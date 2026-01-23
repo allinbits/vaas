@@ -15,10 +15,9 @@ The rewrite simplifies the interchain security modules by removing several featu
 | **Top N Chains** | Part of PSS removal |
 | **Opt-In Chains** | Part of PSS removal |
 | **Power Shaping** | No caps, allowlists, denylists, priority lists |
-| **Per-Consumer Infraction Parameters** | Use global defaults from provider |
+| **Per-Consumer Commission Rates** | Validators use same commission as provider |
 | **Slash Packet Throttling** | Removed all slash meter logic |
 | **Consumer Reward Distribution** | No cross-chain rewards |
-| **Per-Consumer Commission Rates** | Validators use same commission as provider |
 | **Inactive Provider Validators (ADR-017)** | Only active provider validators can validate consumers |
 
 ### Consumer Module
@@ -35,6 +34,7 @@ The rewrite simplifies the interchain security modules by removing several featu
 ### Provider Module
 - Consumer Lifecycle Management (REGISTERED → INITIALIZED → LAUNCHED → STOPPED → DELETED)
 - Key Assignment (validators can use different keys per consumer)
+- Per-Consumer Infraction Parameters (custom slash/jail params per consumer)
 - VSC Packet Generation at epoch boundaries
 - IBC Channel Management
 - Double Voting Evidence handling
@@ -56,8 +56,8 @@ The rewrite simplifies the interchain security modules by removing several featu
 ### Provider Keeper (`x/ccv/provider/keeper/`)
 
 **msg_server.go:**
-- `CreateConsumer`: Removed power shaping, infraction parameters, and reward denom setup
-- `UpdateConsumer`: Removed power shaping and infraction parameter updates
+- `CreateConsumer`: Removed power shaping and reward denom setup (kept per-consumer infraction parameters)
+- `UpdateConsumer`: Removed power shaping (kept per-consumer infraction parameters)
 - `SetConsumerCommissionRate`: Returns error (feature removed)
 - `OptIn`: Simplified to no-op with optional key assignment
 - `OptOut`: Returns error (PSS removed)
@@ -65,7 +65,7 @@ The rewrite simplifies the interchain security modules by removing several featu
 **relay.go:**
 - `BeginBlockCIS`: Now a no-op (slash throttling removed)
 - `OnRecvSlashPacket`: Removed slash meter logic, packets handled directly
-- `HandleSlashPacket`: Uses `DefaultConsumerInfractionParameters` instead of per-consumer params
+- `HandleSlashPacket`: Uses per-consumer infraction parameters via `GetInfractionParameters`
 - `QueueVSCPackets`: Removed activeValidators parameter
 
 **validator_set_update.go:**
@@ -81,14 +81,14 @@ The rewrite simplifies the interchain security modules by removing several featu
 - `InitGenesis`: Removed `InitializeSlashMeter` call
 
 **consumer_equivocation.go:**
-- Uses `DefaultConsumerInfractionParameters` instead of `GetInfractionParameters`
+- Uses per-consumer infraction parameters via `GetInfractionParameters`
 
 **grpc_query.go:**
 - `QueryThrottleState`: Returns empty values
 - `QueryRegisteredConsumerRewardDenoms`: Returns empty list
 - `QueryConsumerChainOptedInValidators`: Returns all consumer validators
 - `QueryConsumerValidators`: Simplified to remove power shaping
-- `GetConsumerChain`: Removed power shaping and per-consumer infraction params
+- `GetConsumerChain`: Removed power shaping (kept per-consumer infraction parameters)
 - `hasToValidate`: Simplified - always returns true for active validators
 
 **keeper.go:**
@@ -179,7 +179,7 @@ go test ./...
 
 1. **No opt-in/out**: All validators on the provider automatically validate all consumer chains
 2. **No power shaping**: Consumer chains get the full provider validator set (up to MaxProviderConsensusValidators)
-3. **No per-consumer params**: Infraction parameters use provider defaults
+3. **Per-consumer infraction params**: Each consumer can have custom slash/jail parameters
 4. **No rewards**: Consumer chains don't distribute rewards to the provider
 5. **No slash packets**: Consumer chains log infractions but don't send slash packets to provider
 6. **Simplified genesis**: Consumer genesis doesn't include outstanding downtime or last transmission block height
