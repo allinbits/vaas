@@ -17,7 +17,6 @@ func NewRestartGenesisState(
 	clientID, channelID string,
 	initValSet []abci.ValidatorUpdate,
 	heightToValsetUpdateIDs []HeightToValsetUpdateID,
-	pendingConsumerPackets ConsumerPacketDataList,
 	params ccv.ConsumerParams,
 ) *GenesisState {
 	return &GenesisState{
@@ -27,7 +26,6 @@ func NewRestartGenesisState(
 			InitialValSet: initValSet,
 		},
 		HeightToValsetUpdateId: heightToValsetUpdateIDs,
-		PendingConsumerPackets: pendingConsumerPackets,
 		ProviderClientId:       clientID,
 		ProviderChannelId:      channelID,
 	}
@@ -72,11 +70,9 @@ func NewInitialGenesisState(cs *ibctmtypes.ClientState, consState *ibctmtypes.Co
 //
 // 2. Chain restarts with CCV handshake still in progress:
 //   - Params, InitialValset, ProviderID, HeightToValidatorSetUpdateID // mandatory
-//   - PendingConsumerPacket // optional
 //
 // 3. Chain restarts with CCV handshake completed:
 //   - Params, InitialValset, ProviderID, channelID, HeightToValidatorSetUpdateID // mandatory
-//   - PendingConsumerPacket // optional
 func (gs GenesisState) Validate() error {
 	if !gs.Params.Enabled {
 		return nil
@@ -125,26 +121,12 @@ func (gs GenesisState) Validate() error {
 		if len(gs.HeightToValsetUpdateId) != 0 {
 			return errorsmod.Wrap(ccv.ErrInvalidGenesis, "HeightToValsetUpdateId must be nil for new chain")
 		}
-		if len(gs.PendingConsumerPackets.List) != 0 {
-			return errorsmod.Wrap(ccv.ErrInvalidGenesis, "pending consumer packets must be empty for new chain")
-		}
 	} else {
 		// NOTE: For restart genesis, we will verify initial validator set in InitGenesis.
 		if gs.ProviderClientId == "" {
 			return errorsmod.Wrap(ccv.ErrInvalidGenesis, "provider client id must be set for a restarting consumer genesis state")
 		}
-		// handshake is still in progress
-		handshakeInProgress := gs.ProviderChannelId == ""
-		if handshakeInProgress {
-			if len(gs.PendingConsumerPackets.List) != 0 {
-				for _, packet := range gs.PendingConsumerPackets.List {
-					if packet.Type == ccv.VscMaturedPacket {
-						return errorsmod.Wrap(ccv.ErrInvalidGenesis, "pending maturing packets must be empty when handshake isn't completed")
-					}
-				}
-			}
-		}
-		/* 		if gs.HeightToValsetUpdateId == nil {
+			/* 		if gs.HeightToValsetUpdateId == nil {
 			return errorsmod.Wrap(
 				ccv.ErrInvalidGenesis,
 				"empty height to validator set update id mapping",

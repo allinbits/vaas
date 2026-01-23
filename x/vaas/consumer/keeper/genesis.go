@@ -117,13 +117,6 @@ func (k Keeper) InitGenesis(ctx sdk.Context, state *types.GenesisState) []abci.V
 			k.SetProviderChannel(ctx, state.ProviderChannelId)
 		}
 
-		// Set pending consumer packets, using the depreciated ConsumerPacketDataList type
-		// that exists for genesis.
-		// note that the list includes pending mature VSC packet only if the handshake is completed
-		for _, packet := range state.PendingConsumerPackets.List {
-			k.AppendPendingPacket(ctx, packet.Type, packet.Data)
-		}
-
 		// set height to valset update id mapping
 		for _, h2v := range state.HeightToValsetUpdateId {
 			k.SetHeightValsetUpdateID(ctx, h2v.Height, h2v.ValsetUpdateId)
@@ -152,11 +145,6 @@ func (k Keeper) ExportGenesis(ctx sdk.Context) (genesis *types.GenesisState) {
 	// export the current validator set
 	valset := k.MustGetCurrentValidatorsAsABCIUpdates(ctx)
 
-	// export pending packets using the depreciated ConsumerPacketDataList type
-	pendingPackets := k.GetPendingPackets(ctx)
-	pendingPacketsDepreciated := types.ConsumerPacketDataList{}
-	pendingPacketsDepreciated.List = append(pendingPacketsDepreciated.List, pendingPackets...)
-
 	// export all the states created after a provider channel got established
 	if channelID, ok := k.GetProviderChannel(ctx); ok {
 		clientID, found := k.GetProviderClientID(ctx)
@@ -170,7 +158,6 @@ func (k Keeper) ExportGenesis(ctx sdk.Context) (genesis *types.GenesisState) {
 			channelID,
 			valset,
 			k.GetAllHeightToValsetUpdateIDs(ctx),
-			pendingPacketsDepreciated,
 			params,
 		)
 	} else {
@@ -187,7 +174,6 @@ func (k Keeper) ExportGenesis(ctx sdk.Context) (genesis *types.GenesisState) {
 			"",
 			valset,
 			k.GetAllHeightToValsetUpdateIDs(ctx),
-			pendingPacketsDepreciated,
 			params,
 		)
 	}

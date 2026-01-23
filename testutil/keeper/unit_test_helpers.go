@@ -28,9 +28,7 @@ import (
 	govkeeper "github.com/cosmos/cosmos-sdk/x/gov/keeper"
 	govtypes "github.com/cosmos/cosmos-sdk/x/gov/types"
 	paramstypes "github.com/cosmos/cosmos-sdk/x/params/types"
-	stakingtypes "github.com/cosmos/cosmos-sdk/x/staking/types"
 
-	abci "github.com/cometbft/cometbft/abci/types"
 	tmproto "github.com/cometbft/cometbft/proto/tendermint/types"
 
 	consumerkeeper "github.com/allinbits/vaas/x/vaas/consumer/keeper"
@@ -184,24 +182,6 @@ type PrivateKey struct {
 	PrivKey cryptotypes.PrivKey
 }
 
-// Obtains slash packet data with a newly generated key, and randomized field values
-func GetNewSlashPacketData() types.SlashPacketData {
-	b1 := make([]byte, 8)
-	_, _ = rand.Read(b1)
-	b2 := make([]byte, 8)
-	_, _ = rand.Read(b2)
-	b3 := make([]byte, 8)
-	_, _ = rand.Read(b3)
-	return types.SlashPacketData{
-		Validator: abci.Validator{
-			Address: ed25519.GenPrivKey().PubKey().Address(),
-			Power:   int64(binary.BigEndian.Uint64(b1)),
-		},
-		ValsetUpdateId: binary.BigEndian.Uint64(b2),
-		Infraction:     stakingtypes.Infraction(binary.BigEndian.Uint64(b3) % 3),
-	}
-}
-
 // SetupForDeleteConsumerChain registers expected mock calls and corresponding state setup
 // which assert that a consumer chain was properly setup to be later deleted with `DeleteConsumerChain`.
 // Note: This function only setups and tests that we correctly setup a consumer chain that we could later delete when
@@ -255,8 +235,6 @@ func TestProviderStateIsCleanedAfterConsumerChainIsDeleted(t *testing.T, ctx sdk
 	require.False(t, found)
 	_, found = providerKeeper.GetInitChainHeight(ctx, consumerId)
 	require.False(t, found)
-	acks := providerKeeper.GetSlashAcks(ctx, consumerId)
-	require.Empty(t, acks)
 
 	// test key assignment state is cleaned
 	require.Empty(t, providerKeeper.GetAllValidatorConsumerPubKeys(ctx, &consumerId))

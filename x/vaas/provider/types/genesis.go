@@ -8,8 +8,6 @@ import (
 
 	errorsmod "cosmossdk.io/errors"
 
-	sdk "github.com/cosmos/cosmos-sdk/types"
-
 	ccv "github.com/allinbits/vaas/x/vaas/types"
 )
 
@@ -87,29 +85,11 @@ func (cs ConsumerState) Validate() error {
 		return err
 	}
 
-	// validate optional fields
-
-	if err := validateSlashAcksAddress(cs.SlashDowntimeAck); err != nil {
-		return err
-	}
-
 	for _, pVSC := range cs.PendingValsetChanges {
 		if pVSC.ValsetUpdateId == 0 {
 			return errors.New("valset update ID cannot be equal to zero")
 		}
-		if err := validateSlashAcksAddress(pVSC.SlashAcks); err != nil {
-			return err
-		}
 	}
 
-	return nil
-}
-
-func validateSlashAcksAddress(acks []string) error {
-	for _, a := range acks {
-		if _, err := sdk.ConsAddressFromBech32(a); err != nil {
-			return fmt.Errorf("invalid Bench32 address in slash downtime acks: %s", err)
-		}
-	}
 	return nil
 }

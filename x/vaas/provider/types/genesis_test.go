@@ -9,7 +9,6 @@ import (
 	ibctmtypes "github.com/cosmos/ibc-go/v10/modules/light-clients/07-tendermint"
 	"github.com/stretchr/testify/require"
 
-	abci "github.com/cometbft/cometbft/abci/types"
 	tmtypes "github.com/cometbft/cometbft/types"
 
 	"github.com/allinbits/vaas/testutil/crypto"
@@ -166,23 +165,6 @@ func TestValidateGenesisState(t *testing.T) {
 			false,
 		},
 		{
-			"invalid consumer state slash acks",
-			types.NewGenesisState(
-				types.DefaultValsetUpdateID,
-				nil,
-				[]types.ConsumerState{{
-					ChainId: "chainid", ChannelId: "channel-0", ClientId: "client-id",
-					ConsumerGenesis:  getInitialConsumerGenesis(t, "chainid", false),
-					SlashDowntimeAck: []string{"cosmosvaloper1qlmk6r5w5taqrky4ycur4zq6jqxmuzr688htpp"},
-				}},
-				types.DefaultParams(),
-				nil,
-				nil,
-				nil,
-			),
-			false,
-		},
-		{
 			"invalid consumer state pending VSC packets",
 			types.NewGenesisState(
 				types.DefaultValsetUpdateID,
@@ -191,27 +173,6 @@ func TestValidateGenesisState(t *testing.T) {
 					ChainId: "chainid", ChannelId: "channel-0", ClientId: "client-id",
 					ConsumerGenesis:      getInitialConsumerGenesis(t, "chainid", false),
 					PendingValsetChanges: []ccv.ValidatorSetChangePacketData{{}},
-				}},
-				types.DefaultParams(),
-				nil,
-				nil,
-				nil,
-			),
-			false,
-		},
-		{
-			"invalid consumer state pending VSC packets 2: invalid slash acks address",
-			types.NewGenesisState(
-				types.DefaultValsetUpdateID,
-				nil,
-				[]types.ConsumerState{{
-					ChainId: "chainid", ChannelId: "channel-0", ClientId: "client-id",
-					ConsumerGenesis: getInitialConsumerGenesis(t, "chainid", false),
-					PendingValsetChanges: []ccv.ValidatorSetChangePacketData{{
-						SlashAcks:        []string{"cosmosvaloper1qlmk6r5w5taqrky4ycur4zq6jqxmuzr688htpp"},
-						ValsetUpdateId:   1,
-						ValidatorUpdates: []abci.ValidatorUpdate{{}},
-					}},
 				}},
 				types.DefaultParams(),
 				nil,

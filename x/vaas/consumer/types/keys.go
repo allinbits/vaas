@@ -4,8 +4,6 @@ import (
 	"encoding/binary"
 	fmt "fmt"
 	"sort"
-
-	sdk "github.com/cosmos/cosmos-sdk/types"
 )
 
 const (
@@ -21,20 +19,11 @@ const (
 	// QuerierRoute is the querier route for IBC consumer
 	QuerierRoute = ModuleName
 
-	// ConsumerRedistributeName the root string for the consumer-redistribution account address
-	ConsumerRedistributeName = "cons_redistribute"
-
-	// ConsumerToSendToProviderName is a "buffer" address for outgoing fees to be transferred to the provider chain
-	//#nosec G101 -- (false positive) this is not a hardcoded credential
-	ConsumerToSendToProviderName = "cons_to_send_to_provider"
-
 	// Names for the store keys.
 	// Used for storing the byte prefixes in the constant map.
 	// See getKeyPrefixes().
 
 	PortKeyName = "PortKey"
-
-	LastDistributionTransmissionKeyName = "LastDistributionTransmissionKey"
 
 	UnbondingTimeKeyName = "UnbondingTimeKey"
 
@@ -44,37 +33,19 @@ const (
 
 	PendingChangesKeyName = "PendingChangesKey"
 
-	DeprecatedPendingDataPacketsV0KeyName = "DeprecatedPendingDataPacketsV0Key"
-
 	PreCCVKeyName = "PreCCVKey"
 
 	InitialValSetKeyName = "InitialValSetKey"
 
-	DeprecatedLastStandaloneHeightKeyName = "DeprecatedLastStandaloneHeightKey"
-
-	DeprecatedSmallestNonOptOutPowerKeyName = "DeprecatedSmallestNonOptOutPowerKey"
-
 	HistoricalInfoKeyName = "HistoricalInfoKey"
 
-	DeprecatedPacketMaturityTimeKeyName = "DeprecatedPacketMaturityTimeKey"
-
 	HeightValsetUpdateIDKeyName = "HeightValsetUpdateIDKey"
-
-	OutstandingDowntimeKeyName = "OutstandingDowntimeKey"
-
-	PendingDataPacketsV1KeyName = "PendingDataPacketsV1Key"
 
 	CrossChainValidatorKeyName = "CrossChainValidatorKey"
 
 	InitGenesisHeightKeyName = "InitGenesisHeightKey"
 
-	StandaloneTransferChannelIDKeyName = "StandaloneTransferChannelIDKey"
-
 	PrevStandaloneChainKeyName = "PrevStandaloneChainKey"
-
-	PendingPacketsIndexKeyName = "PendingPacketsIndexKey"
-
-	SlashRecordKeyName = "SlashRecordKey"
 
 	ParametersKeyName = "ParametersKey"
 )
@@ -84,9 +55,6 @@ func getKeyPrefixes() map[string]byte {
 	return map[string]byte{
 		// PortKey is the key for storing the port ID
 		PortKeyName: 0,
-
-		// LastDistributionTransmissionKey is the key for storing the last distribution transmission
-		LastDistributionTransmissionKeyName: 1,
 
 		// UnbondingTimeKey is the key for storing the unbonding period
 		UnbondingTimeKeyName: 2,
@@ -101,10 +69,6 @@ func getKeyPrefixes() map[string]byte {
 		// received over CCV channel but not yet flushed over ABCI
 		PendingChangesKeyName: 5,
 
-		// NOTE: This prefix is deprecated, but left in place to avoid consumer state migrations
-		// [DEPRECATED]
-		DeprecatedPendingDataPacketsV0KeyName: 6,
-
 		// PreCCVKey is the key for storing the preCCV flag, which is set to true
 		// during the process of a standalone to consumer changeover.
 		PreCCVKeyName: 7,
@@ -112,32 +76,11 @@ func getKeyPrefixes() map[string]byte {
 		// InitialValSetKey is the key for storing the initial validator set for a consumer
 		InitialValSetKeyName: 8,
 
-		// NOTE: This prefix is deprecated, but left in place to avoid consumer state migrations
-		// [DEPRECATED]
-		DeprecatedLastStandaloneHeightKeyName: 9,
-
-		// NOTE: This key is deprecated, but left in place to avoid consumer state migrations
-		// [DEPRECATED]
-		DeprecatedSmallestNonOptOutPowerKeyName: 10,
-
 		// HistoricalInfoKey is the key for storing the historical info for a given height
 		HistoricalInfoKeyName: 11,
 
-		// PacketMaturityTimeKey is the key for storing maturity time for each received VSC packet
-		// NOTE: This prefix is deprecated, but left in place to avoid state migrations
-		// [DEPRECATED]
-		DeprecatedPacketMaturityTimeKeyName: 12,
-
 		// HeightValsetUpdateIDKey is the key for storing the mapping from block height to valset update ID
 		HeightValsetUpdateIDKeyName: 13,
-
-		// OutstandingDowntimeKey is the key for storing the validators outstanding downtime by consensus address
-		OutstandingDowntimeKeyName: 14,
-
-		// PendingDataPacketsV1Key is the key for storing a list of data packets
-		// that cannot be sent yet to the provider chain either because the
-		// CCV channel is not established or because the client is expired
-		PendingDataPacketsV1KeyName: 15,
 
 		// CrossChainValidatorKey is the key for storing cross-chain validators by consensus address
 		CrossChainValidatorKeyName: 16,
@@ -145,18 +88,8 @@ func getKeyPrefixes() map[string]byte {
 		// InitGenesisHeightKey is the key for storing the init genesis height
 		InitGenesisHeightKeyName: 17,
 
-		// StandaloneTransferChannelIDKey is the key for storing the channelID of transfer channel
-		// that existed from a standalone chain changing over to a consumer
-		StandaloneTransferChannelIDKeyName: 18,
-
 		// PrevStandaloneChainKey is the key for storing the flag marking whether this chain was previously standalone
 		PrevStandaloneChainKeyName: 19,
-
-		// PendingPacketsIndexKey is the key for storing a FIFO queue of pending packets.
-		PendingPacketsIndexKeyName: 20,
-
-		// SlashRecordKey is the key for storing the consumer's slash record.
-		SlashRecordKeyName: 21,
 
 		// ParametersKey is the key for storing the consumer's parameters.
 		ParametersKeyName: 22,
@@ -211,11 +144,6 @@ func GetAllKeyNames() []string {
 // PortKey returns the key for storing the port ID
 func PortKey() []byte {
 	return []byte{mustGetKeyPrefix(PortKeyName)}
-}
-
-// LastDistributionTransmissionKey returns the key for storing the last distribution transmission
-func LastDistributionTransmissionKey() []byte {
-	return []byte{mustGetKeyPrefix(LastDistributionTransmissionKeyName)}
 }
 
 // UnbondingTimeKey returns the key for storing the unbonding period
@@ -274,30 +202,6 @@ func HeightValsetUpdateIDKey(height uint64) []byte {
 	return append(HeightValsetUpdateIDKeyPrefix(), hBytes...)
 }
 
-// OutstandingDowntimeKeyPrefix returns the key prefix for storing a validators' outstanding downtime by consensus address
-func OutstandingDowntimeKeyPrefix() []byte {
-	return []byte{mustGetKeyPrefix(OutstandingDowntimeKeyName)}
-}
-
-// OutstandingDowntimeKey returns the key for storing a validators' outstanding downtime by consensus address
-func OutstandingDowntimeKey(address sdk.ConsAddress) []byte {
-	return append(OutstandingDowntimeKeyPrefix(), address.Bytes()...)
-}
-
-// PendingDataPacketsV1KeyPrefix returns the key prefix for storing a queue of data packets to be sent to the provider.
-func PendingDataPacketsV1KeyPrefix() []byte {
-	return []byte{mustGetKeyPrefix(PendingDataPacketsV1KeyName)}
-}
-
-// PendingDataPacketsKey returns the key for storing a queue of data packets to be sent to the provider.
-// Packets in this queue will not be sent on the next endblocker if:
-// - the CCV channel is not yet established
-// - the client is expired
-// - A slash packet is being bounced between consumer and provider (not yet implemented)
-func PendingDataPacketsV1Key(idx uint64) []byte {
-	return append(PendingDataPacketsV1KeyPrefix(), sdk.Uint64ToBigEndian(idx)...)
-}
-
 // CrossChainValidatorKeyPrefix returns the key prefix for storing a cross chain validator by consensus address
 func CrossChainValidatorKeyPrefix() []byte {
 	return []byte{mustGetKeyPrefix(CrossChainValidatorKeyName)}
@@ -313,26 +217,9 @@ func InitGenesisHeightKey() []byte {
 	return []byte{mustGetKeyPrefix(InitGenesisHeightKeyName)}
 }
 
-// StandaloneTransferChannelIDKey returns the key for storing the transfer channelID that existed from a standalone chain
-// changing over to a consumer
-// TODO remove as it's never used
-func StandaloneTransferChannelIDKey() []byte {
-	return []byte{mustGetKeyPrefix(StandaloneTransferChannelIDKeyName)}
-}
-
 // PrevStandaloneChainKey returns the key for storing the flag marking whether this chain was previously standalone
 func PrevStandaloneChainKey() []byte {
 	return []byte{mustGetKeyPrefix(PrevStandaloneChainKeyName)}
-}
-
-// PendingPacketsIndexKey returns the key for storing the FIFO queue of pending packets.
-func PendingPacketsIndexKey() []byte {
-	return []byte{mustGetKeyPrefix(PendingPacketsIndexKeyName)}
-}
-
-// SlashRecordKey returns the key for storing the consumer's slash record.
-func SlashRecordKey() []byte {
-	return []byte{mustGetKeyPrefix(SlashRecordKeyName)}
 }
 
 // ParametersKey returns the key for storing the consumer parameters

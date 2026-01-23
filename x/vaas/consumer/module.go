@@ -174,13 +174,9 @@ func (am AppModule) BeginBlock(goCtx context.Context) error {
 }
 
 // EndBlock implements the AppModule interface
-// Flush PendingChanges to ABCI, send pending packets.
-// Note: Standalone changeover and reward distribution have been removed.
+// Flush PendingChanges to ABCI.
 func (am AppModule) EndBlock(goCtx context.Context) ([]abci.ValidatorUpdate, error) {
 	ctx := sdk.UnwrapSDKContext(goCtx)
-
-	// panics on invalid packets and unexpected send errors
-	am.keeper.SendPackets(ctx)
 
 	data, ok := am.keeper.GetPendingChanges(ctx)
 	if !ok {

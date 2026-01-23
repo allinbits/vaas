@@ -592,7 +592,6 @@ func (k Keeper) DeleteConsumerChain(ctx sdk.Context, consumerId string) (err err
 	}
 
 	k.DeleteInitChainHeight(ctx, consumerId)
-	k.DeleteSlashAcks(ctx, consumerId)
 	k.DeletePendingVSCPackets(ctx, consumerId)
 
 	k.DeleteConsumerValSet(ctx, consumerId)

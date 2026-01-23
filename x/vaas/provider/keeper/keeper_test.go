@@ -93,63 +93,6 @@ func TestGetAllValsetUpdateBlockHeights(t *testing.T) {
 	require.Equal(t, expectedGetAllOrder, result)
 }
 
-// TestSlashAcks tests the getter, setter, iteration, and deletion methods for stored slash acknowledgements
-func TestSlashAcks(t *testing.T) {
-	providerKeeper, ctx, ctrl, _ := testkeeper.GetProviderKeeperAndCtx(t, testkeeper.NewInMemKeeperParams(t))
-	defer ctrl.Finish()
-
-	chainID := CONSUMER_CHAIN_ID
-
-	acks := providerKeeper.GetSlashAcks(ctx, chainID)
-	require.Nil(t, acks)
-
-	p := []string{"alice", "bob", "charlie"}
-	providerKeeper.SetSlashAcks(ctx, chainID, p)
-
-	acks = providerKeeper.GetSlashAcks(ctx, chainID)
-	require.NotNil(t, acks)
-
-	require.Len(t, acks, 3)
-	slashAcks := providerKeeper.ConsumeSlashAcks(ctx, chainID)
-	require.Len(t, slashAcks, 3)
-
-	acks = providerKeeper.GetSlashAcks(ctx, chainID)
-	require.Nil(t, acks)
-
-	chains := []string{"c1", "c2", "c3"}
-
-	for _, c := range chains {
-		providerKeeper.SetSlashAcks(ctx, c, p)
-	}
-
-	for _, c := range chains {
-		require.Equal(t, p, providerKeeper.GetSlashAcks(ctx, c))
-		providerKeeper.DeleteSlashAcks(ctx, c)
-		acks = providerKeeper.GetSlashAcks(ctx, c)
-		require.Len(t, acks, 0)
-	}
-}
-
-// TestAppendSlashAck tests the append method for stored slash acknowledgements
-func TestAppendSlashAck(t *testing.T) {
-	providerKeeper, ctx, ctrl, _ := testkeeper.GetProviderKeeperAndCtx(t, testkeeper.NewInMemKeeperParams(t))
-	defer ctrl.Finish()
-
-	p := []string{"alice", "bob", "charlie"}
-	chains := []string{"c1", "c2"}
-	providerKeeper.SetSlashAcks(ctx, chains[0], p)
-
-	providerKeeper.AppendSlashAck(ctx, chains[0], p[0])
-	acks := providerKeeper.GetSlashAcks(ctx, chains[0])
-	require.NotNil(t, acks)
-	require.Len(t, acks, len(p)+1)
-
-	providerKeeper.AppendSlashAck(ctx, chains[1], p[0])
-	acks = providerKeeper.GetSlashAcks(ctx, chains[1])
-	require.NotNil(t, acks)
-	require.Len(t, acks, 1)
-}
-
 // TestPendingVSCs tests the getter, appending, and deletion methods for stored pending VSCs
 func TestPendingVSCs(t *testing.T) {
 	providerKeeper, ctx, ctrl, _ := testkeeper.GetProviderKeeperAndCtx(t, testkeeper.NewInMemKeeperParams(t))

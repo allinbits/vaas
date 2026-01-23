@@ -20,7 +20,6 @@ func RegisterInterfaces(registry codectypes.InterfaceRegistry) {
 		(*govv1beta1.Content)(nil),
 		&ConsumerAdditionProposal{},
 		&ConsumerRemovalProposal{},
-		&ConsumerModificationProposal{},
 	)
 	registry.RegisterImplementations(
 		(*sdk.Msg)(nil),
@@ -31,11 +30,6 @@ func RegisterInterfaces(registry codectypes.InterfaceRegistry) {
 		&MsgUpdateParams{},
 		&MsgSubmitConsumerMisbehaviour{},
 		&MsgSubmitConsumerDoubleVoting{},
-	)
-	// keep so existing proposals can be correctly deserialized
-	registry.RegisterImplementations(
-		(*govv1beta1.Content)(nil),
-		&EquivocationProposal{},
 	)
 	registry.RegisterImplementations(
 		(*exported.ClientMessage)(nil),

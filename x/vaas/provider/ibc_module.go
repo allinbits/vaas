@@ -1,10 +1,6 @@
 package provider
 
 import (
-	"errors"
-	"fmt"
-	"strconv"
-
 	channeltypes "github.com/cosmos/ibc-go/v10/modules/core/04-channel/types"
 	porttypes "github.com/cosmos/ibc-go/v10/modules/core/05-port/types"
 	ibcexported "github.com/cosmos/ibc-go/v10/modules/core/exported"
@@ -153,103 +149,17 @@ func (am AppModule) OnChanCloseConfirm(
 	return nil
 }
 
-// OnRecvPacket implements the IBCModule interface. A successful acknowledgement
-// is returned if the packet data is successfully decoded and the receive application
-// logic returns without error.
+// OnRecvPacket implements the IBCModule interface.
+// The provider does not expect to receive any packets from consumers.
 func (am AppModule) OnRecvPacket(
 	ctx sdk.Context,
 	_ string,
 	packet channeltypes.Packet,
 	_ sdk.AccAddress,
 ) ibcexported.Acknowledgement {
-	logger := am.keeper.Logger(ctx)
-	ack := channeltypes.NewResultAcknowledgement([]byte{byte(1)})
-
-	var ackErr error
-	consumerPacket, err := UnmarshalConsumerPacket(packet)
-	if err != nil {
-		ackErr = errorsmod.Wrapf(sdkerrors.ErrInvalidType, "cannot unmarshal ConsumerPacket data")
-		logger.Error(fmt.Sprintf("%s sequence %d", ackErr.Error(), packet.Sequence))
-		ack = channeltypes.NewErrorAcknowledgement(ackErr)
-	}
-
-	eventAttributes := []sdk.Attribute{
-		sdk.NewAttribute(sdk.AttributeKeyModule, providertypes.ModuleName),
-	}
-
-	// only attempt the application logic if the packet data
-	// was successfully decoded
-	if ack.Success() {
-		var err error
-		switch consumerPacket.Type {
-		case ccv.VscMaturedPacket:
-			// ignore VSCMaturedPacket
-			err = nil
-		case ccv.SlashPacket:
-			// handle SlashPacket
-			var ackResult ccv.PacketAckResult
-			data := *consumerPacket.GetSlashPacketData()
-			ackResult, err = am.keeper.OnRecvSlashPacket(ctx, packet, data)
-			if err == nil {
-				ack = channeltypes.NewResultAcknowledgement(ackResult)
-				logger.Info("successfully handled SlashPacket", "sequence", packet.Sequence)
-				eventAttributes = append(eventAttributes, sdk.NewAttribute(ccv.AttributeValSetUpdateID, strconv.Itoa(int(data.ValsetUpdateId))))
-			}
-		default:
-			err = fmt.Errorf("invalid consumer packet type: %q", consumerPacket.Type)
-		}
-		if err != nil {
-			ack = channeltypes.NewErrorAcknowledgement(err)
-			ackErr = err
-			logger.Error(fmt.Sprintf("%s sequence %d", ackErr.Error(), packet.Sequence))
-		}
-	}
-
-	eventAttributes = append(eventAttributes, sdk.NewAttribute(ccv.AttributeKeyAckSuccess, fmt.Sprintf("%t", ack.Success())))
-	if ackErr != nil {
-		eventAttributes = append(eventAttributes, sdk.NewAttribute(ccv.AttributeKeyAckError, ackErr.Error()))
-	}
-
-	ctx.EventManager().EmitEvent(
-		sdk.NewEvent(
-			ccv.EventTypePacket,
-			eventAttributes...,
-		),
+	return channeltypes.NewErrorAcknowledgement(
+		errorsmod.Wrap(sdkerrors.ErrInvalidRequest, "provider does not accept packets"),
 	)
-
-	// NOTE: acknowledgement will be written synchronously during IBC handler execution.
-	return ack
-}
-
-func UnmarshalConsumerPacket(packet channeltypes.Packet) (consumerPacket ccv.ConsumerPacketData, err error) {
-	return UnmarshalConsumerPacketData(packet.GetData())
-}
-
-func UnmarshalConsumerPacketData(packetData []byte) (consumerPacket ccv.ConsumerPacketData, err error) {
-	// First try unmarshaling into ccv.ConsumerPacketData type
-	if err := ccv.ModuleCdc.UnmarshalJSON(packetData, &consumerPacket); err != nil {
-		// If failed, packet should be a v1 slash packet, retry for ConsumerPacketDataV1 packet type
-		var v1Packet ccv.ConsumerPacketDataV1
-		errV1 := ccv.ModuleCdc.UnmarshalJSON(packetData, &v1Packet)
-		if errV1 != nil {
-			// If neither worked, return error
-			return ccv.ConsumerPacketData{}, errV1
-		}
-
-		// VSC matured packets should not be unmarshaled as v1 packets
-		if v1Packet.Type == ccv.VscMaturedPacket {
-			return ccv.ConsumerPacketData{}, errors.New("VSC matured packets should be correctly unmarshaled")
-		}
-
-		// Convert from v1 packet type
-		consumerPacket = ccv.ConsumerPacketData{
-			Type: v1Packet.Type,
-			Data: &ccv.ConsumerPacketData_SlashPacketData{
-				SlashPacketData: v1Packet.GetSlashPacketData().FromV1(),
-			},
-		}
-	}
-	return consumerPacket, nil
 }
 
 // OnAcknowledgementPacket implements the IBCModule interface

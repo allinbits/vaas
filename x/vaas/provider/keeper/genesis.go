@@ -35,7 +35,6 @@ func (k Keeper) InitGenesis(ctx sdk.Context, genState *types.GenesisState) []abc
 			k.SetChannelToConsumerId(ctx, cs.ChannelId, chainID)
 			k.SetConsumerIdToChannelId(ctx, chainID, cs.ChannelId)
 			k.SetInitChainHeight(ctx, chainID, cs.InitialHeight)
-			k.SetSlashAcks(ctx, cs.ChainId, cs.SlashDowntimeAck)
 		} else {
 			k.AppendPendingVSCPackets(ctx, chainID, cs.PendingValsetChanges...)
 		}
@@ -139,7 +138,6 @@ func (k Keeper) ExportGenesis(ctx sdk.Context) *types.GenesisState {
 			if !found {
 				panic(fmt.Errorf("cannot find init height for consumer chain %s", consumerId))
 			}
-			cs.SlashDowntimeAck = k.GetSlashAcks(ctx, consumerId)
 		}
 
 		cs.PendingValsetChanges = k.GetPendingVSCPackets(ctx, consumerId)

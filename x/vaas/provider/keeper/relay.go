@@ -3,7 +3,6 @@ package keeper
 import (
 	"errors"
 	"fmt"
-	"strconv"
 
 	clienttypes "github.com/cosmos/ibc-go/v10/modules/core/02-client/types"
 	channeltypes "github.com/cosmos/ibc-go/v10/modules/core/04-channel/types"
@@ -11,7 +10,6 @@ import (
 	errorsmod "cosmossdk.io/errors"
 
 	sdk "github.com/cosmos/cosmos-sdk/types"
-	stakingtypes "github.com/cosmos/cosmos-sdk/x/staking/types"
 
 	abci "github.com/cometbft/cometbft/abci/types"
 
@@ -234,7 +232,7 @@ func (k Keeper) QueueVSCPackets(ctx sdk.Context) error {
 		// check whether there are changes in the validator set
 		if len(valUpdates) != 0 {
 			// construct validator set change packet data
-			packet := ccv.NewValidatorSetChangePacketData(valUpdates, valUpdateID, k.ConsumeSlashAcks(ctx, consumerId))
+			packet := ccv.NewValidatorSetChangePacketData(valUpdates, valUpdateID)
 			k.AppendPendingVSCPackets(ctx, consumerId, packet)
 			k.Logger(ctx).Info("VSCPacket enqueued:",
 				"consumerId", consumerId,
@@ -268,225 +266,6 @@ func (k Keeper) EndBlockCIS(ctx sdk.Context) {
 	for _, consumerId := range k.GetAllConsumersWithIBCClients(ctx) {
 		k.PruneKeyAssignments(ctx, consumerId)
 	}
-}
-
-// OnRecvSlashPacket delivers a received slash packet, validates it and
-// then queues the slash packet as pending if valid.
-func (k Keeper) OnRecvSlashPacket(
-	ctx sdk.Context,
-	packet channeltypes.Packet,
-	data ccv.SlashPacketData,
-) (ccv.PacketAckResult, error) {
-	// check that the channel is established, panic if not
-	consumerId, found := k.GetChannelIdToConsumerId(ctx, packet.DestinationChannel)
-	if !found {
-		// SlashPacket packet was sent on a channel different than any of the established CCV channels;
-		// this should never happen
-		k.Logger(ctx).Error("SlashPacket received on unknown channel",
-			"channelID", packet.DestinationChannel,
-		)
-		panic(fmt.Errorf("SlashPacket received on unknown channel %s", packet.DestinationChannel))
-	}
-
-	// validate packet data upon receiving
-	if err := data.Validate(); err != nil {
-		return nil, errorsmod.Wrapf(err, "error validating SlashPacket data")
-	}
-
-	if err := k.ValidateSlashPacket(ctx, consumerId, packet, data); err != nil {
-		k.Logger(ctx).Error("invalid slash packet",
-			"error", err.Error(),
-			"consumerId", consumerId,
-			"consumer cons addr", sdk.ConsAddress(data.Validator.Address).String(),
-			"vscID", data.ValsetUpdateId,
-			"infractionType", data.Infraction,
-		)
-		return nil, err
-	}
-
-	// The slash packet validator address may be known only on the consumer chain,
-	// in this case, it must be mapped back to the consensus address on the provider chain
-	consumerConsAddr := providertypes.NewConsumerConsAddress(data.Validator.Address)
-	providerConsAddr := k.GetProviderAddrFromConsumerAddr(ctx, consumerId, consumerConsAddr)
-
-	if data.Infraction == stakingtypes.Infraction_INFRACTION_DOUBLE_SIGN {
-		// getMappedInfractionHeight is already checked in ValidateSlashPacket
-		infractionHeight, _ := k.getMappedInfractionHeight(ctx, consumerId, data.ValsetUpdateId)
-
-		k.SetSlashLog(ctx, providerConsAddr)
-		k.Logger(ctx).Info("SlashPacket received for double-signing",
-			"consumerId", consumerId,
-			"consumer cons addr", consumerConsAddr.String(),
-			"provider cons addr", providerConsAddr.String(),
-			"vscID", data.ValsetUpdateId,
-			"infractionHeight", infractionHeight,
-		)
-
-		// return successful ack, as an error would result
-		// in the consumer closing the CCV channel
-		return ccv.V1Result, nil
-	}
-
-	// check that the chain is launched
-	if k.GetConsumerPhase(ctx, consumerId) != providertypes.CONSUMER_PHASE_LAUNCHED {
-		k.Logger(ctx).Info("cannot jail validator on a chain that is not currently launched",
-			"consumerId", consumerId,
-			"phase", k.GetConsumerPhase(ctx, consumerId),
-			"provider cons addr", providerConsAddr.String(),
-		)
-
-		// drop packet but return a slash ack
-		k.AppendSlashAck(ctx, consumerId, consumerConsAddr.String())
-
-		return ccv.SlashPacketHandledResult, nil
-	}
-
-	// check that the validator belongs to the consumer chain valset
-	if !k.IsConsumerValidator(ctx, consumerId, providerConsAddr) {
-		k.Logger(ctx).Error("cannot jail validator that does not belong on the consumer valset",
-			"consumerId", consumerId,
-			"provider cons addr", providerConsAddr.String(),
-		)
-
-		// drop packet but return a slash ack so that the consumer can send another slash packet
-		k.AppendSlashAck(ctx, consumerId, consumerConsAddr.String())
-
-		return ccv.SlashPacketHandledResult, nil
-	}
-
-	// Slash throttling removed - handle packet directly
-	k.HandleSlashPacket(ctx, consumerId, data)
-
-	k.Logger(ctx).Info("slash packet received and handled",
-		"consumerId", consumerId,
-		"consumer cons addr", consumerConsAddr.String(),
-		"provider cons addr", providerConsAddr.String(),
-		"vscID", data.ValsetUpdateId,
-		"infractionType", data.Infraction,
-	)
-
-	// Return result ack that the packet was handled successfully
-	return ccv.SlashPacketHandledResult, nil
-}
-
-// ValidateSlashPacket validates a recv slash packet before it is
-// handled or persisted in store. An error is returned if the packet is invalid,
-// and an error ack should be relayed to the sender.
-func (k Keeper) ValidateSlashPacket(ctx sdk.Context, consumerId string,
-	packet channeltypes.Packet, data ccv.SlashPacketData,
-) error {
-	_, found := k.getMappedInfractionHeight(ctx, consumerId, data.ValsetUpdateId)
-	// return error if we cannot find infraction height matching the validator update id
-	if !found {
-		return fmt.Errorf("cannot find infraction height matching "+
-			"the validator update id %d for chain %s", data.ValsetUpdateId, consumerId)
-	}
-
-	return nil
-}
-
-// HandleSlashPacket potentially jails a misbehaving validator for a downtime infraction.
-// This method should NEVER be called with a double-sign infraction.
-func (k Keeper) HandleSlashPacket(ctx sdk.Context, consumerId string, data ccv.SlashPacketData) {
-	consumerConsAddr := providertypes.NewConsumerConsAddress(data.Validator.Address)
-	// Obtain provider chain consensus address using the consumer chain consensus address
-	providerConsAddr := k.GetProviderAddrFromConsumerAddr(ctx, consumerId, consumerConsAddr)
-
-	k.Logger(ctx).Debug("HandleSlashPacket",
-		"consumerId", consumerId,
-		"consumer cons addr", consumerConsAddr.String(),
-		"provider cons addr", providerConsAddr.String(),
-		"vscID", data.ValsetUpdateId,
-		"infractionType", data.Infraction,
-	)
-
-	// Obtain validator from staking keeper
-	validator, err := k.stakingKeeper.GetValidatorByConsAddr(ctx, providerConsAddr.ToSdkConsAddr())
-	if err != nil {
-		k.Logger(ctx).Error("validator not found", "validator", providerConsAddr.String(), "error", err)
-		return
-	}
-
-	// make sure the validator is not yet unbonded;
-	// stakingKeeper.Slash() panics otherwise
-	if validator.IsUnbonded() {
-		// if validator is not found or is unbonded, drop slash packet and log error.
-		k.Logger(ctx).Info(
-			"HandleSlashPacket - slash packet dropped because validator not found or is unbonded",
-			"provider cons addr", providerConsAddr.String(),
-		)
-		return
-	}
-
-	// tombstoned validators should not be slashed multiple times.
-	if k.slashingKeeper.IsTombstoned(ctx, providerConsAddr.ToSdkConsAddr()) {
-		// Log and drop packet if validator is tombstoned.
-		k.Logger(ctx).Info(
-			"HandleSlashPacket - slash packet dropped because validator is already tombstoned",
-			"provider cons addr", providerConsAddr.String(),
-		)
-		return
-	}
-
-	infractionHeight, found := k.getMappedInfractionHeight(ctx, consumerId, data.ValsetUpdateId)
-	if !found {
-		k.Logger(ctx).Error(
-			"HandleSlashPacket - infraction height not found. But was found during slash packet validation",
-			"vscID", data.ValsetUpdateId,
-		)
-		// drop packet
-		return
-	}
-
-	// Note: the SlashPacket is for downtime infraction, as SlashPackets
-	// for double-signing infractions are already dropped when received
-
-	// append the validator address to the slash ack for its consumer id
-	// TODO: consumer cons address should be accepted here
-	k.AppendSlashAck(ctx, consumerId, consumerConsAddr.String())
-
-	// Use default provider infraction parameters (per-consumer params removed)
-	infractionParams, err := providertypes.DefaultConsumerInfractionParameters(ctx, k.slashingKeeper)
-	if err != nil {
-		k.Logger(ctx).Error("failed to get default infraction parameters", "err", err.Error())
-		return
-	}
-
-	if !validator.IsJailed() {
-		// slash validator
-		_, err = k.stakingKeeper.SlashWithInfractionReason(ctx, providerConsAddr.ToSdkConsAddr(), int64(infractionHeight),
-			data.Validator.Power, infractionParams.Downtime.SlashFraction, stakingtypes.Infraction_INFRACTION_DOWNTIME)
-		if err != nil {
-			k.Logger(ctx).Error("failed to slash validator", providerConsAddr.ToSdkConsAddr().String(), "err", err.Error())
-			return
-		}
-
-		// jail validator
-		err := k.stakingKeeper.Jail(ctx, providerConsAddr.ToSdkConsAddr())
-		if err != nil {
-			k.Logger(ctx).Error("failed to jail validator", providerConsAddr.ToSdkConsAddr().String(), "err", err.Error())
-			return
-		}
-		k.Logger(ctx).Info("HandleSlashPacket - validator jailed", "provider cons addr", providerConsAddr.String())
-
-		jailEndTime := ctx.BlockTime().Add(infractionParams.Downtime.JailDuration)
-		err = k.slashingKeeper.JailUntil(ctx, providerConsAddr.ToSdkConsAddr(), jailEndTime)
-		if err != nil {
-			k.Logger(ctx).Error("failed to set jail duration", "err", err.Error())
-			return
-		}
-	}
-
-	ctx.EventManager().EmitEvent(
-		sdk.NewEvent(
-			providertypes.EventTypeExecuteConsumerChainSlash,
-			sdk.NewAttribute(sdk.AttributeKeyModule, providertypes.ModuleName),
-			sdk.NewAttribute(ccv.AttributeValidatorAddress, providerConsAddr.String()),
-			sdk.NewAttribute(ccv.AttributeInfractionType, data.Infraction.String()),
-			sdk.NewAttribute(providertypes.AttributeInfractionHeight, strconv.Itoa(int(infractionHeight))),
-			sdk.NewAttribute(ccv.AttributeValSetUpdateID, strconv.Itoa(int(data.ValsetUpdateId))),
-		),
-	)
 }
 
 // getMappedInfractionHeight gets the infraction height mapped from val set ID for the given consumer id

@@ -1,22 +1,17 @@
 package keeper_test
 
 import (
-	"fmt"
 	"sort"
 	"testing"
-	"time"
 
 	clienttypes "github.com/cosmos/ibc-go/v10/modules/core/02-client/types"
 	channeltypes "github.com/cosmos/ibc-go/v10/modules/core/04-channel/types"
-	"github.com/golang/mock/gomock"
 	"github.com/stretchr/testify/require"
 
 	cryptocodec "github.com/cosmos/cosmos-sdk/crypto/codec"
 	"github.com/cosmos/cosmos-sdk/crypto/keys/ed25519"
-	stakingtypes "github.com/cosmos/cosmos-sdk/x/staking/types"
 
 	abci "github.com/cometbft/cometbft/abci/types"
-	"github.com/cometbft/cometbft/libs/bytes"
 
 	"github.com/allinbits/vaas/testutil/crypto"
 	testkeeper "github.com/allinbits/vaas/testutil/keeper"
@@ -60,21 +55,11 @@ func TestOnRecvVSCPacket(t *testing.T) {
 	pd := types.NewValidatorSetChangePacketData(
 		changes1,
 		1,
-		nil,
 	)
 
 	pd2 := types.NewValidatorSetChangePacketData(
 		changes2,
 		2,
-		nil,
-	)
-
-	pd3 := types.NewValidatorSetChangePacketData(
-		[]abci.ValidatorUpdate{},
-		3,
-		[]string{
-			"invalid_slash_ack",
-		},
 	)
 
 	testCases := []struct {
@@ -101,26 +86,6 @@ func TestOnRecvVSCPacket(t *testing.T) {
 			"success on packet with more changes",
 			false,
 			channeltypes.NewPacket(pd2.GetBytes(), 3, types.ProviderPortID, providerCCVChannelID, types.ConsumerPortID, consumerCCVChannelID,
-				clienttypes.NewHeight(1, 0), 0),
-			types.ValidatorSetChangePacketData{ValidatorUpdates: []abci.ValidatorUpdate{
-				{
-					PubKey: pk1,
-					Power:  30,
-				},
-				{
-					PubKey: pk2,
-					Power:  40,
-				},
-				{
-					PubKey: pk3,
-					Power:  10,
-				},
-			}},
-		},
-		{
-			"success on packet with invalid slash acks",
-			false,
-			channeltypes.NewPacket(pd3.GetBytes(), 4, types.ProviderPortID, providerCCVChannelID, types.ConsumerPortID, consumerCCVChannelID,
 				clienttypes.NewHeight(1, 0), 0),
 			types.ValidatorSetChangePacketData{ValidatorUpdates: []abci.ValidatorUpdate{
 				{
@@ -206,7 +171,6 @@ func TestOnRecvVSCPacketDuplicateUpdates(t *testing.T) {
 	vscData := types.NewValidatorSetChangePacketData(
 		valUpdates,
 		1,
-		nil,
 	)
 	packet := channeltypes.NewPacket(vscData.GetBytes(), 2, types.ProviderPortID,
 		providerCCVChannelID, types.ConsumerPortID, consumerCCVChannelID, clienttypes.NewHeight(1, 0), 0)
@@ -228,133 +192,3 @@ func TestOnRecvVSCPacketDuplicateUpdates(t *testing.T) {
 	require.Equal(t, valUpdates[1], gotPendingChanges.ValidatorUpdates[0]) // Only latest update should be kept
 }
 
-// TestSendPackets tests the SendPackets method failing
-func TestSendPacketsFailure(t *testing.T) {
-	// Keeper setup
-	consumerKeeper, ctx, ctrl, mocks := testkeeper.GetConsumerKeeperAndCtx(t, testkeeper.NewInMemKeeperParams(t))
-	defer ctrl.Finish()
-	consumerKeeper.SetProviderChannel(ctx, "consumerCCVChannelID")
-	consumerKeeper.SetParams(ctx, types.DefaultParams())
-
-	// Set some pending packets
-	consumerKeeper.AppendPendingPacket(ctx, types.VscMaturedPacket, &types.ConsumerPacketData_VscMaturedPacketData{})
-	consumerKeeper.AppendPendingPacket(ctx, types.SlashPacket, &types.ConsumerPacketData_SlashPacketData{})
-	consumerKeeper.AppendPendingPacket(ctx, types.VscMaturedPacket, &types.ConsumerPacketData_VscMaturedPacketData{})
-
-	// Mock the channel keeper to return an error
-	gomock.InOrder(
-		mocks.MockChannelKeeper.EXPECT().GetChannel(ctx, types.ConsumerPortID,
-			"consumerCCVChannelID").Return(channeltypes.Channel{}, false).Times(1),
-	)
-
-	// No panic should occur, pending packets should not be cleared
-	consumerKeeper.SendPackets(ctx)
-	require.Equal(t, 3, len(consumerKeeper.GetPendingPackets(ctx)))
-}
-
-// TestOnAcknowledgementPacketError tests application logic for ERROR acknowledgments of sent VSCMatured and Slash packets
-// in conjunction with the ibc module's execution of "acknowledgePacket",
-// according to https://github.com/cosmos/ibc/tree/main/spec/core/ics-004-channel-and-packet-semantics#processing-acknowledgements
-func TestOnAcknowledgementPacketError(t *testing.T) {
-	// Channel ID to some dest chain that's not the established provider
-	channelIDToDestChain := "channelIDToDestChain"
-
-	// Channel ID to established provider
-	channelIDToProvider := "channelIDToProvider"
-
-	// Channel ID on destination (counter party) chain
-	channelIDOnDest := "ChannelIDOnDest"
-
-	// Instantiate in-mem keeper with mocks
-	ctrl := gomock.NewController(t)
-	defer ctrl.Finish()
-	keeperParams := testkeeper.NewInMemKeeperParams(t)
-	mocks := testkeeper.NewMockedKeepers(ctrl)
-	consumerKeeper := testkeeper.NewInMemConsumerKeeper(keeperParams, mocks)
-	ctx := keeperParams.Ctx
-
-	// Set an established provider channel for later in test
-	consumerKeeper.SetProviderChannel(ctx, channelIDToProvider)
-
-	slashPacketData := types.NewSlashPacketData(
-		abci.Validator{Address: bytes.HexBytes{}, Power: int64(1)}, uint64(1), stakingtypes.Infraction_INFRACTION_DOWNTIME,
-	)
-
-	// The type that'd be JSON marshaled and sent over the wire
-	consumerPacketData := types.NewConsumerPacketData(
-		types.SlashPacket,
-		&types.ConsumerPacketData_SlashPacketData{
-			SlashPacketData: slashPacketData,
-		},
-	)
-
-	// AcknowledgePacket is in reference to a packet originally sent from this (consumer) module.
-	packet := channeltypes.NewPacket(
-		consumerPacketData.GetBytes(),
-		1,
-		types.ConsumerPortID, // Source port
-		channelIDToDestChain, // Source channel
-		types.ProviderPortID, // Dest (counter party) port
-		channelIDOnDest,      // Dest (counter party) channel
-		clienttypes.Height{},
-		uint64(time.Now().Add(60*time.Second).UnixNano()),
-	)
-
-	// Still expect no error returned from OnAcknowledgementPacket,
-	// but the input error ack will be handled with appropriate ChanCloseInit calls
-	gomock.InOrder(
-
-		// Due to input error ack, ChanCloseInit is called on channel to destination chain
-		mocks.MockChannelKeeper.EXPECT().ChanCloseInit(
-			ctx, types.ConsumerPortID, channelIDToDestChain,
-		).Return(nil).Times(1),
-
-		// Due to input error ack and existence of established channel to provider,
-		// ChanCloseInit is called on channel to provider
-		mocks.MockChannelKeeper.EXPECT().ChanCloseInit(
-			ctx, types.ConsumerPortID, channelIDToProvider,
-		).Return(nil).Times(1),
-	)
-
-	ack := types.NewErrorAcknowledgementWithLog(ctx, fmt.Errorf("error"))
-	err := consumerKeeper.OnAcknowledgementPacket(ctx, packet, ack)
-	require.Nil(t, err)
-}
-
-// Regression test for https://github.com/cosmos/interchain-security/issues/1145
-func TestSendPacketsDeletion(t *testing.T) {
-	// Keeper setup
-	consumerKeeper, ctx, ctrl, mocks := testkeeper.GetConsumerKeeperAndCtx(t, testkeeper.NewInMemKeeperParams(t))
-	defer ctrl.Finish()
-	consumerKeeper.SetProviderChannel(ctx, "consumerCCVChannelID")
-	consumerKeeper.SetParams(ctx, types.DefaultParams())
-
-	// Queue two pending packets, vsc matured first
-	consumerKeeper.AppendPendingPacket(ctx, types.VscMaturedPacket, &types.ConsumerPacketData_VscMaturedPacketData{
-		VscMaturedPacketData: &types.VSCMaturedPacketData{
-			ValsetUpdateId: 90,
-		},
-	})
-	consumerKeeper.AppendPendingPacket(ctx, types.SlashPacket, &types.ConsumerPacketData_SlashPacketData{ // Slash appears first
-		SlashPacketData: &types.SlashPacketData{
-			Validator:      abci.Validator{},
-			ValsetUpdateId: 88,
-			Infraction:     stakingtypes.Infraction_INFRACTION_DOWNTIME,
-		},
-	})
-
-	// Get mocks for the (first) successful SendPacket call that does NOT return an error
-	expectations := testkeeper.GetMocksForSendIBCPacket(ctx, mocks, "consumerCCVChannelID", 1)
-	// Append mocks for the (second) failed SendPacket call, which returns an error
-	expectations = append(expectations, mocks.MockChannelKeeper.EXPECT().GetChannel(ctx, types.ConsumerPortID,
-		"consumerCCVChannelID").Return(channeltypes.Channel{}, false).Times(1))
-	gomock.InOrder(expectations...)
-
-	consumerKeeper.SendPackets(ctx)
-
-	// Expect the first successfully sent packet to be popped from queue
-	require.Equal(t, 1, len(consumerKeeper.GetPendingPackets(ctx)))
-
-	// Expect the slash packet to remain
-	require.Equal(t, types.SlashPacket, consumerKeeper.GetPendingPackets(ctx)[0].Type)
-}

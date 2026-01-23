@@ -1,10 +1,8 @@
 package keeper
 
 import (
-	"errors"
 	"fmt"
 
-	clienttypes "github.com/cosmos/ibc-go/v10/modules/core/02-client/types"
 	channeltypes "github.com/cosmos/ibc-go/v10/modules/core/04-channel/types"
 
 	errorsmod "cosmossdk.io/errors"
@@ -79,55 +77,8 @@ func (k Keeper) OnRecvVSCPacket(ctx sdk.Context, packet channeltypes.Packet, new
 	return nil
 }
 
-// Note: QueueSlashPacket removed - slash functionality is not supported in vaas
-
-// SendPackets iterates queued packets and sends them in FIFO order.
-// received VSC packets in order, and write acknowledgements for all matured VSC packets.
-//
-// This method is a no-op if there is no established channel to provider or the queue is empty.
-//
-// Note: Per spec, a VSC reaching maturity on a consumer chain means that all the unbonding
-// operations that resulted in validator updates included in that VSC have matured on
-// the consumer chain.
-func (k Keeper) SendPackets(ctx sdk.Context) {
-	channelID, ok := k.GetProviderChannel(ctx)
-	if !ok {
-		return
-	}
-
-	pending := k.GetAllPendingPacketsWithIdx(ctx)
-	idxsForDeletion := []uint64{}
-	for _, p := range pending {
-		// Note: VSCMatured packets only - slash packets are not supported
-
-		// Send packet over IBC
-		err := ccv.SendIBCPacket(
-			ctx,
-			k.channelKeeper,
-			channelID,          // source channel id
-			ccv.ConsumerPortID, // source port id
-			p.GetBytes(),
-			k.GetCCVTimeoutPeriod(ctx),
-		)
-		if err != nil {
-			if errors.Is(err, clienttypes.ErrClientNotActive) {
-				// IBC client is expired!
-				// leave the packet data stored to be sent once the client is upgraded
-				k.Logger(ctx).Info("IBC client is expired, cannot send IBC packet; leaving packet data stored:", "type", p.Type.String())
-				break
-			}
-			// Not able to send packet over IBC!
-			// Leave the packet data stored for the sent to be retried in the next block.
-			// Note that if VSCMaturedPackets are not sent for long enough, the provider
-			// will remove the consumer anyway.
-			k.Logger(ctx).Error("cannot send IBC packet; leaving packet data stored:", "type", p.Type.String(), "err", err.Error())
-			break
-		}
-		idxsForDeletion = append(idxsForDeletion, p.Idx)
-	}
-	// Delete pending packets that were successfully sent and did not return an error from SendIBCPacket
-	k.DeletePendingDataPackets(ctx, idxsForDeletion...)
-}
+// Note: SendPackets removed - consumer does not send any packets to provider in vaas
+// (slash packets removed, VSCMatured packets removed)
 
 // OnAcknowledgementPacket executes application logic for acknowledgments of sent VSCMatured packets
 // in conjunction with the ibc module's execution of "acknowledgePacket",
