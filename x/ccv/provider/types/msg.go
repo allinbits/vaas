@@ -10,7 +10,6 @@ import (
 	ibctmtypes "github.com/cosmos/ibc-go/v10/modules/light-clients/07-tendermint"
 
 	errorsmod "cosmossdk.io/errors"
-	"cosmossdk.io/math"
 
 	sdk "github.com/cosmos/cosmos-sdk/types"
 
@@ -35,26 +34,18 @@ const (
 
 var (
 	_ sdk.Msg = (*MsgAssignConsumerKey)(nil)
-	_ sdk.Msg = (*MsgChangeRewardDenoms)(nil)
 	_ sdk.Msg = (*MsgSubmitConsumerMisbehaviour)(nil)
 	_ sdk.Msg = (*MsgSubmitConsumerDoubleVoting)(nil)
 	_ sdk.Msg = (*MsgCreateConsumer)(nil)
 	_ sdk.Msg = (*MsgUpdateConsumer)(nil)
 	_ sdk.Msg = (*MsgRemoveConsumer)(nil)
-	_ sdk.Msg = (*MsgOptIn)(nil)
-	_ sdk.Msg = (*MsgOptOut)(nil)
-	_ sdk.Msg = (*MsgSetConsumerCommissionRate)(nil)
 
 	_ sdk.HasValidateBasic = (*MsgAssignConsumerKey)(nil)
-	_ sdk.HasValidateBasic = (*MsgChangeRewardDenoms)(nil)
 	_ sdk.HasValidateBasic = (*MsgSubmitConsumerMisbehaviour)(nil)
 	_ sdk.HasValidateBasic = (*MsgSubmitConsumerDoubleVoting)(nil)
 	_ sdk.HasValidateBasic = (*MsgCreateConsumer)(nil)
 	_ sdk.HasValidateBasic = (*MsgUpdateConsumer)(nil)
 	_ sdk.HasValidateBasic = (*MsgRemoveConsumer)(nil)
-	_ sdk.HasValidateBasic = (*MsgOptIn)(nil)
-	_ sdk.HasValidateBasic = (*MsgOptOut)(nil)
-	_ sdk.HasValidateBasic = (*MsgSetConsumerCommissionRate)(nil)
 )
 
 // NewMsgAssignConsumerKey creates a new MsgAssignConsumerKey instance.
@@ -89,38 +80,6 @@ func (msg MsgAssignConsumerKey) ValidateBasic() error {
 	}
 	if _, _, err := ParseConsumerKeyFromJson(msg.ConsumerKey); err != nil {
 		return errorsmod.Wrapf(ErrInvalidMsgAssignConsumerKey, "ConsumerKey: %s", err.Error())
-	}
-
-	return nil
-}
-
-// ValidateBasic implements the sdk.HasValidateBasic interface.
-func (msg *MsgChangeRewardDenoms) ValidateBasic() error {
-	emptyDenomsToAdd := len(msg.DenomsToAdd) == 0
-	emptyDenomsToRemove := len(msg.DenomsToRemove) == 0
-	// Return error if both sets are empty or nil
-	if emptyDenomsToAdd && emptyDenomsToRemove {
-		return errorsmod.Wrapf(ErrInvalidMsgChangeRewardDenoms, "both DenomsToAdd and DenomsToRemove are empty")
-	}
-
-	denomMap := map[string]struct{}{}
-	for _, denom := range msg.DenomsToAdd {
-		// validate the denom
-		if !sdk.NewCoin(denom, math.NewInt(1)).IsValid() {
-			return errorsmod.Wrapf(ErrInvalidMsgChangeRewardDenoms, "DenomsToAdd: invalid denom(%s)", denom)
-		}
-		denomMap[denom] = struct{}{}
-	}
-	for _, denom := range msg.DenomsToRemove {
-		// validate the denom
-		if !sdk.NewCoin(denom, math.NewInt(1)).IsValid() {
-			return errorsmod.Wrapf(ErrInvalidMsgChangeRewardDenoms, "DenomsToRemove: invalid denom(%s)", denom)
-		}
-		// denom cannot be in both sets
-		if _, found := denomMap[denom]; found {
-			return errorsmod.Wrapf(ErrInvalidMsgChangeRewardDenoms,
-				"denom(%s) cannot be both added and removed", denom)
-		}
 	}
 
 	return nil
@@ -180,100 +139,6 @@ func (msg MsgSubmitConsumerDoubleVoting) ValidateBasic() error {
 
 	if err := ccvtypes.ValidateConsumerId(msg.ConsumerId); err != nil {
 		return errorsmod.Wrapf(ErrInvalidMsgSubmitConsumerDoubleVoting, "ConsumerId: %s", err.Error())
-	}
-
-	return nil
-}
-
-// NewMsgOptIn creates a new NewMsgOptIn instance.
-func NewMsgOptIn(consumerId string, providerValidatorAddress sdk.ValAddress, consumerConsensusPubKey, signer string) (*MsgOptIn, error) {
-	return &MsgOptIn{
-		ConsumerId:   consumerId,
-		ProviderAddr: providerValidatorAddress.String(),
-		ConsumerKey:  consumerConsensusPubKey,
-		Signer:       signer,
-	}, nil
-}
-
-// ValidateBasic implements the sdk.HasValidateBasic interface.
-func (msg MsgOptIn) ValidateBasic() error {
-	if err := validateDeprecatedChainId(msg.ChainId); err != nil {
-		return errorsmod.Wrapf(ErrInvalidMsgOptIn, "ChainId: %s", err.Error())
-	}
-
-	if err := ccvtypes.ValidateConsumerId(msg.ConsumerId); err != nil {
-		return errorsmod.Wrapf(ErrInvalidMsgOptIn, "ConsumerId: %s", err.Error())
-	}
-
-	if err := validateProviderAddress(msg.ProviderAddr, msg.Signer); err != nil {
-		return errorsmod.Wrapf(ErrInvalidMsgOptIn, "ProviderAddr: %s", err.Error())
-	}
-
-	if msg.ConsumerKey != "" {
-		if _, _, err := ParseConsumerKeyFromJson(msg.ConsumerKey); err != nil {
-			return errorsmod.Wrapf(ErrInvalidMsgOptIn, "ConsumerKey: %s", err.Error())
-		}
-	}
-	return nil
-}
-
-// NewMsgOptOut creates a new NewMsgOptIn instance.
-func NewMsgOptOut(consumerId string, providerValidatorAddress sdk.ValAddress, signer string) (*MsgOptOut, error) {
-	return &MsgOptOut{
-		ConsumerId:   consumerId,
-		ProviderAddr: providerValidatorAddress.String(),
-		Signer:       signer,
-	}, nil
-}
-
-// ValidateBasic implements the sdk.HasValidateBasic interface.
-func (msg MsgOptOut) ValidateBasic() error {
-	if err := validateDeprecatedChainId(msg.ChainId); err != nil {
-		return errorsmod.Wrapf(ErrInvalidMsgOptOut, "ChainId: %s", err.Error())
-	}
-
-	if err := ccvtypes.ValidateConsumerId(msg.ConsumerId); err != nil {
-		return errorsmod.Wrapf(ErrInvalidMsgOptOut, "ConsumerId: %s", err.Error())
-	}
-
-	if err := validateProviderAddress(msg.ProviderAddr, msg.Signer); err != nil {
-		return errorsmod.Wrapf(ErrInvalidMsgOptOut, "ProviderAddr: %s", err.Error())
-	}
-
-	return nil
-}
-
-// NewMsgSetConsumerCommissionRate creates a new MsgSetConsumerCommissionRate msg instance.
-func NewMsgSetConsumerCommissionRate(
-	consumerId string,
-	commission math.LegacyDec,
-	providerValidatorAddress sdk.ValAddress,
-	signer string,
-) *MsgSetConsumerCommissionRate {
-	return &MsgSetConsumerCommissionRate{
-		ConsumerId:   consumerId,
-		Rate:         commission,
-		ProviderAddr: providerValidatorAddress.String(),
-		Signer:       signer,
-	}
-}
-
-// ValidateBasic implements the sdk.HasValidateBasic interface.
-func (msg MsgSetConsumerCommissionRate) ValidateBasic() error {
-	if err := validateDeprecatedChainId(msg.ChainId); err != nil {
-		return errorsmod.Wrapf(ErrInvalidMsgSetConsumerCommissionRate, "ChainId: %s", err.Error())
-	}
-
-	if err := ccvtypes.ValidateConsumerId(msg.ConsumerId); err != nil {
-		return errorsmod.Wrapf(ErrInvalidMsgSetConsumerCommissionRate, "ConsumerId: %s", err.Error())
-	}
-
-	if err := validateProviderAddress(msg.ProviderAddr, msg.Signer); err != nil {
-		return errorsmod.Wrapf(ErrInvalidMsgSetConsumerCommissionRate, "ProviderAddr: %s", err.Error())
-	}
-
-	if msg.Rate.IsNegative() || msg.Rate.GT(math.LegacyOneDec()) {
-		return errorsmod.Wrapf(ErrInvalidMsgSetConsumerCommissionRate, "consumer commission rate should be in the range [0, 1]")
 	}
 
 	return nil

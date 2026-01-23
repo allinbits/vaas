@@ -20,38 +20,9 @@ func NewQueryCmd() *cobra.Command {
 	}
 
 	cmd.AddCommand(
-		CmdNextFeeDistribution(),
 		CmdProviderInfo(),
-		CmdThrottleState(),
 		CmdParams(),
 	)
-
-	return cmd
-}
-
-func CmdNextFeeDistribution() *cobra.Command {
-	cmd := &cobra.Command{
-		Use:   "next-fee-distribution",
-		Short: "Query next fee distribution data",
-		Args:  cobra.ExactArgs(0),
-		RunE: func(cmd *cobra.Command, args []string) (err error) {
-			clientCtx, err := client.GetClientQueryContext(cmd)
-			if err != nil {
-				return err
-			}
-			queryClient := types.NewQueryClient(clientCtx)
-
-			req := &types.QueryNextFeeDistributionEstimateRequest{}
-			res, err := queryClient.QueryNextFeeDistribution(cmd.Context(), req)
-			if err != nil {
-				return err
-			}
-
-			return clientCtx.PrintProto(res)
-		},
-	}
-
-	flags.AddQueryFlagsToCmd(cmd)
 
 	return cmd
 }
@@ -70,33 +41,6 @@ func CmdProviderInfo() *cobra.Command {
 
 			req := &types.QueryProviderInfoRequest{}
 			res, err := queryClient.QueryProviderInfo(cmd.Context(), req)
-			if err != nil {
-				return err
-			}
-
-			return clientCtx.PrintProto(res)
-		},
-	}
-
-	flags.AddQueryFlagsToCmd(cmd)
-
-	return cmd
-}
-
-func CmdThrottleState() *cobra.Command {
-	cmd := &cobra.Command{
-		Use:   "throttle-state",
-		Short: "Query throttle state",
-		Args:  cobra.ExactArgs(0),
-		RunE: func(cmd *cobra.Command, args []string) (err error) {
-			clientCtx, err := client.GetClientQueryContext(cmd)
-			if err != nil {
-				return err
-			}
-			queryClient := types.NewQueryClient(clientCtx)
-
-			req := &types.QueryThrottleStateRequest{}
-			res, err := queryClient.QueryThrottleState(cmd.Context(), req)
 			if err != nil {
 				return err
 			}

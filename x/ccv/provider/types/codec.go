@@ -25,15 +25,13 @@ func RegisterInterfaces(registry codectypes.InterfaceRegistry) {
 	)
 	registry.RegisterImplementations(
 		(*sdk.Msg)(nil),
-		&MsgConsumerAddition{},
-		&MsgConsumerRemoval{},
-		&MsgConsumerModification{},
 		&MsgAssignConsumerKey{},
 		&MsgCreateConsumer{},
 		&MsgUpdateConsumer{},
 		&MsgRemoveConsumer{},
-		&MsgChangeRewardDenoms{},
 		&MsgUpdateParams{},
+		&MsgSubmitConsumerMisbehaviour{},
+		&MsgSubmitConsumerDoubleVoting{},
 	)
 	// keep so existing proposals can be correctly deserialized
 	registry.RegisterImplementations(
@@ -41,28 +39,8 @@ func RegisterInterfaces(registry codectypes.InterfaceRegistry) {
 		&EquivocationProposal{},
 	)
 	registry.RegisterImplementations(
-		(*sdk.Msg)(nil),
-		&MsgSubmitConsumerMisbehaviour{},
-	)
-	registry.RegisterImplementations(
-		(*sdk.Msg)(nil),
-		&MsgSubmitConsumerDoubleVoting{},
-	)
-	registry.RegisterImplementations(
-		(*sdk.Msg)(nil),
-		&MsgOptIn{},
-	)
-	registry.RegisterImplementations(
-		(*sdk.Msg)(nil),
-		&MsgOptOut{},
-	)
-	registry.RegisterImplementations(
 		(*exported.ClientMessage)(nil),
 		&tendermint.Misbehaviour{},
-	)
-	registry.RegisterImplementations(
-		(*sdk.Msg)(nil),
-		&MsgSetConsumerCommissionRate{},
 	)
 	msgservice.RegisterMsgServiceDesc(registry, &_Msg_serviceDesc)
 }

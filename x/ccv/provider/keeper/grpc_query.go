@@ -86,7 +86,6 @@ func (k Keeper) QueryConsumerChains(goCtx context.Context, req *types.QueryConsu
 }
 
 // GetConsumerChain returns a Chain data structure with all the necessary fields
-// Note: Power shaping, allowlist/denylist, and reward denoms have been removed.
 func (k Keeper) GetConsumerChain(ctx sdk.Context, consumerId string) (types.Chain, error) {
 	chainID, err := k.GetConsumerChainId(ctx, consumerId)
 	if err != nil {
@@ -100,29 +99,28 @@ func (k Keeper) GetConsumerChain(ctx sdk.Context, consumerId string) (types.Chai
 		return types.Chain{}, fmt.Errorf("cannot find metadata (%s): %s", consumerId, err.Error())
 	}
 
-	// Use default infraction parameters (per-consumer params removed)
 	infractionParameters, err := types.DefaultConsumerInfractionParameters(ctx, k.slashingKeeper)
 	if err != nil {
 		return types.Chain{}, fmt.Errorf("cannot get default infraction parameters: %s", err.Error())
 	}
 
 	return types.Chain{
-		ChainId:              chainID,
-		ClientId:             clientID,
-		Top_N:                0, // Power shaping removed
-		MinPowerInTop_N:      -1,
-		ValidatorSetCap:      0,
-		ValidatorsPowerCap:   0,
-		Allowlist:            []string{},
-		Denylist:             []string{},
-		Phase:                k.GetConsumerPhase(ctx, consumerId).String(),
-		Metadata:             metadata,
-		AllowInactiveVals:    false,
-		MinStake:             0,
-		ConsumerId:           consumerId,
+		ChainId:                 chainID,
+		ClientId:                clientID,
+		Top_N:                   0,
+		MinPowerInTop_N:         -1,
+		ValidatorSetCap:         0,
+		ValidatorsPowerCap:      0,
+		Allowlist:               []string{},
+		Denylist:                []string{},
+		Phase:                   k.GetConsumerPhase(ctx, consumerId).String(),
+		Metadata:                metadata,
+		AllowInactiveVals:       false,
+		MinStake:                0,
+		ConsumerId:              consumerId,
 		AllowlistedRewardDenoms: &types.AllowlistedRewardDenoms{Denoms: []string{}},
-		Prioritylist:         []string{},
-		InfractionParameters: &infractionParameters,
+		Prioritylist:            []string{},
+		InfractionParameters:    &infractionParameters,
 	}, nil
 }
 
@@ -182,34 +180,6 @@ func (k Keeper) QueryValidatorProviderAddr(goCtx context.Context, req *types.Que
 	}, nil
 }
 
-// QueryThrottleState is deprecated - slash throttling has been removed.
-// Returns empty/zero values for backwards compatibility.
-func (k Keeper) QueryThrottleState(goCtx context.Context, req *types.QueryThrottleStateRequest) (*types.QueryThrottleStateResponse, error) {
-	if req == nil {
-		return nil, status.Error(codes.InvalidArgument, "empty request")
-	}
-
-	// Slash throttling has been removed - return empty values
-	return &types.QueryThrottleStateResponse{
-		SlashMeter:             0,
-		SlashMeterAllowance:    0,
-		NextReplenishCandidate: time.Time{},
-	}, nil
-}
-
-// QueryRegisteredConsumerRewardDenoms is deprecated - reward distribution has been removed.
-// Returns empty list for backwards compatibility.
-func (k Keeper) QueryRegisteredConsumerRewardDenoms(goCtx context.Context, req *types.QueryRegisteredConsumerRewardDenomsRequest) (*types.QueryRegisteredConsumerRewardDenomsResponse, error) {
-	if req == nil {
-		return nil, status.Error(codes.InvalidArgument, "empty request")
-	}
-
-	// Reward distribution has been removed - return empty list
-	return &types.QueryRegisteredConsumerRewardDenomsResponse{
-		Denoms: []string{},
-	}, nil
-}
-
 func (k Keeper) QueryAllPairsValConsAddrByConsumer(
 	goCtx context.Context,
 	req *types.QueryAllPairsValConsAddrByConsumerRequest,
@@ -223,7 +193,6 @@ func (k Keeper) QueryAllPairsValConsAddrByConsumer(
 		return nil, status.Error(codes.InvalidArgument, err.Error())
 	}
 
-	// list of pairs valconsensus addr <providerValConAddrs : consumerValConAddrs>
 	pairValConAddrs := []*types.PairValConAddrProviderAndConsumer{}
 
 	ctx := sdk.UnwrapSDKContext(goCtx)
@@ -245,7 +214,6 @@ func (k Keeper) QueryAllPairsValConsAddrByConsumer(
 	}, nil
 }
 
-// QueryParams returns all parameters and current values of provider
 func (k Keeper) QueryParams(goCtx context.Context, req *types.QueryParamsRequest) (*types.QueryParamsResponse, error) {
 	if req == nil {
 		return nil, status.Error(codes.InvalidArgument, "empty request")
@@ -257,42 +225,6 @@ func (k Keeper) QueryParams(goCtx context.Context, req *types.QueryParamsRequest
 	return &types.QueryParamsResponse{Params: params}, nil
 }
 
-// QueryConsumerChainOptedInValidators returns all validators that opted-in to a given consumer chain
-func (k Keeper) QueryConsumerChainOptedInValidators(goCtx context.Context, req *types.QueryConsumerChainOptedInValidatorsRequest) (*types.QueryConsumerChainOptedInValidatorsResponse, error) {
-	if req == nil {
-		return nil, status.Errorf(codes.InvalidArgument, "empty request")
-	}
-
-	consumerId := req.ConsumerId
-	if err := ccvtypes.ValidateConsumerId(consumerId); err != nil {
-		return nil, status.Error(codes.InvalidArgument, err.Error())
-	}
-
-	ctx := sdk.UnwrapSDKContext(goCtx)
-
-	if !k.IsConsumerActive(ctx, consumerId) {
-		return nil, status.Error(codes.InvalidArgument, fmt.Sprintf("unknown consumer chain: %s", consumerId))
-	}
-
-	// PSS (Partial Set Security) has been removed - all validators validate all consumers.
-	// Return all consumer validators as "opted in"
-	consumerValSet, err := k.GetConsumerValSet(ctx, consumerId)
-	if err != nil {
-		return nil, status.Error(codes.Internal, err.Error())
-	}
-
-	optedInVals := make([]string, 0, len(consumerValSet))
-	for _, v := range consumerValSet {
-		provAddr := types.ProviderConsAddress{Address: v.ProviderConsAddr}
-		optedInVals = append(optedInVals, provAddr.ToSdkConsAddr().String())
-	}
-
-	return &types.QueryConsumerChainOptedInValidatorsResponse{
-		ValidatorsProviderAddresses: optedInVals,
-	}, nil
-}
-
-// QueryConsumerValidators returns all validators that are consumer validators in a given consumer chain
 func (k Keeper) QueryConsumerValidators(goCtx context.Context, req *types.QueryConsumerValidatorsRequest) (*types.QueryConsumerValidatorsResponse, error) {
 	if req == nil {
 		return nil, status.Errorf(codes.InvalidArgument, "empty request")
@@ -305,25 +237,19 @@ func (k Keeper) QueryConsumerValidators(goCtx context.Context, req *types.QueryC
 
 	ctx := sdk.UnwrapSDKContext(goCtx)
 
-	// get the consumer phase
 	phase := k.GetConsumerPhase(ctx, consumerId)
 	if phase == types.CONSUMER_PHASE_UNSPECIFIED {
 		return nil, status.Errorf(codes.InvalidArgument, "cannot find a phase for consumer: %s", consumerId)
 	}
 
-	// query consumer validator set
-	// Note: Power shaping has been removed - all validators validate all consumers
-
 	var consumerValSet []types.ConsensusValidator
 	var err error
 
-	// if the consumer launched, the consumer valset has been persisted
 	if phase == types.CONSUMER_PHASE_LAUNCHED {
 		consumerValSet, err = k.GetConsumerValSet(ctx, consumerId)
 		if err != nil {
 			return nil, status.Error(codes.Internal, err.Error())
 		}
-		// sort the address of the validators by ascending lexical order as they were persisted to the store
 		sort.Slice(consumerValSet, func(i, j int) bool {
 			return bytes.Compare(
 				consumerValSet[i].ProviderConsAddr,
@@ -343,12 +269,7 @@ func (k Keeper) QueryConsumerValidators(goCtx context.Context, req *types.QueryC
 			continue
 		}
 
-		hasToValidate, err := k.hasToValidate(ctx, provAddr, consumerId)
-		if err != nil {
-			k.Logger(ctx).Error("cannot define if validator %s has to validate for consumer %s for current epoch",
-				provAddr.String(), consumerId)
-			continue
-		}
+		hasToValidate := k.IsConsumerValidator(ctx, consumerId, provAddr)
 
 		consumerRate, found := k.GetConsumerCommissionRate(ctx, consumerId, types.NewProviderConsAddress(consAddr))
 		if !found {
@@ -375,131 +296,12 @@ func (k Keeper) QueryConsumerValidators(goCtx context.Context, req *types.QueryC
 	}, nil
 }
 
-// QueryConsumerChainsValidatorHasToValidate returns all consumer chains that the given validator has to validate now
-// or in the next epoch if nothing changes.
-func (k Keeper) QueryConsumerChainsValidatorHasToValidate(goCtx context.Context, req *types.QueryConsumerChainsValidatorHasToValidateRequest) (*types.QueryConsumerChainsValidatorHasToValidateResponse, error) {
-	if req == nil {
-		return nil, status.Error(codes.InvalidArgument, "empty request")
-	}
-
-	if req.ProviderAddress == "" {
-		return nil, status.Error(codes.InvalidArgument, "empty provider address")
-	}
-
-	consAddr, err := sdk.ConsAddressFromBech32(req.ProviderAddress)
-	if err != nil {
-		return nil, status.Error(codes.InvalidArgument, "invalid provider address")
-	}
-
-	ctx := sdk.UnwrapSDKContext(goCtx)
-
-	provAddr := types.NewProviderConsAddress(consAddr)
-
-	// get all the consumer chains for which the validator is either already
-	// opted-in, currently a consumer validator or if its voting power is within the TopN validators
-	consumersToValidate := []string{}
-	// To avoid large iterations over all the consumer IDs, iterate only over
-	// chains with an IBC client created.
-	for _, consumerId := range k.GetAllConsumersWithIBCClients(ctx) {
-		if hasToValidate, err := k.hasToValidate(ctx, provAddr, consumerId); err == nil && hasToValidate {
-			consumersToValidate = append(consumersToValidate, consumerId)
-		}
-	}
-
-	return &types.QueryConsumerChainsValidatorHasToValidateResponse{
-		ConsumerIds: consumersToValidate,
-	}, nil
-}
-
-// hasToValidate checks if a validator needs to validate on a consumer chain
-// Note: With PSS removed, all active validators validate all consumer chains.
-func (k Keeper) hasToValidate(
-	ctx sdk.Context,
-	provAddr types.ProviderConsAddress,
-	consumerId string,
-) (bool, error) {
-	// only ask validators to validate active chains
-	if !k.IsConsumerActive(ctx, consumerId) {
-		return false, nil
-	}
-
-	// if the validator was sent as part of the packet in the last epoch, it has to validate
-	if k.IsConsumerValidator(ctx, consumerId, provAddr) {
-		return true, nil
-	}
-
-	// With PSS removed, all bonded validators validate all consumers
-	// Check if this validator is in the bonded set
-	lastVals, err := k.GetLastBondedValidators(ctx)
-	if err != nil {
-		return false, err
-	}
-
-	for _, val := range lastVals {
-		consAddr, err := val.GetConsAddr()
-		if err != nil {
-			continue
-		}
-		if provAddr.ToSdkConsAddr().Equals(sdk.ConsAddress(consAddr)) {
-			return true, nil
-		}
-	}
-
-	return false, nil
-}
-
-// QueryValidatorConsumerCommissionRate returns the commission rate a given
-// validator charges on a given consumer chain
-func (k Keeper) QueryValidatorConsumerCommissionRate(goCtx context.Context, req *types.QueryValidatorConsumerCommissionRateRequest) (*types.QueryValidatorConsumerCommissionRateResponse, error) {
-	if req == nil {
-		return nil, status.Errorf(codes.InvalidArgument, "empty request")
-	}
-
-	consumerId := req.ConsumerId
-	if err := ccvtypes.ValidateConsumerId(consumerId); err != nil {
-		return nil, status.Error(codes.InvalidArgument, err.Error())
-	}
-
-	consAddr, err := sdk.ConsAddressFromBech32(req.ProviderAddress)
-	if err != nil {
-		return nil, status.Error(codes.InvalidArgument, "invalid provider address")
-	}
-
-	ctx := sdk.UnwrapSDKContext(goCtx)
-
-	if !k.IsConsumerActive(ctx, consumerId) {
-		return nil, status.Error(codes.InvalidArgument, fmt.Sprintf("unknown consumer chain: %s", consumerId))
-	}
-
-	res := &types.QueryValidatorConsumerCommissionRateResponse{}
-
-	// Check if the validator has a commission rate set for the consumer chain,
-	// otherwise use the commission rate from the validator staking module struct
-	consumerRate, found := k.GetConsumerCommissionRate(ctx, consumerId, types.NewProviderConsAddress(consAddr))
-	if found {
-		res.Rate = consumerRate
-	} else {
-		v, err := k.stakingKeeper.GetValidatorByConsAddr(ctx, consAddr)
-		if err != nil {
-			return nil, status.Error(codes.InvalidArgument, fmt.Sprintf("unknown validator: %s", consAddr.String()))
-		}
-		res.Rate = v.Commission.Rate
-	}
-
-	return res, nil
-}
-
-// QueryBlocksUntilNextEpoch returns the number of blocks until the next epoch
 func (k Keeper) QueryBlocksUntilNextEpoch(goCtx context.Context, req *types.QueryBlocksUntilNextEpochRequest) (*types.QueryBlocksUntilNextEpochResponse, error) {
 	ctx := sdk.UnwrapSDKContext(goCtx)
-
-	// Calculate the blocks until the next epoch
 	blocksUntilNextEpoch := k.BlocksUntilNextEpoch(ctx)
-
 	return &types.QueryBlocksUntilNextEpochResponse{BlocksUntilNextEpoch: uint64(blocksUntilNextEpoch)}, nil
 }
 
-// QueryConsumerIdFromClientId returns the consumer id of the chain associated with this client id
 func (k Keeper) QueryConsumerIdFromClientId(goCtx context.Context, req *types.QueryConsumerIdFromClientIdRequest) (*types.QueryConsumerIdFromClientIdResponse, error) {
 	ctx := sdk.UnwrapSDKContext(goCtx)
 
@@ -511,7 +313,6 @@ func (k Keeper) QueryConsumerIdFromClientId(goCtx context.Context, req *types.Qu
 	return &types.QueryConsumerIdFromClientIdResponse{ConsumerId: consumerId}, nil
 }
 
-// QueryConsumerChain returns the consumer chain associated with the consumer id
 func (k Keeper) QueryConsumerChain(goCtx context.Context, req *types.QueryConsumerChainRequest) (*types.QueryConsumerChainResponse, error) {
 	if req == nil {
 		return nil, status.Errorf(codes.InvalidArgument, "empty request")
@@ -543,18 +344,13 @@ func (k Keeper) QueryConsumerChain(goCtx context.Context, req *types.QueryConsum
 		return nil, status.Errorf(codes.InvalidArgument, "cannot retrieve metadata for consumer id: %s", consumerId)
 	}
 
-	// neither the init nor the power shaping params are mandatory for consumers
 	initParams, _ := k.GetConsumerInitializationParameters(ctx, consumerId)
-	// Note: Power shaping has been removed - return empty params
 	powerParams := types.PowerShapingParameters{}
-	// Note: Per-consumer infraction parameters have been removed - use defaults
 	infractionParams, err := types.DefaultConsumerInfractionParameters(ctx, k.slashingKeeper)
 	if err != nil {
 		return nil, status.Errorf(codes.Internal, "cannot retrieve default infraction parameters: %s", err)
 	}
 
-	// The client id might not exist in case the consumer chain has not yet launched or in case the chain has been deleted.
-	// That's why we do not check if the client id is found.
 	clientId, _ := k.GetConsumerClientId(ctx, consumerId)
 
 	return &types.QueryConsumerChainResponse{
@@ -570,11 +366,6 @@ func (k Keeper) QueryConsumerChain(goCtx context.Context, req *types.QueryConsum
 	}, nil
 }
 
-//	QueryConsumerGenesisTime returns the genesis time
-//
-// of the consumer chain associated with the provided consumer id
-// Deprecated: QueryConsumerGenesisTime is deprecated since the underlying ClientKeeper interface is deprecating
-// access of the ConsensusState::GetTimestamp call.
 func (k Keeper) QueryConsumerGenesisTime(goCtx context.Context, req *types.QueryConsumerGenesisTimeRequest) (*types.QueryConsumerGenesisTimeResponse, error) {
 	if req == nil {
 		return nil, status.Errorf(codes.InvalidArgument, "empty request")
@@ -586,8 +377,6 @@ func (k Keeper) QueryConsumerGenesisTime(goCtx context.Context, req *types.Query
 	}
 	ctx := sdk.UnwrapSDKContext(goCtx)
 
-	// Get consumer initialization params. If they aren't found,
-	// it means that there is no consumer for that consumerId.
 	params, err := k.GetConsumerInitializationParameters(ctx, consumerId)
 	if err != nil {
 		return nil, status.Errorf(
@@ -597,8 +386,6 @@ func (k Keeper) QueryConsumerGenesisTime(goCtx context.Context, req *types.Query
 		)
 	}
 
-	// Get the consumer clientId. If it isn't found, it means
-	// that the consumer hasn't been launched or has been stopped and deleted.
 	clientID, ok := k.GetConsumerClientId(ctx, consumerId)
 	if !ok {
 		return nil, status.Errorf(
@@ -608,8 +395,6 @@ func (k Keeper) QueryConsumerGenesisTime(goCtx context.Context, req *types.Query
 		)
 	}
 
-	// Get the consensus state of the consumer client at the initial height,
-	// for which the timestamps corresponds to the consumer genesis time
 	cs, ok := k.clientKeeper.GetClientConsensusState(
 		ctx,
 		clientID,

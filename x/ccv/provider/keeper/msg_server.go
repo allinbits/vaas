@@ -100,17 +100,6 @@ func (k msgServer) AssignConsumerKey(goCtx context.Context, msg *types.MsgAssign
 	return &types.MsgAssignConsumerKeyResponse{}, nil
 }
 
-// ChangeRewardDenoms is deprecated - reward distribution has been removed.
-// This function is kept for backwards compatibility but returns an error.
-func (k msgServer) ChangeRewardDenoms(goCtx context.Context, msg *types.MsgChangeRewardDenoms) (*types.MsgChangeRewardDenomsResponse, error) {
-	if k.GetAuthority() != msg.Authority {
-		return nil, errorsmod.Wrapf(types.ErrUnauthorized, "expected %s, got %s", k.GetAuthority(), msg.Authority)
-	}
-
-	// Reward distribution has been removed
-	return nil, errorsmod.Wrap(types.ErrUnauthorized, "reward distribution feature has been removed")
-}
-
 func (k msgServer) SubmitConsumerMisbehaviour(goCtx context.Context, msg *types.MsgSubmitConsumerMisbehaviour) (*types.MsgSubmitConsumerMisbehaviourResponse, error) {
 	ctx := sdk.UnwrapSDKContext(goCtx)
 	if err := k.Keeper.HandleConsumerMisbehaviour(ctx, msg.ConsumerId, *msg.Misbehaviour); err != nil {
@@ -183,56 +172,6 @@ func (k msgServer) SubmitConsumerDoubleVoting(goCtx context.Context, msg *types.
 	)
 
 	return &types.MsgSubmitConsumerDoubleVotingResponse{}, nil
-}
-
-func (k msgServer) OptIn(goCtx context.Context, msg *types.MsgOptIn) (*types.MsgOptInResponse, error) {
-	ctx := sdk.UnwrapSDKContext(goCtx)
-
-	valAddress, err := sdk.ValAddressFromBech32(msg.ProviderAddr)
-	if err != nil {
-		return nil, err
-	}
-
-	// validator must already be registered
-	validator, err := k.stakingKeeper.GetValidator(ctx, valAddress)
-	if err != nil {
-		return nil, err
-	}
-
-	// PSS (Partial Set Security) has been removed - all validators validate all consumers.
-	// OptIn is now a no-op. If a consumer key is provided, use key assignment instead.
-	if msg.ConsumerKey != "" {
-		consumerKey, err := k.ParseConsumerKey(msg.ConsumerKey)
-		if err != nil {
-			return nil, err
-		}
-
-		// Handle key assignment if consumer key is provided
-		if err := k.Keeper.AssignConsumerKey(ctx, msg.ConsumerId, validator, consumerKey); err != nil {
-			return nil, err
-		}
-	}
-
-	k.Logger(ctx).Info("validator opt-in processed (PSS removed - all validators validate all consumers)",
-		"consumerId", msg.ConsumerId,
-		"validator operator addr", msg.ProviderAddr,
-	)
-
-	return &types.MsgOptInResponse{}, nil
-}
-
-// OptOut is deprecated - PSS (Partial Set Security) has been removed.
-// All validators must validate all consumer chains. Returns an error.
-func (k msgServer) OptOut(goCtx context.Context, msg *types.MsgOptOut) (*types.MsgOptOutResponse, error) {
-	// PSS has been removed - validators cannot opt out
-	return nil, errorsmod.Wrap(types.ErrUnauthorized, "opt-out is not supported - all validators must validate all consumer chains")
-}
-
-// SetConsumerCommissionRate is deprecated - per-consumer commission rates have been removed.
-// Validators use the same commission rate as on the provider.
-func (k msgServer) SetConsumerCommissionRate(goCtx context.Context, msg *types.MsgSetConsumerCommissionRate) (*types.MsgSetConsumerCommissionRateResponse, error) {
-	// Per-consumer commission rates have been removed - validators use provider commission
-	return nil, errorsmod.Wrap(types.ErrUnauthorized, "per-consumer commission rates are not supported - validators use the same commission rate as on the provider")
 }
 
 // CreateConsumer creates a consumer chain
