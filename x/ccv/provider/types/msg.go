@@ -146,16 +146,14 @@ func (msg MsgSubmitConsumerDoubleVoting) ValidateBasic() error {
 
 // NewMsgCreateConsumer creates a new MsgCreateConsumer instance
 func NewMsgCreateConsumer(submitter, chainId string, metadata ConsumerMetadata,
-	initializationParameters *ConsumerInitializationParameters, powerShapingParameters *PowerShapingParameters,
-	allowlistedRewardDenoms *AllowlistedRewardDenoms, infractionParameters *InfractionParameters,
+	initializationParameters *ConsumerInitializationParameters,
+	infractionParameters *InfractionParameters,
 ) (*MsgCreateConsumer, error) {
 	return &MsgCreateConsumer{
 		Submitter:                submitter,
 		ChainId:                  chainId,
 		Metadata:                 metadata,
 		InitializationParameters: initializationParameters,
-		PowerShapingParameters:   powerShapingParameters,
-		AllowlistedRewardDenoms:  allowlistedRewardDenoms,
 		InfractionParameters:     infractionParameters,
 	}, nil
 }
@@ -201,25 +199,9 @@ func (msg MsgCreateConsumer) ValidateBasic() error {
 		}
 	}
 
-	if msg.PowerShapingParameters != nil {
-		if msg.PowerShapingParameters.Top_N != 0 {
-			return errors.New("cannot create a Top N chain through `MsgCreateConsumer`; " +
-				"first create the chain and then use `MsgUpdateConsumer` to make the chain Top N")
-		}
-		if err := ValidatePowerShapingParameters(*msg.PowerShapingParameters); err != nil {
-			return errorsmod.Wrapf(ErrInvalidMsgCreateConsumer, "PowerShapingParameters: %s", err.Error())
-		}
-	}
-
 	if msg.InfractionParameters != nil {
 		if err := ValidateInfractionParameters(*msg.InfractionParameters); err != nil {
 			return errorsmod.Wrapf(ErrInvalidMsgCreateConsumer, "InfractionParameters: %s", err.Error())
-		}
-	}
-
-	if msg.AllowlistedRewardDenoms != nil {
-		if err := ValidateAllowlistedRewardDenoms(*msg.AllowlistedRewardDenoms); err != nil {
-			return errorsmod.Wrapf(ErrInvalidMsgCreateConsumer, "AllowlistedRewardDenoms: %s", err.Error())
 		}
 	}
 
@@ -228,8 +210,8 @@ func (msg MsgCreateConsumer) ValidateBasic() error {
 
 // NewMsgUpdateConsumer creates a new MsgUpdateConsumer instance
 func NewMsgUpdateConsumer(owner, consumerId, ownerAddress string, metadata *ConsumerMetadata,
-	initializationParameters *ConsumerInitializationParameters, powerShapingParameters *PowerShapingParameters,
-	allowlistedRewardDenoms *AllowlistedRewardDenoms, newChainId string, infractionParameters *InfractionParameters,
+	initializationParameters *ConsumerInitializationParameters,
+	newChainId string, infractionParameters *InfractionParameters,
 ) (*MsgUpdateConsumer, error) {
 	return &MsgUpdateConsumer{
 		Owner:                    owner,
@@ -237,8 +219,6 @@ func NewMsgUpdateConsumer(owner, consumerId, ownerAddress string, metadata *Cons
 		NewOwnerAddress:          ownerAddress,
 		Metadata:                 metadata,
 		InitializationParameters: initializationParameters,
-		PowerShapingParameters:   powerShapingParameters,
-		AllowlistedRewardDenoms:  allowlistedRewardDenoms,
 		NewChainId:               newChainId,
 		InfractionParameters:     infractionParameters,
 	}, nil
@@ -264,21 +244,9 @@ func (msg MsgUpdateConsumer) ValidateBasic() error {
 		}
 	}
 
-	if msg.PowerShapingParameters != nil {
-		if err := ValidatePowerShapingParameters(*msg.PowerShapingParameters); err != nil {
-			return errorsmod.Wrapf(ErrInvalidMsgUpdateConsumer, "PowerShapingParameters: %s", err.Error())
-		}
-	}
-
 	if msg.InfractionParameters != nil {
 		if err := ValidateInfractionParameters(*msg.InfractionParameters); err != nil {
 			return errorsmod.Wrapf(ErrInvalidMsgUpdateConsumer, "InfractionParameters: %s", err.Error())
-		}
-	}
-
-	if msg.AllowlistedRewardDenoms != nil {
-		if err := ValidateAllowlistedRewardDenoms(*msg.AllowlistedRewardDenoms); err != nil {
-			return errorsmod.Wrapf(ErrInvalidMsgUpdateConsumer, "AllowlistedRewardDenoms: %s", err.Error())
 		}
 	}
 
@@ -391,59 +359,6 @@ func ValidateConsumerMetadata(metadata ConsumerMetadata) error {
 	return nil
 }
 
-// ValidateConsAddressList validates a list of consensus addresses
-func ValidateConsAddressList(list []string, maxLength int) error {
-	if len(list) > maxLength {
-		return fmt.Errorf("consensus address list too long;  got: %d, max: %d", len(list), maxLength)
-	}
-	for _, address := range list {
-		_, err := sdk.ConsAddressFromBech32(address)
-		if err != nil {
-			return fmt.Errorf("invalid address %s: %s", address, err.Error())
-		}
-	}
-	return nil
-}
-
-// ValidatePowerShapingParameters validates that all the provided power-shaping parameters are in the expected range
-func ValidatePowerShapingParameters(powerShapingParameters PowerShapingParameters) error {
-	// Top N corresponds to the top N% of validators that have to validate the consumer chain and can only be 0 (for an
-	// Opt In chain) or in the range [50, 100] (for a Top N chain).
-	if powerShapingParameters.Top_N != 0 && (powerShapingParameters.Top_N < 50 || powerShapingParameters.Top_N > 100) {
-		return errorsmod.Wrap(ErrInvalidPowerShapingParameters, "Top N can either be 0 or in the range [50, 100]")
-	}
-
-	if powerShapingParameters.ValidatorsPowerCap > 100 {
-		return errorsmod.Wrap(ErrInvalidPowerShapingParameters, "ValidatorsPowerCap has to be in the range [0, 100]")
-	}
-
-	if err := ValidateConsAddressList(powerShapingParameters.Allowlist, MaxValidatorCount); err != nil {
-		return errorsmod.Wrapf(ErrInvalidPowerShapingParameters, "Allowlist: %s", err.Error())
-	}
-	if err := ValidateConsAddressList(powerShapingParameters.Denylist, MaxValidatorCount); err != nil {
-		return errorsmod.Wrapf(ErrInvalidPowerShapingParameters, "Denylist: %s", err.Error())
-	}
-	if err := ValidateConsAddressList(powerShapingParameters.Prioritylist, MaxValidatorCount); err != nil {
-		return errorsmod.Wrapf(ErrInvalidPowerShapingParameters, "Prioritylist: %s", err.Error())
-	}
-
-	return nil
-}
-
-// ValidateAllowlistedRewardDenoms validates the provided allowlisted reward denoms
-func ValidateAllowlistedRewardDenoms(allowlistedRewardDenoms AllowlistedRewardDenoms) error {
-	if len(allowlistedRewardDenoms.Denoms) > MaxAllowlistedRewardDenomsPerChain {
-		return errorsmod.Wrapf(ErrInvalidAllowlistedRewardDenoms, "More than %d denoms", MaxAllowlistedRewardDenomsPerChain)
-	}
-
-	for _, denom := range allowlistedRewardDenoms.Denoms {
-		if err := ccvtypes.ValidateIBCDenom(denom); err != nil {
-			return errorsmod.Wrapf(ErrInvalidAllowlistedRewardDenoms, "Invalid denom (%s): %s", denom, err.Error())
-		}
-	}
-	return nil
-}
-
 // ValidateInitializationParameters validates that all the provided parameters are in the expected range
 func ValidateInitializationParameters(initializationParameters ConsumerInitializationParameters) error {
 	if initializationParameters.InitialHeight.IsZero() {
@@ -458,28 +373,12 @@ func ValidateInitializationParameters(initializationParameters ConsumerInitializ
 		return errorsmod.Wrapf(ErrInvalidConsumerInitializationParameters, "BinaryHash: %s", err.Error())
 	}
 
-	if err := ccvtypes.ValidateStringFraction(initializationParameters.ConsumerRedistributionFraction); err != nil {
-		return errorsmod.Wrapf(ErrInvalidConsumerInitializationParameters, "ConsumerRedistributionFraction: %s", err.Error())
-	}
-
-	if err := ccvtypes.ValidatePositiveInt64(initializationParameters.BlocksPerDistributionTransmission); err != nil {
-		return errorsmod.Wrapf(ErrInvalidConsumerInitializationParameters, "BlocksPerDistributionTransmission: %s", err.Error())
-	}
-
-	if err := ccvtypes.ValidateDistributionTransmissionChannel(initializationParameters.DistributionTransmissionChannel); err != nil {
-		return errorsmod.Wrapf(ErrInvalidConsumerInitializationParameters, "DistributionTransmissionChannel: %s", err.Error())
-	}
-
 	if err := ccvtypes.ValidatePositiveInt64(initializationParameters.HistoricalEntries); err != nil {
 		return errorsmod.Wrapf(ErrInvalidConsumerInitializationParameters, "HistoricalEntries: %s", err.Error())
 	}
 
 	if err := ccvtypes.ValidateDuration(initializationParameters.CcvTimeoutPeriod); err != nil {
 		return errorsmod.Wrapf(ErrInvalidConsumerInitializationParameters, "CcvTimeoutPeriod: %s", err.Error())
-	}
-
-	if err := ccvtypes.ValidateDuration(initializationParameters.TransferTimeoutPeriod); err != nil {
-		return errorsmod.Wrapf(ErrInvalidConsumerInitializationParameters, "TransferTimeoutPeriod: %s", err.Error())
 	}
 
 	if err := ccvtypes.ValidateDuration(initializationParameters.UnbondingPeriod); err != nil {

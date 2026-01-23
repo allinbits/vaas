@@ -9,10 +9,6 @@ import (
 	ibctmtypes "github.com/cosmos/ibc-go/v10/modules/light-clients/07-tendermint"
 	"github.com/stretchr/testify/require"
 
-	"cosmossdk.io/math"
-
-	sdk "github.com/cosmos/cosmos-sdk/types"
-
 	abci "github.com/cometbft/cometbft/abci/types"
 	tmtypes "github.com/cometbft/cometbft/types"
 
@@ -66,7 +62,7 @@ func TestValidateGenesisState(t *testing.T) {
 				nil,
 				[]types.ConsumerState{{ChainId: "chainid-1", ChannelId: "channelid", ClientId: "client-id", ConsumerGenesis: getInitialConsumerGenesis(t, "chainid-1", false)}},
 				types.NewParams(types.DefaultTemplateClient(),
-					types.DefaultTrustingPeriodFraction, time.Hour, time.Hour, "0.1", sdk.Coin{Denom: "stake", Amount: math.NewInt(10000000)}, 600, 24, 180),
+					types.DefaultTrustingPeriodFraction, time.Hour, 600, 180),
 				nil,
 				nil,
 				nil,
@@ -107,10 +103,7 @@ func TestValidateGenesisState(t *testing.T) {
 				[]types.ConsumerState{{ChainId: "chainid-1", ChannelId: "channelid", ClientId: "client-id"}},
 				types.NewParams(types.DefaultTemplateClient(),
 					"0.0", // 0 trusting period fraction here
-					ccv.DefaultCCVTimeoutPeriod,
-					types.DefaultSlashMeterReplenishPeriod,
-					types.DefaultSlashMeterReplenishFraction,
-					sdk.Coin{Denom: "stake", Amount: math.NewInt(10000000)}, 600, 24, 180),
+					ccv.DefaultCCVTimeoutPeriod, 600, 180),
 				nil,
 				nil,
 				nil,
@@ -126,45 +119,7 @@ func TestValidateGenesisState(t *testing.T) {
 				types.NewParams(types.DefaultTemplateClient(),
 					types.DefaultTrustingPeriodFraction,
 					0, // 0 ccv timeout here
-					types.DefaultSlashMeterReplenishPeriod,
-					types.DefaultSlashMeterReplenishFraction,
-					sdk.Coin{Denom: "stake", Amount: math.NewInt(1000000)}, 600, 24, 180),
-				nil,
-				nil,
-				nil,
-			),
-			false,
-		},
-		{
-			"invalid params, zero slash meter replenish period",
-			types.NewGenesisState(
-				types.DefaultValsetUpdateID,
-				nil,
-				[]types.ConsumerState{{ChainId: "chainid-1", ChannelId: "channelid", ClientId: "client-id"}},
-				types.NewParams(types.DefaultTemplateClient(),
-					types.DefaultTrustingPeriodFraction,
-					ccv.DefaultCCVTimeoutPeriod,
-					0, // 0 slash meter replenish period here
-					types.DefaultSlashMeterReplenishFraction,
-					sdk.Coin{Denom: "stake", Amount: math.NewInt(10000000)}, 600, 24, 180),
-				nil,
-				nil,
-				nil,
-			),
-			false,
-		},
-		{
-			"invalid params, invalid slash meter replenish fraction",
-			types.NewGenesisState(
-				types.DefaultValsetUpdateID,
-				nil,
-				[]types.ConsumerState{{ChainId: "chainid-1", ChannelId: "channelid", ClientId: "client-id"}},
-				types.NewParams(types.DefaultTemplateClient(),
-					types.DefaultTrustingPeriodFraction,
-					ccv.DefaultCCVTimeoutPeriod,
-					types.DefaultSlashMeterReplenishPeriod,
-					"1.15",
-					sdk.Coin{Denom: "stake", Amount: math.NewInt(10000000)}, 600, 24, 180),
+					600, 180),
 				nil,
 				nil,
 				nil,
@@ -259,34 +214,6 @@ func TestValidateGenesisState(t *testing.T) {
 					}},
 				}},
 				types.DefaultParams(),
-				nil,
-				nil,
-				nil,
-			),
-			false,
-		},
-		{
-			"invalid params- invalid consumer registration fee denom",
-			types.NewGenesisState(
-				types.DefaultValsetUpdateID,
-				nil,
-				[]types.ConsumerState{{ChainId: "chainid-1", ChannelId: "channelid", ClientId: "client-id", ConsumerGenesis: getInitialConsumerGenesis(t, "chainid-1", false)}},
-				types.NewParams(types.DefaultTemplateClient(),
-					types.DefaultTrustingPeriodFraction, time.Hour, time.Hour, "0.1", sdk.Coin{Denom: "st", Amount: math.NewInt(10000000)}, 600, 24, 180),
-				nil,
-				nil,
-				nil,
-			),
-			false,
-		},
-		{
-			"invalid params- invalid consumer registration fee amount",
-			types.NewGenesisState(
-				types.DefaultValsetUpdateID,
-				nil,
-				[]types.ConsumerState{{ChainId: "chainid-1", ChannelId: "channelid", ClientId: "client-id", ConsumerGenesis: getInitialConsumerGenesis(t, "chainid-1", false)}},
-				types.NewParams(types.DefaultTemplateClient(),
-					types.DefaultTrustingPeriodFraction, time.Hour, time.Hour, "0.1", sdk.Coin{Denom: "stake", Amount: math.NewInt(-1000000)}, 600, 24, 180),
 				nil,
 				nil,
 				nil,

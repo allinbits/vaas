@@ -133,11 +133,6 @@ message MsgCreateConsumer {
 
   ConsumerInitializationParameters initialization_parameters = 4;
 
-  PowerShapingParameters power_shaping_parameters = 5;
-
-  // allowlisted reward denoms of the consumer
-  AllowlistedRewardDenoms allowlisted_reward_denoms = 6;
-
   // infraction parameters for slashing and jailing
   InfractionParameters infraction_parameters = 7;
 }
@@ -165,12 +160,6 @@ message MsgUpdateConsumer {
 
   // initialization parameters can only be updated before a chain has launched
   ConsumerInitializationParameters initialization_parameters = 5;
-
-  // the power-shaping parameters of the consumer when updated
-  PowerShapingParameters power_shaping_parameters = 6;
-
-  // allowlisted reward denoms of the consumer (if provided they overwrite previously set reward denoms)
-  AllowlistedRewardDenoms allowlisted_reward_denoms = 7;
 
   // (optional) If the consumer chain has NOT yet launched, the chain id can be updated. After a chain has launched
   // the chain id CANNOT be updated.

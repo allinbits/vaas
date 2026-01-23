@@ -299,7 +299,7 @@ The parameters not provided are set to their zero value.
 			}
 
 			msg, err := types.NewMsgCreateConsumer(submitter, consCreate.ChainId, consCreate.Metadata, consCreate.InitializationParameters,
-				consCreate.PowerShapingParameters, consCreate.AllowlistedRewardDenoms, consCreate.InfractionParameters)
+				consCreate.InfractionParameters)
 			if err != nil {
 				return err
 			}
@@ -419,7 +419,7 @@ If one of the fields is missing, it will be set to its zero value.
 			}
 
 			msg, err := types.NewMsgUpdateConsumer(owner, consUpdate.ConsumerId, consUpdate.NewOwnerAddress, consUpdate.Metadata,
-				consUpdate.InitializationParameters, consUpdate.PowerShapingParameters, consUpdate.AllowlistedRewardDenoms, consUpdate.NewChainId, consUpdate.InfractionParameters)
+				consUpdate.InitializationParameters, consUpdate.NewChainId, consUpdate.InfractionParameters)
 			if err != nil {
 				return err
 			}

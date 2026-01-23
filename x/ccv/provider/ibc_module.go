@@ -75,9 +75,7 @@ func (am AppModule) OnChanOpenTry(
 	}
 
 	md := ccv.HandshakeMetadata{
-		// Rewards distribution has been removed, so ProviderFeePoolAddr is empty
-		ProviderFeePoolAddr: "",
-		Version:             ccv.Version,
+		Version: ccv.Version,
 	}
 	mdBz, err := (&md).Marshal()
 	if err != nil {

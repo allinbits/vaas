@@ -276,17 +276,13 @@ func GetTestConsumerMetadata() providertypes.ConsumerMetadata {
 
 func GetTestInitializationParameters() providertypes.ConsumerInitializationParameters {
 	return providertypes.ConsumerInitializationParameters{
-		InitialHeight:                     clienttypes.NewHeight(0, 5),
-		GenesisHash:                       []byte("gen_hash"),
-		BinaryHash:                        []byte("bin_hash"),
-		SpawnTime:                         time.Now().UTC(),
-		ConsumerRedistributionFraction:    types.DefaultConsumerRedistributeFrac,
-		BlocksPerDistributionTransmission: types.DefaultBlocksPerDistributionTransmission,
-		DistributionTransmissionChannel:   "",
-		HistoricalEntries:                 types.DefaultHistoricalEntries,
-		CcvTimeoutPeriod:                  types.DefaultCCVTimeoutPeriod,
-		TransferTimeoutPeriod:             types.DefaultTransferTimeoutPeriod,
-		UnbondingPeriod:                   types.DefaultConsumerUnbondingPeriod,
+		InitialHeight:     clienttypes.NewHeight(0, 5),
+		GenesisHash:       []byte("gen_hash"),
+		BinaryHash:        []byte("bin_hash"),
+		SpawnTime:         time.Now().UTC(),
+		HistoricalEntries: types.DefaultHistoricalEntries,
+		CcvTimeoutPeriod:  types.DefaultCCVTimeoutPeriod,
+		UnbondingPeriod:   types.DefaultConsumerUnbondingPeriod,
 	}
 }
 
@@ -302,19 +298,6 @@ func GetTestInfractionParameters() providertypes.InfractionParameters {
 			SlashFraction: math.LegacyNewDec(0),
 			Tombstone:     false,
 		},
-	}
-}
-
-func GetTestPowerShapingParameters() providertypes.PowerShapingParameters {
-	return providertypes.PowerShapingParameters{
-		Top_N:              0,
-		ValidatorsPowerCap: 0,
-		ValidatorSetCap:    0,
-		Allowlist:          nil,
-		Denylist:           nil,
-		MinStake:           0,
-		AllowInactiveVals:  false,
-		Prioritylist:       nil,
 	}
 }
 

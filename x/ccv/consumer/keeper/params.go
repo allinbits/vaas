@@ -42,57 +42,10 @@ func (k Keeper) GetEnabled(ctx sdk.Context) bool {
 	return params.Enabled
 }
 
-func (k Keeper) GetBlocksPerDistributionTransmission(ctx sdk.Context) int64 {
-	params := k.GetConsumerParams(ctx)
-	return params.BlocksPerDistributionTransmission
-}
-
-func (k Keeper) SetBlocksPerDistributionTransmission(ctx sdk.Context, bpdt int64) {
-	params := k.GetConsumerParams(ctx)
-	params.BlocksPerDistributionTransmission = bpdt
-	k.SetParams(ctx, params)
-}
-
-func (k Keeper) GetDistributionTransmissionChannel(ctx sdk.Context) string {
-	params := k.GetConsumerParams(ctx)
-	return params.DistributionTransmissionChannel
-}
-
-func (k Keeper) SetDistributionTransmissionChannel(ctx sdk.Context, channel string) {
-	params := k.GetConsumerParams(ctx)
-	params.DistributionTransmissionChannel = channel
-	k.SetParams(ctx, params)
-}
-
-func (k Keeper) GetProviderFeePoolAddrStr(ctx sdk.Context) string {
-	params := k.GetConsumerParams(ctx)
-	return params.ProviderFeePoolAddrStr
-}
-
-func (k Keeper) SetProviderFeePoolAddrStr(ctx sdk.Context, addr string) {
-	params := k.GetConsumerParams(ctx)
-	params.ProviderFeePoolAddrStr = addr
-	k.SetParams(ctx, params)
-}
-
 // GetCCVTimeoutPeriod returns the timeout period for sent ccv related ibc packets
 func (k Keeper) GetCCVTimeoutPeriod(ctx sdk.Context) time.Duration {
 	params := k.GetConsumerParams(ctx)
 	return params.CcvTimeoutPeriod
-}
-
-// GetTransferTimeoutPeriod returns the timeout period for sent transfer related ibc packets
-func (k Keeper) GetTransferTimeoutPeriod(ctx sdk.Context) time.Duration {
-	params := k.GetConsumerParams(ctx)
-	return params.TransferTimeoutPeriod
-}
-
-// GetConsumerRedistributionFrac returns the fraction of tokens allocated to the consumer redistribution
-// address during distribution events. The fraction is a string representing a
-// decimal number. For example "0.75" would represent 75%.
-func (k Keeper) GetConsumerRedistributionFrac(ctx sdk.Context) string {
-	params := k.GetConsumerParams(ctx)
-	return params.ConsumerRedistributionFraction
 }
 
 // GetHistoricalEntries returns the number of historical info entries to persist in store
@@ -111,24 +64,4 @@ func (k Keeper) SetUnbondingPeriod(ctx sdk.Context, period time.Duration) {
 func (k Keeper) GetUnbondingPeriod(ctx sdk.Context) time.Duration {
 	params := k.GetConsumerParams(ctx)
 	return params.UnbondingPeriod
-}
-
-func (k Keeper) GetRewardDenoms(ctx sdk.Context) []string {
-	params := k.GetConsumerParams(ctx)
-	return params.RewardDenoms
-}
-
-func (k Keeper) GetProviderRewardDenoms(ctx sdk.Context) []string {
-	params := k.GetConsumerParams(ctx)
-	return params.ProviderRewardDenoms
-}
-
-func (k Keeper) GetRetryDelayPeriod(ctx sdk.Context) time.Duration {
-	params := k.GetConsumerParams(ctx)
-	return params.RetryDelayPeriod
-}
-
-func (k Keeper) GetConsumerId(ctx sdk.Context) string {
-	params := k.GetConsumerParams(ctx)
-	return params.ConsumerId
 }

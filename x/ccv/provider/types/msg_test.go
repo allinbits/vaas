@@ -158,198 +158,98 @@ func TestValidateInitializationParameters(t *testing.T) {
 		{
 			name: "valid",
 			params: types.ConsumerInitializationParameters{
-				InitialHeight:                     clienttypes.NewHeight(3, 4),
-				GenesisHash:                       []byte{0x01},
-				BinaryHash:                        []byte{0x01},
-				SpawnTime:                         now,
-				UnbondingPeriod:                   time.Duration(100000000000),
-				CcvTimeoutPeriod:                  time.Duration(100000000000),
-				TransferTimeoutPeriod:             time.Duration(100000000000),
-				ConsumerRedistributionFraction:    "0.75",
-				BlocksPerDistributionTransmission: 10,
-				HistoricalEntries:                 10000,
-				DistributionTransmissionChannel:   "",
-				ConnectionId:                      "",
+				InitialHeight:     clienttypes.NewHeight(3, 4),
+				GenesisHash:       []byte{0x01},
+				BinaryHash:        []byte{0x01},
+				SpawnTime:         now,
+				UnbondingPeriod:   time.Duration(100000000000),
+				CcvTimeoutPeriod:  time.Duration(100000000000),
+				HistoricalEntries: 10000,
+				ConnectionId:      "",
 			},
 			valid: true,
 		},
 		{
 			name: "invalid - zero height",
 			params: types.ConsumerInitializationParameters{
-				InitialHeight:                     clienttypes.ZeroHeight(),
-				GenesisHash:                       []byte{0x01},
-				BinaryHash:                        []byte{0x01},
-				SpawnTime:                         now,
-				UnbondingPeriod:                   time.Duration(100000000000),
-				CcvTimeoutPeriod:                  time.Duration(100000000000),
-				TransferTimeoutPeriod:             time.Duration(100000000000),
-				ConsumerRedistributionFraction:    "0.75",
-				BlocksPerDistributionTransmission: 10,
-				HistoricalEntries:                 10000,
-				DistributionTransmissionChannel:   "",
-				ConnectionId:                      "",
+				InitialHeight:     clienttypes.ZeroHeight(),
+				GenesisHash:       []byte{0x01},
+				BinaryHash:        []byte{0x01},
+				SpawnTime:         now,
+				UnbondingPeriod:   time.Duration(100000000000),
+				CcvTimeoutPeriod:  time.Duration(100000000000),
+				HistoricalEntries: 10000,
+				ConnectionId:      "",
 			},
 			valid: false,
 		},
 		{
 			name: "invalid - hash too long",
 			params: types.ConsumerInitializationParameters{
-				InitialHeight:                     clienttypes.NewHeight(3, 4),
-				GenesisHash:                       tooLongHash,
-				BinaryHash:                        []byte{0x01},
-				SpawnTime:                         now,
-				UnbondingPeriod:                   time.Duration(100000000000),
-				CcvTimeoutPeriod:                  time.Duration(100000000000),
-				TransferTimeoutPeriod:             time.Duration(100000000000),
-				ConsumerRedistributionFraction:    "0.75",
-				BlocksPerDistributionTransmission: 10,
-				HistoricalEntries:                 10000,
-				DistributionTransmissionChannel:   "",
-				ConnectionId:                      "",
+				InitialHeight:     clienttypes.NewHeight(3, 4),
+				GenesisHash:       tooLongHash,
+				BinaryHash:        []byte{0x01},
+				SpawnTime:         now,
+				UnbondingPeriod:   time.Duration(100000000000),
+				CcvTimeoutPeriod:  time.Duration(100000000000),
+				HistoricalEntries: 10000,
+				ConnectionId:      "",
 			},
 			valid: false,
 		},
 		{
 			name: "invalid - zero spawn time",
 			params: types.ConsumerInitializationParameters{
-				InitialHeight:                     clienttypes.NewHeight(3, 4),
-				GenesisHash:                       []byte{0x01},
-				BinaryHash:                        []byte{0x01},
-				SpawnTime:                         time.Time{},
-				UnbondingPeriod:                   time.Duration(100000000000),
-				CcvTimeoutPeriod:                  time.Duration(100000000000),
-				TransferTimeoutPeriod:             time.Duration(100000000000),
-				ConsumerRedistributionFraction:    "0.75",
-				BlocksPerDistributionTransmission: 10,
-				HistoricalEntries:                 10000,
-				DistributionTransmissionChannel:   "",
-				ConnectionId:                      "",
+				InitialHeight:     clienttypes.NewHeight(3, 4),
+				GenesisHash:       []byte{0x01},
+				BinaryHash:        []byte{0x01},
+				SpawnTime:         time.Time{},
+				UnbondingPeriod:   time.Duration(100000000000),
+				CcvTimeoutPeriod:  time.Duration(100000000000),
+				HistoricalEntries: 10000,
+				ConnectionId:      "",
 			},
 			valid: true,
 		},
 		{
 			name: "invalid - zero duration",
 			params: types.ConsumerInitializationParameters{
-				InitialHeight:                     clienttypes.NewHeight(3, 4),
-				GenesisHash:                       []byte{0x01},
-				BinaryHash:                        []byte{0x01},
-				SpawnTime:                         now,
-				UnbondingPeriod:                   0,
-				CcvTimeoutPeriod:                  time.Duration(100000000000),
-				TransferTimeoutPeriod:             time.Duration(100000000000),
-				ConsumerRedistributionFraction:    "0.75",
-				BlocksPerDistributionTransmission: 10,
-				HistoricalEntries:                 10000,
-				DistributionTransmissionChannel:   "",
-				ConnectionId:                      "",
-			},
-			valid: false,
-		},
-		{
-			name: "invalid -- ConsumerRedistributionFraction > 1",
-			params: types.ConsumerInitializationParameters{
-				InitialHeight:                     clienttypes.NewHeight(3, 4),
-				GenesisHash:                       []byte{0x01},
-				BinaryHash:                        []byte{0x01},
-				SpawnTime:                         now,
-				UnbondingPeriod:                   time.Duration(100000000000),
-				CcvTimeoutPeriod:                  time.Duration(100000000000),
-				TransferTimeoutPeriod:             time.Duration(100000000000),
-				ConsumerRedistributionFraction:    "1.75",
-				BlocksPerDistributionTransmission: 10,
-				HistoricalEntries:                 10000,
-				DistributionTransmissionChannel:   "",
-				ConnectionId:                      "",
-			},
-			valid: false,
-		},
-		{
-			name: "invalid -- ConsumerRedistributionFraction wrong format",
-			params: types.ConsumerInitializationParameters{
-				InitialHeight:                     clienttypes.NewHeight(3, 4),
-				GenesisHash:                       []byte{0x01},
-				BinaryHash:                        []byte{0x01},
-				SpawnTime:                         now,
-				UnbondingPeriod:                   time.Duration(100000000000),
-				CcvTimeoutPeriod:                  time.Duration(100000000000),
-				TransferTimeoutPeriod:             time.Duration(100000000000),
-				ConsumerRedistributionFraction:    coolStr,
-				BlocksPerDistributionTransmission: 10,
-				HistoricalEntries:                 10000,
-				DistributionTransmissionChannel:   "",
-				ConnectionId:                      "",
-			},
-			valid: false,
-		},
-		{
-			name: "invalid - BlocksPerDistributionTransmission zero",
-			params: types.ConsumerInitializationParameters{
-				InitialHeight:                     clienttypes.NewHeight(3, 4),
-				GenesisHash:                       []byte{0x01},
-				BinaryHash:                        []byte{0x01},
-				SpawnTime:                         now,
-				UnbondingPeriod:                   time.Duration(100000000000),
-				CcvTimeoutPeriod:                  time.Duration(100000000000),
-				TransferTimeoutPeriod:             time.Duration(100000000000),
-				ConsumerRedistributionFraction:    "0.75",
-				BlocksPerDistributionTransmission: 0,
-				HistoricalEntries:                 10000,
-				DistributionTransmissionChannel:   "",
-				ConnectionId:                      "",
+				InitialHeight:     clienttypes.NewHeight(3, 4),
+				GenesisHash:       []byte{0x01},
+				BinaryHash:        []byte{0x01},
+				SpawnTime:         now,
+				UnbondingPeriod:   0,
+				CcvTimeoutPeriod:  time.Duration(100000000000),
+				HistoricalEntries: 10000,
+				ConnectionId:      "",
 			},
 			valid: false,
 		},
 		{
 			name: "invalid - HistoricalEntries zero",
 			params: types.ConsumerInitializationParameters{
-				InitialHeight:                     clienttypes.NewHeight(3, 4),
-				GenesisHash:                       []byte{0x01},
-				BinaryHash:                        []byte{0x01},
-				SpawnTime:                         now,
-				UnbondingPeriod:                   time.Duration(100000000000),
-				CcvTimeoutPeriod:                  time.Duration(100000000000),
-				TransferTimeoutPeriod:             time.Duration(100000000000),
-				ConsumerRedistributionFraction:    "0.75",
-				BlocksPerDistributionTransmission: 10,
-				HistoricalEntries:                 0,
-				DistributionTransmissionChannel:   "",
-				ConnectionId:                      "",
-			},
-			valid: false,
-		},
-		{
-			name: "invalid - DistributionTransmissionChannel too long",
-			params: types.ConsumerInitializationParameters{
-				InitialHeight:                     clienttypes.NewHeight(3, 4),
-				GenesisHash:                       []byte{0x01},
-				BinaryHash:                        []byte{0x01},
-				SpawnTime:                         now,
-				UnbondingPeriod:                   time.Duration(100000000000),
-				CcvTimeoutPeriod:                  time.Duration(100000000000),
-				TransferTimeoutPeriod:             time.Duration(100000000000),
-				ConsumerRedistributionFraction:    "0.75",
-				BlocksPerDistributionTransmission: 10,
-				HistoricalEntries:                 10000,
-				DistributionTransmissionChannel:   coolStr,
-				ConnectionId:                      "",
+				InitialHeight:     clienttypes.NewHeight(3, 4),
+				GenesisHash:       []byte{0x01},
+				BinaryHash:        []byte{0x01},
+				SpawnTime:         now,
+				UnbondingPeriod:   time.Duration(100000000000),
+				CcvTimeoutPeriod:  time.Duration(100000000000),
+				HistoricalEntries: 0,
+				ConnectionId:      "",
 			},
 			valid: false,
 		},
 		{
 			name: "invalid - ConnectionId too long",
 			params: types.ConsumerInitializationParameters{
-				InitialHeight:                     clienttypes.NewHeight(3, 4),
-				GenesisHash:                       []byte{0x01},
-				BinaryHash:                        []byte{0x01},
-				SpawnTime:                         now,
-				UnbondingPeriod:                   time.Duration(100000000000),
-				CcvTimeoutPeriod:                  time.Duration(100000000000),
-				TransferTimeoutPeriod:             time.Duration(100000000000),
-				ConsumerRedistributionFraction:    "0.75",
-				BlocksPerDistributionTransmission: 10,
-				HistoricalEntries:                 10000,
-				DistributionTransmissionChannel:   "",
-				ConnectionId:                      coolStr,
+				InitialHeight:     clienttypes.NewHeight(3, 4),
+				GenesisHash:       []byte{0x01},
+				BinaryHash:        []byte{0x01},
+				SpawnTime:         now,
+				UnbondingPeriod:   time.Duration(100000000000),
+				CcvTimeoutPeriod:  time.Duration(100000000000),
+				HistoricalEntries: 10000,
+				ConnectionId:      coolStr,
 			},
 			valid: false,
 		},
@@ -365,58 +265,6 @@ func TestValidateInitializationParameters(t *testing.T) {
 	}
 }
 
-func TestValidateConsAddressList(t *testing.T) {
-	consAddr1 := "cosmosvalcons1qmq08eruchr5sf5s3rwz7djpr5a25f7xw4mceq"
-	consAddr2 := "cosmosvalcons1nx7n5uh0ztxsynn4sje6eyq2ud6rc6klc96w39"
-	invalidConsAddr := "cosmosvalcons1nx7n5uh0ztxsynn4sje6ey"
-
-	testCases := []struct {
-		name      string
-		list      []string
-		maxLength int
-		valid     bool
-	}{
-		{
-			name:      "valid - empty list",
-			list:      []string{},
-			maxLength: 10,
-			valid:     true,
-		},
-		{
-			name:      "valid - non-empty list",
-			list:      []string{consAddr1, consAddr2},
-			maxLength: 10,
-			valid:     true,
-		},
-		{
-			name:      "invalid - address with wrong format",
-			list:      []string{invalidConsAddr},
-			maxLength: 10,
-			valid:     false,
-		},
-		{
-			name:      "invalid - empty address",
-			list:      []string{""},
-			maxLength: 10,
-			valid:     false,
-		},
-		{
-			name:      "invalid - list length",
-			list:      []string{consAddr1, consAddr2},
-			maxLength: 1,
-			valid:     false,
-		},
-	}
-
-	for _, tc := range testCases {
-		err := types.ValidateConsAddressList(tc.list, tc.maxLength)
-		if tc.valid {
-			require.NoError(t, err, tc.name)
-		} else {
-			require.Error(t, err, tc.name)
-		}
-	}
-}
 
 func TestValidateByteSlice(t *testing.T) {
 	testCases := []struct {
@@ -457,44 +305,38 @@ func TestValidateByteSlice(t *testing.T) {
 
 func TestMsgCreateConsumerValidateBasic(t *testing.T) {
 	testCases := []struct {
-		name                   string
-		chainId                string
-		powerShapingParameters *types.PowerShapingParameters
-		infractionParameters   *types.InfractionParameters
-		expPass                bool
+		name                 string
+		chainId              string
+		infractionParameters *types.InfractionParameters
+		expPass              bool
 	}{
 		{
 			"empty chain id",
 			"",
-			nil, // no power-shaping parameters
 			nil,
 			false,
 		},
 		{
 			"empty chain id after trimming",
 			"   	",
-			nil, // no power-shaping parameters
 			nil,
 			false,
 		},
 		{
 			"neutron chain id that cannot be reused",
 			"neutron-1",
-			nil, // no power-shaping parameters
 			nil,
 			false,
 		},
 		{
 			"stride chain id that cannot be reused",
 			"stride-1",
-			nil, // no power-shaping parameters
 			nil,
 			false,
 		},
 		{
 			"valid chain id",
 			"somechain-1",
-			nil, // no power-shaping parameters
 			&types.InfractionParameters{
 				DoubleSign: &types.SlashJailParameters{
 					JailDuration:  time.Duration(1<<63 - 1),        // max duration
@@ -510,16 +352,8 @@ func TestMsgCreateConsumerValidateBasic(t *testing.T) {
 			true,
 		},
 		{
-			"valid chain id and invalid power-shaping parameters",
-			"somechain-1",
-			&types.PowerShapingParameters{Top_N: 51}, // TopN cannot be > 0 in MsgCreateConsumer
-			nil,
-			false,
-		},
-		{
 			"invalid infraction downtime jailing parameters",
 			"somechain-1",
-			nil,
 			&types.InfractionParameters{Downtime: &types.SlashJailParameters{
 				JailDuration:  -1,
 				SlashFraction: math.LegacyNewDec(0),
@@ -529,7 +363,6 @@ func TestMsgCreateConsumerValidateBasic(t *testing.T) {
 		{
 			"invalid infraction downtime slashing parameters",
 			"somechain-1",
-			nil,
 			&types.InfractionParameters{Downtime: &types.SlashJailParameters{
 				JailDuration:  600 * time.Second,
 				SlashFraction: math.LegacyNewDec(2),
@@ -539,7 +372,6 @@ func TestMsgCreateConsumerValidateBasic(t *testing.T) {
 		{
 			"invalid infraction double sign jailing parameters",
 			"somechain-1",
-			nil,
 			&types.InfractionParameters{Downtime: &types.SlashJailParameters{
 				JailDuration:  -1,
 				SlashFraction: math.LegacyNewDec(0),
@@ -549,7 +381,6 @@ func TestMsgCreateConsumerValidateBasic(t *testing.T) {
 		{
 			"invalid infraction double sign slashing parameters",
 			"somechain-1",
-			nil,
 			&types.InfractionParameters{Downtime: &types.SlashJailParameters{
 				JailDuration:  600 * time.Second,
 				SlashFraction: math.LegacyNewDec(2),
@@ -560,7 +391,7 @@ func TestMsgCreateConsumerValidateBasic(t *testing.T) {
 
 	for _, tc := range testCases {
 		validConsumerMetadata := types.ConsumerMetadata{Name: "name", Description: "description", Metadata: "metadata"}
-		msg, err := types.NewMsgCreateConsumer("submitter", tc.chainId, validConsumerMetadata, nil, tc.powerShapingParameters, nil, tc.infractionParameters)
+		msg, err := types.NewMsgCreateConsumer("submitter", tc.chainId, validConsumerMetadata, nil, tc.infractionParameters)
 		require.NoError(t, err)
 		err = msg.ValidateBasic()
 		if tc.expPass {
@@ -572,79 +403,20 @@ func TestMsgCreateConsumerValidateBasic(t *testing.T) {
 }
 
 func TestMsgUpdateConsumerValidateBasic(t *testing.T) {
-	consAddr1 := "cosmosvalcons1qmq08eruchr5sf5s3rwz7djpr5a25f7xw4mceq"
-	consAddr2 := "cosmosvalcons1nx7n5uh0ztxsynn4sje6eyq2ud6rc6klc96w39"
-	consAddr3 := "cosmosvalcons1muys5jyqk4xd27e208nym85kn0t4zjcfeu63fe"
-
 	testCases := []struct {
-		name                   string
-		powerShapingParameters types.PowerShapingParameters
-		newChainId             string
-		expPass                bool
+		name       string
+		newChainId string
+		expPass    bool
 	}{
 		{
 			"success",
-			types.PowerShapingParameters{
-				Top_N:              50,
-				ValidatorsPowerCap: 100,
-				ValidatorSetCap:    34,
-				Allowlist:          []string{consAddr1},
-				Denylist:           nil,
-				MinStake:           0,
-				AllowInactiveVals:  false,
-				Prioritylist:       []string{consAddr1},
-			},
-			"validchainid-0",
-			true,
-		},
-		{
-			"top N is invalid",
-			types.PowerShapingParameters{
-				Top_N:              10,
-				ValidatorsPowerCap: 0,
-				ValidatorSetCap:    0,
-				Allowlist:          nil,
-				Denylist:           nil,
-				Prioritylist:       nil,
-			},
-			"validchainid-0",
-			false,
-		},
-		{
-			"validators power cap is invalid",
-			types.PowerShapingParameters{
-				Top_N:              50,
-				ValidatorsPowerCap: 101,
-				ValidatorSetCap:    0,
-				Allowlist:          nil,
-				Denylist:           nil,
-				MinStake:           0,
-				AllowInactiveVals:  false,
-				Prioritylist:       nil,
-			},
-			"validchainid-0",
-			false,
-		},
-		{
-			"valid proposal",
-			types.PowerShapingParameters{
-				Top_N:              54,
-				ValidatorsPowerCap: 92,
-				ValidatorSetCap:    0,
-				Allowlist:          []string{consAddr1},
-				Denylist:           []string{consAddr2, consAddr3},
-				MinStake:           0,
-				AllowInactiveVals:  false,
-				Prioritylist:       []string{consAddr1},
-			},
 			"validchainid-0",
 			true,
 		},
 	}
 
 	for _, tc := range testCases {
-		// TODO (PERMISSIONLESS) add more tests
-		msg, _ := types.NewMsgUpdateConsumer("", "0", "cosmos1p3ucd3ptpw902fluyjzhq3ffgq4ntddac9sa3s", nil, nil, &tc.powerShapingParameters, nil, tc.newChainId, nil)
+		msg, _ := types.NewMsgUpdateConsumer("", "0", "cosmos1p3ucd3ptpw902fluyjzhq3ffgq4ntddac9sa3s", nil, nil, tc.newChainId, nil)
 		err := msg.ValidateBasic()
 		if tc.expPass {
 			require.NoError(t, err, "valid case: %s should not return error. got %w", tc.name, err)

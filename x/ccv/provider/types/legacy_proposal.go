@@ -16,14 +16,12 @@ const (
 	ProposalTypeConsumerRemoval      = "ConsumerRemoval"
 	ProposalTypeConsumerModification = "ConsumerModification"
 	ProposalTypeEquivocation         = "Equivocation"
-	ProposalTypeChangeRewardDenoms   = "ChangeRewardDenoms"
 )
 
 var (
 	_ govv1beta1.Content = &ConsumerAdditionProposal{}
 	_ govv1beta1.Content = &ConsumerRemovalProposal{}
 	_ govv1beta1.Content = &ConsumerModificationProposal{}
-	_ govv1beta1.Content = &ChangeRewardDenomsProposal{}
 	_ govv1beta1.Content = &EquivocationProposal{}
 )
 
@@ -31,7 +29,6 @@ func init() {
 	govv1beta1.RegisterProposalType(ProposalTypeConsumerAddition)
 	govv1beta1.RegisterProposalType(ProposalTypeConsumerRemoval)
 	govv1beta1.RegisterProposalType(ProposalTypeConsumerModification)
-	govv1beta1.RegisterProposalType(ProposalTypeChangeRewardDenoms)
 	govv1beta1.RegisterProposalType(ProposalTypeEquivocation)
 }
 
@@ -211,28 +208,4 @@ func (sp *EquivocationProposal) ProposalType() string {
 // ValidateBasic runs basic stateless validity checks
 func (sp *EquivocationProposal) ValidateBasic() error {
 	return fmt.Errorf("EquivocationProposal is deprecated")
-}
-
-func NewChangeRewardDenomsProposal(title, description string,
-	denomsToAdd, denomsToRemove []string,
-) govv1beta1.Content {
-	return &ChangeRewardDenomsProposal{
-		Title:          title,
-		Description:    description,
-		DenomsToAdd:    denomsToAdd,
-		DenomsToRemove: denomsToRemove,
-	}
-}
-
-// ProposalRoute returns the routing key of a change reward denoms proposal.
-func (crdp *ChangeRewardDenomsProposal) ProposalRoute() string { return RouterKey }
-
-// ProposalType returns the type of a change reward denoms proposal.
-func (crdp *ChangeRewardDenomsProposal) ProposalType() string {
-	return ProposalTypeChangeRewardDenoms
-}
-
-// ValidateBasic runs basic stateless validity checks on a ChangeRewardDenomsProposal.
-func (crdp *ChangeRewardDenomsProposal) ValidateBasic() error {
-	return fmt.Errorf("ChangeRewardDenomsProposal is deprecated")
 }

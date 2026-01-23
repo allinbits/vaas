@@ -1,10 +1,7 @@
 package types
 
 import (
-	fmt "fmt"
-	time "time"
-
-	"cosmossdk.io/math"
+	"time"
 
 	sdktypes "github.com/cosmos/cosmos-sdk/types"
 	paramtypes "github.com/cosmos/cosmos-sdk/x/params/types"
@@ -12,22 +9,6 @@ import (
 )
 
 const (
-	// about 2 hr at 7.6 seconds per blocks
-	DefaultBlocksPerDistributionTransmission = 1000
-
-	// Default transfer timeout period is 1 hour, less than the default blocks
-	// per dist transmission * average block time.
-	// Since IBC token transfers do not have to be in order, it could be easier
-	// to reason about the distribution protocol if the previous reward times out
-	// before sending the next one. Note that on timeout, the transferred funds are
-	// added back to the pool, so the next transfer will include them as well.
-	DefaultTransferTimeoutPeriod = time.Hour
-
-	// The default fraction of tokens allocated to the consumer redistribution address
-	// during distribution events. The fraction is a string representing a
-	// decimal number. For example "0.75" would represent 75%.
-	DefaultConsumerRedistributeFrac = "0.75"
-
 	// Default number of historical info entries to persist in store.
 	// We use the same default as the staking module, but use a signed integer
 	// so that negative values can be caught during parameter validation in a readable way,
@@ -38,24 +19,13 @@ const (
 	// than the default unbonding period on the provider, where the provider uses
 	// the staking module default.
 	DefaultConsumerUnbondingPeriod = stakingtypes.DefaultUnbondingTime - 24*time.Hour
-
-	// Default retry delay period is 1 hour.
-	DefaultRetryDelayPeriod = time.Hour
 )
 
 // Reflection based keys for params subspace
 var (
-	KeyEnabled                           = []byte("Enabled")
-	KeyBlocksPerDistributionTransmission = []byte("BlocksPerDistributionTransmission")
-	KeyDistributionTransmissionChannel   = []byte("DistributionTransmissionChannel")
-	KeyProviderFeePoolAddrStr            = []byte("ProviderFeePoolAddrStr")
-	KeyTransferTimeoutPeriod             = []byte("TransferTimeoutPeriod")
-	KeyConsumerRedistributionFrac        = []byte("ConsumerRedistributionFraction")
-	KeyHistoricalEntries                 = []byte("HistoricalEntries")
-	KeyConsumerUnbondingPeriod           = []byte("UnbondingPeriod")
-	KeyRewardDenoms                      = []byte("RewardDenoms")
-	KeyProviderRewardDenoms              = []byte("ProviderRewardDenoms")
-	KeyRetryDelayPeriod                  = []byte("RetryDelayPeriod")
+	KeyEnabled                 = []byte("Enabled")
+	KeyHistoricalEntries       = []byte("HistoricalEntries")
+	KeyConsumerUnbondingPeriod = []byte("UnbondingPeriod")
 )
 
 // helper interface
@@ -72,51 +42,26 @@ func ParamKeyTable() paramtypes.KeyTable {
 }
 
 // NewParams creates new consumer parameters with provided arguments
-func NewParams(enabled bool, blocksPerDistributionTransmission int64,
-	distributionTransmissionChannel, providerFeePoolAddrStr string,
-	ccvTimeoutPeriod, transferTimeoutPeriod time.Duration,
-	consumerRedistributionFraction string, historicalEntries int64,
+func NewParams(enabled bool,
+	ccvTimeoutPeriod time.Duration,
+	historicalEntries int64,
 	consumerUnbondingPeriod time.Duration,
-	rewardDenoms, providerRewardDenoms []string, retryDelayPeriod time.Duration,
-	consumerId string,
 ) ConsumerParams {
 	return ConsumerParams{
-		Enabled:                           enabled,
-		BlocksPerDistributionTransmission: blocksPerDistributionTransmission,
-		DistributionTransmissionChannel:   distributionTransmissionChannel,
-		ProviderFeePoolAddrStr:            providerFeePoolAddrStr,
-		CcvTimeoutPeriod:                  ccvTimeoutPeriod,
-		TransferTimeoutPeriod:             transferTimeoutPeriod,
-		ConsumerRedistributionFraction:    consumerRedistributionFraction,
-		HistoricalEntries:                 historicalEntries,
-		UnbondingPeriod:                   consumerUnbondingPeriod,
-		// DEPRECATED but setting here to 0 (i.e., disabled) for older versions of interchain-security
-		SoftOptOutThreshold:  "0",
-		RewardDenoms:         rewardDenoms,
-		ProviderRewardDenoms: providerRewardDenoms,
-		RetryDelayPeriod:     retryDelayPeriod,
-		ConsumerId:           consumerId,
+		Enabled:           enabled,
+		CcvTimeoutPeriod:  ccvTimeoutPeriod,
+		HistoricalEntries: historicalEntries,
+		UnbondingPeriod:   consumerUnbondingPeriod,
 	}
 }
 
 // DefaultParams is the default params for the consumer module
 func DefaultParams() ConsumerParams {
-	var rewardDenoms []string
-	var provideRewardDenoms []string
 	return NewParams(
 		false,
-		DefaultBlocksPerDistributionTransmission,
-		"",
-		"",
 		DefaultCCVTimeoutPeriod,
-		DefaultTransferTimeoutPeriod,
-		DefaultConsumerRedistributeFrac,
 		DefaultHistoricalEntries,
 		DefaultConsumerUnbondingPeriod,
-		rewardDenoms,
-		provideRewardDenoms,
-		DefaultRetryDelayPeriod,
-		"0",
 	)
 }
 
@@ -125,40 +70,13 @@ func (p ConsumerParams) Validate() error {
 	if err := ValidateBool(p.Enabled); err != nil {
 		return err
 	}
-	if err := ValidatePositiveInt64(p.BlocksPerDistributionTransmission); err != nil {
-		return err
-	}
-	if err := ValidateDistributionTransmissionChannel(p.DistributionTransmissionChannel); err != nil {
-		return err
-	}
-	if err := ValidateProviderFeePoolAddrStr(p.ProviderFeePoolAddrStr); err != nil {
-		return err
-	}
 	if err := ValidateDuration(p.CcvTimeoutPeriod); err != nil {
-		return err
-	}
-	if err := ValidateDuration(p.TransferTimeoutPeriod); err != nil {
-		return err
-	}
-	if err := ValidateStringFraction(p.ConsumerRedistributionFraction); err != nil {
 		return err
 	}
 	if err := ValidatePositiveInt64(p.HistoricalEntries); err != nil {
 		return err
 	}
 	if err := ValidateDuration(p.UnbondingPeriod); err != nil {
-		return err
-	}
-	if err := ValidateDenoms(p.RewardDenoms); err != nil {
-		return err
-	}
-	if err := ValidateDenoms(p.ProviderRewardDenoms); err != nil {
-		return err
-	}
-	if err := ValidateDuration(p.RetryDelayPeriod); err != nil {
-		return err
-	}
-	if err := ValidateConsumerId(p.ConsumerId); err != nil {
 		return err
 	}
 	return nil
@@ -168,57 +86,12 @@ func (p ConsumerParams) Validate() error {
 func (p *ConsumerParams) ParamSetPairs() paramtypes.ParamSetPairs {
 	return paramtypes.ParamSetPairs{
 		paramtypes.NewParamSetPair(KeyEnabled, p.Enabled, ValidateBool),
-		paramtypes.NewParamSetPair(KeyBlocksPerDistributionTransmission,
-			p.BlocksPerDistributionTransmission, ValidatePositiveInt64),
-		paramtypes.NewParamSetPair(KeyDistributionTransmissionChannel,
-			p.DistributionTransmissionChannel, ValidateDistributionTransmissionChannel),
-		paramtypes.NewParamSetPair(KeyProviderFeePoolAddrStr,
-			p.ProviderFeePoolAddrStr, ValidateProviderFeePoolAddrStr),
 		paramtypes.NewParamSetPair(KeyCCVTimeoutPeriod,
 			p.CcvTimeoutPeriod, ValidateDuration),
-		paramtypes.NewParamSetPair(KeyTransferTimeoutPeriod,
-			p.TransferTimeoutPeriod, ValidateDuration),
-		paramtypes.NewParamSetPair(KeyConsumerRedistributionFrac,
-			p.ConsumerRedistributionFraction, ValidateStringFraction),
 		paramtypes.NewParamSetPair(KeyHistoricalEntries,
 			p.HistoricalEntries, ValidatePositiveInt64),
 		paramtypes.NewParamSetPair(KeyConsumerUnbondingPeriod,
 			p.UnbondingPeriod, ValidateDuration),
-		paramtypes.NewParamSetPair(KeyRewardDenoms,
-			p.RewardDenoms, ValidateDenoms),
-		paramtypes.NewParamSetPair(KeyProviderRewardDenoms,
-			p.ProviderRewardDenoms, ValidateDenoms),
-		paramtypes.NewParamSetPair(KeyRetryDelayPeriod,
-			p.RetryDelayPeriod, ValidateDuration),
 	}
 }
 
-func ValidateProviderFeePoolAddrStr(i interface{}) error {
-	// Accept empty string as valid, since this will be the default value on genesis
-	if i == "" {
-		return nil
-	}
-	// Cannot validate provider chain address on the consumer chain
-	return nil
-}
-
-func ValidateDenoms(i interface{}) error {
-	v, ok := i.([]string)
-	if !ok {
-		return fmt.Errorf("invalid parameter type: %T", i)
-	}
-
-	// iterate over the denoms, turning them into coins and validating them
-	for _, denom := range v {
-		coin := sdktypes.Coin{
-			Denom:  denom,
-			Amount: math.NewInt(0),
-		}
-
-		if err := coin.Validate(); err != nil {
-			return err
-		}
-	}
-
-	return nil
-}

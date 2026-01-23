@@ -151,8 +151,6 @@ func TestInitGenesis(t *testing.T) {
 			"restart a chain with an established CCV channel",
 			func(ctx sdk.Context, mocks testkeeper.MockedKeepers) {
 				// simulate a CCV channel handshake completion
-				params.DistributionTransmissionChannel = "distribution-channel"
-				params.ProviderFeePoolAddrStr = "provider-fee-pool-address"
 				gomock.InOrder()
 			},
 			// create a genesis for a restarted chain

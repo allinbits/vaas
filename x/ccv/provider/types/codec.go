@@ -21,7 +21,6 @@ func RegisterInterfaces(registry codectypes.InterfaceRegistry) {
 		&ConsumerAdditionProposal{},
 		&ConsumerRemovalProposal{},
 		&ConsumerModificationProposal{},
-		&ChangeRewardDenomsProposal{},
 	)
 	registry.RegisterImplementations(
 		(*sdk.Msg)(nil),

@@ -79,8 +79,7 @@ enum ConsumerPacketDataType {
 
 // Note this type is used during IBC handshake methods for both the consumer and provider
 message HandshakeMetadata {
-  string provider_fee_pool_addr = 1;
-  string version = 2;
+  string version = 1;
 }
 
 // ConsumerPacketData contains a consumer packet data and a type tag

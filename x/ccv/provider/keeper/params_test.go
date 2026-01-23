@@ -9,10 +9,6 @@ import (
 	ibctmtypes "github.com/cosmos/ibc-go/v10/modules/light-clients/07-tendermint"
 	"github.com/stretchr/testify/require"
 
-	"cosmossdk.io/math"
-
-	sdk "github.com/cosmos/cosmos-sdk/types"
-
 	testkeeper "github.com/allinbits/vaas/testutil/keeper"
 	providertypes "github.com/allinbits/vaas/x/ccv/provider/types"
 )
@@ -42,14 +38,7 @@ func TestParams(t *testing.T) {
 		),
 		"0.25",
 		7*24*time.Hour,
-		time.Hour,
-		"0.4",
-		sdk.Coin{
-			Denom:  "stake",
-			Amount: math.NewInt(10000000),
-		},
 		600,
-		24,
 		10,
 	)
 	providerKeeper.SetParams(ctx, newParams)

@@ -3,7 +3,6 @@ syntax = "proto3";
 package vaas.ccv.provider.v1;
 
 import "amino/amino.proto";
-import "cosmos/base/v1beta1/coin.proto";
 import "cosmos/evidence/v1beta1/evidence.proto";
 import "cosmos_proto/cosmos.proto";
 import "gogoproto/gogo.proto";
@@ -201,27 +200,6 @@ message EquivocationProposal {
 
 // Params defines the parameters for CCV Provider module
 message Params {
-  // Reserve 4th slot for removed init_timeout_period param
-  reserved 4;
-
-  // Reserve 5th slot for removed vsc_timeout_period param
-  reserved 5;
-
-  // Reserve 6th slot for removed slash_meter_replenish_period param (throttling removed)
-  reserved 6;
-
-  // Reserve 7th slot for removed slash_meter_replenish_fraction param (throttling removed)
-  reserved 7;
-
-  // Reserve 8th slot for removed max throttled packet param
-  reserved 8;
-
-  // Reserve 9th slot for removed consumer_reward_denom_registration_fee param (rewards removed)
-  reserved 9;
-
-  // Reserve 11th slot for removed number_of_epochs_to_start_receiving_rewards param (rewards removed)
-  reserved 11;
-
   ibc.lightclients.tendermint.v1.ClientState template_client = 1;
   // TrustingPeriodFraction is used to compute the consumer and provider IBC
   // client's TrustingPeriod from the chain defined UnbondingPeriod
@@ -389,91 +367,16 @@ message ConsumerInitializationParameters {
     (gogoproto.nullable) = false,
     (gogoproto.stdduration) = true
   ];
-  // Sent transfer related IBC packets will timeout after this duration
-  google.protobuf.Duration transfer_timeout_period = 7 [
-    (gogoproto.nullable) = false,
-    (gogoproto.stdduration) = true
-  ];
-  // The fraction of tokens allocated to the consumer redistribution address
-  // during distribution events. The fraction is a string representing a
-  // decimal number. For example "0.75" would represent 75%.
-  string consumer_redistribution_fraction = 8;
-  // BlocksPerDistributionTransmission is the number of blocks between
-  // ibc-token-transfers from the consumer chain to the provider chain. On
-  // sending transmission event, `consumer_redistribution_fraction` of the
-  // accumulated tokens are sent to the consumer redistribution address.
-  int64 blocks_per_distribution_transmission = 9;
   // The number of historical info entries to persist in store.
   // This param is a part of the cosmos sdk staking module. In the case of
   // a ccv enabled consumer chain, the ccv module acts as the staking module.
   int64 historical_entries = 10;
-  // The ID of a token transfer channel used for the Reward Distribution
-  // sub-protocol. If DistributionTransmissionChannel == "", a new transfer
-  // channel is created on top of the same connection as the CCV channel.
-  // Note that transfer_channel_id is the ID of the channel end on the consumer
-  // chain. It is most relevant for chains performing a standalone to consumer
-  // changeover in order to maintain the existing ibc transfer channel
-  string distribution_transmission_channel = 11;
   // The ID of the connection end on the provider chain on top of which the CCV
   // channel will be established. If connection_id == "", a new client of the
   // consumer chain and a new connection on top of this client are created.
   // Note that a standalone chain can transition to a consumer chain while
   // maintaining existing IBC channels to other chains by providing a valid connection_id.
   string connection_id = 12;
-}
-
-// PowerShapingParameters contains parameters that shape the validator set that we send to the consumer chain
-message PowerShapingParameters {
-  // Corresponds to the percentage of validators that have to validate the chain under the Top N case.
-  // For example, 53 corresponds to a Top 53% chain, meaning that the top 53% provider validators by voting power
-  // have to validate the proposed consumer chain. top_N can either be 0 or any value in [50, 100].
-  // A chain can join with top_N == 0 as an Opt In chain, or with top_N ∈ [50, 100] as a Top N chain.
-  uint32 top_N = 1;
-  // `validators_power_cap` corresponds to the maximum power (percentage-wise) a validator can have on the consumer chain.
-  // For instance, if `validators_power_cap` is set to 32, no validator can have more than 32% of the total voting power of the
-  // consumer chain. The power cap is intended as a safeguard against a validator having too much power on the consumer
-  // chain and hence "taking over" the consumer chain.
-  //
-  // To respect this power cap, the voting powers of the validators that run the consumer chain are decremented or
-  // incremented accordingly. It is important to note that the voting powers of validators on the provider do **not** change.
-  // For example, assume that the provider chain has among others, validators `A`, `B`, `C`, and `D` with voting powers
-  // 100, 1, 1, 1 respectively. Assume that only those 4 validators opt in on a consumer chain. Without a power cap set,
-  // validator `A` would have 100 / (100 + 1 + 1 + 1) = ~97% of the total voting power on the consumer chain, while
-  // validators `B`, `C`, and `D` would have 1 /(100 + 1 + 1 + 1) = ~1% of the total voting power on the consumer chain.
-  // If `validators_power_cap` is set to 30%, then the voting power of `A` would be reduced from 100 to 30 on the consumer
-  // chain, the voting power of `B` would be increased from 1 to 25, and the power of `C` and `D` would be increased from
-  // 1 to 24. After those modifications, `A` would have 30 / (30 + 25 + 24 + 24) = ~29% of the total voting power of the
-  // consumer chain, `B` would have 25 / (30 + 25 + 24 + 24) = ~25%, and `C` and `D` would both have 24 / (30 + 25 + 24 + 24) = ~23%.
-  // Naturally, there are many ways to change the voting powers of validators to respect the power cap, and ICS chooses
-  // one of them (see the `NoMoreThanPercentOfTheSum` function).
-  //
-  // Note that respecting `validators_power_cap` might NOT always be possible. For example, if we have a consumer
-  // chain with only 5 validators and `validators_power_cap` is set to 10%, then it is not possible to respect the
-  // `validators_power_cap`. If the voting power of each validator is capped to a maximum of 10% of the total consumer
-  // chain's voting power, then the total voting power of the consumer chain would add up to 50% which obviously does not
-  // make sense (percentages should add up to 100%). In cases where it is not feasible to respect the power cap, all
-  // validators on the consumer chain will have equal voting power in order to minimize the power of a single validator.
-  // Thus, in the example of 5 validators and a `validators_power_cap` set to 10%, all validators would end up having 20%
-  // of the total voting power on the consumer chain. Therefore, `validators_power_cap` operates on a best-effort basis.
-  // For more information on the power cap and other power-shaping parameters, please refer to the ICS docs and
-  // specifically `interchain-security/docs/docs/features/power-shaping.md`.
-  uint32 validators_power_cap = 2;
-  // Corresponds to the maximum number of validators that can validate a consumer chain.
-  // Only applicable to Opt In chains. Setting `validator_set_cap` on a Top N chain is a no-op.
-  uint32 validator_set_cap = 3;
-  // corresponds to a list of provider consensus addresses of validators that are the ONLY ones that can validate the consumer chain
-  repeated string allowlist = 4;
-  // corresponds to a list of provider consensus addresses of validators that CANNOT validate the consumer chain
-  repeated string denylist = 5;
-  // Corresponds to the minimal amount of (provider chain) stake required to validate on the consumer chain.
-  uint64 min_stake = 6;
-  // Corresponds to whether inactive validators are allowed to validate the consumer chain.
-  bool allow_inactive_vals = 7;
-  // Corresponds to a list of provider consensus addresses of validators that should have PRIORITY to validate on the consumer chain,
-  // meaning as long as they are eligible/opted in to validate on the consumer chain, the validator set will be
-  // filled with these validators first, and other validators will be added to the validator set only if there are
-  // not enough eligible priority validators.
-  repeated string prioritylist = 8;
 }
 
 // ConsumerIds contains consumer ids of chains
@@ -501,11 +404,6 @@ enum ConsumerPhase {
   CONSUMER_PHASE_STOPPED = 4;
   // DELETED defines the phase in which the state of a stopped chain has been deleted.
   CONSUMER_PHASE_DELETED = 5;
-}
-
-// AllowlistedRewardDenoms corresponds to the denoms allowlisted by a specific consumer id
-message AllowlistedRewardDenoms {
-  repeated string denoms = 1;
 }
 
 //

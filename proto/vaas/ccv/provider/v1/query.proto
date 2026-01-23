@@ -133,38 +133,13 @@ message QueryConsumerChainsResponse {
 message Chain {
   string chain_id = 1;
   string client_id = 2;
-  uint32 top_N = 3;
-  // If the chain is a Top-N chain, this is the minimum power required to be in the top N.
-  // Otherwise, this is -1.
-  int64 min_power_in_top_N = 4;
-  // Corresponds to the maximum power (percentage-wise) a validator can have on the consumer chain.
-  uint32 validators_power_cap = 5;
-  // Corresponds to the maximum number of validators that can validate a consumer chain.
-  // Only applicable to Opt In chains. Setting `validator_set_cap` on a Top N chain is a no-op.
-  uint32 validator_set_cap = 6;
-  // Corresponds to a list of provider consensus addresses of validators that are the ONLY ones that can validate
-  // the consumer chain.
-  repeated string allowlist = 7;
-  // Corresponds to a list of provider consensus addresses of validators that CANNOT validate the consumer chain.
-  repeated string denylist = 8;
   // The phase the consumer chain
   string phase = 9;
   // The metadata of the consumer chain
   ConsumerMetadata metadata = 10  [(gogoproto.nullable) = false ];
-  // Corresponds to the minimal amount of (provider chain) stake required to validate on the consumer chain.
-  uint64 min_stake = 11;
-  // Corresponds to whether inactive validators are allowed to validate the consumer chain.
-  bool allow_inactive_vals = 12;
   string consumer_id = 13;
-  // the reward denoms allowlisted by this consumer chain
-  AllowlistedRewardDenoms allowlisted_reward_denoms = 14;
-  // Corresponds to a list of provider consensus addresses of validators that should have PRIORITY to validate on the consumer chain,
-  // meaning as long as they are eligible/opted in to validate on the consumer chain, the validator set will be
-  // filled with these validators first, and other validators will be added to the validator set only if there are
-  // not enough eligible priority validators.
-  repeated string prioritylist = 15;
-   // Infraction parameters for slashing and jailing
-   InfractionParameters infraction_parameters = 16;
+  // Infraction parameters for slashing and jailing
+  InfractionParameters infraction_parameters = 16;
 }
 
 message QueryValidatorConsumerAddrRequest {
@@ -300,7 +275,6 @@ message QueryConsumerChainResponse {
   string phase = 4;
   ConsumerMetadata metadata = 5 [ (gogoproto.nullable) = false ];
   ConsumerInitializationParameters init_params = 6;
-  PowerShapingParameters power_shaping_params = 7;
   InfractionParameters infraction_parameters = 8;
 
   // corresponds to the id of the client that is created during launch

@@ -369,22 +369,12 @@ func (k Keeper) MakeConsumerGenesis(
 		return gen, errorsmod.Wrapf(ccv.ErrInvalidConsumerState,
 			"getting initialization parameters, consumerId(%s): %s", consumerId, err.Error())
 	}
-	// note that providerFeePoolAddrStr is sent to the consumer during the IBC Channel handshake;
-	// see HandshakeMetadata in OnChanOpenTry on the provider-side, and OnChanOpenAck on the consumer-side
+	// Create consumer genesis params
 	consumerGenesisParams := ccv.NewParams(
 		true,
-		initializationRecord.BlocksPerDistributionTransmission,
-		initializationRecord.DistributionTransmissionChannel,
-		"", // providerFeePoolAddrStr,
 		initializationRecord.CcvTimeoutPeriod,
-		initializationRecord.TransferTimeoutPeriod,
-		initializationRecord.ConsumerRedistributionFraction,
 		initializationRecord.HistoricalEntries,
 		initializationRecord.UnbondingPeriod,
-		[]string{},
-		[]string{},
-		ccv.DefaultRetryDelayPeriod,
-		consumerId,
 	)
 
 	var clientState *ibctmtypes.ClientState = nil

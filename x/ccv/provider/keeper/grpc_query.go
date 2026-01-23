@@ -105,22 +105,12 @@ func (k Keeper) GetConsumerChain(ctx sdk.Context, consumerId string) (types.Chai
 	}
 
 	return types.Chain{
-		ChainId:                 chainID,
-		ClientId:                clientID,
-		Top_N:                   0,
-		MinPowerInTop_N:         -1,
-		ValidatorSetCap:         0,
-		ValidatorsPowerCap:      0,
-		Allowlist:               []string{},
-		Denylist:                []string{},
-		Phase:                   k.GetConsumerPhase(ctx, consumerId).String(),
-		Metadata:                metadata,
-		AllowInactiveVals:       false,
-		MinStake:                0,
-		ConsumerId:              consumerId,
-		AllowlistedRewardDenoms: &types.AllowlistedRewardDenoms{Denoms: []string{}},
-		Prioritylist:            []string{},
-		InfractionParameters:    &infractionParameters,
+		ChainId:              chainID,
+		ClientId:             clientID,
+		Phase:                k.GetConsumerPhase(ctx, consumerId).String(),
+		Metadata:             metadata,
+		ConsumerId:           consumerId,
+		InfractionParameters: &infractionParameters,
 	}, nil
 }
 
@@ -345,7 +335,6 @@ func (k Keeper) QueryConsumerChain(goCtx context.Context, req *types.QueryConsum
 	}
 
 	initParams, _ := k.GetConsumerInitializationParameters(ctx, consumerId)
-	powerParams := types.PowerShapingParameters{}
 	infractionParams, err := types.DefaultConsumerInfractionParameters(ctx, k.slashingKeeper)
 	if err != nil {
 		return nil, status.Errorf(codes.Internal, "cannot retrieve default infraction parameters: %s", err)
@@ -360,7 +349,6 @@ func (k Keeper) QueryConsumerChain(goCtx context.Context, req *types.QueryConsum
 		Phase:                phase.String(),
 		Metadata:             metadata,
 		InitParams:           &initParams,
-		PowerShapingParams:   &powerParams,
 		InfractionParameters: &infractionParams,
 		ClientId:             clientId,
 	}, nil

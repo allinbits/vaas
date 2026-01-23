@@ -17,16 +17,12 @@ func DefaultConsumerInitializationParameters() ConsumerInitializationParameters 
 			RevisionNumber: 1,
 			RevisionHeight: 1,
 		},
-		GenesisHash:                       []byte{},
-		BinaryHash:                        []byte{},
-		SpawnTime:                         time.Time{},
-		UnbondingPeriod:                   ccv.DefaultConsumerUnbondingPeriod,
-		CcvTimeoutPeriod:                  ccv.DefaultCCVTimeoutPeriod,
-		TransferTimeoutPeriod:             ccv.DefaultTransferTimeoutPeriod,
-		ConsumerRedistributionFraction:    ccv.DefaultConsumerRedistributeFrac,
-		BlocksPerDistributionTransmission: ccv.DefaultBlocksPerDistributionTransmission,
-		HistoricalEntries:                 ccv.DefaultHistoricalEntries,
-		DistributionTransmissionChannel:   "",
+		GenesisHash:       []byte{},
+		BinaryHash:        []byte{},
+		SpawnTime:         time.Time{},
+		UnbondingPeriod:   ccv.DefaultConsumerUnbondingPeriod,
+		CcvTimeoutPeriod:  ccv.DefaultCCVTimeoutPeriod,
+		HistoricalEntries: ccv.DefaultHistoricalEntries,
 	}
 }
 
