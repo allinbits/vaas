@@ -236,42 +236,25 @@ where create_consumer.json has the following structure:
     "spawn_time": "2024-08-29T12:26:16.529913Z",
     "unbonding_period": 1728000000000000,
     "ccv_timeout_period": 2419200000000000,
-    "transfer_timeout_period": 1800000000000,
-    "consumer_redistribution_fraction": "0.75",
-    "blocks_per_distribution_transmission": 1000,
     "historical_entries": 10000,
-    "distribution_transmission_channel": "",
     "connection_id": ""
-  },
-  "power_shaping_parameters": {
-    "top_N": 0,
-    "validators_power_cap": 10,
-    "validator_set_cap": 0,
-    "allowlist": ["cosmosvalcons..."],
-    "denylist": ["cosmosvalcons..."],
-    "min_stake": 0,
-    "allow_inactive_vals": false,
-    "prioritylist": ["cosmosvalcons..."]
   },
   "infraction_parameters":{
    "double_sign":{
       "slash_fraction": "0.05",
       "jail_duration": 9223372036854775807,
-      "tombstone": true	 
+      "tombstone": true
    },
    "downtime":{
       "slash_fraction": "0.0001",
       "jail_duration": 600000000000,
-      "tombstone": false	 
+      "tombstone": false
    }
-  },
-  "allowlisted_reward_denoms": {
-    "denoms": ["ibc/...", "ibc/..."]
   }
 }
 
 Note that both 'chain_id' and 'metadata' are mandatory;
-and 'initialization_parameters', 'power_shaping_parameters' and 'allowlisted_reward_denoms' are optional. 
+and 'initialization_parameters' and 'infraction_parameters' are optional. 
 The parameters not provided are set to their zero value. 
 `, version.AppName)),
 		Args: cobra.ExactArgs(1),
@@ -323,7 +306,7 @@ func NewUpdateConsumerCmd() *cobra.Command {
 		Use:   "update-consumer [consumer-parameters]",
 		Short: "update a consumer chain",
 		Long: strings.TrimSpace(
-			fmt.Sprintf(`Update a consumer chain to change its parameters (e.g., spawn time, allow list, etc.).
+			fmt.Sprintf(`Update a consumer chain to change its parameters (e.g., spawn time, infraction parameters, etc.).
 Note that only the owner of the chain can initialize it.
 
 Example:
@@ -348,45 +331,28 @@ where update_consumer.json has the following structure:
     "spawn_time": "2024-08-29T12:26:16.529913Z",
     "unbonding_period": 1728000000000000,
     "ccv_timeout_period": 2419200000000000,
-    "transfer_timeout_period": 1800000000000,
-    "consumer_redistribution_fraction": "0.75",
-    "blocks_per_distribution_transmission": 1000,
     "historical_entries": 10000,
-    "distribution_transmission_channel": "",
-	"connection_id": ""
+    "connection_id": ""
    },
-   "power_shaping_parameters": {
-    "top_N": 0,
-    "validators_power_cap": 10,
-    "validator_set_cap": 0,
-    "allowlist": ["cosmosvalcons..."],
-    "denylist": ["cosmosvalcons..."],
-    "min_stake": 0,
-    "allow_inactive_vals": false,
-    "prioritylist": ["cosmosvalcons..."]
+   "infraction_parameters":{
+    "double_sign":{
+       "slash_fraction": "0.05",
+       "jail_duration": 9223372036854775807,
+       "tombstone": true
+    },
+    "downtime":{
+       "slash_fraction": "0.0001",
+       "jail_duration": 600000000000,
+       "tombstone": false
+    }
    },
-  "infraction_parameters":{
-   "double_sign":{
-      "slash_fraction": "0.05",
-      "jail_duration": 9223372036854775807,
-      "tombstone": true	  
-   },
-   "downtime":{
-      "slash_fraction": "0.0001",
-      "jail_duration": 600000000000,
-      "tombstone": false	 
-   }
-  },
-  "allowlisted_reward_denoms": {
-    "denoms": ["ibc/...", "ibc/..."]
-  }
-  "new_chain_id": "newConsumer-1", // is optional and can be empty (i.e., "new_chain_id": "")
+   "new_chain_id": "newConsumer-1" // is optional and can be empty (i.e., "new_chain_id": "")
 }
 
 Note that only 'consumer_id' is mandatory. The others are optional.
-Not providing one of them will leave the existing values unchanged. 
-Providing one of 'metadata', 'initialization_parameters', 'power_shaping_parameters', or 'allowlisted_reward_denoms' 
-will update all the containing fields. 
+Not providing one of them will leave the existing values unchanged.
+Providing one of 'metadata', 'initialization_parameters', or 'infraction_parameters'
+will update all the containing fields.
 If one of the fields is missing, it will be set to its zero value.
 `, version.AppName)),
 		Args: cobra.ExactArgs(1),
