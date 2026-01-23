@@ -2,12 +2,7 @@ version: v1
 plugins:
   - name: gocosmos
     out: ..
-    opt:
-      - plugins=grpc
-      - Mgoogle/protobuf/any.proto=github.com/cosmos/cosmos-sdk/codec/types
-      - Mibc/lightclients/tendermint/v1/tendermint.proto=github.com/cosmos/ibc-go/v10/modules/light-clients/07-tendermint
-      - Mibc/core/client/v1/client.proto=github.com/cosmos/ibc-go/v10/modules/core/02-client/types
-      - Mibc/core/commitment/v1/commitment.proto=github.com/cosmos/ibc-go/v10/modules/core/23-commitment/types
+    opt: plugins=grpc,Mgoogle/protobuf/any.proto=github.com/cosmos/cosmos-sdk/codec/types
   - name: grpc-gateway
     out: ..
     opt: logtostderr=true,allow_colon_final_segments=true
