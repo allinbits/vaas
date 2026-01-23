@@ -20,18 +20,6 @@ import "tendermint/abci/types.proto";
 // Note: this type is only used on consumer side and references shared types with
 // provider
 message GenesisState {
-  // Reserve 5th slot for removed provider_client_state field
-  reserved 5;
-
-  // Reserve 6th slot for removed provider_consensus_state field
-  reserved 6;
-
-  // Reserve 7th slot for removed maturing_packets field
-  reserved 7;
-
-  // Reserve 8th slot for removed initial_val_set field
-  reserved 8;
-
   // ConsumerParams is a shared type with provider module
   vaas.ccv.v1.ConsumerParams params = 1
       [ (gogoproto.nullable) = false ];
@@ -42,26 +30,26 @@ message GenesisState {
   // true for new chain, false for chain restart.
   bool new_chain = 4;
   // HeightToValsetUpdateId nil on new chain, filled in on restart.
-  repeated HeightToValsetUpdateID height_to_valset_update_id = 9
+  repeated HeightToValsetUpdateID height_to_valset_update_id = 5
       [ (gogoproto.nullable) = false ];
   // OutstandingDowntimes nil on new chain, filled  in on restart.
-  repeated OutstandingDowntime outstanding_downtime_slashing = 10
+  repeated OutstandingDowntime outstanding_downtime_slashing = 6
       [ (gogoproto.nullable) = false ];
   // PendingConsumerPackets nil on new chain, filled in on restart.
-  ConsumerPacketDataList pending_consumer_packets = 11
+  ConsumerPacketDataList pending_consumer_packets = 7
       [ (gogoproto.nullable) = false ];
   // LastTransmissionBlockHeight nil on new chain, filled in on restart.
-  LastTransmissionBlockHeight last_transmission_block_height = 12
+  LastTransmissionBlockHeight last_transmission_block_height = 8
       [ (gogoproto.nullable) = false ];
   // Flag indicating whether the consumer CCV module starts in pre-CCV state
-  bool preCCV = 13;
-  vaas.ccv.v1.ProviderInfo provider = 14
+  bool preCCV = 9;
+  vaas.ccv.v1.ProviderInfo provider = 10
       [ (gogoproto.nullable) = false ];
   // The ID of the connection end on the consumer chain on top of which the
   // CCV channel will be established. If connection_id == "", a new client of
   // the provider chain and a new connection on top of this client are created.
   // The new client is initialized using provider.client_state and provider.consensus_state.
-  string connection_id = 15;
+  string connection_id = 11;
 }
 
 // HeightValsetUpdateID represents a mapping internal to the consumer CCV module

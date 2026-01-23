@@ -211,11 +211,11 @@ message Params {
   ];
 
   // The number of blocks that comprise an epoch.
-  int64 blocks_per_epoch = 10;
+  int64 blocks_per_epoch = 4;
 
   // The maximal number of validators that will be passed
   // to the consensus engine on the provider.
-  int64 max_provider_consensus_validators = 12;
+  int64 max_provider_consensus_validators = 5;
 }
 
 // SlashAcks contains cons addresses of consumer chain validators
@@ -370,13 +370,13 @@ message ConsumerInitializationParameters {
   // The number of historical info entries to persist in store.
   // This param is a part of the cosmos sdk staking module. In the case of
   // a ccv enabled consumer chain, the ccv module acts as the staking module.
-  int64 historical_entries = 10;
+  int64 historical_entries = 7;
   // The ID of the connection end on the provider chain on top of which the CCV
   // channel will be established. If connection_id == "", a new client of the
   // consumer chain and a new connection on top of this client are created.
   // Note that a standalone chain can transition to a consumer chain while
   // maintaining existing IBC channels to other chains by providing a valid connection_id.
-  string connection_id = 12;
+  string connection_id = 8;
 }
 
 // ConsumerIds contains consumer ids of chains
