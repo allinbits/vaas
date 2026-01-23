@@ -1,0 +1,30 @@
+syntax = "proto3";
+package vaas.consumer.v1;
+
+option go_package = "github.com/allinbits/vaas/x/vaas/consumer/types";
+
+import "google/protobuf/any.proto";
+import "gogoproto/gogo.proto";
+import "cosmos_proto/cosmos.proto";
+import "google/protobuf/timestamp.proto";
+
+//
+// Note any type defined in this file is ONLY used internally to the consumer
+// CCV module. These schemas can change with proper consideration of
+// compatibility or migration.
+
+// CrossChainValidator defines the type used to store validator information
+// internal to the consumer CCV module.  Note one cross chain validator entry is
+// persisted for each consumer validator, where incoming VSC packets update this
+// data, which is eventually forwarded to comet for consumer chain consensus.
+//
+// Note this type is only used internally to the consumer CCV module.
+message CrossChainValidator {
+  bytes address = 1;
+  int64 power = 2;
+  // pubkey is the consensus public key of the validator, as a Protobuf Any.
+  google.protobuf.Any pubkey = 3 [
+    (cosmos_proto.accepts_interface) = "cosmos.crypto.PubKey",
+    (gogoproto.moretags) = "yaml:\"consensus_pubkey\""
+  ];
+}

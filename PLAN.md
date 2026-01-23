@@ -1,6 +1,6 @@
 # VAAS Rewrite Plan
 
-Rewrite `x/ccv/provider` and `x/ccv/consumer` in a new `vaas` folder as a **new Go module** with package path `github.com/allinbits/vaas`.
+Rewrite `x/vaas/provider` and `x/vaas/consumer` in a new `vaas` folder as a **new Go module** with package path `github.com/allinbits/vaas`.
 
 ---
 
@@ -45,7 +45,7 @@ Rewrite `x/ccv/provider` and `x/ccv/consumer` in a new `vaas` folder as a **new 
 
 ## Resulting Architecture
 
-### Provider Module (`vaas/x/ccv/provider`)
+### Provider Module (`vaas/x/vaas/provider`)
 
 **Core Components:**
 1. **Consumer Lifecycle** - Create, update, remove consumer chains with phase management
@@ -74,7 +74,7 @@ Rewrite `x/ccv/provider` and `x/ccv/consumer` in a new `vaas` folder as a **new 
 - `MsgSubmitConsumerMisbehaviour`
 - `MsgSubmitConsumerDoubleVoting`
 
-### Consumer Module (`vaas/x/ccv/consumer`)
+### Consumer Module (`vaas/x/vaas/consumer`)
 
 **Core Components:**
 1. **VSC Packet Handling** - Receive and apply validator set changes
@@ -133,9 +133,9 @@ vaas/
 **Go Module:** `github.com/allinbits/vaas`
 
 Import paths will be:
-- `github.com/allinbits/vaas/x/ccv/provider`
-- `github.com/allinbits/vaas/x/ccv/consumer`
-- `github.com/allinbits/vaas/x/ccv/types`
+- `github.com/allinbits/vaas/x/vaas/provider`
+- `github.com/allinbits/vaas/x/vaas/consumer`
+- `github.com/allinbits/vaas/x/vaas/types`
 
 ### Phase 2: Copy Provider Module Files
 
@@ -197,16 +197,16 @@ For each copied file:
 ## Key Files to Reference
 
 **Provider (current):**
-- `x/ccv/provider/keeper/keeper.go` - Keeper structure
-- `x/ccv/provider/keeper/consumer_lifecycle.go` - Lifecycle management
-- `x/ccv/provider/keeper/key_assignment.go` - Key assignment
-- `x/ccv/provider/keeper/relay.go` - VSC packet logic
-- `x/ccv/provider/types/keys.go` - State keys
-- `x/ccv/provider/ibc_module.go` - IBC callbacks
+- `x/vaas/provider/keeper/keeper.go` - Keeper structure
+- `x/vaas/provider/keeper/consumer_lifecycle.go` - Lifecycle management
+- `x/vaas/provider/keeper/key_assignment.go` - Key assignment
+- `x/vaas/provider/keeper/relay.go` - VSC packet logic
+- `x/vaas/provider/types/keys.go` - State keys
+- `x/vaas/provider/ibc_module.go` - IBC callbacks
 
 **Consumer (current):**
-- `x/ccv/consumer/keeper/keeper.go` - Keeper structure
-- `x/ccv/consumer/keeper/relay.go` - VSC handling
-- `x/ccv/consumer/keeper/validators.go` - Validator + historical info
-- `x/ccv/consumer/types/keys.go` - State keys
-- `x/ccv/consumer/ibc_module.go` - IBC callbacks
+- `x/vaas/consumer/keeper/keeper.go` - Keeper structure
+- `x/vaas/consumer/keeper/relay.go` - VSC handling
+- `x/vaas/consumer/keeper/validators.go` - Validator + historical info
+- `x/vaas/consumer/types/keys.go` - State keys
+- `x/vaas/consumer/ibc_module.go` - IBC callbacks

@@ -15,7 +15,7 @@ import (
 	tmprotocrypto "github.com/cometbft/cometbft/proto/tendermint/crypto"
 	tmtypes "github.com/cometbft/cometbft/types"
 
-	providertypes "github.com/allinbits/vaas/x/ccv/provider/types"
+	providertypes "github.com/allinbits/vaas/x/vaas/provider/types"
 )
 
 // CryptoIdentity is a test helper for generating keys and addresses of

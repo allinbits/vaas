@@ -33,11 +33,11 @@ import (
 	abci "github.com/cometbft/cometbft/abci/types"
 	tmproto "github.com/cometbft/cometbft/proto/tendermint/types"
 
-	consumerkeeper "github.com/allinbits/vaas/x/ccv/consumer/keeper"
-	consumertypes "github.com/allinbits/vaas/x/ccv/consumer/types"
-	providerkeeper "github.com/allinbits/vaas/x/ccv/provider/keeper"
-	providertypes "github.com/allinbits/vaas/x/ccv/provider/types"
-	"github.com/allinbits/vaas/x/ccv/types"
+	consumerkeeper "github.com/allinbits/vaas/x/vaas/consumer/keeper"
+	consumertypes "github.com/allinbits/vaas/x/vaas/consumer/types"
+	providerkeeper "github.com/allinbits/vaas/x/vaas/provider/keeper"
+	providertypes "github.com/allinbits/vaas/x/vaas/provider/types"
+	"github.com/allinbits/vaas/x/vaas/types"
 )
 
 // Parameters needed to instantiate an in-memory keeper

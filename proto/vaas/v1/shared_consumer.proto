@@ -1,0 +1,74 @@
+syntax = "proto3";
+
+package vaas.v1;
+
+option go_package = "github.com/allinbits/vaas/x/vaas/types";
+
+import "tendermint/abci/types.proto";
+import "ibc/lightclients/tendermint/v1/tendermint.proto";
+import "google/protobuf/duration.proto";
+import "gogoproto/gogo.proto";
+
+//
+// Note any type defined in this file is referenced/persisted in both the
+// consumer and provider CCV modules, but not sent over the wire. These schemas
+// could change, only with careful consideration of effects!
+//
+
+// ConsumerParams defines the parameters for CCV consumer module.
+//
+// Note this type is referenced in both the consumer and provider CCV modules,
+// and persisted on the provider, see MakeConsumerGenesis and
+// SetConsumerGenesis.
+//
+message ConsumerParams {
+    // TODO: Remove enabled flag and find a better way to setup integration tests
+    // See: https://github.com/cosmos/interchain-security/issues/339
+    bool enabled = 1;
+
+    // Sent CCV related IBC packets will timeout after this duration
+    google.protobuf.Duration ccv_timeout_period = 2
+        [ (gogoproto.nullable) = false, (gogoproto.stdduration) = true ];
+
+    // The number of historical info entries to persist in store.
+    // This param is a part of the cosmos sdk staking module. In the case of
+    // a ccv enabled consumer chain, the ccv module acts as the staking module.
+    int64 historical_entries = 3;
+
+    // Unbonding period for the consumer,
+    // which should be smaller than that of the provider in general.
+    google.protobuf.Duration unbonding_period = 4
+        [ (gogoproto.nullable) = false, (gogoproto.stdduration) = true ];
+}
+
+// ConsumerGenesisState defines shared genesis information between provider and
+// consumer
+message ConsumerGenesisState {
+  ConsumerParams params = 1 [ (gogoproto.nullable) = false ];
+  ProviderInfo provider = 2 [ (gogoproto.nullable) = false ];
+  // True for new chain, false for chain restart.
+  // This is needed and always set to true; otherwise, new_chain in the consumer
+  // genesis state will default to false
+  bool new_chain = 3;
+  // Flag indicating whether the consumer CCV module starts in pre-CCV state
+  bool preCCV = 4;
+  // The ID of the connection end on the consumer chain on top of which the
+  // CCV channel will be established. If connection_id == "", a new client of
+  // the provider chain and a new connection on top of this client are created.
+  // The new client is initialized using client_state and consensus_state.
+  string connection_id = 5;
+}
+
+// ProviderInfo defines all information a consumer needs from a provider
+// Shared data type between provider and consumer
+message ProviderInfo {
+  // The client state for the provider client filled in on new chain, nil on restart.
+  // If connection_id != "", then client_state is ignored.
+  ibc.lightclients.tendermint.v1.ClientState client_state = 1;
+  // The consensus state for the provider client filled in on new chain, nil on restart.
+  // If connection_id != "", then consensus_state is ignored.
+  ibc.lightclients.tendermint.v1.ConsensusState consensus_state = 2;
+  // InitialValset filled in on new chain and on restart.
+  repeated .tendermint.abci.ValidatorUpdate initial_val_set = 3
+      [ (gogoproto.nullable) = false ];
+}

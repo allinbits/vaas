@@ -53,7 +53,7 @@ The rewrite simplifies the interchain security modules by removing several featu
 
 ## Code Changes Made
 
-### Provider Keeper (`x/ccv/provider/keeper/`)
+### Provider Keeper (`x/vaas/provider/keeper/`)
 
 **msg_server.go:**
 - `CreateConsumer`: Removed power shaping and reward denom setup (kept per-consumer infraction parameters)
@@ -100,7 +100,7 @@ The rewrite simplifies the interchain security modules by removing several featu
 **ibc_module.go:**
 - `ProviderFeePoolAddr` set to empty string (rewards removed)
 
-### Consumer Keeper (`x/ccv/consumer/keeper/`)
+### Consumer Keeper (`x/vaas/consumer/keeper/`)
 
 **genesis.go:**
 - Removed `SetOutstandingDowntime` and `SetLastTransmissionBlockHeight`
@@ -117,12 +117,12 @@ The rewrite simplifies the interchain security modules by removing several featu
 **ibc_module.go:**
 - Removed distribution transfer channel initialization
 
-### Consumer Types (`x/ccv/consumer/types/`)
+### Consumer Types (`x/vaas/consumer/types/`)
 
 **genesis.go:**
 - `NewRestartGenesisState`: Removed `OutstandingDowntime` and `LastTransmissionBlockHeight` parameters
 
-### Shared Types (`x/ccv/types/`)
+### Shared Types (`x/vaas/types/`)
 
 **denom_helpers.go:**
 - Added `ValidateIBCDenom` function
@@ -157,11 +157,11 @@ vaas/
 ## Test Status
 
 ### Tests Passing
-- `x/ccv/consumer/keeper` - Genesis, keeper, params, validators tests
-- `x/ccv/consumer/types` - Genesis, keys, params tests
-- `x/ccv/provider/keeper` - Consumer equivocation, hooks, keeper, key assignment, msg server, params, permissionless tests
-- `x/ccv/provider/types` - Genesis, keys, msg, params tests
-- `x/ccv/types` - Shared params, utils, wire tests
+- `x/vaas/consumer/keeper` - Genesis, keeper, params, validators tests
+- `x/vaas/consumer/types` - Genesis, keys, params tests
+- `x/vaas/provider/keeper` - Consumer equivocation, hooks, keeper, key assignment, msg server, params, permissionless tests
+- `x/vaas/provider/types` - Genesis, keys, msg, params tests
+- `x/vaas/types` - Shared params, utils, wire tests
 
 ### Tests Removed (tested removed features)
 - Provider: relay, staking keeper interface, validator set update, consumer lifecycle, genesis, grpc query

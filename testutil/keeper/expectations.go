@@ -14,8 +14,8 @@ import (
 	sdk "github.com/cosmos/cosmos-sdk/types"
 	stakingtypes "github.com/cosmos/cosmos-sdk/x/staking/types"
 
-	providertypes "github.com/allinbits/vaas/x/ccv/provider/types"
-	"github.com/allinbits/vaas/x/ccv/types"
+	providertypes "github.com/allinbits/vaas/x/vaas/provider/types"
+	"github.com/allinbits/vaas/x/vaas/types"
 )
 
 //
