@@ -167,6 +167,13 @@ func (k Keeper) ChanCloseInit(ctx sdk.Context, portID, channelID string) error {
 	return k.channelKeeper.ChanCloseInit(ctx, portID, channelID)
 }
 
+// ChannelOpenInit defines a wrapper function for the ibcCoreKeeper's function
+func (k Keeper) ChannelOpenInit(ctx sdk.Context, msg *channeltypes.MsgChannelOpenInit) (
+	*channeltypes.MsgChannelOpenInitResponse, error,
+) {
+	return k.ibcCoreKeeper.ChannelOpenInit(ctx, msg)
+}
+
 // GetPort returns the portID for the transfer module. Used in ExportGenesis
 func (k Keeper) GetPort(ctx sdk.Context) string {
 	store := ctx.KVStore(k.storeKey)

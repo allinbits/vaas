@@ -2,6 +2,7 @@ package keeper
 
 import (
 	conntypes "github.com/cosmos/ibc-go/v10/modules/core/03-connection/types"
+	channeltypes "github.com/cosmos/ibc-go/v10/modules/core/04-channel/types"
 	ibchost "github.com/cosmos/ibc-go/v10/modules/core/exported"
 
 	errorsmod "cosmossdk.io/errors"
@@ -90,11 +91,23 @@ func (k Keeper) InitGenesis(ctx sdk.Context, state *types.GenesisState) []abci.V
 		k.SetHeightValsetUpdateID(ctx, uint64(ctx.BlockHeight()), uint64(0))
 
 		if state.ConnectionId != "" {
-			// When a connection ID is provided, the CCV channel handshake must be
-			// initiated by a relayer. Log this for visibility.
-			k.Logger(ctx).Info("CCV channel handshake must be initiated by a relayer",
-				"connection id", state.ConnectionId,
+			// initiate CCV channel handshake
+			ccvChannelOpenInitMsg := channeltypes.NewMsgChannelOpenInit(
+				ccv.ConsumerPortID,
+				ccv.Version,
+				channeltypes.ORDERED,
+				[]string{state.ConnectionId},
+				ccv.ProviderPortID,
+				"", // signer unused
 			)
+			_, err := k.ChannelOpenInit(ctx, ccvChannelOpenInitMsg)
+			if err != nil {
+				panic(err)
+			}
+
+			// Note that if the connection ID is not provider, we cannot initiate
+			// the connection handshake as the counterparty client ID is unknown
+			// at this point. The connection handshake must be initiated by a relayer.
 		}
 
 	} else {
