@@ -18,7 +18,7 @@ import (
 	"github.com/cosmos/cosmos-sdk/types/query"
 
 	"github.com/allinbits/vaas/x/vaas/provider/types"
-	ccvtypes "github.com/allinbits/vaas/x/vaas/types"
+	vaastypes "github.com/allinbits/vaas/x/vaas/types"
 )
 
 var _ types.QueryServer = Keeper{}
@@ -31,7 +31,7 @@ func (k Keeper) QueryConsumerGenesis(c context.Context, req *types.QueryConsumer
 	}
 
 	consumerId := req.ConsumerId
-	if err := ccvtypes.ValidateConsumerId(consumerId); err != nil {
+	if err := vaastypes.ValidateConsumerId(consumerId); err != nil {
 		return nil, status.Error(codes.InvalidArgument, err.Error())
 	}
 
@@ -122,7 +122,7 @@ func (k Keeper) QueryValidatorConsumerAddr(goCtx context.Context, req *types.Que
 	ctx := sdk.UnwrapSDKContext(goCtx)
 
 	consumerId := req.ConsumerId
-	if err := ccvtypes.ValidateConsumerId(consumerId); err != nil {
+	if err := vaastypes.ValidateConsumerId(consumerId); err != nil {
 		return nil, status.Error(codes.InvalidArgument, err.Error())
 	}
 
@@ -137,7 +137,7 @@ func (k Keeper) QueryValidatorConsumerAddr(goCtx context.Context, req *types.Que
 		return &types.QueryValidatorConsumerAddrResponse{}, nil
 	}
 
-	consumerAddr, err := ccvtypes.TMCryptoPublicKeyToConsAddr(consumerKey)
+	consumerAddr, err := vaastypes.TMCryptoPublicKeyToConsAddr(consumerKey)
 	if err != nil {
 		return nil, err
 	}
@@ -179,7 +179,7 @@ func (k Keeper) QueryAllPairsValConsAddrByConsumer(
 	}
 
 	consumerId := req.ConsumerId
-	if err := ccvtypes.ValidateConsumerId(consumerId); err != nil {
+	if err := vaastypes.ValidateConsumerId(consumerId); err != nil {
 		return nil, status.Error(codes.InvalidArgument, err.Error())
 	}
 
@@ -188,7 +188,7 @@ func (k Keeper) QueryAllPairsValConsAddrByConsumer(
 	ctx := sdk.UnwrapSDKContext(goCtx)
 	validatorConsumerPubKeys := k.GetAllValidatorConsumerPubKeys(ctx, &consumerId)
 	for _, data := range validatorConsumerPubKeys {
-		consumerAddr, err := ccvtypes.TMCryptoPublicKeyToConsAddr(*data.ConsumerKey)
+		consumerAddr, err := vaastypes.TMCryptoPublicKeyToConsAddr(*data.ConsumerKey)
 		if err != nil {
 			return nil, err
 		}
@@ -221,7 +221,7 @@ func (k Keeper) QueryConsumerValidators(goCtx context.Context, req *types.QueryC
 	}
 
 	consumerId := req.ConsumerId
-	if err := ccvtypes.ValidateConsumerId(consumerId); err != nil {
+	if err := vaastypes.ValidateConsumerId(consumerId); err != nil {
 		return nil, status.Error(codes.InvalidArgument, err.Error())
 	}
 
@@ -302,7 +302,7 @@ func (k Keeper) QueryConsumerChain(goCtx context.Context, req *types.QueryConsum
 	}
 
 	consumerId := req.ConsumerId
-	if err := ccvtypes.ValidateConsumerId(consumerId); err != nil {
+	if err := vaastypes.ValidateConsumerId(consumerId); err != nil {
 		return nil, status.Error(codes.InvalidArgument, err.Error())
 	}
 	ctx := sdk.UnwrapSDKContext(goCtx)
@@ -353,7 +353,7 @@ func (k Keeper) QueryConsumerGenesisTime(goCtx context.Context, req *types.Query
 	}
 
 	consumerId := req.ConsumerId
-	if err := ccvtypes.ValidateConsumerId(consumerId); err != nil {
+	if err := vaastypes.ValidateConsumerId(consumerId); err != nil {
 		return nil, status.Error(codes.InvalidArgument, err.Error())
 	}
 	ctx := sdk.UnwrapSDKContext(goCtx)

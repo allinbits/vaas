@@ -8,21 +8,21 @@ import (
 	stakingtypes "github.com/cosmos/cosmos-sdk/x/staking/types"
 
 	"github.com/allinbits/vaas/x/vaas/consumer/types"
-	ccvtypes "github.com/allinbits/vaas/x/vaas/types"
+	vaastypes "github.com/allinbits/vaas/x/vaas/types"
 )
 
-// GetParams returns the params for the consumer ccv module
+// GetParams returns the params for the consumer VAAS module
 // NOTE: it is different from the GetParams method which is required to implement StakingKeeper interface
-func (k Keeper) GetConsumerParams(ctx sdk.Context) ccvtypes.ConsumerParams {
+func (k Keeper) GetConsumerParams(ctx sdk.Context) vaastypes.ConsumerParams {
 	store := ctx.KVStore(k.storeKey)
 	bz := store.Get(types.ParametersKey())
-	var params ccvtypes.ConsumerParams
+	var params vaastypes.ConsumerParams
 	k.cdc.MustUnmarshal(bz, &params)
 	return params
 }
 
 // SetParams sets the paramset for the consumer module
-func (k Keeper) SetParams(ctx sdk.Context, params ccvtypes.ConsumerParams) {
+func (k Keeper) SetParams(ctx sdk.Context, params vaastypes.ConsumerParams) {
 	store := ctx.KVStore(k.storeKey)
 	bz := k.cdc.MustMarshal(&params)
 	store.Set(types.ParametersKey(), bz)
@@ -42,10 +42,10 @@ func (k Keeper) GetEnabled(ctx sdk.Context) bool {
 	return params.Enabled
 }
 
-// GetCCVTimeoutPeriod returns the timeout period for sent ccv related ibc packets
-func (k Keeper) GetCCVTimeoutPeriod(ctx sdk.Context) time.Duration {
+// GetVAASTimeoutPeriod returns the timeout period for sent VAAS related ibc packets
+func (k Keeper) GetVAASTimeoutPeriod(ctx sdk.Context) time.Duration {
 	params := k.GetConsumerParams(ctx)
-	return params.CcvTimeoutPeriod
+	return params.VaasTimeoutPeriod
 }
 
 // GetHistoricalEntries returns the number of historical info entries to persist in store

@@ -27,7 +27,7 @@ var _ = math.Inf
 // proto package needs to be updated.
 const _ = proto.GoGoProtoPackageIsVersion3 // please upgrade the proto package
 
-// GenesisState defines the CCV consumer genesis state
+// GenesisState defines the VAAS consumer genesis state
 //
 // Note: this type is only used on consumer side and references shared types
 // with provider
@@ -46,7 +46,7 @@ type GenesisState struct {
 	PreVAAS  bool               `protobuf:"varint,9,opt,name=preVAAS,proto3" json:"preVAAS,omitempty"`
 	Provider types.ProviderInfo `protobuf:"bytes,10,opt,name=provider,proto3" json:"provider"`
 	// The ID of the connection end on the consumer chain on top of which the
-	// CCV channel will be established. If connection_id == "", a new client of
+	// VAAS channel will be established. If connection_id == "", a new client of
 	// the provider chain and a new connection on top of this client are created.
 	// The new client is initialized using provider.client_state and
 	// provider.consensus_state.
@@ -142,7 +142,7 @@ func (m *GenesisState) GetConnectionId() string {
 	return ""
 }
 
-// HeightValsetUpdateID represents a mapping internal to the consumer CCV module
+// HeightValsetUpdateID represents a mapping internal to the consumer VAAS module
 // which links a block height to each recv valset update id.
 type HeightToValsetUpdateID struct {
 	Height         uint64 `protobuf:"varint,1,opt,name=height,proto3" json:"height,omitempty"`

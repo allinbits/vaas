@@ -20,7 +20,7 @@ import (
 	"github.com/allinbits/vaas/testutil/crypto"
 	testkeeper "github.com/allinbits/vaas/testutil/keeper"
 	"github.com/allinbits/vaas/x/vaas/consumer/types"
-	ccv "github.com/allinbits/vaas/x/vaas/types"
+	vaastypes "github.com/allinbits/vaas/x/vaas/types"
 )
 
 // TestProviderClientID tests getter and setter functionality for the client ID stored on consumer keeper
@@ -56,7 +56,7 @@ func TestPendingChanges(t *testing.T) {
 	pk2, err := cryptocodec.ToCmtProtoPublicKey(ed25519.GenPrivKey().PubKey())
 	require.NoError(t, err)
 
-	pd := ccv.NewValidatorSetChangePacketData(
+	pd := vaastypes.NewValidatorSetChangePacketData(
 		[]abci.ValidatorUpdate{
 			{
 				PubKey: pk1,

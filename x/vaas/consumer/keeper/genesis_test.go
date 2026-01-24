@@ -23,7 +23,7 @@ import (
 	testkeeper "github.com/allinbits/vaas/testutil/keeper"
 	consumerkeeper "github.com/allinbits/vaas/x/vaas/consumer/keeper"
 	consumertypes "github.com/allinbits/vaas/x/vaas/consumer/types"
-	ccv "github.com/allinbits/vaas/x/vaas/types"
+	vaastypes "github.com/allinbits/vaas/x/vaas/types"
 )
 
 // TestInitGenesis tests that a consumer chain is correctly initialised from genesis.
@@ -71,7 +71,7 @@ func TestInitGenesis(t *testing.T) {
 	)
 
 	// create default parameters for a new chain
-	params := ccv.DefaultParams()
+	params := vaastypes.DefaultParams()
 	params.Enabled = true
 
 	// define three test cases which respectively create a genesis struct, use it to call InitGenesis
@@ -194,7 +194,7 @@ func TestExportGenesis(t *testing.T) {
 		consumertypes.HeightToValsetUpdateID{ValsetUpdateId: vscID + 1, Height: blockHeight + 1},
 	)
 	// create default parameters for a new chain
-	params := ccv.DefaultParams()
+	params := vaastypes.DefaultParams()
 	params.Enabled = true
 
 	// define two test cases which respectively populate the consumer chain store

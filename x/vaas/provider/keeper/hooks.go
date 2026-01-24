@@ -10,7 +10,7 @@ import (
 	stakingtypes "github.com/cosmos/cosmos-sdk/x/staking/types"
 
 	providertypes "github.com/allinbits/vaas/x/vaas/provider/types"
-	ccvtypes "github.com/allinbits/vaas/x/vaas/types"
+	vaastypes "github.com/allinbits/vaas/x/vaas/types"
 )
 
 // Wrapper struct
@@ -51,7 +51,7 @@ func (h Hooks) AfterValidatorRemoved(goCtx context.Context, valConsAddr sdk.Cons
 
 	for _, validatorConsumerPubKey := range h.k.GetAllValidatorConsumerPubKeys(ctx, nil) {
 		if sdk.ConsAddress(validatorConsumerPubKey.ProviderAddr).Equals(valConsAddr) {
-			consumerAddrTmp, err := ccvtypes.TMCryptoPublicKeyToConsAddr(*validatorConsumerPubKey.ConsumerKey)
+			consumerAddrTmp, err := vaastypes.TMCryptoPublicKeyToConsAddr(*validatorConsumerPubKey.ConsumerKey)
 			if err != nil {
 				// An error here would indicate something is very wrong
 				panic("cannot get address of consumer key")

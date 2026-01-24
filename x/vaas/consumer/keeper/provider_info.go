@@ -6,21 +6,21 @@ import (
 	sdk "github.com/cosmos/cosmos-sdk/types"
 
 	"github.com/allinbits/vaas/x/vaas/consumer/types"
-	ccvtypes "github.com/allinbits/vaas/x/vaas/types"
+	vaastypes "github.com/allinbits/vaas/x/vaas/types"
 )
 
 func (k Keeper) GetProviderInfo(ctx sdk.Context) (*types.QueryProviderInfoResponse, error) { //nolint:golint
 	consumerChannelID, found := k.GetProviderChannel(ctx)
 	if !found {
-		return nil, ccvtypes.ErrChannelNotFound
+		return nil, vaastypes.ErrChannelNotFound
 	}
-	consumerChannel, found := k.channelKeeper.GetChannel(ctx, ccvtypes.ConsumerPortID, consumerChannelID)
+	consumerChannel, found := k.channelKeeper.GetChannel(ctx, vaastypes.ConsumerPortID, consumerChannelID)
 	if !found {
-		return nil, ccvtypes.ErrChannelNotFound
+		return nil, vaastypes.ErrChannelNotFound
 	}
 
 	// from channel get connection
-	consumerConnectionID, consumerConnection, err := k.channelKeeper.GetChannelConnection(ctx, ccvtypes.ConsumerPortID, consumerChannelID)
+	consumerConnectionID, consumerConnection, err := k.channelKeeper.GetChannelConnection(ctx, vaastypes.ConsumerPortID, consumerChannelID)
 	if err != nil {
 		return nil, err
 	}
@@ -30,7 +30,7 @@ func (k Keeper) GetProviderInfo(ctx sdk.Context) (*types.QueryProviderInfoRespon
 
 	consumerClientState, found := k.clientKeeper.GetClientState(ctx, consumerConnection.ClientId)
 	if !found {
-		return nil, ccvtypes.ErrClientNotFound
+		return nil, vaastypes.ErrClientNotFound
 	}
 	providerChainID := consumerClientState.(*ibctm.ClientState).ChainId
 

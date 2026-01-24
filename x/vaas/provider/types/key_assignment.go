@@ -8,7 +8,7 @@ import (
 
 	sdk "github.com/cosmos/cosmos-sdk/types"
 
-	ccvtypes "github.com/allinbits/vaas/x/vaas/types"
+	vaastypes "github.com/allinbits/vaas/x/vaas/types"
 )
 
 // A validator's consensus address on the provider chain.
@@ -71,33 +71,33 @@ func KeyAssignmentValidateBasic(
 ) error {
 	for _, e := range assignedKeys {
 		if strings.TrimSpace(e.ChainId) == "" {
-			return errorsmod.Wrap(ccvtypes.ErrInvalidGenesis, "consumer chain id must not be blank")
+			return errorsmod.Wrap(vaastypes.ErrInvalidGenesis, "consumer chain id must not be blank")
 		}
 		if err := sdk.VerifyAddressFormat(e.ProviderAddr); err != nil {
-			return errorsmod.Wrap(ccvtypes.ErrInvalidGenesis, fmt.Sprintf("invalid provider address: %s", e.ProviderAddr))
+			return errorsmod.Wrap(vaastypes.ErrInvalidGenesis, fmt.Sprintf("invalid provider address: %s", e.ProviderAddr))
 		}
 		if e.ConsumerKey == nil {
-			return errorsmod.Wrap(ccvtypes.ErrInvalidGenesis, fmt.Sprintf("invalid consumer key: %s", e.ConsumerKey))
+			return errorsmod.Wrap(vaastypes.ErrInvalidGenesis, fmt.Sprintf("invalid consumer key: %s", e.ConsumerKey))
 		}
 	}
 	for _, e := range byConsumerAddrs {
 		if strings.TrimSpace(e.ChainId) == "" {
-			return errorsmod.Wrap(ccvtypes.ErrInvalidGenesis, "consumer chain id must not be blank")
+			return errorsmod.Wrap(vaastypes.ErrInvalidGenesis, "consumer chain id must not be blank")
 		}
 		if err := sdk.VerifyAddressFormat(e.ProviderAddr); err != nil {
-			return errorsmod.Wrap(ccvtypes.ErrInvalidGenesis, fmt.Sprintf("invalid provider address: %s", e.ProviderAddr))
+			return errorsmod.Wrap(vaastypes.ErrInvalidGenesis, fmt.Sprintf("invalid provider address: %s", e.ProviderAddr))
 		}
 		if err := sdk.VerifyAddressFormat(e.ConsumerAddr); err != nil {
-			return errorsmod.Wrap(ccvtypes.ErrInvalidGenesis, fmt.Sprintf("invalid consumer address: %s", e.ConsumerAddr))
+			return errorsmod.Wrap(vaastypes.ErrInvalidGenesis, fmt.Sprintf("invalid consumer address: %s", e.ConsumerAddr))
 		}
 	}
 	for _, e := range consumerAddrsToPrune {
 		if strings.TrimSpace(e.ChainId) == "" {
-			return errorsmod.Wrap(ccvtypes.ErrInvalidGenesis, "consumer chain id must not be blank")
+			return errorsmod.Wrap(vaastypes.ErrInvalidGenesis, "consumer chain id must not be blank")
 		}
 		for _, a := range e.ConsumerAddrs.Addresses {
 			if err := sdk.VerifyAddressFormat(a); err != nil {
-				return errorsmod.Wrap(ccvtypes.ErrInvalidGenesis, fmt.Sprintf("invalid consumer address: %s", a))
+				return errorsmod.Wrap(vaastypes.ErrInvalidGenesis, fmt.Sprintf("invalid consumer address: %s", a))
 			}
 		}
 	}

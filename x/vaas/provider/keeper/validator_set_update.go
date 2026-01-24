@@ -10,7 +10,7 @@ import (
 	abci "github.com/cometbft/cometbft/abci/types"
 
 	"github.com/allinbits/vaas/x/vaas/provider/types"
-	ccv "github.com/allinbits/vaas/x/vaas/types"
+	vaastypes "github.com/allinbits/vaas/x/vaas/types"
 )
 
 // GetConsumerChainConsensusValidatorsKey returns the store key for consumer validators of the consumer chain with `consumerId`
@@ -232,14 +232,14 @@ func (k Keeper) GetLastBondedValidators(ctx sdk.Context) ([]stakingtypes.Validat
 	if err != nil {
 		return nil, err
 	}
-	return ccv.GetLastBondedValidatorsUtil(ctx, k.stakingKeeper, maxVals)
+	return vaastypes.GetLastBondedValidatorsUtil(ctx, k.stakingKeeper, maxVals)
 }
 
 // GetLastProviderConsensusActiveValidators returns the `MaxProviderConsensusValidators` many validators with the largest powers
 // from the last bonded validators in the staking module.
 func (k Keeper) GetLastProviderConsensusActiveValidators(ctx sdk.Context) ([]stakingtypes.Validator, error) {
 	maxVals := k.GetMaxProviderConsensusValidators(ctx)
-	return ccv.GetLastBondedValidatorsUtil(ctx, k.stakingKeeper, uint32(maxVals))
+	return vaastypes.GetLastBondedValidatorsUtil(ctx, k.stakingKeeper, uint32(maxVals))
 }
 
 // ComputeConsumerNextValSet computes the consumer next validator set and returns

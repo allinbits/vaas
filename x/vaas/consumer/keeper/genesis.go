@@ -12,7 +12,7 @@ import (
 	abci "github.com/cometbft/cometbft/abci/types"
 
 	"github.com/allinbits/vaas/x/vaas/consumer/types"
-	ccv "github.com/allinbits/vaas/x/vaas/types"
+	vaastypes "github.com/allinbits/vaas/x/vaas/types"
 )
 
 // InitGenesis initializes the CCV consumer state and binds to PortID.
@@ -42,7 +42,7 @@ func (k Keeper) InitGenesis(ctx sdk.Context, state *types.GenesisState) []abci.V
 		return nil
 	}
 
-	k.SetPort(ctx, ccv.ConsumerPortID)
+	k.SetPort(ctx, vaastypes.ConsumerPortID)
 
 	// initialValSet is checked in NewChain case by ValidateGenesis
 	// start a new chain
@@ -93,11 +93,11 @@ func (k Keeper) InitGenesis(ctx sdk.Context, state *types.GenesisState) []abci.V
 		if state.ConnectionId != "" {
 			// initiate CCV channel handshake
 			ccvChannelOpenInitMsg := channeltypes.NewMsgChannelOpenInit(
-				ccv.ConsumerPortID,
-				ccv.Version,
+				vaastypes.ConsumerPortID,
+				vaastypes.Version,
 				channeltypes.ORDERED,
 				[]string{state.ConnectionId},
-				ccv.ProviderPortID,
+				vaastypes.ProviderPortID,
 				"", // signer unused
 			)
 			_, err := k.ChannelOpenInit(ctx, ccvChannelOpenInitMsg)

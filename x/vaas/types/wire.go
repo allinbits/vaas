@@ -13,7 +13,7 @@ func NewValidatorSetChangePacketData(valUpdates []abci.ValidatorUpdate, valUpdat
 	}
 }
 
-// Validate is used for validating the CCV packet data.
+// Validate is used for validating the VAAS packet data.
 func (vsc ValidatorSetChangePacketData) Validate() error {
 	// Note that vsc.ValidatorUpdates can be empty in the case of unbonding
 	// operations w/o changes in the voting power of the validators in the validator set

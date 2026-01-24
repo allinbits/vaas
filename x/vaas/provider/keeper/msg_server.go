@@ -15,7 +15,7 @@ import (
 	tmtypes "github.com/cometbft/cometbft/types"
 
 	"github.com/allinbits/vaas/x/vaas/provider/types"
-	ccvtypes "github.com/allinbits/vaas/x/vaas/types"
+	vaastypes "github.com/allinbits/vaas/x/vaas/types"
 )
 
 type msgServer struct {
@@ -75,7 +75,7 @@ func (k msgServer) AssignConsumerKey(goCtx context.Context, msg *types.MsgAssign
 
 	chainId, err := k.GetConsumerChainId(ctx, msg.ConsumerId)
 	if err != nil {
-		return nil, errorsmod.Wrapf(ccvtypes.ErrInvalidConsumerState, "cannot get consumer chain ID: %s", err.Error())
+		return nil, errorsmod.Wrapf(vaastypes.ErrInvalidConsumerState, "cannot get consumer chain ID: %s", err.Error())
 	}
 
 	k.Logger(ctx).Info("validator assigned consumer key",
@@ -108,14 +108,14 @@ func (k msgServer) SubmitConsumerMisbehaviour(goCtx context.Context, msg *types.
 
 	ctx.EventManager().EmitEvent(
 		sdk.NewEvent(
-			ccvtypes.EventTypeSubmitConsumerMisbehaviour,
+			vaastypes.EventTypeSubmitConsumerMisbehaviour,
 			sdk.NewAttribute(sdk.AttributeKeyModule, types.ModuleName),
 			sdk.NewAttribute(types.AttributeConsumerId, msg.ConsumerId),
 			sdk.NewAttribute(types.AttributeConsumerChainId, msg.Misbehaviour.Header1.Header.ChainID),
-			sdk.NewAttribute(ccvtypes.AttributeConsumerMisbehaviour, msg.Misbehaviour.String()),
-			sdk.NewAttribute(ccvtypes.AttributeMisbehaviourClientId, msg.Misbehaviour.ClientId),
-			sdk.NewAttribute(ccvtypes.AttributeMisbehaviourHeight1, msg.Misbehaviour.Header1.GetHeight().String()),
-			sdk.NewAttribute(ccvtypes.AttributeMisbehaviourHeight2, msg.Misbehaviour.Header2.GetHeight().String()),
+			sdk.NewAttribute(vaastypes.AttributeConsumerMisbehaviour, msg.Misbehaviour.String()),
+			sdk.NewAttribute(vaastypes.AttributeMisbehaviourClientId, msg.Misbehaviour.ClientId),
+			sdk.NewAttribute(vaastypes.AttributeMisbehaviourHeight1, msg.Misbehaviour.Header1.GetHeight().String()),
+			sdk.NewAttribute(vaastypes.AttributeMisbehaviourHeight2, msg.Misbehaviour.Header2.GetHeight().String()),
 			sdk.NewAttribute(types.AttributeSubmitterAddress, msg.Submitter),
 		),
 	)
@@ -144,7 +144,7 @@ func (k msgServer) SubmitConsumerDoubleVoting(goCtx context.Context, msg *types.
 	_, validator := valset.GetByAddress(evidence.VoteA.ValidatorAddress)
 	if validator == nil {
 		return nil, errorsmod.Wrapf(
-			ccvtypes.ErrInvalidDoubleVotingEvidence,
+			vaastypes.ErrInvalidDoubleVotingEvidence,
 			"misbehaving validator %s cannot be found in the infraction block header validator set",
 			evidence.VoteA.ValidatorAddress)
 	}
@@ -162,11 +162,11 @@ func (k msgServer) SubmitConsumerDoubleVoting(goCtx context.Context, msg *types.
 
 	ctx.EventManager().EmitEvent(
 		sdk.NewEvent(
-			ccvtypes.EventTypeSubmitConsumerDoubleVoting,
+			vaastypes.EventTypeSubmitConsumerDoubleVoting,
 			sdk.NewAttribute(sdk.AttributeKeyModule, types.ModuleName),
 			sdk.NewAttribute(types.AttributeConsumerId, msg.ConsumerId),
 			sdk.NewAttribute(types.AttributeConsumerChainId, msg.InfractionBlockHeader.Header.ChainID),
-			sdk.NewAttribute(ccvtypes.AttributeConsumerDoubleVoting, msg.DuplicateVoteEvidence.String()),
+			sdk.NewAttribute(vaastypes.AttributeConsumerDoubleVoting, msg.DuplicateVoteEvidence.String()),
 			sdk.NewAttribute(types.AttributeSubmitterAddress, msg.Submitter),
 		),
 	)
@@ -219,7 +219,7 @@ func (k msgServer) CreateConsumer(goCtx context.Context, msg *types.MsgCreateCon
 
 	if spawnTime, initialized := k.Keeper.InitializeConsumer(ctx, consumerId); initialized {
 		if err := k.Keeper.PrepareConsumerForLaunch(ctx, consumerId, time.Time{}, spawnTime); err != nil {
-			return &resp, errorsmod.Wrapf(ccvtypes.ErrInvalidConsumerState,
+			return &resp, errorsmod.Wrapf(vaastypes.ErrInvalidConsumerState,
 				"prepare consumer for launch, consumerId(%s), spawnTime(%s): %s", consumerId, spawnTime, err.Error())
 		}
 
@@ -277,7 +277,7 @@ func (k msgServer) UpdateConsumer(goCtx context.Context, msg *types.MsgUpdateCon
 
 	chainId, err := k.GetConsumerChainId(ctx, consumerId)
 	if err != nil {
-		return &resp, errorsmod.Wrapf(ccvtypes.ErrInvalidConsumerState, "cannot get consumer chain ID: %s", err.Error())
+		return &resp, errorsmod.Wrapf(vaastypes.ErrInvalidConsumerState, "cannot get consumer chain ID: %s", err.Error())
 	}
 
 	// We only validate and use `NewChainId` if it is not empty (because `NewChainId` is an optional argument)
@@ -327,7 +327,7 @@ func (k msgServer) UpdateConsumer(goCtx context.Context, msg *types.MsgUpdateCon
 	// get the previous spawn time so that we can remove its previously planned spawn time if a new spawn time is provided
 	previousInitializationParameters, err := k.Keeper.GetConsumerInitializationParameters(ctx, consumerId)
 	if err != nil {
-		return &resp, errorsmod.Wrapf(ccvtypes.ErrInvalidConsumerState,
+		return &resp, errorsmod.Wrapf(vaastypes.ErrInvalidConsumerState,
 			"cannot get consumer initialized parameters, consumerId(%s): %s", consumerId, err.Error())
 	}
 	previousSpawnTime := previousInitializationParameters.SpawnTime
@@ -367,12 +367,12 @@ func (k msgServer) UpdateConsumer(goCtx context.Context, msg *types.MsgUpdateCon
 
 	currentOwnerAddress, err := k.Keeper.GetConsumerOwnerAddress(ctx, consumerId)
 	if err != nil {
-		return &resp, errorsmod.Wrapf(ccvtypes.ErrInvalidConsumerState, "cannot retrieve owner address %s: %s", ownerAddress, err.Error())
+		return &resp, errorsmod.Wrapf(vaastypes.ErrInvalidConsumerState, "cannot retrieve owner address %s: %s", ownerAddress, err.Error())
 	}
 
 	if spawnTime, initialized := k.Keeper.InitializeConsumer(ctx, consumerId); initialized {
 		if err := k.Keeper.PrepareConsumerForLaunch(ctx, consumerId, previousSpawnTime, spawnTime); err != nil {
-			return &resp, errorsmod.Wrapf(ccvtypes.ErrInvalidConsumerState,
+			return &resp, errorsmod.Wrapf(vaastypes.ErrInvalidConsumerState,
 				"prepare consumer for launch, consumerId(%s), previousSpawnTime(%s), spawnTime(%s): %s",
 				consumerId, previousSpawnTime, spawnTime, err.Error())
 		}
@@ -416,7 +416,7 @@ func (k msgServer) RemoveConsumer(goCtx context.Context, msg *types.MsgRemoveCon
 
 	chainId, err := k.GetConsumerChainId(ctx, consumerId)
 	if err != nil {
-		return &resp, errorsmod.Wrapf(ccvtypes.ErrInvalidConsumerState, "cannot get consumer chain ID: %s", err.Error())
+		return &resp, errorsmod.Wrapf(vaastypes.ErrInvalidConsumerState, "cannot get consumer chain ID: %s", err.Error())
 	}
 
 	if msg.Owner != ownerAddress {

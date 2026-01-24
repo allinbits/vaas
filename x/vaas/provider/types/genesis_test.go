@@ -13,7 +13,7 @@ import (
 
 	"github.com/allinbits/vaas/testutil/crypto"
 	"github.com/allinbits/vaas/x/vaas/provider/types"
-	ccv "github.com/allinbits/vaas/x/vaas/types"
+	vaastypes "github.com/allinbits/vaas/x/vaas/types"
 )
 
 // Tests validation of consumer states and params within a provider genesis state
@@ -102,7 +102,7 @@ func TestValidateGenesisState(t *testing.T) {
 				[]types.ConsumerState{{ChainId: "chainid-1", ChannelId: "channelid", ClientId: "client-id"}},
 				types.NewParams(types.DefaultTemplateClient(),
 					"0.0", // 0 trusting period fraction here
-					ccv.DefaultCCVTimeoutPeriod, 600, 180),
+					vaastypes.DefaultVAASTimeoutPeriod, 600, 180),
 				nil,
 				nil,
 				nil,
@@ -110,7 +110,7 @@ func TestValidateGenesisState(t *testing.T) {
 			false,
 		},
 		{
-			"invalid params, zero ccv timeout",
+			"invalid params, zero VAAS timeout",
 			types.NewGenesisState(
 				types.DefaultValsetUpdateID,
 				nil,
@@ -172,7 +172,7 @@ func TestValidateGenesisState(t *testing.T) {
 				[]types.ConsumerState{{
 					ChainId: "chainid", ChannelId: "channel-0", ClientId: "client-id",
 					ConsumerGenesis:      getInitialConsumerGenesis(t, "chainid", false),
-					PendingValsetChanges: []ccv.ValidatorSetChangePacketData{{}},
+					PendingValsetChanges: []vaastypes.ValidatorSetChangePacketData{{}},
 				}},
 				types.DefaultParams(),
 				nil,
@@ -196,7 +196,7 @@ func TestValidateGenesisState(t *testing.T) {
 	}
 }
 
-func getInitialConsumerGenesis(t *testing.T, chainID string, preVAAS bool) ccv.ConsumerGenesisState {
+func getInitialConsumerGenesis(t *testing.T, chainID string, preVAAS bool) vaastypes.ConsumerGenesisState {
 	t.Helper()
 	// generate validator public key
 	cId := crypto.NewCryptoIdentityFromIntSeed(239668)
@@ -227,8 +227,8 @@ func getInitialConsumerGenesis(t *testing.T, chainID string, preVAAS bool) ccv.C
 		consensusState = ibctmtypes.NewConsensusState(time.Now(), commitmenttypes.NewMerkleRoot([]byte("apphash")), valHash)
 	}
 
-	params := ccv.DefaultParams()
+	params := vaastypes.DefaultParams()
 	params.Enabled = true
 
-	return *ccv.NewInitialConsumerGenesisState(clientState, consensusState, valUpdates, preVAAS, connectionId, params)
+	return *vaastypes.NewInitialConsumerGenesisState(clientState, consensusState, valUpdates, preVAAS, connectionId, params)
 }

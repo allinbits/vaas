@@ -1,9 +1,9 @@
 package types
 
-// CCV events
+// VAAS events
 const (
 	EventTypeTimeout                    = "timeout"
-	EventTypePacket                     = "ccv_packet"
+	EventTypePacket                     = "vaas_packet"
 	EventTypeChannelEstablished         = "channel_established"
 	EventTypeFeeTransferChannelOpened   = "fee_transfer_channel_opened"
 	EventTypeConsumerClientCreated      = "consumer_client_created"

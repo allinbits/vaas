@@ -26,7 +26,7 @@ import (
 
 	consumertypes "github.com/allinbits/vaas/x/vaas/consumer/types"
 	"github.com/allinbits/vaas/x/vaas/provider/types"
-	ccv "github.com/allinbits/vaas/x/vaas/types"
+	vaastypes "github.com/allinbits/vaas/x/vaas/types"
 )
 
 // Keeper defines the Cross-Chain Validation Provider Keeper
@@ -37,14 +37,14 @@ type Keeper struct {
 	storeKey storetypes.StoreKey
 
 	cdc                codec.BinaryCodec
-	channelKeeper      ccv.ChannelKeeper
-	connectionKeeper   ccv.ConnectionKeeper
-	accountKeeper      ccv.AccountKeeper
-	clientKeeper       ccv.ClientKeeper
-	stakingKeeper      ccv.StakingKeeper
-	slashingKeeper     ccv.SlashingKeeper
-	distributionKeeper ccv.DistributionKeeper
-	bankKeeper         ccv.BankKeeper
+	channelKeeper      vaastypes.ChannelKeeper
+	connectionKeeper   vaastypes.ConnectionKeeper
+	accountKeeper      vaastypes.AccountKeeper
+	clientKeeper       vaastypes.ClientKeeper
+	stakingKeeper      vaastypes.StakingKeeper
+	slashingKeeper     vaastypes.SlashingKeeper
+	distributionKeeper vaastypes.DistributionKeeper
+	bankKeeper         vaastypes.BankKeeper
 	govKeeper          govkeeper.Keeper
 	feeCollectorName   string
 
@@ -55,11 +55,11 @@ type Keeper struct {
 // NewKeeper creates a new provider Keeper instance
 func NewKeeper(
 	cdc codec.BinaryCodec, key storetypes.StoreKey, paramSpace paramtypes.Subspace,
-	channelKeeper ccv.ChannelKeeper,
-	connectionKeeper ccv.ConnectionKeeper, clientKeeper ccv.ClientKeeper,
-	stakingKeeper ccv.StakingKeeper, slashingKeeper ccv.SlashingKeeper,
-	accountKeeper ccv.AccountKeeper,
-	distributionKeeper ccv.DistributionKeeper, bankKeeper ccv.BankKeeper,
+	channelKeeper vaastypes.ChannelKeeper,
+	connectionKeeper vaastypes.ConnectionKeeper, clientKeeper vaastypes.ClientKeeper,
+	stakingKeeper vaastypes.StakingKeeper, slashingKeeper vaastypes.SlashingKeeper,
+	accountKeeper vaastypes.AccountKeeper,
+	distributionKeeper vaastypes.DistributionKeeper, bankKeeper vaastypes.BankKeeper,
 	govKeeper govkeeper.Keeper,
 	authority string,
 	validatorAddressCodec, consensusAddressCodec addresscodec.Codec,
@@ -114,23 +114,23 @@ func (k Keeper) mustValidateFields() {
 		panic("validator and/or consensus address codec are nil")
 	}
 
-	ccv.PanicIfZeroOrNil(k.cdc, "cdc")                                     // 1
-	ccv.PanicIfZeroOrNil(k.storeKey, "storeKey")                           // 2
-	ccv.PanicIfZeroOrNil(k.channelKeeper, "channelKeeper")                 // 4
-	ccv.PanicIfZeroOrNil(k.connectionKeeper, "connectionKeeper")           // 6
-	ccv.PanicIfZeroOrNil(k.accountKeeper, "accountKeeper")                 // 7
-	ccv.PanicIfZeroOrNil(k.clientKeeper, "clientKeeper")                   // 8
-	ccv.PanicIfZeroOrNil(k.stakingKeeper, "stakingKeeper")                 // 9
-	ccv.PanicIfZeroOrNil(k.slashingKeeper, "slashingKeeper")               // 10
-	ccv.PanicIfZeroOrNil(k.distributionKeeper, "distributionKeeper")       // 11
-	ccv.PanicIfZeroOrNil(k.bankKeeper, "bankKeeper")                       // 12
-	ccv.PanicIfZeroOrNil(k.feeCollectorName, "feeCollectorName")           // 13
-	ccv.PanicIfZeroOrNil(k.authority, "authority")                         // 14
-	ccv.PanicIfZeroOrNil(k.validatorAddressCodec, "validatorAddressCodec") // 15
-	ccv.PanicIfZeroOrNil(k.consensusAddressCodec, "consensusAddressCodec") // 16
+	vaastypes.PanicIfZeroOrNil(k.cdc, "cdc")                                     // 1
+	vaastypes.PanicIfZeroOrNil(k.storeKey, "storeKey")                           // 2
+	vaastypes.PanicIfZeroOrNil(k.channelKeeper, "channelKeeper")                 // 4
+	vaastypes.PanicIfZeroOrNil(k.connectionKeeper, "connectionKeeper")           // 6
+	vaastypes.PanicIfZeroOrNil(k.accountKeeper, "accountKeeper")                 // 7
+	vaastypes.PanicIfZeroOrNil(k.clientKeeper, "clientKeeper")                   // 8
+	vaastypes.PanicIfZeroOrNil(k.stakingKeeper, "stakingKeeper")                 // 9
+	vaastypes.PanicIfZeroOrNil(k.slashingKeeper, "slashingKeeper")               // 10
+	vaastypes.PanicIfZeroOrNil(k.distributionKeeper, "distributionKeeper")       // 11
+	vaastypes.PanicIfZeroOrNil(k.bankKeeper, "bankKeeper")                       // 12
+	vaastypes.PanicIfZeroOrNil(k.feeCollectorName, "feeCollectorName")           // 13
+	vaastypes.PanicIfZeroOrNil(k.authority, "authority")                         // 14
+	vaastypes.PanicIfZeroOrNil(k.validatorAddressCodec, "validatorAddressCodec") // 15
+	vaastypes.PanicIfZeroOrNil(k.consensusAddressCodec, "consensusAddressCodec") // 16
 
 	// this can be nil in tests
-	// ccv.PanicIfZeroOrNil(k.govKeeper, "govKeeper")                         // 17
+	// vaastypes.PanicIfZeroOrNil(k.govKeeper, "govKeeper")                         // 17
 }
 
 func (k *Keeper) SetGovKeeper(govKeeper govkeeper.Keeper) {
@@ -249,7 +249,7 @@ func (k Keeper) GetAllChannelToConsumers(ctx sdk.Context) (channelsToConsumers [
 	return channelsToConsumers
 }
 
-func (k Keeper) SetConsumerGenesis(ctx sdk.Context, consumerId string, gen ccv.ConsumerGenesisState) error {
+func (k Keeper) SetConsumerGenesis(ctx sdk.Context, consumerId string, gen vaastypes.ConsumerGenesisState) error {
 	store := ctx.KVStore(k.storeKey)
 	bz, err := gen.Marshal()
 	if err != nil {
@@ -260,14 +260,14 @@ func (k Keeper) SetConsumerGenesis(ctx sdk.Context, consumerId string, gen ccv.C
 	return nil
 }
 
-func (k Keeper) GetConsumerGenesis(ctx sdk.Context, consumerId string) (ccv.ConsumerGenesisState, bool) {
+func (k Keeper) GetConsumerGenesis(ctx sdk.Context, consumerId string) (vaastypes.ConsumerGenesisState, bool) {
 	store := ctx.KVStore(k.storeKey)
 	bz := store.Get(types.ConsumerGenesisKey(consumerId))
 	if bz == nil {
-		return ccv.ConsumerGenesisState{}, false
+		return vaastypes.ConsumerGenesisState{}, false
 	}
 
-	var data ccv.ConsumerGenesisState
+	var data vaastypes.ConsumerGenesisState
 	if err := data.Unmarshal(bz); err != nil {
 		// An error here would indicate something is very wrong,
 		// the ConsumerGenesis is assumed to be correctly serialized in SetConsumerGenesis.
@@ -295,11 +295,11 @@ func (k Keeper) VerifyConsumerChain(ctx sdk.Context, channelID string, connectio
 
 	consumerId, found := k.GetClientIdToConsumerId(ctx, clientId)
 	if !found {
-		return errorsmod.Wrapf(ccv.ErrConsumerChainNotFound, "cannot find consumer id associated with client id: %s", clientId)
+		return errorsmod.Wrapf(vaastypes.ErrConsumerChainNotFound, "cannot find consumer id associated with client id: %s", clientId)
 	}
 	ccvClientId, found := k.GetConsumerClientId(ctx, consumerId)
 	if !found {
-		return errorsmod.Wrapf(ccv.ErrClientNotFound, "cannot find client for consumer chain %s", consumerId)
+		return errorsmod.Wrapf(vaastypes.ErrClientNotFound, "cannot find client for consumer chain %s", consumerId)
 	}
 	if ccvClientId != clientId {
 		return errorsmod.Wrapf(types.ErrInvalidConsumerClient, "CCV channel must be built on top of CCV client. expected %s, got %s", ccvClientId, clientId)
@@ -307,7 +307,7 @@ func (k Keeper) VerifyConsumerChain(ctx sdk.Context, channelID string, connectio
 
 	// Verify that there isn't already a CCV channel for the consumer chain
 	if prevChannel, ok := k.GetConsumerIdToChannelId(ctx, consumerId); ok {
-		return errorsmod.Wrapf(ccv.ErrDuplicateChannel, "CCV channel with ID: %s already created for consumer chain %s", prevChannel, consumerId)
+		return errorsmod.Wrapf(vaastypes.ErrDuplicateChannel, "CCV channel with ID: %s already created for consumer chain %s", prevChannel, consumerId)
 	}
 	return nil
 }
@@ -320,7 +320,7 @@ func (k Keeper) VerifyConsumerChain(ctx sdk.Context, channelID string, connectio
 //
 // SetConsumerChain is called by OnChanOpenConfirm.
 func (k Keeper) SetConsumerChain(ctx sdk.Context, channelID string) error {
-	channel, ok := k.channelKeeper.GetChannel(ctx, ccv.ProviderPortID, channelID)
+	channel, ok := k.channelKeeper.GetChannel(ctx, vaastypes.ProviderPortID, channelID)
 	if !ok {
 		return errorsmod.Wrapf(channeltypes.ErrChannelNotFound, "channel not found for channel ID: %s", channelID)
 	}
@@ -339,7 +339,7 @@ func (k Keeper) SetConsumerChain(ctx sdk.Context, channelID string) error {
 	// Verify that there isn't already a CCV channel for the consumer chain
 	chainID := tmClient.ChainId
 	if prevChannelID, ok := k.GetConsumerIdToChannelId(ctx, consumerId); ok {
-		return errorsmod.Wrapf(ccv.ErrDuplicateChannel, "CCV channel with ID: %s already created for consumer chain with id %s", prevChannelID, consumerId)
+		return errorsmod.Wrapf(vaastypes.ErrDuplicateChannel, "CCV channel with ID: %s already created for consumer chain with id %s", prevChannelID, consumerId)
 	}
 
 	// the CCV channel is established:
@@ -352,7 +352,7 @@ func (k Keeper) SetConsumerChain(ctx sdk.Context, channelID string) error {
 	// emit event on successful addition
 	ctx.EventManager().EmitEvent(
 		sdk.NewEvent(
-			ccv.EventTypeChannelEstablished,
+			vaastypes.EventTypeChannelEstablished,
 			sdk.NewAttribute(sdk.AttributeKeyModule, consumertypes.ModuleName),
 			sdk.NewAttribute(types.AttributeConsumerId, consumerId),
 			sdk.NewAttribute(types.AttributeConsumerChainId, chainID),
@@ -389,7 +389,7 @@ func (k Keeper) getUnderlyingClient(ctx sdk.Context, connectionID string) (
 
 // chanCloseInit defines a wrapper function for the channel Keeper's function
 func (k Keeper) chanCloseInit(ctx sdk.Context, channelID string) error {
-	return k.channelKeeper.ChanCloseInit(ctx, ccv.ProviderPortID, channelID)
+	return k.channelKeeper.ChanCloseInit(ctx, vaastypes.ProviderPortID, channelID)
 }
 
 func (k Keeper) IncrementValidatorSetUpdateId(ctx sdk.Context) {
@@ -491,13 +491,13 @@ func (k Keeper) DeleteInitChainHeight(ctx sdk.Context, consumerId string) {
 }
 
 // GetPendingVSCPackets returns the list of pending ValidatorSetChange packets stored under consumer id
-func (k Keeper) GetPendingVSCPackets(ctx sdk.Context, consumerId string) []ccv.ValidatorSetChangePacketData {
+func (k Keeper) GetPendingVSCPackets(ctx sdk.Context, consumerId string) []vaastypes.ValidatorSetChangePacketData {
 	var packets types.ValidatorSetChangePackets
 
 	store := ctx.KVStore(k.storeKey)
 	bz := store.Get(types.PendingVSCsKey(consumerId))
 	if bz == nil {
-		return []ccv.ValidatorSetChangePacketData{}
+		return []vaastypes.ValidatorSetChangePacketData{}
 	}
 	if err := packets.Unmarshal(bz); err != nil {
 		// An error here would indicate something is very wrong,
@@ -509,7 +509,7 @@ func (k Keeper) GetPendingVSCPackets(ctx sdk.Context, consumerId string) []ccv.V
 
 // AppendPendingVSCPackets adds the given ValidatorSetChange packet to the list
 // of pending ValidatorSetChange packets stored under consumer id
-func (k Keeper) AppendPendingVSCPackets(ctx sdk.Context, consumerId string, newPackets ...ccv.ValidatorSetChangePacketData) {
+func (k Keeper) AppendPendingVSCPackets(ctx sdk.Context, consumerId string, newPackets ...vaastypes.ValidatorSetChangePacketData) {
 	pds := append(k.GetPendingVSCPackets(ctx, consumerId), newPackets...)
 
 	store := ctx.KVStore(k.storeKey)

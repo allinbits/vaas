@@ -14,7 +14,7 @@ import (
 	tmprotocrypto "github.com/cometbft/cometbft/proto/tendermint/crypto"
 
 	"github.com/allinbits/vaas/x/vaas/provider/types"
-	ccvtypes "github.com/allinbits/vaas/x/vaas/types"
+	vaastypes "github.com/allinbits/vaas/x/vaas/types"
 )
 
 // ParseConsumerKey parses the ED25519 PubKey`consumerKey` from a JSON string
@@ -410,7 +410,7 @@ func (k Keeper) AssignConsumerKey(
 			"cannot assign a key to a consumer chain that is not in the registered, initialized, or launched phase: %s", consumerId)
 	}
 
-	consAddrTmp, err := ccvtypes.TMCryptoPublicKeyToConsAddr(consumerKey)
+	consAddrTmp, err := vaastypes.TMCryptoPublicKeyToConsAddr(consumerKey)
 	if err != nil {
 		return err
 	}
@@ -452,7 +452,7 @@ func (k Keeper) AssignConsumerKey(
 
 	// get the previous key assigned for this validator on this consumer chain
 	if oldConsumerKey, found := k.GetValidatorConsumerPubKey(ctx, consumerId, providerAddr); found {
-		oldConsumerAddrTmp, err := ccvtypes.TMCryptoPublicKeyToConsAddr(oldConsumerKey)
+		oldConsumerAddrTmp, err := vaastypes.TMCryptoPublicKeyToConsAddr(oldConsumerKey)
 		if err != nil {
 			return err
 		}

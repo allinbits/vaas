@@ -21,7 +21,7 @@ import (
 	testkeeper "github.com/allinbits/vaas/testutil/keeper"
 	providerkeeper "github.com/allinbits/vaas/x/vaas/provider/keeper"
 	"github.com/allinbits/vaas/x/vaas/provider/types"
-	ccvtypes "github.com/allinbits/vaas/x/vaas/types"
+	vaastypes "github.com/allinbits/vaas/x/vaas/types"
 )
 
 func TestValidatorConsumerPubKeyCRUD(t *testing.T) {
@@ -322,7 +322,7 @@ func checkCorrectPruningProperty(ctx sdk.Context, k providerkeeper.Keeper, chain
 		// Try to find a validator who has this consumer address currently assigned
 		isCurrentlyAssigned := false
 		for _, valconsPubKey := range k.GetAllValidatorConsumerPubKeys(ctx, &valByConsAddr.ChainId) {
-			consumerAddr, _ := ccvtypes.TMCryptoPublicKeyToConsAddr(*valconsPubKey.ConsumerKey)
+			consumerAddr, _ := vaastypes.TMCryptoPublicKeyToConsAddr(*valconsPubKey.ConsumerKey)
 			if consumerAddr.Equals(sdk.ConsAddress(valByConsAddr.ConsumerAddr)) {
 				isCurrentlyAssigned = true
 				break
@@ -647,7 +647,7 @@ func (vs *ValSet) apply(updates []abci.ValidatorUpdate) {
 	// note: an insertion index should always be found
 	for _, u := range updates {
 		for i, id := range vs.identities { // n2 looping but n is tiny
-			cons, _ := ccvtypes.TMCryptoPublicKeyToConsAddr(u.PubKey)
+			cons, _ := vaastypes.TMCryptoPublicKeyToConsAddr(u.PubKey)
 			if id.SDKValConsAddress().Equals(cons) {
 				vs.power[i] = u.Power
 			}
@@ -877,7 +877,7 @@ func TestSimulatedAssignmentsAndUpdateApplication(t *testing.T) {
 						// Use default if unassigned
 						ck = idP.TMProtoCryptoPublicKey()
 					}
-					consC, err := ccvtypes.TMCryptoPublicKeyToConsAddr(ck)
+					consC, err := vaastypes.TMCryptoPublicKeyToConsAddr(ck)
 					require.NoError(t, err)
 					// Find the corresponding consumer validator (must always be found)
 					for j, idC := range consumerValset.identities {

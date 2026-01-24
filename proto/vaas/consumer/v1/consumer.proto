@@ -10,15 +10,15 @@ import "google/protobuf/timestamp.proto";
 
 //
 // Note any type defined in this file is ONLY used internally to the consumer
-// CCV module. These schemas can change with proper consideration of
+// VAAS module. These schemas can change with proper consideration of
 // compatibility or migration.
 
 // CrossChainValidator defines the type used to store validator information
-// internal to the consumer CCV module.  Note one cross chain validator entry is
+// internal to the consumer VAAS module.  Note one cross chain validator entry is
 // persisted for each consumer validator, where incoming VSC packets update this
 // data, which is eventually forwarded to comet for consumer chain consensus.
 //
-// Note this type is only used internally to the consumer CCV module.
+// Note this type is only used internally to the consumer VAAS module.
 message CrossChainValidator {
   bytes address = 1;
   int64 power = 2;

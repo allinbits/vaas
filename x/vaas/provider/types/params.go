@@ -10,7 +10,7 @@ import (
 
 	paramtypes "github.com/cosmos/cosmos-sdk/x/params/types"
 
-	ccvtypes "github.com/allinbits/vaas/x/vaas/types"
+	vaastypes "github.com/allinbits/vaas/x/vaas/types"
 )
 
 const (
@@ -34,7 +34,7 @@ const (
 
 // Reflection based keys for params subspace
 // Legacy: usage of x/params for parameters is deprecated.
-// Use x/ccv/provider/keeper/params instead
+// Use x/vaas/provider/keeper/params instead
 // [DEPRECATED]
 var (
 	KeyTemplateClient                 = []byte("TemplateClient")
@@ -52,14 +52,14 @@ func ParamKeyTable() paramtypes.KeyTable {
 func NewParams(
 	cs *ibctmtypes.ClientState,
 	trustingPeriodFraction string,
-	ccvTimeoutPeriod time.Duration,
+	vaasTimeoutPeriod time.Duration,
 	blocksPerEpoch int64,
 	maxProviderConsensusValidators int64,
 ) Params {
 	return Params{
 		TemplateClient:                 cs,
 		TrustingPeriodFraction:         trustingPeriodFraction,
-		CcvTimeoutPeriod:               ccvTimeoutPeriod,
+		VaasTimeoutPeriod:              vaasTimeoutPeriod,
 		BlocksPerEpoch:                 blocksPerEpoch,
 		MaxProviderConsensusValidators: maxProviderConsensusValidators,
 	}
@@ -86,13 +86,13 @@ func DefaultParams() Params {
 	return NewParams(
 		DefaultTemplateClient(),
 		DefaultTrustingPeriodFraction,
-		ccvtypes.DefaultCCVTimeoutPeriod,
+		vaastypes.DefaultVAASTimeoutPeriod,
 		DefaultBlocksPerEpoch,
 		DefaultMaxProviderConsensusValidators,
 	)
 }
 
-// Validate all ccv-provider module parameters
+// Validate all VAAS-provider module parameters
 func (p Params) Validate() error {
 	if p.TemplateClient == nil {
 		return fmt.Errorf("template client is nil")
@@ -100,16 +100,16 @@ func (p Params) Validate() error {
 	if err := ValidateTemplateClient(*p.TemplateClient); err != nil {
 		return err
 	}
-	if err := ccvtypes.ValidateStringFractionNonZero(p.TrustingPeriodFraction); err != nil {
+	if err := vaastypes.ValidateStringFractionNonZero(p.TrustingPeriodFraction); err != nil {
 		return fmt.Errorf("trusting period fraction is invalid: %s", err)
 	}
-	if err := ccvtypes.ValidateDuration(p.CcvTimeoutPeriod); err != nil {
-		return fmt.Errorf("ccv timeout period is invalid: %s", err)
+	if err := vaastypes.ValidateDuration(p.VaasTimeoutPeriod); err != nil {
+		return fmt.Errorf("VAAS timeout period is invalid: %s", err)
 	}
-	if err := ccvtypes.ValidatePositiveInt64(p.BlocksPerEpoch); err != nil {
+	if err := vaastypes.ValidatePositiveInt64(p.BlocksPerEpoch); err != nil {
 		return fmt.Errorf("blocks per epoch is invalid: %s", err)
 	}
-	if err := ccvtypes.ValidatePositiveInt64(p.MaxProviderConsensusValidators); err != nil {
+	if err := vaastypes.ValidatePositiveInt64(p.MaxProviderConsensusValidators); err != nil {
 		return fmt.Errorf("max provider consensus validators is invalid: %s", err)
 	}
 	return nil
@@ -119,10 +119,10 @@ func (p Params) Validate() error {
 func (p *Params) ParamSetPairs() paramtypes.ParamSetPairs {
 	return paramtypes.ParamSetPairs{
 		paramtypes.NewParamSetPair(KeyTemplateClient, p.TemplateClient, ValidateTemplateClient),
-		paramtypes.NewParamSetPair(KeyTrustingPeriodFraction, p.TrustingPeriodFraction, ccvtypes.ValidateStringFraction),
-		paramtypes.NewParamSetPair(ccvtypes.KeyCCVTimeoutPeriod, p.CcvTimeoutPeriod, ccvtypes.ValidateDuration),
-		paramtypes.NewParamSetPair(KeyBlocksPerEpoch, p.BlocksPerEpoch, ccvtypes.ValidatePositiveInt64),
-		paramtypes.NewParamSetPair(KeyMaxProviderConsensusValidators, p.MaxProviderConsensusValidators, ccvtypes.ValidatePositiveInt64),
+		paramtypes.NewParamSetPair(KeyTrustingPeriodFraction, p.TrustingPeriodFraction, vaastypes.ValidateStringFraction),
+		paramtypes.NewParamSetPair(vaastypes.KeyVAASTimeoutPeriod, p.VaasTimeoutPeriod, vaastypes.ValidateDuration),
+		paramtypes.NewParamSetPair(KeyBlocksPerEpoch, p.BlocksPerEpoch, vaastypes.ValidatePositiveInt64),
+		paramtypes.NewParamSetPair(KeyMaxProviderConsensusValidators, p.MaxProviderConsensusValidators, vaastypes.ValidatePositiveInt64),
 	}
 }
 
@@ -138,13 +138,13 @@ func ValidateTemplateClient(i interface{}) error {
 	// populate zeroed fields with valid fields
 	copiedClient.ChainId = "chainid"
 
-	trustPeriod, err := ccvtypes.CalculateTrustPeriod(ccvtypes.DefaultConsumerUnbondingPeriod, DefaultTrustingPeriodFraction)
+	trustPeriod, err := vaastypes.CalculateTrustPeriod(vaastypes.DefaultConsumerUnbondingPeriod, DefaultTrustingPeriodFraction)
 	if err != nil {
 		return fmt.Errorf("invalid TrustPeriodFraction: %T", err)
 	}
 	copiedClient.TrustingPeriod = trustPeriod
 
-	copiedClient.UnbondingPeriod = ccvtypes.DefaultConsumerUnbondingPeriod
+	copiedClient.UnbondingPeriod = vaastypes.DefaultConsumerUnbondingPeriod
 	copiedClient.LatestHeight = clienttypes.NewHeight(0, 1)
 
 	if err := copiedClient.Validate(); err != nil {

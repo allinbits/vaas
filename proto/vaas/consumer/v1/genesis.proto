@@ -12,7 +12,7 @@ import "vaas/v1/wire.proto";
 import "google/protobuf/timestamp.proto";
 import "tendermint/abci/types.proto";
 
-// GenesisState defines the CCV consumer genesis state
+// GenesisState defines the VAAS consumer genesis state
 //
 // Note: this type is only used on consumer side and references shared types
 // with provider
@@ -32,14 +32,14 @@ message GenesisState {
   bool preVAAS = 9;
   vaas.v1.ProviderInfo provider = 10 [ (gogoproto.nullable) = false ];
   // The ID of the connection end on the consumer chain on top of which the
-  // CCV channel will be established. If connection_id == "", a new client of
+  // VAAS channel will be established. If connection_id == "", a new client of
   // the provider chain and a new connection on top of this client are created.
   // The new client is initialized using provider.client_state and
   // provider.consensus_state.
   string connection_id = 11;
 }
 
-// HeightValsetUpdateID represents a mapping internal to the consumer CCV module
+// HeightValsetUpdateID represents a mapping internal to the consumer VAAS module
 // which links a block height to each recv valset update id.
 message HeightToValsetUpdateID {
   uint64 height = 1;

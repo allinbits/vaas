@@ -15,11 +15,11 @@ import (
 	"github.com/allinbits/vaas/x/vaas/provider/types"
 )
 
-// NewQueryCmd returns a root CLI command handler for all x/ccv/provider query commands.
+// NewQueryCmd returns a root CLI command handler for all x/vaas/provider query commands.
 func NewQueryCmd() *cobra.Command {
 	cmd := &cobra.Command{
 		Use:                        types.ModuleName,
-		Short:                      "Querying commands for the ccv provider module",
+		Short:                      "Querying commands for the VAAS provider module",
 		DisableFlagParsing:         true,
 		SuggestionsMinimumDistance: 2,
 		RunE:                       client.ValidateCmd,

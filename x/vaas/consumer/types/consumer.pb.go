@@ -27,11 +27,11 @@ var _ = math.Inf
 const _ = proto.GoGoProtoPackageIsVersion3 // please upgrade the proto package
 
 // CrossChainValidator defines the type used to store validator information
-// internal to the consumer CCV module.  Note one cross chain validator entry is
+// internal to the consumer VAAS module.  Note one cross chain validator entry is
 // persisted for each consumer validator, where incoming VSC packets update this
 // data, which is eventually forwarded to comet for consumer chain consensus.
 //
-// Note this type is only used internally to the consumer CCV module.
+// Note this type is only used internally to the consumer VAAS module.
 type CrossChainValidator struct {
 	Address []byte `protobuf:"bytes,1,opt,name=address,proto3" json:"address,omitempty"`
 	Power   int64  `protobuf:"varint,2,opt,name=power,proto3" json:"power,omitempty"`

@@ -7,26 +7,26 @@ import (
 	"github.com/stretchr/testify/require"
 
 	testkeeper "github.com/allinbits/vaas/testutil/keeper"
-	ccv "github.com/allinbits/vaas/x/vaas/types"
+	vaastypes "github.com/allinbits/vaas/x/vaas/types"
 )
 
 // TestParams tests getters/setters for consumer params
 func TestParams(t *testing.T) {
 	consumerKeeper, ctx, ctrl, _ := testkeeper.GetConsumerKeeperAndCtx(t, testkeeper.NewInMemKeeperParams(t))
 	defer ctrl.Finish()
-	consumerKeeper.SetParams(ctx, ccv.DefaultParams())
+	consumerKeeper.SetParams(ctx, vaastypes.DefaultParams())
 
-	expParams := ccv.NewParams(
+	expParams := vaastypes.NewParams(
 		false,
-		ccv.DefaultCCVTimeoutPeriod,
-		ccv.DefaultHistoricalEntries,
-		ccv.DefaultConsumerUnbondingPeriod,
+		vaastypes.DefaultVAASTimeoutPeriod,
+		vaastypes.DefaultHistoricalEntries,
+		vaastypes.DefaultConsumerUnbondingPeriod,
 	) // these are the default params, IBC suite independently sets enabled=true
 
 	params := consumerKeeper.GetConsumerParams(ctx)
 	require.Equal(t, expParams, params)
 
-	newParams := ccv.NewParams(false, 7*24*time.Hour, 500, 24*21*time.Hour)
+	newParams := vaastypes.NewParams(false, 7*24*time.Hour, 500, 24*21*time.Hour)
 	consumerKeeper.SetParams(ctx, newParams)
 	params = consumerKeeper.GetConsumerParams(ctx)
 	require.Equal(t, newParams, params)

@@ -7,8 +7,8 @@ import (
 )
 
 const (
-	// ModuleName defines the CCV consumer module name
-	ModuleName = "ccvconsumer"
+	// ModuleName defines the VAAS consumer module name
+	ModuleName = "vaasconsumer"
 
 	// StoreKey is the store key string for IBC consumer
 	StoreKey = ModuleName

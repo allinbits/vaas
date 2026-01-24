@@ -8,7 +8,7 @@ import (
 
 	errorsmod "cosmossdk.io/errors"
 
-	ccv "github.com/allinbits/vaas/x/vaas/types"
+	vaastypes "github.com/allinbits/vaas/x/vaas/types"
 )
 
 func NewGenesisState(
@@ -41,19 +41,19 @@ func DefaultGenesisState() *GenesisState {
 
 func (gs GenesisState) Validate() error {
 	if gs.ValsetUpdateId == 0 {
-		return errorsmod.Wrap(ccv.ErrInvalidGenesis, "valset update ID cannot be equal to zero")
+		return errorsmod.Wrap(vaastypes.ErrInvalidGenesis, "valset update ID cannot be equal to zero")
 	}
 
 	if len(gs.ValsetUpdateIdToHeight) > 0 {
 		// check only the first tuple of the list since it is ordered by VSC ID
 		if gs.ValsetUpdateIdToHeight[0].ValsetUpdateId == 0 {
-			return errorsmod.Wrap(ccv.ErrInvalidGenesis, "valset update ID cannot be equal to zero")
+			return errorsmod.Wrap(vaastypes.ErrInvalidGenesis, "valset update ID cannot be equal to zero")
 		}
 	}
 
 	for _, cs := range gs.ConsumerStates {
 		if err := cs.Validate(); err != nil {
-			return errorsmod.Wrap(ccv.ErrInvalidGenesis, fmt.Sprintf("%s: for consumer chain id: %s", err, cs.ChainId))
+			return errorsmod.Wrap(vaastypes.ErrInvalidGenesis, fmt.Sprintf("%s: for consumer chain id: %s", err, cs.ChainId))
 		}
 	}
 

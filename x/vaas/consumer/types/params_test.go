@@ -6,32 +6,32 @@ import (
 
 	"github.com/stretchr/testify/require"
 
-	ccvtypes "github.com/allinbits/vaas/x/vaas/types"
+	vaastypes "github.com/allinbits/vaas/x/vaas/types"
 )
 
 // Tests the validation of consumer params that happens at genesis
 func TestValidateParams(t *testing.T) {
 	testCases := []struct {
 		name    string
-		params  ccvtypes.ConsumerParams
+		params  vaastypes.ConsumerParams
 		expPass bool
 	}{
-		{"default params", ccvtypes.DefaultParams(), true},
+		{"default params", vaastypes.DefaultParams(), true},
 		{
 			"custom valid params",
-			ccvtypes.NewParams(true, ccvtypes.DefaultCCVTimeoutPeriod, 1000, 24*21*time.Hour), true,
+			vaastypes.NewParams(true, vaastypes.DefaultVAASTimeoutPeriod, 1000, 24*21*time.Hour), true,
 		},
 		{
-			"custom invalid params, ccv timeout",
-			ccvtypes.NewParams(true, 0, 1000, 24*21*time.Hour), false,
+			"custom invalid params, VAAS timeout",
+			vaastypes.NewParams(true, 0, 1000, 24*21*time.Hour), false,
 		},
 		{
 			"custom invalid params, negative num historical entries",
-			ccvtypes.NewParams(true, ccvtypes.DefaultCCVTimeoutPeriod, -100, 24*21*time.Hour), false,
+			vaastypes.NewParams(true, vaastypes.DefaultVAASTimeoutPeriod, -100, 24*21*time.Hour), false,
 		},
 		{
 			"custom invalid params, negative unbonding period",
-			ccvtypes.NewParams(true, ccvtypes.DefaultCCVTimeoutPeriod, 1000, -24*21*time.Hour), false,
+			vaastypes.NewParams(true, vaastypes.DefaultVAASTimeoutPeriod, 1000, -24*21*time.Hour), false,
 		},
 	}
 

@@ -9,13 +9,13 @@ import (
 
 	sdk "github.com/cosmos/cosmos-sdk/types"
 
-	ccvtypes "github.com/allinbits/vaas/x/vaas/types"
+	vaastypes "github.com/allinbits/vaas/x/vaas/types"
 )
 
 type Status int
 
 const (
-	// ModuleName defines the CCV provider module name
+	// ModuleName defines the VAAS provider module name
 	ModuleName = "provider"
 
 	// StoreKey is the store key string for IBC transfer
@@ -460,7 +460,7 @@ func SpawnTimeToConsumerIdsKeyPrefix() byte {
 // SpawnTimeToConsumerIdsKey returns the key prefix for storing the spawn times of consumer chains
 // that are about to be launched
 func SpawnTimeToConsumerIdsKey(spawnTime time.Time) []byte {
-	return ccvtypes.AppendMany(
+	return vaastypes.AppendMany(
 		// append the prefix
 		[]byte{SpawnTimeToConsumerIdsKeyPrefix()},
 		// append the time
@@ -476,7 +476,7 @@ func RemovalTimeToConsumerIdsKeyPrefix() byte {
 // RemovalTimeToConsumerIdsKey returns the key prefix for storing the removal times of consumer chains
 // that are about to be removed
 func RemovalTimeToConsumerIdsKey(removalTime time.Time) []byte {
-	return ccvtypes.AppendMany(
+	return vaastypes.AppendMany(
 		// append the prefix
 		[]byte{RemovalTimeToConsumerIdsKeyPrefix()},
 		// append the time
@@ -501,7 +501,7 @@ func ParseTime(prefix byte, bz []byte) (time.Time, error) {
 // ClientIdToConsumerIdKey returns the consumer id that corresponds to this client id
 func ClientIdToConsumerIdKey(clientId string) []byte {
 	clientIdLength := len(clientId)
-	return ccvtypes.AppendMany(
+	return vaastypes.AppendMany(
 		// Append the prefix
 		[]byte{mustGetKeyPrefix(ClientIdToConsumerIdKeyName)},
 		// Append the client id length
@@ -538,7 +538,7 @@ func InfractionScheduledTimeToConsumerIdsKeyPrefix() byte {
 
 // InfractionScheduledTimeToConsumerIdsKey returns the key prefix for storing pending consumers ids that needs to update their infraction parameters at the specific time
 func InfractionScheduledTimeToConsumerIdsKey(updateTime time.Time) []byte {
-	return ccvtypes.AppendMany(
+	return vaastypes.AppendMany(
 		// append the prefix
 		[]byte{InfractionScheduledTimeToConsumerIdsKeyPrefix()},
 		// append the time
@@ -559,7 +559,7 @@ func InfractionScheduledTimeToConsumerIdsKey(updateTime time.Time) []byte {
 // StringIdAndTsKey returns the key with the following format:
 // bytePrefix | len(stringId) | stringId | timestamp
 func StringIdAndTsKey(prefix byte, stringId string, timestamp time.Time) []byte {
-	return ccvtypes.AppendMany(
+	return vaastypes.AppendMany(
 		StringIdWithLenKey(prefix, stringId),
 		sdk.FormatTimeBytes(timestamp),
 	)
@@ -584,7 +584,7 @@ func ParseStringIdAndTsKey(prefix byte, bz []byte) (string, time.Time, error) {
 // StringIdWithLenKey returns the key with the following format:
 // bytePrefix | len(stringId) | stringId
 func StringIdWithLenKey(prefix byte, stringId string) []byte {
-	return ccvtypes.AppendMany(
+	return vaastypes.AppendMany(
 		// Append the prefix
 		[]byte{prefix},
 		// Append the string id length
@@ -609,7 +609,7 @@ func ParseStringIdWithLenKey(prefix byte, bz []byte) (string, error) {
 // StringIdAndUintIdKey returns the key with the following format:
 // bytePrefix | len(stringId) | stringId | uint64(ID)
 func StringIdAndUintIdKey(prefix byte, stringId string, uintId uint64) []byte {
-	return ccvtypes.AppendMany(
+	return vaastypes.AppendMany(
 		StringIdWithLenKey(prefix, stringId),
 		sdk.Uint64ToBigEndian(uintId),
 	)
@@ -631,7 +631,7 @@ func ParseStringIdAndUintIdKey(prefix byte, bz []byte) (string, uint64, error) {
 // StringIdAndConsAddrKey returns the key with the following format:
 // bytePrefix | len(stringId) | stringId | ConsAddress
 func StringIdAndConsAddrKey(prefix byte, stringId string, addr sdk.ConsAddress) []byte {
-	return ccvtypes.AppendMany(
+	return vaastypes.AppendMany(
 		StringIdWithLenKey(prefix, stringId),
 		addr,
 	)

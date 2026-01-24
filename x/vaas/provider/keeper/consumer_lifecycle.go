@@ -22,7 +22,7 @@ import (
 	tmtypes "github.com/cometbft/cometbft/types"
 
 	"github.com/allinbits/vaas/x/vaas/provider/types"
-	ccv "github.com/allinbits/vaas/x/vaas/types"
+	vaastypes "github.com/allinbits/vaas/x/vaas/types"
 )
 
 // PrepareConsumerForLaunch prepares to move the launch of a consumer chain from the previous spawn time to spawn time.
@@ -76,7 +76,7 @@ func (k Keeper) BeginBlockLaunchConsumers(ctx sdk.Context) error {
 		200,
 	)
 	if err != nil {
-		return errorsmod.Wrapf(ccv.ErrInvalidConsumerState, "getting consumers ready to laumch: %s", err.Error())
+		return errorsmod.Wrapf(vaastypes.ErrInvalidConsumerState, "getting consumers ready to laumch: %s", err.Error())
 	}
 	if len(consumerIds) > 0 {
 		// get the bonded validators from the staking module
@@ -97,7 +97,7 @@ func (k Keeper) BeginBlockLaunchConsumers(ctx sdk.Context) error {
 			// reset spawn time to zero so that owner can try again later
 			initializationRecord, err := k.GetConsumerInitializationParameters(ctx, consumerId)
 			if err != nil {
-				return errorsmod.Wrapf(ccv.ErrInvalidConsumerState,
+				return errorsmod.Wrapf(vaastypes.ErrInvalidConsumerState,
 					"getting initialization parameters, consumerId(%s): %s", consumerId, err.Error())
 			}
 			initializationRecord.SpawnTime = time.Time{}
@@ -305,7 +305,7 @@ func (k Keeper) CreateConsumerClient(
 	clientState.ChainId = chainId
 	clientState.LatestHeight = initializationRecord.InitialHeight
 
-	trustPeriod, err := ccv.CalculateTrustPeriod(consumerUnbondingPeriod, k.GetTrustingPeriodFraction(ctx))
+	trustPeriod, err := vaastypes.CalculateTrustPeriod(consumerUnbondingPeriod, k.GetTrustingPeriodFraction(ctx))
 	if err != nil {
 		return err
 	}
@@ -363,16 +363,16 @@ func (k Keeper) MakeConsumerGenesis(
 	ctx sdk.Context,
 	consumerId string,
 	initialValidatorUpdates []abci.ValidatorUpdate,
-) (gen ccv.ConsumerGenesisState, err error) {
+) (gen vaastypes.ConsumerGenesisState, err error) {
 	initializationRecord, err := k.GetConsumerInitializationParameters(ctx, consumerId)
 	if err != nil {
-		return gen, errorsmod.Wrapf(ccv.ErrInvalidConsumerState,
+		return gen, errorsmod.Wrapf(vaastypes.ErrInvalidConsumerState,
 			"getting initialization parameters, consumerId(%s): %s", consumerId, err.Error())
 	}
 	// Create consumer genesis params
-	consumerGenesisParams := ccv.NewParams(
+	consumerGenesisParams := vaastypes.NewParams(
 		true,
-		initializationRecord.CcvTimeoutPeriod,
+		initializationRecord.VaasTimeoutPeriod,
 		initializationRecord.HistoricalEntries,
 		initializationRecord.UnbondingPeriod,
 	)
@@ -402,7 +402,7 @@ func (k Keeper) MakeConsumerGenesis(
 		// this is the latest height the client was updated at, i.e.,
 		// the height of the latest consensus state (see below)
 		clientState.LatestHeight = height
-		trustPeriod, err := ccv.CalculateTrustPeriod(providerUnbondingPeriod, k.GetTrustingPeriodFraction(ctx))
+		trustPeriod, err := vaastypes.CalculateTrustPeriod(providerUnbondingPeriod, k.GetTrustingPeriodFraction(ctx))
 		if err != nil {
 			return gen, errorsmod.Wrapf(sdkerrors.ErrInvalidHeight, "error %s calculating trusting_period for: %s", err, height)
 		}
@@ -467,7 +467,7 @@ func (k Keeper) MakeConsumerGenesis(
 		)
 	}
 
-	gen = *ccv.NewInitialConsumerGenesisState(
+	gen = *vaastypes.NewInitialConsumerGenesisState(
 		clientState,
 		tmConsState,
 		initialValidatorUpdates,
@@ -517,7 +517,7 @@ func (k Keeper) StopAndPrepareForConsumerRemoval(ctx sdk.Context, consumerId str
 		return fmt.Errorf("cannot set removal time (%s): %s", removalTime.String(), err.Error())
 	}
 	if err := k.AppendConsumerToBeRemoved(ctx, consumerId, removalTime); err != nil {
-		return errorsmod.Wrapf(ccv.ErrInvalidConsumerState, "cannot set consumer to be removed: %s", err.Error())
+		return errorsmod.Wrapf(vaastypes.ErrInvalidConsumerState, "cannot set consumer to be removed: %s", err.Error())
 	}
 
 	return nil
@@ -534,7 +534,7 @@ func (k Keeper) BeginBlockRemoveConsumers(ctx sdk.Context) error {
 		200,
 	)
 	if err != nil {
-		return errorsmod.Wrapf(ccv.ErrInvalidConsumerState, "getting consumers ready to stop: %s", err.Error())
+		return errorsmod.Wrapf(vaastypes.ErrInvalidConsumerState, "getting consumers ready to stop: %s", err.Error())
 	}
 	for _, consumerId := range consumerIds {
 		// delete consumer chain in a cached context to abort deletion in case of errors
@@ -570,7 +570,7 @@ func (k Keeper) DeleteConsumerChain(ctx sdk.Context, consumerId string) (err err
 	if channelID, found := k.GetConsumerIdToChannelId(ctx, consumerId); found {
 		// Close the channel for the given channel ID on the condition
 		// that the channel exists and isn't already in the CLOSED state
-		channel, found := k.channelKeeper.GetChannel(ctx, ccv.ProviderPortID, channelID)
+		channel, found := k.channelKeeper.GetChannel(ctx, vaastypes.ProviderPortID, channelID)
 		if found && channel.State != channeltypes.CLOSED {
 			err := k.chanCloseInit(ctx, channelID)
 			if err != nil {

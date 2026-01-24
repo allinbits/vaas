@@ -8,7 +8,7 @@ import (
 
 	"cosmossdk.io/math"
 
-	ccv "github.com/allinbits/vaas/x/vaas/types"
+	vaastypes "github.com/allinbits/vaas/x/vaas/types"
 )
 
 func DefaultConsumerInitializationParameters() ConsumerInitializationParameters {
@@ -20,13 +20,13 @@ func DefaultConsumerInitializationParameters() ConsumerInitializationParameters 
 		GenesisHash:       []byte{},
 		BinaryHash:        []byte{},
 		SpawnTime:         time.Time{},
-		UnbondingPeriod:   ccv.DefaultConsumerUnbondingPeriod,
-		CcvTimeoutPeriod:  ccv.DefaultCCVTimeoutPeriod,
-		HistoricalEntries: ccv.DefaultHistoricalEntries,
+		UnbondingPeriod:   vaastypes.DefaultConsumerUnbondingPeriod,
+		VaasTimeoutPeriod: vaastypes.DefaultVAASTimeoutPeriod,
+		HistoricalEntries: vaastypes.DefaultHistoricalEntries,
 	}
 }
 
-func DefaultConsumerInfractionParameters(ctx context.Context, slashingKeeper ccv.SlashingKeeper) (InfractionParameters, error) {
+func DefaultConsumerInfractionParameters(ctx context.Context, slashingKeeper vaastypes.SlashingKeeper) (InfractionParameters, error) {
 	jailDuration, err := slashingKeeper.DowntimeJailDuration(ctx)
 	if err != nil {
 		return InfractionParameters{}, err

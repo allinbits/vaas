@@ -12,7 +12,7 @@ import (
 	abci "github.com/cometbft/cometbft/abci/types"
 
 	"github.com/allinbits/vaas/x/vaas/consumer/types"
-	ccv "github.com/allinbits/vaas/x/vaas/types"
+	vaastypes "github.com/allinbits/vaas/x/vaas/types"
 )
 
 // OnRecvVSCPacket sets the pending validator set changes that will be flushed to ABCI on Endblock
@@ -21,7 +21,7 @@ import (
 //
 // Note: CCV uses an ordered IBC channel, meaning VSC packet changes will be accumulated (and later
 // processed by ApplyCCValidatorChanges) s.t. more recent val power changes overwrite older ones.
-func (k Keeper) OnRecvVSCPacket(ctx sdk.Context, packet channeltypes.Packet, newChanges ccv.ValidatorSetChangePacketData) error {
+func (k Keeper) OnRecvVSCPacket(ctx sdk.Context, packet channeltypes.Packet, newChanges vaastypes.ValidatorSetChangePacketData) error {
 	// validate packet data upon receiving
 	if err := newChanges.Validate(); err != nil {
 		return errorsmod.Wrapf(err, "error validating VSCPacket data")
@@ -44,7 +44,7 @@ func (k Keeper) OnRecvVSCPacket(ctx sdk.Context, packet channeltypes.Packet, new
 		// emit event on first VSC packet to signal that CCV is working
 		ctx.EventManager().EmitEvent(
 			sdk.NewEvent(
-				ccv.EventTypeChannelEstablished,
+				vaastypes.EventTypeChannelEstablished,
 				sdk.NewAttribute(sdk.AttributeKeyModule, types.ModuleName),
 				sdk.NewAttribute(channeltypes.AttributeKeyChannelID, packet.DestinationChannel),
 				sdk.NewAttribute(channeltypes.AttributeKeyPortID, packet.DestinationPort),
@@ -57,9 +57,9 @@ func (k Keeper) OnRecvVSCPacket(ctx sdk.Context, packet channeltypes.Packet, new
 	if exists {
 		currentValUpdates = currentChanges.ValidatorUpdates
 	}
-	pendingChanges := ccv.AccumulateChanges(currentValUpdates, newChanges.ValidatorUpdates)
+	pendingChanges := vaastypes.AccumulateChanges(currentValUpdates, newChanges.ValidatorUpdates)
 
-	k.SetPendingChanges(ctx, ccv.ValidatorSetChangePacketData{
+	k.SetPendingChanges(ctx, vaastypes.ValidatorSetChangePacketData{
 		ValidatorUpdates: pendingChanges,
 	})
 
@@ -111,7 +111,7 @@ func (k Keeper) OnAcknowledgementPacket(ctx sdk.Context, packet channeltypes.Pac
 		}
 		if channelID != packet.SourceChannel {
 			// Close the established CCV channel as well
-			return k.ChanCloseInit(ctx, ccv.ConsumerPortID, channelID)
+			return k.ChanCloseInit(ctx, vaastypes.ConsumerPortID, channelID)
 		}
 	}
 	return nil
@@ -119,7 +119,7 @@ func (k Keeper) OnAcknowledgementPacket(ctx sdk.Context, packet channeltypes.Pac
 
 // IsChannelClosed returns a boolean whether a given channel is in the CLOSED state
 func (k Keeper) IsChannelClosed(ctx sdk.Context, channelID string) bool {
-	channel, found := k.channelKeeper.GetChannel(ctx, ccv.ConsumerPortID, channelID)
+	channel, found := k.channelKeeper.GetChannel(ctx, vaastypes.ConsumerPortID, channelID)
 	if !found || channel.State == channeltypes.CLOSED {
 		return true
 	}

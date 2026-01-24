@@ -24,7 +24,7 @@ var _ = math.Inf
 // proto package needs to be updated.
 const _ = proto.GoGoProtoPackageIsVersion3 // please upgrade the proto package
 
-// GenesisState defines the CCV provider chain genesis state
+// GenesisState defines the VAAS provider chain genesis state
 type GenesisState struct {
 	// strictly positive and set to 1 (DefaultValsetUpdateID) for a new chain
 	ValsetUpdateId uint64 `protobuf:"varint,1,opt,name=valset_update_id,json=valsetUpdateId,proto3" json:"valset_update_id,omitempty"`
@@ -123,9 +123,9 @@ func (m *GenesisState) GetConsumerAddrsToPruneV2() []ConsumerAddrsToPruneV2 {
 	return nil
 }
 
-// The provider CCV module's knowledge of consumer state.
+// The provider VAAS module's knowledge of consumer state.
 //
-// Note this type is only used internally to the provider CCV module.
+// Note this type is only used internally to the provider VAAS module.
 type ConsumerState struct {
 	// ChainID defines the chain ID for the consumer chain
 	ChainId string `protobuf:"bytes,1,opt,name=chain_id,json=chainId,proto3" json:"chain_id,omitempty"`

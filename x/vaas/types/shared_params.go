@@ -17,10 +17,10 @@ import (
 
 const (
 	// Default timeout period is 4 weeks to ensure channel doesn't close on timeout
-	DefaultCCVTimeoutPeriod = 4 * 7 * 24 * time.Hour
+	DefaultVAASTimeoutPeriod = 4 * 7 * 24 * time.Hour
 )
 
-var KeyCCVTimeoutPeriod = []byte("CcvTimeoutPeriod")
+var KeyVAASTimeoutPeriod = []byte("VaasTimeoutPeriod")
 
 func ValidateDuration(i interface{}) error {
 	period, ok := i.(time.Duration)

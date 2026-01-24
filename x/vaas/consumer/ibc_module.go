@@ -43,7 +43,7 @@ func (am AppModule) OnChanOpenInit(
 	}
 
 	// Validate parameters
-	if err := validateCCVChannelParams(
+	if err := validateVAASChannelParams(
 		ctx, am.keeper, order, portID, version,
 	); err != nil {
 		return "", err
@@ -62,8 +62,8 @@ func (am AppModule) OnChanOpenInit(
 	return version, nil
 }
 
-// validateCCVChannelParams validates a ccv channel
-func validateCCVChannelParams(
+// validateVAASChannelParams validates a VAAS channel
+func validateVAASChannelParams(
 	ctx sdk.Context,
 	keeper keeper.Keeper,
 	order channeltypes.Order,
@@ -75,7 +75,7 @@ func validateCCVChannelParams(
 		return errorsmod.Wrapf(channeltypes.ErrInvalidChannelOrdering, "expected %s channel, got %s ", channeltypes.ORDERED, order)
 	}
 
-	// the port ID must match the port ID the CCV module is bounded to
+	// the port ID must match the port ID the VAAS module is bounded to
 	boundPort := keeper.GetPort(ctx)
 	if boundPort != portID {
 		return errorsmod.Wrapf(porttypes.ErrInvalidPort, "invalid port: %s, expected %s", portID, boundPort)

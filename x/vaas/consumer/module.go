@@ -23,7 +23,7 @@ import (
 	"github.com/allinbits/vaas/x/vaas/consumer/client/cli"
 	"github.com/allinbits/vaas/x/vaas/consumer/keeper"
 	consumertypes "github.com/allinbits/vaas/x/vaas/consumer/types"
-	ccvtypes "github.com/allinbits/vaas/x/vaas/types"
+	vaastypes "github.com/allinbits/vaas/x/vaas/types"
 )
 
 var (
@@ -67,7 +67,7 @@ func (AppModule) IsOnePerModuleType() {}
 // DefaultGenesis returns default genesis state as raw bytes for the ibc
 // consumer module.
 func (AppModuleBasic) DefaultGenesis(cdc codec.JSONCodec) json.RawMessage {
-	return cdc.MustMarshalJSON(ccvtypes.DefaultConsumerGenesisState())
+	return cdc.MustMarshalJSON(vaastypes.DefaultConsumerGenesisState())
 }
 
 // ValidateGenesis performs genesis state validation for the ibc consumer module.
@@ -154,9 +154,9 @@ func (am AppModule) BeginBlock(goCtx context.Context) error {
 
 	channelID, found := am.keeper.GetProviderChannel(ctx)
 	if found && am.keeper.IsChannelClosed(ctx, channelID) {
-		// The CCV channel was established, but it was then closed;
+		// The VAAS channel was established, but it was then closed;
 		// the consumer chain is not secured anymore, but we allow it to run as a POA chain and log an error.
-		channelClosedMsg := fmt.Sprintf("CCV channel %q was closed - shutdown consumer chain since it is not secured anymore", channelID)
+		channelClosedMsg := fmt.Sprintf("VAAS channel %q was closed - shutdown consumer chain since it is not secured anymore", channelID)
 		am.keeper.Logger(ctx).Error(channelClosedMsg)
 	}
 

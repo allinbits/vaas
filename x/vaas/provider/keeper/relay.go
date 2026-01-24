@@ -14,7 +14,7 @@ import (
 	abci "github.com/cometbft/cometbft/abci/types"
 
 	providertypes "github.com/allinbits/vaas/x/vaas/provider/types"
-	ccv "github.com/allinbits/vaas/x/vaas/types"
+	vaastypes "github.com/allinbits/vaas/x/vaas/types"
 )
 
 // OnAcknowledgementPacket handles acknowledgments for sent VSC packets
@@ -164,13 +164,13 @@ func (k Keeper) SendVSCPacketsToChain(ctx sdk.Context, consumerId, channelId str
 	pendingPackets := k.GetPendingVSCPackets(ctx, consumerId)
 	for _, data := range pendingPackets {
 		// send packet over IBC
-		err := ccv.SendIBCPacket(
+		err := vaastypes.SendIBCPacket(
 			ctx,
 			k.channelKeeper,
 			channelId,          // source channel id
-			ccv.ProviderPortID, // source port id
+			vaastypes.ProviderPortID, // source port id
 			data.GetBytes(),
-			k.GetCCVTimeoutPeriod(ctx),
+			k.GetVAASTimeoutPeriod(ctx),
 		)
 		if err != nil {
 			if errors.Is(err, clienttypes.ErrClientNotActive) {
@@ -232,7 +232,7 @@ func (k Keeper) QueueVSCPackets(ctx sdk.Context) error {
 		// check whether there are changes in the validator set
 		if len(valUpdates) != 0 {
 			// construct validator set change packet data
-			packet := ccv.NewValidatorSetChangePacketData(valUpdates, valUpdateID)
+			packet := vaastypes.NewValidatorSetChangePacketData(valUpdates, valUpdateID)
 			k.AppendPendingVSCPackets(ctx, consumerId, packet)
 			k.Logger(ctx).Info("VSCPacket enqueued:",
 				"consumerId", consumerId,

@@ -1,17 +1,17 @@
 package types
 
 const (
-	// ModuleName defines the CCV module name
-	ModuleName = "CCV"
+	// ModuleName defines the VAAS module name
+	ModuleName = "VAAS"
 
-	// Version defines the current version the IBC CCV provider and consumer
+	// Version defines the current version the IBC VAAS provider and consumer
 	// module supports
 	Version = "1"
 
-	// ProviderPortID is the default port id the provider CCV module binds to
+	// ProviderPortID is the default port id the provider VAAS module binds to
 	ProviderPortID = "provider"
 
-	// ConsumerPortID is the default port id the consumer CCV module binds to
+	// ConsumerPortID is the default port id the consumer VAAS module binds to
 	ConsumerPortID = "consumer"
 
 	RouterKey = ModuleName
@@ -20,5 +20,5 @@ const (
 	StoreKey = ModuleName
 
 	// MemStoreKey defines the in-memory store key
-	MemStoreKey = "mem_ccv"
+	MemStoreKey = "mem_vaas"
 )

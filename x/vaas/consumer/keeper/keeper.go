@@ -22,7 +22,7 @@ import (
 	tmtypes "github.com/cometbft/cometbft/abci/types"
 
 	"github.com/allinbits/vaas/x/vaas/consumer/types"
-	ccv "github.com/allinbits/vaas/x/vaas/types"
+	vaastypes "github.com/allinbits/vaas/x/vaas/types"
 )
 
 // Keeper defines the Cross-Chain Validation Consumer Keeper
@@ -33,19 +33,19 @@ type Keeper struct {
 
 	storeKey         storetypes.StoreKey
 	cdc              codec.BinaryCodec
-	channelKeeper    ccv.ChannelKeeper
-	connectionKeeper ccv.ConnectionKeeper
-	clientKeeper     ccv.ClientKeeper
+	channelKeeper    vaastypes.ChannelKeeper
+	connectionKeeper vaastypes.ConnectionKeeper
+	clientKeeper     vaastypes.ClientKeeper
 	// standaloneStakingKeeper is the staking keeper that managed proof of stake for a previously standalone chain,
 	// before the chain went through a standalone to consumer changeover.
 	// This keeper is not used for consumers that launched with ICS, and is therefore set after the constructor.
-	standaloneStakingKeeper ccv.StakingKeeper
-	slashingKeeper          ccv.SlashingKeeper
-	hooks                   ccv.ConsumerHooks
-	bankKeeper              ccv.BankKeeper
-	authKeeper              ccv.AccountKeeper
-	ibcTransferKeeper       ccv.IBCTransferKeeper
-	ibcCoreKeeper           ccv.IBCCoreKeeper
+	standaloneStakingKeeper vaastypes.StakingKeeper
+	slashingKeeper          vaastypes.SlashingKeeper
+	hooks                   vaastypes.ConsumerHooks
+	bankKeeper              vaastypes.BankKeeper
+	authKeeper              vaastypes.AccountKeeper
+	ibcTransferKeeper       vaastypes.IBCTransferKeeper
+	ibcCoreKeeper           vaastypes.IBCCoreKeeper
 	feeCollectorName        string
 
 	validatorAddressCodec addresscodec.Codec
@@ -57,10 +57,10 @@ type Keeper struct {
 // collector (and not the provider chain)
 func NewKeeper(
 	cdc codec.BinaryCodec, key storetypes.StoreKey,
-	channelKeeper ccv.ChannelKeeper,
-	connectionKeeper ccv.ConnectionKeeper, clientKeeper ccv.ClientKeeper,
-	slashingKeeper ccv.SlashingKeeper, bankKeeper ccv.BankKeeper, accountKeeper ccv.AccountKeeper,
-	ibcTransferKeeper ccv.IBCTransferKeeper, ibcCoreKeeper ccv.IBCCoreKeeper,
+	channelKeeper vaastypes.ChannelKeeper,
+	connectionKeeper vaastypes.ConnectionKeeper, clientKeeper vaastypes.ClientKeeper,
+	slashingKeeper vaastypes.SlashingKeeper, bankKeeper vaastypes.BankKeeper, accountKeeper vaastypes.AccountKeeper,
+	ibcTransferKeeper vaastypes.IBCTransferKeeper, ibcCoreKeeper vaastypes.IBCCoreKeeper,
 	feeCollectorName, authority string, validatorAddressCodec,
 	consensusAddressCodec addresscodec.Codec,
 ) Keeper {
@@ -102,7 +102,7 @@ func NewNonZeroKeeper(cdc codec.BinaryCodec, key storetypes.StoreKey) Keeper {
 
 // SetStandaloneStakingKeeper sets the standalone staking keeper for the consumer chain.
 // This method should only be called for previously standalone chains that are now consumers.
-func (k *Keeper) SetStandaloneStakingKeeper(sk ccv.StakingKeeper) {
+func (k *Keeper) SetStandaloneStakingKeeper(sk vaastypes.StakingKeeper) {
 	k.standaloneStakingKeeper = sk
 }
 
@@ -118,20 +118,20 @@ func (k Keeper) mustValidateFields() {
 	// hooks are explicitly set after the constructor,
 	// stakingKeeper is optionally set after the constructor,
 
-	ccv.PanicIfZeroOrNil(k.storeKey, "storeKey")                           // 1
-	ccv.PanicIfZeroOrNil(k.cdc, "cdc")                                     // 2
-	ccv.PanicIfZeroOrNil(k.channelKeeper, "channelKeeper")                 // 4
-	ccv.PanicIfZeroOrNil(k.connectionKeeper, "connectionKeeper")           // 6
-	ccv.PanicIfZeroOrNil(k.clientKeeper, "clientKeeper")                   // 7
-	ccv.PanicIfZeroOrNil(k.slashingKeeper, "slashingKeeper")               // 8
-	ccv.PanicIfZeroOrNil(k.bankKeeper, "bankKeeper")                       // 9
-	ccv.PanicIfZeroOrNil(k.authKeeper, "authKeeper")                       // 10
-	ccv.PanicIfZeroOrNil(k.ibcTransferKeeper, "ibcTransferKeeper")         // 11
-	ccv.PanicIfZeroOrNil(k.ibcCoreKeeper, "ibcCoreKeeper")                 // 12
-	ccv.PanicIfZeroOrNil(k.feeCollectorName, "feeCollectorName")           // 13
-	ccv.PanicIfZeroOrNil(k.authority, "authority")                         // 14
-	ccv.PanicIfZeroOrNil(k.validatorAddressCodec, "validatorAddressCodec") // 15
-	ccv.PanicIfZeroOrNil(k.consensusAddressCodec, "consensusAddressCodec") // 16
+	vaastypes.PanicIfZeroOrNil(k.storeKey, "storeKey")                           // 1
+	vaastypes.PanicIfZeroOrNil(k.cdc, "cdc")                                     // 2
+	vaastypes.PanicIfZeroOrNil(k.channelKeeper, "channelKeeper")                 // 4
+	vaastypes.PanicIfZeroOrNil(k.connectionKeeper, "connectionKeeper")           // 6
+	vaastypes.PanicIfZeroOrNil(k.clientKeeper, "clientKeeper")                   // 7
+	vaastypes.PanicIfZeroOrNil(k.slashingKeeper, "slashingKeeper")               // 8
+	vaastypes.PanicIfZeroOrNil(k.bankKeeper, "bankKeeper")                       // 9
+	vaastypes.PanicIfZeroOrNil(k.authKeeper, "authKeeper")                       // 10
+	vaastypes.PanicIfZeroOrNil(k.ibcTransferKeeper, "ibcTransferKeeper")         // 11
+	vaastypes.PanicIfZeroOrNil(k.ibcCoreKeeper, "ibcCoreKeeper")                 // 12
+	vaastypes.PanicIfZeroOrNil(k.feeCollectorName, "feeCollectorName")           // 13
+	vaastypes.PanicIfZeroOrNil(k.authority, "authority")                         // 14
+	vaastypes.PanicIfZeroOrNil(k.validatorAddressCodec, "validatorAddressCodec") // 15
+	vaastypes.PanicIfZeroOrNil(k.consensusAddressCodec, "consensusAddressCodec") // 16
 }
 
 // ValidatorAddressCodec returns the app validator address codec.
@@ -149,7 +149,7 @@ func (k Keeper) Logger(ctx sdk.Context) log.Logger {
 	return ctx.Logger().With("module", "x/"+host.SubModuleName+"-"+types.ModuleName)
 }
 
-func (k *Keeper) SetHooks(sh ccv.ConsumerHooks) *Keeper {
+func (k *Keeper) SetHooks(sh vaastypes.ConsumerHooks) *Keeper {
 	if k.hooks != nil {
 		// This should never happen as SetHooks is expected
 		// to be called only once in app.go
@@ -226,7 +226,7 @@ func (k Keeper) DeleteProviderChannel(ctx sdk.Context) {
 }
 
 // SetPendingChanges sets the pending validator set change packet that haven't been flushed to ABCI
-func (k Keeper) SetPendingChanges(ctx sdk.Context, updates ccv.ValidatorSetChangePacketData) {
+func (k Keeper) SetPendingChanges(ctx sdk.Context, updates vaastypes.ValidatorSetChangePacketData) {
 	store := ctx.KVStore(k.storeKey)
 	bz, err := updates.Marshal()
 	if err != nil {
@@ -237,13 +237,13 @@ func (k Keeper) SetPendingChanges(ctx sdk.Context, updates ccv.ValidatorSetChang
 }
 
 // GetPendingChanges gets the pending changes that haven't been flushed over ABCI
-func (k Keeper) GetPendingChanges(ctx sdk.Context) (*ccv.ValidatorSetChangePacketData, bool) {
+func (k Keeper) GetPendingChanges(ctx sdk.Context) (*vaastypes.ValidatorSetChangePacketData, bool) {
 	store := ctx.KVStore(k.storeKey)
 	bz := store.Get(types.PendingChangesKey())
 	if bz == nil {
 		return nil, false
 	}
-	var data ccv.ValidatorSetChangePacketData
+	var data vaastypes.ValidatorSetChangePacketData
 	if err := data.Unmarshal(bz); err != nil {
 		// This should never happen as PendingChanges is expected
 		// to be correctly serialized in SetPendingChanges
@@ -295,7 +295,7 @@ func (k Keeper) SetInitialValSet(ctx sdk.Context, initialValSet []tmtypes.Valida
 	store := ctx.KVStore(k.storeKey)
 	// TODO it's not necessary to store the entire genesis state
 	initialValSetState := types.GenesisState{
-		Provider: ccv.ProviderInfo{InitialValSet: initialValSet},
+		Provider: vaastypes.ProviderInfo{InitialValSet: initialValSet},
 	}
 	bz := k.cdc.MustMarshal(&initialValSetState)
 	store.Set(types.InitialValSetKey(), bz)
@@ -452,5 +452,5 @@ func (k Keeper) GetLastBondedValidators(ctx sdk.Context) ([]stakingtypes.Validat
 	if err != nil {
 		return nil, err
 	}
-	return ccv.GetLastBondedValidatorsUtil(ctx, k.standaloneStakingKeeper, maxVals)
+	return vaastypes.GetLastBondedValidatorsUtil(ctx, k.standaloneStakingKeeper, maxVals)
 }

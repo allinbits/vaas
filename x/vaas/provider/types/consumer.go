@@ -1,7 +1,7 @@
 package types
 
 import (
-	ccv "github.com/allinbits/vaas/x/vaas/types"
+	vaastypes "github.com/allinbits/vaas/x/vaas/types"
 )
 
 func NewConsumerStates(
@@ -9,8 +9,8 @@ func NewConsumerStates(
 	clientID,
 	channelID string,
 	initialHeight uint64,
-	genesis ccv.ConsumerGenesisState,
-	pendingValsetChanges []ccv.ValidatorSetChangePacketData,
+	genesis vaastypes.ConsumerGenesisState,
+	pendingValsetChanges []vaastypes.ValidatorSetChangePacketData,
 	slashDowntimeAck []string,
 	phase ConsumerPhase,
 ) ConsumerState {

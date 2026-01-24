@@ -237,7 +237,7 @@ message QueryBlocksUntilNextEpochResponse {
 
 message QueryConsumerIdFromClientIdRequest {
   // the client id (on the provider) that is tracking the consumer chain
-  // the client id can be found from the consumer chain by querying (i.e., `query ccvconsumer provider-info`)
+  // the client id can be found from the consumer chain by querying (i.e., `query vaasconsumer provider-info`)
   string client_id = 1;
 }
 

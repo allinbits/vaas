@@ -20,7 +20,7 @@ import (
 	tmtypes "github.com/cometbft/cometbft/types"
 
 	"github.com/allinbits/vaas/x/vaas/provider/types"
-	ccvtypes "github.com/allinbits/vaas/x/vaas/types"
+	vaastypes "github.com/allinbits/vaas/x/vaas/types"
 )
 
 //
@@ -38,7 +38,7 @@ func (k Keeper) HandleConsumerDoubleVoting(
 	// check that the evidence is for an ICS consumer chain
 	if _, found := k.GetConsumerClientId(ctx, consumerId); !found {
 		return errorsmod.Wrapf(
-			ccvtypes.ErrInvalidDoubleVotingEvidence,
+			vaastypes.ErrInvalidDoubleVotingEvidence,
 			"cannot find consumer chain %s",
 			consumerId,
 		)
@@ -48,7 +48,7 @@ func (k Keeper) HandleConsumerDoubleVoting(
 	minHeight := k.GetEquivocationEvidenceMinHeight(ctx, consumerId)
 	if uint64(evidence.VoteA.Height) < minHeight {
 		return errorsmod.Wrapf(
-			ccvtypes.ErrInvalidDoubleVotingEvidence,
+			vaastypes.ErrInvalidDoubleVotingEvidence,
 			"evidence for consumer chain %s is too old - evidence height (%d), min (%d)",
 			consumerId,
 			evidence.VoteA.Height,
@@ -111,7 +111,7 @@ func (k Keeper) VerifyDoubleVotingEvidence(
 	// check that the validator address in the evidence is derived from the provided public key
 	if !bytes.Equal(pubkey.Address(), evidence.VoteA.ValidatorAddress) {
 		return errorsmod.Wrapf(
-			ccvtypes.ErrInvalidDoubleVotingEvidence,
+			vaastypes.ErrInvalidDoubleVotingEvidence,
 			"public key %s doesn't correspond to the validator address %s in double vote evidence",
 			pubkey.String(), evidence.VoteA.ValidatorAddress.String(),
 		)
@@ -124,7 +124,7 @@ func (k Keeper) VerifyDoubleVotingEvidence(
 		evidence.VoteA.Round != evidence.VoteB.Round ||
 		evidence.VoteA.Type != evidence.VoteB.Type {
 		return errorsmod.Wrapf(
-			ccvtypes.ErrInvalidDoubleVotingEvidence,
+			vaastypes.ErrInvalidDoubleVotingEvidence,
 			"height/round/type are not the same: %d/%d/%v vs %d/%d/%v",
 			evidence.VoteA.Height, evidence.VoteA.Round, evidence.VoteA.Type,
 			evidence.VoteB.Height, evidence.VoteB.Round, evidence.VoteB.Type)
@@ -133,7 +133,7 @@ func (k Keeper) VerifyDoubleVotingEvidence(
 	// Addresses must be the same
 	if !bytes.Equal(evidence.VoteA.ValidatorAddress, evidence.VoteB.ValidatorAddress) {
 		return errorsmod.Wrapf(
-			ccvtypes.ErrInvalidDoubleVotingEvidence,
+			vaastypes.ErrInvalidDoubleVotingEvidence,
 			"validator addresses do not match: %X vs %X",
 			evidence.VoteA.ValidatorAddress,
 			evidence.VoteB.ValidatorAddress,
@@ -143,7 +143,7 @@ func (k Keeper) VerifyDoubleVotingEvidence(
 	// BlockIDs must be different
 	if evidence.VoteA.BlockID.Equals(evidence.VoteB.BlockID) {
 		return errorsmod.Wrapf(
-			ccvtypes.ErrInvalidDoubleVotingEvidence,
+			vaastypes.ErrInvalidDoubleVotingEvidence,
 			"block IDs are the same (%v) - not a real duplicate vote",
 			evidence.VoteA.BlockID,
 		)
@@ -351,7 +351,7 @@ func (k Keeper) CheckMisbehaviour(ctx sdk.Context, consumerId string, misbehavio
 	// as it's already part of the chain ID and the minimum height is mapped to chain IDs
 	if evidenceHeight < minHeight {
 		return errorsmod.Wrapf(
-			ccvtypes.ErrInvalidDoubleVotingEvidence,
+			vaastypes.ErrInvalidDoubleVotingEvidence,
 			"evidence for consumer chain %s is too old - evidence height (%d), min (%d)",
 			consumerId,
 			evidenceHeight,

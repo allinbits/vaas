@@ -143,7 +143,7 @@ func TestConsumerInitializationParameters(t *testing.T) {
 		BinaryHash:       []byte{2, 3},
 		SpawnTime:        time.Unix(1, 2).UTC(),
 		UnbondingPeriod:  time.Duration(3456),
-		CcvTimeoutPeriod: time.Duration(789),
+		VaasTimeoutPeriod: time.Duration(789),
 		HistoricalEntries: 456,
 	}
 	providerKeeper.SetConsumerChainId(ctx, CONSUMER_ID, "chain-1")
@@ -160,7 +160,7 @@ func TestConsumerInitializationParameters(t *testing.T) {
 		BinaryHash:        []byte{4, 5},
 		SpawnTime:         time.Unix(2, 3).UTC(),
 		UnbondingPeriod:   time.Duration(789),
-		CcvTimeoutPeriod:  time.Duration(101112),
+		VaasTimeoutPeriod:  time.Duration(101112),
 		HistoricalEntries: 789,
 	}
 	providerKeeper.SetConsumerInitializationParameters(ctx, CONSUMER_ID, expectedInitializationParameters)

@@ -17,18 +17,18 @@ option go_package = "github.com/allinbits/vaas/x/vaas/provider/types";
 
 //
 // Note any type defined in this file is ONLY used internally to the provider
-// CCV module. These schemas can change with proper consideration of
+// VAAS module. These schemas can change with proper consideration of
 // compatibility or migration.
 //
 
-// Params defines the parameters for CCV Provider module
+// Params defines the parameters for VAAS Provider module
 message Params {
   ibc.lightclients.tendermint.v1.ClientState template_client = 1;
   // TrustingPeriodFraction is used to compute the consumer and provider IBC
   // client's TrustingPeriod from the chain defined UnbondingPeriod
   string trusting_period_fraction = 2;
   // Sent IBC packets will timeout after this duration
-  google.protobuf.Duration ccv_timeout_period = 3
+  google.protobuf.Duration vaas_timeout_period = 3
       [ (gogoproto.nullable) = false, (gogoproto.stdduration) = true ];
 
   // The number of blocks that comprise an epoch.
@@ -128,7 +128,7 @@ message ConsumerInitializationParameters {
   // For a completely new chain, this will be {0,1}. However, it may be
   // different if this is a chain that is converting to a consumer chain.
   ibc.core.client.v1.Height initial_height = 1 [ (gogoproto.nullable) = false ];
-  // The hash of the consumer chain genesis state without the consumer CCV
+  // The hash of the consumer chain genesis state without the consumer VAAS
   // module genesis params. It is used for off-chain confirmation of
   // genesis.json validity by validators and other parties.
   bytes genesis_hash = 2;
@@ -152,14 +152,14 @@ message ConsumerInitializationParameters {
   // chain. Those params can then be directly modified by the consumer chain.
   // ---------- ---------- ----------
 
-  // Sent CCV related IBC packets will timeout after this duration
-  google.protobuf.Duration ccv_timeout_period = 6
+  // Sent VAAS related IBC packets will timeout after this duration
+  google.protobuf.Duration vaas_timeout_period = 6
       [ (gogoproto.nullable) = false, (gogoproto.stdduration) = true ];
   // The number of historical info entries to persist in store.
   // This param is a part of the cosmos sdk staking module. In the case of
-  // a ccv enabled consumer chain, the ccv module acts as the staking module.
+  // a VAAS enabled consumer chain, the VAAS module acts as the staking module.
   int64 historical_entries = 7;
-  // The ID of the connection end on the provider chain on top of which the CCV
+  // The ID of the connection end on the provider chain on top of which the VAAS
   // channel will be established. If connection_id == "", a new client of the
   // consumer chain and a new connection on top of this client are created.
   // Note that a standalone chain can transition to a consumer chain while

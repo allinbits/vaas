@@ -258,7 +258,7 @@ func GetTestInitializationParameters() providertypes.ConsumerInitializationParam
 		BinaryHash:        []byte("bin_hash"),
 		SpawnTime:         time.Now().UTC(),
 		HistoricalEntries: types.DefaultHistoricalEntries,
-		CcvTimeoutPeriod:  types.DefaultCCVTimeoutPeriod,
+		VaasTimeoutPeriod: types.DefaultVAASTimeoutPeriod,
 		UnbondingPeriod:   types.DefaultConsumerUnbondingPeriod,
 	}
 }

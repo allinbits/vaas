@@ -9,7 +9,7 @@ import "vaas/v1/shared_consumer.proto";
 import "vaas/v1/wire.proto";
 import "vaas/provider/v1/provider.proto";
 
-// GenesisState defines the CCV provider chain genesis state
+// GenesisState defines the VAAS provider chain genesis state
 message GenesisState {
   // strictly positive and set to 1 (DefaultValsetUpdateID) for a new chain
   uint64 valset_update_id = 1;
@@ -34,9 +34,9 @@ message GenesisState {
       [ (gogoproto.nullable) = false ];
 }
 
-// The provider CCV module's knowledge of consumer state.
+// The provider VAAS module's knowledge of consumer state.
 //
-// Note this type is only used internally to the provider CCV module.
+// Note this type is only used internally to the provider VAAS module.
 message ConsumerState {
   // ChainID defines the chain ID for the consumer chain
   string chain_id = 1;

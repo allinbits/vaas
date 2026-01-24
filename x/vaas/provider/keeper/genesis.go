@@ -8,12 +8,12 @@ import (
 	abci "github.com/cometbft/cometbft/abci/types"
 
 	"github.com/allinbits/vaas/x/vaas/provider/types"
-	ccv "github.com/allinbits/vaas/x/vaas/types"
+	vaastypes "github.com/allinbits/vaas/x/vaas/types"
 )
 
 // InitGenesis initializes the CCV provider state and binds to PortID.
 func (k Keeper) InitGenesis(ctx sdk.Context, genState *types.GenesisState) []abci.ValidatorUpdate {
-	k.SetPort(ctx, ccv.ProviderPortID)
+	k.SetPort(ctx, vaastypes.ProviderPortID)
 
 	k.SetValidatorSetUpdateId(ctx, genState.ValsetUpdateId)
 	for _, v2h := range genState.ValsetUpdateIdToHeight {

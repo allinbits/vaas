@@ -8,7 +8,7 @@ import "gogoproto/gogo.proto";
 import "google/api/annotations.proto";
 
 service Query {
-  // QueryParams queries the ccv/consumer module parameters.
+  // QueryParams queries the vaas/consumer module parameters.
   rpc QueryParams(QueryParamsRequest) returns (QueryParamsResponse) {
     option (google.api.http).get = "/vaas/consumer/params";
   }

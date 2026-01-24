@@ -1019,7 +1019,7 @@ func (m *QueryBlocksUntilNextEpochResponse) GetBlocksUntilNextEpoch() uint64 {
 
 type QueryConsumerIdFromClientIdRequest struct {
 	// the client id (on the provider) that is tracking the consumer chain
-	// the client id can be found from the consumer chain by querying (i.e., `query ccvconsumer provider-info`)
+	// the client id can be found from the consumer chain by querying (i.e., `query vaasconsumer provider-info`)
 	ClientId string `protobuf:"bytes,1,opt,name=client_id,json=clientId,proto3" json:"client_id,omitempty"`
 }
 

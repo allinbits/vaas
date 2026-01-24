@@ -16,7 +16,7 @@ import (
 	tmtypes "github.com/cometbft/cometbft/proto/tendermint/types"
 	cmttypes "github.com/cometbft/cometbft/types"
 
-	ccvtypes "github.com/allinbits/vaas/x/vaas/types"
+	vaastypes "github.com/allinbits/vaas/x/vaas/types"
 )
 
 const (
@@ -63,7 +63,7 @@ func NewMsgAssignConsumerKey(consumerId string, providerValidatorAddress sdk.Val
 
 // ValidateBasic implements the sdk.HasValidateBasic interface.
 func (msg MsgAssignConsumerKey) ValidateBasic() error {
-	if err := ccvtypes.ValidateConsumerId(msg.ConsumerId); err != nil {
+	if err := vaastypes.ValidateConsumerId(msg.ConsumerId); err != nil {
 		return errorsmod.Wrapf(ErrInvalidMsgAssignConsumerKey, "ConsumerId: %s", err.Error())
 	}
 
@@ -95,7 +95,7 @@ func NewMsgSubmitConsumerMisbehaviour(
 
 // ValidateBasic implements the sdk.HasValidateBasic interface.
 func (msg MsgSubmitConsumerMisbehaviour) ValidateBasic() error {
-	if err := ccvtypes.ValidateConsumerId(msg.ConsumerId); err != nil {
+	if err := vaastypes.ValidateConsumerId(msg.ConsumerId); err != nil {
 		return errorsmod.Wrapf(ErrInvalidMsgSubmitConsumerMisbehaviour, "ConsumerId: %s", err.Error())
 	}
 
@@ -133,7 +133,7 @@ func (msg MsgSubmitConsumerDoubleVoting) ValidateBasic() error {
 		return errorsmod.Wrapf(ErrInvalidMsgSubmitConsumerDoubleVoting, "ValidateTendermintHeader: %s", err.Error())
 	}
 
-	if err := ccvtypes.ValidateConsumerId(msg.ConsumerId); err != nil {
+	if err := vaastypes.ValidateConsumerId(msg.ConsumerId); err != nil {
 		return errorsmod.Wrapf(ErrInvalidMsgSubmitConsumerDoubleVoting, "ConsumerId: %s", err.Error())
 	}
 
@@ -222,7 +222,7 @@ func NewMsgUpdateConsumer(owner, consumerId, ownerAddress string, metadata *Cons
 
 // ValidateBasic implements the sdk.HasValidateBasic interface.
 func (msg MsgUpdateConsumer) ValidateBasic() error {
-	if err := ccvtypes.ValidateConsumerId(msg.ConsumerId); err != nil {
+	if err := vaastypes.ValidateConsumerId(msg.ConsumerId); err != nil {
 		return errorsmod.Wrapf(ErrInvalidMsgUpdateConsumer, "ConsumerId: %s", err.Error())
 	}
 
@@ -259,7 +259,7 @@ func NewMsgRemoveConsumer(owner, consumerId string) (*MsgRemoveConsumer, error) 
 
 // ValidateBasic implements the sdk.HasValidateBasic interface.
 func (msg MsgRemoveConsumer) ValidateBasic() error {
-	if err := ccvtypes.ValidateConsumerId(msg.ConsumerId); err != nil {
+	if err := vaastypes.ValidateConsumerId(msg.ConsumerId); err != nil {
 		return err
 	}
 	return nil
@@ -369,19 +369,19 @@ func ValidateInitializationParameters(initializationParameters ConsumerInitializ
 		return errorsmod.Wrapf(ErrInvalidConsumerInitializationParameters, "BinaryHash: %s", err.Error())
 	}
 
-	if err := ccvtypes.ValidatePositiveInt64(initializationParameters.HistoricalEntries); err != nil {
+	if err := vaastypes.ValidatePositiveInt64(initializationParameters.HistoricalEntries); err != nil {
 		return errorsmod.Wrapf(ErrInvalidConsumerInitializationParameters, "HistoricalEntries: %s", err.Error())
 	}
 
-	if err := ccvtypes.ValidateDuration(initializationParameters.CcvTimeoutPeriod); err != nil {
-		return errorsmod.Wrapf(ErrInvalidConsumerInitializationParameters, "CcvTimeoutPeriod: %s", err.Error())
+	if err := vaastypes.ValidateDuration(initializationParameters.VaasTimeoutPeriod); err != nil {
+		return errorsmod.Wrapf(ErrInvalidConsumerInitializationParameters, "VaasTimeoutPeriod: %s", err.Error())
 	}
 
-	if err := ccvtypes.ValidateDuration(initializationParameters.UnbondingPeriod); err != nil {
+	if err := vaastypes.ValidateDuration(initializationParameters.UnbondingPeriod); err != nil {
 		return errorsmod.Wrapf(ErrInvalidConsumerInitializationParameters, "UnbondingPeriod: %s", err.Error())
 	}
 
-	if err := ccvtypes.ValidateConnectionIdentifier(initializationParameters.ConnectionId); err != nil {
+	if err := vaastypes.ValidateConnectionIdentifier(initializationParameters.ConnectionId); err != nil {
 		return errorsmod.Wrapf(ErrInvalidConsumerInitializationParameters, "ConnectionId: %s", err.Error())
 	}
 
@@ -394,7 +394,7 @@ func ValidateInfractionParameters(initializationParameters InfractionParameters)
 		if initializationParameters.DoubleSign.JailDuration < 0 {
 			return errorsmod.Wrap(ErrInvalidConsumerInfractionParameters, "DoubleSign.JailDuration cannot be negative")
 		}
-		if err := ccvtypes.ValidateFraction(initializationParameters.DoubleSign.SlashFraction); err != nil {
+		if err := vaastypes.ValidateFraction(initializationParameters.DoubleSign.SlashFraction); err != nil {
 			return errorsmod.Wrapf(ErrInvalidConsumerInfractionParameters, "DoubleSign.SlashFraction: %s", err.Error())
 		}
 	}
@@ -403,7 +403,7 @@ func ValidateInfractionParameters(initializationParameters InfractionParameters)
 		if initializationParameters.Downtime.JailDuration < 0 {
 			return errorsmod.Wrap(ErrInvalidConsumerInfractionParameters, "Downtime.JailDuration cannot be negative")
 		}
-		if err := ccvtypes.ValidateFraction(initializationParameters.Downtime.SlashFraction); err != nil {
+		if err := vaastypes.ValidateFraction(initializationParameters.Downtime.SlashFraction); err != nil {
 			return errorsmod.Wrapf(ErrInvalidConsumerInfractionParameters, "Downtime.SlashFraction: %s", err.Error())
 		}
 	}

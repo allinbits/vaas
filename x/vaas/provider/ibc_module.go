@@ -12,7 +12,7 @@ import (
 
 	"github.com/allinbits/vaas/x/vaas/provider/keeper"
 	providertypes "github.com/allinbits/vaas/x/vaas/provider/types"
-	ccv "github.com/allinbits/vaas/x/vaas/types"
+	vaastypes "github.com/allinbits/vaas/x/vaas/types"
 )
 
 // OnChanOpenInit implements the IBCModule interface
@@ -28,7 +28,7 @@ func (am AppModule) OnChanOpenInit(
 	counterparty channeltypes.Counterparty,
 	version string,
 ) (string, error) {
-	return version, errorsmod.Wrap(ccv.ErrInvalidChannelFlow, "channel handshake must be initiated by consumer chain")
+	return version, errorsmod.Wrap(vaastypes.ErrInvalidChannelFlow, "channel handshake must be initiated by consumer chain")
 }
 
 // OnChanOpenTry implements the IBCModule interface
@@ -45,23 +45,23 @@ func (am AppModule) OnChanOpenTry(
 	counterpartyVersion string,
 ) (metadata string, err error) {
 	// Validate parameters
-	if err := validateCCVChannelParams(
+	if err := validateVAASChannelParams(
 		ctx, am.keeper, order, portID,
 	); err != nil {
 		return "", err
 	}
 
 	// ensure the counterparty port ID matches the expected consumer port ID
-	if counterparty.PortId != ccv.ConsumerPortID {
+	if counterparty.PortId != vaastypes.ConsumerPortID {
 		return "", errorsmod.Wrapf(porttypes.ErrInvalidPort,
-			"invalid counterparty port: %s, expected %s", counterparty.PortId, ccv.ConsumerPortID)
+			"invalid counterparty port: %s, expected %s", counterparty.PortId, vaastypes.ConsumerPortID)
 	}
 
 	// ensure the counter party version matches the expected version
-	if counterpartyVersion != ccv.Version {
+	if counterpartyVersion != vaastypes.Version {
 		return "", errorsmod.Wrapf(
-			ccv.ErrInvalidVersion, "invalid counterparty version: got: %s, expected %s",
-			counterpartyVersion, ccv.Version)
+			vaastypes.ErrInvalidVersion, "invalid counterparty version: got: %s, expected %s",
+			counterpartyVersion, vaastypes.Version)
 	}
 
 	if err := am.keeper.VerifyConsumerChain(
@@ -70,19 +70,19 @@ func (am AppModule) OnChanOpenTry(
 		return "", err
 	}
 
-	md := ccv.HandshakeMetadata{
-		Version: ccv.Version,
+	md := vaastypes.HandshakeMetadata{
+		Version: vaastypes.Version,
 	}
 	mdBz, err := (&md).Marshal()
 	if err != nil {
-		return "", errorsmod.Wrapf(ccv.ErrInvalidHandshakeMetadata,
+		return "", errorsmod.Wrapf(vaastypes.ErrInvalidHandshakeMetadata,
 			"error marshalling ibc-try metadata: %v", err)
 	}
 	return string(mdBz), nil
 }
 
-// validateCCVChannelParams validates a ccv channel
-func validateCCVChannelParams(
+// validateVAASChannelParams validates a VAAS channel
+func validateVAASChannelParams(
 	ctx sdk.Context,
 	keeper *keeper.Keeper,
 	order channeltypes.Order,
@@ -92,7 +92,7 @@ func validateCCVChannelParams(
 		return errorsmod.Wrapf(channeltypes.ErrInvalidChannelOrdering, "expected %s channel, got %s ", channeltypes.ORDERED, order)
 	}
 
-	// the port ID must match the port ID the CCV module is bounded to
+	// the port ID must match the port ID the VAAS module is bounded to
 	boundPort := keeper.GetPort(ctx)
 	if boundPort != portID {
 		return errorsmod.Wrapf(porttypes.ErrInvalidPort, "invalid port: %s, expected %s", portID, boundPort)
@@ -111,7 +111,7 @@ func (am AppModule) OnChanOpenAck(
 	counterpartyChannelID string,
 	counterpartyVersion string,
 ) error {
-	return errorsmod.Wrap(ccv.ErrInvalidChannelFlow, "channel handshake must be initiated by consumer chain")
+	return errorsmod.Wrap(vaastypes.ErrInvalidChannelFlow, "channel handshake must be initiated by consumer chain")
 }
 
 // OnChanOpenConfirm implements the IBCModule interface
@@ -171,7 +171,7 @@ func (am AppModule) OnAcknowledgementPacket(
 	_ sdk.AccAddress,
 ) error {
 	var ack channeltypes.Acknowledgement
-	if err := ccv.ModuleCdc.UnmarshalJSON(acknowledgement, &ack); err != nil {
+	if err := vaastypes.ModuleCdc.UnmarshalJSON(acknowledgement, &ack); err != nil {
 		return errorsmod.Wrapf(sdkerrors.ErrUnknownRequest, "cannot unmarshal provider packet acknowledgement: %v", err)
 	}
 
@@ -181,9 +181,9 @@ func (am AppModule) OnAcknowledgementPacket(
 
 	ctx.EventManager().EmitEvent(
 		sdk.NewEvent(
-			ccv.EventTypePacket,
+			vaastypes.EventTypePacket,
 			sdk.NewAttribute(sdk.AttributeKeyModule, providertypes.ModuleName),
-			sdk.NewAttribute(ccv.AttributeKeyAck, ack.String()),
+			sdk.NewAttribute(vaastypes.AttributeKeyAck, ack.String()),
 		),
 	)
 
@@ -191,15 +191,15 @@ func (am AppModule) OnAcknowledgementPacket(
 	case *channeltypes.Acknowledgement_Result:
 		ctx.EventManager().EmitEvent(
 			sdk.NewEvent(
-				ccv.EventTypePacket,
-				sdk.NewAttribute(ccv.AttributeKeyAckSuccess, string(resp.Result)),
+				vaastypes.EventTypePacket,
+				sdk.NewAttribute(vaastypes.AttributeKeyAckSuccess, string(resp.Result)),
 			),
 		)
 	case *channeltypes.Acknowledgement_Error:
 		ctx.EventManager().EmitEvent(
 			sdk.NewEvent(
-				ccv.EventTypePacket,
-				sdk.NewAttribute(ccv.AttributeKeyAckError, resp.Error),
+				vaastypes.EventTypePacket,
+				sdk.NewAttribute(vaastypes.AttributeKeyAckError, resp.Error),
 			),
 		)
 	}
@@ -220,7 +220,7 @@ func (am AppModule) OnTimeoutPacket(
 
 	ctx.EventManager().EmitEvent(
 		sdk.NewEvent(
-			ccv.EventTypeTimeout,
+			vaastypes.EventTypeTimeout,
 			sdk.NewAttribute(sdk.AttributeKeyModule, providertypes.ModuleName),
 		),
 	)

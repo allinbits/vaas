@@ -24,10 +24,10 @@ func (k Keeper) GetTrustingPeriodFraction(ctx sdk.Context) string {
 	return params.TrustingPeriodFraction
 }
 
-// GetCCVTimeoutPeriod returns the timeout period for sent ibc packets
-func (k Keeper) GetCCVTimeoutPeriod(ctx sdk.Context) time.Duration {
+// GetVAASTimeoutPeriod returns the timeout period for sent ibc packets
+func (k Keeper) GetVAASTimeoutPeriod(ctx sdk.Context) time.Duration {
 	params := k.GetParams(ctx)
-	return params.CcvTimeoutPeriod
+	return params.VaasTimeoutPeriod
 }
 
 // GetBlocksPerEpoch returns the number of blocks that constitute an epoch

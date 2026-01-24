@@ -15,7 +15,7 @@ import (
 
 	testkeeper "github.com/allinbits/vaas/testutil/keeper"
 	providertypes "github.com/allinbits/vaas/x/vaas/provider/types"
-	ccv "github.com/allinbits/vaas/x/vaas/types"
+	vaastypes "github.com/allinbits/vaas/x/vaas/types"
 )
 
 const (
@@ -106,7 +106,7 @@ func TestPendingVSCs(t *testing.T) {
 		ppks[i], _ = cryptocodec.ToCmtProtoPublicKey(pk)
 	}
 
-	packetList := []ccv.ValidatorSetChangePacketData{
+	packetList := []vaastypes.ValidatorSetChangePacketData{
 		{
 			ValidatorUpdates: []abci.ValidatorUpdate{
 				{PubKey: ppks[0], Power: 1},
@@ -126,7 +126,7 @@ func TestPendingVSCs(t *testing.T) {
 	packets := providerKeeper.GetPendingVSCPackets(ctx, chainID)
 	require.Len(t, packets, 2)
 
-	newPacket := ccv.ValidatorSetChangePacketData{
+	newPacket := vaastypes.ValidatorSetChangePacketData{
 		ValidatorUpdates: []abci.ValidatorUpdate{
 			{PubKey: ppks[3], Power: 4},
 		},

@@ -10,7 +10,7 @@ var (
 	ErrUnknownConsumerChannelId                = errorsmod.Register(ModuleName, 4, "no consumer chain with this channel id")
 	ErrConsumerKeyInUse                        = errorsmod.Register(ModuleName, 10, "consumer key is already in use by a validator")
 	ErrCannotAssignDefaultKeyAssignment        = errorsmod.Register(ModuleName, 11, "cannot re-assign default key assignment")
-	ErrInvalidConsumerClient                   = errorsmod.Register(ModuleName, 16, "ccv channel is not built on correct client")
+	ErrInvalidConsumerClient                   = errorsmod.Register(ModuleName, 16, "VAAS channel is not built on correct client")
 	ErrNoUnbondingTime                         = errorsmod.Register(ModuleName, 23, "provider unbonding time not found")
 	ErrUnauthorized                            = errorsmod.Register(ModuleName, 25, "unauthorized")
 	ErrInvalidPhase                            = errorsmod.Register(ModuleName, 27, "cannot perform action in the current phase of consumer chain")

@@ -11,13 +11,13 @@ import "gogoproto/gogo.proto";
 
 //
 // Note any type defined in this file is referenced/persisted in both the
-// consumer and provider CCV modules, but not sent over the wire. These schemas
+// consumer and provider VAAS modules, but not sent over the wire. These schemas
 // could change, only with careful consideration of effects!
 //
 
-// ConsumerParams defines the parameters for CCV consumer module.
+// ConsumerParams defines the parameters for VAAS consumer module.
 //
-// Note this type is referenced in both the consumer and provider CCV modules,
+// Note this type is referenced in both the consumer and provider VAAS modules,
 // and persisted on the provider, see MakeConsumerGenesis and
 // SetConsumerGenesis.
 //
@@ -26,13 +26,13 @@ message ConsumerParams {
     // See: https://github.com/cosmos/interchain-security/issues/339
     bool enabled = 1;
 
-    // Sent CCV related IBC packets will timeout after this duration
-    google.protobuf.Duration ccv_timeout_period = 2
+    // Sent VAAS related IBC packets will timeout after this duration
+    google.protobuf.Duration vaas_timeout_period = 2
         [ (gogoproto.nullable) = false, (gogoproto.stdduration) = true ];
 
     // The number of historical info entries to persist in store.
     // This param is a part of the cosmos sdk staking module. In the case of
-    // a ccv enabled consumer chain, the ccv module acts as the staking module.
+    // a VAAS enabled consumer chain, the VAAS module acts as the staking module.
     int64 historical_entries = 3;
 
     // Unbonding period for the consumer,
@@ -53,7 +53,7 @@ message ConsumerGenesisState {
   // Flag indicating whether the consumer VAAS module starts in pre-VAAS state
   bool preVAAS = 4;
   // The ID of the connection end on the consumer chain on top of which the
-  // CCV channel will be established. If connection_id == "", a new client of
+  // VAAS channel will be established. If connection_id == "", a new client of
   // the provider chain and a new connection on top of this client are created.
   // The new client is initialized using client_state and consensus_state.
   string connection_id = 5;

@@ -7,7 +7,7 @@ import (
 
 	abci "github.com/cometbft/cometbft/abci/types"
 
-	ccv "github.com/allinbits/vaas/x/vaas/types"
+	vaastypes "github.com/allinbits/vaas/x/vaas/types"
 )
 
 // NewRestartGenesisState returns a consumer GenesisState that has already been established.
@@ -17,12 +17,12 @@ func NewRestartGenesisState(
 	clientID, channelID string,
 	initValSet []abci.ValidatorUpdate,
 	heightToValsetUpdateIDs []HeightToValsetUpdateID,
-	params ccv.ConsumerParams,
+	params vaastypes.ConsumerParams,
 ) *GenesisState {
 	return &GenesisState{
 		NewChain: false,
 		Params:   params,
-		Provider: ccv.ProviderInfo{
+		Provider: vaastypes.ProviderInfo{
 			InitialValSet: initValSet,
 		},
 		HeightToValsetUpdateId: heightToValsetUpdateIDs,
@@ -35,18 +35,18 @@ func NewRestartGenesisState(
 // unless explicitly specified in genesis.
 func DefaultGenesisState() *GenesisState {
 	return &GenesisState{
-		Params: ccv.DefaultParams(),
+		Params: vaastypes.DefaultParams(),
 	}
 }
 
 // NewInitialGenesisState returns a GenesisState for a completely new consumer chain.
 func NewInitialGenesisState(cs *ibctmtypes.ClientState, consState *ibctmtypes.ConsensusState,
-	initValSet []abci.ValidatorUpdate, params ccv.ConsumerParams,
+	initValSet []abci.ValidatorUpdate, params vaastypes.ConsumerParams,
 ) *GenesisState {
 	return &GenesisState{
 		NewChain: true,
 		Params:   params,
-		Provider: ccv.ProviderInfo{
+		Provider: vaastypes.ProviderInfo{
 			ClientState:    cs,
 			ConsensusState: consState,
 			InitialValSet:  initValSet,
@@ -78,7 +78,7 @@ func (gs GenesisState) Validate() error {
 		return nil
 	}
 	if len(gs.Provider.InitialValSet) == 0 {
-		return errorsmod.Wrap(ccv.ErrInvalidGenesis, "initial validator set is empty")
+		return errorsmod.Wrap(vaastypes.ErrInvalidGenesis, "initial validator set is empty")
 	}
 	if err := gs.Params.Validate(); err != nil {
 		return err
@@ -88,52 +88,52 @@ func (gs GenesisState) Validate() error {
 		if gs.ConnectionId == "" {
 			// connection ID is not provided
 			if gs.Provider.ClientState == nil {
-				return errorsmod.Wrap(ccv.ErrInvalidGenesis, "provider client state cannot be nil for new chain")
+				return errorsmod.Wrap(vaastypes.ErrInvalidGenesis, "provider client state cannot be nil for new chain")
 			}
 			if err := gs.Provider.ClientState.Validate(); err != nil {
-				return errorsmod.Wrapf(ccv.ErrInvalidGenesis, "provider client state invalid for new chain %s", err.Error())
+				return errorsmod.Wrapf(vaastypes.ErrInvalidGenesis, "provider client state invalid for new chain %s", err.Error())
 			}
 			if gs.Provider.ConsensusState == nil {
-				return errorsmod.Wrap(ccv.ErrInvalidGenesis, "provider consensus state cannot be nil for new chain")
+				return errorsmod.Wrap(vaastypes.ErrInvalidGenesis, "provider consensus state cannot be nil for new chain")
 			}
 			if err := gs.Provider.ConsensusState.ValidateBasic(); err != nil {
-				return errorsmod.Wrapf(ccv.ErrInvalidGenesis, "provider consensus state invalid for new chain %s", err.Error())
+				return errorsmod.Wrapf(vaastypes.ErrInvalidGenesis, "provider consensus state invalid for new chain %s", err.Error())
 			}
 		} else {
 			// connection ID is provided
 			if gs.Provider.ClientState != nil {
-				return errorsmod.Wrap(ccv.ErrInvalidGenesis, "provider client state must be nil when connection id is provided")
+				return errorsmod.Wrap(vaastypes.ErrInvalidGenesis, "provider client state must be nil when connection id is provided")
 			}
 			if gs.Provider.ConsensusState != nil {
-				return errorsmod.Wrap(ccv.ErrInvalidGenesis, "provider consensus state must be nil when connection id is provided")
+				return errorsmod.Wrap(vaastypes.ErrInvalidGenesis, "provider consensus state must be nil when connection id is provided")
 			}
-			if err := ccv.ValidateConnectionIdentifier(gs.ConnectionId); err != nil {
-				return errorsmod.Wrapf(ccv.ErrInvalidGenesis, "invalid connection id: %s", err.Error())
+			if err := vaastypes.ValidateConnectionIdentifier(gs.ConnectionId); err != nil {
+				return errorsmod.Wrapf(vaastypes.ErrInvalidGenesis, "invalid connection id: %s", err.Error())
 			}
 		}
 
 		if gs.ProviderClientId != "" {
-			return errorsmod.Wrap(ccv.ErrInvalidGenesis, "provider client id cannot be set for new chain. It must be established on handshake")
+			return errorsmod.Wrap(vaastypes.ErrInvalidGenesis, "provider client id cannot be set for new chain. It must be established on handshake")
 		}
 		if gs.ProviderChannelId != "" {
-			return errorsmod.Wrap(ccv.ErrInvalidGenesis, "provider channel id cannot be set for new chain. It must be established on handshake")
+			return errorsmod.Wrap(vaastypes.ErrInvalidGenesis, "provider channel id cannot be set for new chain. It must be established on handshake")
 		}
 		if len(gs.HeightToValsetUpdateId) != 0 {
-			return errorsmod.Wrap(ccv.ErrInvalidGenesis, "HeightToValsetUpdateId must be nil for new chain")
+			return errorsmod.Wrap(vaastypes.ErrInvalidGenesis, "HeightToValsetUpdateId must be nil for new chain")
 		}
 	} else {
 		// NOTE: For restart genesis, we will verify initial validator set in InitGenesis.
 		if gs.ProviderClientId == "" {
-			return errorsmod.Wrap(ccv.ErrInvalidGenesis, "provider client id must be set for a restarting consumer genesis state")
+			return errorsmod.Wrap(vaastypes.ErrInvalidGenesis, "provider client id must be set for a restarting consumer genesis state")
 		}
 			/* 		if gs.HeightToValsetUpdateId == nil {
 			return errorsmod.Wrap(
-				ccv.ErrInvalidGenesis,
+				vaastypes.ErrInvalidGenesis,
 				"empty height to validator set update id mapping",
 			)
 		} */
 		if gs.Provider.ClientState != nil || gs.Provider.ConsensusState != nil {
-			return errorsmod.Wrap(ccv.ErrInvalidGenesis, "provider client state and consensus state must be nil for a restarting genesis state")
+			return errorsmod.Wrap(vaastypes.ErrInvalidGenesis, "provider client state and consensus state must be nil for a restarting genesis state")
 		}
 	}
 	return nil

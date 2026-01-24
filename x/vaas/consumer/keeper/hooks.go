@@ -5,10 +5,10 @@ import (
 
 	sdk "github.com/cosmos/cosmos-sdk/types"
 
-	ccv "github.com/allinbits/vaas/x/vaas/types"
+	vaastypes "github.com/allinbits/vaas/x/vaas/types"
 )
 
-var _ ccv.ConsumerHooks = Keeper{}
+var _ vaastypes.ConsumerHooks = Keeper{}
 
 // Hooks wrapper struct for ConsumerKeeper
 type Hooks struct {

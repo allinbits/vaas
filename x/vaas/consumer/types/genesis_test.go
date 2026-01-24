@@ -13,7 +13,7 @@ import (
 
 	"github.com/allinbits/vaas/testutil/crypto"
 	"github.com/allinbits/vaas/x/vaas/consumer/types"
-	ccv "github.com/allinbits/vaas/x/vaas/types"
+	vaastypes "github.com/allinbits/vaas/x/vaas/types"
 )
 
 const (
@@ -44,7 +44,7 @@ func TestValidateInitialGenesisState(t *testing.T) {
 	cs := ibctmtypes.NewClientState(chainID, ibctmtypes.DefaultTrustLevel, trustingPeriod, ubdPeriod, maxClockDrift, height, commitmenttypes.GetSDKSpecs(), upgradePath)
 	consensusState := ibctmtypes.NewConsensusState(time.Now(), commitmenttypes.NewMerkleRoot([]byte("apphash")), valHash)
 
-	params := ccv.DefaultParams()
+	params := vaastypes.DefaultParams()
 	params.Enabled = true
 
 	cases := []struct {
@@ -86,7 +86,7 @@ func TestValidateInitialGenesisState(t *testing.T) {
 				ProviderClientId:  "ccvclient",
 				ProviderChannelId: "",
 				NewChain:          true,
-				Provider: ccv.ProviderInfo{
+				Provider: vaastypes.ProviderInfo{
 					ClientState:    cs,
 					ConsensusState: consensusState,
 					InitialValSet:  valUpdates,
@@ -103,7 +103,7 @@ func TestValidateInitialGenesisState(t *testing.T) {
 				ProviderClientId:  "",
 				ProviderChannelId: "ccvchannel",
 				NewChain:          true,
-				Provider: ccv.ProviderInfo{
+				Provider: vaastypes.ProviderInfo{
 					ClientState:    cs,
 					ConsensusState: consensusState,
 					InitialValSet:  valUpdates,
@@ -145,11 +145,11 @@ func TestValidateInitialGenesisState(t *testing.T) {
 		{
 			"invalid new consumer genesis state: invalid params - ccvTimeoutPeriod",
 			types.NewInitialGenesisState(cs, consensusState, valUpdates,
-				ccv.NewParams(
+				vaastypes.NewParams(
 					true,
 					0, // CCV timeout period cannot be 0
-					ccv.DefaultHistoricalEntries,
-					ccv.DefaultConsumerUnbondingPeriod,
+					vaastypes.DefaultHistoricalEntries,
+					vaastypes.DefaultConsumerUnbondingPeriod,
 				)),
 			true,
 		},
@@ -160,7 +160,7 @@ func TestValidateInitialGenesisState(t *testing.T) {
 				ProviderClientId:  "",
 				ProviderChannelId: "",
 				NewChain:          true,
-				Provider: ccv.ProviderInfo{
+				Provider: vaastypes.ProviderInfo{
 					ClientState:    nil,
 					ConsensusState: nil,
 					InitialValSet:  valUpdates,
@@ -178,7 +178,7 @@ func TestValidateInitialGenesisState(t *testing.T) {
 				ProviderClientId:  "",
 				ProviderChannelId: "",
 				NewChain:          true,
-				Provider: ccv.ProviderInfo{
+				Provider: vaastypes.ProviderInfo{
 					ClientState:    cs,
 					ConsensusState: nil,
 					InitialValSet:  valUpdates,
@@ -196,7 +196,7 @@ func TestValidateInitialGenesisState(t *testing.T) {
 				ProviderClientId:  "",
 				ProviderChannelId: "",
 				NewChain:          true,
-				Provider: ccv.ProviderInfo{
+				Provider: vaastypes.ProviderInfo{
 					ClientState:    nil,
 					ConsensusState: consensusState,
 					InitialValSet:  valUpdates,
@@ -214,7 +214,7 @@ func TestValidateInitialGenesisState(t *testing.T) {
 				ProviderClientId:  "",
 				ProviderChannelId: "",
 				NewChain:          true,
-				Provider: ccv.ProviderInfo{
+				Provider: vaastypes.ProviderInfo{
 					ClientState:    nil,
 					ConsensusState: nil,
 					InitialValSet:  valUpdates,
@@ -258,7 +258,7 @@ func TestValidateRestartConsumerGenesisState(t *testing.T) {
 	cs := ibctmtypes.NewClientState(chainID, ibctmtypes.DefaultTrustLevel, trustingPeriod, ubdPeriod, maxClockDrift, height, commitmenttypes.GetSDKSpecs(), upgradePath)
 	consensusState := ibctmtypes.NewConsensusState(time.Now(), commitmenttypes.NewMerkleRoot([]byte("apphash")), valHash)
 
-	params := ccv.DefaultParams()
+	params := vaastypes.DefaultParams()
 	params.Enabled = true
 
 	cases := []struct {
@@ -283,7 +283,7 @@ func TestValidateRestartConsumerGenesisState(t *testing.T) {
 				ProviderClientId:  "ccvclient",
 				ProviderChannelId: "ccvchannel",
 				NewChain:          false,
-				Provider: ccv.ProviderInfo{
+				Provider: vaastypes.ProviderInfo{
 					ClientState:    cs,
 					ConsensusState: nil,
 					InitialValSet:  valUpdates,
@@ -300,7 +300,7 @@ func TestValidateRestartConsumerGenesisState(t *testing.T) {
 				ProviderClientId:  "ccvclient",
 				ProviderChannelId: "ccvchannel",
 				NewChain:          false,
-				Provider: ccv.ProviderInfo{
+				Provider: vaastypes.ProviderInfo{
 					ClientState:    nil,
 					ConsensusState: consensusState,
 					InitialValSet:  valUpdates,
@@ -318,11 +318,11 @@ func TestValidateRestartConsumerGenesisState(t *testing.T) {
 		{
 			"invalid restart consumer genesis state: invalid params",
 			types.NewRestartGenesisState("ccvclient", "ccvchannel", valUpdates, nil,
-				ccv.NewParams(
+				vaastypes.NewParams(
 					true,
 					0, // CCV timeout period cannot be 0
-					ccv.DefaultHistoricalEntries,
-					ccv.DefaultConsumerUnbondingPeriod,
+					vaastypes.DefaultHistoricalEntries,
+					vaastypes.DefaultConsumerUnbondingPeriod,
 				)),
 			true,
 		},

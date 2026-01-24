@@ -12,7 +12,7 @@ const (
 	// Default number of historical info entries to persist in store.
 	// We use the same default as the staking module, but use a signed integer
 	// so that negative values can be caught during parameter validation in a readable way,
-	// (and for consistency with other protobuf schemas defined for ccv).
+	// (and for consistency with other protobuf schemas defined for VAAS).
 	DefaultHistoricalEntries = int64(stakingtypes.DefaultHistoricalEntries)
 
 	// In general, the default unbonding period on the consumer is one day less
@@ -43,13 +43,13 @@ func ParamKeyTable() paramtypes.KeyTable {
 
 // NewParams creates new consumer parameters with provided arguments
 func NewParams(enabled bool,
-	ccvTimeoutPeriod time.Duration,
+	vaasTimeoutPeriod time.Duration,
 	historicalEntries int64,
 	consumerUnbondingPeriod time.Duration,
 ) ConsumerParams {
 	return ConsumerParams{
 		Enabled:           enabled,
-		CcvTimeoutPeriod:  ccvTimeoutPeriod,
+		VaasTimeoutPeriod: vaasTimeoutPeriod,
 		HistoricalEntries: historicalEntries,
 		UnbondingPeriod:   consumerUnbondingPeriod,
 	}
@@ -59,18 +59,18 @@ func NewParams(enabled bool,
 func DefaultParams() ConsumerParams {
 	return NewParams(
 		false,
-		DefaultCCVTimeoutPeriod,
+		DefaultVAASTimeoutPeriod,
 		DefaultHistoricalEntries,
 		DefaultConsumerUnbondingPeriod,
 	)
 }
 
-// Validate all ccv-consumer module parameters
+// Validate all VAAS-consumer module parameters
 func (p ConsumerParams) Validate() error {
 	if err := ValidateBool(p.Enabled); err != nil {
 		return err
 	}
-	if err := ValidateDuration(p.CcvTimeoutPeriod); err != nil {
+	if err := ValidateDuration(p.VaasTimeoutPeriod); err != nil {
 		return err
 	}
 	if err := ValidatePositiveInt64(p.HistoricalEntries); err != nil {
@@ -86,8 +86,8 @@ func (p ConsumerParams) Validate() error {
 func (p *ConsumerParams) ParamSetPairs() paramtypes.ParamSetPairs {
 	return paramtypes.ParamSetPairs{
 		paramtypes.NewParamSetPair(KeyEnabled, p.Enabled, ValidateBool),
-		paramtypes.NewParamSetPair(KeyCCVTimeoutPeriod,
-			p.CcvTimeoutPeriod, ValidateDuration),
+		paramtypes.NewParamSetPair(KeyVAASTimeoutPeriod,
+			p.VaasTimeoutPeriod, ValidateDuration),
 		paramtypes.NewParamSetPair(KeyHistoricalEntries,
 			p.HistoricalEntries, ValidatePositiveInt64),
 		paramtypes.NewParamSetPair(KeyConsumerUnbondingPeriod,

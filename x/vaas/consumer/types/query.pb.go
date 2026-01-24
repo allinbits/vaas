@@ -323,7 +323,7 @@ const _ = grpc.SupportPackageIsVersion4
 //
 // For semantics around ctx use and closing/ending streaming RPCs, please refer to https://godoc.org/google.golang.org/grpc#ClientConn.NewStream.
 type QueryClient interface {
-	// QueryParams queries the ccv/consumer module parameters.
+	// QueryParams queries the vaas/consumer module parameters.
 	QueryParams(ctx context.Context, in *QueryParamsRequest, opts ...grpc.CallOption) (*QueryParamsResponse, error)
 	QueryProviderInfo(ctx context.Context, in *QueryProviderInfoRequest, opts ...grpc.CallOption) (*QueryProviderInfoResponse, error)
 }
@@ -356,7 +356,7 @@ func (c *queryClient) QueryProviderInfo(ctx context.Context, in *QueryProviderIn
 
 // QueryServer is the server API for Query service.
 type QueryServer interface {
-	// QueryParams queries the ccv/consumer module parameters.
+	// QueryParams queries the vaas/consumer module parameters.
 	QueryParams(context.Context, *QueryParamsRequest) (*QueryParamsResponse, error)
 	QueryProviderInfo(context.Context, *QueryProviderInfoRequest) (*QueryProviderInfoResponse, error)
 }
