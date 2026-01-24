@@ -69,41 +69,39 @@ func TestPreserveBytePrefix(t *testing.T) {
 	i++
 	require.Equal(t, byte(19), providertypes.DenylistKeyPrefix())
 	i++
-	require.Equal(t, byte(20), providertypes.MinimumPowerInTopNKey("13")[0])
+	require.Equal(t, byte(20), providertypes.ConsumerAddrsToPruneV2KeyPrefix())
 	i++
-	require.Equal(t, byte(21), providertypes.ConsumerAddrsToPruneV2KeyPrefix())
+	require.Equal(t, byte(21), providertypes.LastProviderConsensusValsPrefix()[0])
 	i++
-	require.Equal(t, byte(22), providertypes.LastProviderConsensusValsPrefix()[0])
+	require.Equal(t, byte(22), providertypes.ConsumerIdKey()[0])
 	i++
-	require.Equal(t, byte(23), providertypes.ConsumerIdKey()[0])
+	require.Equal(t, byte(23), providertypes.ConsumerIdToChainIdKey("13")[0])
 	i++
-	require.Equal(t, byte(24), providertypes.ConsumerIdToChainIdKey("13")[0])
+	require.Equal(t, byte(24), providertypes.ConsumerIdToOwnerAddressKey("13")[0])
 	i++
-	require.Equal(t, byte(25), providertypes.ConsumerIdToOwnerAddressKey("13")[0])
+	require.Equal(t, byte(25), providertypes.ConsumerIdToMetadataKeyPrefix())
 	i++
-	require.Equal(t, byte(26), providertypes.ConsumerIdToMetadataKeyPrefix())
+	require.Equal(t, byte(26), providertypes.ConsumerIdToInitializationParametersKeyPrefix())
 	i++
-	require.Equal(t, byte(27), providertypes.ConsumerIdToInitializationParametersKeyPrefix())
+	require.Equal(t, byte(27), providertypes.ConsumerIdToPowerShapingParametersKey("13")[0])
 	i++
-	require.Equal(t, byte(28), providertypes.ConsumerIdToPowerShapingParametersKey("13")[0])
+	require.Equal(t, byte(28), providertypes.ConsumerIdToPhaseKey("13")[0])
 	i++
-	require.Equal(t, byte(29), providertypes.ConsumerIdToPhaseKey("13")[0])
+	require.Equal(t, byte(29), providertypes.ConsumerIdToRemovalTimeKeyPrefix())
 	i++
-	require.Equal(t, byte(30), providertypes.ConsumerIdToRemovalTimeKeyPrefix())
+	require.Equal(t, byte(30), providertypes.SpawnTimeToConsumerIdsKeyPrefix())
 	i++
-	require.Equal(t, byte(31), providertypes.SpawnTimeToConsumerIdsKeyPrefix())
+	require.Equal(t, byte(31), providertypes.RemovalTimeToConsumerIdsKeyPrefix())
 	i++
-	require.Equal(t, byte(32), providertypes.RemovalTimeToConsumerIdsKeyPrefix())
+	require.Equal(t, byte(32), providertypes.ClientIdToConsumerIdKey("clientId")[0])
 	i++
-	require.Equal(t, byte(33), providertypes.ClientIdToConsumerIdKey("clientId")[0])
+	require.Equal(t, byte(33), providertypes.PrioritylistKeyPrefix())
 	i++
-	require.Equal(t, byte(34), providertypes.PrioritylistKeyPrefix())
+	require.Equal(t, byte(34), providertypes.ConsumerIdToInfractionParametersKeyPrefix())
 	i++
-	require.Equal(t, byte(35), providertypes.ConsumerIdToInfractionParametersKeyPrefix())
+	require.Equal(t, byte(35), providertypes.ConsumerIdToQueuedInfractionParametersKeyPrefix())
 	i++
-	require.Equal(t, byte(36), providertypes.ConsumerIdToQueuedInfractionParametersKeyPrefix())
-	i++
-	require.Equal(t, byte(37), providertypes.InfractionScheduledTimeToConsumerIdsKeyPrefix())
+	require.Equal(t, byte(36), providertypes.InfractionScheduledTimeToConsumerIdsKeyPrefix())
 	i++
 
 	prefixes := providertypes.GetAllKeyPrefixes()
@@ -145,7 +143,6 @@ func getAllFullyDefinedKeys() [][]byte {
 		providertypes.AllowlistKey("13", providertypes.NewProviderConsAddress([]byte{0x05})),
 		providertypes.DenylistKey("13", providertypes.NewProviderConsAddress([]byte{0x05})),
 		providertypes.OptedInKey("13", providertypes.NewProviderConsAddress([]byte{0x05})),
-		providertypes.MinimumPowerInTopNKey("13"),
 		providertypes.ConsumerAddrsToPruneV2Key("13", time.Time{}),
 		providerkeeper.GetValidatorKey(providertypes.LastProviderConsensusValsPrefix(), providertypes.NewProviderConsAddress([]byte{0x05})),
 		providertypes.ConsumerIdKey(),

@@ -76,8 +76,6 @@ const (
 
 	DenylistKeyName = "DenylistKey"
 
-	MinimumPowerInTopNKeyName = "MinimumPowerInTopNKey"
-
 	LastProviderConsensusValsKeyName = "LastProviderConsensusValsKey"
 
 	ConsumerAddrsToPruneV2KeyName = "ConsumerAddrsToPruneV2Key"
@@ -190,65 +188,61 @@ func getKeyPrefixes() map[string]byte {
 		// denylisted.
 		DenylistKeyName: 19,
 
-		// MinimumPowerInTopNKey is the key for storing the
-		// minimum power required to be in the top N per consumer chain.
-		MinimumPowerInTopNKeyName: 20,
-
 		// ConsumerAddrsToPruneV2Key is the key for storing
 		// consumer validators addresses that need to be pruned.
-		ConsumerAddrsToPruneV2KeyName: 21,
+		ConsumerAddrsToPruneV2KeyName: 20,
 
 		// LastProviderConsensusValsKey is the key for storing the last validator set
 		// sent to the consensus engine of the provider chain
-		LastProviderConsensusValsKeyName: 22,
+		LastProviderConsensusValsKeyName: 21,
 
 		// ConsumerIdKeyName is the key for storing the consumer id for the next registered consumer chain
-		ConsumerIdKeyName: 23,
+		ConsumerIdKeyName: 22,
 
 		// ConsumerIdToChainIdKeyName is the key for storing the chain id for the given consumer id
-		ConsumerIdToChainIdKeyName: 24,
+		ConsumerIdToChainIdKeyName: 23,
 
 		// ConsumerIdToOwnerAddressKeyName is the key for storing the owner address for the given consumer id
-		ConsumerIdToOwnerAddressKeyName: 25,
+		ConsumerIdToOwnerAddressKeyName: 24,
 
 		// ConsumerIdToConsumerMetadataKeyName is the key for storing the metadata for the given consumer id
-		ConsumerIdToConsumerMetadataKeyName: 26,
+		ConsumerIdToConsumerMetadataKeyName: 25,
 
 		// ConsumerIdToInitializationParametersKeyName is the key for storing the initialization parameters for the given consumer id
-		ConsumerIdToInitializationParametersKeyName: 27,
+		ConsumerIdToInitializationParametersKeyName: 26,
 
 		// ConsumerIdToPowerShapingParameters is the key for storing the power-shaping parameters for the given consumer id
-		ConsumerIdToPowerShapingParameters: 28,
+		ConsumerIdToPowerShapingParameters: 27,
 
 		// ConsumerIdToPhaseKeyName is the key for storing the phase of a consumer chain with the given consumer id
-		ConsumerIdToPhaseKeyName: 29,
+		ConsumerIdToPhaseKeyName: 28,
 
 		// ConsumerIdToRemovalTimeKeyName is the key for storing the removal time of a consumer chain that is to be removed
-		ConsumerIdToRemovalTimeKeyName: 30,
+		ConsumerIdToRemovalTimeKeyName: 29,
 
 		// SpawnTimeToConsumerIdKeyName is the key for storing pending initialized consumers that are to be launched.
 		// For a specific spawn time, it might store multiple consumer chain ids for chains that are to be launched.
-		SpawnTimeToConsumerIdsKeyName: 31,
+		SpawnTimeToConsumerIdsKeyName: 30,
 
 		// RemovalTimeToConsumerIdsKeyName is the key for storing pending launched consumers that are to be removed.
 		// For a specific removal time, it might store multiple consumer chain ids for chains that are to be removed.
-		RemovalTimeToConsumerIdsKeyName: 32,
+		RemovalTimeToConsumerIdsKeyName: 31,
 
 		// ClientIdToConsumerIdKeyName is the key for storing the consumer id for the given client id
-		ClientIdToConsumerIdKeyName: 33,
+		ClientIdToConsumerIdKeyName: 32,
 
 		// PrioritylistKey is the key for storing the mapping from a consumer chain to the set of validators that are
 		// prioritylisted.
-		PrioritylistKeyName: 34,
+		PrioritylistKeyName: 33,
 
 		// ConsumerIdToInfractionParametersKeyName is the key for storing slashing and jailing infraction parameters for a specific consumer chain
-		ConsumerIdToInfractionParametersKeyName: 35,
+		ConsumerIdToInfractionParametersKeyName: 34,
 
 		// ConsumerIdToQueuedInfractionParametersKeyName is the key for storing queued infraction parameters that will be used to update consumer infraction parameters
-		ConsumerIdToQueuedInfractionParametersKeyName: 36,
+		ConsumerIdToQueuedInfractionParametersKeyName: 35,
 
 		// InfractionScheduledTimeToConsumerIdsKeyName is the key for storing time when the infraction parameters will be updated for the specific consumer
-		InfractionScheduledTimeToConsumerIdsKeyName: 37,
+		InfractionScheduledTimeToConsumerIdsKeyName: 36,
 
 		// NOTE: DO NOT ADD NEW BYTE PREFIXES HERE WITHOUT ADDING THEM TO TestPreserveBytePrefix() IN keys_test.go
 	}
@@ -464,10 +458,6 @@ func OptedInKeyPrefix() byte {
 // OptedInKey returns the key used to store whether a validator is opted in on a consumer chain.
 func OptedInKey(consumerId string, providerAddr ProviderConsAddress) []byte {
 	return StringIdAndConsAddrKey(OptedInKeyPrefix(), consumerId, providerAddr.ToSdkConsAddr())
-}
-
-func MinimumPowerInTopNKey(consumerId string) []byte {
-	return StringIdWithLenKey(mustGetKeyPrefix(MinimumPowerInTopNKeyName), consumerId)
 }
 
 // ConsumerAddrsToPruneV2KeyPrefix returns the key prefix for storing the consumer validators

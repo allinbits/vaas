@@ -23,7 +23,6 @@ const (
 	AttributeConsumerChainId          = "consumer_chain_id"
 	AttributeConsumerName             = "consumer_name"
 	AttributeConsumerOwner            = "consumer_owner"
-	AttributeConsumerSpawnTime        = "consumer_spawn_time"
-	AttributeConsumerPhase            = "consumer_phase"
-	AttributeConsumerTopN             = "consumer_topn"
+	AttributeConsumerSpawnTime = "consumer_spawn_time"
+	AttributeConsumerPhase     = "consumer_phase"
 )
