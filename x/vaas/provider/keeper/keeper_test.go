@@ -13,7 +13,6 @@ import (
 	abci "github.com/cometbft/cometbft/abci/types"
 	tmprotocrypto "github.com/cometbft/cometbft/proto/tendermint/crypto"
 
-	cryptotestutil "github.com/allinbits/vaas/testutil/crypto"
 	testkeeper "github.com/allinbits/vaas/testutil/keeper"
 	providertypes "github.com/allinbits/vaas/x/vaas/provider/types"
 	ccv "github.com/allinbits/vaas/x/vaas/types"
@@ -218,19 +217,6 @@ func TestGetAllChannelToChains(t *testing.T) {
 	result := pk.GetAllChannelToConsumers(ctx)
 	require.Len(t, result, len(consumerIds))
 	require.Equal(t, expectedGetAllOrder, result)
-}
-
-// TestSetSlashLog tests slash log getter and setter methods
-func TestSetSlashLog(t *testing.T) {
-	providerKeeper, ctx, ctrl, _ := testkeeper.GetProviderKeeperAndCtx(t, testkeeper.NewInMemKeeperParams(t))
-	defer ctrl.Finish()
-
-	addrWithDoubleSigns := cryptotestutil.NewCryptoIdentityFromIntSeed(1).ProviderConsAddress()
-	addrWithoutDoubleSigns := cryptotestutil.NewCryptoIdentityFromIntSeed(2).ProviderConsAddress()
-
-	providerKeeper.SetSlashLog(ctx, addrWithDoubleSigns)
-	require.True(t, providerKeeper.GetSlashLog(ctx, addrWithDoubleSigns))
-	require.False(t, providerKeeper.GetSlashLog(ctx, addrWithoutDoubleSigns))
 }
 
 // TestConsumerClientId tests the getter, setter, and deletion of the client id <> consumer id mappings

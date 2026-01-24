@@ -40,10 +40,6 @@ const (
 
 	ValidatorSetUpdateIdKeyName = "ValidatorSetUpdateIdKey"
 
-	SlashMeterKeyName = "SlashMeterKey"
-
-	SlashMeterReplenishTimeCandidateKeyName = "SlashMeterReplenishTimeCandidateKey"
-
 	ConsumerIdToChannelIdKeyName = "ConsumerIdToChannelIdKey"
 
 	ChannelIdToConsumerIdKeyName = "ChannelToConsumerIdKey"
@@ -54,8 +50,6 @@ const (
 
 	ConsumerGenesisKeyName = "ConsumerGenesisKey"
 
-	SlashAcksKeyName = "SlashAcksKey"
-
 	InitChainHeightKeyName = "InitChainHeightKey"
 
 	PendingVSCsKeyName = "PendingVSCsKey"
@@ -63,8 +57,6 @@ const (
 	ConsumerValidatorsKeyName = "ConsumerValidatorsKey"
 
 	ValidatorsByConsumerAddrKeyName = "ValidatorsByConsumerAddrKey"
-
-	SlashLogKeyName = "SlashLogKey"
 
 	EquivocationEvidenceMinHeightKeyName = "EquivocationEvidenceMinHeightKey"
 
@@ -119,113 +111,100 @@ func getKeyPrefixes() map[string]byte {
 		// ValidatorSetUpdateIdKey is the key that stores the current validator set update id
 		ValidatorSetUpdateIdKeyName: 1,
 
-		// SlashMeterKey is the key for storing the slash meter
-		SlashMeterKeyName: 2,
-
-		// SlashMeterReplenishTimeCandidateKey is the key for storing the slash meter replenish time candidate
-		SlashMeterReplenishTimeCandidateKeyName: 3,
-
 		// ConsumerIdToChannelIdKey is the key for storing mapping
 		// from chainID to the channel ID that is used to send over validator set changes.
-		ConsumerIdToChannelIdKeyName: 4,
+		ConsumerIdToChannelIdKeyName: 2,
 
 		// ChannelToConsumerIdKey is the key for storing mapping
 		// from the CCV channel ID to the consumer chain ID.
-		ChannelIdToConsumerIdKeyName: 5,
+		ChannelIdToConsumerIdKeyName: 3,
 
 		// ConsumerIdToClientIdKey is the key for storing the client ID for a given consumer chainID.
-		ConsumerIdToClientIdKeyName: 6,
+		ConsumerIdToClientIdKeyName: 4,
 
 		// ValsetUpdateBlockHeightKey is the key for storing the mapping from vscIDs to block heights
-		ValsetUpdateBlockHeightKeyName: 7,
+		ValsetUpdateBlockHeightKeyName: 5,
 
 		// ConsumerGenesisKey stores consumer genesis state material (consensus state and client state) indexed by consumer chain id
-		ConsumerGenesisKeyName: 8,
-
-		// SlashAcksKey is the key for storing consensus address of consumer chain validators successfully slashed on the provider chain
-		SlashAcksKeyName: 9,
+		ConsumerGenesisKeyName: 6,
 
 		// InitChainHeightKey is the key for storing the mapping from a chain id to the corresponding block height on the provider
 		// this consumer chain was initialized
-		InitChainHeightKeyName: 10,
+		InitChainHeightKeyName: 7,
 
 		// PendingVSCsKey is the key for storing pending ValidatorSetChangePacket data
-		PendingVSCsKeyName: 11,
+		PendingVSCsKeyName: 8,
 
 		// ConsumerValidatorsKey is the key for storing the validator assigned keys for every consumer chain
-		ConsumerValidatorsKeyName: 12,
+		ConsumerValidatorsKeyName: 9,
 
 		// ValidatorsByConsumerAddrKey is the key for storing the mapping from validator addresses
 		// on consumer chains to validator addresses on the provider chain
-		ValidatorsByConsumerAddrKeyName: 13,
-
-		// SlashLogKey is the key for storing the mapping from provider address to boolean
-		// denoting whether the provider address has committed any double signign infractions
-		SlashLogKeyName: 14,
+		ValidatorsByConsumerAddrKeyName: 10,
 
 		// EquivocationEvidenceMinHeightKey is the key for storing the mapping from consumer chain IDs
 		// to the minimum height of a valid consumer equivocation evidence
-		EquivocationEvidenceMinHeightKeyName: 15,
+		EquivocationEvidenceMinHeightKeyName: 11,
 
 		// ConsumerValidatorKey is the key for storing for each consumer chain all the consumer
 		// validators in this epoch that are validating the consumer chain
-		ConsumerValidatorKeyName: 16,
+		ConsumerValidatorKeyName: 12,
 
 		// ConsumerAddrsToPruneV2Key is the key for storing
 		// consumer validators addresses that need to be pruned.
-		ConsumerAddrsToPruneV2KeyName: 17,
+		ConsumerAddrsToPruneV2KeyName: 13,
 
 		// LastProviderConsensusValsKey is the key for storing the last validator set
 		// sent to the consensus engine of the provider chain
-		LastProviderConsensusValsKeyName: 18,
+		LastProviderConsensusValsKeyName: 14,
 
 		// ConsumerIdKeyName is the key for storing the consumer id for the next registered consumer chain
-		ConsumerIdKeyName: 19,
+		ConsumerIdKeyName: 15,
 
 		// ConsumerIdToChainIdKeyName is the key for storing the chain id for the given consumer id
-		ConsumerIdToChainIdKeyName: 20,
+		ConsumerIdToChainIdKeyName: 16,
 
 		// ConsumerIdToOwnerAddressKeyName is the key for storing the owner address for the given consumer id
-		ConsumerIdToOwnerAddressKeyName: 21,
+		ConsumerIdToOwnerAddressKeyName: 17,
 
 		// ConsumerIdToConsumerMetadataKeyName is the key for storing the metadata for the given consumer id
-		ConsumerIdToConsumerMetadataKeyName: 22,
+		ConsumerIdToConsumerMetadataKeyName: 18,
 
 		// ConsumerIdToInitializationParametersKeyName is the key for storing the initialization parameters for the given consumer id
-		ConsumerIdToInitializationParametersKeyName: 23,
+		ConsumerIdToInitializationParametersKeyName: 19,
 
 		// ConsumerIdToPowerShapingParameters is the key for storing the power-shaping parameters for the given consumer id
-		ConsumerIdToPowerShapingParameters: 24,
+		ConsumerIdToPowerShapingParameters: 20,
 
 		// ConsumerIdToPhaseKeyName is the key for storing the phase of a consumer chain with the given consumer id
-		ConsumerIdToPhaseKeyName: 25,
+		ConsumerIdToPhaseKeyName: 21,
 
 		// ConsumerIdToRemovalTimeKeyName is the key for storing the removal time of a consumer chain that is to be removed
-		ConsumerIdToRemovalTimeKeyName: 26,
+		ConsumerIdToRemovalTimeKeyName: 22,
 
 		// SpawnTimeToConsumerIdKeyName is the key for storing pending initialized consumers that are to be launched.
 		// For a specific spawn time, it might store multiple consumer chain ids for chains that are to be launched.
-		SpawnTimeToConsumerIdsKeyName: 27,
+		SpawnTimeToConsumerIdsKeyName: 23,
 
 		// RemovalTimeToConsumerIdsKeyName is the key for storing pending launched consumers that are to be removed.
 		// For a specific removal time, it might store multiple consumer chain ids for chains that are to be removed.
-		RemovalTimeToConsumerIdsKeyName: 28,
+		RemovalTimeToConsumerIdsKeyName: 24,
 
 		// ClientIdToConsumerIdKeyName is the key for storing the consumer id for the given client id
-		ClientIdToConsumerIdKeyName: 29,
+		ClientIdToConsumerIdKeyName: 25,
 
 		// PrioritylistKey is the key for storing the mapping from a consumer chain to the set of validators that are
 		// prioritylisted.
-		PrioritylistKeyName: 30,
+		PrioritylistKeyName: 26,
 
 		// ConsumerIdToInfractionParametersKeyName is the key for storing slashing and jailing infraction parameters for a specific consumer chain
-		ConsumerIdToInfractionParametersKeyName: 31,
+		ConsumerIdToInfractionParametersKeyName: 27,
 
 		// ConsumerIdToQueuedInfractionParametersKeyName is the key for storing queued infraction parameters that will be used to update consumer infraction parameters
-		ConsumerIdToQueuedInfractionParametersKeyName: 32,
+		ConsumerIdToQueuedInfractionParametersKeyName: 28,
 
 		// InfractionScheduledTimeToConsumerIdsKeyName is the key for storing time when the infraction parameters will be updated for the specific consumer
-		InfractionScheduledTimeToConsumerIdsKeyName: 33,
+		InfractionScheduledTimeToConsumerIdsKeyName: 29,
 
 		// NOTE: DO NOT ADD NEW BYTE PREFIXES HERE WITHOUT ADDING THEM TO TestPreserveBytePrefix() IN keys_test.go
 	}
@@ -289,16 +268,6 @@ func ValidatorSetUpdateIdKey() []byte {
 	return []byte{mustGetKeyPrefix(ValidatorSetUpdateIdKeyName)}
 }
 
-// SlashMeterKey returns the key storing the slash meter
-func SlashMeterKey() []byte {
-	return []byte{mustGetKeyPrefix(SlashMeterKeyName)}
-}
-
-// SlashMeterReplenishTimeCandidateKey returns the key storing the slash meter replenish time candidate
-func SlashMeterReplenishTimeCandidateKey() []byte {
-	return []byte{mustGetKeyPrefix(SlashMeterReplenishTimeCandidateKeyName)}
-}
-
 // ConsumerIdToChannelIdKey returns the key under which the CCV channel ID will be stored for the given consumer chain.
 func ConsumerIdToChannelIdKey(consumerId string) []byte {
 	return append([]byte{mustGetKeyPrefix(ConsumerIdToChannelIdKeyName)}, []byte(consumerId)...)
@@ -342,11 +311,6 @@ func ConsumerGenesisKey(consumerId string) []byte {
 	return append([]byte{mustGetKeyPrefix(ConsumerGenesisKeyName)}, []byte(consumerId)...)
 }
 
-// SlashAcksKey returns the key under which slashing acks are stored for a given consumer id
-func SlashAcksKey(consumerId string) []byte {
-	return append([]byte{mustGetKeyPrefix(SlashAcksKeyName)}, []byte(consumerId)...)
-}
-
 // InitChainHeightKey returns the key under which the block height for a given consumer id is stored
 func InitChainHeightKey(consumerId string) []byte {
 	return append([]byte{mustGetKeyPrefix(InitChainHeightKeyName)}, []byte(consumerId)...)
@@ -379,11 +343,6 @@ func ValidatorsByConsumerAddrKeyPrefix() byte {
 // on consumer chains to validator addresses on the provider chain
 func ValidatorsByConsumerAddrKey(consumerId string, addr ConsumerConsAddress) []byte {
 	return StringIdAndConsAddrKey(ValidatorsByConsumerAddrKeyPrefix(), consumerId, addr.ToSdkConsAddr())
-}
-
-// SlashLogKey returns the key to a validator's slash log
-func SlashLogKey(providerAddr ProviderConsAddress) []byte {
-	return append([]byte{mustGetKeyPrefix(SlashLogKeyName)}, providerAddr.ToSdkConsAddr().Bytes()...)
 }
 
 // EquivocationEvidenceMinHeightKey returns the key storing the minimum height

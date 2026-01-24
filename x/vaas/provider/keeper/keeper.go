@@ -579,28 +579,6 @@ func (k Keeper) DeleteConsumerClientId(ctx sdk.Context, consumerId string) {
 	store.Delete(types.ConsumerIdToClientIdKey(consumerId))
 }
 
-// SetSlashLog updates validator's slash log for a consumer chain
-// If an entry exists for a given validator address, at least one
-// double signing slash packet was received by the provider from at least one consumer chain
-func (k Keeper) SetSlashLog(
-	ctx sdk.Context,
-	providerAddr types.ProviderConsAddress,
-) {
-	store := ctx.KVStore(k.storeKey)
-	store.Set(types.SlashLogKey(providerAddr), []byte{})
-}
-
-// GetSlashLog returns a validator's slash log status
-// True will be returned if an entry exists for a given validator address
-func (k Keeper) GetSlashLog(
-	ctx sdk.Context,
-	providerAddr types.ProviderConsAddress,
-) (found bool) {
-	store := ctx.KVStore(k.storeKey)
-	bz := store.Get(types.SlashLogKey(providerAddr))
-	return bz != nil
-}
-
 func (k Keeper) BondDenom(ctx sdk.Context) (string, error) {
 	return k.stakingKeeper.BondDenom(ctx)
 }
