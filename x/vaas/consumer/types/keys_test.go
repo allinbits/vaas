@@ -1,7 +1,6 @@
 package types_test
 
 import (
-	"strings"
 	"testing"
 
 	"github.com/stretchr/testify/require"
@@ -56,17 +55,6 @@ func TestPreserveBytePrefix(t *testing.T) {
 
 func TestNoPrefixOverlap(t *testing.T) {
 	keys := getAllFullyDefinedKeys()
-
-	// Make sure that we check all the fully defined keys.
-	// All non-deprecated keys should have such a function.
-	keyNames := consumertypes.GetAllKeyNames()
-	nonDeprecatedKey := []string{}
-	for _, name := range keyNames {
-		if !strings.Contains(name, "Deprecated") {
-			nonDeprecatedKey = append(nonDeprecatedKey, name)
-		}
-	}
-	require.Equal(t, len(nonDeprecatedKey), len(keys))
 
 	seenPrefixes := []byte{}
 	for _, key := range keys {

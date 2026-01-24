@@ -1,7 +1,6 @@
 package types_test
 
 import (
-	"strings"
 	"testing"
 	"time"
 
@@ -32,128 +31,87 @@ func TestPreserveBytePrefix(t *testing.T) {
 	i++
 	require.Equal(t, byte(0), providertypes.PortKey()[0])
 	i++
-	// reserve 1 as deprecated
+	require.Equal(t, byte(1), providertypes.ValidatorSetUpdateIdKey()[0])
 	i++
-	require.Equal(t, byte(2), providertypes.ValidatorSetUpdateIdKey()[0])
+	require.Equal(t, byte(2), providertypes.SlashMeterKey()[0])
 	i++
-	require.Equal(t, byte(3), providertypes.SlashMeterKey()[0])
+	require.Equal(t, byte(3), providertypes.SlashMeterReplenishTimeCandidateKey()[0])
 	i++
-	require.Equal(t, byte(4), providertypes.SlashMeterReplenishTimeCandidateKey()[0])
+	require.Equal(t, byte(4), providertypes.ConsumerIdToChannelIdKey("13")[0])
 	i++
-	require.Equal(t, byte(5), providertypes.ConsumerIdToChannelIdKey("13")[0])
+	require.Equal(t, byte(5), providertypes.ChannelIdToConsumerIdKeyPrefix()[0])
 	i++
-	require.Equal(t, byte(6), providertypes.ChannelIdToConsumerIdKeyPrefix()[0])
+	require.Equal(t, byte(6), providertypes.ConsumerIdToClientIdKeyPrefix()[0])
 	i++
-	require.Equal(t, byte(7), providertypes.ConsumerIdToClientIdKeyPrefix()[0])
+	require.Equal(t, byte(7), providertypes.ValsetUpdateBlockHeightKeyPrefix()[0])
 	i++
-	// reserve 8 as deprecated
+	require.Equal(t, byte(8), providertypes.ConsumerGenesisKey("13")[0])
 	i++
-	// reserve 9 as deprecated
+	require.Equal(t, byte(9), providertypes.SlashAcksKey("13")[0])
 	i++
-	// reserve 10 as deprecated
+	require.Equal(t, byte(10), providertypes.InitChainHeightKey("13")[0])
 	i++
-	// reserve 11 as deprecated
+	require.Equal(t, byte(11), providertypes.PendingVSCsKey("13")[0])
 	i++
-	// reserve 12 as deprecated
+	require.Equal(t, byte(12), providertypes.ConsumerValidatorsKeyPrefix())
 	i++
-	require.Equal(t, byte(13), providertypes.ValsetUpdateBlockHeightKeyPrefix()[0])
+	require.Equal(t, byte(13), providertypes.ValidatorsByConsumerAddrKeyPrefix())
 	i++
-	require.Equal(t, byte(14), providertypes.ConsumerGenesisKey("13")[0])
+	require.Equal(t, byte(14), providertypes.SlashLogKey(providertypes.NewProviderConsAddress([]byte{0x05}))[0])
 	i++
-	require.Equal(t, byte(15), providertypes.SlashAcksKey("13")[0])
+	require.Equal(t, byte(15), providertypes.ConsumerRewardDenomsKeyPrefix()[0])
 	i++
-	require.Equal(t, byte(16), providertypes.InitChainHeightKey("13")[0])
+	require.Equal(t, byte(16), providertypes.EquivocationEvidenceMinHeightKey("13")[0])
 	i++
-	require.Equal(t, byte(17), providertypes.PendingVSCsKey("13")[0])
+	require.Equal(t, byte(17), providertypes.ConsumerValidatorKeyPrefix())
 	i++
-	// reserve 18 as deprecated
+	require.Equal(t, byte(18), providertypes.OptedInKeyPrefix())
 	i++
-	// reserve 19 as deprecated
+	require.Equal(t, byte(19), providertypes.AllowlistKeyPrefix())
 	i++
-	// reserve 20 as deprecated
+	require.Equal(t, byte(20), providertypes.DenylistKeyPrefix())
 	i++
-	// DEPRECATED
-	// require.Equal(t, uint8(21), providertypes.GlobalSlashEntryKeyPrefix()[0])
+	require.Equal(t, byte(21), providertypes.ConsumerCommissionRateKeyPrefix())
 	i++
-	require.Equal(t, byte(22), providertypes.ConsumerValidatorsKeyPrefix())
+	require.Equal(t, byte(22), providertypes.MinimumPowerInTopNKey("13")[0])
 	i++
-	require.Equal(t, byte(23), providertypes.ValidatorsByConsumerAddrKeyPrefix())
+	require.Equal(t, byte(23), providertypes.ConsumerAddrsToPruneV2KeyPrefix())
 	i++
-	// reserve 24 as deprecated
+	require.Equal(t, byte(24), providertypes.LastProviderConsensusValsPrefix()[0])
 	i++
-	// reserve 25 as deprecated
+	require.Equal(t, byte(25), providertypes.ConsumerIdKey()[0])
 	i++
-	require.Equal(t, byte(26), providertypes.SlashLogKey(providertypes.NewProviderConsAddress([]byte{0x05}))[0])
+	require.Equal(t, byte(26), providertypes.ConsumerIdToChainIdKey("13")[0])
 	i++
-	require.Equal(t, byte(27), providertypes.ConsumerRewardDenomsKeyPrefix()[0])
+	require.Equal(t, byte(27), providertypes.ConsumerIdToOwnerAddressKey("13")[0])
 	i++
-	// reserve 28 as deprecated
+	require.Equal(t, byte(28), providertypes.ConsumerIdToMetadataKeyPrefix())
 	i++
-	require.Equal(t, byte(29), providertypes.EquivocationEvidenceMinHeightKey("13")[0])
+	require.Equal(t, byte(29), providertypes.ConsumerIdToInitializationParametersKeyPrefix())
 	i++
-	// reserve 30 as deprecated
+	require.Equal(t, byte(30), providertypes.ConsumerIdToPowerShapingParametersKey("13")[0])
 	i++
-	require.Equal(t, byte(31), providertypes.ConsumerValidatorKeyPrefix())
+	require.Equal(t, byte(31), providertypes.ConsumerIdToPhaseKey("13")[0])
 	i++
-	require.Equal(t, byte(32), providertypes.OptedInKeyPrefix())
+	require.Equal(t, byte(32), providertypes.ConsumerIdToRemovalTimeKeyPrefix())
 	i++
-	// DEPRECATED
-	// require.Equal(t, byte(33), providertypes.TopNKey("13")[0])
+	require.Equal(t, byte(33), providertypes.SpawnTimeToConsumerIdsKeyPrefix())
 	i++
-	// DEPRECATED
-	// require.Equal(t, byte(34), providertypes.ValidatorsPowerCapKey("13")[0])
+	require.Equal(t, byte(34), providertypes.RemovalTimeToConsumerIdsKeyPrefix())
 	i++
-	// DEPRECATED
-	// require.Equal(t, byte(35), providertypes.ValidatorSetCapKey("13")[0])
+	require.Equal(t, byte(35), providertypes.ClientIdToConsumerIdKey("clientId")[0])
 	i++
-	require.Equal(t, byte(36), providertypes.AllowlistKeyPrefix())
+	require.Equal(t, byte(36), providertypes.ConsumerIdToAllowlistedRewardDenomKey("13")[0])
 	i++
-	require.Equal(t, byte(37), providertypes.DenylistKeyPrefix())
+	require.Equal(t, byte(37), providertypes.ConsumerRewardsAllocationByDenomKey("13", "denom")[0])
 	i++
-	// DEPRECATED
-	// require.Equal(t, byte(38), providertypes.ConsumerRewardsAllocationKey("13")[0])
+	require.Equal(t, byte(38), providertypes.PrioritylistKeyPrefix())
 	i++
-	require.Equal(t, byte(39), providertypes.ConsumerCommissionRateKeyPrefix())
+	require.Equal(t, byte(39), providertypes.ConsumerIdToInfractionParametersKeyPrefix())
 	i++
-	require.Equal(t, byte(40), providertypes.MinimumPowerInTopNKey("13")[0])
+	require.Equal(t, byte(40), providertypes.ConsumerIdToQueuedInfractionParametersKeyPrefix())
 	i++
-	require.Equal(t, byte(41), providertypes.ConsumerAddrsToPruneV2KeyPrefix())
-	i++
-	require.Equal(t, byte(42), providertypes.LastProviderConsensusValsPrefix()[0])
-	i++
-	require.Equal(t, byte(43), providertypes.ConsumerIdKey()[0])
-	i++
-	require.Equal(t, byte(44), providertypes.ConsumerIdToChainIdKey("13")[0])
-	i++
-	require.Equal(t, byte(45), providertypes.ConsumerIdToOwnerAddressKey("13")[0])
-	i++
-	require.Equal(t, byte(46), providertypes.ConsumerIdToMetadataKeyPrefix())
-	i++
-	require.Equal(t, byte(47), providertypes.ConsumerIdToInitializationParametersKeyPrefix())
-	i++
-	require.Equal(t, byte(48), providertypes.ConsumerIdToPowerShapingParametersKey("13")[0])
-	i++
-	require.Equal(t, byte(49), providertypes.ConsumerIdToPhaseKey("13")[0])
-	i++
-	require.Equal(t, byte(50), providertypes.ConsumerIdToRemovalTimeKeyPrefix())
-	i++
-	require.Equal(t, byte(51), providertypes.SpawnTimeToConsumerIdsKeyPrefix())
-	i++
-	require.Equal(t, byte(52), providertypes.RemovalTimeToConsumerIdsKeyPrefix())
-	i++
-	require.Equal(t, byte(53), providertypes.ClientIdToConsumerIdKey("clientId")[0])
-	i++
-	require.Equal(t, byte(54), providertypes.ConsumerIdToAllowlistedRewardDenomKey("13")[0])
-	i++
-	require.Equal(t, byte(55), providertypes.ConsumerRewardsAllocationByDenomKey("13", "denom")[0])
-	i++
-	require.Equal(t, byte(56), providertypes.PrioritylistKeyPrefix())
-	i++
-	require.Equal(t, byte(57), providertypes.ConsumerIdToInfractionParametersKeyPrefix())
-	i++
-	require.Equal(t, byte(58), providertypes.ConsumerIdToQueuedInfractionParametersKeyPrefix())
-	i++
-	require.Equal(t, byte(59), providertypes.InfractionScheduledTimeToConsumerIdsKeyPrefix())
+	require.Equal(t, byte(41), providertypes.InfractionScheduledTimeToConsumerIdsKeyPrefix())
 	i++
 
 	prefixes := providertypes.GetAllKeyPrefixes()
@@ -162,17 +120,6 @@ func TestPreserveBytePrefix(t *testing.T) {
 
 func TestNoPrefixOverlap(t *testing.T) {
 	keys := getAllFullyDefinedKeys()
-
-	// Make sure that we check all the fully defined keys.
-	// All non-deprecated keys should have such a function.
-	keyNames := providertypes.GetAllKeyNames()
-	nonDeprecatedKey := []string{}
-	for _, name := range keyNames {
-		if !strings.Contains(name, "Deprecated") {
-			nonDeprecatedKey = append(nonDeprecatedKey, name)
-		}
-	}
-	require.Equal(t, len(nonDeprecatedKey), len(keys))
 
 	seenPrefixes := []byte{}
 	for _, key := range keys {

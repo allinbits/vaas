@@ -45,8 +45,6 @@ const (
 
 	PortKeyName = "PortKey"
 
-	DeprecatedMaturedUnbondingOpsKeyName = "DeprecatedMaturedUnbondingOpsKey"
-
 	ValidatorSetUpdateIdKeyName = "ValidatorSetUpdateIdKey"
 
 	SlashMeterKeyName = "SlashMeterKey"
@@ -59,16 +57,6 @@ const (
 
 	ConsumerIdToClientIdKeyName = "ConsumerIdToClientIdKey"
 
-	DeprecatedInitTimeoutTimestampKeyName = "DeprecatedInitTimeoutTimestampKey"
-
-	DeprecatedPendingCAPKeyName = "DeprecatedPendingCAPKey"
-
-	DeprecatedPendingCRPKeyName = "DeprecatedPendingCRPKey"
-
-	DeprecatedUnbondingOpKeyName = "DeprecatedUnbondingOpKey"
-
-	DeprecatedUnbondingOpIndexKeyName = "DeprecatedUnbondingOpIndexKey"
-
 	ValsetUpdateBlockHeightKeyName = "ValsetUpdateBlockHeightKey"
 
 	ConsumerGenesisKeyName = "ConsumerGenesisKey"
@@ -79,47 +67,23 @@ const (
 
 	PendingVSCsKeyName = "PendingVSCsKey"
 
-	DeprecatedVscSendTimestampKeyName = "DeprecatedVscSendTimestampKey"
-
-	DeprecatedThrottledPacketDataSizeKeyName = "DeprecatedThrottledPacketDataSizeKey"
-
-	DeprecatedThrottledPacketDataKeyName = "DeprecatedThrottledPacketDataKey"
-
-	DeprecatedGlobalSlashEntryKeyName = "DeprecatedGlobalSlashEntryKey"
-
 	ConsumerValidatorsKeyName = "ConsumerValidatorsKey"
 
 	ValidatorsByConsumerAddrKeyName = "ValidatorsByConsumerAddrKey"
-
-	DeprecatedKeyAssignmentReplacementsKeyName = "DeprecatedKeyAssignmentReplacementsKey"
-
-	DeprecatedConsumerAddrsToPruneKeyName = "DeprecatedConsumerAddrsToPruneKey"
 
 	SlashLogKeyName = "SlashLogKey"
 
 	ConsumerRewardDenomsKeyName = "ConsumerRewardDenomsKey"
 
-	DeprecatedVSCMaturedHandledThisBlockKeyName = "DeprecatedVSCMaturedHandledThisBlockKey"
-
 	EquivocationEvidenceMinHeightKeyName = "EquivocationEvidenceMinHeightKey"
-
-	DeprecatedProposedConsumerChainKeyName = "DeprecatedProposedConsumerChainKey"
 
 	ConsumerValidatorKeyName = "ConsumerValidatorKey"
 
 	OptedInKeyName = "OptedInKey"
 
-	DeprecatedTopNKeyName = "DeprecatedTopNKey"
-
-	DeprecatedValidatorsPowerCapKeyName = "DeprecatedValidatorsPowerCapKey"
-
-	DeprecatedValidatorSetCapKeyName = "DeprecatedValidatorSetCapKey"
-
 	AllowlistKeyName = "AllowlistKey"
 
 	DenylistKeyName = "DenylistKey"
-
-	DeprecatedConsumerRewardsAllocationKeyName = "DeprecatedConsumerRewardsAllocationKey"
 
 	ConsumerCommissionRateKeyName = "ConsumerCommissionRateKey"
 
@@ -175,242 +139,144 @@ func getKeyPrefixes() map[string]byte {
 		// PortKey defines the key to store the port ID in store
 		PortKeyName: 0,
 
-		// MaturedUnbondingOpsKey is the key that stores the list of all unbonding operations ids
-		// that have matured from a consumer chain perspective,
-		// i.e., no longer waiting on the unbonding period to elapse on any consumer chain
-		// NOTE: This prefix is deprecated, but left in place to avoid state migrations
-		// [DEPRECATED]
-		DeprecatedMaturedUnbondingOpsKeyName: 1,
-
 		// ValidatorSetUpdateIdKey is the key that stores the current validator set update id
-		ValidatorSetUpdateIdKeyName: 2,
+		ValidatorSetUpdateIdKeyName: 1,
 
 		// SlashMeterKey is the key for storing the slash meter
-		SlashMeterKeyName: 3,
+		SlashMeterKeyName: 2,
 
 		// SlashMeterReplenishTimeCandidateKey is the key for storing the slash meter replenish time candidate
-		SlashMeterReplenishTimeCandidateKeyName: 4,
+		SlashMeterReplenishTimeCandidateKeyName: 3,
 
 		// ConsumerIdToChannelIdKey is the key for storing mapping
 		// from chainID to the channel ID that is used to send over validator set changes.
-		ConsumerIdToChannelIdKeyName: 5,
+		ConsumerIdToChannelIdKeyName: 4,
 
 		// ChannelToConsumerIdKey is the key for storing mapping
 		// from the CCV channel ID to the consumer chain ID.
-		ChannelIdToConsumerIdKeyName: 6,
+		ChannelIdToConsumerIdKeyName: 5,
 
 		// ConsumerIdToClientIdKey is the key for storing the client ID for a given consumer chainID.
-		ConsumerIdToClientIdKeyName: 7,
-
-		// InitTimeoutTimestampKey is the key for storing
-		// the init timeout timestamp for a given consumer chainID.
-		// NOTE: This prefix is deprecated, but left in place to avoid state migrations
-		// [DEPRECATED]
-		DeprecatedInitTimeoutTimestampKeyName: 8,
-
-		// PendingCAPKey is the key for storing pending consumer addition proposals before the spawn time occurs.
-		// The key includes the BigEndian timestamp to allow for efficient chronological iteration
-		// [DEPRECATED]
-		DeprecatedPendingCAPKeyName: 9,
-
-		// PendingCRPKey is the key for storing pending consumer removal proposals before the stop time occurs.
-		// The key includes the BigEndian timestamp to allow for efficient chronological iteration
-		// [DEPRECATED]
-		DeprecatedPendingCRPKeyName: 10,
-
-		// UnbondingOpKey is the key that stores a record of all the ids of consumer chains that
-		// need to unbond before a given unbonding operation can unbond on this chain.
-		// NOTE: This prefix is deprecated, but left in place to avoid state migrations
-		// [DEPRECATED]
-		DeprecatedUnbondingOpKeyName: 11,
-
-		// UnbondingOpIndexKey is key of the index for looking up which unbonding
-		// operations are waiting for a given consumer chain to unbond
-		// NOTE: This prefix is deprecated, but left in place to avoid state migrations
-		// [DEPRECATED]
-		DeprecatedUnbondingOpIndexKeyName: 12,
+		ConsumerIdToClientIdKeyName: 6,
 
 		// ValsetUpdateBlockHeightKey is the key for storing the mapping from vscIDs to block heights
-		ValsetUpdateBlockHeightKeyName: 13,
+		ValsetUpdateBlockHeightKeyName: 7,
 
 		// ConsumerGenesisKey stores consumer genesis state material (consensus state and client state) indexed by consumer chain id
-		ConsumerGenesisKeyName: 14,
+		ConsumerGenesisKeyName: 8,
 
 		// SlashAcksKey is the key for storing consensus address of consumer chain validators successfully slashed on the provider chain
-		SlashAcksKeyName: 15,
+		SlashAcksKeyName: 9,
 
 		// InitChainHeightKey is the key for storing the mapping from a chain id to the corresponding block height on the provider
 		// this consumer chain was initialized
-		InitChainHeightKeyName: 16,
+		InitChainHeightKeyName: 10,
 
 		// PendingVSCsKey is the key for storing pending ValidatorSetChangePacket data
-		PendingVSCsKeyName: 17,
-
-		// VscSendTimestampKey is the key for storing
-		// the list of VSC sending timestamps for a given consumer chainID.
-		// NOTE: This prefix is deprecated, but left in place to avoid state migrations
-		// [DEPRECATED]
-		DeprecatedVscSendTimestampKeyName: 18,
-
-		// ThrottledPacketDataSizeKey is the key for storing the size of chain-specific throttled packet data queues
-		// [DEPRECATED]
-		DeprecatedThrottledPacketDataSizeKeyName: 19,
-
-		// ThrottledPacketDataKey is the key for storing throttled packet data
-		// [DEPRECATED]
-		DeprecatedThrottledPacketDataKeyName: 20,
-
-		// GlobalSlashEntryKey is the key for storing global slash queue entries
-		// [DEPRECATED]
-		DeprecatedGlobalSlashEntryKeyName: 21,
+		PendingVSCsKeyName: 11,
 
 		// ConsumerValidatorsKey is the key for storing the validator assigned keys for every consumer chain
-		ConsumerValidatorsKeyName: 22,
+		ConsumerValidatorsKeyName: 12,
 
 		// ValidatorsByConsumerAddrKey is the key for storing the mapping from validator addresses
 		// on consumer chains to validator addresses on the provider chain
-		ValidatorsByConsumerAddrKeyName: 23,
-
-		// DeprecatedKeyAssignmentReplacementsKey was the key used to store the key assignments that needed to be replaced in the current block
-		// NOTE: This prefix is deprecated, but left in place to avoid consumer state migrations
-		// [DEPRECATED]
-		DeprecatedKeyAssignmentReplacementsKeyName: 24,
-
-		// ConsumerAddrsToPruneKey is the key for storing the mapping from VSC ids
-		// to consumer validators addresses needed for pruning
-		// NOTE: This prefix is deprecated, but left in place to avoid consumer state migrations
-		// [DEPRECATED]
-		DeprecatedConsumerAddrsToPruneKeyName: 25,
+		ValidatorsByConsumerAddrKeyName: 13,
 
 		// SlashLogKey is the key for storing the mapping from provider address to boolean
 		// denoting whether the provider address has committed any double signign infractions
-		SlashLogKeyName: 26,
+		SlashLogKeyName: 14,
 
 		// ConsumerRewardDenomsKey is the key for storing a list of consumer reward denoms
-		ConsumerRewardDenomsKeyName: 27,
-
-		// VSCMaturedHandledThisBlockKey is the key for storing the number of vsc matured packets
-		// handled in the current block
-		// NOTE: This prefix is deprecated, but left in place to avoid state migrations
-		// [DEPRECATED]
-		DeprecatedVSCMaturedHandledThisBlockKeyName: 28,
+		ConsumerRewardDenomsKeyName: 15,
 
 		// EquivocationEvidenceMinHeightKey is the key for storing the mapping from consumer chain IDs
 		// to the minimum height of a valid consumer equivocation evidence
-		EquivocationEvidenceMinHeightKeyName: 29,
-
-		// ProposedConsumerChainKey is the key for storing the consumer chainId in consumerAddition gov proposal submitted before voting finishes
-		// [DEPRECATED]
-		DeprecatedProposedConsumerChainKeyName: 30,
+		EquivocationEvidenceMinHeightKeyName: 16,
 
 		// ConsumerValidatorKey is the key for storing for each consumer chain all the consumer
 		// validators in this epoch that are validating the consumer chain
-		ConsumerValidatorKeyName: 31,
+		ConsumerValidatorKeyName: 17,
 
 		// OptedInKey is the key for storing whether a validator is opted in to validate on a consumer chain
-		OptedInKeyName: 32,
-
-		// DeprecatedTopNKey is the key for storing the mapping from a consumer chain to the N value of this chain,
-		// that corresponds to the N% of the top validators that have to validate this consumer chain
-		// NOTE: This prefix is deprecated, but left in place to avoid state migrations
-		// [DEPRECATED]
-		DeprecatedTopNKeyName: 33,
-
-		// DeprecatedValidatorsPowerCapKey is the key for  storing the mapping from a consumer chain to the power-cap value of this chain,
-		// that corresponds to p% such that no validator can have more than p% of the voting power on the consumer chain.
-		// Operates on a best-effort basis.
-		// NOTE: This prefix is deprecated, but left in place to avoid state migrations
-		// [DEPRECATED]
-		DeprecatedValidatorsPowerCapKeyName: 34,
-
-		// DeprecatedValidatorSetCapKey is the key for storing the mapping from a consumer chain to the validator-set cap value
-		// of this chain.
-		// NOTE: This prefix is deprecated, but left in place to avoid state migrations
-		// [DEPRECATED]
-		DeprecatedValidatorSetCapKeyName: 35,
+		OptedInKeyName: 18,
 
 		// AllowlistKey is the key for storing the mapping from a consumer chain to the set of validators that are
 		// allowlisted.
-		AllowlistKeyName: 36,
+		AllowlistKeyName: 19,
 
 		// DenylistKey is the key for storing the mapping from a consumer chain to the set of validators that are
 		// denylisted.
-		DenylistKeyName: 37,
-
-		// ConsumerRewardsAllocationKey is the key for storing for each consumer the ICS rewards
-		// allocated to the consumer rewards pool
-		// [DEPRECATED]
-		DeprecatedConsumerRewardsAllocationKeyName: 38,
+		DenylistKeyName: 20,
 
 		// ConsumerCommissionRateKey is the key for storing the commission rate
 		// per validator per consumer chain
-		ConsumerCommissionRateKeyName: 39,
+		ConsumerCommissionRateKeyName: 21,
 
 		// MinimumPowerInTopNKey is the key for storing the
 		// minimum power required to be in the top N per consumer chain.
-		MinimumPowerInTopNKeyName: 40,
+		MinimumPowerInTopNKeyName: 22,
 
 		// ConsumerAddrsToPruneV2Key is the key for storing
 		// consumer validators addresses that need to be pruned.
-		ConsumerAddrsToPruneV2KeyName: 41,
+		ConsumerAddrsToPruneV2KeyName: 23,
 
 		// LastProviderConsensusValsKey is the key for storing the last validator set
 		// sent to the consensus engine of the provider chain
-		LastProviderConsensusValsKeyName: 42,
+		LastProviderConsensusValsKeyName: 24,
 
 		// ConsumerIdKeyName is the key for storing the consumer id for the next registered consumer chain
-		ConsumerIdKeyName: 43,
+		ConsumerIdKeyName: 25,
 
 		// ConsumerIdToChainIdKeyName is the key for storing the chain id for the given consumer id
-		ConsumerIdToChainIdKeyName: 44,
+		ConsumerIdToChainIdKeyName: 26,
 
 		// ConsumerIdToOwnerAddressKeyName is the key for storing the owner address for the given consumer id
-		ConsumerIdToOwnerAddressKeyName: 45,
+		ConsumerIdToOwnerAddressKeyName: 27,
 
 		// ConsumerIdToConsumerMetadataKeyName is the key for storing the metadata for the given consumer id
-		ConsumerIdToConsumerMetadataKeyName: 46,
+		ConsumerIdToConsumerMetadataKeyName: 28,
 
 		// ConsumerIdToInitializationParametersKeyName is the key for storing the initialization parameters for the given consumer id
-		ConsumerIdToInitializationParametersKeyName: 47,
+		ConsumerIdToInitializationParametersKeyName: 29,
 
 		// ConsumerIdToPowerShapingParameters is the key for storing the power-shaping parameters for the given consumer id
-		ConsumerIdToPowerShapingParameters: 48,
+		ConsumerIdToPowerShapingParameters: 30,
 
 		// ConsumerIdToPhaseKeyName is the key for storing the phase of a consumer chain with the given consumer id
-		ConsumerIdToPhaseKeyName: 49,
+		ConsumerIdToPhaseKeyName: 31,
 
 		// ConsumerIdToRemovalTimeKeyName is the key for storing the removal time of a consumer chain that is to be removed
-		ConsumerIdToRemovalTimeKeyName: 50,
+		ConsumerIdToRemovalTimeKeyName: 32,
 
 		// SpawnTimeToConsumerIdKeyName is the key for storing pending initialized consumers that are to be launched.
 		// For a specific spawn time, it might store multiple consumer chain ids for chains that are to be launched.
-		SpawnTimeToConsumerIdsKeyName: 51,
+		SpawnTimeToConsumerIdsKeyName: 33,
 
 		// RemovalTimeToConsumerIdsKeyName is the key for storing pending launched consumers that are to be removed.
 		// For a specific removal time, it might store multiple consumer chain ids for chains that are to be removed.
-		RemovalTimeToConsumerIdsKeyName: 52,
+		RemovalTimeToConsumerIdsKeyName: 34,
 
 		// ClientIdToConsumerIdKeyName is the key for storing the consumer id for the given client id
-		ClientIdToConsumerIdKeyName: 53,
+		ClientIdToConsumerIdKeyName: 35,
 
 		// ConsumerIdToAllowlistedRewardDenomKeyName is the key for storing the allowlisted reward denom for the given consumer id
-		ConsumerIdToAllowlistedRewardDenomKeyName: 54,
+		ConsumerIdToAllowlistedRewardDenomKeyName: 36,
 
 		// ConsumerRewardsAllocationByDenomKeyName is the key for storing the consumer rewards for a specific consumer chain and denom
-		ConsumerRewardsAllocationByDenomKeyName: 55,
+		ConsumerRewardsAllocationByDenomKeyName: 37,
 
 		// PrioritylistKey is the key for storing the mapping from a consumer chain to the set of validators that are
 		// prioritylisted.
-		PrioritylistKeyName: 56,
+		PrioritylistKeyName: 38,
 
 		// ConsumerIdToInfractionParametersKeyName is the key for storing slashing and jailing infraction parameters for a specific consumer chain
-		ConsumerIdToInfractionParametersKeyName: 57,
+		ConsumerIdToInfractionParametersKeyName: 39,
 
 		// ConsumerIdToQueuedInfractionParametersKeyName is the key for storing queued infraction parameters that will be used to update consumer infraction parameters
-		ConsumerIdToQueuedInfractionParametersKeyName: 58,
+		ConsumerIdToQueuedInfractionParametersKeyName: 40,
 
 		// InfractionScheduledTimeToConsumerIdsKeyName is the key for storing time when the infraction parameters will be updated for the specific consumer
-		InfractionScheduledTimeToConsumerIdsKeyName: 59,
+		InfractionScheduledTimeToConsumerIdsKeyName: 41,
 
 		// NOTE: DO NOT ADD NEW BYTE PREFIXES HERE WITHOUT ADDING THEM TO TestPreserveBytePrefix() IN keys_test.go
 	}
