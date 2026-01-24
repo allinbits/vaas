@@ -16,7 +16,6 @@ import (
 	addresscodec "cosmossdk.io/core/address"
 	errorsmod "cosmossdk.io/errors"
 	"cosmossdk.io/log"
-	"cosmossdk.io/math"
 	storetypes "cosmossdk.io/store/types"
 
 	"github.com/cosmos/cosmos-sdk/codec"
@@ -632,79 +631,6 @@ func (k Keeper) GetAllActiveConsumerIds(ctx sdk.Context) []string {
 		consumerIds = append(consumerIds, consumerId)
 	}
 	return consumerIds
-}
-
-// SetConsumerCommissionRate sets a per-consumer chain commission rate
-// for the given validator address
-func (k Keeper) SetConsumerCommissionRate(
-	ctx sdk.Context,
-	consumerId string,
-	providerAddr types.ProviderConsAddress,
-	commissionRate math.LegacyDec,
-) error {
-	store := ctx.KVStore(k.storeKey)
-	bz, err := commissionRate.Marshal()
-	if err != nil {
-		err = fmt.Errorf("consumer commission rate marshalling failed: %s", err)
-		k.Logger(ctx).Error(err.Error())
-		return err
-	}
-
-	store.Set(types.ConsumerCommissionRateKey(consumerId, providerAddr), bz)
-	return nil
-}
-
-// GetConsumerCommissionRate returns the per-consumer commission rate set
-// for the given validator address
-func (k Keeper) GetConsumerCommissionRate(
-	ctx sdk.Context,
-	consumerId string,
-	providerAddr types.ProviderConsAddress,
-) (math.LegacyDec, bool) {
-	store := ctx.KVStore(k.storeKey)
-	bz := store.Get(types.ConsumerCommissionRateKey(consumerId, providerAddr))
-	if bz == nil {
-		return math.LegacyZeroDec(), false
-	}
-
-	cr := math.LegacyZeroDec()
-	// handle error gracefully since it's called in BeginBlockRD
-	if err := cr.Unmarshal(bz); err != nil {
-		k.Logger(ctx).Error("consumer commission rate unmarshalling failed: %s", err)
-		return cr, false
-	}
-
-	return cr, true
-}
-
-// GetAllCommissionRateValidators returns all the validator address
-// that set a commission rate for the given consumer id
-func (k Keeper) GetAllCommissionRateValidators(
-	ctx sdk.Context,
-	consumerId string,
-) (addresses []types.ProviderConsAddress) {
-	store := ctx.KVStore(k.storeKey)
-	key := types.StringIdWithLenKey(types.ConsumerCommissionRateKeyPrefix(), consumerId)
-	iterator := storetypes.KVStorePrefixIterator(store, key)
-	defer iterator.Close()
-
-	for ; iterator.Valid(); iterator.Next() {
-		providerAddr := types.NewProviderConsAddress(iterator.Key()[len(key):])
-		addresses = append(addresses, providerAddr)
-	}
-
-	return addresses
-}
-
-// DeleteConsumerCommissionRate the per-consumer chain commission rate
-// associated to the given validator address
-func (k Keeper) DeleteConsumerCommissionRate(
-	ctx sdk.Context,
-	consumerId string,
-	providerAddr types.ProviderConsAddress,
-) {
-	store := ctx.KVStore(k.storeKey)
-	store.Delete(types.ConsumerCommissionRateKey(consumerId, providerAddr))
 }
 
 func (k Keeper) UnbondingCanComplete(ctx sdk.Context, id uint64) error {

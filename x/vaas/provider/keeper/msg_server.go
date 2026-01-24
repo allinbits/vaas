@@ -228,8 +228,6 @@ func (k msgServer) CreateConsumer(goCtx context.Context, msg *types.MsgCreateCon
 			sdk.NewAttribute(types.AttributeConsumerSpawnTime, initializationParameters.SpawnTime.String()))
 	}
 
-	// Reward denoms removed - no cross-chain rewards
-
 	// add Phase event attribute
 	phase := k.GetConsumerPhase(ctx, consumerId)
 	eventAttributes = append(eventAttributes, sdk.NewAttribute(types.AttributeConsumerPhase, phase.String()))
@@ -379,8 +377,6 @@ func (k msgServer) UpdateConsumer(goCtx context.Context, msg *types.MsgUpdateCon
 				consumerId, previousSpawnTime, spawnTime, err.Error())
 		}
 	}
-
-	// Reward denoms removed - no cross-chain rewards
 
 	// add Owner event attribute
 	eventAttributes = append(eventAttributes, sdk.NewAttribute(types.AttributeConsumerOwner, currentOwnerAddress))

@@ -6,6 +6,5 @@ import (
 
 // Consumer sentinel errors
 var (
-	ErrNoProposerChannelId                  = errorsmod.Register(ModuleName, 1, "no established CCV channel")
-	ErrConsumerRewardDenomAlreadyRegistered = errorsmod.Register(ModuleName, 2, "consumer reward denom already registered")
+	ErrNoProposerChannelId = errorsmod.Register(ModuleName, 1, "no established CCV channel")
 )

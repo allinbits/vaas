@@ -585,12 +585,6 @@ func (k Keeper) DeleteConsumerChain(ctx sdk.Context, consumerId string) (err err
 		k.DeleteChannelIdToConsumerId(ctx, channelID)
 	}
 
-	// delete consumer commission rate
-	provAddrs := k.GetAllCommissionRateValidators(ctx, consumerId)
-	for _, addr := range provAddrs {
-		k.DeleteConsumerCommissionRate(ctx, consumerId, addr)
-	}
-
 	k.DeleteInitChainHeight(ctx, consumerId)
 	k.DeletePendingVSCPackets(ctx, consumerId)
 

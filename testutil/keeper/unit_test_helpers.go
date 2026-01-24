@@ -240,7 +240,6 @@ func TestProviderStateIsCleanedAfterConsumerChainIsDeleted(t *testing.T, ctx sdk
 	require.Empty(t, providerKeeper.GetAllValidatorConsumerPubKeys(ctx, &consumerId))
 	require.Empty(t, providerKeeper.GetAllValidatorsByConsumerAddr(ctx, &consumerId))
 	require.Empty(t, providerKeeper.GetAllConsumerAddrsToPrune(ctx, consumerId))
-	require.Empty(t, providerKeeper.GetAllCommissionRateValidators(ctx, consumerId))
 	require.Zero(t, providerKeeper.GetEquivocationEvidenceMinHeight(ctx, consumerId))
 }
 

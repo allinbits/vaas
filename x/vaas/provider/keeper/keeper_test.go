@@ -8,8 +8,6 @@ import (
 	ibctesting "github.com/cosmos/ibc-go/v10/testing"
 	"github.com/stretchr/testify/require"
 
-	"cosmossdk.io/math"
-
 	cryptocodec "github.com/cosmos/cosmos-sdk/crypto/codec"
 
 	abci "github.com/cometbft/cometbft/abci/types"
@@ -233,42 +231,6 @@ func TestSetSlashLog(t *testing.T) {
 	providerKeeper.SetSlashLog(ctx, addrWithDoubleSigns)
 	require.True(t, providerKeeper.GetSlashLog(ctx, addrWithDoubleSigns))
 	require.False(t, providerKeeper.GetSlashLog(ctx, addrWithoutDoubleSigns))
-}
-
-// TestConsumerCommissionRate tests the `SetConsumerCommissionRate`, `GetConsumerCommissionRate`, and `DeleteConsumerCommissionRate` methods
-func TestConsumerCommissionRate(t *testing.T) {
-	providerKeeper, ctx, ctrl, _ := testkeeper.GetProviderKeeperAndCtx(t, testkeeper.NewInMemKeeperParams(t))
-	defer ctrl.Finish()
-
-	providerAddr1 := providertypes.NewProviderConsAddress([]byte("providerAddr1"))
-	providerAddr2 := providertypes.NewProviderConsAddress([]byte("providerAddr2"))
-
-	cr, found := providerKeeper.GetConsumerCommissionRate(ctx, CONSUMER_ID, providerAddr1)
-	require.False(t, found)
-	require.Equal(t, math.LegacyZeroDec(), cr)
-
-	providerKeeper.SetConsumerCommissionRate(ctx, CONSUMER_ID, providerAddr1, math.LegacyOneDec())
-	cr, found = providerKeeper.GetConsumerCommissionRate(ctx, CONSUMER_ID, providerAddr1)
-	require.True(t, found)
-	require.Equal(t, math.LegacyOneDec(), cr)
-
-	providerKeeper.SetConsumerCommissionRate(ctx, CONSUMER_ID, providerAddr2, math.LegacyZeroDec())
-	cr, found = providerKeeper.GetConsumerCommissionRate(ctx, CONSUMER_ID, providerAddr2)
-	require.True(t, found)
-	require.Equal(t, math.LegacyZeroDec(), cr)
-
-	provAddrs := providerKeeper.GetAllCommissionRateValidators(ctx, CONSUMER_ID)
-	require.Len(t, provAddrs, 2)
-
-	for _, addr := range provAddrs {
-		providerKeeper.DeleteConsumerCommissionRate(ctx, CONSUMER_ID, addr)
-	}
-
-	_, found = providerKeeper.GetConsumerCommissionRate(ctx, CONSUMER_ID, providerAddr1)
-	require.False(t, found)
-
-	_, found = providerKeeper.GetConsumerCommissionRate(ctx, CONSUMER_ID, providerAddr2)
-	require.False(t, found)
 }
 
 // TestConsumerClientId tests the getter, setter, and deletion of the client id <> consumer id mappings

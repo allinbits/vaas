@@ -30,13 +30,6 @@ const (
 	// Default validator set update ID
 	DefaultValsetUpdateID = 1
 
-	// This address receives rewards from consumer chains
-	ConsumerRewardsPool = "consumer_rewards_pool"
-
-	// MaxAllowlistedRewardDenomsPerChain corresponds to the maximum number of reward denoms
-	// a consumer chain can allowlist
-	MaxAllowlistedRewardDenomsPerChain = 3
-
 	// Names for the store keys.
 	// Used for storing the byte prefixes in the constant map.
 	// See getKeyPrefixes().
@@ -73,8 +66,6 @@ const (
 
 	SlashLogKeyName = "SlashLogKey"
 
-	ConsumerRewardDenomsKeyName = "ConsumerRewardDenomsKey"
-
 	EquivocationEvidenceMinHeightKeyName = "EquivocationEvidenceMinHeightKey"
 
 	ConsumerValidatorKeyName = "ConsumerValidatorKey"
@@ -84,8 +75,6 @@ const (
 	AllowlistKeyName = "AllowlistKey"
 
 	DenylistKeyName = "DenylistKey"
-
-	ConsumerCommissionRateKeyName = "ConsumerCommissionRateKey"
 
 	MinimumPowerInTopNKeyName = "MinimumPowerInTopNKey"
 
@@ -114,10 +103,6 @@ const (
 	RemovalTimeToConsumerIdsKeyName = "RemovalTimeToConsumerIdsKeyName"
 
 	ClientIdToConsumerIdKeyName = "ClientIdToConsumerIdKey"
-
-	ConsumerIdToAllowlistedRewardDenomKeyName = "ConsumerIdToAllowlistedRewardDenomKey"
-
-	ConsumerRewardsAllocationByDenomKeyName = "ConsumerRewardsAllocationByDenomKey"
 
 	PrioritylistKeyName = "PrioritylistKey"
 
@@ -186,97 +171,84 @@ func getKeyPrefixes() map[string]byte {
 		// denoting whether the provider address has committed any double signign infractions
 		SlashLogKeyName: 14,
 
-		// ConsumerRewardDenomsKey is the key for storing a list of consumer reward denoms
-		ConsumerRewardDenomsKeyName: 15,
-
 		// EquivocationEvidenceMinHeightKey is the key for storing the mapping from consumer chain IDs
 		// to the minimum height of a valid consumer equivocation evidence
-		EquivocationEvidenceMinHeightKeyName: 16,
+		EquivocationEvidenceMinHeightKeyName: 15,
 
 		// ConsumerValidatorKey is the key for storing for each consumer chain all the consumer
 		// validators in this epoch that are validating the consumer chain
-		ConsumerValidatorKeyName: 17,
+		ConsumerValidatorKeyName: 16,
 
 		// OptedInKey is the key for storing whether a validator is opted in to validate on a consumer chain
-		OptedInKeyName: 18,
+		OptedInKeyName: 17,
 
 		// AllowlistKey is the key for storing the mapping from a consumer chain to the set of validators that are
 		// allowlisted.
-		AllowlistKeyName: 19,
+		AllowlistKeyName: 18,
 
 		// DenylistKey is the key for storing the mapping from a consumer chain to the set of validators that are
 		// denylisted.
-		DenylistKeyName: 20,
-
-		// ConsumerCommissionRateKey is the key for storing the commission rate
-		// per validator per consumer chain
-		ConsumerCommissionRateKeyName: 21,
+		DenylistKeyName: 19,
 
 		// MinimumPowerInTopNKey is the key for storing the
 		// minimum power required to be in the top N per consumer chain.
-		MinimumPowerInTopNKeyName: 22,
+		MinimumPowerInTopNKeyName: 20,
 
 		// ConsumerAddrsToPruneV2Key is the key for storing
 		// consumer validators addresses that need to be pruned.
-		ConsumerAddrsToPruneV2KeyName: 23,
+		ConsumerAddrsToPruneV2KeyName: 21,
 
 		// LastProviderConsensusValsKey is the key for storing the last validator set
 		// sent to the consensus engine of the provider chain
-		LastProviderConsensusValsKeyName: 24,
+		LastProviderConsensusValsKeyName: 22,
 
 		// ConsumerIdKeyName is the key for storing the consumer id for the next registered consumer chain
-		ConsumerIdKeyName: 25,
+		ConsumerIdKeyName: 23,
 
 		// ConsumerIdToChainIdKeyName is the key for storing the chain id for the given consumer id
-		ConsumerIdToChainIdKeyName: 26,
+		ConsumerIdToChainIdKeyName: 24,
 
 		// ConsumerIdToOwnerAddressKeyName is the key for storing the owner address for the given consumer id
-		ConsumerIdToOwnerAddressKeyName: 27,
+		ConsumerIdToOwnerAddressKeyName: 25,
 
 		// ConsumerIdToConsumerMetadataKeyName is the key for storing the metadata for the given consumer id
-		ConsumerIdToConsumerMetadataKeyName: 28,
+		ConsumerIdToConsumerMetadataKeyName: 26,
 
 		// ConsumerIdToInitializationParametersKeyName is the key for storing the initialization parameters for the given consumer id
-		ConsumerIdToInitializationParametersKeyName: 29,
+		ConsumerIdToInitializationParametersKeyName: 27,
 
 		// ConsumerIdToPowerShapingParameters is the key for storing the power-shaping parameters for the given consumer id
-		ConsumerIdToPowerShapingParameters: 30,
+		ConsumerIdToPowerShapingParameters: 28,
 
 		// ConsumerIdToPhaseKeyName is the key for storing the phase of a consumer chain with the given consumer id
-		ConsumerIdToPhaseKeyName: 31,
+		ConsumerIdToPhaseKeyName: 29,
 
 		// ConsumerIdToRemovalTimeKeyName is the key for storing the removal time of a consumer chain that is to be removed
-		ConsumerIdToRemovalTimeKeyName: 32,
+		ConsumerIdToRemovalTimeKeyName: 30,
 
 		// SpawnTimeToConsumerIdKeyName is the key for storing pending initialized consumers that are to be launched.
 		// For a specific spawn time, it might store multiple consumer chain ids for chains that are to be launched.
-		SpawnTimeToConsumerIdsKeyName: 33,
+		SpawnTimeToConsumerIdsKeyName: 31,
 
 		// RemovalTimeToConsumerIdsKeyName is the key for storing pending launched consumers that are to be removed.
 		// For a specific removal time, it might store multiple consumer chain ids for chains that are to be removed.
-		RemovalTimeToConsumerIdsKeyName: 34,
+		RemovalTimeToConsumerIdsKeyName: 32,
 
 		// ClientIdToConsumerIdKeyName is the key for storing the consumer id for the given client id
-		ClientIdToConsumerIdKeyName: 35,
-
-		// ConsumerIdToAllowlistedRewardDenomKeyName is the key for storing the allowlisted reward denom for the given consumer id
-		ConsumerIdToAllowlistedRewardDenomKeyName: 36,
-
-		// ConsumerRewardsAllocationByDenomKeyName is the key for storing the consumer rewards for a specific consumer chain and denom
-		ConsumerRewardsAllocationByDenomKeyName: 37,
+		ClientIdToConsumerIdKeyName: 33,
 
 		// PrioritylistKey is the key for storing the mapping from a consumer chain to the set of validators that are
 		// prioritylisted.
-		PrioritylistKeyName: 38,
+		PrioritylistKeyName: 34,
 
 		// ConsumerIdToInfractionParametersKeyName is the key for storing slashing and jailing infraction parameters for a specific consumer chain
-		ConsumerIdToInfractionParametersKeyName: 39,
+		ConsumerIdToInfractionParametersKeyName: 35,
 
 		// ConsumerIdToQueuedInfractionParametersKeyName is the key for storing queued infraction parameters that will be used to update consumer infraction parameters
-		ConsumerIdToQueuedInfractionParametersKeyName: 40,
+		ConsumerIdToQueuedInfractionParametersKeyName: 36,
 
 		// InfractionScheduledTimeToConsumerIdsKeyName is the key for storing time when the infraction parameters will be updated for the specific consumer
-		InfractionScheduledTimeToConsumerIdsKeyName: 41,
+		InfractionScheduledTimeToConsumerIdsKeyName: 37,
 
 		// NOTE: DO NOT ADD NEW BYTE PREFIXES HERE WITHOUT ADDING THEM TO TestPreserveBytePrefix() IN keys_test.go
 	}
@@ -437,16 +409,6 @@ func SlashLogKey(providerAddr ProviderConsAddress) []byte {
 	return append([]byte{mustGetKeyPrefix(SlashLogKeyName)}, providerAddr.ToSdkConsAddr().Bytes()...)
 }
 
-// ConsumerRewardDenomsKeyPrefix returns the key prefix for storing consumer reward denoms
-func ConsumerRewardDenomsKeyPrefix() []byte {
-	return []byte{mustGetKeyPrefix(ConsumerRewardDenomsKeyName)}
-}
-
-// ConsumerRewardDenomsKey returns the key for storing consumer reward denoms
-func ConsumerRewardDenomsKey(denom string) []byte {
-	return append(ConsumerRewardDenomsKeyPrefix(), []byte(denom)...)
-}
-
 // EquivocationEvidenceMinHeightKey returns the key storing the minimum height
 // of a valid consumer equivocation evidence for a given consumer id
 func EquivocationEvidenceMinHeightKey(consumerId string) []byte {
@@ -502,20 +464,6 @@ func OptedInKeyPrefix() byte {
 // OptedInKey returns the key used to store whether a validator is opted in on a consumer chain.
 func OptedInKey(consumerId string, providerAddr ProviderConsAddress) []byte {
 	return StringIdAndConsAddrKey(OptedInKeyPrefix(), consumerId, providerAddr.ToSdkConsAddr())
-}
-
-// ConsumerCommissionRateKeyPrefix returns the key prefix for storing the commission rate per validator per consumer chain.
-func ConsumerCommissionRateKeyPrefix() byte {
-	return mustGetKeyPrefix(ConsumerCommissionRateKeyName)
-}
-
-// ConsumerCommissionRateKey returns the key used to store the commission rate per validator per consumer chain.
-func ConsumerCommissionRateKey(consumerId string, providerAddr ProviderConsAddress) []byte {
-	return StringIdAndConsAddrKey(
-		ConsumerCommissionRateKeyPrefix(),
-		consumerId,
-		providerAddr.ToSdkConsAddr(),
-	)
 }
 
 func MinimumPowerInTopNKey(consumerId string) []byte {
@@ -659,26 +607,6 @@ func ClientIdToConsumerIdKey(clientId string) []byte {
 		// Append the client id
 		[]byte(clientId),
 	)
-}
-
-// ConsumerIdToAllowlistedRewardDenomKeyPrefix returns the key prefix for storing the allowlisted reward denom that corresponds to this consumer id
-func ConsumerIdToAllowlistedRewardDenomKeyPrefix() byte {
-	return mustGetKeyPrefix(ConsumerIdToAllowlistedRewardDenomKeyName)
-}
-
-// ConsumerIdToAllowlistedRewardDenomKey returns the key used to store the allowlisted reward denom that corresponds to this consumer id
-func ConsumerIdToAllowlistedRewardDenomKey(consumerId string) []byte {
-	return StringIdWithLenKey(ConsumerIdToAllowlistedRewardDenomKeyPrefix(), consumerId)
-}
-
-// ConsumerRewardsAllocationByDenomKeyPrefix returns the key prefix for storing the allowlisted reward denom that corresponds to this consumer id
-func ConsumerRewardsAllocationByDenomKeyPrefix() byte {
-	return mustGetKeyPrefix(ConsumerRewardsAllocationByDenomKeyName)
-}
-
-// ConsumerRewardsAllocationByDenomKey returns the key used to store the ICS rewards per consumer chain
-func ConsumerRewardsAllocationByDenomKey(consumerId, denom string) []byte {
-	return append(StringIdWithLenKey(ConsumerRewardsAllocationByDenomKeyPrefix(), consumerId), []byte(denom)...)
 }
 
 // ConsumerIdToInfractionParametersKeyPrefix returns the key prefix for storing consumer infraction parameters

@@ -261,22 +261,15 @@ func (k Keeper) QueryConsumerValidators(goCtx context.Context, req *types.QueryC
 
 		hasToValidate := k.IsConsumerValidator(ctx, consumerId, provAddr)
 
-		consumerRate, found := k.GetConsumerCommissionRate(ctx, consumerId, types.NewProviderConsAddress(consAddr))
-		if !found {
-			consumerRate = providerVal.Commission.Rate
-		}
-
 		validators = append(validators, &types.QueryConsumerValidatorsValidator{
 			ProviderAddress:         sdk.ConsAddress(consumerVal.ProviderConsAddr).String(),
 			ConsumerKey:             consumerVal.PublicKey,
 			ConsumerPower:           consumerVal.Power,
-			ConsumerCommissionRate:  consumerRate,
 			Description:             providerVal.Description,
 			ProviderOperatorAddress: providerVal.OperatorAddress,
 			Jailed:                  providerVal.Jailed,
 			Status:                  providerVal.Status,
 			ProviderTokens:          providerVal.Tokens,
-			ProviderCommissionRate:  providerVal.Commission.Rate,
 			ProviderPower:           providerVal.GetConsensusPower(k.stakingKeeper.PowerReduction(ctx)),
 			ValidatesCurrentEpoch:   hasToValidate,
 		})
