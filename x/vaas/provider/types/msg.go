@@ -63,10 +63,6 @@ func NewMsgAssignConsumerKey(consumerId string, providerValidatorAddress sdk.Val
 
 // ValidateBasic implements the sdk.HasValidateBasic interface.
 func (msg MsgAssignConsumerKey) ValidateBasic() error {
-	if err := validateDeprecatedChainId(msg.ChainId); err != nil {
-		return errorsmod.Wrapf(ErrInvalidMsgAssignConsumerKey, "ChainId: %s", err.Error())
-	}
-
 	if err := ccvtypes.ValidateConsumerId(msg.ConsumerId); err != nil {
 		return errorsmod.Wrapf(ErrInvalidMsgAssignConsumerKey, "ConsumerId: %s", err.Error())
 	}
@@ -419,14 +415,6 @@ func ValidateByteSlice(hash []byte, maxLength int) error {
 	if len(hash) > maxLength {
 		return fmt.Errorf("hash is too long; got: %d, max: %d", len(hash), maxLength)
 	}
-	return nil
-}
-
-func validateDeprecatedChainId(chainId string) error {
-	if strings.TrimSpace(chainId) != "" {
-		return fmt.Errorf("found non-empty chainId(%s); chainId is deprecated, use consumerId instead", chainId)
-	}
-
 	return nil
 }
 

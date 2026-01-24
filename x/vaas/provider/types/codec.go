@@ -8,19 +8,13 @@ import (
 	codectypes "github.com/cosmos/cosmos-sdk/codec/types"
 	sdk "github.com/cosmos/cosmos-sdk/types"
 	"github.com/cosmos/cosmos-sdk/types/msgservice"
-	govv1beta1 "github.com/cosmos/cosmos-sdk/x/gov/types/v1beta1"
 )
 
 func RegisterLegacyAminoCodec(cdc *codec.LegacyAmino) {
 }
 
-// RegisterInterfaces registers the provider proposal structs to the interface registry
+// RegisterInterfaces registers the provider message types to the interface registry
 func RegisterInterfaces(registry codectypes.InterfaceRegistry) {
-	registry.RegisterImplementations(
-		(*govv1beta1.Content)(nil),
-		&ConsumerAdditionProposal{},
-		&ConsumerRemovalProposal{},
-	)
 	registry.RegisterImplementations(
 		(*sdk.Msg)(nil),
 		&MsgAssignConsumerKey{},

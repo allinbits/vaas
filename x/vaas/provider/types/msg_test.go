@@ -441,18 +441,12 @@ func TestMsgAssignConsumerKeyValidateBasic(t *testing.T) {
 
 	testCases := []struct {
 		name         string
-		chainId      string
 		providerAddr string
 		signer       string
 		consumerKey  string
 		consumerId   string
 		expErr       bool
 	}{
-		{
-			name:    "invalid: chainId non-empty",
-			chainId: "chainId",
-			expErr:  true,
-		},
 		{
 			name:       "invalid: consumerId empty",
 			consumerId: "",
@@ -501,11 +495,10 @@ func TestMsgAssignConsumerKeyValidateBasic(t *testing.T) {
 	for _, tc := range testCases {
 		t.Run(tc.name, func(t *testing.T) {
 			msg := types.MsgAssignConsumerKey{
-				ChainId:      tc.chainId,
+				ConsumerId:   tc.consumerId,
 				ConsumerKey:  tc.consumerKey,
 				ProviderAddr: tc.providerAddr,
 				Signer:       tc.signer,
-				ConsumerId:   tc.consumerId,
 			}
 
 			err := msg.ValidateBasic()
