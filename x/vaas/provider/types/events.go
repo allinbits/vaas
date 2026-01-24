@@ -5,8 +5,6 @@ const (
 	EventTypeConsumerClientCreated     = "consumer_client_created"
 	EventTypeAssignConsumerKey         = "assign_consumer_key"
 	EventTypeExecuteConsumerChainSlash = "execute_consumer_chain_slash"
-	EventTypeOptIn                     = "opt_in"
-	EventTypeOptOut                    = "opt_out"
 	EventTypeCreateConsumer            = "create_consumer"
 	EventTypeUpdateConsumer            = "update_consumer"
 	EventTypeRemoveConsumer            = "remove_consumer"
