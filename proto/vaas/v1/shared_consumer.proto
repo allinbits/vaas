@@ -50,8 +50,8 @@ message ConsumerGenesisState {
   // This is needed and always set to true; otherwise, new_chain in the consumer
   // genesis state will default to false
   bool new_chain = 3;
-  // Flag indicating whether the consumer CCV module starts in pre-CCV state
-  bool preCCV = 4;
+  // Flag indicating whether the consumer VAAS module starts in pre-VAAS state
+  bool preVAAS = 4;
   // The ID of the connection end on the consumer chain on top of which the
   // CCV channel will be established. If connection_id == "", a new client of
   // the provider chain and a new connection on top of this client are created.

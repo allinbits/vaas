@@ -33,7 +33,7 @@ const (
 
 	PendingChangesKeyName = "PendingChangesKey"
 
-	PreCCVKeyName = "PreCCVKey"
+	PreVAASKeyName = "PreVAASKey"
 
 	InitialValSetKeyName = "InitialValSetKey"
 
@@ -69,9 +69,9 @@ func getKeyPrefixes() map[string]byte {
 		// received over CCV channel but not yet flushed over ABCI
 		PendingChangesKeyName: 5,
 
-		// PreCCVKey is the key for storing the preCCV flag, which is set to true
+		// PreVAASKey is the key for storing the preVAAS flag, which is set to true
 		// during the process of a standalone to consumer changeover.
-		PreCCVKeyName: 7,
+		PreVAASKeyName: 7,
 
 		// InitialValSetKey is the key for storing the initial validator set for a consumer
 		InitialValSetKeyName: 8,
@@ -167,10 +167,10 @@ func PendingChangesKey() []byte {
 	return []byte{mustGetKeyPrefix(PendingChangesKeyName)}
 }
 
-// PreCCVKey returns the key for storing the preCCV flag, which is set to true
+// PreVAASKey returns the key for storing the preVAAS flag, which is set to true
 // during the process of a standalone to consumer changeover.
-func PreCCVKey() []byte {
-	return []byte{mustGetKeyPrefix(PreCCVKeyName)}
+func PreVAASKey() []byte {
+	return []byte{mustGetKeyPrefix(PreVAASKeyName)}
 }
 
 // InitialValSetKey returns the key for storing the initial validator set for a consumer

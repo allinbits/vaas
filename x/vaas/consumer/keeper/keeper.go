@@ -274,21 +274,21 @@ func (k Keeper) SetInitGenesisHeight(ctx sdk.Context, height int64) {
 	store.Set(types.InitGenesisHeightKey(), bz)
 }
 
-func (k Keeper) IsPreCCV(ctx sdk.Context) bool {
+func (k Keeper) IsPreVAAS(ctx sdk.Context) bool {
 	store := ctx.KVStore(k.storeKey)
-	bz := store.Get(types.PreCCVKey())
+	bz := store.Get(types.PreVAASKey())
 	return bz != nil
 }
 
-func (k Keeper) SetPreCCVTrue(ctx sdk.Context) {
+func (k Keeper) SetPreVAASTrue(ctx sdk.Context) {
 	store := ctx.KVStore(k.storeKey)
 	bz := sdk.Uint64ToBigEndian(uint64(1))
-	store.Set(types.PreCCVKey(), bz)
+	store.Set(types.PreVAASKey(), bz)
 }
 
-func (k Keeper) DeletePreCCV(ctx sdk.Context) {
+func (k Keeper) DeletePreVAAS(ctx sdk.Context) {
 	store := ctx.KVStore(k.storeKey)
-	store.Delete(types.PreCCVKey())
+	store.Delete(types.PreVAASKey())
 }
 
 func (k Keeper) SetInitialValSet(ctx sdk.Context, initialValSet []tmtypes.ValidatorUpdate) {
@@ -313,8 +313,8 @@ func (k Keeper) GetInitialValSet(ctx sdk.Context) []tmtypes.ValidatorUpdate {
 }
 
 func (k Keeper) GetLastStandaloneValidators(ctx sdk.Context) ([]stakingtypes.Validator, error) {
-	if !k.IsPreCCV(ctx) || k.standaloneStakingKeeper == nil {
-		panic("cannot get last standalone validators if not in pre-ccv state, or if standalone staking keeper is nil")
+	if !k.IsPreVAAS(ctx) || k.standaloneStakingKeeper == nil {
+		panic("cannot get last standalone validators if not in pre-VAAS state, or if standalone staking keeper is nil")
 	}
 	return k.GetLastBondedValidators(ctx)
 }

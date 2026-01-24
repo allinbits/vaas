@@ -196,7 +196,7 @@ func TestValidateGenesisState(t *testing.T) {
 	}
 }
 
-func getInitialConsumerGenesis(t *testing.T, chainID string, preCCV bool) ccv.ConsumerGenesisState {
+func getInitialConsumerGenesis(t *testing.T, chainID string, preVAAS bool) ccv.ConsumerGenesisState {
 	t.Helper()
 	// generate validator public key
 	cId := crypto.NewCryptoIdentityFromIntSeed(239668)
@@ -212,7 +212,7 @@ func getInitialConsumerGenesis(t *testing.T, chainID string, preCCV bool) ccv.Co
 	var consensusState *ibctmtypes.ConsensusState = nil
 	connectionId := ""
 
-	if preCCV {
+	if preVAAS {
 		connectionId = "connection-1"
 	} else {
 		clientState = ibctmtypes.NewClientState(
@@ -230,5 +230,5 @@ func getInitialConsumerGenesis(t *testing.T, chainID string, preCCV bool) ccv.Co
 	params := ccv.DefaultParams()
 	params.Enabled = true
 
-	return *ccv.NewInitialConsumerGenesisState(clientState, consensusState, valUpdates, preCCV, connectionId, params)
+	return *ccv.NewInitialConsumerGenesisState(clientState, consensusState, valUpdates, preVAAS, connectionId, params)
 }

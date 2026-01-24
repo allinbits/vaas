@@ -100,21 +100,21 @@ func TestInitGenesisHeight(t *testing.T) {
 	require.Equal(t, int64(43234426), consumerKeeper.GetInitGenesisHeight(ctx))
 }
 
-// TestPreCCV tests the getter, setter and deletion methods for the pre-CCV state flag
-func TestPreCCV(t *testing.T) {
+// TestPreVAAS tests the getter, setter and deletion methods for the pre-VAAS state flag
+func TestPreVAAS(t *testing.T) {
 	consumerKeeper, ctx, ctrl, _ := testkeeper.GetConsumerKeeperAndCtx(t, testkeeper.NewInMemKeeperParams(t))
 	defer ctrl.Finish()
 
 	// Default value is false without any setter
-	require.False(t, consumerKeeper.IsPreCCV(ctx))
+	require.False(t, consumerKeeper.IsPreVAAS(ctx))
 
-	// Set/get the pre-CCV state to true
-	consumerKeeper.SetPreCCVTrue(ctx)
-	require.True(t, consumerKeeper.IsPreCCV(ctx))
+	// Set/get the pre-VAAS state to true
+	consumerKeeper.SetPreVAASTrue(ctx)
+	require.True(t, consumerKeeper.IsPreVAAS(ctx))
 
-	// Delete the pre-CCV state, setting it to false
-	consumerKeeper.DeletePreCCV(ctx)
-	require.False(t, consumerKeeper.IsPreCCV(ctx))
+	// Delete the pre-VAAS state, setting it to false
+	consumerKeeper.DeletePreVAAS(ctx)
+	require.False(t, consumerKeeper.IsPreVAAS(ctx))
 }
 
 // TestInitialValSet tests the getter and setter methods for storing the initial validator set for a consumer
@@ -167,19 +167,19 @@ func TestGetLastSovereignValidators(t *testing.T) {
 	ck, ctx, ctrl, mocks := testkeeper.GetConsumerKeeperAndCtx(t, testkeeper.NewInMemKeeperParams(t))
 	defer ctrl.Finish()
 
-	// Should panic if pre-CCV is true but staking keeper is not set
-	ck.SetPreCCVTrue(ctx)
+	// Should panic if pre-VAAS is true but staking keeper is not set
+	ck.SetPreVAASTrue(ctx)
 	require.Panics(t, func() { ck.GetLastStandaloneValidators(ctx) })
 
-	// Should panic if staking keeper is set but pre-CCV is false
+	// Should panic if staking keeper is set but pre-VAAS is false
 	ck.SetStandaloneStakingKeeper(mocks.MockStakingKeeper)
-	ck.DeletePreCCV(ctx)
-	require.False(t, ck.IsPreCCV(ctx))
+	ck.DeletePreVAAS(ctx)
+	require.False(t, ck.IsPreVAAS(ctx))
 	require.Panics(t, func() { ck.GetLastStandaloneValidators(ctx) })
 
-	// Set the pre-CCV state to true and get the last standalone validators from mock
-	ck.SetPreCCVTrue(ctx)
-	require.True(t, ck.IsPreCCV(ctx))
+	// Set the pre-VAAS state to true and get the last standalone validators from mock
+	ck.SetPreVAASTrue(ctx)
+	require.True(t, ck.IsPreVAAS(ctx))
 	cId1 := crypto.NewCryptoIdentityFromIntSeed(11)
 	val := cId1.SDKStakingValidator()
 	val.Description.Moniker = "sanity check this is the correctly serialized val"

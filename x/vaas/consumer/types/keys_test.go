@@ -32,7 +32,7 @@ func TestPreserveBytePrefix(t *testing.T) {
 	i++
 	require.Equal(t, byte(5), consumertypes.PendingChangesKey()[0])
 	i++
-	require.Equal(t, byte(7), consumertypes.PreCCVKey()[0])
+	require.Equal(t, byte(7), consumertypes.PreVAASKey()[0])
 	i++
 	require.Equal(t, byte(8), consumertypes.InitialValSetKey()[0])
 	i++
@@ -75,7 +75,7 @@ func getAllFullyDefinedKeys() [][]byte {
 		consumertypes.HistoricalInfoKey(0),
 		consumertypes.HeightValsetUpdateIDKey(0),
 		consumertypes.CrossChainValidatorKey([]byte{0x05}),
-		consumertypes.PreCCVKey(),
+		consumertypes.PreVAASKey(),
 		consumertypes.InitialValSetKey(),
 		consumertypes.InitGenesisHeightKey(),
 		consumertypes.PrevStandaloneChainKey(),

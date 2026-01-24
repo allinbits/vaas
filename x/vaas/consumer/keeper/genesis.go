@@ -22,14 +22,14 @@ import (
 //  2. A consumer chain restarts after a client to the provider was created, but the CCV channel handshake is still in progress
 //  3. A consumer chain restarts after the CCV channel handshake was completed.
 func (k Keeper) InitGenesis(ctx sdk.Context, state *types.GenesisState) []abci.ValidatorUpdate {
-	// PreCCV is true during the process of a standalone to consumer changeover.
-	// At the PreCCV point in the process, the standalone chain has just been upgraded to include
-	// the consumer ccv module, but the standalone staking keeper is still managing the validator set.
-	// Once the provider validator set starts validating blocks, the consumer CCV module
+	// PreVAAS is true during the process of a standalone to consumer changeover.
+	// At the PreVAAS point in the process, the standalone chain has just been upgraded to include
+	// the consumer VAAS module, but the standalone staking keeper is still managing the validator set.
+	// Once the provider validator set starts validating blocks, the consumer VAAS module
 	// will take over proof of stake capabilities, but the standalone staking keeper will
 	// stick around for slashing/jailing purposes.
-	if state.PreCCV {
-		k.SetPreCCVTrue(ctx)
+	if state.PreVAAS {
+		k.SetPreVAASTrue(ctx)
 		k.MarkAsPrevStandaloneChain(ctx)
 		k.SetInitialValSet(ctx, state.Provider.InitialValSet)
 	}
@@ -126,7 +126,7 @@ func (k Keeper) InitGenesis(ctx sdk.Context, state *types.GenesisState) []abci.V
 		k.SetProviderClientID(ctx, state.ProviderClientId)
 	}
 
-	if state.PreCCV {
+	if state.PreVAAS {
 		return []abci.ValidatorUpdate{}
 	}
 

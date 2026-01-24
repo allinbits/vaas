@@ -379,12 +379,12 @@ func (k Keeper) MakeConsumerGenesis(
 
 	var clientState *ibctmtypes.ClientState = nil
 	var tmConsState *ibctmtypes.ConsensusState = nil
-	var preCCV bool
+	var preVAAS bool
 	var counterpartyConnectionId string
 
 	if initializationRecord.ConnectionId == "" {
 		// no connection ID provided
-		preCCV = false
+		preVAAS = false
 		counterpartyConnectionId = ""
 
 		// create provider client state and consensus state for the consumer to be able
@@ -416,7 +416,7 @@ func (k Keeper) MakeConsumerGenesis(
 		tmConsState = consState
 	} else {
 		// connection ID provided
-		preCCV = true
+		preVAAS = true
 
 		// get the connection end
 		connectionEnd, found := k.connectionKeeper.GetConnection(ctx, initializationRecord.ConnectionId)
@@ -471,7 +471,7 @@ func (k Keeper) MakeConsumerGenesis(
 		clientState,
 		tmConsState,
 		initialValidatorUpdates,
-		preCCV,
+		preVAAS,
 		counterpartyConnectionId,
 		consumerGenesisParams,
 	)

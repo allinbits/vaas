@@ -16,11 +16,6 @@ import (
 	"github.com/allinbits/vaas/x/vaas/consumer/types"
 )
 
-//
-// TODO: make unit tests for all of: MVP consumer, democ consumer, and pre-ccv consumer
-// for previously unimplemented methods, if they're implemented to solve the above issue.
-//
-
 // ApplyCCValidatorChanges applies the given changes to the cross-chain validators states
 // and returns updates to forward to tendermint.
 func (k Keeper) ApplyCCValidatorChanges(ctx sdk.Context, changes []abci.ValidatorUpdate) []abci.ValidatorUpdate {
