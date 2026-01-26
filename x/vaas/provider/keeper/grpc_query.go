@@ -8,6 +8,8 @@ import (
 	"sort"
 	"time"
 
+	"github.com/allinbits/vaas/x/vaas/provider/types"
+	vaastypes "github.com/allinbits/vaas/x/vaas/types"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
 
@@ -16,9 +18,6 @@ import (
 
 	sdk "github.com/cosmos/cosmos-sdk/types"
 	"github.com/cosmos/cosmos-sdk/types/query"
-
-	"github.com/allinbits/vaas/x/vaas/provider/types"
-	vaastypes "github.com/allinbits/vaas/x/vaas/types"
 )
 
 var _ types.QueryServer = Keeper{}
@@ -391,6 +390,6 @@ func (k Keeper) QueryConsumerGenesisTime(goCtx context.Context, req *types.Query
 	}
 
 	return &types.QueryConsumerGenesisTimeResponse{
-		GenesisTime: time.Unix(0, int64(cs.GetTimestamp())), // nolint:staticcheck
+		GenesisTime: time.Unix(0, int64(cs.GetTimestamp())), //nolint:staticcheck
 	}, nil
 }

@@ -3,12 +3,12 @@ package keeper
 import (
 	"fmt"
 
-	sdk "github.com/cosmos/cosmos-sdk/types"
+	"github.com/allinbits/vaas/x/vaas/provider/types"
+	vaastypes "github.com/allinbits/vaas/x/vaas/types"
 
 	abci "github.com/cometbft/cometbft/abci/types"
 
-	"github.com/allinbits/vaas/x/vaas/provider/types"
-	vaastypes "github.com/allinbits/vaas/x/vaas/types"
+	sdk "github.com/cosmos/cosmos-sdk/types"
 )
 
 // InitGenesis initializes the CCV provider state and binds to PortID.

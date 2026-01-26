@@ -1,6 +1,10 @@
 package provider
 
 import (
+	"github.com/allinbits/vaas/x/vaas/provider/keeper"
+	providertypes "github.com/allinbits/vaas/x/vaas/provider/types"
+	vaastypes "github.com/allinbits/vaas/x/vaas/types"
+
 	channeltypes "github.com/cosmos/ibc-go/v10/modules/core/04-channel/types"
 	porttypes "github.com/cosmos/ibc-go/v10/modules/core/05-port/types"
 	ibcexported "github.com/cosmos/ibc-go/v10/modules/core/exported"
@@ -9,10 +13,6 @@ import (
 
 	sdk "github.com/cosmos/cosmos-sdk/types"
 	sdkerrors "github.com/cosmos/cosmos-sdk/types/errors"
-
-	"github.com/allinbits/vaas/x/vaas/provider/keeper"
-	providertypes "github.com/allinbits/vaas/x/vaas/provider/types"
-	vaastypes "github.com/allinbits/vaas/x/vaas/types"
 )
 
 // OnChanOpenInit implements the IBCModule interface

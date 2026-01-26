@@ -1,9 +1,9 @@
 package types
 
 import (
-	errorsmod "cosmossdk.io/errors"
-
 	abci "github.com/cometbft/cometbft/abci/types"
+
+	errorsmod "cosmossdk.io/errors"
 )
 
 func NewValidatorSetChangePacketData(valUpdates []abci.ValidatorUpdate, valUpdateID uint64) ValidatorSetChangePacketData {

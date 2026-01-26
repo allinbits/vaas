@@ -4,18 +4,18 @@ import (
 	cryptoEd25519 "crypto/ed25519"
 	"encoding/binary"
 
+	providertypes "github.com/allinbits/vaas/x/vaas/provider/types"
+
+	tmcrypto "github.com/cometbft/cometbft/crypto"
+	tmprotocrypto "github.com/cometbft/cometbft/proto/tendermint/crypto"
+	tmtypes "github.com/cometbft/cometbft/types"
+
 	sdkcryptocodec "github.com/cosmos/cosmos-sdk/crypto/codec"
 	sdkcryptoEd25519 "github.com/cosmos/cosmos-sdk/crypto/keys/ed25519"
 	sdkcryptoSecp256k1 "github.com/cosmos/cosmos-sdk/crypto/keys/secp256k1"
 	sdkcryptotypes "github.com/cosmos/cosmos-sdk/crypto/types"
 	sdktypes "github.com/cosmos/cosmos-sdk/types"
 	sdkstakingtypes "github.com/cosmos/cosmos-sdk/x/staking/types"
-
-	tmcrypto "github.com/cometbft/cometbft/crypto"
-	tmprotocrypto "github.com/cometbft/cometbft/proto/tendermint/crypto"
-	tmtypes "github.com/cometbft/cometbft/types"
-
-	providertypes "github.com/allinbits/vaas/x/vaas/provider/types"
 )
 
 // CryptoIdentity is a test helper for generating keys and addresses of

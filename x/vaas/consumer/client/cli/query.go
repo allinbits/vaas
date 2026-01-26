@@ -1,12 +1,11 @@
 package cli
 
 import (
+	"github.com/allinbits/vaas/x/vaas/consumer/types"
 	"github.com/spf13/cobra"
 
 	"github.com/cosmos/cosmos-sdk/client"
 	"github.com/cosmos/cosmos-sdk/client/flags"
-
-	"github.com/allinbits/vaas/x/vaas/consumer/types"
 )
 
 // NewQueryCmd returns a root CLI command handler for all x/vaas/consumer query commands.

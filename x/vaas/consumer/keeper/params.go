@@ -4,11 +4,11 @@ import (
 	"context"
 	"time"
 
-	sdk "github.com/cosmos/cosmos-sdk/types"
-	stakingtypes "github.com/cosmos/cosmos-sdk/x/staking/types"
-
 	"github.com/allinbits/vaas/x/vaas/consumer/types"
 	vaastypes "github.com/allinbits/vaas/x/vaas/types"
+
+	sdk "github.com/cosmos/cosmos-sdk/types"
+	stakingtypes "github.com/cosmos/cosmos-sdk/x/staking/types"
 )
 
 // GetParams returns the params for the consumer VAAS module

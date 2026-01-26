@@ -3,12 +3,11 @@ package keeper
 import (
 	"context"
 
+	"github.com/allinbits/vaas/x/vaas/consumer/types"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
 
 	sdk "github.com/cosmos/cosmos-sdk/types"
-
-	"github.com/allinbits/vaas/x/vaas/consumer/types"
 )
 
 var _ types.QueryServer = Keeper{} //nolint:golint

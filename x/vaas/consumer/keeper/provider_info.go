@@ -1,12 +1,12 @@
 package keeper
 
 import (
+	"github.com/allinbits/vaas/x/vaas/consumer/types"
+	vaastypes "github.com/allinbits/vaas/x/vaas/types"
+
 	ibctm "github.com/cosmos/ibc-go/v10/modules/light-clients/07-tendermint" //nolint:golint
 
 	sdk "github.com/cosmos/cosmos-sdk/types"
-
-	"github.com/allinbits/vaas/x/vaas/consumer/types"
-	vaastypes "github.com/allinbits/vaas/x/vaas/types"
 )
 
 func (k Keeper) GetProviderInfo(ctx sdk.Context) (*types.QueryProviderInfoResponse, error) { //nolint:golint

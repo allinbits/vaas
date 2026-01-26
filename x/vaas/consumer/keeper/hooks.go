@@ -3,9 +3,9 @@ package keeper
 import (
 	"context"
 
-	sdk "github.com/cosmos/cosmos-sdk/types"
-
 	vaastypes "github.com/allinbits/vaas/x/vaas/types"
+
+	sdk "github.com/cosmos/cosmos-sdk/types"
 )
 
 var _ vaastypes.ConsumerHooks = Keeper{}

@@ -4,12 +4,12 @@ import (
 	"fmt"
 	"time"
 
-	ibctmtypes "github.com/cosmos/ibc-go/v10/modules/light-clients/07-tendermint"
-
 	"github.com/cometbft/cometbft/crypto/tmhash"
 	"github.com/cometbft/cometbft/libs/bytes"
 	tmproto "github.com/cometbft/cometbft/proto/tendermint/types"
 	tmtypes "github.com/cometbft/cometbft/types"
+
+	ibctmtypes "github.com/cosmos/ibc-go/v10/modules/light-clients/07-tendermint"
 )
 
 // utility function duplicated from CometBFT

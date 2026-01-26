@@ -7,6 +7,9 @@ import (
 	"strings"
 	"time"
 
+	abci "github.com/cometbft/cometbft/abci/types"
+	tmprotocrypto "github.com/cometbft/cometbft/proto/tendermint/crypto"
+
 	clienttypes "github.com/cosmos/ibc-go/v10/modules/core/02-client/types"
 	channeltypes "github.com/cosmos/ibc-go/v10/modules/core/04-channel/types"
 
@@ -16,9 +19,6 @@ import (
 	sdk "github.com/cosmos/cosmos-sdk/types"
 	"github.com/cosmos/cosmos-sdk/types/bech32"
 	stakingtypes "github.com/cosmos/cosmos-sdk/x/staking/types"
-
-	abci "github.com/cometbft/cometbft/abci/types"
-	tmprotocrypto "github.com/cometbft/cometbft/proto/tendermint/crypto"
 )
 
 func AccumulateChanges(currentChanges, newChanges []abci.ValidatorUpdate) []abci.ValidatorUpdate {

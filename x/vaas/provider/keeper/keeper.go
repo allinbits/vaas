@@ -7,6 +7,10 @@ import (
 	"reflect"
 	"time"
 
+	consumertypes "github.com/allinbits/vaas/x/vaas/consumer/types"
+	"github.com/allinbits/vaas/x/vaas/provider/types"
+	vaastypes "github.com/allinbits/vaas/x/vaas/types"
+
 	clienttypes "github.com/cosmos/ibc-go/v10/modules/core/02-client/types"
 	conntypes "github.com/cosmos/ibc-go/v10/modules/core/03-connection/types"
 	channeltypes "github.com/cosmos/ibc-go/v10/modules/core/04-channel/types"
@@ -23,10 +27,6 @@ import (
 	govkeeper "github.com/cosmos/cosmos-sdk/x/gov/keeper"
 	paramtypes "github.com/cosmos/cosmos-sdk/x/params/types"
 	stakingtypes "github.com/cosmos/cosmos-sdk/x/staking/types"
-
-	consumertypes "github.com/allinbits/vaas/x/vaas/consumer/types"
-	"github.com/allinbits/vaas/x/vaas/provider/types"
-	vaastypes "github.com/allinbits/vaas/x/vaas/types"
 )
 
 // Keeper defines the Cross-Chain Validation Provider Keeper

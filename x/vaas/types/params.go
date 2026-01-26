@@ -94,4 +94,3 @@ func (p *ConsumerParams) ParamSetPairs() paramtypes.ParamSetPairs {
 			p.UnbondingPeriod, ValidateDuration),
 	}
 }
-

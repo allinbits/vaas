@@ -5,17 +5,17 @@ import (
 	"strings"
 	"time"
 
+	"github.com/allinbits/vaas/x/vaas/provider/types"
+	vaastypes "github.com/allinbits/vaas/x/vaas/types"
+
+	tmtypes "github.com/cometbft/cometbft/types"
+
 	errorsmod "cosmossdk.io/errors"
 
 	cryptocodec "github.com/cosmos/cosmos-sdk/crypto/codec"
 	sdk "github.com/cosmos/cosmos-sdk/types"
 	govtypes "github.com/cosmos/cosmos-sdk/x/gov/types"
 	stakingtypes "github.com/cosmos/cosmos-sdk/x/staking/types"
-
-	tmtypes "github.com/cometbft/cometbft/types"
-
-	"github.com/allinbits/vaas/x/vaas/provider/types"
-	vaastypes "github.com/allinbits/vaas/x/vaas/types"
 )
 
 type msgServer struct {

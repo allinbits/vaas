@@ -3,12 +3,12 @@ package keeper
 import (
 	"context"
 
+	"github.com/allinbits/vaas/x/vaas/consumer/types"
+
 	errorsmod "cosmossdk.io/errors"
 
 	sdk "github.com/cosmos/cosmos-sdk/types"
 	govtypes "github.com/cosmos/cosmos-sdk/x/gov/types"
-
-	"github.com/allinbits/vaas/x/vaas/consumer/types"
 )
 
 type msgServer struct {

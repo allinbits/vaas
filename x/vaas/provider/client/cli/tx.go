@@ -6,8 +6,12 @@ import (
 	"os"
 	"strings"
 
-	ibctmtypes "github.com/cosmos/ibc-go/v10/modules/light-clients/07-tendermint"
+	"github.com/allinbits/vaas/x/vaas/provider/types"
 	"github.com/spf13/cobra"
+
+	tmproto "github.com/cometbft/cometbft/proto/tendermint/types"
+
+	ibctmtypes "github.com/cosmos/ibc-go/v10/modules/light-clients/07-tendermint"
 
 	"github.com/cosmos/cosmos-sdk/client"
 	"github.com/cosmos/cosmos-sdk/client/flags"
@@ -15,10 +19,6 @@ import (
 	"github.com/cosmos/cosmos-sdk/codec"
 	sdk "github.com/cosmos/cosmos-sdk/types"
 	"github.com/cosmos/cosmos-sdk/version"
-
-	tmproto "github.com/cometbft/cometbft/proto/tendermint/types"
-
-	"github.com/allinbits/vaas/x/vaas/provider/types"
 )
 
 // GetTxCmd returns the transaction commands for this module

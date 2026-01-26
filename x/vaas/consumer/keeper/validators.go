@@ -5,15 +5,15 @@ import (
 	"errors"
 	"time"
 
+	"github.com/allinbits/vaas/x/vaas/consumer/types"
+
+	abci "github.com/cometbft/cometbft/abci/types"
+
 	"cosmossdk.io/math"
 
 	cryptocodec "github.com/cosmos/cosmos-sdk/crypto/codec"
 	sdk "github.com/cosmos/cosmos-sdk/types"
 	stakingtypes "github.com/cosmos/cosmos-sdk/x/staking/types"
-
-	abci "github.com/cometbft/cometbft/abci/types"
-
-	"github.com/allinbits/vaas/x/vaas/consumer/types"
 )
 
 // ApplyCCValidatorChanges applies the given changes to the cross-chain validators states
@@ -31,7 +31,7 @@ func (k Keeper) ApplyCCValidatorChanges(ctx sdk.Context, changes []abci.Validato
 		addr := pubkey.Address()
 		val, found := k.GetCCValidator(ctx, addr)
 
-		if found {
+		if found { //nolint:gocritic
 			// update or delete an existing validator
 			if change.Power < 1 {
 				k.DeleteCCValidator(ctx, addr)

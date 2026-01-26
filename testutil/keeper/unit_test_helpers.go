@@ -6,10 +6,18 @@ import (
 	"testing"
 	"time"
 
-	dbm "github.com/cosmos/cosmos-db"
-	clienttypes "github.com/cosmos/ibc-go/v10/modules/core/02-client/types"
+	consumerkeeper "github.com/allinbits/vaas/x/vaas/consumer/keeper"
+	consumertypes "github.com/allinbits/vaas/x/vaas/consumer/types"
+	providerkeeper "github.com/allinbits/vaas/x/vaas/provider/keeper"
+	providertypes "github.com/allinbits/vaas/x/vaas/provider/types"
+	"github.com/allinbits/vaas/x/vaas/types"
 	"github.com/golang/mock/gomock"
 	"github.com/stretchr/testify/require"
+
+	tmproto "github.com/cometbft/cometbft/proto/tendermint/types"
+
+	dbm "github.com/cosmos/cosmos-db"
+	clienttypes "github.com/cosmos/ibc-go/v10/modules/core/02-client/types"
 
 	"cosmossdk.io/log"
 	math "cosmossdk.io/math"
@@ -28,14 +36,6 @@ import (
 	govkeeper "github.com/cosmos/cosmos-sdk/x/gov/keeper"
 	govtypes "github.com/cosmos/cosmos-sdk/x/gov/types"
 	paramstypes "github.com/cosmos/cosmos-sdk/x/params/types"
-
-	tmproto "github.com/cometbft/cometbft/proto/tendermint/types"
-
-	consumerkeeper "github.com/allinbits/vaas/x/vaas/consumer/keeper"
-	consumertypes "github.com/allinbits/vaas/x/vaas/consumer/types"
-	providerkeeper "github.com/allinbits/vaas/x/vaas/provider/keeper"
-	providertypes "github.com/allinbits/vaas/x/vaas/provider/types"
-	"github.com/allinbits/vaas/x/vaas/types"
 )
 
 // Parameters needed to instantiate an in-memory keeper

@@ -1,13 +1,13 @@
 package types
 
 import (
-	ibctmtypes "github.com/cosmos/ibc-go/v10/modules/light-clients/07-tendermint"
-
-	errorsmod "cosmossdk.io/errors"
+	vaastypes "github.com/allinbits/vaas/x/vaas/types"
 
 	abci "github.com/cometbft/cometbft/abci/types"
 
-	vaastypes "github.com/allinbits/vaas/x/vaas/types"
+	ibctmtypes "github.com/cosmos/ibc-go/v10/modules/light-clients/07-tendermint"
+
+	errorsmod "cosmossdk.io/errors"
 )
 
 // NewRestartGenesisState returns a consumer GenesisState that has already been established.
@@ -126,7 +126,7 @@ func (gs GenesisState) Validate() error {
 		if gs.ProviderClientId == "" {
 			return errorsmod.Wrap(vaastypes.ErrInvalidGenesis, "provider client id must be set for a restarting consumer genesis state")
 		}
-			/* 		if gs.HeightToValsetUpdateId == nil {
+		/* 		if gs.HeightToValsetUpdateId == nil {
 			return errorsmod.Wrap(
 				vaastypes.ErrInvalidGenesis,
 				"empty height to validator set update id mapping",

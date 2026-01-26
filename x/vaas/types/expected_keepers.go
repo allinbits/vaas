@@ -4,6 +4,8 @@ import (
 	context "context"
 	"time"
 
+	abci "github.com/cometbft/cometbft/abci/types"
+
 	transfertypes "github.com/cosmos/ibc-go/v10/modules/apps/transfer/types"
 	clienttypes "github.com/cosmos/ibc-go/v10/modules/core/02-client/types"
 	conntypes "github.com/cosmos/ibc-go/v10/modules/core/03-connection/types"
@@ -17,8 +19,6 @@ import (
 	sdk "github.com/cosmos/cosmos-sdk/types"
 	slashingtypes "github.com/cosmos/cosmos-sdk/x/slashing/types"
 	stakingtypes "github.com/cosmos/cosmos-sdk/x/staking/types"
-
-	abci "github.com/cometbft/cometbft/abci/types"
 )
 
 // StakingKeeper defines the contract expected by provider-chain ccv module from a Staking Module that will keep track

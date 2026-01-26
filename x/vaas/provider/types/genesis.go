@@ -4,11 +4,11 @@ import (
 	"errors"
 	"fmt"
 
+	vaastypes "github.com/allinbits/vaas/x/vaas/types"
+
 	host "github.com/cosmos/ibc-go/v10/modules/core/24-host"
 
 	errorsmod "cosmossdk.io/errors"
-
-	vaastypes "github.com/allinbits/vaas/x/vaas/types"
 )
 
 func NewGenesisState(

@@ -4,17 +4,17 @@ import (
 	"errors"
 	"fmt"
 
+	providertypes "github.com/allinbits/vaas/x/vaas/provider/types"
+	vaastypes "github.com/allinbits/vaas/x/vaas/types"
+
+	abci "github.com/cometbft/cometbft/abci/types"
+
 	clienttypes "github.com/cosmos/ibc-go/v10/modules/core/02-client/types"
 	channeltypes "github.com/cosmos/ibc-go/v10/modules/core/04-channel/types"
 
 	errorsmod "cosmossdk.io/errors"
 
 	sdk "github.com/cosmos/cosmos-sdk/types"
-
-	abci "github.com/cometbft/cometbft/abci/types"
-
-	providertypes "github.com/allinbits/vaas/x/vaas/provider/types"
-	vaastypes "github.com/allinbits/vaas/x/vaas/types"
 )
 
 // OnAcknowledgementPacket handles acknowledgments for sent VSC packets
@@ -167,7 +167,7 @@ func (k Keeper) SendVSCPacketsToChain(ctx sdk.Context, consumerId, channelId str
 		err := vaastypes.SendIBCPacket(
 			ctx,
 			k.channelKeeper,
-			channelId,          // source channel id
+			channelId,                // source channel id
 			vaastypes.ProviderPortID, // source port id
 			data.GetBytes(),
 			k.GetVAASTimeoutPeriod(ctx),
@@ -265,16 +265,5 @@ func (k Keeper) EndBlockCIS(ctx sdk.Context) {
 	// prune previous consumer validator addresses that are no longer needed
 	for _, consumerId := range k.GetAllConsumersWithIBCClients(ctx) {
 		k.PruneKeyAssignments(ctx, consumerId)
-	}
-}
-
-// getMappedInfractionHeight gets the infraction height mapped from val set ID for the given consumer id
-func (k Keeper) getMappedInfractionHeight(ctx sdk.Context,
-	consumerId string, valsetUpdateID uint64,
-) (height uint64, found bool) {
-	if valsetUpdateID == 0 {
-		return k.GetInitChainHeight(ctx, consumerId)
-	} else {
-		return k.GetValsetUpdateBlockHeight(ctx, valsetUpdateID)
 	}
 }

@@ -397,4 +397,3 @@ func TestPrevStandaloneChainFlag(t *testing.T) {
 	ck.MarkAsPrevStandaloneChain(ctx)
 	require.True(t, ck.IsPrevStandaloneChain(ctx))
 }
-

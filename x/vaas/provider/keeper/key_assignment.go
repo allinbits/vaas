@@ -5,16 +5,16 @@ import (
 	"fmt"
 	"time"
 
+	"github.com/allinbits/vaas/x/vaas/provider/types"
+	vaastypes "github.com/allinbits/vaas/x/vaas/types"
+
+	tmprotocrypto "github.com/cometbft/cometbft/proto/tendermint/crypto"
+
 	errorsmod "cosmossdk.io/errors"
 	storetypes "cosmossdk.io/store/types"
 
 	sdk "github.com/cosmos/cosmos-sdk/types"
 	stakingtypes "github.com/cosmos/cosmos-sdk/x/staking/types"
-
-	tmprotocrypto "github.com/cometbft/cometbft/proto/tendermint/crypto"
-
-	"github.com/allinbits/vaas/x/vaas/provider/types"
-	vaastypes "github.com/allinbits/vaas/x/vaas/types"
 )
 
 // ParseConsumerKey parses the ED25519 PubKey`consumerKey` from a JSON string

@@ -3,10 +3,10 @@ package keeper
 import (
 	"fmt"
 
+	types "github.com/allinbits/vaas/x/vaas/provider/types"
+
 	sdk "github.com/cosmos/cosmos-sdk/types"
 	stakingtypes "github.com/cosmos/cosmos-sdk/x/staking/types"
-
-	types "github.com/allinbits/vaas/x/vaas/provider/types"
 )
 
 // RegisterInvariants registers all staking invariants

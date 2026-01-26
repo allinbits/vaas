@@ -5,9 +5,9 @@ import (
 	"fmt"
 	"strconv"
 
-	sdk "github.com/cosmos/cosmos-sdk/types"
-
 	"github.com/allinbits/vaas/x/vaas/provider/types"
+
+	sdk "github.com/cosmos/cosmos-sdk/types"
 )
 
 // setConsumerId sets the provided consumerId

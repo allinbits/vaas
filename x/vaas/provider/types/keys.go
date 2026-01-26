@@ -7,9 +7,9 @@ import (
 	"sort"
 	"time"
 
-	sdk "github.com/cosmos/cosmos-sdk/types"
-
 	vaastypes "github.com/allinbits/vaas/x/vaas/types"
+
+	sdk "github.com/cosmos/cosmos-sdk/types"
 )
 
 type Status int

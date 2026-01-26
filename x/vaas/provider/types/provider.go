@@ -4,11 +4,11 @@ import (
 	"context"
 	"time"
 
+	vaastypes "github.com/allinbits/vaas/x/vaas/types"
+
 	clienttypes "github.com/cosmos/ibc-go/v10/modules/core/02-client/types"
 
 	"cosmossdk.io/math"
-
-	vaastypes "github.com/allinbits/vaas/x/vaas/types"
 )
 
 func DefaultConsumerInitializationParameters() ConsumerInitializationParameters {

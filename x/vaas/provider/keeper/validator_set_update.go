@@ -4,13 +4,13 @@ import (
 	"fmt"
 	"sort"
 
-	sdk "github.com/cosmos/cosmos-sdk/types"
-	stakingtypes "github.com/cosmos/cosmos-sdk/x/staking/types"
+	"github.com/allinbits/vaas/x/vaas/provider/types"
+	vaastypes "github.com/allinbits/vaas/x/vaas/types"
 
 	abci "github.com/cometbft/cometbft/abci/types"
 
-	"github.com/allinbits/vaas/x/vaas/provider/types"
-	vaastypes "github.com/allinbits/vaas/x/vaas/types"
+	sdk "github.com/cosmos/cosmos-sdk/types"
+	stakingtypes "github.com/cosmos/cosmos-sdk/x/staking/types"
 )
 
 // GetConsumerChainConsensusValidatorsKey returns the store key for consumer validators of the consumer chain with `consumerId`

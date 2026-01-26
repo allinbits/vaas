@@ -6,6 +6,11 @@ import (
 	"errors"
 	"fmt"
 
+	"github.com/allinbits/vaas/x/vaas/provider/types"
+	vaastypes "github.com/allinbits/vaas/x/vaas/types"
+
+	tmtypes "github.com/cometbft/cometbft/types"
+
 	ibcclienttypes "github.com/cosmos/ibc-go/v10/modules/core/02-client/types"
 	ibctmtypes "github.com/cosmos/ibc-go/v10/modules/light-clients/07-tendermint"
 
@@ -16,11 +21,6 @@ import (
 	sdk "github.com/cosmos/cosmos-sdk/types"
 	slashingtypes "github.com/cosmos/cosmos-sdk/x/slashing/types"
 	stakingtypes "github.com/cosmos/cosmos-sdk/x/staking/types"
-
-	tmtypes "github.com/cometbft/cometbft/types"
-
-	"github.com/allinbits/vaas/x/vaas/provider/types"
-	vaastypes "github.com/allinbits/vaas/x/vaas/types"
 )
 
 //

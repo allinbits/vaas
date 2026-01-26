@@ -5,8 +5,13 @@ import (
 	"encoding/json"
 	"fmt"
 
+	"github.com/allinbits/vaas/x/vaas/provider/client/cli"
+	"github.com/allinbits/vaas/x/vaas/provider/keeper"
+	providertypes "github.com/allinbits/vaas/x/vaas/provider/types"
 	"github.com/grpc-ecosystem/grpc-gateway/runtime"
 	"github.com/spf13/cobra"
+
+	abci "github.com/cometbft/cometbft/abci/types"
 
 	"cosmossdk.io/core/appmodule"
 
@@ -16,12 +21,6 @@ import (
 	sdk "github.com/cosmos/cosmos-sdk/types"
 	"github.com/cosmos/cosmos-sdk/types/module"
 	simtypes "github.com/cosmos/cosmos-sdk/types/simulation"
-
-	abci "github.com/cometbft/cometbft/abci/types"
-
-	"github.com/allinbits/vaas/x/vaas/provider/client/cli"
-	"github.com/allinbits/vaas/x/vaas/provider/keeper"
-	providertypes "github.com/allinbits/vaas/x/vaas/provider/types"
 )
 
 var (

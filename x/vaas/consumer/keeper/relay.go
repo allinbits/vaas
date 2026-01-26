@@ -3,16 +3,16 @@ package keeper
 import (
 	"fmt"
 
+	"github.com/allinbits/vaas/x/vaas/consumer/types"
+	vaastypes "github.com/allinbits/vaas/x/vaas/types"
+
+	abci "github.com/cometbft/cometbft/abci/types"
+
 	channeltypes "github.com/cosmos/ibc-go/v10/modules/core/04-channel/types"
 
 	errorsmod "cosmossdk.io/errors"
 
 	sdk "github.com/cosmos/cosmos-sdk/types"
-
-	abci "github.com/cometbft/cometbft/abci/types"
-
-	"github.com/allinbits/vaas/x/vaas/consumer/types"
-	vaastypes "github.com/allinbits/vaas/x/vaas/types"
 )
 
 // OnRecvVSCPacket sets the pending validator set changes that will be flushed to ABCI on Endblock

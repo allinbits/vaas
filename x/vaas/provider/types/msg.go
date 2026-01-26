@@ -6,17 +6,17 @@ import (
 	"fmt"
 	"strings"
 
+	vaastypes "github.com/allinbits/vaas/x/vaas/types"
+
+	tmtypes "github.com/cometbft/cometbft/proto/tendermint/types"
+	cmttypes "github.com/cometbft/cometbft/types"
+
 	clienttypes "github.com/cosmos/ibc-go/v10/modules/core/02-client/types"
 	ibctmtypes "github.com/cosmos/ibc-go/v10/modules/light-clients/07-tendermint"
 
 	errorsmod "cosmossdk.io/errors"
 
 	sdk "github.com/cosmos/cosmos-sdk/types"
-
-	tmtypes "github.com/cometbft/cometbft/proto/tendermint/types"
-	cmttypes "github.com/cometbft/cometbft/types"
-
-	vaastypes "github.com/allinbits/vaas/x/vaas/types"
 )
 
 const (

@@ -3,12 +3,11 @@ package keeper
 import (
 	"fmt"
 
-	"cosmossdk.io/math"
+	"github.com/allinbits/vaas/x/vaas/provider/types"
+
 	storetypes "cosmossdk.io/store/types"
 
 	sdk "github.com/cosmos/cosmos-sdk/types"
-
-	"github.com/allinbits/vaas/x/vaas/provider/types"
 )
 
 // The functions here are meant to provide a generic interface to a validator set that
@@ -106,19 +105,6 @@ func (k Keeper) getValSet(
 	}
 
 	return validators, err
-}
-
-// getTotalPower computes the total power of all the consumer validators stored under the given prefix.
-func (k Keeper) getTotalPower(ctx sdk.Context, prefix []byte) (math.Int, error) {
-	totalPower := math.ZeroInt()
-	validators, err := k.getValSet(ctx, prefix)
-	if err != nil {
-		return totalPower, err
-	}
-	for _, val := range validators {
-		totalPower = totalPower.Add(math.NewInt(val.Power))
-	}
-	return totalPower, nil
 }
 
 // SetLastProviderConsensusValSet resets the stored last validator set sent to the consensus engine on the provider

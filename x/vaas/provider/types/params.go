@@ -4,13 +4,13 @@ import (
 	"fmt"
 	"time"
 
+	vaastypes "github.com/allinbits/vaas/x/vaas/types"
+
 	clienttypes "github.com/cosmos/ibc-go/v10/modules/core/02-client/types"
 	commitmenttypes "github.com/cosmos/ibc-go/v10/modules/core/23-commitment/types"
 	ibctmtypes "github.com/cosmos/ibc-go/v10/modules/light-clients/07-tendermint"
 
 	paramtypes "github.com/cosmos/cosmos-sdk/x/params/types"
-
-	vaastypes "github.com/allinbits/vaas/x/vaas/types"
 )
 
 const (

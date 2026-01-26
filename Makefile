@@ -1,20 +1,31 @@
+# command to run dependency utilities
+rundep=go run -modfile devdeps/go.mod
+
 ###############################################################################
 ###                               Build & Test                              ###
 ###############################################################################
 
 build:
-	@echo "Building..."
-	@go build ./...
+	go build ./...
 
 test:
-	@echo "Running tests..."
-	@go test ./...
+	go test ./...
 
+lint_cmd=$(rundep) github.com/golangci/golangci-lint/cmd/golangci-lint
 lint:
-	@echo "Running linter..."
-	@golangci-lint run ./...
+	$(lint_cmd) run ./...
 
-.PHONY: build test test-verbose lint
+lint-fix:
+	$(lint_cmd) run --fix --out-format=tab --issues-exit-code=0
+
+vulncheck:
+	$(rundep) golang.org/x/vuln/cmd/govulncheck ./...
+
+mockgen_cmd=$(rundep) github.com/golang/mock/mockgen
+mocks-gen:
+	$(mockgen_cmd) -package=keeper -destination=testutil/keeper/mocks.go -source=x/vaas/types/expected_keepers.go
+
+.PHONY: build test lint lint-fix vulncheck mocks-gen
 
 ###############################################################################
 ###                                Protobuf                                 ###
@@ -25,18 +36,15 @@ containerProtoImage=ghcr.io/cosmos/proto-builder:$(containerProtoVer)
 protoImage=docker run --rm -v $(CURDIR):/workspace --workdir /workspace $(containerProtoImage)
 
 proto-gen:
-	@echo "Generating Protobuf files"
-	@$(protoImage) sh ./scripts/protocgen.sh
+	$(protoImage) sh ./scripts/protocgen.sh
 
 proto-format:
-	@echo "Formatting Protobuf files"
-	@$(protoImage) find ./ -name "*.proto" -exec clang-format -i {} \;
+	$(protoImage) find ./ -name "*.proto" -exec clang-format -i {} \;
 
 proto-lint:
-	@$(protoImage) buf lint --error-format=json
+	$(protoImage) buf lint --error-format=json
 
 proto-update-deps:
-	@echo "Updating Protobuf dependencies"
-	@$(protoImage) buf mod update proto/
+	$(protoImage) buf mod update proto/
 
 .PHONY: proto-gen proto-format proto-lint proto-update-deps

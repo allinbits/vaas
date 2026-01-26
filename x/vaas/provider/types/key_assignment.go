@@ -4,11 +4,11 @@ import (
 	"fmt"
 	"strings"
 
+	vaastypes "github.com/allinbits/vaas/x/vaas/types"
+
 	errorsmod "cosmossdk.io/errors"
 
 	sdk "github.com/cosmos/cosmos-sdk/types"
-
-	vaastypes "github.com/allinbits/vaas/x/vaas/types"
 )
 
 // A validator's consensus address on the provider chain.

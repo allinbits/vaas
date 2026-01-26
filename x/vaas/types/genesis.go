@@ -3,11 +3,11 @@ package types
 import (
 	"strings"
 
+	abci "github.com/cometbft/cometbft/abci/types"
+
 	ibctmtypes "github.com/cosmos/ibc-go/v10/modules/light-clients/07-tendermint"
 
 	errorsmod "cosmossdk.io/errors"
-
-	abci "github.com/cometbft/cometbft/abci/types"
 )
 
 // NewInitialConsumerGenesisState returns a ConsumerGenesisState for a completely new consumer chain.

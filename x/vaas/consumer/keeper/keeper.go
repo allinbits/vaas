@@ -5,6 +5,11 @@ import (
 	"fmt"
 	"reflect"
 
+	"github.com/allinbits/vaas/x/vaas/consumer/types"
+	vaastypes "github.com/allinbits/vaas/x/vaas/types"
+
+	tmtypes "github.com/cometbft/cometbft/abci/types"
+
 	clienttypes "github.com/cosmos/ibc-go/v10/modules/core/02-client/types"
 	conntypes "github.com/cosmos/ibc-go/v10/modules/core/03-connection/types"
 	channeltypes "github.com/cosmos/ibc-go/v10/modules/core/04-channel/types"
@@ -18,11 +23,6 @@ import (
 	"github.com/cosmos/cosmos-sdk/codec"
 	sdk "github.com/cosmos/cosmos-sdk/types"
 	stakingtypes "github.com/cosmos/cosmos-sdk/x/staking/types"
-
-	tmtypes "github.com/cometbft/cometbft/abci/types"
-
-	"github.com/allinbits/vaas/x/vaas/consumer/types"
-	vaastypes "github.com/allinbits/vaas/x/vaas/types"
 )
 
 // Keeper defines the Cross-Chain Validation Consumer Keeper

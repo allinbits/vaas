@@ -1,6 +1,11 @@
 package keeper
 
 import (
+	"github.com/allinbits/vaas/x/vaas/consumer/types"
+	vaastypes "github.com/allinbits/vaas/x/vaas/types"
+
+	abci "github.com/cometbft/cometbft/abci/types"
+
 	conntypes "github.com/cosmos/ibc-go/v10/modules/core/03-connection/types"
 	channeltypes "github.com/cosmos/ibc-go/v10/modules/core/04-channel/types"
 	ibchost "github.com/cosmos/ibc-go/v10/modules/core/exported"
@@ -8,11 +13,6 @@ import (
 	errorsmod "cosmossdk.io/errors"
 
 	sdk "github.com/cosmos/cosmos-sdk/types"
-
-	abci "github.com/cometbft/cometbft/abci/types"
-
-	"github.com/allinbits/vaas/x/vaas/consumer/types"
-	vaastypes "github.com/allinbits/vaas/x/vaas/types"
 )
 
 // InitGenesis initializes the CCV consumer state and binds to PortID.
