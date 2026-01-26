@@ -17,7 +17,6 @@ import (
 	tmproto "github.com/cometbft/cometbft/proto/tendermint/types"
 
 	dbm "github.com/cosmos/cosmos-db"
-
 	clienttypes "github.com/cosmos/ibc-go/v10/modules/core/02-client/types"
 
 	"cosmossdk.io/log"
