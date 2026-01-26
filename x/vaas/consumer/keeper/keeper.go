@@ -44,7 +44,6 @@ type Keeper struct {
 	hooks                   vaastypes.ConsumerHooks
 	bankKeeper              vaastypes.BankKeeper
 	authKeeper              vaastypes.AccountKeeper
-	ibcTransferKeeper       vaastypes.IBCTransferKeeper
 	ibcCoreKeeper           vaastypes.IBCCoreKeeper
 	feeCollectorName        string
 
@@ -60,7 +59,7 @@ func NewKeeper(
 	channelKeeper vaastypes.ChannelKeeper,
 	connectionKeeper vaastypes.ConnectionKeeper, clientKeeper vaastypes.ClientKeeper,
 	slashingKeeper vaastypes.SlashingKeeper, bankKeeper vaastypes.BankKeeper, accountKeeper vaastypes.AccountKeeper,
-	ibcTransferKeeper vaastypes.IBCTransferKeeper, ibcCoreKeeper vaastypes.IBCCoreKeeper,
+	ibcCoreKeeper vaastypes.IBCCoreKeeper,
 	feeCollectorName, authority string, validatorAddressCodec,
 	consensusAddressCodec addresscodec.Codec,
 ) Keeper {
@@ -74,7 +73,6 @@ func NewKeeper(
 		slashingKeeper:          slashingKeeper,
 		bankKeeper:              bankKeeper,
 		authKeeper:              accountKeeper,
-		ibcTransferKeeper:       ibcTransferKeeper,
 		ibcCoreKeeper:           ibcCoreKeeper,
 		feeCollectorName:        feeCollectorName,
 		standaloneStakingKeeper: nil,
@@ -110,8 +108,8 @@ func (k *Keeper) SetStandaloneStakingKeeper(sk vaastypes.StakingKeeper) {
 // non-nil values for all its fields. Otherwise this method will panic.
 func (k Keeper) mustValidateFields() {
 	// Ensures no fields are missed in this validation
-	if reflect.ValueOf(k).NumField() != 16 {
-		panic("number of fields in consumer keeper is not 16")
+	if reflect.ValueOf(k).NumField() != 15 {
+		panic("number of fields in consumer keeper is not 15")
 	}
 
 	// Note 116 / 16 fields will be validated,
@@ -126,7 +124,6 @@ func (k Keeper) mustValidateFields() {
 	vaastypes.PanicIfZeroOrNil(k.slashingKeeper, "slashingKeeper")               // 8
 	vaastypes.PanicIfZeroOrNil(k.bankKeeper, "bankKeeper")                       // 9
 	vaastypes.PanicIfZeroOrNil(k.authKeeper, "authKeeper")                       // 10
-	vaastypes.PanicIfZeroOrNil(k.ibcTransferKeeper, "ibcTransferKeeper")         // 11
 	vaastypes.PanicIfZeroOrNil(k.ibcCoreKeeper, "ibcCoreKeeper")                 // 12
 	vaastypes.PanicIfZeroOrNil(k.feeCollectorName, "feeCollectorName")           // 13
 	vaastypes.PanicIfZeroOrNil(k.authority, "authority")                         // 14
