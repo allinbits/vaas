@@ -1,6 +1,6 @@
 module github.com/allinbits/vaas
 
-go 1.24.4
+go 1.25
 
 replace (
 	cosmossdk.io/x/evidence => github.com/atomone-hub/cosmos-sdk/x/evidence v0.1.1
