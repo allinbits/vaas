@@ -436,10 +436,11 @@ func TestJailAndTombstoneValidator(t *testing.T) {
 			t, testkeeper.NewInMemKeeperParams(t))
 
 		// Setup expected mock calls
-		gomock.InOrder(tc.expectedCalls(ctx, mocks, tc.provAddr)...)
+		gomock.InOrder(tc.expectedCalls(ctx, mocks, tc.provAddr))
 
 		// Execute method and assert expected mock calls
-		providerKeeper.JailAndTombstoneValidator(ctx, tc.provAddr, getTestInfractionParameters().DoubleSign)
+		err := providerKeeper.JailAndTombstoneValidator(ctx, tc.provAddr, getTestInfractionParameters().DoubleSign)
+		require.NoError(t, err)
 
 		ctrl.Finish()
 	}
@@ -738,8 +739,9 @@ func TestSlashValidator(t *testing.T) {
 			Times(1),
 	}
 
-	gomock.InOrder(expectedCalls...)
-	keeper.SlashValidator(ctx, providerAddr, getTestInfractionParameters().DoubleSign)
+	gomock.InOrder(expectedCalls)
+	err = keeper.SlashValidator(ctx, providerAddr, getTestInfractionParameters().DoubleSign)
+	require.NoError(t, err)
 }
 
 // TestSlashValidatorDoesNotSlashIfValidatorIsUnbonded asserts that `SlashValidator` does not call
@@ -765,8 +767,9 @@ func TestSlashValidatorDoesNotSlashIfValidatorIsUnbonded(t *testing.T) {
 			Return(validator, nil),
 	}
 
-	gomock.InOrder(expectedCalls...)
-	keeper.SlashValidator(ctx, providerAddr, getTestInfractionParameters().DoubleSign)
+	gomock.InOrder(expectedCalls)
+	err := keeper.SlashValidator(ctx, providerAddr, getTestInfractionParameters().DoubleSign)
+	require.NoError(t, err)
 }
 
 func TestEquivocationEvidenceMinHeightCRUD(t *testing.T) {
