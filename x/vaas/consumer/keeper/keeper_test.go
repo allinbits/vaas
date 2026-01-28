@@ -5,8 +5,8 @@ import (
 	"sort"
 	"testing"
 
-	"github.com/golang/mock/gomock"
 	"github.com/stretchr/testify/require"
+	"go.uber.org/mock/gomock"
 
 	conntypes "github.com/cosmos/ibc-go/v10/modules/core/03-connection/types"
 

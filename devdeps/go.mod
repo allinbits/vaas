@@ -3,8 +3,8 @@ module devdeps
 go 1.25
 
 require (
-	github.com/golang/mock v1.6.0
 	github.com/golangci/golangci-lint v1.64.8
+	go.uber.org/mock v0.6.0
 	golang.org/x/vuln v1.1.4
 )
 

@@ -11,8 +11,8 @@ import (
 	providerkeeper "github.com/allinbits/vaas/x/vaas/provider/keeper"
 	providertypes "github.com/allinbits/vaas/x/vaas/provider/types"
 	"github.com/allinbits/vaas/x/vaas/types"
-	"github.com/golang/mock/gomock"
 	"github.com/stretchr/testify/require"
+	"go.uber.org/mock/gomock"
 
 	tmproto "github.com/cometbft/cometbft/proto/tendermint/types"
 

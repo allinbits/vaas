@@ -21,7 +21,7 @@ lint-fix:
 vulncheck:
 	$(rundep) golang.org/x/vuln/cmd/govulncheck ./...
 
-mockgen_cmd=$(rundep) github.com/golang/mock/mockgen
+mockgen_cmd=$(rundep) go.uber.org/mock/mockgen
 mocks-gen:
 	$(mockgen_cmd) -package=keeper -destination=testutil/keeper/mocks.go -source=x/vaas/types/expected_keepers.go
 

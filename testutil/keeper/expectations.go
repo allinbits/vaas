@@ -5,7 +5,7 @@ import (
 
 	providertypes "github.com/allinbits/vaas/x/vaas/provider/types"
 	"github.com/allinbits/vaas/x/vaas/types"
-	"github.com/golang/mock/gomock"
+	"go.uber.org/mock/gomock"
 
 	clienttypes "github.com/cosmos/ibc-go/v10/modules/core/02-client/types"
 	conntypes "github.com/cosmos/ibc-go/v10/modules/core/03-connection/types"
