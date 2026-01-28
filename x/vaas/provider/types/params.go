@@ -4,13 +4,14 @@ import (
 	"fmt"
 	"time"
 
-	vaastypes "github.com/allinbits/vaas/x/vaas/types"
-
+	"cosmossdk.io/math"
+	sdk "github.com/cosmos/cosmos-sdk/types"
+	paramtypes "github.com/cosmos/cosmos-sdk/x/params/types"
 	clienttypes "github.com/cosmos/ibc-go/v10/modules/core/02-client/types"
 	commitmenttypes "github.com/cosmos/ibc-go/v10/modules/core/23-commitment/types"
 	ibctmtypes "github.com/cosmos/ibc-go/v10/modules/light-clients/07-tendermint"
 
-	paramtypes "github.com/cosmos/cosmos-sdk/x/params/types"
+	vaastypes "github.com/allinbits/vaas/x/vaas/types"
 )
 
 const (
@@ -32,6 +33,9 @@ const (
 	DefaultMaxProviderConsensusValidators = 180
 )
 
+// DefaultFeesPerBlock is the default amount that each consumer chain must pay per block
+var DefaultFeesPerBlock = sdk.NewCoin("photon", math.NewInt(1000)) // Default fees per block
+
 // Reflection based keys for params subspace
 // Legacy: usage of x/params for parameters is deprecated.
 // Use x/vaas/provider/keeper/params instead
@@ -41,6 +45,7 @@ var (
 	KeyTrustingPeriodFraction         = []byte("TrustingPeriodFraction")
 	KeyBlocksPerEpoch                 = []byte("BlocksPerEpoch")
 	KeyMaxProviderConsensusValidators = []byte("MaxProviderConsensusValidators")
+	KeyFeesPerBlock                   = []byte("FeesPerBlock")
 )
 
 // ParamKeyTable returns a key table with the necessary registered provider params
@@ -55,6 +60,7 @@ func NewParams(
 	vaasTimeoutPeriod time.Duration,
 	blocksPerEpoch int64,
 	maxProviderConsensusValidators int64,
+	feesPerBlock sdk.Coin,
 ) Params {
 	return Params{
 		TemplateClient:                 cs,
@@ -62,6 +68,7 @@ func NewParams(
 		VaasTimeoutPeriod:              vaasTimeoutPeriod,
 		BlocksPerEpoch:                 blocksPerEpoch,
 		MaxProviderConsensusValidators: maxProviderConsensusValidators,
+		FeesPerBlock:                   feesPerBlock,
 	}
 }
 
@@ -89,6 +96,7 @@ func DefaultParams() Params {
 		vaastypes.DefaultVAASTimeoutPeriod,
 		DefaultBlocksPerEpoch,
 		DefaultMaxProviderConsensusValidators,
+		DefaultFeesPerBlock,
 	)
 }
 
@@ -112,6 +120,10 @@ func (p Params) Validate() error {
 	if err := vaastypes.ValidatePositiveInt64(p.MaxProviderConsensusValidators); err != nil {
 		return fmt.Errorf("max provider consensus validators is invalid: %s", err)
 	}
+	if p.FeesPerBlock.IsNil() || p.FeesPerBlock.IsNegative() {
+		return fmt.Errorf("fees per block must be positive")
+	}
+
 	return nil
 }
 
@@ -123,7 +135,19 @@ func (p *Params) ParamSetPairs() paramtypes.ParamSetPairs {
 		paramtypes.NewParamSetPair(vaastypes.KeyVAASTimeoutPeriod, p.VaasTimeoutPeriod, vaastypes.ValidateDuration),
 		paramtypes.NewParamSetPair(KeyBlocksPerEpoch, p.BlocksPerEpoch, vaastypes.ValidatePositiveInt64),
 		paramtypes.NewParamSetPair(KeyMaxProviderConsensusValidators, p.MaxProviderConsensusValidators, vaastypes.ValidatePositiveInt64),
+		paramtypes.NewParamSetPair(KeyFeesPerBlock, p.FeesPerBlock, validateFeesPerBlock),
 	}
+}
+
+func validateFeesPerBlock(i interface{}) error {
+	v, ok := i.(math.Int)
+	if !ok {
+		return fmt.Errorf("invalid parameter type: %T", i)
+	}
+	if v.IsNil() || v.IsNegative() {
+		return fmt.Errorf("fees per block must be positive")
+	}
+	return nil
 }
 
 func ValidateTemplateClient(i interface{}) error {

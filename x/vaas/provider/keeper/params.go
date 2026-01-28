@@ -43,6 +43,12 @@ func (k Keeper) GetMaxProviderConsensusValidators(ctx sdk.Context) int64 {
 	return params.MaxProviderConsensusValidators
 }
 
+// GetFeesPerBlock returns the fees that each consumer chain must pay per block
+func (k Keeper) GetFeesPerBlock(ctx sdk.Context) sdk.Coin {
+	params := k.GetParams(ctx)
+	return params.FeesPerBlock
+}
+
 // GetParams returns the paramset for the provider module
 func (k Keeper) GetParams(ctx sdk.Context) types.Params {
 	store := ctx.KVStore(k.storeKey)

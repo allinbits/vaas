@@ -1,0 +1,33 @@
+# Build artifacts
+build/
+*.o
+*.a
+*.so
+*.exe
+
+# Go artifacts
+*.test
+*.out
+coverage.out
+
+# Dependency directories
+vendor/
+
+# IDEs and editors
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+.DS_Store
+
+# Temporary files
+*.tmp
+*.log
+/tmp/
+todo.md
+
+# CometBFT data directories
+.cometbft/
+.ics/
+/data/

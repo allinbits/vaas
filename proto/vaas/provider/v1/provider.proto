@@ -3,9 +3,10 @@ syntax = "proto3";
 package vaas.provider.v1;
 
 import "amino/amino.proto";
-import "cosmos/evidence/v1beta1/evidence.proto";
+import "cosmos/base/v1beta1/coin.proto";
 import "cosmos_proto/cosmos.proto";
 import "gogoproto/gogo.proto";
+import "cosmos/evidence/v1beta1/evidence.proto";
 import "google/protobuf/duration.proto";
 import "google/protobuf/timestamp.proto";
 import "ibc/core/client/v1/client.proto";
@@ -37,6 +38,14 @@ message Params {
   // The maximal number of validators that will be passed
   // to the consensus engine on the provider.
   int64 max_provider_consensus_validators = 5;
+
+  // The fee charged per block for consumer chain operation.
+  cosmos.base.v1beta1.Coin fees_per_block = 6 [
+    (gogoproto.castrepeated) = "github.com/cosmos/cosmos-sdk/types.Coins",
+    (amino.encoding) = "legacy_coins",
+    (amino.dont_omitempty) = true,
+    (gogoproto.nullable) = false
+  ];
 }
 
 // AddressList contains a list of consensus addresses
