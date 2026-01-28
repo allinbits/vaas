@@ -18,7 +18,7 @@ import (
 
 // ApplyCCValidatorChanges applies the given changes to the cross-chain validators states
 // and returns updates to forward to tendermint.
-func (k Keeper) ApplyCCValidatorChanges(ctx sdk.Context, changes []abci.ValidatorUpdate) []abci.ValidatorUpdate {
+func (k Keeper) ApplyCCValidatorChanges(ctx context.Context, changes []abci.ValidatorUpdate) []abci.ValidatorUpdate {
 	ret := []abci.ValidatorUpdate{}
 	for _, change := range changes {
 		// convert TM pubkey to SDK pubkey
@@ -149,53 +149,34 @@ func (k Keeper) MaxValidators(context.Context) (uint32, error) {
 
 // UnbondingTime returns consumer unbonding period, satisfying the staking keeper interface
 func (k Keeper) UnbondingTime(goCtx context.Context) (time.Duration, error) {
-	ctx := sdk.UnwrapSDKContext(goCtx)
-	return k.GetUnbondingPeriod(ctx), nil
+	return k.GetUnbondingPeriod(goCtx), nil
 }
 
 // GetHistoricalInfo gets the historical info at a given height
 func (k Keeper) GetHistoricalInfo(goCtx context.Context, height int64) (stakingtypes.HistoricalInfo, error) {
-	ctx := sdk.UnwrapSDKContext(goCtx)
-
-	store := ctx.KVStore(k.storeKey)
-	key := types.HistoricalInfoKey(height)
-
-	value := store.Get(key)
-	if value == nil {
+	info, err := k.HistoricalInfos.Get(goCtx, height)
+	if err != nil {
 		return stakingtypes.HistoricalInfo{}, stakingtypes.ErrNoHistoricalInfo
 	}
-
-	return stakingtypes.UnmarshalHistoricalInfo(k.cdc, value)
+	return info, nil
 }
 
 // SetHistoricalInfo sets the historical info at a given height
 func (k Keeper) SetHistoricalInfo(goCtx context.Context, height int64, hi *stakingtypes.HistoricalInfo) {
-	ctx := sdk.UnwrapSDKContext(goCtx)
-
-	store := ctx.KVStore(k.storeKey)
-	key := types.HistoricalInfoKey(height)
-	value := k.cdc.MustMarshal(hi)
-
-	store.Set(key, value)
+	if err := k.HistoricalInfos.Set(goCtx, height, *hi); err != nil {
+		panic(err)
+	}
 }
 
 // DeleteHistoricalInfo deletes the historical info at a given height
 func (k Keeper) DeleteHistoricalInfo(goCtx context.Context, height int64) error {
-	ctx := sdk.UnwrapSDKContext(goCtx)
-
-	store := ctx.KVStore(k.storeKey)
-	key := types.HistoricalInfoKey(height)
-
-	store.Delete(key)
-	return nil
+	return k.HistoricalInfos.Remove(goCtx, height)
 }
 
 // TrackHistoricalInfo saves the latest historical-info and deletes the oldest
 // heights that are below pruning height
 func (k Keeper) TrackHistoricalInfo(goCtx context.Context) error {
-	ctx := sdk.UnwrapSDKContext(goCtx)
-
-	numHistoricalEntries := k.GetHistoricalEntries(ctx)
+	numHistoricalEntries := k.GetHistoricalEntries(goCtx)
 
 	// Prune store to ensure we only have parameter-defined historical entries.
 	// In most cases, this will involve removing a single historical entry.
@@ -204,6 +185,7 @@ func (k Keeper) TrackHistoricalInfo(goCtx context.Context) error {
 	// Since the entries to be deleted are always in a continuous range, we can iterate
 	// over the historical entries starting from the most recent version to be pruned
 	// and then return at the first empty entry.
+	ctx := sdk.UnwrapSDKContext(goCtx)
 	for i := ctx.BlockHeight() - numHistoricalEntries; i >= 0; i-- {
 		_, err := k.GetHistoricalInfo(ctx, i)
 		if err != nil {
@@ -256,7 +238,7 @@ func (k Keeper) TrackHistoricalInfo(goCtx context.Context) error {
 
 // MustGetCurrentValidatorsAsABCIUpdates gets all cross-chain validators converted
 // to the ABCI validator update type. It panics in case of failure.
-func (k Keeper) MustGetCurrentValidatorsAsABCIUpdates(ctx sdk.Context) []abci.ValidatorUpdate {
+func (k Keeper) MustGetCurrentValidatorsAsABCIUpdates(ctx context.Context) []abci.ValidatorUpdate {
 	vals := k.GetAllCCValidator(ctx)
 	valUpdates := make([]abci.ValidatorUpdate, 0, len(vals))
 	for _, v := range vals {
