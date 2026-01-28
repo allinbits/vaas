@@ -1,6 +1,7 @@
 package app
 
 import (
+	"context"
 	"fmt"
 	"io"
 	stdlog "log"
@@ -10,7 +11,16 @@ import (
 	"github.com/allinbits/vaas/app/provider/encoding"
 	dbm "github.com/cosmos/cosmos-db"
 	"github.com/cosmos/gogoproto/proto"
-
+	"github.com/cosmos/ibc-go/v10/modules/apps/transfer"
+	ibctransferkeeper "github.com/cosmos/ibc-go/v10/modules/apps/transfer/keeper"
+	ibctransfertypes "github.com/cosmos/ibc-go/v10/modules/apps/transfer/types"
+	ibc "github.com/cosmos/ibc-go/v10/modules/core"
+	ibcconnectiontypes "github.com/cosmos/ibc-go/v10/modules/core/03-connection/types"
+	porttypes "github.com/cosmos/ibc-go/v10/modules/core/05-port/types"
+	ibcexported "github.com/cosmos/ibc-go/v10/modules/core/exported"
+	ibckeeper "github.com/cosmos/ibc-go/v10/modules/core/keeper"
+	ibctm "github.com/cosmos/ibc-go/v10/modules/light-clients/07-tendermint"
+	ibctesting "github.com/cosmos/ibc-go/v10/testing"
 	"github.com/spf13/cast"
 
 	autocliv1 "cosmossdk.io/api/cosmos/autocli/v1"
@@ -19,10 +29,13 @@ import (
 	"cosmossdk.io/core/appmodule"
 	"cosmossdk.io/log"
 	storetypes "cosmossdk.io/store/types"
-
+	"cosmossdk.io/x/upgrade"
+	upgradekeeper "cosmossdk.io/x/upgrade/keeper"
+	upgradetypes "cosmossdk.io/x/upgrade/types"
 	"cosmossdk.io/x/tx/signing"
 	"github.com/cosmos/cosmos-sdk/baseapp"
 	"github.com/cosmos/cosmos-sdk/client"
+	"github.com/cosmos/cosmos-sdk/client/flags"
 	"github.com/cosmos/cosmos-sdk/client/grpc/cmtservice"
 	nodeservice "github.com/cosmos/cosmos-sdk/client/grpc/node"
 	"github.com/cosmos/cosmos-sdk/codec"
@@ -79,7 +92,6 @@ import (
 	"github.com/cosmos/cosmos-sdk/x/slashing"
 	slashingkeeper "github.com/cosmos/cosmos-sdk/x/slashing/keeper"
 	slashingtypes "github.com/cosmos/cosmos-sdk/x/slashing/types"
-	"github.com/cosmos/cosmos-sdk/x/staking"
 	stakingkeeper "github.com/cosmos/cosmos-sdk/x/staking/keeper"
 	stakingtypes "github.com/cosmos/cosmos-sdk/x/staking/types"
 
@@ -87,10 +99,18 @@ import (
 	tmjson "github.com/cometbft/cometbft/libs/json"
 	tmos "github.com/cometbft/cometbft/libs/os"
 
+	no_valupdates_genutil "github.com/allinbits/vaas/x/vaas/no_valupdates_genutil"
+	no_valupdates_staking "github.com/allinbits/vaas/x/vaas/no_valupdates_staking"
+
+
+	ibcprovider "github.com/allinbits/vaas/x/vaas/provider"
+	ibcproviderkeeper "github.com/allinbits/vaas/x/vaas/provider/keeper"
+	providertypes "github.com/allinbits/vaas/x/vaas/provider/types"
 )
 
 const (
 	AppName = "vaas-provider"
+	upgradeName = "vaas-v1-to-v2"
 )
 
 // this line is used by starport scaffolding # stargate/wasm/app/enabledProposals
@@ -116,7 +136,8 @@ var (
 		mint.AppModuleBasic{},
 		slashing.AppModuleBasic{},
 		distr.AppModuleBasic{},
-		staking.AppModuleBasic{},
+		no_valupdates_staking.AppModuleBasic{},
+		upgrade.AppModuleBasic{},
 
 		params.AppModuleBasic{},
 	)
@@ -129,12 +150,15 @@ var (
 		stakingtypes.BondedPoolName:    {authtypes.Burner, authtypes.Staking},
 		stakingtypes.NotBondedPoolName: {authtypes.Burner, authtypes.Staking},
 		govtypes.ModuleName:            {authtypes.Burner},
+		ibctransfertypes.ModuleName:       {authtypes.Minter, authtypes.Burner},
+
 	}
 )
 
 var (
 	_ runtime.AppI            = (*App)(nil)
 	_ servertypes.Application = (*App)(nil)
+	_ ibctesting.TestingApp   = (*App)(nil)
 )
 
 // App extends an ABCI application, but with most of its parameters exported.
@@ -164,7 +188,11 @@ type App struct { // nolint: golint
 	// different fee-pool from the consumer chain ConsumerKeeper
 	DistrKeeper           distrkeeper.Keeper
 	GovKeeper             *govkeeper.Keeper // Gov Keeper must be a pointer in the app, so we can SetRouter on it correctly
+	UpgradeKeeper         upgradekeeper.Keeper
 	ParamsKeeper          paramskeeper.Keeper
+	IBCKeeper             *ibckeeper.Keeper // IBC Keeper must be a pointer in the app, so we can SetRouter on it correctly
+	TransferKeeper        ibctransferkeeper.Keeper
+	ProviderKeeper        ibcproviderkeeper.Keeper
 	ConsensusParamsKeeper consensusparamkeeper.Keeper
 
 
@@ -230,8 +258,11 @@ func New(
 	keys := storetypes.NewKVStoreKeys(
 		authtypes.StoreKey, banktypes.StoreKey, stakingtypes.StoreKey,
 		minttypes.StoreKey, distrtypes.StoreKey, slashingtypes.StoreKey,
-		govtypes.StoreKey, paramstypes.StoreKey,
+		govtypes.StoreKey, paramstypes.StoreKey, ibcexported.StoreKey,
+		ibctransfertypes.StoreKey,
+		providertypes.StoreKey,
 		consensusparamtypes.StoreKey,
+		upgradetypes.StoreKey,
 	)
 
 	// register streaming services
@@ -322,13 +353,52 @@ func New(
 		skipUpgradeHeights[int64(h)] = true
 	}
 
+	homePath := cast.ToString(appOpts.Get(flags.FlagHome))
+	// set the governance module account as the authority for conducting upgrades
+	app.UpgradeKeeper = *upgradekeeper.NewKeeper(
+		skipUpgradeHeights,
+		runtime.NewKVStoreService(keys[upgradetypes.StoreKey]),
+		appCodec,
+		homePath,
+		app.BaseApp,
+		authtypes.NewModuleAddress(govtypes.ModuleName).String(),
+	)
+
 	// register the staking hooks
 	// NOTE: stakingKeeper above is passed by reference, so that it will contain these hooks
 	app.StakingKeeper.SetHooks(
 		stakingtypes.NewMultiStakingHooks(
 			app.DistrKeeper.Hooks(),
 			app.SlashingKeeper.Hooks(),
+			app.ProviderKeeper.Hooks(),
 		),
+	)
+
+	app.IBCKeeper = ibckeeper.NewKeeper(
+		appCodec,
+		runtime.NewKVStoreService(keys[ibcexported.StoreKey]),
+		app.GetSubspace(ibcexported.ModuleName),
+		app.UpgradeKeeper,
+		authtypes.NewModuleAddress(govtypes.ModuleName).String(),
+	)
+
+	app.ProviderKeeper = ibcproviderkeeper.NewKeeper(
+		appCodec,
+		keys[providertypes.StoreKey],
+		app.GetSubspace(providertypes.ModuleName),
+		app.IBCKeeper.ChannelKeeper,
+		app.IBCKeeper.ConnectionKeeper,
+		app.IBCKeeper.ClientKeeper,
+		app.StakingKeeper,
+		app.SlashingKeeper,
+		app.AccountKeeper,
+		app.DistrKeeper,
+		app.BankKeeper,
+		govkeeper.Keeper{}, // will be set after the GovKeeper is created
+		authtypes.NewModuleAddress(govtypes.ModuleName).String(),
+		authcodec.NewBech32Codec(sdk.GetConfig().GetBech32ValidatorAddrPrefix()),
+		authcodec.NewBech32Codec(sdk.GetConfig().GetBech32ConsensusAddrPrefix()),
+		authtypes.FeeCollectorName,
 	)
 
 	govConfig := govtypes.DefaultConfig()
@@ -355,6 +425,33 @@ func New(
 	)
 
 
+	providerModule := ibcprovider.NewAppModule(
+		&app.ProviderKeeper,
+	)
+
+	app.TransferKeeper = ibctransferkeeper.NewKeeper(
+		appCodec,
+		runtime.NewKVStoreService(keys[ibctransfertypes.StoreKey]),
+		app.GetSubspace(ibctransfertypes.ModuleName),
+		app.IBCKeeper.ChannelKeeper,
+		app.IBCKeeper.ChannelKeeper,
+		app.MsgServiceRouter(),
+		app.AccountKeeper,
+		app.BankKeeper,
+		authtypes.NewModuleAddress(govtypes.ModuleName).String(),
+	)
+
+	// // Add an IBC middleware callback to track the consumer rewards
+	// var transferStack porttypes.IBCModule
+	// transferStack = transfer.NewIBCModule(app.TransferKeeper)
+	// transferStack = ibcprovider.NewIBCMiddleware(transferStack, app.ProviderKeeper)
+
+	// create static IBC router, add transfer route, then set and seal it
+	ibcRouter := porttypes.NewRouter()
+	// ibcRouter.AddRoute(ibctransfertypes.ModuleName, transferStack)
+	ibcRouter.AddRoute(providertypes.ModuleName, providerModule)
+	app.IBCKeeper.SetRouter(ibcRouter)
+
 	govRouter := govv1beta1.NewRouter()
 	govRouter.
 		AddRoute(govtypes.RouterKey, govv1beta1.ProposalHandler).
@@ -362,10 +459,13 @@ func New(
 	// Set legacy router for backwards compatibility with gov v1beta1
 	app.GovKeeper.SetLegacyRouter(govRouter)
 
+	tmLightClientModule := ibctm.NewLightClientModule(appCodec, app.IBCKeeper.ClientKeeper.GetStoreProvider())
+	app.IBCKeeper.ClientKeeper.AddRoute(ibctm.ModuleName, tmLightClientModule)
+
 	// NOTE: Any module instantiated in the module manager that is later modified
 	// must be passed by reference here.
 	app.MM = module.NewManager(
-		genutil.NewAppModule(app.AccountKeeper, app.StakingKeeper, app, txConfig),
+		no_valupdates_genutil.NewAppModule(app.AccountKeeper, app.StakingKeeper, app, txConfig),
 		auth.NewAppModule(appCodec, app.AccountKeeper, nil, app.GetSubspace(authtypes.ModuleName)),
 		vesting.NewAppModule(app.AccountKeeper, app.BankKeeper),
 		bank.NewAppModule(appCodec, app.BankKeeper, app.AccountKeeper, app.GetSubspace(banktypes.ModuleName)),
@@ -374,8 +474,14 @@ func New(
 		mint.NewAppModule(appCodec, app.MintKeeper, app.AccountKeeper, nil, app.GetSubspace(minttypes.ModuleName)),
 		slashing.NewAppModule(appCodec, app.SlashingKeeper, app.AccountKeeper, app.BankKeeper, app.StakingKeeper, app.GetSubspace(slashingtypes.ModuleName), app.interfaceRegistry),
 		distr.NewAppModule(appCodec, app.DistrKeeper, app.AccountKeeper, app.BankKeeper, app.StakingKeeper, app.GetSubspace(distrtypes.ModuleName)),
-		staking.NewAppModule(appCodec, app.StakingKeeper, app.AccountKeeper, app.BankKeeper, app.GetSubspace(stakingtypes.ModuleName)),
+		no_valupdates_staking.NewAppModule(appCodec, app.StakingKeeper, app.AccountKeeper, app.BankKeeper, app.GetSubspace(stakingtypes.ModuleName)),
 		params.NewAppModule(app.ParamsKeeper),
+		upgrade.NewAppModule(&app.UpgradeKeeper, app.AccountKeeper.AddressCodec()),
+		ibc.NewAppModule(app.IBCKeeper),
+		ibctm.NewAppModule(tmLightClientModule),
+		params.NewAppModule(app.ParamsKeeper),
+		transfer.NewAppModule(app.TransferKeeper),
+		providerModule,
 	)
 
 	// NOTE: @Msalopek -> ModuleBasic override is happening because Tx commands don't work without it
@@ -408,6 +514,7 @@ func New(
 	app.txConfig = txConfig
 
 	app.MM.SetOrderPreBlockers(
+		upgradetypes.ModuleName,
 		authtypes.ModuleName,
 	)
 
@@ -418,6 +525,8 @@ func New(
 	app.MM.SetOrderBeginBlockers(
 		govtypes.ModuleName,
 		stakingtypes.ModuleName,
+		ibctransfertypes.ModuleName,
+		ibcexported.ModuleName,
 		authtypes.ModuleName,
 		banktypes.ModuleName,
 		distrtypes.ModuleName,
@@ -426,6 +535,7 @@ func New(
 		genutiltypes.ModuleName,
 		paramstypes.ModuleName,
 		vestingtypes.ModuleName,
+		providertypes.ModuleName,
 	)
 
 	// NOTE: provider module needs to come after the staking module, since
@@ -433,6 +543,8 @@ func New(
 	app.MM.SetOrderEndBlockers(
 		govtypes.ModuleName,
 		stakingtypes.ModuleName,
+		ibctransfertypes.ModuleName,
+		ibcexported.ModuleName,
 		authtypes.ModuleName,
 		banktypes.ModuleName,
 		distrtypes.ModuleName,
@@ -440,7 +552,9 @@ func New(
 		minttypes.ModuleName,
 		genutiltypes.ModuleName,
 		paramstypes.ModuleName,
+		upgradetypes.ModuleName,
 		vestingtypes.ModuleName,
+		providertypes.ModuleName,
 	)
 
 	// NOTE: The genutils module must occur after staking so that pools are
@@ -456,8 +570,12 @@ func New(
 		slashingtypes.ModuleName,
 		govtypes.ModuleName,
 		minttypes.ModuleName,
+		ibcexported.ModuleName,
+		ibctransfertypes.ModuleName,
 		genutiltypes.ModuleName,
 		paramstypes.ModuleName,
+		upgradetypes.ModuleName,
+		providertypes.ModuleName,
 		vestingtypes.ModuleName,
 		consensusparamtypes.ModuleName,
 	)
@@ -476,7 +594,40 @@ func New(
 
 	// register the store decoders for simulation tests
 	app.sm.RegisterStoreDecoders()
+	// Note this upgrade handler is just an example and may not be exactly what you need to implement.
+	// See https://docs.cosmos.network/v0.45/building-modules/upgrade.html
+	app.UpgradeKeeper.SetUpgradeHandler(
+		upgradeName,
+		func(ctx context.Context, _ upgradetypes.Plan, _ module.VersionMap) (module.VersionMap, error) {
+			sdkCtx := sdk.UnwrapSDKContext(ctx)
+			app.IBCKeeper.ConnectionKeeper.SetParams(sdkCtx, ibcconnectiontypes.DefaultParams())
 
+			fromVM := make(map[string]uint64)
+
+			for moduleName := range app.MM.Modules {
+				m := app.MM.Modules[moduleName]
+				if module, ok := m.(module.HasConsensusVersion); ok {
+					fromVM[moduleName] = module.ConsensusVersion()
+				}
+			}
+
+			app.Logger().Info("start to run module migrations...")
+
+			return app.MM.RunMigrations(ctx, app.configurator, fromVM)
+		},
+	)
+
+	upgradeInfo, err := app.UpgradeKeeper.ReadUpgradeInfoFromDisk()
+	if err != nil {
+		panic(fmt.Sprintf("failed to read upgrade info from disk %s", err))
+	}
+
+	if upgradeInfo.Name == upgradeName && !app.UpgradeKeeper.IsSkipHeight(upgradeInfo.Height) {
+		storeUpgrades := storetypes.StoreUpgrades{}
+
+		// configure store loader that checks if version == upgradeHeight and applies store upgrades
+		app.SetStoreLoader(upgradetypes.UpgradeStoreLoader(upgradeInfo.Height, &storeUpgrades))
+	}
 	autocliv1.RegisterQueryServer(app.GRPCQueryRouter(), runtimeservices.NewAutoCLIQueryService(app.MM.Modules))
 
 	reflectionSvc, err := runtimeservices.NewReflectionService()
@@ -585,6 +736,8 @@ func (app *App) InitChainer(ctx sdk.Context, req *abci.RequestInitChain) (*abci.
 		panic(err)
 	}
 
+	app.UpgradeKeeper.SetModuleVersionMap(ctx, app.MM.GetVersionMap())
+
 	return app.MM.InitGenesis(ctx, app.appCodec, genesisState)
 }
 
@@ -663,6 +816,11 @@ func (app *App) GetBaseApp() *baseapp.BaseApp {
 // GetTxConfig implements the TestingApp interface.
 func (app *App) GetTxConfig() client.TxConfig {
 	return app.txConfig
+}
+
+// GetIBCKeeper implements the TestingApp interface.
+func (app *App) GetIBCKeeper() *ibckeeper.Keeper {
+	return app.IBCKeeper
 }
 
 // TxConfig returns SimApp's TxConfig
@@ -747,6 +905,9 @@ func initParamsKeeper(appCodec codec.BinaryCodec, legacyAmino *codec.LegacyAmino
 	paramsKeeper.Subspace(distrtypes.ModuleName)
 	paramsKeeper.Subspace(slashingtypes.ModuleName)
 	paramsKeeper.Subspace(govtypes.ModuleName).WithKeyTable(gov.ProvideKeyTable())
+	paramsKeeper.Subspace(ibctransfertypes.ModuleName)
+	paramsKeeper.Subspace(ibcexported.ModuleName)
+	paramsKeeper.Subspace(providertypes.ModuleName)
 
 	return paramsKeeper
 }
