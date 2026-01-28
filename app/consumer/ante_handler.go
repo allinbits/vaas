@@ -2,7 +2,10 @@ package app
 
 import (
 
+	ibcante "github.com/cosmos/ibc-go/v10/modules/core/ante"
 	errorsmod "cosmossdk.io/errors"
+	ibckeeper "github.com/cosmos/ibc-go/v10/modules/core/keeper"
+	ibcconsumerkeeper "github.com/allinbits/vaas/x/vaas/consumer/keeper"
 
 	sdk "github.com/cosmos/cosmos-sdk/types"
 	sdkerrors "github.com/cosmos/cosmos-sdk/types/errors"
@@ -13,6 +16,9 @@ import (
 // channel keeper.
 type HandlerOptions struct {
 	ante.HandlerOptions
+
+	IBCKeeper      *ibckeeper.Keeper
+	ConsumerKeeper ibcconsumerkeeper.Keeper
 }
 
 func NewAnteHandler(options HandlerOptions) (sdk.AnteHandler, error) {
@@ -45,6 +51,7 @@ func NewAnteHandler(options HandlerOptions) (sdk.AnteHandler, error) {
 		ante.NewSigGasConsumeDecorator(options.AccountKeeper, sigGasConsumer),
 		ante.NewSigVerificationDecorator(options.AccountKeeper, options.SignModeHandler),
 		ante.NewIncrementSequenceDecorator(options.AccountKeeper),
+		ibcante.NewRedundantRelayDecorator(options.IBCKeeper),
 	}
 
 	return sdk.ChainAnteDecorators(anteDecorators...), nil
