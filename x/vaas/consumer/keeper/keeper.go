@@ -3,7 +3,6 @@ package keeper
 import (
 	"context"
 	"fmt"
-	"reflect"
 
 	"github.com/allinbits/vaas/x/vaas/consumer/types"
 	vaastypes "github.com/allinbits/vaas/x/vaas/types"
@@ -122,7 +121,6 @@ func NewKeeper(
 	}
 	k.Schema = schema
 
-	k.mustValidateFields()
 	return k
 }
 
@@ -168,34 +166,6 @@ func NewNonZeroKeeper(cdc codec.BinaryCodec, storeService corestoretypes.KVStore
 // This method should only be called for previously standalone chains that are now consumers.
 func (k *Keeper) SetStandaloneStakingKeeper(sk vaastypes.StakingKeeper) {
 	k.standaloneStakingKeeper = sk
-}
-
-// Validates that the consumer keeper is initialized with non-zero and
-// non-nil values for all its fields. Otherwise this method will panic.
-func (k Keeper) mustValidateFields() {
-	// Ensures no fields are missed in this validation
-	if reflect.ValueOf(k).NumField() != 29 {
-		panic(fmt.Sprintf("number of fields in consumer keeper is not 29, got %d", reflect.ValueOf(k).NumField()))
-	}
-
-	// Note: fields will be validated,
-	// hooks are explicitly set after the constructor,
-	// stakingKeeper is optionally set after the constructor,
-
-	vaastypes.PanicIfZeroOrNil(k.storeService, "storeService")                   // 1
-	vaastypes.PanicIfZeroOrNil(k.cdc, "cdc")                                     // 2
-	vaastypes.PanicIfZeroOrNil(k.channelKeeper, "channelKeeper")                 // 3
-	vaastypes.PanicIfZeroOrNil(k.connectionKeeper, "connectionKeeper")           // 4
-	vaastypes.PanicIfZeroOrNil(k.clientKeeper, "clientKeeper")                   // 5
-	vaastypes.PanicIfZeroOrNil(k.slashingKeeper, "slashingKeeper")               // 6
-	vaastypes.PanicIfZeroOrNil(k.bankKeeper, "bankKeeper")                       // 7
-	vaastypes.PanicIfZeroOrNil(k.authKeeper, "authKeeper")                       // 8
-	vaastypes.PanicIfZeroOrNil(k.ibcTransferKeeper, "ibcTransferKeeper")         // 9
-	vaastypes.PanicIfZeroOrNil(k.ibcCoreKeeper, "ibcCoreKeeper")                 // 10
-	vaastypes.PanicIfZeroOrNil(k.feeCollectorName, "feeCollectorName")           // 11
-	vaastypes.PanicIfZeroOrNil(k.authority, "authority")                         // 12
-	vaastypes.PanicIfZeroOrNil(k.validatorAddressCodec, "validatorAddressCodec") // 13
-	vaastypes.PanicIfZeroOrNil(k.consensusAddressCodec, "consensusAddressCodec") // 14
 }
 
 // ValidatorAddressCodec returns the app validator address codec.

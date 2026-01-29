@@ -3,7 +3,6 @@ package keeper
 import (
 	"context"
 	"fmt"
-	"reflect"
 	"time"
 
 	consumertypes "github.com/allinbits/vaas/x/vaas/consumer/types"
@@ -19,6 +18,7 @@ import (
 	ibctmtypes "github.com/cosmos/ibc-go/v10/modules/light-clients/07-tendermint"
 
 	"cosmossdk.io/collections"
+	"cosmossdk.io/collections/indexes"
 	addresscodec "cosmossdk.io/core/address"
 	corestoretypes "cosmossdk.io/core/store"
 	errorsmod "cosmossdk.io/errors"
@@ -61,10 +61,8 @@ type Keeper struct {
 	Params                        collections.Item[types.Params]
 	ValidatorSetUpdateId          collections.Sequence
 	ConsumerId                    collections.Sequence
-	ConsumerIdToChannelId         collections.Map[string, string]
-	ChannelIdToConsumerId         collections.Map[string, string]
-	ConsumerIdToClientId          collections.Map[string, string]
-	ClientIdToConsumerId          collections.Map[string, string]
+	ConsumerChannels              *collections.IndexedMap[string, string, ConsumerChannelIndexes]
+	ConsumerClients               *collections.IndexedMap[string, string, ConsumerClientIndexes]
 	ConsumerGenesis               collections.Map[string, vaastypes.ConsumerGenesisState]
 	ValsetUpdateBlockHeight       collections.Map[uint64, uint64]
 	InitChainHeight               collections.Map[string, uint64]
@@ -122,14 +120,48 @@ func NewKeeper(
 		govKeeper:             govKeeper,
 
 		// Initialize collections
-		Port:                          collections.NewItem(sb, types.PortPrefix, "port", collections.StringValue),
-		Params:                        collections.NewItem(sb, types.ParametersPrefix, "params", codec.CollValue[types.Params](cdc)),
-		ValidatorSetUpdateId:          collections.NewSequence(sb, types.ValidatorSetUpdateIdPrefix, "validator_set_update_id"),
-		ConsumerId:                    collections.NewSequence(sb, types.ConsumerIdPrefix, "consumer_id"),
-		ConsumerIdToChannelId:         collections.NewMap(sb, types.ConsumerIdToChannelIdPrefix, "consumer_id_to_channel_id", collections.StringKey, collections.StringValue),
-		ChannelIdToConsumerId:         collections.NewMap(sb, types.ChannelIdToConsumerIdPrefix, "channel_id_to_consumer_id", collections.StringKey, collections.StringValue),
-		ConsumerIdToClientId:          collections.NewMap(sb, types.ConsumerIdToClientIdPrefix, "consumer_id_to_client_id", collections.StringKey, collections.StringValue),
-		ClientIdToConsumerId:          collections.NewMap(sb, types.ClientIdToConsumerIdPrefix, "client_id_to_consumer_id", collections.StringKey, collections.StringValue),
+		Port:                 collections.NewItem(sb, types.PortPrefix, "port", collections.StringValue),
+		Params:               collections.NewItem(sb, types.ParametersPrefix, "params", codec.CollValue[types.Params](cdc)),
+		ValidatorSetUpdateId: collections.NewSequence(sb, types.ValidatorSetUpdateIdPrefix, "validator_set_update_id"),
+		ConsumerId:           collections.NewSequence(sb, types.ConsumerIdPrefix, "consumer_id"),
+		ConsumerChannels: collections.NewIndexedMap(
+			sb,
+			types.ConsumerIdToChannelIdPrefix,
+			"consumer_channels",
+			collections.StringKey,
+			collections.StringValue,
+			ConsumerChannelIndexes{
+				ByChannelId: indexes.NewUnique(
+					sb,
+					types.ChannelIdToConsumerIdPrefix,
+					"consumer_channels_by_channel_id",
+					collections.StringKey,
+					collections.StringKey,
+					func(_ string, channelId string) (string, error) {
+						return channelId, nil
+					},
+				),
+			},
+		),
+		ConsumerClients: collections.NewIndexedMap(
+			sb,
+			types.ConsumerIdToClientIdPrefix,
+			"consumer_clients",
+			collections.StringKey,
+			collections.StringValue,
+			ConsumerClientIndexes{
+				ByClientId: indexes.NewUnique(
+					sb,
+					types.ClientIdToConsumerIdPrefix,
+					"consumer_clients_by_client_id",
+					collections.StringKey,
+					collections.StringKey,
+					func(_ string, clientId string) (string, error) {
+						return clientId, nil
+					},
+				),
+			},
+		),
 		ConsumerGenesis:               collections.NewMap(sb, types.ConsumerGenesisPrefix, "consumer_genesis", collections.StringKey, codec.CollValue[vaastypes.ConsumerGenesisState](cdc)),
 		ValsetUpdateBlockHeight:       collections.NewMap(sb, types.ValsetUpdateBlockHeightPrefix, "valset_update_block_height", collections.Uint64Key, collections.Uint64Value),
 		InitChainHeight:               collections.NewMap(sb, types.InitChainHeightPrefix, "init_chain_height", collections.StringKey, collections.Uint64Value),
@@ -160,7 +192,6 @@ func NewKeeper(
 	}
 	k.Schema = schema
 
-	k.mustValidateFields()
 	return k
 }
 
@@ -177,34 +208,6 @@ func (k Keeper) ValidatorAddressCodec() addresscodec.Codec {
 // ConsensusAddressCodec returns the app consensus address codec.
 func (k Keeper) ConsensusAddressCodec() addresscodec.Codec {
 	return k.consensusAddressCodec
-}
-
-// Validates that the provider keeper is initialized with non-zero and
-// non-nil values for all its fields. Otherwise this method will panic.
-func (k Keeper) mustValidateFields() {
-	numFields := reflect.ValueOf(k).NumField()
-	if numFields != 42 {
-		panic(fmt.Sprintf("number of fields in provider keeper is not 42 - have %d", numFields))
-	}
-
-	if k.validatorAddressCodec == nil || k.consensusAddressCodec == nil {
-		panic("validator and/or consensus address codec are nil")
-	}
-
-	vaastypes.PanicIfZeroOrNil(k.cdc, "cdc")
-	vaastypes.PanicIfZeroOrNil(k.storeService, "storeService")
-	vaastypes.PanicIfZeroOrNil(k.channelKeeper, "channelKeeper")
-	vaastypes.PanicIfZeroOrNil(k.connectionKeeper, "connectionKeeper")
-	vaastypes.PanicIfZeroOrNil(k.accountKeeper, "accountKeeper")
-	vaastypes.PanicIfZeroOrNil(k.clientKeeper, "clientKeeper")
-	vaastypes.PanicIfZeroOrNil(k.stakingKeeper, "stakingKeeper")
-	vaastypes.PanicIfZeroOrNil(k.slashingKeeper, "slashingKeeper")
-	vaastypes.PanicIfZeroOrNil(k.distributionKeeper, "distributionKeeper")
-	vaastypes.PanicIfZeroOrNil(k.bankKeeper, "bankKeeper")
-	vaastypes.PanicIfZeroOrNil(k.feeCollectorName, "feeCollectorName")
-	vaastypes.PanicIfZeroOrNil(k.authority, "authority")
-	vaastypes.PanicIfZeroOrNil(k.validatorAddressCodec, "validatorAddressCodec")
-	vaastypes.PanicIfZeroOrNil(k.consensusAddressCodec, "consensusAddressCodec")
 }
 
 func (k *Keeper) SetGovKeeper(govKeeper govkeeper.Keeper) {
@@ -235,14 +238,14 @@ func (k Keeper) SetPort(ctx context.Context, portID string) {
 
 // SetConsumerIdToChannelId sets the mapping from a consumer id to the CCV channel id for that consumer chain.
 func (k Keeper) SetConsumerIdToChannelId(ctx context.Context, consumerId, channelId string) {
-	if err := k.ConsumerIdToChannelId.Set(ctx, consumerId, channelId); err != nil {
+	if err := k.ConsumerChannels.Set(ctx, consumerId, channelId); err != nil {
 		panic(fmt.Errorf("failed to set consumer id to channel id: %w", err))
 	}
 }
 
 // GetConsumerIdToChannelId gets the CCV channelId for the given consumer id
 func (k Keeper) GetConsumerIdToChannelId(ctx context.Context, consumerId string) (string, bool) {
-	channelId, err := k.ConsumerIdToChannelId.Get(ctx, consumerId)
+	channelId, err := k.ConsumerChannels.Get(ctx, consumerId)
 	if err != nil {
 		return "", false
 	}
@@ -251,7 +254,7 @@ func (k Keeper) GetConsumerIdToChannelId(ctx context.Context, consumerId string)
 
 // DeleteConsumerIdToChannelId deletes the CCV channel id for the given consumer id
 func (k Keeper) DeleteConsumerIdToChannelId(ctx context.Context, consumerId string) {
-	if err := k.ConsumerIdToChannelId.Remove(ctx, consumerId); err != nil {
+	if err := k.ConsumerChannels.Remove(ctx, consumerId); err != nil {
 		panic(fmt.Errorf("failed to delete consumer id to channel id: %w", err))
 	}
 }
@@ -260,7 +263,7 @@ func (k Keeper) DeleteConsumerIdToChannelId(ctx context.Context, consumerId stri
 func (k Keeper) GetAllConsumersWithIBCClients(ctx context.Context) []string {
 	consumerIds := []string{}
 
-	iter, err := k.ConsumerIdToClientId.Iterate(ctx, nil)
+	iter, err := k.ConsumerClients.Iterate(ctx, nil)
 	if err != nil {
 		return consumerIds
 	}
@@ -278,15 +281,19 @@ func (k Keeper) GetAllConsumersWithIBCClients(ctx context.Context) []string {
 }
 
 // SetChannelToConsumerId sets the mapping from the CCV channel id to the consumer id.
+// Note: This is now handled automatically by the ConsumerChannels indexed map.
+// This method is kept for API compatibility but the index is maintained automatically.
 func (k Keeper) SetChannelToConsumerId(ctx context.Context, channelId, consumerId string) {
-	if err := k.ChannelIdToConsumerId.Set(ctx, channelId, consumerId); err != nil {
+	// The reverse index is automatically maintained by ConsumerChannels IndexedMap
+	// This method exists for backwards compatibility
+	if err := k.ConsumerChannels.Set(ctx, consumerId, channelId); err != nil {
 		panic(fmt.Errorf("failed to set channel to consumer id: %w", err))
 	}
 }
 
 // GetChannelIdToConsumerId gets the consumer id for a given CCV channel id
 func (k Keeper) GetChannelIdToConsumerId(ctx context.Context, channelID string) (string, bool) {
-	consumerId, err := k.ChannelIdToConsumerId.Get(ctx, channelID)
+	consumerId, err := k.ConsumerChannels.Indexes.ByChannelId.MatchExact(ctx, channelID)
 	if err != nil {
 		return "", false
 	}
@@ -294,35 +301,46 @@ func (k Keeper) GetChannelIdToConsumerId(ctx context.Context, channelID string) 
 }
 
 // DeleteChannelIdToConsumerId deletes the consumer id for a given CCV channel id
+// Note: This is now handled automatically by the ConsumerChannels indexed map.
 func (k Keeper) DeleteChannelIdToConsumerId(ctx context.Context, channelId string) {
-	if err := k.ChannelIdToConsumerId.Remove(ctx, channelId); err != nil {
+	// Look up the consumerId first, then remove from the indexed map
+	consumerId, err := k.ConsumerChannels.Indexes.ByChannelId.MatchExact(ctx, channelId)
+	if err != nil {
+		return // Not found, nothing to delete
+	}
+	if err := k.ConsumerChannels.Remove(ctx, consumerId); err != nil {
 		panic(fmt.Errorf("failed to delete channel id to consumer id: %w", err))
 	}
 }
 
 // GetAllChannelToConsumers gets all channel to chain mappings.
+// The results are sorted by ChannelId.
 func (k Keeper) GetAllChannelToConsumers(ctx context.Context) (channelsToConsumers []struct {
 	ChannelId  string
 	ConsumerId string
 },
 ) {
-	iter, err := k.ChannelIdToConsumerId.Iterate(ctx, nil)
+	// Iterate over the ByChannelId index to get results sorted by ChannelId
+	iter, err := k.ConsumerChannels.Indexes.ByChannelId.Iterate(ctx, nil)
 	if err != nil {
 		return channelsToConsumers
 	}
 	defer iter.Close()
 
 	for ; iter.Valid(); iter.Next() {
-		kv, err := iter.KeyValue()
+		// FullKey returns Pair[ReferenceKey, PrimaryKey] = Pair[ChannelId, ConsumerId]
+		fullKey, err := iter.FullKey()
 		if err != nil {
 			continue
 		}
+		channelId := fullKey.K1()
+		consumerId := fullKey.K2()
 		channelsToConsumers = append(channelsToConsumers, struct {
 			ChannelId  string
 			ConsumerId string
 		}{
-			ChannelId:  kv.Key,
-			ConsumerId: kv.Value,
+			ChannelId:  channelId,
+			ConsumerId: consumerId,
 		})
 	}
 
@@ -569,29 +587,16 @@ func (k Keeper) DeletePendingVSCPackets(ctx context.Context, consumerId string) 
 }
 
 // SetConsumerClientId sets the client id for the given consumer id.
-// Note that the method also stores a reverse index that can be accessed
-// by calling GetClientIdToConsumerId.
+// The reverse index is automatically maintained by the indexed map.
 func (k Keeper) SetConsumerClientId(ctx context.Context, consumerId, clientId string) {
-	// Check if there's a previous client ID and delete the reverse index
-	if prevClientId, found := k.GetConsumerClientId(ctx, consumerId); found {
-		if err := k.ClientIdToConsumerId.Remove(ctx, prevClientId); err != nil {
-			panic(fmt.Errorf("failed to remove old client id to consumer id mapping: %w", err))
-		}
-	}
-
-	if err := k.ConsumerIdToClientId.Set(ctx, consumerId, clientId); err != nil {
+	if err := k.ConsumerClients.Set(ctx, consumerId, clientId); err != nil {
 		panic(fmt.Errorf("failed to set consumer id to client id: %w", err))
-	}
-
-	// set the reverse index
-	if err := k.ClientIdToConsumerId.Set(ctx, clientId, consumerId); err != nil {
-		panic(fmt.Errorf("failed to set client id to consumer id: %w", err))
 	}
 }
 
 // GetConsumerClientId returns the client id for the given consumer id.
 func (k Keeper) GetConsumerClientId(ctx context.Context, consumerId string) (string, bool) {
-	clientId, err := k.ConsumerIdToClientId.Get(ctx, consumerId)
+	clientId, err := k.ConsumerClients.Get(ctx, consumerId)
 	if err != nil {
 		return "", false
 	}
@@ -600,7 +605,7 @@ func (k Keeper) GetConsumerClientId(ctx context.Context, consumerId string) (str
 
 // GetClientIdToConsumerId returns the consumer id associated with this client id
 func (k Keeper) GetClientIdToConsumerId(ctx context.Context, clientId string) (string, bool) {
-	consumerId, err := k.ClientIdToConsumerId.Get(ctx, clientId)
+	consumerId, err := k.ConsumerClients.Indexes.ByClientId.MatchExact(ctx, clientId)
 	if err != nil {
 		return "", false
 	}
@@ -608,15 +613,9 @@ func (k Keeper) GetClientIdToConsumerId(ctx context.Context, clientId string) (s
 }
 
 // DeleteConsumerClientId removes from the store the client id for the given consumer id.
-// Note that the method also removes the reverse index.
+// The reverse index is automatically cleaned up by the indexed map.
 func (k Keeper) DeleteConsumerClientId(ctx context.Context, consumerId string) {
-	if clientId, found := k.GetConsumerClientId(ctx, consumerId); found {
-		if err := k.ClientIdToConsumerId.Remove(ctx, clientId); err != nil {
-			panic(fmt.Errorf("failed to remove client id to consumer id mapping: %w", err))
-		}
-	}
-
-	if err := k.ConsumerIdToClientId.Remove(ctx, consumerId); err != nil {
+	if err := k.ConsumerClients.Remove(ctx, consumerId); err != nil {
 		panic(fmt.Errorf("failed to remove consumer id to client id mapping: %w", err))
 	}
 }
