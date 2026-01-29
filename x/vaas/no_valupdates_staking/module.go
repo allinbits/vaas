@@ -4,6 +4,8 @@ import (
 	"context"
 	"encoding/json"
 
+	abci "github.com/cometbft/cometbft/abci/types"
+
 	"cosmossdk.io/core/appmodule"
 
 	"github.com/cosmos/cosmos-sdk/codec"
@@ -13,8 +15,6 @@ import (
 	"github.com/cosmos/cosmos-sdk/x/staking/exported"
 	"github.com/cosmos/cosmos-sdk/x/staking/keeper"
 	"github.com/cosmos/cosmos-sdk/x/staking/types"
-
-	abci "github.com/cometbft/cometbft/abci/types"
 )
 
 var (
