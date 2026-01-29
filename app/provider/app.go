@@ -299,6 +299,7 @@ func New(
 	)
 
 	bApp.SetParamStore(&app.ConsensusParamsKeeper.ParamsStore)
+	bApp.SetVersionModifier(consensus.ProvideAppVersionModifier(app.ConsensusParamsKeeper))
 
 	// add keepers
 	app.AccountKeeper = authkeeper.NewAccountKeeper(
