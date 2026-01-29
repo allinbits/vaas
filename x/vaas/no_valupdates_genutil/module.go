@@ -3,6 +3,8 @@ package genutil
 import (
 	"encoding/json"
 
+	abci "github.com/cometbft/cometbft/abci/types"
+
 	"cosmossdk.io/core/genesis"
 
 	"github.com/cosmos/cosmos-sdk/client"
@@ -11,8 +13,6 @@ import (
 	"github.com/cosmos/cosmos-sdk/types/module"
 	"github.com/cosmos/cosmos-sdk/x/genutil"
 	"github.com/cosmos/cosmos-sdk/x/genutil/types"
-
-	abci "github.com/cometbft/cometbft/abci/types"
 )
 
 var (
