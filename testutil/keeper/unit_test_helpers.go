@@ -197,7 +197,7 @@ func SetupForDeleteConsumerChain(t *testing.T, ctx sdk.Context,
 		"chainID", clienttypes.NewHeight(0, 5))
 	expectations = append(expectations, GetMocksForSetConsumerChain(ctx, &mocks, "chainID")...)
 
-	gomock.InOrder(expectations)
+	gomock.InOrder(expectations...)
 
 	providerKeeper.SetConsumerChainId(ctx, consumerId, "chainID")
 	err := providerKeeper.SetConsumerMetadata(ctx, consumerId, GetTestConsumerMetadata())
