@@ -38,7 +38,7 @@ import (
 	paramstypes "github.com/cosmos/cosmos-sdk/x/params/types"
 )
 
-// Parameters needed to instantiate an in-memory keeper
+// InMemKeeperParams parameters needed to instantiate an in-memory keeper
 type InMemKeeperParams struct {
 	Cdc            *codec.ProtoCodec
 	StoreKey       *storetypes.KVStoreKey
