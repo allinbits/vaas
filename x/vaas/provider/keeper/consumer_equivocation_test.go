@@ -5,6 +5,7 @@ import (
 	"testing"
 	"time"
 
+	slashingtypes "github.com/cosmos/cosmos-sdk/x/slashing/types"
 	"github.com/stretchr/testify/require"
 	"go.uber.org/mock/gomock"
 
@@ -55,8 +56,8 @@ func TestVerifyDoubleVotingEvidence(t *testing.T) {
 		expPass bool
 	}{
 		{
-			"invalid verifying public key - shouldn't pass",
-			[]*tmtypes.Vote{
+			name: "invalid verifying public key - shouldn't pass",
+			votes: []*tmtypes.Vote{
 				cryptotestutil.MakeAndSignVote(
 					blockID1,
 					ctx.BlockHeight(),
@@ -74,13 +75,13 @@ func TestVerifyDoubleVotingEvidence(t *testing.T) {
 					chainID,
 				),
 			},
-			chainID,
-			nil,
-			false,
+			chainID: chainID,
+			pubkey:  nil,
+			expPass: false,
 		},
 		{
-			"verifying public key doesn't correspond to validator address",
-			[]*tmtypes.Vote{
+			name: "verifying public key doesn't correspond to validator address",
+			votes: []*tmtypes.Vote{
 				cryptotestutil.MakeAndSignVoteWithForgedValAddress(
 					blockID1,
 					ctx.BlockHeight(),
@@ -100,13 +101,13 @@ func TestVerifyDoubleVotingEvidence(t *testing.T) {
 					chainID,
 				),
 			},
-			chainID,
-			valPubkey1,
-			false,
+			chainID: chainID,
+			pubkey:  valPubkey1,
+			expPass: false,
 		},
 		{
-			"evidence has votes with different block height - shouldn't pass",
-			[]*tmtypes.Vote{
+			name: "evidence has votes with different block height - shouldn't pass",
+			votes: []*tmtypes.Vote{
 				cryptotestutil.MakeAndSignVote(
 					blockID1,
 					ctx.BlockHeight()+1,
@@ -124,9 +125,9 @@ func TestVerifyDoubleVotingEvidence(t *testing.T) {
 					chainID,
 				),
 			},
-			chainID,
-			valPubkey1,
-			false,
+			chainID: chainID,
+			pubkey:  valPubkey1,
+			expPass: false,
 		},
 		{
 			"evidence has votes with different validator address - shouldn't pass",
@@ -328,11 +329,12 @@ func TestJailAndTombstoneValidator(t *testing.T) {
 		name          string
 		provAddr      types.ProviderConsAddress
 		expectedCalls func(sdk.Context, testkeeper.MockedKeepers, types.ProviderConsAddress) []any
+		err           error
 	}{
 		{
-			"unfound validator",
-			providerConsAddr,
-			func(ctx sdk.Context, mocks testkeeper.MockedKeepers,
+			name:     "unfound validator",
+			provAddr: providerConsAddr,
+			expectedCalls: func(ctx sdk.Context, mocks testkeeper.MockedKeepers,
 				provAddr types.ProviderConsAddress,
 			) []any {
 				return []any{
@@ -344,11 +346,12 @@ func TestJailAndTombstoneValidator(t *testing.T) {
 					).Times(1),
 				}
 			},
+			err: slashingtypes.ErrNoValidatorForAddress,
 		},
 		{
-			"unbonded validator",
-			providerConsAddr,
-			func(ctx sdk.Context, mocks testkeeper.MockedKeepers,
+			name:     "unbonded validator",
+			provAddr: providerConsAddr,
+			expectedCalls: func(ctx sdk.Context, mocks testkeeper.MockedKeepers,
 				provAddr types.ProviderConsAddress,
 			) []any {
 				return []any{
@@ -359,11 +362,12 @@ func TestJailAndTombstoneValidator(t *testing.T) {
 					).Times(1),
 				}
 			},
+			err: stakingtypes.ErrNoUnbondingDelegation,
 		},
 		{
-			"tombstoned validator",
-			providerConsAddr,
-			func(ctx sdk.Context, mocks testkeeper.MockedKeepers,
+			name:     "tombstoned validator",
+			provAddr: providerConsAddr,
+			expectedCalls: func(ctx sdk.Context, mocks testkeeper.MockedKeepers,
 				provAddr types.ProviderConsAddress,
 			) []any {
 				return []any{
@@ -377,11 +381,12 @@ func TestJailAndTombstoneValidator(t *testing.T) {
 					).Times(1),
 				}
 			},
+			err: slashingtypes.ErrValidatorTombstoned,
 		},
 		{
-			"jailed validator",
-			providerConsAddr,
-			func(ctx sdk.Context, mocks testkeeper.MockedKeepers,
+			name:     "jailed validator",
+			provAddr: providerConsAddr,
+			expectedCalls: func(ctx sdk.Context, mocks testkeeper.MockedKeepers,
 				provAddr types.ProviderConsAddress,
 			) []any {
 				jailEndTime := ctx.BlockTime().Add(getTestInfractionParameters().DoubleSign.JailDuration)
@@ -404,9 +409,9 @@ func TestJailAndTombstoneValidator(t *testing.T) {
 			},
 		},
 		{
-			"bonded validator",
-			providerConsAddr,
-			func(ctx sdk.Context, mocks testkeeper.MockedKeepers,
+			name:     "bonded validator",
+			provAddr: providerConsAddr,
+			expectedCalls: func(ctx sdk.Context, mocks testkeeper.MockedKeepers,
 				provAddr types.ProviderConsAddress,
 			) []any {
 				jailEndTime := ctx.BlockTime().Add(getTestInfractionParameters().DoubleSign.JailDuration)
@@ -432,7 +437,6 @@ func TestJailAndTombstoneValidator(t *testing.T) {
 			},
 		},
 	}
-
 	for _, tc := range testCases {
 		t.Run(tc.name, func(t *testing.T) {
 			providerKeeper, ctx, ctrl, mocks := testkeeper.GetProviderKeeperAndCtx(
@@ -443,6 +447,11 @@ func TestJailAndTombstoneValidator(t *testing.T) {
 
 			// Execute method and assert expected mock calls
 			err := providerKeeper.JailAndTombstoneValidator(ctx, tc.provAddr, getTestInfractionParameters().DoubleSign)
+			if tc.err != nil {
+				require.Error(t, err)
+				require.ErrorIs(t, err, tc.err)
+				return
+			}
 			require.NoError(t, err)
 
 			ctrl.Finish()
@@ -776,7 +785,8 @@ func TestSlashValidatorDoesNotSlashIfValidatorIsUnbonded(t *testing.T) {
 
 	gomock.InOrder(expectedCalls...)
 	err := keeper.SlashValidator(ctx, providerAddr, getTestInfractionParameters().DoubleSign)
-	require.NoError(t, err)
+	require.Error(t, err)
+	require.ErrorIs(t, stakingtypes.ErrNoUnbondingDelegation, err)
 }
 
 func TestEquivocationEvidenceMinHeightCRUD(t *testing.T) {
