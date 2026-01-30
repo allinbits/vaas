@@ -15,7 +15,7 @@ type Hooks struct {
 	k Keeper
 }
 
-// Return the wrapper struct
+// Hooks Return the wrapper struct
 func (k Keeper) Hooks() Hooks {
 	return Hooks{k}
 }

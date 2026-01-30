@@ -616,7 +616,6 @@ func TestComputePowerToSlash(t *testing.T) {
 
 	for _, tc := range testCases {
 		t.Run(tc.name, func(t *testing.T) {
-
 			gomock.InOrder(mocks.MockStakingKeeper.EXPECT().
 				SlashUnbondingDelegation(gomock.Any(), gomock.Any(), int64(0), math.LegacyNewDec(1)).
 				DoAndReturn(

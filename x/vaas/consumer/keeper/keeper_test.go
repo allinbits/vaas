@@ -169,13 +169,13 @@ func TestGetLastSovereignValidators(t *testing.T) {
 
 	// Should panic if pre-VAAS is true but staking keeper is not set
 	ck.SetPreVAASTrue(ctx)
-	require.Panics(t, func() { ck.GetLastStandaloneValidators(ctx) })
+	require.Panics(t, func() { _, _ = ck.GetLastStandaloneValidators(ctx) })
 
 	// Should panic if staking keeper is set but pre-VAAS is false
 	ck.SetStandaloneStakingKeeper(mocks.MockStakingKeeper)
 	ck.DeletePreVAAS(ctx)
 	require.False(t, ck.IsPreVAAS(ctx))
-	require.Panics(t, func() { ck.GetLastStandaloneValidators(ctx) })
+	require.Panics(t, func() { _, _ = ck.GetLastStandaloneValidators(ctx) })
 
 	// Set the pre-VAAS state to true and get the last standalone validators from mock
 	ck.SetPreVAASTrue(ctx)
@@ -324,24 +324,25 @@ func TestVerifyProviderChain(t *testing.T) {
 	}
 
 	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			keeperParams := testkeeper.NewInMemKeeperParams(t)
+			consumerKeeper, ctx, ctrl, mocks := testkeeper.GetConsumerKeeperAndCtx(t, keeperParams)
 
-		keeperParams := testkeeper.NewInMemKeeperParams(t)
-		consumerKeeper, ctx, ctrl, mocks := testkeeper.GetConsumerKeeperAndCtx(t, keeperParams)
+			// Common setup
+			consumerKeeper.SetProviderClientID(ctx, "clientID") // Set expected provider clientID
 
-		// Common setup
-		consumerKeeper.SetProviderClientID(ctx, "clientID") // Set expected provider clientID
+			// Specific mock setup
+			tc.mockSetup(ctx, mocks)
 
-		// Specific mock setup
-		tc.mockSetup(ctx, mocks)
+			err := consumerKeeper.VerifyProviderChain(ctx, tc.connectionHops)
 
-		err := consumerKeeper.VerifyProviderChain(ctx, tc.connectionHops)
-
-		if tc.expError {
-			require.Error(t, err, "invalid case did not return error")
-		} else {
-			require.NoError(t, err, "valid case returned error")
-		}
-		ctrl.Finish()
+			if tc.expError {
+				require.Error(t, err, "invalid case did not return error")
+			} else {
+				require.NoError(t, err, "valid case returned error")
+			}
+			ctrl.Finish()
+		})
 	}
 }
 

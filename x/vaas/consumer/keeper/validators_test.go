@@ -69,26 +69,31 @@ func TestApplyCCValidatorChanges(t *testing.T) {
 
 	// test behaviors
 	testCases := []struct {
+		name          string
 		changes       []abci.ValidatorUpdate
 		expTotalPower int64
 		expValsNum    int
 	}{
-		{ // add new bonded validator
+		{
+			name:          "add new bonded validator",
 			changes:       changes[len(changes)-1:],
 			expTotalPower: changesPower,
 			expValsNum:    len(ccVals) + 1,
 		},
-		{ // update a validator voting power
+		{
+			name:          "update a validator voting power",
 			changes:       []abci.ValidatorUpdate{{PubKey: changes[0].PubKey, Power: changes[0].Power + 3}},
 			expTotalPower: changesPower + 3,
 			expValsNum:    len(ccVals) + 1,
 		},
-		{ // unbond a validator
+		{
+			name:          "unbond a validator",
 			changes:       []abci.ValidatorUpdate{{PubKey: changes[0].PubKey, Power: 0}},
 			expTotalPower: changesPower - changes[0].Power,
 			expValsNum:    len(ccVals),
 		},
-		{ // update all validators voting power
+		{
+			name: "update all validators voting power",
 			changes: []abci.ValidatorUpdate{
 				{PubKey: changes[0].PubKey, Power: changes[0].Power + 1},
 				{PubKey: changes[1].PubKey, Power: changes[1].Power + 2},
@@ -101,12 +106,13 @@ func TestApplyCCValidatorChanges(t *testing.T) {
 	}
 
 	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			consumerKeeper.ApplyCCValidatorChanges(ctx, tc.changes)
+			gotVals := getCCVals()
 
-		consumerKeeper.ApplyCCValidatorChanges(ctx, tc.changes)
-		gotVals := getCCVals()
-
-		require.Len(t, gotVals, tc.expValsNum)
-		require.Equal(t, tc.expTotalPower, sumCCValsPow(gotVals))
+			require.Len(t, gotVals, tc.expValsNum)
+			require.Equal(t, tc.expTotalPower, sumCCValsPow(gotVals))
+		})
 	}
 }
 

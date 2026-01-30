@@ -11,7 +11,7 @@ import (
 	stakingtypes "github.com/cosmos/cosmos-sdk/x/staking/types"
 )
 
-// GetParams returns the params for the consumer VAAS module
+// GetConsumerParams returns the params for the consumer VAAS module
 // NOTE: it is different from the GetParams method which is required to implement StakingKeeper interface
 func (k Keeper) GetConsumerParams(ctx sdk.Context) vaastypes.ConsumerParams {
 	store := ctx.KVStore(k.storeKey)
@@ -54,7 +54,7 @@ func (k Keeper) GetHistoricalEntries(ctx sdk.Context) int64 {
 	return params.HistoricalEntries
 }
 
-// Only used to set an unbonding period in diff tests
+// SetUnbondingPeriod only used to set an unbonding period in diff tests
 func (k Keeper) SetUnbondingPeriod(ctx sdk.Context, period time.Duration) {
 	params := k.GetConsumerParams(ctx)
 	params.UnbondingPeriod = period
