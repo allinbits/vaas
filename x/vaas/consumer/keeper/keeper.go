@@ -124,11 +124,11 @@ func (k Keeper) mustValidateFields() {
 	vaastypes.PanicIfZeroOrNil(k.slashingKeeper, "slashingKeeper")               // 8
 	vaastypes.PanicIfZeroOrNil(k.bankKeeper, "bankKeeper")                       // 9
 	vaastypes.PanicIfZeroOrNil(k.authKeeper, "authKeeper")                       // 10
-	vaastypes.PanicIfZeroOrNil(k.ibcCoreKeeper, "ibcCoreKeeper")                 // 12
-	vaastypes.PanicIfZeroOrNil(k.feeCollectorName, "feeCollectorName")           // 13
-	vaastypes.PanicIfZeroOrNil(k.authority, "authority")                         // 14
-	vaastypes.PanicIfZeroOrNil(k.validatorAddressCodec, "validatorAddressCodec") // 15
-	vaastypes.PanicIfZeroOrNil(k.consensusAddressCodec, "consensusAddressCodec") // 16
+	vaastypes.PanicIfZeroOrNil(k.ibcCoreKeeper, "ibcCoreKeeper")                 // 11
+	vaastypes.PanicIfZeroOrNil(k.feeCollectorName, "feeCollectorName")           // 12
+	vaastypes.PanicIfZeroOrNil(k.authority, "authority")                         // 13
+	vaastypes.PanicIfZeroOrNil(k.validatorAddressCodec, "validatorAddressCodec") // 14
+	vaastypes.PanicIfZeroOrNil(k.consensusAddressCodec, "consensusAddressCodec") // 15
 }
 
 // ValidatorAddressCodec returns the app validator address codec.

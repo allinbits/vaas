@@ -120,14 +120,14 @@ func (k Keeper) mustValidateFields() {
 	vaastypes.PanicIfZeroOrNil(k.clientKeeper, "clientKeeper")                   // 8
 	vaastypes.PanicIfZeroOrNil(k.stakingKeeper, "stakingKeeper")                 // 9
 	vaastypes.PanicIfZeroOrNil(k.slashingKeeper, "slashingKeeper")               // 10
-	vaastypes.PanicIfZeroOrNil(k.bankKeeper, "bankKeeper")                       // 12
-	vaastypes.PanicIfZeroOrNil(k.feeCollectorName, "feeCollectorName")           // 13
-	vaastypes.PanicIfZeroOrNil(k.authority, "authority")                         // 14
-	vaastypes.PanicIfZeroOrNil(k.validatorAddressCodec, "validatorAddressCodec") // 15
-	vaastypes.PanicIfZeroOrNil(k.consensusAddressCodec, "consensusAddressCodec") // 16
+	vaastypes.PanicIfZeroOrNil(k.bankKeeper, "bankKeeper")                       // 11
+	vaastypes.PanicIfZeroOrNil(k.feeCollectorName, "feeCollectorName")           // 12
+	vaastypes.PanicIfZeroOrNil(k.authority, "authority")                         // 13
+	vaastypes.PanicIfZeroOrNil(k.validatorAddressCodec, "validatorAddressCodec") // 14
+	vaastypes.PanicIfZeroOrNil(k.consensusAddressCodec, "consensusAddressCodec") // 15
 
 	// this can be nil in tests
-	// vaastypes.PanicIfZeroOrNil(k.govKeeper, "govKeeper")                         // 17
+	// vaastypes.PanicIfZeroOrNil(k.govKeeper, "govKeeper")                         // 16
 }
 
 func (k *Keeper) SetGovKeeper(govKeeper govkeeper.Keeper) {
