@@ -16,8 +16,8 @@ curl -L https://github.com/informalsystems/hermes/releases/download/v1.13.3/herm
 # linux amd64
 curl -L https://github.com/informalsystems/hermes/releases/download/v1.13.3/hermes-v1.13.3-x86_64-unknown-linux-gnu.tar.gz | tar -xz -C ~/.local/bin/
 
-# Verify installation
-~/bin/hermes version
+# Verify installation (assuming binary is in your $PATH)
+hermes version
 ```
 
 ## Quick Start
