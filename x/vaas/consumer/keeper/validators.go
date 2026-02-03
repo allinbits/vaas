@@ -51,7 +51,8 @@ func (k Keeper) ApplyCCValidatorChanges(ctx sdk.Context, changes []abci.Validato
 			}
 
 			k.SetCCValidator(ctx, ccVal)
-			err = k.AfterValidatorBonded(ctx, consAddr, val.Address)
+			valAddr := sdk.ValAddress(ccVal.Address)
+			err = k.AfterValidatorBonded(ctx, consAddr, valAddr)
 			if err != nil {
 				// AfterValidatorBonded is called by the Slashing module and should not return an error.
 				panic(err)
