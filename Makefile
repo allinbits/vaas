@@ -92,6 +92,11 @@ provider-start: build-apps
 	# Decrease voting period to 5min
 	jq '.app_state.gov.params.voting_period = "300s"' $(provider_home)/config/genesis.json > /tmp/gen
 	mv /tmp/gen $(provider_home)/config/genesis.json
+
+	# Decrease number of blocks per epoch (VAAS provider VCS update)
+	jq '.app_state.provider.params.blocks_per_epoch = "10"' $(provider_home)/config/genesis.json > /tmp/gen
+	mv /tmp/gen $(provider_home)/config/genesis.json
+
 	$(providerd) start
 
 consumer_home=~/.consumer-localnet
