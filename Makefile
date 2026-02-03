@@ -176,15 +176,14 @@ consumer-start: consumer-init consumer-create
 HERMES ?= $(shell which hermes)
 HERMES_CONFIG ?= $(HOME)/.hermes/config.toml
 
-# Install Hermes IBC relayer
+# Check Hermes IBC relayer installation
 relayer-install:
-	@echo "Installing Hermes IBC relayer..."
-	@mkdir -p $(HOME)/bin
-	@curl -L https://github.com/informalsystems/hermes/releases/download/v1.10.4/hermes-v1.10.4-aarch64-apple-darwin.tar.gz | tar -xz -C $(HOME)/bin/
+	@echo "checking Hermes IBC relayer..."
+	@if [ "$(HERMES)" != "" ]; then echo "Found Hermes binary"; else echo "Could not find Hermes relayer in PATH. Please follow app/README.md to install it." && exit 1; fi
 	@$(HERMES) version
 
 # Create Hermes configuration
-relayer-config:
+relayer-config: relayer-install
 	@chmod +x ./scripts/hermes-config.sh
 	@./scripts/hermes-config.sh
 

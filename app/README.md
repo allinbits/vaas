@@ -11,7 +11,8 @@ This guide explains how to run a local VAAS (Validator-as-a-Service) testnet wit
 
 ```bash
 # macOS ARM64
-curl -L https://github.com/informalsystems/hermes/releases/download/v1.13.3/hermes-v1.13.3-aarch64-apple-darwin.tar.gz | tar -xz -C ~/bin/
+curl -L https://github.com/informalsystems/hermes/releases/download/v1.13.3/hermes-v1.13.3-aarch64-apple-darwin.tar.gz | tar -xz -C ~/.local/bin/
+
 
 # linux amd64
 curl -L https://github.com/informalsystems/hermes/releases/download/v1.13.3/hermes-v1.13.3-x86_64-unknown-linux-gnu.tar.gz | tar -xz -C ~/.local/bin/
@@ -167,7 +168,7 @@ lsof -i :9092   # Consumer gRPC
 │                 │◄────────Channel──────────►│                 │
 │    Provider     │                           │    Consumer     │
 │    Chain        │    Hermes Relayer         │    Chain        │
-│                 │◄────────────────────────►│                 │
+│                 │◄─────────────────────────►│                 │
 │  Port: provider │                           │  Port: consumer │
 └─────────────────┘                           └─────────────────┘
      :26657                                        :26667
