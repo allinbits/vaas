@@ -22,7 +22,7 @@ vulncheck:
 	$(rundep) golang.org/x/vuln/cmd/govulncheck ./...
 
 mocks-gen:
-	mockgen -package=keeper -destination=testutil/keeper/mocks.go -source=x/vaas/types/expected_keepers.go
+	go run go.uber.org/mock/mockgen -package=keeper -destination=testutil/keeper/mocks.go -source=x/vaas/types/expected_keepers.go
 
 .PHONY: build test lint lint-fix vulncheck mocks-gen
 
