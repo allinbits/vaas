@@ -155,10 +155,10 @@ func (am AppModule) BeginBlock(ctx context.Context) error {
 		return err
 	}
 
-	fesPerBlock := am.keeper.GetFeesPerBlock(sdkCtx)
+	feesPerBlock := am.keeper.GetFeesPerBlock(sdkCtx)
 
 	// Collect fees from consumer chains
-	collectedFees, err := am.keeper.CollectFeesFromConsumers(sdkCtx, fesPerBlock)
+	collectedFees, err := am.keeper.CollectFeesFromConsumers(sdkCtx, feesPerBlock)
 	if err != nil {
 		return err
 	}

@@ -4,16 +4,15 @@ import (
 	"testing"
 	"time"
 
+	"github.com/allinbits/vaas/testutil/crypto"
+	"github.com/allinbits/vaas/x/vaas/provider/types"
+	vaastypes "github.com/allinbits/vaas/x/vaas/types"
+	tmtypes "github.com/cometbft/cometbft/types"
+	sdk "github.com/cosmos/cosmos-sdk/types"
 	clienttypes "github.com/cosmos/ibc-go/v10/modules/core/02-client/types"
 	commitmenttypes "github.com/cosmos/ibc-go/v10/modules/core/23-commitment/types"
 	ibctmtypes "github.com/cosmos/ibc-go/v10/modules/light-clients/07-tendermint"
 	"github.com/stretchr/testify/require"
-
-	tmtypes "github.com/cometbft/cometbft/types"
-
-	"github.com/allinbits/vaas/testutil/crypto"
-	"github.com/allinbits/vaas/x/vaas/provider/types"
-	vaastypes "github.com/allinbits/vaas/x/vaas/types"
 )
 
 // Tests validation of consumer states and params within a provider genesis state
@@ -61,7 +60,7 @@ func TestValidateGenesisState(t *testing.T) {
 				nil,
 				[]types.ConsumerState{{ChainId: "chainid-1", ChannelId: "channelid", ClientId: "client-id", ConsumerGenesis: getInitialConsumerGenesis(t, "chainid-1", false)}},
 				types.NewParams(types.DefaultTemplateClient(),
-					types.DefaultTrustingPeriodFraction, time.Hour, 600, 180),
+					types.DefaultTrustingPeriodFraction, time.Hour, 600, 180, sdk.NewInt64Coin("photon", 42)),
 				nil,
 				nil,
 				nil,
@@ -102,7 +101,7 @@ func TestValidateGenesisState(t *testing.T) {
 				[]types.ConsumerState{{ChainId: "chainid-1", ChannelId: "channelid", ClientId: "client-id"}},
 				types.NewParams(types.DefaultTemplateClient(),
 					"0.0", // 0 trusting period fraction here
-					vaastypes.DefaultVAASTimeoutPeriod, 600, 180),
+					vaastypes.DefaultVAASTimeoutPeriod, 600, 180, sdk.NewInt64Coin("photon", 42)),
 				nil,
 				nil,
 				nil,
@@ -118,7 +117,7 @@ func TestValidateGenesisState(t *testing.T) {
 				types.NewParams(types.DefaultTemplateClient(),
 					types.DefaultTrustingPeriodFraction,
 					0, // 0 ccv timeout here
-					600, 180),
+					600, 180, sdk.NewInt64Coin("photon", 42)),
 				nil,
 				nil,
 				nil,

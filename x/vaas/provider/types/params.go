@@ -4,14 +4,16 @@ import (
 	"fmt"
 	"time"
 
-	"cosmossdk.io/math"
-	sdk "github.com/cosmos/cosmos-sdk/types"
-	paramtypes "github.com/cosmos/cosmos-sdk/x/params/types"
+	vaastypes "github.com/allinbits/vaas/x/vaas/types"
+
 	clienttypes "github.com/cosmos/ibc-go/v10/modules/core/02-client/types"
 	commitmenttypes "github.com/cosmos/ibc-go/v10/modules/core/23-commitment/types"
 	ibctmtypes "github.com/cosmos/ibc-go/v10/modules/light-clients/07-tendermint"
 
-	vaastypes "github.com/allinbits/vaas/x/vaas/types"
+	"cosmossdk.io/math"
+
+	sdk "github.com/cosmos/cosmos-sdk/types"
+	paramtypes "github.com/cosmos/cosmos-sdk/x/params/types"
 )
 
 const (
@@ -120,8 +122,8 @@ func (p Params) Validate() error {
 	if err := vaastypes.ValidatePositiveInt64(p.MaxProviderConsensusValidators); err != nil {
 		return fmt.Errorf("max provider consensus validators is invalid: %s", err)
 	}
-	if p.FeesPerBlock.IsNil() || p.FeesPerBlock.IsNegative() {
-		return fmt.Errorf("fees per block must be positive")
+	if err := validateFeesPerBlock(p.FeesPerBlock); err != nil {
+		return err
 	}
 
 	return nil
@@ -140,11 +142,14 @@ func (p *Params) ParamSetPairs() paramtypes.ParamSetPairs {
 }
 
 func validateFeesPerBlock(i interface{}) error {
-	v, ok := i.(math.Int)
+	coin, ok := i.(sdk.Coin)
 	if !ok {
 		return fmt.Errorf("invalid parameter type: %T", i)
 	}
-	if v.IsNil() || v.IsNegative() {
+	if !coin.IsValid() {
+		return fmt.Errorf("fees per block coin is invalid")
+	}
+	if coin.IsZero() || coin.IsNegative() {
 		return fmt.Errorf("fees per block must be positive")
 	}
 	return nil
