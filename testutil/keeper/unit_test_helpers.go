@@ -35,15 +35,13 @@ import (
 	authtypes "github.com/cosmos/cosmos-sdk/x/auth/types"
 	govkeeper "github.com/cosmos/cosmos-sdk/x/gov/keeper"
 	govtypes "github.com/cosmos/cosmos-sdk/x/gov/types"
-	paramstypes "github.com/cosmos/cosmos-sdk/x/params/types"
 )
 
 // Parameters needed to instantiate an in-memory keeper
 type InMemKeeperParams struct {
-	Cdc            *codec.ProtoCodec
-	StoreKey       *storetypes.KVStoreKey
-	ParamsSubspace *paramstypes.Subspace
-	Ctx            sdk.Context
+	Cdc      *codec.ProtoCodec
+	StoreKey *storetypes.KVStoreKey
+	Ctx      sdk.Context
 }
 
 // NewInMemKeeperParams instantiates in-memory keeper params with default values
@@ -62,19 +60,12 @@ func NewInMemKeeperParams(tb testing.TB) InMemKeeperParams {
 	cryptocodec.RegisterInterfaces(registry) // Public key implementation registered here
 	cdc := codec.NewProtoCodec(registry)
 
-	paramsSubspace := paramstypes.NewSubspace(cdc,
-		codec.NewLegacyAmino(),
-		storeKey,
-		memStoreKey,
-		paramstypes.ModuleName,
-	)
 	ctx := sdk.NewContext(stateStore, tmproto.Header{}, false, log.NewNopLogger())
 
 	return InMemKeeperParams{
-		Cdc:            cdc,
-		StoreKey:       storeKey,
-		ParamsSubspace: &paramsSubspace,
-		Ctx:            ctx,
+		Cdc:      cdc,
+		StoreKey: storeKey,
+		Ctx:      ctx,
 	}
 }
 
@@ -114,7 +105,6 @@ func NewInMemProviderKeeper(params InMemKeeperParams, mocks MockedKeepers) provi
 	return providerkeeper.NewKeeper(
 		params.Cdc,
 		params.StoreKey,
-		*params.ParamsSubspace,
 		mocks.MockChannelKeeper,
 		mocks.MockConnectionKeeper,
 		mocks.MockClientKeeper,
