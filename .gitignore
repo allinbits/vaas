@@ -1,7 +1,9 @@
-# IDEs and editors
-.vscode/
-.idea/
 .DS_Store
 *.test
 *.out
 coverage.out
+build/
+
+# IDEs and editors
+.vscode/
+.idea/
