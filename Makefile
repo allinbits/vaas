@@ -173,7 +173,7 @@ consumer-start: consumer-init consumer-create
 ###                                 Relayer                                 ###
 ###############################################################################
 
-HERMES ?= $(HOME)/bin/hermes
+HERMES ?= $(shell which hermes)
 HERMES_CONFIG ?= $(HOME)/.hermes/config.toml
 
 # Install Hermes IBC relayer
