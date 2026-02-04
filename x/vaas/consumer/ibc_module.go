@@ -116,19 +116,11 @@ func (am AppModule) OnChanOpenAck(
 			"provider channel: %s already established", providerChannel)
 	}
 
-	var md types.HandshakeMetadata
-	if err := (&md).Unmarshal([]byte(counterpartyMetadata)); err != nil {
-		return errorsmod.Wrapf(types.ErrInvalidHandshakeMetadata,
-			"error unmarshalling ibc-ack metadata: \n%v; \nmetadata: %v", err, counterpartyMetadata)
-	}
-
-	if md.Version != types.Version {
+	// Validate counterparty version directly (HandshakeMetadata removed in IBC v2 migration)
+	if counterpartyMetadata != types.Version {
 		return errorsmod.Wrapf(types.ErrInvalidVersion,
-			"invalid counterparty version: %s, expected %s", md.Version, types.Version)
+			"invalid counterparty version: %s, expected %s", counterpartyMetadata, types.Version)
 	}
-
-	// Note: Distribution functionality has been removed, so we no longer
-	// store the provider fee pool address or initialize transfer channels.
 
 	return nil
 }

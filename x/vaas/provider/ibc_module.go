@@ -70,15 +70,9 @@ func (am AppModule) OnChanOpenTry(
 		return "", err
 	}
 
-	md := vaastypes.HandshakeMetadata{
-		Version: vaastypes.Version,
-	}
-	mdBz, err := (&md).Marshal()
-	if err != nil {
-		return "", errorsmod.Wrapf(vaastypes.ErrInvalidHandshakeMetadata,
-			"error marshalling ibc-try metadata: %v", err)
-	}
-	return string(mdBz), nil
+	// Return the version string directly instead of HandshakeMetadata.
+	// HandshakeMetadata was removed in IBC v2 migration.
+	return vaastypes.Version, nil
 }
 
 // validateVAASChannelParams validates a VAAS channel

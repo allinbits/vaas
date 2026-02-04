@@ -40,10 +40,16 @@ const (
 
 	ValidatorSetUpdateIdKeyName = "ValidatorSetUpdateIdKey"
 
+	// ConsumerIdToChannelIdKeyName stores the mapping from consumer ID to channel ID.
+	// Deprecated: Used for IBC v1 channel-based communication. Use ConsumerIdToClientIdKeyName for IBC v2.
 	ConsumerIdToChannelIdKeyName = "ConsumerIdToChannelIdKey"
 
+	// ChannelIdToConsumerIdKeyName stores the reverse mapping from channel ID to consumer ID.
+	// Deprecated: Used for IBC v1 channel-based communication. Use ClientIdToConsumerIdKeyName for IBC v2.
 	ChannelIdToConsumerIdKeyName = "ChannelToConsumerIdKey"
 
+	// ConsumerIdToClientIdKeyName stores the mapping from consumer ID to client ID.
+	// This is the primary lookup mechanism for IBC v2 client-based communication.
 	ConsumerIdToClientIdKeyName = "ConsumerIdToClientIdKey"
 
 	ValsetUpdateBlockHeightKeyName = "ValsetUpdateBlockHeightKey"
@@ -86,6 +92,8 @@ const (
 
 	RemovalTimeToConsumerIdsKeyName = "RemovalTimeToConsumerIdsKeyName"
 
+	// ClientIdToConsumerIdKeyName stores the reverse mapping from client ID to consumer ID.
+	// This is the reverse lookup mechanism for IBC v2 client-based communication.
 	ClientIdToConsumerIdKeyName = "ClientIdToConsumerIdKey"
 
 	PrioritylistKeyName = "PrioritylistKey"

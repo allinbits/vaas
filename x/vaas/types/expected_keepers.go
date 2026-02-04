@@ -82,7 +82,10 @@ type SlashingKeeper interface {
 	IsTombstoned(context.Context, sdk.ConsAddress) bool
 }
 
-// ChannelKeeper defines the expected IBC channel keeper
+// ChannelKeeper defines the expected IBC channel keeper.
+// Deprecated: ChannelKeeper is used for IBC v1 channel-based communication.
+// For IBC v2, use IBCPacketHandler instead. This interface is kept for
+// backward compatibility during the migration period.
 type ChannelKeeper interface {
 	GetChannel(ctx sdk.Context, srcPort, srcChan string) (channel channeltypes.Channel, found bool)
 	GetNextSequenceSend(ctx sdk.Context, portID, channelID string) (uint64, bool)
@@ -99,7 +102,10 @@ type ChannelKeeper interface {
 	GetChannelConnection(ctx sdk.Context, portID, channelID string) (string, conntypes.ConnectionEnd, error)
 }
 
-// ConnectionKeeper defines the expected IBC connection keeper
+// ConnectionKeeper defines the expected IBC connection keeper.
+// Deprecated: ConnectionKeeper is used for IBC v1 connection-based routing.
+// In IBC v2, connections are managed internally by the IBC core module.
+// This interface is kept for backward compatibility during the migration period.
 type ConnectionKeeper interface {
 	GetConnection(ctx sdk.Context, connectionID string) (conntypes.ConnectionEnd, bool)
 }
@@ -147,11 +153,30 @@ type IBCTransferKeeper interface {
 	Transfer(context.Context, *transfertypes.MsgTransfer) (*transfertypes.MsgTransferResponse, error)
 }
 
-// IBCCoreKeeper defines the expected interface needed for opening a
-// channel
+// IBCCoreKeeper defines the expected interface needed for opening a channel.
+// Deprecated: IBCCoreKeeper is used for IBC v1 channel-based operations.
+// In IBC v2, channel operations are replaced by client-based routing.
+// This interface is kept for backward compatibility during the migration period.
 type IBCCoreKeeper interface {
 	ChannelOpenInit(
 		goCtx context.Context,
 		msg *channeltypes.MsgChannelOpenInit,
 	) (*channeltypes.MsgChannelOpenInitResponse, error)
+}
+
+// IBCPacketHandler defines the expected interface for IBC v2 packet operations.
+// This replaces channel-based packet sending from IBC v1 with client-based routing.
+type IBCPacketHandler interface {
+	// SendPacket sends a packet using IBC v2's client-based routing.
+	// sourceClient is the client ID on the sending chain.
+	// destApp is the application identifier on the destination chain (e.g., "vaas/consumer").
+	// timeoutTimestamp is the absolute timeout in nanoseconds.
+	// data is the packet payload.
+	SendPacket(
+		ctx context.Context,
+		sourceClient string,
+		destApp string,
+		timeoutTimestamp uint64,
+		data []byte,
+	) (sequence uint64, err error)
 }
