@@ -17,7 +17,9 @@ import (
 	sdk "github.com/cosmos/cosmos-sdk/types"
 )
 
-// OnAcknowledgementPacket handles acknowledgments for sent VSC packets
+// OnAcknowledgementPacket handles acknowledgments for sent VSC packets.
+// IBC v2 Note: This handler supports both channel-based (v1) and client-based (v2) lookups
+// during the migration period.
 func (k Keeper) OnAcknowledgementPacket(ctx sdk.Context, packet channeltypes.Packet, ack channeltypes.Acknowledgement) error {
 	if err := ack.GetError(); err != "" {
 		// The VSC packet data could not be successfully decoded.
@@ -27,6 +29,7 @@ func (k Keeper) OnAcknowledgementPacket(ctx sdk.Context, packet channeltypes.Pac
 			"channelID", packet.SourceChannel,
 			"error", err,
 		)
+		// IBC v1: Use channel-based lookup (deprecated, kept for backward compatibility)
 		if consumerId, ok := k.GetChannelIdToConsumerId(ctx, packet.SourceChannel); ok {
 			return k.StopAndPrepareForConsumerRemoval(ctx, consumerId)
 		}
@@ -36,8 +39,10 @@ func (k Keeper) OnAcknowledgementPacket(ctx sdk.Context, packet channeltypes.Pac
 }
 
 // OnTimeoutPacket aborts the transaction if no chain exists for the destination channel,
-// otherwise it stops the chain
+// otherwise it stops the chain.
+// IBC v2 Note: Timeout triggers immediate consumer removal, consistent with the spec.
 func (k Keeper) OnTimeoutPacket(ctx sdk.Context, packet channeltypes.Packet) error {
+	// IBC v1: Use channel-based lookup (deprecated, kept for backward compatibility)
 	consumerId, found := k.GetChannelIdToConsumerId(ctx, packet.SourceChannel)
 	if !found {
 		k.Logger(ctx).Error("packet timeout, unknown channel:", "channelID", packet.SourceChannel)

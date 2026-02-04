@@ -35,8 +35,12 @@ type Keeper struct {
 
 	storeKey storetypes.StoreKey
 
-	cdc                codec.BinaryCodec
-	channelKeeper      vaastypes.ChannelKeeper
+	cdc codec.BinaryCodec
+	// channelKeeper is used for IBC v1 channel-based communication.
+	// Deprecated: Will be replaced by IBCPacketHandler in IBC v2.
+	channelKeeper vaastypes.ChannelKeeper
+	// connectionKeeper is used for IBC v1 connection validation.
+	// Deprecated: Connections are managed internally by IBC core in v2.
 	connectionKeeper   vaastypes.ConnectionKeeper
 	accountKeeper      vaastypes.AccountKeeper
 	clientKeeper       vaastypes.ClientKeeper

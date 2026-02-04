@@ -48,6 +48,8 @@ func TestPreserveBytePrefix(t *testing.T) {
 	i++
 	require.Equal(t, byte(22), consumertypes.ParametersKey()[0])
 	i++
+	require.Equal(t, byte(23), consumertypes.HighestValsetUpdateIDKey()[0])
+	i++
 
 	prefixes := consumertypes.GetAllKeyPrefixes()
 	require.Equal(t, len(prefixes), i)
@@ -80,5 +82,6 @@ func getAllFullyDefinedKeys() [][]byte {
 		consumertypes.InitGenesisHeightKey(),
 		consumertypes.PrevStandaloneChainKey(),
 		consumertypes.ParametersKey(),
+		consumertypes.HighestValsetUpdateIDKey(),
 	}
 }

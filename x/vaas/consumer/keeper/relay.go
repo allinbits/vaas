@@ -16,15 +16,28 @@ import (
 )
 
 // OnRecvVSCPacket sets the pending validator set changes that will be flushed to ABCI on Endblock
-// and set the maturity time for the packet. Once the maturity time elapses, a VSCMatured packet is
-// sent back to the provider chain.
+// and set the maturity time for the packet.
 //
-// Note: CCV uses an ordered IBC channel, meaning VSC packet changes will be accumulated (and later
-// processed by ApplyCCValidatorChanges) s.t. more recent val power changes overwrite older ones.
+// IBC v2 Note: Out-of-order packet handling is supported. If a packet with a lower valset_update_id
+// than previously processed arrives, it is acknowledged but ignored. This allows safe handling of
+// out-of-order delivery without strict channel ordering requirements.
 func (k Keeper) OnRecvVSCPacket(ctx sdk.Context, packet channeltypes.Packet, newChanges vaastypes.ValidatorSetChangePacketData) error {
 	// validate packet data upon receiving
 	if err := newChanges.Validate(); err != nil {
 		return errorsmod.Wrapf(err, "error validating VSCPacket data")
+	}
+
+	// IBC v2: Check for out-of-order packets
+	// If this packet's valset_update_id is not higher than the highest we've seen,
+	// acknowledge but don't process (stale/out-of-order packet)
+	highestID := k.GetHighestValsetUpdateID(ctx)
+	if newChanges.ValsetUpdateId <= highestID {
+		k.Logger(ctx).Info("skipping out-of-order VSCPacket",
+			"packetVscID", newChanges.ValsetUpdateId,
+			"highestVscID", highestID,
+		)
+		// Return nil to acknowledge the packet without processing
+		return nil
 	}
 
 	// get the provider channel
@@ -67,6 +80,9 @@ func (k Keeper) OnRecvVSCPacket(ctx sdk.Context, packet channeltypes.Packet, new
 	blockHeight := uint64(ctx.BlockHeight()) + 1
 	k.SetHeightValsetUpdateID(ctx, blockHeight, newChanges.ValsetUpdateId)
 	k.Logger(ctx).Debug("block height was mapped to vscID", "height", blockHeight, "vscID", newChanges.ValsetUpdateId)
+
+	// IBC v2: Update the highest valset update ID for out-of-order packet tracking
+	k.SetHighestValsetUpdateID(ctx, newChanges.ValsetUpdateId)
 
 	// Note: Slash acks processing removed as slash functionality is not supported
 
