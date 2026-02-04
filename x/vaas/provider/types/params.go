@@ -13,7 +13,6 @@ import (
 	"cosmossdk.io/math"
 
 	sdk "github.com/cosmos/cosmos-sdk/types"
-	paramtypes "github.com/cosmos/cosmos-sdk/x/params/types"
 )
 
 const (
@@ -37,23 +36,6 @@ const (
 
 // DefaultFeesPerBlock is the default amount that each consumer chain must pay per block
 var DefaultFeesPerBlock = sdk.NewCoin("photon", math.NewInt(1000)) // Default fees per block
-
-// Reflection based keys for params subspace
-// Legacy: usage of x/params for parameters is deprecated.
-// Use x/vaas/provider/keeper/params instead
-// [DEPRECATED]
-var (
-	KeyTemplateClient                 = []byte("TemplateClient")
-	KeyTrustingPeriodFraction         = []byte("TrustingPeriodFraction")
-	KeyBlocksPerEpoch                 = []byte("BlocksPerEpoch")
-	KeyMaxProviderConsensusValidators = []byte("MaxProviderConsensusValidators")
-	KeyFeesPerBlock                   = []byte("FeesPerBlock")
-)
-
-// ParamKeyTable returns a key table with the necessary registered provider params
-func ParamKeyTable() paramtypes.KeyTable {
-	return paramtypes.NewKeyTable().RegisterParamSet(&Params{})
-}
 
 // NewParams creates new provider parameters with provided arguments
 func NewParams(
@@ -127,18 +109,6 @@ func (p Params) Validate() error {
 	}
 
 	return nil
-}
-
-// ParamSetPairs implements params.ParamSet
-func (p *Params) ParamSetPairs() paramtypes.ParamSetPairs {
-	return paramtypes.ParamSetPairs{
-		paramtypes.NewParamSetPair(KeyTemplateClient, p.TemplateClient, ValidateTemplateClient),
-		paramtypes.NewParamSetPair(KeyTrustingPeriodFraction, p.TrustingPeriodFraction, vaastypes.ValidateStringFraction),
-		paramtypes.NewParamSetPair(vaastypes.KeyVAASTimeoutPeriod, p.VaasTimeoutPeriod, vaastypes.ValidateDuration),
-		paramtypes.NewParamSetPair(KeyBlocksPerEpoch, p.BlocksPerEpoch, vaastypes.ValidatePositiveInt64),
-		paramtypes.NewParamSetPair(KeyMaxProviderConsensusValidators, p.MaxProviderConsensusValidators, vaastypes.ValidatePositiveInt64),
-		paramtypes.NewParamSetPair(KeyFeesPerBlock, p.FeesPerBlock, validateFeesPerBlock),
-	}
 }
 
 func validateFeesPerBlock(i interface{}) error {
