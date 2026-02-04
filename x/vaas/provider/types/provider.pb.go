@@ -87,6 +87,9 @@ func (ConsumerPhase) EnumDescriptor() ([]byte, []int) {
 
 // Params defines the parameters for VAAS Provider module
 type Params struct {
+	// Deprecated: template_client is deprecated in IBC v2. Per-consumer client
+	// configuration should be used instead via ConsumerInitializationParameters.
+	// This field is kept for backward compatibility during the migration period.
 	TemplateClient *_07_tendermint.ClientState `protobuf:"bytes,1,opt,name=template_client,json=templateClient,proto3" json:"template_client,omitempty"`
 	// TrustingPeriodFraction is used to compute the consumer and provider IBC
 	// client's TrustingPeriod from the chain defined UnbondingPeriod
@@ -686,6 +689,8 @@ type ConsumerInitializationParameters struct {
 	// Note that a standalone chain can transition to a consumer chain while
 	// maintaining existing IBC channels to other chains by providing a valid
 	// connection_id.
+	// IBC v2 Note: In IBC v2, connections are not required. This field may be
+	// repurposed or replaced with client_id in future versions.
 	ConnectionId string `protobuf:"bytes,8,opt,name=connection_id,json=connectionId,proto3" json:"connection_id,omitempty"`
 }
 
