@@ -214,7 +214,12 @@ func (k Keeper) HasActiveConsumerValidator(ctx sdk.Context, consumerId string, a
 }
 
 // LaunchConsumer launches the chain with the provided consumer id by creating the consumer client and the respective
-// consumer genesis file
+// consumer genesis file.
+//
+// IBC v2 Note: In IBC v2 (Eureka), consumer chains are launched when RegisterCounterparty
+// succeeds on both chains. The current implementation sets CONSUMER_PHASE_LAUNCHED after
+// client creation, but in IBC v2 this will happen after RegisterCounterparty completes.
+// The channel handshake (OnChanOpenConfirm) will no longer be the launch trigger.
 //
 // TODO add unit test for LaunchConsumer
 func (k Keeper) LaunchConsumer(
@@ -268,6 +273,10 @@ func (k Keeper) LaunchConsumer(
 
 // CreateConsumerClient will create the CCV client for the given consumer chain. The CCV channel must be built
 // on top of the CCV client to ensure connection with the right consumer chain.
+//
+// IBC v2 Note: In IBC v2 (Eureka), channels are not used. The client ID is used directly
+// for packet routing. After client creation, RegisterCounterparty should be called to
+// establish the bi-directional link between provider and consumer.
 func (k Keeper) CreateConsumerClient(
 	ctx sdk.Context,
 	consumerId string,
@@ -552,7 +561,11 @@ func (k Keeper) BeginBlockRemoveConsumers(ctx sdk.Context) error {
 	return nil
 }
 
-// DeleteConsumerChain cleans up the state of the given consumer chain
+// DeleteConsumerChain cleans up the state of the given consumer chain.
+//
+// IBC v2 Note: In IBC v2 (Eureka), the channel-based cleanup logic will be removed.
+// Only client-based state needs to be cleaned up. The channel closing logic below
+// is kept for backward compatibility during the migration period.
 func (k Keeper) DeleteConsumerChain(ctx sdk.Context, consumerId string) (err error) {
 	phase := k.GetConsumerPhase(ctx, consumerId)
 	if phase != types.CONSUMER_PHASE_STOPPED {

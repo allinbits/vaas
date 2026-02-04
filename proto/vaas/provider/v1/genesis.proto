@@ -37,12 +37,17 @@ message GenesisState {
 // The provider VAAS module's knowledge of consumer state.
 //
 // Note this type is only used internally to the provider VAAS module.
+// IBC v2 Note: In IBC v2 (Eureka), channel_id will be removed and only
+// client_id will be used for routing. The channel_id field is kept for
+// backward compatibility during the migration period.
 message ConsumerState {
   // ChainID defines the chain ID for the consumer chain
   string chain_id = 1;
   // ChannelID defines the IBC channel ID for the consumer chain
+  // Deprecated: In IBC v2 (Eureka), channels are not used. Use client_id instead.
   string channel_id = 2;
   // ClientID defines the IBC client ID for the consumer chain
+  // IBC v2 Note: This is the primary identifier for routing in IBC v2.
   string client_id = 3;
   // InitalHeight defines the initial block height for the consumer chain
   uint64 initial_height = 4;
