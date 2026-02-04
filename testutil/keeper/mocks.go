@@ -1313,3 +1313,41 @@ func (mr *MockIBCCoreKeeperMockRecorder) ChannelOpenInit(goCtx, msg interface{})
 	mr.mock.ctrl.T.Helper()
 	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "ChannelOpenInit", reflect.TypeOf((*MockIBCCoreKeeper)(nil).ChannelOpenInit), goCtx, msg)
 }
+
+// MockIBCPacketHandler is a mock of IBCPacketHandler interface.
+type MockIBCPacketHandler struct {
+	ctrl     *gomock.Controller
+	recorder *MockIBCPacketHandlerMockRecorder
+}
+
+// MockIBCPacketHandlerMockRecorder is the mock recorder for MockIBCPacketHandler.
+type MockIBCPacketHandlerMockRecorder struct {
+	mock *MockIBCPacketHandler
+}
+
+// NewMockIBCPacketHandler creates a new mock instance.
+func NewMockIBCPacketHandler(ctrl *gomock.Controller) *MockIBCPacketHandler {
+	mock := &MockIBCPacketHandler{ctrl: ctrl}
+	mock.recorder = &MockIBCPacketHandlerMockRecorder{mock}
+	return mock
+}
+
+// EXPECT returns an object that allows the caller to indicate expected use.
+func (m *MockIBCPacketHandler) EXPECT() *MockIBCPacketHandlerMockRecorder {
+	return m.recorder
+}
+
+// SendPacket mocks base method.
+func (m *MockIBCPacketHandler) SendPacket(ctx context.Context, sourceClient, destApp string, timeoutTimestamp uint64, data []byte) (uint64, error) {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "SendPacket", ctx, sourceClient, destApp, timeoutTimestamp, data)
+	ret0, _ := ret[0].(uint64)
+	ret1, _ := ret[1].(error)
+	return ret0, ret1
+}
+
+// SendPacket indicates an expected call of SendPacket.
+func (mr *MockIBCPacketHandlerMockRecorder) SendPacket(ctx, sourceClient, destApp, timeoutTimestamp, data interface{}) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "SendPacket", reflect.TypeOf((*MockIBCPacketHandler)(nil).SendPacket), ctx, sourceClient, destApp, timeoutTimestamp, data)
+}
