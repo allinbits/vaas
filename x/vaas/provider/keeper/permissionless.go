@@ -8,13 +8,6 @@ import (
 	"github.com/allinbits/vaas/x/vaas/provider/types"
 )
 
-// setConsumerId sets the provided consumerId
-func (k Keeper) setConsumerId(ctx context.Context, consumerId uint64) {
-	if err := k.ConsumerId.Set(ctx, consumerId); err != nil {
-		panic(fmt.Errorf("failed to set consumer id: %w", err))
-	}
-}
-
 // GetConsumerId returns the next to-be-assigned consumer id
 // Returns (0, false) if the sequence has never been used (no consumers created yet)
 func (k Keeper) GetConsumerId(ctx context.Context) (uint64, bool) {
