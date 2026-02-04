@@ -17,6 +17,10 @@ import (
 
 // OnChanOpenInit implements the IBCModule interface
 //
+// Deprecated: IBC v1 channel handshake callback. In IBC v2 (Eureka), channels are not
+// used - routing is done via client IDs. This callback is kept for backward compatibility
+// during the migration period and will be removed when IBC v2 is fully adopted.
+//
 // See: https://github.com/cosmos/ibc/blob/main/spec/app/ics-028-cross-chain-validation/methods.md#ccv-pcf-coinit1
 // Spec Tag: [CCV-PCF-COINIT.1]
 func (am AppModule) OnChanOpenInit(
@@ -32,6 +36,10 @@ func (am AppModule) OnChanOpenInit(
 }
 
 // OnChanOpenTry implements the IBCModule interface
+//
+// Deprecated: IBC v1 channel handshake callback. In IBC v2 (Eureka), channels are not
+// used - routing is done via client IDs. This callback is kept for backward compatibility
+// during the migration period and will be removed when IBC v2 is fully adopted.
 //
 // See: https://github.com/cosmos/ibc/blob/main/spec/app/ics-028-cross-chain-validation/methods.md#ccv-pcf-cotry1
 // Spec tag: [CCV-PCF-COTRY.1]
@@ -76,6 +84,10 @@ func (am AppModule) OnChanOpenTry(
 }
 
 // validateVAASChannelParams validates a VAAS channel
+//
+// Deprecated: IBC v1 channel validation. In IBC v2 (Eureka), channel validation is not
+// required as routing is done via client IDs. This function is kept for backward
+// compatibility during the migration period.
 func validateVAASChannelParams(
 	ctx sdk.Context,
 	keeper *keeper.Keeper,
@@ -96,6 +108,10 @@ func validateVAASChannelParams(
 
 // OnChanOpenAck implements the IBCModule interface
 //
+// Deprecated: IBC v1 channel handshake callback. In IBC v2 (Eureka), channels are not
+// used - routing is done via client IDs. This callback is kept for backward compatibility
+// during the migration period and will be removed when IBC v2 is fully adopted.
+//
 // See: https://github.com/cosmos/ibc/blob/main/spec/app/ics-028-cross-chain-validation/methods.md#ccv-pcf-coack1
 // Spec tag: [CCV-PCF-COACK.1]
 func (am AppModule) OnChanOpenAck(
@@ -109,6 +125,11 @@ func (am AppModule) OnChanOpenAck(
 }
 
 // OnChanOpenConfirm implements the IBCModule interface
+//
+// Deprecated: IBC v1 channel handshake callback. In IBC v2 (Eureka), channels are not
+// used - consumer chains are launched via RegisterCounterparty. This callback is kept
+// for backward compatibility during the migration period and will be removed when IBC v2
+// is fully adopted.
 //
 // See: https://github.com/cosmos/ibc/blob/main/spec/app/ics-028-cross-chain-validation/methods.md#ccv-pcf-coconfirm1
 // Spec tag: [CCV-PCF-COCONFIRM.1]
@@ -125,6 +146,9 @@ func (am AppModule) OnChanOpenConfirm(
 }
 
 // OnChanCloseInit implements the IBCModule interface
+//
+// Deprecated: IBC v1 channel close callback. In IBC v2 (Eureka), channels are not used.
+// This callback is kept for backward compatibility during the migration period.
 func (am AppModule) OnChanCloseInit(
 	ctx sdk.Context,
 	portID,
@@ -135,6 +159,9 @@ func (am AppModule) OnChanCloseInit(
 }
 
 // OnChanCloseConfirm implements the IBCModule interface
+//
+// Deprecated: IBC v1 channel close callback. In IBC v2 (Eureka), channels are not used.
+// This callback is kept for backward compatibility during the migration period.
 func (am AppModule) OnChanCloseConfirm(
 	ctx sdk.Context,
 	portID,
