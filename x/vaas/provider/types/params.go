@@ -9,8 +9,6 @@ import (
 	clienttypes "github.com/cosmos/ibc-go/v10/modules/core/02-client/types"
 	commitmenttypes "github.com/cosmos/ibc-go/v10/modules/core/23-commitment/types"
 	ibctmtypes "github.com/cosmos/ibc-go/v10/modules/light-clients/07-tendermint"
-
-	paramtypes "github.com/cosmos/cosmos-sdk/x/params/types"
 )
 
 const (
@@ -31,22 +29,6 @@ const (
 	// be passed on from the staking module to the consensus engine on the provider.
 	DefaultMaxProviderConsensusValidators = 180
 )
-
-// Reflection based keys for params subspace
-// Legacy: usage of x/params for parameters is deprecated.
-// Use x/vaas/provider/keeper/params instead
-// [DEPRECATED]
-var (
-	KeyTemplateClient                 = []byte("TemplateClient")
-	KeyTrustingPeriodFraction         = []byte("TrustingPeriodFraction")
-	KeyBlocksPerEpoch                 = []byte("BlocksPerEpoch")
-	KeyMaxProviderConsensusValidators = []byte("MaxProviderConsensusValidators")
-)
-
-// ParamKeyTable returns a key table with the necessary registered provider params
-func ParamKeyTable() paramtypes.KeyTable {
-	return paramtypes.NewKeyTable().RegisterParamSet(&Params{})
-}
 
 // NewParams creates new provider parameters with provided arguments
 func NewParams(
@@ -113,17 +95,6 @@ func (p Params) Validate() error {
 		return fmt.Errorf("max provider consensus validators is invalid: %s", err)
 	}
 	return nil
-}
-
-// ParamSetPairs implements params.ParamSet
-func (p *Params) ParamSetPairs() paramtypes.ParamSetPairs {
-	return paramtypes.ParamSetPairs{
-		paramtypes.NewParamSetPair(KeyTemplateClient, p.TemplateClient, ValidateTemplateClient),
-		paramtypes.NewParamSetPair(KeyTrustingPeriodFraction, p.TrustingPeriodFraction, vaastypes.ValidateStringFraction),
-		paramtypes.NewParamSetPair(vaastypes.KeyVAASTimeoutPeriod, p.VaasTimeoutPeriod, vaastypes.ValidateDuration),
-		paramtypes.NewParamSetPair(KeyBlocksPerEpoch, p.BlocksPerEpoch, vaastypes.ValidatePositiveInt64),
-		paramtypes.NewParamSetPair(KeyMaxProviderConsensusValidators, p.MaxProviderConsensusValidators, vaastypes.ValidatePositiveInt64),
-	}
 }
 
 func ValidateTemplateClient(i interface{}) error {
