@@ -22,7 +22,6 @@ import (
 	sdk "github.com/cosmos/cosmos-sdk/types"
 	"github.com/cosmos/cosmos-sdk/types/module"
 	simtypes "github.com/cosmos/cosmos-sdk/types/simulation"
-	paramtypes "github.com/cosmos/cosmos-sdk/x/params/types"
 )
 
 var (
@@ -101,15 +100,13 @@ func (AppModuleBasic) GetQueryCmd() *cobra.Command {
 // AppModule represents the AppModule for this module
 type AppModule struct {
 	AppModuleBasic
-	keeper     keeper.Keeper
-	paramSpace paramtypes.Subspace
+	keeper keeper.Keeper
 }
 
 // NewAppModule creates a new consumer module
-func NewAppModule(k keeper.Keeper, paramSpace paramtypes.Subspace) AppModule {
+func NewAppModule(k keeper.Keeper) AppModule {
 	return AppModule{
-		keeper:     k,
-		paramSpace: paramSpace,
+		keeper: k,
 	}
 }
 
