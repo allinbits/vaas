@@ -38,6 +38,27 @@ func (k Keeper) OnAcknowledgementPacket(ctx sdk.Context, packet channeltypes.Pac
 	return nil
 }
 
+// OnAcknowledgementPacketV2 handles acknowledgments for sent VSC packets using IBC v2 client-based routing.
+//
+// IBC v2 Note: In IBC v2, the source client ID is used to identify the consumer chain
+// instead of the source channel ID. This handler should be used when packets are
+// sent via SendVSCPacketsToChainV2.
+func (k Keeper) OnAcknowledgementPacketV2(ctx sdk.Context, sourceClientID string, ackError string) error {
+	if ackError != "" {
+		k.Logger(ctx).Error(
+			"recv ErrorAcknowledgement (v2)",
+			"clientID", sourceClientID,
+			"error", ackError,
+		)
+		// IBC v2: Use client-based lookup
+		if consumerId, found := k.GetClientIdToConsumerId(ctx, sourceClientID); found {
+			return k.StopAndPrepareForConsumerRemoval(ctx, consumerId)
+		}
+		return errorsmod.Wrapf(providertypes.ErrInvalidConsumerClient, "recv ErrorAcknowledgement on unknown client %s", sourceClientID)
+	}
+	return nil
+}
+
 // OnTimeoutPacket aborts the transaction if no chain exists for the destination channel,
 // otherwise it stops the chain.
 // IBC v2 Note: Timeout triggers immediate consumer removal, consistent with the spec.
@@ -53,6 +74,26 @@ func (k Keeper) OnTimeoutPacket(ctx sdk.Context, packet channeltypes.Packet) err
 		)
 	}
 	k.Logger(ctx).Info("packet timeout, deleting the consumer:", "consumerId", consumerId)
+	return k.StopAndPrepareForConsumerRemoval(ctx, consumerId)
+}
+
+// OnTimeoutPacketV2 handles packet timeouts using IBC v2 client-based routing.
+// A timeout triggers immediate consumer removal as per the IBC v2 spec.
+//
+// IBC v2 Note: In IBC v2, the source client ID is used to identify the consumer chain.
+// Timeouts immediately trigger consumer removal since the consumer chain is considered
+// unresponsive.
+func (k Keeper) OnTimeoutPacketV2(ctx sdk.Context, sourceClientID string) error {
+	// IBC v2: Use client-based lookup
+	consumerId, found := k.GetClientIdToConsumerId(ctx, sourceClientID)
+	if !found {
+		k.Logger(ctx).Error("packet timeout (v2), unknown client:", "clientID", sourceClientID)
+		return errorsmod.Wrapf(
+			providertypes.ErrInvalidConsumerClient,
+			"timeout on unknown client %s", sourceClientID,
+		)
+	}
+	k.Logger(ctx).Info("packet timeout (v2), deleting the consumer:", "consumerId", consumerId, "clientId", sourceClientID)
 	return k.StopAndPrepareForConsumerRemoval(ctx, consumerId)
 }
 
