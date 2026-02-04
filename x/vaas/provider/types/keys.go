@@ -89,12 +89,6 @@ const (
 	ClientIdToConsumerIdKeyName = "ClientIdToConsumerIdKey"
 
 	PrioritylistKeyName = "PrioritylistKey"
-
-	ConsumerIdToInfractionParametersKeyName = "ConsumerIdToInfractionParametersKey"
-
-	ConsumerIdToQueuedInfractionParametersKeyName = "ConsumerIdToQueuedInfractionParametersKeyName"
-
-	InfractionScheduledTimeToConsumerIdsKeyName = "InfractionScheduledTimeToConsumerIdsKeyName"
 )
 
 // getKeyPrefixes returns a constant map of all the byte prefixes for existing keys
@@ -196,15 +190,6 @@ func getKeyPrefixes() map[string]byte {
 		// PrioritylistKey is the key for storing the mapping from a consumer chain to the set of validators that are
 		// prioritylisted.
 		PrioritylistKeyName: 26,
-
-		// ConsumerIdToInfractionParametersKeyName is the key for storing slashing and jailing infraction parameters for a specific consumer chain
-		ConsumerIdToInfractionParametersKeyName: 27,
-
-		// ConsumerIdToQueuedInfractionParametersKeyName is the key for storing queued infraction parameters that will be used to update consumer infraction parameters
-		ConsumerIdToQueuedInfractionParametersKeyName: 28,
-
-		// InfractionScheduledTimeToConsumerIdsKeyName is the key for storing time when the infraction parameters will be updated for the specific consumer
-		InfractionScheduledTimeToConsumerIdsKeyName: 29,
 
 		// NOTE: DO NOT ADD NEW BYTE PREFIXES HERE WITHOUT ADDING THEM TO TestPreserveBytePrefix() IN keys_test.go
 	}
@@ -508,41 +493,6 @@ func ClientIdToConsumerIdKey(clientId string) []byte {
 		sdk.Uint64ToBigEndian(uint64(clientIdLength)),
 		// Append the client id
 		[]byte(clientId),
-	)
-}
-
-// ConsumerIdToInfractionParametersKeyPrefix returns the key prefix for storing consumer infraction parameters
-func ConsumerIdToInfractionParametersKeyPrefix() byte {
-	return mustGetKeyPrefix(ConsumerIdToInfractionParametersKeyName)
-}
-
-// ConsumerIdToInfractionParametersKey returns the key used to store the infraction parameters that corresponds to this consumer id
-func ConsumerIdToInfractionParametersKey(consumerId string) []byte {
-	return StringIdWithLenKey(ConsumerIdToInfractionParametersKeyPrefix(), consumerId)
-}
-
-// ConsumerIdToQueuedInfractionParametersKeyPrefix returns the key prefix for storing queued consumer infraction parameters that will be applied after due time
-func ConsumerIdToQueuedInfractionParametersKeyPrefix() byte {
-	return mustGetKeyPrefix(ConsumerIdToQueuedInfractionParametersKeyName)
-}
-
-// ConsumerIdToQueuedInfractionParametersKey returns the key used to store the queued consumer infraction parameters that will be applied after due time
-func ConsumerIdToQueuedInfractionParametersKey(consumerId string) []byte {
-	return StringIdWithLenKey(ConsumerIdToQueuedInfractionParametersKeyPrefix(), consumerId)
-}
-
-// InfractionScheduledTimeToConsumerIdsKeyPrefix returns the key prefix for storing pending consumers ids that needs to update their infraction parameters at the specific time
-func InfractionScheduledTimeToConsumerIdsKeyPrefix() byte {
-	return mustGetKeyPrefix(InfractionScheduledTimeToConsumerIdsKeyName)
-}
-
-// InfractionScheduledTimeToConsumerIdsKey returns the key prefix for storing pending consumers ids that needs to update their infraction parameters at the specific time
-func InfractionScheduledTimeToConsumerIdsKey(updateTime time.Time) []byte {
-	return vaastypes.AppendMany(
-		// append the prefix
-		[]byte{InfractionScheduledTimeToConsumerIdsKeyPrefix()},
-		// append the time
-		sdk.FormatTimeBytes(updateTime),
 	)
 }
 

@@ -83,12 +83,6 @@ func TestPreserveBytePrefix(t *testing.T) {
 	i++
 	require.Equal(t, byte(26), providertypes.PrioritylistKeyPrefix())
 	i++
-	require.Equal(t, byte(27), providertypes.ConsumerIdToInfractionParametersKeyPrefix())
-	i++
-	require.Equal(t, byte(28), providertypes.ConsumerIdToQueuedInfractionParametersKeyPrefix())
-	i++
-	require.Equal(t, byte(29), providertypes.InfractionScheduledTimeToConsumerIdsKeyPrefix())
-	i++
 
 	prefixes := providertypes.GetAllKeyPrefixes()
 	require.Equal(t, len(prefixes), i)
@@ -136,9 +130,6 @@ func getAllFullyDefinedKeys() [][]byte {
 		providertypes.RemovalTimeToConsumerIdsKey(time.Time{}),
 		providertypes.ClientIdToConsumerIdKey("clientId"),
 		providertypes.PrioritylistKey("13", providertypes.NewProviderConsAddress([]byte{0x05})),
-		providertypes.ConsumerIdToInfractionParametersKey("13"),
-		providertypes.ConsumerIdToQueuedInfractionParametersKey("13"),
-		providertypes.InfractionScheduledTimeToConsumerIdsKey(time.Time{}),
 	}
 }
 
