@@ -53,6 +53,11 @@ type Keeper struct {
 
 	validatorAddressCodec addresscodec.Codec
 	consensusAddressCodec addresscodec.Codec
+
+	// ibcPacketHandler is used for IBC v2 (Eureka) client-based packet sending.
+	// This field is optional and can be nil if only v1 routing is used.
+	// Set via SetIBCPacketHandler after keeper creation.
+	ibcPacketHandler vaastypes.IBCPacketHandler
 }
 
 // NewKeeper creates a new provider Keeper instance
@@ -105,12 +110,22 @@ func (k Keeper) ConsensusAddressCodec() addresscodec.Codec {
 	return k.consensusAddressCodec
 }
 
+// SetIBCPacketHandler sets the IBC v2 packet handler for client-based routing.
+// This method should be called during app wiring if IBC v2 is enabled.
+//
+// IBC v2 Note: The IBCPacketHandler is optional. If not set, only channel-based
+// (v1) routing will be used for packet sending.
+func (k *Keeper) SetIBCPacketHandler(handler vaastypes.IBCPacketHandler) {
+	k.ibcPacketHandler = handler
+}
+
 // Validates that the provider keeper is initialized with non-zero and
 // non-nil values for all its fields. Otherwise this method will panic.
 func (k Keeper) mustValidateFields() {
 	// Ensures no fields are missed in this validation
-	if reflect.ValueOf(k).NumField() != 15 {
-		panic(fmt.Sprintf("number of fields in provider keeper is not 15 - have %d", reflect.ValueOf(k).NumField()))
+	// Note: ibcPacketHandler (field 16) is optional and not validated
+	if reflect.ValueOf(k).NumField() != 16 {
+		panic(fmt.Sprintf("number of fields in provider keeper is not 16 - have %d", reflect.ValueOf(k).NumField()))
 	}
 
 	if k.validatorAddressCodec == nil || k.consensusAddressCodec == nil {

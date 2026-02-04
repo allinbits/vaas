@@ -144,7 +144,11 @@ func (k Keeper) BlocksUntilNextEpoch(ctx sdk.Context) int64 {
 // SendVSCPackets iterates over all consumers chains with created IBC clients
 // and sends pending VSC packets to the chains with established CCV channels.
 // If the CCV channel is not established for a consumer chain,
-// the updates will remain queued until the channel is established
+// the updates will remain queued until the channel is established.
+//
+// IBC v2 Note: This function supports both channel-based (v1) and client-based (v2)
+// routing. It first tries to send via channel (v1), and if no channel exists but
+// a client is available, it will use client-based routing (v2).
 //
 // TODO (mpoke): iterate only over consumers with established channel -- GetAllChannelToConsumers
 func (k Keeper) SendVSCPackets(ctx sdk.Context) error {
@@ -154,17 +158,28 @@ func (k Keeper) SendVSCPackets(ctx sdk.Context) error {
 			continue
 		}
 
-		// check if CCV channel is established and send
+		// IBC v1: Try channel-based routing first (for backward compatibility)
 		if channelID, found := k.GetConsumerIdToChannelId(ctx, consumerId); found {
 			if err := k.SendVSCPacketsToChain(ctx, consumerId, channelID); err != nil {
 				return fmt.Errorf("sending VSCPacket to consumer, consumerId(%s): %w", consumerId, err)
+			}
+			continue
+		}
+
+		// IBC v2: Use client-based routing if channel doesn't exist
+		if clientID, found := k.GetConsumerClientId(ctx, consumerId); found {
+			if err := k.SendVSCPacketsToChainV2(ctx, consumerId, clientID); err != nil {
+				return fmt.Errorf("sending VSCPacket (v2) to consumer, consumerId(%s): %w", consumerId, err)
 			}
 		}
 	}
 	return nil
 }
 
-// SendVSCPacketsToChain sends all queued VSC packets to the specified chain
+// SendVSCPacketsToChain sends all queued VSC packets to the specified chain using IBC v1 channels.
+//
+// Deprecated: This function uses IBC v1 channel-based routing. Use SendVSCPacketsToChainV2
+// for IBC v2 client-based routing.
 func (k Keeper) SendVSCPacketsToChain(ctx sdk.Context, consumerId, channelId string) error {
 	pendingPackets := k.GetPendingVSCPackets(ctx, consumerId)
 	for _, data := range pendingPackets {
@@ -198,6 +213,68 @@ func (k Keeper) SendVSCPacketsToChain(ctx sdk.Context, consumerId, channelId str
 			}
 			return nil
 		}
+	}
+	k.DeletePendingVSCPackets(ctx, consumerId)
+
+	return nil
+}
+
+// SendVSCPacketsToChainV2 sends all queued VSC packets to the specified chain using IBC v2 client-based routing.
+//
+// IBC v2 Note: This function uses client IDs for routing instead of channel IDs.
+// Packets are sent directly to the consumer chain via the client, with the
+// consumer application identifier (vaas/consumer) as the destination.
+func (k Keeper) SendVSCPacketsToChainV2(ctx sdk.Context, consumerId, clientId string) error {
+	// Check if IBCPacketHandler is available
+	if k.ibcPacketHandler == nil {
+		k.Logger(ctx).Debug("IBC v2 packet handler not configured, skipping v2 send",
+			"consumerId", consumerId,
+		)
+		return nil
+	}
+
+	pendingPackets := k.GetPendingVSCPackets(ctx, consumerId)
+	for _, data := range pendingPackets {
+		// send packet over IBC v2
+		sequence, err := vaastypes.SendIBCPacketV2(
+			ctx,
+			k.ibcPacketHandler,
+			clientId,               // source client id (identifies destination chain)
+			vaastypes.ConsumerAppID, // destination application identifier
+			data.GetBytes(),
+			k.GetVAASTimeoutPeriod(ctx),
+		)
+		if err != nil {
+			if errors.Is(err, clienttypes.ErrClientNotActive) {
+				// IBC client is expired!
+				k.Logger(ctx).Info("IBC client is expired, cannot send VSC (v2), leaving packet data stored:",
+					"consumerId", consumerId,
+					"clientId", clientId,
+					"vscid", data.ValsetUpdateId,
+				)
+				return nil
+			}
+			// Not able to send packet over IBC!
+			k.Logger(ctx).Error("cannot send VSC (v2), removing consumer:",
+				"consumerId", consumerId,
+				"clientId", clientId,
+				"vscid", data.ValsetUpdateId,
+				"err", err.Error(),
+			)
+
+			err := k.StopAndPrepareForConsumerRemoval(ctx, consumerId)
+			if err != nil {
+				k.Logger(ctx).Info("consumer chain failed to stop:", "consumerId", consumerId, "error", err.Error())
+			}
+			return nil
+		}
+
+		k.Logger(ctx).Info("VSCPacket sent via IBC v2:",
+			"consumerId", consumerId,
+			"clientId", clientId,
+			"vscid", data.ValsetUpdateId,
+			"sequence", sequence,
+		)
 	}
 	k.DeletePendingVSCPackets(ctx, consumerId)
 
