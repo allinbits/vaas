@@ -22,7 +22,7 @@ func (k Keeper) Hooks() Hooks {
 
 func (k Keeper) AfterValidatorBonded(ctx context.Context, consAddr sdk.ConsAddress, valAddr sdk.ValAddress) error {
 	if k.hooks != nil {
-		err := k.hooks.AfterValidatorBonded(ctx, consAddr, nil)
+		err := k.hooks.AfterValidatorBonded(ctx, consAddr, valAddr)
 		return err
 	}
 	return nil

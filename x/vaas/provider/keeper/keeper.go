@@ -25,7 +25,6 @@ import (
 	"github.com/cosmos/cosmos-sdk/codec"
 	sdk "github.com/cosmos/cosmos-sdk/types"
 	govkeeper "github.com/cosmos/cosmos-sdk/x/gov/keeper"
-	paramtypes "github.com/cosmos/cosmos-sdk/x/params/types"
 	stakingtypes "github.com/cosmos/cosmos-sdk/x/staking/types"
 )
 
@@ -54,7 +53,7 @@ type Keeper struct {
 
 // NewKeeper creates a new provider Keeper instance
 func NewKeeper(
-	cdc codec.BinaryCodec, key storetypes.StoreKey, paramSpace paramtypes.Subspace,
+	cdc codec.BinaryCodec, key storetypes.StoreKey,
 	channelKeeper vaastypes.ChannelKeeper,
 	connectionKeeper vaastypes.ConnectionKeeper, clientKeeper vaastypes.ClientKeeper,
 	stakingKeeper vaastypes.StakingKeeper, slashingKeeper vaastypes.SlashingKeeper,
