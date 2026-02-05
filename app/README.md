@@ -21,6 +21,8 @@ curl -L https://github.com/informalsystems/hermes/releases/download/v1.13.3/herm
 hermes version
 ```
 
+Make sure that `~/.local/bin` is in your $PATH, or use `/usr/local/bin` instead if it applies to your system.
+
 ## Quick Start
 
 A single command starts the entire localnet (provider, consumer, and relayer):
