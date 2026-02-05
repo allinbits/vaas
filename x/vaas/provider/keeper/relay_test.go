@@ -7,8 +7,11 @@ import (
 	"github.com/golang/mock/gomock"
 	"github.com/stretchr/testify/require"
 
+	abci "github.com/cometbft/cometbft/abci/types"
+
 	testkeeper "github.com/allinbits/vaas/testutil/keeper"
 	providertypes "github.com/allinbits/vaas/x/vaas/provider/types"
+	vaastypes "github.com/allinbits/vaas/x/vaas/types"
 )
 
 // TestOnAcknowledgementPacketV2 tests the IBC v2 acknowledgement handler.
@@ -132,4 +135,90 @@ func TestClientIdToConsumerIdMapping(t *testing.T) {
 	require.False(t, found)
 	_, found = providerKeeper.GetClientIdToConsumerId(ctx, clientId)
 	require.False(t, found)
+}
+
+// TestSendVSCPacketsToChainV2NoHandler tests that SendVSCPacketsToChainV2 gracefully
+// handles the case when no IBC packet handler is configured.
+func TestSendVSCPacketsToChainV2NoHandler(t *testing.T) {
+	providerKeeper, ctx, ctrl, _ := testkeeper.GetProviderKeeperAndCtx(t, testkeeper.NewInMemKeeperParams(t))
+	defer ctrl.Finish()
+
+	consumerId := "0"
+	clientId := "07-tendermint-0"
+
+	// Setup consumer with pending packets
+	providerKeeper.SetConsumerClientId(ctx, consumerId, clientId)
+	providerKeeper.SetConsumerPhase(ctx, consumerId, providertypes.CONSUMER_PHASE_LAUNCHED)
+
+	// Add a pending VSC packet
+	providerKeeper.AppendPendingVSCPackets(ctx, consumerId, vaastypes.ValidatorSetChangePacketData{
+		ValidatorUpdates: []abci.ValidatorUpdate{},
+		ValsetUpdateId:   1,
+	})
+
+	// Without setting IBCPacketHandler, SendVSCPacketsToChainV2 should return nil
+	// and not send any packets (graceful no-op)
+	err := providerKeeper.SendVSCPacketsToChainV2(ctx, consumerId, clientId)
+	require.NoError(t, err)
+
+	// Pending packets should still be there since no handler was configured
+	pending := providerKeeper.GetPendingVSCPackets(ctx, consumerId)
+	require.Len(t, pending, 1)
+}
+
+// TestSendVSCPacketsToChainV2WithHandler tests SendVSCPacketsToChainV2 with a mock handler.
+func TestSendVSCPacketsToChainV2WithHandler(t *testing.T) {
+	providerKeeper, ctx, ctrl, _ := testkeeper.GetProviderKeeperAndCtx(t, testkeeper.NewInMemKeeperParams(t))
+	defer ctrl.Finish()
+
+	consumerId := "0"
+	clientId := "07-tendermint-0"
+
+	// Setup consumer
+	providerKeeper.SetConsumerClientId(ctx, consumerId, clientId)
+	providerKeeper.SetConsumerPhase(ctx, consumerId, providertypes.CONSUMER_PHASE_LAUNCHED)
+	providerKeeper.SetConsumerChainId(ctx, consumerId, "consumer-chain")
+
+	// Set VAAS timeout period in params
+	params := providertypes.DefaultParams()
+	providerKeeper.SetParams(ctx, params)
+
+	// Add pending VSC packets
+	providerKeeper.AppendPendingVSCPackets(ctx, consumerId, vaastypes.ValidatorSetChangePacketData{
+		ValidatorUpdates: []abci.ValidatorUpdate{},
+		ValsetUpdateId:   1,
+	})
+	providerKeeper.AppendPendingVSCPackets(ctx, consumerId, vaastypes.ValidatorSetChangePacketData{
+		ValidatorUpdates: []abci.ValidatorUpdate{},
+		ValsetUpdateId:   2,
+	})
+
+	// Create and set a mock handler
+	mockHandler := testkeeper.NewMockIBCPacketHandler(ctrl)
+	providerKeeper.SetIBCPacketHandler(mockHandler)
+
+	// Expect SendPacket to be called twice (once for each pending packet)
+	mockHandler.EXPECT().SendPacket(
+		gomock.Any(), // ctx
+		clientId,     // sourceClient
+		vaastypes.ConsumerAppID, // destApp
+		gomock.Any(), // timeoutTimestamp
+		gomock.Any(), // data
+	).Return(uint64(1), nil).Times(1)
+
+	mockHandler.EXPECT().SendPacket(
+		gomock.Any(),
+		clientId,
+		vaastypes.ConsumerAppID,
+		gomock.Any(),
+		gomock.Any(),
+	).Return(uint64(2), nil).Times(1)
+
+	// Send packets
+	err := providerKeeper.SendVSCPacketsToChainV2(ctx, consumerId, clientId)
+	require.NoError(t, err)
+
+	// Pending packets should be deleted after successful send
+	pending := providerKeeper.GetPendingVSCPackets(ctx, consumerId)
+	require.Len(t, pending, 0)
 }
