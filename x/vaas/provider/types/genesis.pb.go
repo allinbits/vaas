@@ -126,12 +126,17 @@ func (m *GenesisState) GetConsumerAddrsToPruneV2() []ConsumerAddrsToPruneV2 {
 // The provider VAAS module's knowledge of consumer state.
 //
 // Note this type is only used internally to the provider VAAS module.
+// IBC v2 Note: In IBC v2 (Eureka), channel_id will be removed and only
+// client_id will be used for routing. The channel_id field is kept for
+// backward compatibility during the migration period.
 type ConsumerState struct {
 	// ChainID defines the chain ID for the consumer chain
 	ChainId string `protobuf:"bytes,1,opt,name=chain_id,json=chainId,proto3" json:"chain_id,omitempty"`
 	// ChannelID defines the IBC channel ID for the consumer chain
+	// Deprecated: In IBC v2 (Eureka), channels are not used. Use client_id instead.
 	ChannelId string `protobuf:"bytes,2,opt,name=channel_id,json=channelId,proto3" json:"channel_id,omitempty"`
 	// ClientID defines the IBC client ID for the consumer chain
+	// IBC v2 Note: This is the primary identifier for routing in IBC v2.
 	ClientId string `protobuf:"bytes,3,opt,name=client_id,json=clientId,proto3" json:"client_id,omitempty"`
 	// InitalHeight defines the initial block height for the consumer chain
 	InitialHeight uint64 `protobuf:"varint,4,opt,name=initial_height,json=initialHeight,proto3" json:"initial_height,omitempty"`

@@ -11,15 +11,13 @@ import "tendermint/abci/types.proto";
 
 //
 // Note any type defined in this file is used by both the consumer and provider
-// AND SENT OVER THE WIRE via a VAAS channel. Ideally these schemas should never
+// AND SENT OVER THE WIRE via IBC v2. Ideally these schemas should never
 // change, or at least be backwards compatible if ever changed.
 //
 
 // This packet is sent from provider chain to consumer chain if the validator
 // set for consumer chain changes (due to new bonding/unbonding messages or
-// slashing events) A VSCMatured packet from consumer chain will be sent
-// asynchronously once unbonding period is over, and this will function as
-// `UnbondingOver` message for this packet.
+// slashing events).
 message ValidatorSetChangePacketData {
   repeated .tendermint.abci.ValidatorUpdate validator_updates = 1 [
     (gogoproto.nullable) = false,
@@ -27,7 +25,3 @@ message ValidatorSetChangePacketData {
   ];
   uint64 valset_update_id = 2;
 }
-
-// Note this type is used during IBC handshake methods for both the consumer and
-// provider
-message HandshakeMetadata { string version = 1; }

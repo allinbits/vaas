@@ -61,7 +61,10 @@ func TMCryptoPublicKeyToConsAddr(k tmprotocrypto.PublicKey) (sdk.ConsAddress, er
 }
 
 // SendIBCPacket sends an IBC packet with packetData
-// over the source channelID and portID
+// over the source channelID and portID.
+//
+// Deprecated: This is the IBC v1 (channel-based) packet sending function.
+// Use SendIBCPacketV2 for IBC v2 (client-based) routing.
 func SendIBCPacket(
 	ctx sdk.Context,
 	channelKeeper ChannelKeeper,
@@ -83,6 +86,43 @@ func SendIBCPacket(
 		packetData,
 	)
 	return err
+}
+
+// SendIBCPacketV2 sends an IBC packet using IBC v2 (Eureka) client-based routing.
+// This function routes packets directly via client ID without using channels.
+//
+// Parameters:
+//   - ctx: SDK context
+//   - packetHandler: IBC v2 packet handler for sending packets
+//   - sourceClientID: the client ID on the source chain that identifies the destination chain
+//   - destAppID: the application identifier on the destination chain (e.g., "vaas/consumer")
+//   - packetData: the serialized packet data to send
+//   - timeoutPeriod: duration after which the packet times out
+//
+// IBC v2 Note: In IBC v2, packets are routed using client IDs and application IDs
+// instead of channel IDs and port IDs. This provides a simpler routing model.
+func SendIBCPacketV2(
+	ctx sdk.Context,
+	packetHandler IBCPacketHandler,
+	sourceClientID string,
+	destAppID string,
+	packetData []byte,
+	timeoutPeriod time.Duration,
+) (uint64, error) {
+	timeoutTimestamp := uint64(ctx.BlockTime().Add(timeoutPeriod).UnixNano())
+
+	sequence, err := packetHandler.SendPacket(
+		ctx,
+		sourceClientID,
+		destAppID,
+		timeoutTimestamp,
+		packetData,
+	)
+	if err != nil {
+		return 0, errorsmod.Wrap(err, "failed to send IBC v2 packet")
+	}
+
+	return sequence, nil
 }
 
 func NewErrorAcknowledgementWithLog(ctx sdk.Context, err error) channeltypes.Acknowledgement {

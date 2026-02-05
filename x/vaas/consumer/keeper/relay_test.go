@@ -140,6 +140,132 @@ func TestOnRecvVSCPacket(t *testing.T) {
 	}
 }
 
+// TestOnRecvVSCPacketV2 tests the behavior of OnRecvVSCPacketV2 (IBC v2 client-based routing)
+// over various packet scenarios including out-of-order packet handling.
+func TestOnRecvVSCPacketV2(t *testing.T) {
+	providerClientID := "07-tendermint-0"
+
+	pk1, err := cryptocodec.ToCmtProtoPublicKey(ed25519.GenPrivKey().PubKey())
+	require.NoError(t, err)
+	pk2, err := cryptocodec.ToCmtProtoPublicKey(ed25519.GenPrivKey().PubKey())
+	require.NoError(t, err)
+	pk3, err := cryptocodec.ToCmtProtoPublicKey(ed25519.GenPrivKey().PubKey())
+	require.NoError(t, err)
+
+	changes1 := []abci.ValidatorUpdate{
+		{PubKey: pk1, Power: 30},
+		{PubKey: pk2, Power: 20},
+	}
+
+	changes2 := []abci.ValidatorUpdate{
+		{PubKey: pk2, Power: 40},
+		{PubKey: pk3, Power: 10},
+	}
+
+	consumerKeeper, ctx, ctrl, _ := testkeeper.GetConsumerKeeperAndCtx(t, testkeeper.NewInMemKeeperParams(t))
+	defer ctrl.Finish()
+
+	// Test 1: First packet establishes provider client
+	pd1 := types.NewValidatorSetChangePacketData(changes1, 1)
+	err = consumerKeeper.OnRecvVSCPacketV2(ctx, providerClientID, pd1)
+	require.NoError(t, err, "first packet should succeed")
+
+	// Verify provider client was set
+	clientID, found := consumerKeeper.GetProviderClientID(ctx)
+	require.True(t, found)
+	require.Equal(t, providerClientID, clientID)
+
+	// Verify pending changes
+	pendingChanges, ok := consumerKeeper.GetPendingChanges(ctx)
+	require.True(t, ok)
+	require.Equal(t, 2, len(pendingChanges.ValidatorUpdates))
+
+	// Verify highest valset update ID
+	highestID := consumerKeeper.GetHighestValsetUpdateID(ctx)
+	require.Equal(t, uint64(1), highestID)
+
+	// Test 2: Second packet with higher valset ID
+	pd2 := types.NewValidatorSetChangePacketData(changes2, 2)
+	err = consumerKeeper.OnRecvVSCPacketV2(ctx, providerClientID, pd2)
+	require.NoError(t, err, "second packet should succeed")
+
+	highestID = consumerKeeper.GetHighestValsetUpdateID(ctx)
+	require.Equal(t, uint64(2), highestID)
+
+	// Test 3: Packet from different client should fail
+	differentClientID := "07-tendermint-999"
+	pd3 := types.NewValidatorSetChangePacketData(changes1, 3)
+	err = consumerKeeper.OnRecvVSCPacketV2(ctx, differentClientID, pd3)
+	require.Error(t, err, "packet from different client should fail")
+
+	// Highest ID should not have changed
+	highestID = consumerKeeper.GetHighestValsetUpdateID(ctx)
+	require.Equal(t, uint64(2), highestID)
+}
+
+// TestOnRecvVSCPacketV2OutOfOrder tests out-of-order packet handling in IBC v2.
+// Packets with valset_update_id <= highest processed ID should be acknowledged but ignored.
+func TestOnRecvVSCPacketV2OutOfOrder(t *testing.T) {
+	providerClientID := "07-tendermint-0"
+
+	pk1, err := cryptocodec.ToCmtProtoPublicKey(ed25519.GenPrivKey().PubKey())
+	require.NoError(t, err)
+	pk2, err := cryptocodec.ToCmtProtoPublicKey(ed25519.GenPrivKey().PubKey())
+	require.NoError(t, err)
+
+	consumerKeeper, ctx, ctrl, _ := testkeeper.GetConsumerKeeperAndCtx(t, testkeeper.NewInMemKeeperParams(t))
+	defer ctrl.Finish()
+
+	// Send packet with valset ID 5 first
+	changes5 := []abci.ValidatorUpdate{{PubKey: pk1, Power: 50}}
+	pd5 := types.NewValidatorSetChangePacketData(changes5, 5)
+	err = consumerKeeper.OnRecvVSCPacketV2(ctx, providerClientID, pd5)
+	require.NoError(t, err)
+
+	highestID := consumerKeeper.GetHighestValsetUpdateID(ctx)
+	require.Equal(t, uint64(5), highestID)
+
+	pendingChanges, _ := consumerKeeper.GetPendingChanges(ctx)
+	require.Equal(t, int64(50), pendingChanges.ValidatorUpdates[0].Power)
+
+	// Send packet with valset ID 3 (out of order - should be ignored)
+	changes3 := []abci.ValidatorUpdate{{PubKey: pk2, Power: 30}}
+	pd3 := types.NewValidatorSetChangePacketData(changes3, 3)
+	err = consumerKeeper.OnRecvVSCPacketV2(ctx, providerClientID, pd3)
+	require.NoError(t, err, "out-of-order packet should be acknowledged without error")
+
+	// Highest ID should still be 5
+	highestID = consumerKeeper.GetHighestValsetUpdateID(ctx)
+	require.Equal(t, uint64(5), highestID)
+
+	// Pending changes should still only contain pk1 with power 50
+	pendingChanges, _ = consumerKeeper.GetPendingChanges(ctx)
+	require.Equal(t, 1, len(pendingChanges.ValidatorUpdates))
+	require.Equal(t, int64(50), pendingChanges.ValidatorUpdates[0].Power)
+
+	// Send packet with valset ID 5 again (duplicate - should be ignored)
+	pd5Dup := types.NewValidatorSetChangePacketData(changes3, 5)
+	err = consumerKeeper.OnRecvVSCPacketV2(ctx, providerClientID, pd5Dup)
+	require.NoError(t, err, "duplicate packet should be acknowledged without error")
+
+	// Highest ID should still be 5
+	highestID = consumerKeeper.GetHighestValsetUpdateID(ctx)
+	require.Equal(t, uint64(5), highestID)
+
+	// Send packet with valset ID 6 (should be processed)
+	changes6 := []abci.ValidatorUpdate{{PubKey: pk2, Power: 60}}
+	pd6 := types.NewValidatorSetChangePacketData(changes6, 6)
+	err = consumerKeeper.OnRecvVSCPacketV2(ctx, providerClientID, pd6)
+	require.NoError(t, err)
+
+	highestID = consumerKeeper.GetHighestValsetUpdateID(ctx)
+	require.Equal(t, uint64(6), highestID)
+
+	// Pending changes should now include pk2
+	pendingChanges, _ = consumerKeeper.GetPendingChanges(ctx)
+	require.Equal(t, 2, len(pendingChanges.ValidatorUpdates))
+}
+
 // TestOnRecvVSCPacketDuplicateUpdates tests that the consumer can correctly handle a single VSC packet
 // with duplicate valUpdates for the same pub key.
 //

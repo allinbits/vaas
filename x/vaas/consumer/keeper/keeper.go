@@ -31,9 +31,13 @@ type Keeper struct {
 	// should be the x/gov module account.
 	authority string
 
-	storeKey         storetypes.StoreKey
-	cdc              codec.BinaryCodec
-	channelKeeper    vaastypes.ChannelKeeper
+	storeKey storetypes.StoreKey
+	cdc      codec.BinaryCodec
+	// channelKeeper is used for IBC v1 channel-based communication.
+	// Deprecated: Will be removed in IBC v2 where channels are not used.
+	channelKeeper vaastypes.ChannelKeeper
+	// connectionKeeper is used for IBC v1 connection validation.
+	// Deprecated: Connections are managed internally by IBC core in v2.
 	connectionKeeper vaastypes.ConnectionKeeper
 	clientKeeper     vaastypes.ClientKeeper
 	// standaloneStakingKeeper is the staking keeper that managed proof of stake for a previously standalone chain,
@@ -45,8 +49,10 @@ type Keeper struct {
 	bankKeeper              vaastypes.BankKeeper
 	authKeeper              vaastypes.AccountKeeper
 	ibcTransferKeeper       vaastypes.IBCTransferKeeper
-	ibcCoreKeeper           vaastypes.IBCCoreKeeper
-	feeCollectorName        string
+	// ibcCoreKeeper is used for IBC v1 channel operations.
+	// Deprecated: Channel operations are not used in IBC v2.
+	ibcCoreKeeper    vaastypes.IBCCoreKeeper
+	feeCollectorName string
 
 	validatorAddressCodec addresscodec.Codec
 	consensusAddressCodec addresscodec.Codec
@@ -453,4 +459,24 @@ func (k Keeper) GetLastBondedValidators(ctx sdk.Context) ([]stakingtypes.Validat
 		return nil, err
 	}
 	return vaastypes.GetLastBondedValidatorsUtil(ctx, k.standaloneStakingKeeper, maxVals)
+}
+
+// SetHighestValsetUpdateID sets the highest valset update ID that has been processed.
+// Used for IBC v2 out-of-order packet handling - packets with lower IDs are ignored.
+func (k Keeper) SetHighestValsetUpdateID(ctx sdk.Context, id uint64) {
+	store := ctx.KVStore(k.storeKey)
+	bz := make([]byte, 8)
+	binary.BigEndian.PutUint64(bz, id)
+	store.Set(types.HighestValsetUpdateIDKey(), bz)
+}
+
+// GetHighestValsetUpdateID gets the highest valset update ID that has been processed.
+// Returns 0 if not set. Used for IBC v2 out-of-order packet handling.
+func (k Keeper) GetHighestValsetUpdateID(ctx sdk.Context) uint64 {
+	store := ctx.KVStore(k.storeKey)
+	bz := store.Get(types.HighestValsetUpdateIDKey())
+	if bz == nil {
+		return 0
+	}
+	return binary.BigEndian.Uint64(bz)
 }

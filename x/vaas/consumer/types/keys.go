@@ -48,6 +48,10 @@ const (
 	PrevStandaloneChainKeyName = "PrevStandaloneChainKey"
 
 	ParametersKeyName = "ParametersKey"
+
+	// HighestValsetUpdateIDKeyName is the key for storing the highest valset update ID
+	// that has been processed. Used for IBC v2 out-of-order packet handling.
+	HighestValsetUpdateIDKeyName = "HighestValsetUpdateIDKey"
 )
 
 // getKeyPrefixes returns a constant map of all the byte prefixes for existing keys
@@ -93,6 +97,10 @@ func getKeyPrefixes() map[string]byte {
 
 		// ParametersKey is the key for storing the consumer's parameters.
 		ParametersKeyName: 22,
+
+		// HighestValsetUpdateIDKey is the key for storing the highest valset update ID
+		// that has been processed. Used for IBC v2 out-of-order packet handling.
+		HighestValsetUpdateIDKeyName: 23,
 
 		// NOTE: DO NOT ADD NEW BYTE PREFIXES HERE WITHOUT ADDING THEM TO TestPreserveBytePrefix() IN keys_test.go
 	}
@@ -225,6 +233,12 @@ func PrevStandaloneChainKey() []byte {
 // ParametersKey returns the key for storing the consumer parameters
 func ParametersKey() []byte {
 	return []byte{mustGetKeyPrefix(ParametersKeyName)}
+}
+
+// HighestValsetUpdateIDKey returns the key for storing the highest valset update ID
+// that has been processed. Used for IBC v2 out-of-order packet handling.
+func HighestValsetUpdateIDKey() []byte {
+	return []byte{mustGetKeyPrefix(HighestValsetUpdateIDKeyName)}
 }
 
 // NOTE: DO	NOT ADD FULLY DEFINED KEY FUNCTIONS WITHOUT ADDING THEM TO getAllFullyDefinedKeys() IN keys_test.go

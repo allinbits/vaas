@@ -7,6 +7,9 @@ import (
 
 	"github.com/allinbits/vaas/x/vaas/provider/types"
 
+	conntypes "github.com/cosmos/ibc-go/v10/modules/core/03-connection/types"
+	ibctmtypes "github.com/cosmos/ibc-go/v10/modules/light-clients/07-tendermint"
+
 	sdk "github.com/cosmos/cosmos-sdk/types"
 )
 
@@ -142,7 +145,93 @@ func (k Keeper) SetConsumerInitializationParameters(ctx sdk.Context, consumerId 
 	if err := types.ValidateInitialHeight(parameters.InitialHeight, chainId); err != nil {
 		return fmt.Errorf("invalid initial height for consumer id (%s): %w", consumerId, err)
 	}
+
+	// Option A: If connection_id is provided, validate the IBC link is fully established
+	// This is for sovereign chains migrating to VAAS validation where an existing IBC
+	// connection must already be functional (connection OPEN, counterparty registered, client active)
+	if parameters.ConnectionId != "" {
+		if err := k.validateExistingIBCLink(ctx, parameters.ConnectionId, chainId); err != nil {
+			return fmt.Errorf("invalid connection_id for consumer id (%s): %w", consumerId, err)
+		}
+	}
+
 	store.Set(types.ConsumerIdToInitializationParametersKey(consumerId), bz)
+	return nil
+}
+
+// validateExistingIBCLink validates that an existing IBC connection is fully functional.
+// This is called when connection_id is provided (Option A: sovereign chain migration).
+// For the IBC link to be valid:
+//  1. Connection must exist and be in OPEN state
+//  2. Counterparty connection must be set (bidirectional link established)
+//  3. Associated client must be a Tendermint client matching the expected chain ID
+//  4. Client must be active (not frozen or expired)
+//
+// In IBC v2 (Eureka) terminology, this validates that RegisterCounterparty has been
+// successfully called on both chains and the link is ready for packet routing.
+func (k Keeper) validateExistingIBCLink(ctx sdk.Context, connectionId, expectedChainId string) error {
+	// 1. Get the connection and verify it exists
+	connectionEnd, found := k.connectionKeeper.GetConnection(ctx, connectionId)
+	if !found {
+		return fmt.Errorf("connection not found: %s", connectionId)
+	}
+
+	// 2. Verify connection is in OPEN state (handshake complete)
+	if connectionEnd.State != conntypes.OPEN {
+		return fmt.Errorf("connection %s is not in OPEN state (current: %s), IBC link not fully established",
+			connectionId, connectionEnd.State.String())
+	}
+
+	// 3. Verify counterparty connection is set (bidirectional link)
+	if connectionEnd.Counterparty.ConnectionId == "" {
+		return fmt.Errorf("connection %s has no counterparty connection ID, IBC link not bidirectional", connectionId)
+	}
+
+	// 4. Get and validate the client
+	clientId := connectionEnd.ClientId
+	clientStateI, found := k.clientKeeper.GetClientState(ctx, clientId)
+	if !found {
+		return fmt.Errorf("client %s associated with connection %s not found", clientId, connectionId)
+	}
+
+	// 5. Verify it's a Tendermint client
+	tmClient, ok := clientStateI.(*ibctmtypes.ClientState)
+	if !ok {
+		return fmt.Errorf("client %s is not a Tendermint client (type: %s)", clientId, clientStateI.ClientType())
+	}
+
+	// 6. Verify the chain ID matches the expected consumer chain
+	if tmClient.ChainId != expectedChainId {
+		return fmt.Errorf("client %s chain ID mismatch: expected %s, got %s",
+			clientId, expectedChainId, tmClient.ChainId)
+	}
+
+	// 7. Verify client is not frozen
+	if tmClient.FrozenHeight.RevisionHeight != 0 {
+		return fmt.Errorf("client %s is frozen at height %s, IBC link not functional",
+			clientId, tmClient.FrozenHeight.String())
+	}
+
+	// 8. Verify client is not expired by checking if the trusting period has elapsed
+	// Get the latest consensus state to check the timestamp
+	consensusState, found := k.clientKeeper.GetLatestClientConsensusState(ctx, clientId)
+	if !found {
+		return fmt.Errorf("no consensus state found for client %s", clientId)
+	}
+
+	// The consensus state timestamp plus trusting period must be after the current time
+	// for the client to still be within its trusting period
+	tmConsensusState, ok := consensusState.(*ibctmtypes.ConsensusState)
+	if !ok {
+		return fmt.Errorf("consensus state for client %s is not a Tendermint consensus state", clientId)
+	}
+
+	expirationTime := tmConsensusState.Timestamp.Add(tmClient.TrustingPeriod)
+	if ctx.BlockTime().After(expirationTime) {
+		return fmt.Errorf("client %s has expired (last update: %s, trusting period: %s, current time: %s), IBC link not functional",
+			clientId, tmConsensusState.Timestamp.String(), tmClient.TrustingPeriod.String(), ctx.BlockTime().String())
+	}
+
 	return nil
 }
 
