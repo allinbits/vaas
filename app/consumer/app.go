@@ -8,7 +8,6 @@ import (
 	"os"
 	"path/filepath"
 
-	"github.com/allinbits/vaas/app/provider/encoding"
 	dbm "github.com/cosmos/cosmos-db"
 
 	"github.com/cosmos/ibc-go/v10/modules/apps/transfer"
@@ -823,13 +822,4 @@ func initParamsKeeper(appCodec codec.BinaryCodec, legacyAmino *codec.LegacyAmino
 	paramsKeeper.Subspace(ibchost.ModuleName)
 	paramsKeeper.Subspace(ibcconsumertypes.ModuleName)
 	return paramsKeeper
-}
-
-func MakeTestEncodingConfig() encoding.EncodingConfig {
-	encodingConfig := encoding.MakeTestEncodingConfig()
-	std.RegisterLegacyAminoCodec(encodingConfig.Amino)
-	std.RegisterInterfaces(encodingConfig.InterfaceRegistry)
-	ModuleBasics.RegisterLegacyAminoCodec(encodingConfig.Amino)
-	ModuleBasics.RegisterInterfaces(encodingConfig.InterfaceRegistry)
-	return encodingConfig
 }
