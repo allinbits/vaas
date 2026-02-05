@@ -11,8 +11,8 @@ import (
 	providerkeeper "github.com/allinbits/vaas/x/vaas/provider/keeper"
 	providertypes "github.com/allinbits/vaas/x/vaas/provider/types"
 	"github.com/allinbits/vaas/x/vaas/types"
-	"github.com/golang/mock/gomock"
 	"github.com/stretchr/testify/require"
+	"go.uber.org/mock/gomock"
 
 	tmproto "github.com/cometbft/cometbft/proto/tendermint/types"
 
@@ -37,7 +37,7 @@ import (
 	govtypes "github.com/cosmos/cosmos-sdk/x/gov/types"
 )
 
-// Parameters needed to instantiate an in-memory keeper
+// InMemKeeperParams parameters needed to instantiate an in-memory keeper
 type InMemKeeperParams struct {
 	Cdc      *codec.ProtoCodec
 	StoreKey *storetypes.KVStoreKey
