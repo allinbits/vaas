@@ -6,12 +6,16 @@ import (
 	vaastypes "github.com/allinbits/vaas/x/vaas/types"
 
 	channeltypesv2 "github.com/cosmos/ibc-go/v10/modules/core/04-channel/v2/types"
+	"github.com/cosmos/ibc-go/v10/modules/core/api"
 
 	errorsmod "cosmossdk.io/errors"
 
 	sdk "github.com/cosmos/cosmos-sdk/types"
 	sdkerrors "github.com/cosmos/cosmos-sdk/types/errors"
 )
+
+// Ensure IBCModuleV2 implements the IBC v2 module interface.
+var _ api.IBCModule = (*IBCModuleV2)(nil)
 
 // IBCModuleV2 implements the IBC v2 (Eureka) module interface for the provider.
 // This module handles packet callbacks using client-based routing instead of
