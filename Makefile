@@ -52,13 +52,12 @@ proto-update-deps:
 
 .PHONY: proto-gen proto-format proto-lint proto-update-deps
 
-provider_home=~/.provider-localnet
-providerd=./build/provider --home $(provider_home)
-
 ###############################################################################
 ###                                  Apps                                   ###
 ###############################################################################
 BUILDDIR ?= $(CURDIR)/build
+provider_home=~/.provider-localnet
+providerd=./build/provider --home $(provider_home)
 
 
 GO_REQUIRED_VERSION = $(shell go list -f {{.GoVersion}} -m)
@@ -66,7 +65,7 @@ BUILD_TARGETS := build-apps install-apps
 build-apps: BUILD_ARGS=-o $(BUILDDIR)/
 
 $(BUILD_TARGETS): go.sum $(BUILDDIR)/
-	cd app; go $(patsubst %-apps,%,$@) -mod=readonly $(BUILD_ARGS) ./...
+	@cd app; go $(patsubst %-apps,%,$@) -mod=readonly $(BUILD_ARGS) ./...
 
 $(BUILDDIR)/:
 	mkdir -p $(BUILDDIR)/
@@ -238,9 +237,84 @@ relayer-setup: relayer-config relayer-keys relayer-channel
 ###                              Full Localnet                              ###
 ###############################################################################
 
-# Clean all localnet data
+# Clean all localnet data and stop running processes
 localnet-clean:
+	@echo "Stopping running processes..."
+	-@pkill -f "provider.*start" 2>/dev/null || true
+	-@pkill -f "consumer.*start" 2>/dev/null || true
+	-@pkill -f hermes 2>/dev/null || true
+	@sleep 2
 	rm -rf $(provider_home) $(consumer_home)
+	rm -rf $(HOME)/.vaas-hermes
+	rm -f /tmp/vaas-provider.log /tmp/vaas-consumer.log /tmp/vaas-hermes.log
+	rm -rf /tmp/vaas-test
 	@echo "Localnet data cleaned"
 
-.PHONY: localnet-clean 
+# Start the full localnet: provider, consumer, relayer — all in one command
+localnet-start: build-apps
+	@echo "=== Starting VAAS Localnet ==="
+	@echo ""
+	@echo "Step 1/6: Starting provider chain in background..."
+	@$(MAKE) provider-start > /tmp/vaas-provider.log 2>&1 &
+	@echo "  Waiting for provider to produce blocks (http://localhost:26657) ..."
+	@for i in $$(seq 1 60); do \
+		HEIGHT=$$(curl -sf http://localhost:26657/status 2>/dev/null | sed -n 's/.*"latest_block_height":"\([0-9]*\)".*/\1/p'); \
+		if [ -n "$$HEIGHT" ] && [ "$$HEIGHT" -gt 0 ] 2>/dev/null; then \
+			echo "  Provider is producing blocks (height $$HEIGHT, after $$((i*2))s)"; \
+			break; \
+		fi; \
+		if [ $$i -eq 60 ]; then \
+			echo "  ERROR: Provider failed to produce blocks within 120s. Check /tmp/vaas-provider.log"; \
+			exit 1; \
+		fi; \
+		sleep 2; \
+	done
+	@echo ""
+	@echo "Step 2/6: Starting consumer chain in background..."
+	@$(MAKE) consumer-start > /tmp/vaas-consumer.log 2>&1 &
+	@echo "  Waiting for consumer to produce blocks (http://localhost:26667) ..."
+	@for i in $$(seq 1 90); do \
+		HEIGHT=$$(curl -sf http://localhost:26667/status 2>/dev/null | sed -n 's/.*"latest_block_height":"\([0-9]*\)".*/\1/p'); \
+		if [ -n "$$HEIGHT" ] && [ "$$HEIGHT" -gt 0 ] 2>/dev/null; then \
+			echo "  Consumer is producing blocks (height $$HEIGHT, after $$((i*2))s)"; \
+			break; \
+		fi; \
+		if [ $$i -eq 90 ]; then \
+			echo "  ERROR: Consumer failed to produce blocks within 180s. Check /tmp/vaas-consumer.log"; \
+			exit 1; \
+		fi; \
+		sleep 2; \
+	done
+	@echo ""
+	@echo "Step 3/6: Configuring relayer..."
+	@$(MAKE) relayer-setup > /tmp/vaas-hermes.log 2>&1
+	@echo ""
+	@echo "Step 4/6: Starting relayer in background..."
+	@$(MAKE) relayer-start >> /tmp/vaas-hermes.log 2>&1 &
+	@sleep 3
+	@echo ""
+	@echo "Step 5/6: Triggering valset change to send first VSC packet..."
+	@VALOPER=$$($(providerd) keys show val --bech val -a 2> /dev/null); \
+	$(providerd) tx staking delegate $$VALOPER 1000000uatone --from user --fees 5000uatone -y > /dev/null 2>&1
+	@echo "  Delegation sent. Waiting for VSC packet to be relayed..."
+	@for i in $$(seq 1 60); do \
+		if $(consumerd) query vaasconsumer provider-info --node tcp://localhost:26667 > /dev/null 2>&1; then \
+			echo "  CCV channel established! (after $$((i*2))s)"; \
+			break; \
+		fi; \
+		if [ $$i -eq 60 ]; then \
+			echo "  WARNING: VSC packet not relayed within 120s. The channel may need more time."; \
+			break; \
+		fi; \
+		sleep 2; \
+	done
+	@echo ""
+	@echo "=== VAAS Localnet is running! ==="
+	@echo ""
+	@echo "  Provider: http://localhost:26657 (log: /tmp/vaas-provider.log)"
+	@echo "  Consumer: http://localhost:26667 (log: /tmp/vaas-consumer.log)"
+	@echo "  Relayer:                         (log: /tmp/vaas-hermes.log)"
+	@echo ""
+	@echo "  To stop: make localnet-clean"
+
+.PHONY: localnet-clean localnet-start

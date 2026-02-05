@@ -23,52 +23,54 @@ hermes version
 
 ## Quick Start
 
-You'll need **3 terminal windows** to run the full setup.
+A single command starts the entire localnet (provider, consumer, and relayer):
+
+```bash
+make localnet-start
+```
+
+This will:
+1. Build the provider and consumer binaries
+2. Start the provider chain (`provider-localnet`) in the background
+3. Wait for the provider RPC to be ready
+4. Initialize and start the consumer chain (`consumer-localnet`) in the background
+5. Wait for the consumer RPC to be ready
+6. Configure and set up the Hermes relayer (keys, connection, channel)
+7. Start the relayer in the background
+
+Log files:
+- Provider: `/tmp/vaas-provider.log`
+- Consumer: `/tmp/vaas-consumer.log`
+- Relayer: `/tmp/vaas-hermes.log`
+
+## Manual Setup (3-Terminal)
+
+For debugging or development, you can run each component in a separate terminal.
 
 ### Terminal 1: Provider Chain
 
 ```bash
-# From the repository root
 make provider-start
 ```
-
-This will:
-- Build the provider and consumer binaries
-- Initialize the provider chain with chain-id `provider-localnet`
-- Create a validator and start the chain
 
 Wait until you see blocks being produced before continuing.
 
 ### Terminal 2: Consumer Chain
 
 ```bash
-# From the repository root (after provider is running)
+# After provider is running
 make consumer-start
 ```
-
-This will:
-- Initialize the consumer chain with chain-id `consumer-localnet`
-- Register the consumer on the provider
-- Fetch the consumer genesis from the provider
-- Copy the validator key from provider
-- Start the consumer chain
 
 Wait until you see blocks being produced before continuing.
 
 ### Terminal 3: Relayer
 
 ```bash
-# From the repository root (after both chains are running)
+# After both chains are running
 make relayer-setup
 make relayer-start
 ```
-
-This will:
-- Configure Hermes for both chains
-- Set up relayer keys
-- Create the IBC connection using genesis clients
-- Create the VAAS channel
-- Start relaying packets
 
 ## Network Configuration
 
@@ -103,25 +105,21 @@ This will:
 
 ```bash
 # View Hermes logs
-tail -f /tmp/hermes.log
+tail -f /tmp/vaas-hermes.log
 
 # Query channel status
-~/bin/hermes query channels --chain consumer-localnet
+hermes --config ~/.vaas-hermes/config.toml query channels --chain consumer-localnet
 ```
 
 ## Clean Up
 
-To stop everything and clean up:
+Stop all processes and remove all localnet data:
 
 ```bash
-# Stop background processes
-pkill -f "provider.*start"
-pkill -f "consumer.*start"
-pkill -f hermes
-
-# Clean all data
 make localnet-clean
 ```
+
+This will kill running provider/consumer/hermes processes, remove chain data directories (`~/.provider-localnet`, `~/.consumer-localnet`), Hermes config (`~/.vaas-hermes`), log files, and temporary files.
 
 ## Troubleshooting
 
