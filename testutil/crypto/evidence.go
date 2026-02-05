@@ -12,7 +12,7 @@ import (
 	ibctmtypes "github.com/cosmos/ibc-go/v10/modules/light-clients/07-tendermint"
 )
 
-// utility function duplicated from CometBFT
+// MakeBlockID utility function duplicated from CometBFT
 // see https://github.com/cometbft/cometbft/blob/main/evidence/verify_test.go#L554
 func MakeBlockID(hash []byte, partSetSize uint32, partSetHash []byte) tmtypes.BlockID {
 	var (

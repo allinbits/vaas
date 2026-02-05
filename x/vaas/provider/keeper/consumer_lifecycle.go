@@ -616,11 +616,11 @@ func (k Keeper) GetConsumerRemovalTime(ctx sdk.Context, consumerId string) (time
 	if buf == nil {
 		return time.Time{}, fmt.Errorf("failed to retrieve removal time for consumer id (%s)", consumerId)
 	}
-	var time time.Time
-	if err := time.UnmarshalBinary(buf); err != nil {
-		return time, fmt.Errorf("failed to unmarshal removal time for consumer id (%s): %w", consumerId, err)
+	var removalTime time.Time
+	if err := removalTime.UnmarshalBinary(buf); err != nil {
+		return removalTime, fmt.Errorf("failed to unmarshal removal time for consumer id (%s): %w", consumerId, err)
 	}
-	return time, nil
+	return removalTime, nil
 }
 
 // SetConsumerRemovalTime sets the removal time associated with this consumer id
