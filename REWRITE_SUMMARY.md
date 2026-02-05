@@ -34,7 +34,7 @@ The rewrite simplifies the interchain security modules by removing several featu
 ### Provider Module
 - Consumer Lifecycle Management (REGISTERED → INITIALIZED → LAUNCHED → STOPPED → DELETED)
 - Key Assignment (validators can use different keys per consumer)
-- Per-Consumer Infraction Parameters (custom slash/jail params per consumer)
+- Provider Slashing Parameters only (per-consumer customization removed)
 - VSC Packet Generation at epoch boundaries
 - IBC Channel Management
 - Double Voting Evidence handling

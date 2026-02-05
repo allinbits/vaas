@@ -14,7 +14,7 @@ VAAS allows Cosmos blockchains to lease their proof-of-stake security to consume
 |---------|-------------|
 | Consumer Lifecycle | Full lifecycle management (REGISTERED → INITIALIZED → LAUNCHED → STOPPED → DELETED) |
 | Key Assignment | Validators can use different consensus keys per consumer chain |
-| Per-Consumer Infraction Parameters | Customizable slash/jail parameters per consumer |
+| Slashing Parameters | Uses provider defaults; per-consumer customization removed |
 | VSC Packets | Validator set updates sent at epoch boundaries |
 | Double Voting Evidence | Handle double voting evidence from consumers |
 | Light Client Misbehavior | Detection and logging of misbehavior |
