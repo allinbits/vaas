@@ -282,7 +282,7 @@ func txCommand() *cobra.Command {
 
 // genesisCommand builds genesis-related `simd genesis` command. Users may provide application specific commands as a parameter
 func genesisCommand(encodingConfig appEncoding.EncodingConfig, cmds ...*cobra.Command) *cobra.Command {
-	cmd := genutilcli.GenesisCoreCommand(encodingConfig.TxConfig, providerApp.ModuleBasics, providerApp.DefaultNodeHome)
+	cmd := genutilcli.Commands(encodingConfig.TxConfig, providerApp.ModuleBasics, providerApp.DefaultNodeHome)
 	for _, sub_cmd := range cmds {
 		cmd.AddCommand(sub_cmd)
 	}
