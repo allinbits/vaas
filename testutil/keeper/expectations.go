@@ -5,7 +5,7 @@ import (
 
 	providertypes "github.com/allinbits/vaas/x/vaas/provider/types"
 	"github.com/allinbits/vaas/x/vaas/types"
-	"github.com/golang/mock/gomock"
+	"go.uber.org/mock/gomock"
 
 	clienttypes "github.com/cosmos/ibc-go/v10/modules/core/02-client/types"
 	conntypes "github.com/cosmos/ibc-go/v10/modules/core/03-connection/types"
@@ -27,8 +27,8 @@ import (
 // GetMocksForCreateConsumerClient returns mock expectations needed to call CreateConsumerClient().
 func GetMocksForCreateConsumerClient(ctx sdk.Context, mocks *MockedKeepers,
 	expectedChainID string, expectedLatestHeight clienttypes.Height,
-) []*gomock.Call {
-	return []*gomock.Call{
+) []any {
+	return []any{
 		mocks.MockClientKeeper.EXPECT().CreateClient(
 			gomock.Any(),
 			gomock.Any(),
@@ -41,8 +41,8 @@ func GetMocksForCreateConsumerClient(ctx sdk.Context, mocks *MockedKeepers,
 // GetMocksForMakeConsumerGenesis returns mock expectations needed to call MakeConsumerGenesis().
 func GetMocksForMakeConsumerGenesis(ctx sdk.Context, mocks *MockedKeepers,
 	unbondingTimeToInject time.Duration, revisionHeight int64,
-) []*gomock.Call {
-	return []*gomock.Call{
+) []any {
+	return []any{
 		mocks.MockStakingKeeper.EXPECT().UnbondingTime(gomock.Any()).Return(unbondingTimeToInject, nil).Times(1),
 		mocks.MockStakingKeeper.EXPECT().GetHistoricalInfo(gomock.Any(), revisionHeight).Times(1),
 	}
@@ -51,8 +51,8 @@ func GetMocksForMakeConsumerGenesis(ctx sdk.Context, mocks *MockedKeepers,
 // GetMocksForSetConsumerChain returns mock expectations needed to call SetConsumerChain().
 func GetMocksForSetConsumerChain(ctx sdk.Context, mocks *MockedKeepers,
 	chainIDToInject string,
-) []*gomock.Call {
-	return []*gomock.Call{
+) []any {
+	return []any{
 		mocks.MockChannelKeeper.EXPECT().GetChannel(ctx, types.ProviderPortID, gomock.Any()).Return(
 			channeltypes.Channel{
 				State:          channeltypes.OPEN,
@@ -70,8 +70,8 @@ func GetMocksForSetConsumerChain(ctx sdk.Context, mocks *MockedKeepers,
 }
 
 // GetMocksForDeleteConsumerChain returns mock expectations needed to call `DeleteConsumerChain`
-func GetMocksForDeleteConsumerChain(ctx sdk.Context, mocks *MockedKeepers) []*gomock.Call {
-	return []*gomock.Call{
+func GetMocksForDeleteConsumerChain(ctx sdk.Context, mocks *MockedKeepers) []any {
+	return []any{
 		mocks.MockChannelKeeper.EXPECT().GetChannel(gomock.Any(), types.ProviderPortID, "channelID").Return(
 			channeltypes.Channel{State: channeltypes.OPEN}, true,
 		).Times(1),
@@ -82,9 +82,9 @@ func GetMocksForDeleteConsumerChain(ctx sdk.Context, mocks *MockedKeepers) []*go
 func GetMocksForHandleSlashPacket(ctx sdk.Context, mocks MockedKeepers,
 	expectedProviderValConsAddr providertypes.ProviderConsAddress,
 	valToReturn stakingtypes.Validator, expectJailing bool,
-) []*gomock.Call {
+) []any {
 	// These first two calls are always made.
-	calls := []*gomock.Call{
+	calls := []any{
 		mocks.MockStakingKeeper.EXPECT().GetValidatorByConsAddr(
 			ctx, expectedProviderValConsAddr.ToSdkConsAddr()).Return(
 			valToReturn, nil,
@@ -124,8 +124,8 @@ func ExpectCreateClientMock(ctx sdk.Context, mocks MockedKeepers, clientType, cl
 		nil).Times(1)
 }
 
-func GetMocksForSendIBCPacket(ctx sdk.Context, mocks MockedKeepers, channelID string, times int) []*gomock.Call {
-	return []*gomock.Call{
+func GetMocksForSendIBCPacket(ctx sdk.Context, mocks MockedKeepers, channelID string, times int) []any {
+	return []any{
 		mocks.MockChannelKeeper.EXPECT().GetChannel(ctx, types.ConsumerPortID,
 			"consumerCCVChannelID").Return(channeltypes.Channel{}, true).Times(times),
 		mocks.MockChannelKeeper.EXPECT().SendPacket(ctx,
@@ -150,8 +150,8 @@ func GetMocksForSlashValidator(
 	currentPower,
 	expectedInfractionHeight,
 	expectedSlashPower int64,
-) []*gomock.Call {
-	return []*gomock.Call{
+) []any {
+	return []any{
 		mocks.MockStakingKeeper.EXPECT().
 			GetUnbondingDelegationsFromValidator(ctx, validator.GetOperator()).
 			Return(undelegations),
