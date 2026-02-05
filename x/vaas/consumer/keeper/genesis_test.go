@@ -288,3 +288,29 @@ func assertHeightValsetUpdateIDs(t *testing.T, ctx sdk.Context, ck *consumerkeep
 		ctr++
 	}
 }
+
+// TestHighestValsetUpdateID tests the getter and setter for the highest valset update ID
+// used in IBC v2 out-of-order packet handling.
+func TestHighestValsetUpdateID(t *testing.T) {
+	consumerKeeper, ctx, ctrl, _ := testkeeper.GetConsumerKeeperAndCtx(t, testkeeper.NewInMemKeeperParams(t))
+	defer ctrl.Finish()
+
+	// Initially should be 0
+	highestID := consumerKeeper.GetHighestValsetUpdateID(ctx)
+	require.Equal(t, uint64(0), highestID)
+
+	// Set and verify
+	consumerKeeper.SetHighestValsetUpdateID(ctx, 5)
+	highestID = consumerKeeper.GetHighestValsetUpdateID(ctx)
+	require.Equal(t, uint64(5), highestID)
+
+	// Update to higher value
+	consumerKeeper.SetHighestValsetUpdateID(ctx, 10)
+	highestID = consumerKeeper.GetHighestValsetUpdateID(ctx)
+	require.Equal(t, uint64(10), highestID)
+
+	// Can set to lower value (though in practice we only set higher)
+	consumerKeeper.SetHighestValsetUpdateID(ctx, 3)
+	highestID = consumerKeeper.GetHighestValsetUpdateID(ctx)
+	require.Equal(t, uint64(3), highestID)
+}
