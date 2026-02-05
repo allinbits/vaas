@@ -36,11 +36,13 @@ func TestValidateParams(t *testing.T) {
 	}
 
 	for _, tc := range testCases {
-		err := tc.params.Validate()
-		if tc.expPass {
-			require.Nil(t, err, "expected error to be nil for test case: %s", tc.name)
-		} else {
-			require.NotNil(t, err, "expected error but got nil for test case: %s", tc.name)
-		}
+		t.Run(tc.name, func(t *testing.T) {
+			err := tc.params.Validate()
+			if tc.expPass {
+				require.Nil(t, err, "expected error to be nil for test case: %s", tc.name)
+			} else {
+				require.NotNil(t, err, "expected error but got nil for test case: %s", tc.name)
+			}
+		})
 	}
 }
