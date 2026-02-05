@@ -14,6 +14,7 @@ import (
 // GetTemplateClient returns the template consumer client
 func (k Keeper) GetTemplateClient(ctx sdk.Context) *ibctmtypes.ClientState {
 	params := k.GetParams(ctx)
+	//nolint:staticcheck
 	return params.TemplateClient
 }
 

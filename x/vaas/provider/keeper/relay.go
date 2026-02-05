@@ -280,7 +280,7 @@ func (k Keeper) SendVSCPacketsToChainV2(ctx sdk.Context, consumerId, clientId st
 		sequence, err := vaastypes.SendIBCPacketV2(
 			ctx,
 			k.ibcPacketHandler,
-			clientId,               // source client id (identifies destination chain)
+			clientId,                // source client id (identifies destination chain)
 			vaastypes.ConsumerAppID, // destination application identifier
 			data.GetBytes(),
 			k.GetVAASTimeoutPeriod(ctx),
