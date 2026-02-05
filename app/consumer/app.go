@@ -647,7 +647,9 @@ func (app *App) InitChainer(ctx sdk.Context, req *abci.RequestInitChain) (*abci.
 	if err := tmjson.Unmarshal(req.AppStateBytes, &genesisState); err != nil {
 		panic(err)
 	}
-	app.UpgradeKeeper.SetModuleVersionMap(ctx, app.MM.GetVersionMap())
+	if err := app.UpgradeKeeper.SetModuleVersionMap(ctx, app.MM.GetVersionMap()); err != nil {
+		panic(err)
+	}
 	return app.MM.InitGenesis(ctx, app.appCodec, genesisState)
 }
 
