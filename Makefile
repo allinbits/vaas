@@ -299,7 +299,7 @@ localnet-start: build-apps
 	@echo "  Delegation sent. Waiting for VSC packet to be relayed..."
 	@for i in $$(seq 1 60); do \
 		if $(consumerd) query vaasconsumer provider-info --node tcp://localhost:26667 > /dev/null 2>&1; then \
-			echo "  CCV channel established! (after $$((i*2))s)"; \
+			echo "  Channel established! (after $$((i*2))s)"; \
 			break; \
 		fi; \
 		if [ $$i -eq 60 ]; then \
