@@ -174,7 +174,9 @@ consumer-start: consumer-init consumer-create
 ###############################################################################
 
 HERMES ?= $(shell which hermes)
-HERMES_CONFIG ?= $(HOME)/.hermes/config.toml
+HERMES_CONFIG ?= $(HOME)/.vaas-hermes/config.toml
+
+HERMES_CMD = $(HERMES) --config $(HERMES_CONFIG)
 
 # Check Hermes IBC relayer installation
 relayer-install:
@@ -202,11 +204,11 @@ relayer-keys:
 	@echo "Waiting for provider tx..."
 	@sleep 5
 	@echo "Removing old Hermes keys if they exist..."
-	@rm -rf $(HOME)/.hermes/keys
+	@rm -rf $(HOME)/.vaas-hermes/keys
 	@echo "Adding relayer key to Hermes for provider..."
-	$(HERMES) keys add --chain provider-localnet --mnemonic-file $(RELAYER_MNEMONIC_FILE) --key-name relayer
+	$(HERMES_CMD) keys add --chain provider-localnet --mnemonic-file $(RELAYER_MNEMONIC_FILE) --key-name relayer
 	@echo "Adding relayer key to Hermes for consumer..."
-	$(HERMES) keys add --chain consumer-localnet --mnemonic-file $(RELAYER_MNEMONIC_FILE) --key-name relayer
+	$(HERMES_CMD) keys add --chain consumer-localnet --mnemonic-file $(RELAYER_MNEMONIC_FILE) --key-name relayer
 	@echo "Relayer keys setup complete"
 	@echo "Relayer address: $$($(providerd) keys show relayer -a)"
 
@@ -215,16 +217,16 @@ relayer-keys:
 # After a fresh localnet-clean, this will create connection-0
 relayer-channel:
 	@echo "Creating connection using genesis clients (07-tendermint-0)..."
-	$(HERMES) create connection --a-chain consumer-localnet --a-client 07-tendermint-0 --b-client 07-tendermint-0
+	$(HERMES_CMD) create connection --a-chain consumer-localnet --a-client 07-tendermint-0 --b-client 07-tendermint-0
 	@sleep 2
 	@echo "Creating VAAS channel on connection-0..."
-	$(HERMES) create channel --a-chain consumer-localnet --a-connection connection-0 --a-port consumer --b-port provider --order ordered --channel-version 1
+	$(HERMES_CMD) create channel --a-chain consumer-localnet --a-connection connection-0 --a-port consumer --b-port provider --order ordered --channel-version 1
 	@echo "Channel created"
 
 # Start the relayer
 relayer-start:
 	@echo "Starting Hermes relayer..."
-	$(HERMES) start
+	$(HERMES_CMD) start
 
 # Full relayer setup (requires both chains running)
 relayer-setup: relayer-config relayer-keys relayer-channel

@@ -1,10 +1,10 @@
 #!/bin/bash
 # Create Hermes configuration for local VAAS testing
 
-HERMES_CONFIG="${HOME}/.hermes/config.toml"
-mkdir -p "${HOME}/.hermes"
+HERMES_CONFIG="${HOME}/.vaas-hermes/config.toml"
+mkdir -p "${HOME}/.vaas-hermes"
 
-cat > "${HERMES_CONFIG}" << 'EOF'
+cat > "${HERMES_CONFIG}" << EOF
 [global]
 log_level = 'info'
 
@@ -46,6 +46,7 @@ trusted_node = true
 account_prefix = 'cosmos'
 key_name = 'relayer'
 key_store_type = 'Test'
+key_store_folder = '${HOME}/.vaas-hermes/keys'
 store_prefix = 'ibc'
 default_gas = 100000
 max_gas = 3000000
@@ -86,6 +87,7 @@ trusted_node = true
 account_prefix = 'cosmos'
 key_name = 'relayer'
 key_store_type = 'Test'
+key_store_folder = '${HOME}/.vaas-hermes/keys'
 store_prefix = 'ibc'
 default_gas = 100000
 max_gas = 3000000
