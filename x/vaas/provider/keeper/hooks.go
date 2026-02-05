@@ -13,7 +13,7 @@ import (
 	stakingtypes "github.com/cosmos/cosmos-sdk/x/staking/types"
 )
 
-// Wrapper struct
+// Hooks wrapper struct
 type Hooks struct {
 	k *Keeper
 }
@@ -23,7 +23,7 @@ var (
 	_ sdkgov.GovHooks           = Hooks{}
 )
 
-// Returns new provider hooks
+// Hooks returns new provider hooks
 func (k *Keeper) Hooks() Hooks {
 	return Hooks{k}
 }
