@@ -277,6 +277,27 @@ func (k Keeper) LaunchConsumer(
 // IBC v2 Note: In IBC v2 (Eureka), channels are not used. The client ID is used directly
 // for packet routing. After client creation, RegisterCounterparty should be called to
 // establish the bi-directional link between provider and consumer.
+//
+// IMPORTANT - Timing Constraint (Option B: New Consumer Chain):
+// The consensus state for the new client is created with the current provider block time
+// (ctx.BlockTime()). This timestamp will be used by the consumer's IBC client to verify
+// headers from the new consumer chain.
+//
+// For the IBC client to remain valid, the consumer chain's genesis_time must satisfy:
+//
+//	genesis_time - client_creation_time < trusting_period
+//
+// Where:
+//   - client_creation_time = the block time when this function executes (LaunchConsumer is called)
+//   - genesis_time = the time at which the consumer chain starts producing blocks
+//   - trusting_period = calculated from unbonding_period * trusting_period_fraction
+//
+// If this constraint is violated, the client will appear expired before any blocks can be
+// relayed, causing relayers to fail with "trusted state outside of trusting period" errors.
+//
+// Recommended approach: Set the consumer's genesis_time to be close to the expected
+// client_creation_time (spawn_time on the provider), or query the actual client creation
+// timestamp and use it directly as genesis_time.
 func (k Keeper) CreateConsumerClient(
 	ctx sdk.Context,
 	consumerId string,
@@ -321,7 +342,13 @@ func (k Keeper) CreateConsumerClient(
 	clientState.TrustingPeriod = trustPeriod
 	clientState.UnbondingPeriod = consumerUnbondingPeriod
 
-	// Create consensus state
+	// Create consensus state for the new consumer chain.
+	// - Timestamp: Current block time. IMPORTANT: Consumer's genesis_time must be within
+	//   trusting_period of this timestamp, otherwise the client will appear expired.
+	// - Root: SentinelRoot is used as a placeholder since the consumer hasn't produced
+	//   blocks yet. The client will be updated with real app hashes once blocks are relayed.
+	// - NextValidatorsHash: Hash of the initial validator set. This binds the client to
+	//   the expected validators, so the first consumer block must be signed by this set.
 	consensusState := ibctmtypes.NewConsensusState(
 		ctx.BlockTime(),
 		commitmenttypes.NewMerkleRoot([]byte(ibctmtypes.SentinelRoot)),
