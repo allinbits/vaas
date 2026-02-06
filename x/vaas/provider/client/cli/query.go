@@ -38,8 +38,7 @@ func NewQueryCmd() *cobra.Command {
 	return cmd
 }
 
-// NewQuerySubspaceParamsCmd returns a CLI command handler for querying subspace
-// parameters managed by the x/params module.
+// CmdConsumerGenesis queries the consumer chain genesis by consumer id.
 func CmdConsumerGenesis() *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "consumer-genesis [consumer-id]",

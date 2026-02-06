@@ -27,7 +27,6 @@ import (
 	"github.com/cosmos/cosmos-sdk/codec"
 	sdk "github.com/cosmos/cosmos-sdk/types"
 	govkeeper "github.com/cosmos/cosmos-sdk/x/gov/keeper"
-	paramtypes "github.com/cosmos/cosmos-sdk/x/params/types"
 	stakingtypes "github.com/cosmos/cosmos-sdk/x/staking/types"
 )
 
@@ -38,17 +37,16 @@ type Keeper struct {
 
 	storeService corestoretypes.KVStoreService
 
-	cdc                codec.BinaryCodec
-	channelKeeper      vaastypes.ChannelKeeper
-	connectionKeeper   vaastypes.ConnectionKeeper
-	accountKeeper      vaastypes.AccountKeeper
-	clientKeeper       vaastypes.ClientKeeper
-	stakingKeeper      vaastypes.StakingKeeper
-	slashingKeeper     vaastypes.SlashingKeeper
-	distributionKeeper vaastypes.DistributionKeeper
-	bankKeeper         vaastypes.BankKeeper
-	govKeeper          govkeeper.Keeper
-	feeCollectorName   string
+	cdc              codec.BinaryCodec
+	channelKeeper    vaastypes.ChannelKeeper
+	connectionKeeper vaastypes.ConnectionKeeper
+	accountKeeper    vaastypes.AccountKeeper
+	clientKeeper     vaastypes.ClientKeeper
+	stakingKeeper    vaastypes.StakingKeeper
+	slashingKeeper   vaastypes.SlashingKeeper
+	bankKeeper       vaastypes.BankKeeper
+	govKeeper        govkeeper.Keeper
+	feeCollectorName string
 
 	validatorAddressCodec addresscodec.Codec
 	consensusAddressCodec addresscodec.Codec
@@ -94,7 +92,7 @@ func NewKeeper(
 	connectionKeeper vaastypes.ConnectionKeeper, clientKeeper vaastypes.ClientKeeper,
 	stakingKeeper vaastypes.StakingKeeper, slashingKeeper vaastypes.SlashingKeeper,
 	accountKeeper vaastypes.AccountKeeper,
-	distributionKeeper vaastypes.DistributionKeeper, bankKeeper vaastypes.BankKeeper,
+	bankKeeper vaastypes.BankKeeper,
 	govKeeper govkeeper.Keeper,
 	authority string,
 	validatorAddressCodec, consensusAddressCodec addresscodec.Codec,
@@ -112,7 +110,6 @@ func NewKeeper(
 		stakingKeeper:         stakingKeeper,
 		slashingKeeper:        slashingKeeper,
 		accountKeeper:         accountKeeper,
-		distributionKeeper:    distributionKeeper,
 		bankKeeper:            bankKeeper,
 		feeCollectorName:      feeCollectorName,
 		validatorAddressCodec: validatorAddressCodec,

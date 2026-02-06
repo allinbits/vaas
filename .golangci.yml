@@ -2,13 +2,6 @@ run:
   tests: false
   # timeout for analysis, e.g. 30s, 5m, default is 1m
   timeout: 5m
-  skip-dirs:
-    - tests/
-  skip-files:
-    - ".*\\.pb\\.go$"
-    - ".*\\.pb\\.gw\\.go$"
-    - x/gov/types/v1/wrapper.go
-    - x/gov/types/v1beta1/wrapper.go
 
 linters:
   disable-all: true
@@ -35,6 +28,13 @@ linters:
     - unused
 
 issues:
+  exclude-dirs:
+    - tests/
+  exclude-files:
+    - ".*\\.pb\\.go$"
+    - ".*\\.pb\\.gw\\.go$"
+    - x/gov/types/v1/wrapper.go
+    - x/gov/types/v1beta1/wrapper.go
   exclude-rules:
     - text: "Use of weak random number generator"
       linters:

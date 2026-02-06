@@ -44,7 +44,6 @@ type Keeper struct {
 	hooks                   vaastypes.ConsumerHooks
 	bankKeeper              vaastypes.BankKeeper
 	authKeeper              vaastypes.AccountKeeper
-	ibcTransferKeeper       vaastypes.IBCTransferKeeper
 	ibcCoreKeeper           vaastypes.IBCCoreKeeper
 	feeCollectorName        string
 
@@ -77,7 +76,7 @@ func NewKeeper(
 	channelKeeper vaastypes.ChannelKeeper,
 	connectionKeeper vaastypes.ConnectionKeeper, clientKeeper vaastypes.ClientKeeper,
 	slashingKeeper vaastypes.SlashingKeeper, bankKeeper vaastypes.BankKeeper, accountKeeper vaastypes.AccountKeeper,
-	ibcTransferKeeper vaastypes.IBCTransferKeeper, ibcCoreKeeper vaastypes.IBCCoreKeeper,
+	ibcCoreKeeper vaastypes.IBCCoreKeeper,
 	feeCollectorName, authority string, validatorAddressCodec,
 	consensusAddressCodec addresscodec.Codec,
 ) Keeper {
@@ -93,7 +92,6 @@ func NewKeeper(
 		slashingKeeper:          slashingKeeper,
 		bankKeeper:              bankKeeper,
 		authKeeper:              accountKeeper,
-		ibcTransferKeeper:       ibcTransferKeeper,
 		ibcCoreKeeper:           ibcCoreKeeper,
 		feeCollectorName:        feeCollectorName,
 		standaloneStakingKeeper: nil,

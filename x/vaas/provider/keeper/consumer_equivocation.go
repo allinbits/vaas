@@ -425,7 +425,7 @@ func (k Keeper) JailAndTombstoneValidator(ctx sdk.Context, providerAddr types.Pr
 	}
 
 	if validator.IsUnbonded() {
-		return fmt.Errorf("validator is unbonded. provider consensus address: %s", providerAddr.String())
+		return errorsmod.Wrapf(stakingtypes.ErrNoUnbondingDelegation, "validator is unbonded. provider consensus address: %s", providerAddr.String())
 	}
 
 	if k.slashingKeeper.IsTombstoned(ctx, providerAddr.ToSdkConsAddr()) {
@@ -502,11 +502,11 @@ func (k Keeper) SlashValidator(ctx sdk.Context, providerAddr types.ProviderConsA
 	}
 
 	if validator.IsUnbonded() {
-		return fmt.Errorf("validator is unbonded. provider consensus address: %s", providerAddr.String())
+		return errorsmod.Wrapf(stakingtypes.ErrNoUnbondingDelegation, "validator is unbonded. provider consensus address: %s", providerAddr.String())
 	}
 
 	if k.slashingKeeper.IsTombstoned(ctx, providerAddr.ToSdkConsAddr()) {
-		return fmt.Errorf("validator is tombstoned. provider consensus address: %s", providerAddr.String())
+		return errorsmod.Wrapf(slashingtypes.ErrValidatorTombstoned, "validator is tombstoned. provider consensus address: %s", providerAddr.String())
 	}
 
 	valAddr, err := k.ValidatorAddressCodec().StringToBytes(validator.GetOperator())

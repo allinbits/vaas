@@ -3,8 +3,6 @@ package types
 import (
 	"time"
 
-	sdktypes "github.com/cosmos/cosmos-sdk/types"
-	paramtypes "github.com/cosmos/cosmos-sdk/x/params/types"
 	stakingtypes "github.com/cosmos/cosmos-sdk/x/staking/types"
 )
 
@@ -20,26 +18,6 @@ const (
 	// the staking module default.
 	DefaultConsumerUnbondingPeriod = stakingtypes.DefaultUnbondingTime - 24*time.Hour
 )
-
-// Reflection based keys for params subspace
-var (
-	KeyEnabled                 = []byte("Enabled")
-	KeyHistoricalEntries       = []byte("HistoricalEntries")
-	KeyConsumerUnbondingPeriod = []byte("UnbondingPeriod")
-)
-
-// helper interface
-// sdk::paramtypes.ParamSpace implicitly implements this interface because it
-// implements the Get(ctx sdk.Context, key []byte, ptr interface{})
-// since only Get(...) is needed to migrate params we can ignore the other methods on paramtypes.ParamSpace.
-type LegacyParamSubspace interface {
-	Get(ctx sdktypes.Context, key []byte, ptr interface{})
-}
-
-// ParamKeyTable type declaration for parameters
-func ParamKeyTable() paramtypes.KeyTable {
-	return paramtypes.NewKeyTable().RegisterParamSet(&ConsumerParams{})
-}
 
 // NewParams creates new consumer parameters with provided arguments
 func NewParams(enabled bool,
@@ -80,17 +58,4 @@ func (p ConsumerParams) Validate() error {
 		return err
 	}
 	return nil
-}
-
-// ParamSetPairs implements params.ParamSet
-func (p *ConsumerParams) ParamSetPairs() paramtypes.ParamSetPairs {
-	return paramtypes.ParamSetPairs{
-		paramtypes.NewParamSetPair(KeyEnabled, p.Enabled, ValidateBool),
-		paramtypes.NewParamSetPair(KeyVAASTimeoutPeriod,
-			p.VaasTimeoutPeriod, ValidateDuration),
-		paramtypes.NewParamSetPair(KeyHistoricalEntries,
-			p.HistoricalEntries, ValidatePositiveInt64),
-		paramtypes.NewParamSetPair(KeyConsumerUnbondingPeriod,
-			p.UnbondingPeriod, ValidateDuration),
-	}
 }
