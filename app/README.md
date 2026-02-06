@@ -97,10 +97,10 @@ make relayer-start
 
 ```bash
 # Check provider info
-./build/consumer --home ~/.consumer-localnet query vaasconsumer provider-info --node tcp://localhost:26667
+./build/consumer --home ~/.consumer-localnet query vaasconsumer provider-info
 
 # List IBC channels
-./build/consumer --home ~/.consumer-localnet query ibc channel channels --node tcp://localhost:26667
+./build/consumer --home ~/.consumer-localnet query ibc channel channels
 ```
 
 ### Check Relayer Status
@@ -144,7 +144,7 @@ The VAAS channel must use the genesis client (`07-tendermint-0`). If you see "in
 
 ```bash
 # Check which clients exist
-./build/consumer --home ~/.consumer-localnet query ibc client states --node tcp://localhost:26667
+./build/consumer --home ~/.consumer-localnet query ibc client states
 
 # The genesis client should track provider-localnet
 # Ensure you're using: --a-client 07-tendermint-0 --b-client 07-tendermint-0
