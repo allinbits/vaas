@@ -4,28 +4,26 @@ import (
 	"context"
 	"time"
 
-	"github.com/allinbits/vaas/x/vaas/consumer/types"
 	vaastypes "github.com/allinbits/vaas/x/vaas/types"
 
-	sdk "github.com/cosmos/cosmos-sdk/types"
 	stakingtypes "github.com/cosmos/cosmos-sdk/x/staking/types"
 )
 
 // GetConsumerParams returns the params for the consumer VAAS module
 // NOTE: it is different from the GetParams method which is required to implement StakingKeeper interface
-func (k Keeper) GetConsumerParams(ctx sdk.Context) vaastypes.ConsumerParams {
-	store := ctx.KVStore(k.storeKey)
-	bz := store.Get(types.ParametersKey())
-	var params vaastypes.ConsumerParams
-	k.cdc.MustUnmarshal(bz, &params)
+func (k Keeper) GetConsumerParams(ctx context.Context) vaastypes.ConsumerParams {
+	params, err := k.Params.Get(ctx)
+	if err != nil {
+		return vaastypes.ConsumerParams{}
+	}
 	return params
 }
 
 // SetParams sets the paramset for the consumer module
-func (k Keeper) SetParams(ctx sdk.Context, params vaastypes.ConsumerParams) {
-	store := ctx.KVStore(k.storeKey)
-	bz := k.cdc.MustMarshal(&params)
-	store.Set(types.ParametersKey(), bz)
+func (k Keeper) SetParams(ctx context.Context, params vaastypes.ConsumerParams) {
+	if err := k.Params.Set(ctx, params); err != nil {
+		panic(err)
+	}
 }
 
 // GetParams implements StakingKeeper GetParams interface method
@@ -37,31 +35,31 @@ func (k Keeper) GetParams(context.Context) (stakingtypes.Params, error) {
 }
 
 // GetEnabled returns the enabled flag for the consumer module
-func (k Keeper) GetEnabled(ctx sdk.Context) bool {
+func (k Keeper) GetEnabled(ctx context.Context) bool {
 	params := k.GetConsumerParams(ctx)
 	return params.Enabled
 }
 
 // GetVAASTimeoutPeriod returns the timeout period for sent VAAS related ibc packets
-func (k Keeper) GetVAASTimeoutPeriod(ctx sdk.Context) time.Duration {
+func (k Keeper) GetVAASTimeoutPeriod(ctx context.Context) time.Duration {
 	params := k.GetConsumerParams(ctx)
 	return params.VaasTimeoutPeriod
 }
 
 // GetHistoricalEntries returns the number of historical info entries to persist in store
-func (k Keeper) GetHistoricalEntries(ctx sdk.Context) int64 {
+func (k Keeper) GetHistoricalEntries(ctx context.Context) int64 {
 	params := k.GetConsumerParams(ctx)
 	return params.HistoricalEntries
 }
 
-// SetUnbondingPeriod only used to set an unbonding period in diff tests
-func (k Keeper) SetUnbondingPeriod(ctx sdk.Context, period time.Duration) {
+// Only used to set an unbonding period in diff tests
+func (k Keeper) SetUnbondingPeriod(ctx context.Context, period time.Duration) {
 	params := k.GetConsumerParams(ctx)
 	params.UnbondingPeriod = period
 	k.SetParams(ctx, params)
 }
 
-func (k Keeper) GetUnbondingPeriod(ctx sdk.Context) time.Duration {
+func (k Keeper) GetUnbondingPeriod(ctx context.Context) time.Duration {
 	params := k.GetConsumerParams(ctx)
 	return params.UnbondingPeriod
 }
