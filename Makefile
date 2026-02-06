@@ -118,6 +118,7 @@ consumer-init: build-apps
 	sed -i.bak 's#tcp://127.0.0.1:26657#tcp://127.0.0.1:26667#g' $(consumer_home)/config/config.toml
 	sed -i.bak 's#tcp://0.0.0.0:26656#tcp://0.0.0.0:26666#g' $(consumer_home)/config/config.toml
 	sed -i.bak 's#tcp://127.0.0.1:26658#tcp://127.0.0.1:26668#g' $(consumer_home)/config/config.toml
+	sed -i.bak 's#tcp://localhost:26657#tcp://localhost:26667#g' $(consumer_home)/config/client.toml
 	sed -i.bak 's#localhost:9090#localhost:9092#g' $(consumer_home)/config/app.toml
 	sed -i.bak 's#localhost:1317#localhost:1318#g' $(consumer_home)/config/app.toml
 	sed -i.bak 's#localhost:6060#localhost:6062#g' $(consumer_home)/config/config.toml
