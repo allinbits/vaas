@@ -124,6 +124,21 @@ func (mr *MockStakingKeeperMockRecorder) GetLastValidatorPower(ctx, operator any
 	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "GetLastValidatorPower", reflect.TypeOf((*MockStakingKeeper)(nil).GetLastValidatorPower), ctx, operator)
 }
 
+// GetLastTotalPower mocks base method.
+func (m *MockStakingKeeper) GetLastTotalPower(ctx context.Context) (math.Int, error) {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "GetLastTotalPower", ctx)
+	ret0, _ := ret[0].(math.Int)
+	ret1, _ := ret[1].(error)
+	return ret0, ret1
+}
+
+// GetLastTotalPower indicates an expected call of GetLastTotalPower.
+func (mr *MockStakingKeeperMockRecorder) GetLastTotalPower(ctx any) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "GetLastTotalPower", reflect.TypeOf((*MockStakingKeeper)(nil).GetLastTotalPower), ctx)
+}
+
 // GetRedelegationsFromSrcValidator mocks base method.
 func (m *MockStakingKeeper) GetRedelegationsFromSrcValidator(ctx context.Context, valAddr types.ValAddress) ([]types0.Redelegation, error) {
 	m.ctrl.T.Helper()

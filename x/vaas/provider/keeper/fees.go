@@ -70,10 +70,10 @@ func (k Keeper) DistributeFeesToValidators(ctx sdk.Context, totalFees sdk.Coin) 
 		return nil
 	}
 
-	// Calculate total voting power
-	totalPower := math.ZeroInt()
-	for _, val := range validators {
-		totalPower = totalPower.Add(math.NewInt(val.GetConsensusPower(sdk.DefaultPowerReduction)))
+	// Retrieve total voting power from staking keeper state.
+	totalPower, err := k.stakingKeeper.GetLastTotalPower(ctx)
+	if err != nil {
+		return fmt.Errorf("failed to get total voting power: %w", err)
 	}
 
 	if totalPower.IsZero() {

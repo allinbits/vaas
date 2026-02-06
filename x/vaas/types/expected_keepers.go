@@ -24,6 +24,7 @@ type StakingKeeper interface {
 	UnbondingTime(ctx context.Context) (time.Duration, error)
 	GetValidatorByConsAddr(ctx context.Context, consAddr sdk.ConsAddress) (stakingtypes.Validator, error)
 	GetLastValidatorPower(ctx context.Context, operator sdk.ValAddress) (int64, error)
+	GetLastTotalPower(ctx context.Context) (math.Int, error)
 	Jail(context.Context, sdk.ConsAddress) error // jail a validator
 	SlashWithInfractionReason(ctx context.Context, consAddr sdk.ConsAddress, infractionHeight, power int64, slashFactor math.LegacyDec, infraction stakingtypes.Infraction) (math.Int, error)
 	SlashUnbondingDelegation(ctx context.Context, unbondingDelegation stakingtypes.UnbondingDelegation, infractionHeight int64, slashFactor math.LegacyDec) (math.Int, error)
