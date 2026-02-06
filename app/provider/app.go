@@ -385,14 +385,12 @@ func New(
 	app.ProviderKeeper = ibcproviderkeeper.NewKeeper(
 		appCodec,
 		keys[providertypes.StoreKey],
-		app.GetSubspace(providertypes.ModuleName),
 		app.IBCKeeper.ChannelKeeper,
 		app.IBCKeeper.ConnectionKeeper,
 		app.IBCKeeper.ClientKeeper,
 		app.StakingKeeper,
 		app.SlashingKeeper,
 		app.AccountKeeper,
-		app.DistrKeeper,
 		app.BankKeeper,
 		govkeeper.Keeper{}, // will be set after the GovKeeper is created
 		authtypes.NewModuleAddress(govtypes.ModuleName).String(),

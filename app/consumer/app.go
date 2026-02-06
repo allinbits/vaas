@@ -352,7 +352,6 @@ func New(
 		app.SlashingKeeper,
 		app.BankKeeper,
 		app.AccountKeeper,
-		&app.TransferKeeper,
 		app.IBCKeeper,
 		authtypes.FeeCollectorName,
 		authtypes.NewModuleAddress(govtypes.ModuleName).String(),
@@ -362,7 +361,7 @@ func New(
 
 	// register slashing module Slashing hooks to the consumer keeper
 	app.ConsumerKeeper = *app.ConsumerKeeper.SetHooks(app.SlashingKeeper.Hooks())
-	consumerModule := ibcconsumer.NewAppModule(app.ConsumerKeeper, app.GetSubspace(ibcconsumertypes.ModuleName))
+	consumerModule := ibcconsumer.NewAppModule(app.ConsumerKeeper)
 
 	app.TransferKeeper = ibctransferkeeper.NewKeeper(
 		appCodec,
