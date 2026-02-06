@@ -8,6 +8,8 @@ import (
 	"github.com/allinbits/vaas/x/vaas/provider/types"
 
 	ibctmtypes "github.com/cosmos/ibc-go/v10/modules/light-clients/07-tendermint"
+
+	sdk "github.com/cosmos/cosmos-sdk/types"
 )
 
 // GetTemplateClient returns the template consumer client
@@ -43,7 +45,7 @@ func (k Keeper) GetMaxProviderConsensusValidators(ctx context.Context) int64 {
 }
 
 // GetFeesPerBlock returns the fees that each consumer chain must pay per block
-func (k Keeper) GetFeesPerBlock(ctx sdk.Context) sdk.Coin {
+func (k Keeper) GetFeesPerBlock(ctx context.Context) sdk.Coin {
 	params := k.GetParams(ctx)
 	return params.FeesPerBlock
 }
