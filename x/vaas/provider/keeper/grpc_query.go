@@ -15,6 +15,7 @@ import (
 	errorsmod "cosmossdk.io/errors"
 
 	sdk "github.com/cosmos/cosmos-sdk/types"
+	"github.com/cosmos/cosmos-sdk/types/query"
 )
 
 var _ types.QueryServer = Keeper{}
@@ -48,39 +49,31 @@ func (k Keeper) QueryConsumerChains(goCtx context.Context, req *types.QueryConsu
 	}
 
 	ctx := sdk.UnwrapSDKContext(goCtx)
-	var chains []*types.Chain
 
-	// Iterate over all consumer phases using collections
-	iter, err := k.ConsumerPhase.Iterate(ctx, nil)
+	chains, pageRes, err := query.CollectionFilteredPaginate(
+		ctx,
+		k.ConsumerPhase,
+		req.Pagination,
+		func(consumerId string, phaseValue uint32) (bool, error) {
+			// Filter by phase if specified
+			if req.Phase != types.CONSUMER_PHASE_UNSPECIFIED {
+				return types.ConsumerPhase(phaseValue) == req.Phase, nil
+			}
+			return true, nil
+		},
+		func(consumerId string, phaseValue uint32) (*types.Chain, error) {
+			c, err := k.GetConsumerChain(ctx, consumerId)
+			if err != nil {
+				return nil, err
+			}
+			return &c, nil
+		},
+	)
 	if err != nil {
 		return nil, status.Error(codes.Internal, err.Error())
 	}
-	defer iter.Close()
 
-	for ; iter.Valid(); iter.Next() {
-		kv, err := iter.KeyValue()
-		if err != nil {
-			return nil, status.Error(codes.Internal, err.Error())
-		}
-
-		consumerId := kv.Key
-		phase := types.ConsumerPhase(kv.Value)
-
-		if req.Phase != types.CONSUMER_PHASE_UNSPECIFIED && req.Phase != phase {
-			continue
-		}
-
-		c, err := k.GetConsumerChain(ctx, consumerId)
-		if err != nil {
-			return nil, status.Error(codes.Internal, err.Error())
-		}
-
-		chains = append(chains, &c)
-	}
-
-	// Note: Pagination is not supported with collections iteration in this simplified version
-	// For full pagination support, consider using collections.Paginate or similar helpers
-	return &types.QueryConsumerChainsResponse{Chains: chains, Pagination: nil}, nil
+	return &types.QueryConsumerChainsResponse{Chains: chains, Pagination: pageRes}, nil
 }
 
 // GetConsumerChain returns a Chain data structure with all the necessary fields
