@@ -78,25 +78,21 @@ type MockedKeepers struct {
 	*MockSlashingKeeper
 	*MockAccountKeeper
 	*MockBankKeeper
-	*MockIBCTransferKeeper
 	*MockIBCCoreKeeper
-	*MockDistributionKeeper
 	// *MockGovKeeper
 }
 
 // NewMockedKeepers instantiates a struct with pointers to properly instantiated mocked keepers.
 func NewMockedKeepers(ctrl *gomock.Controller) MockedKeepers {
 	return MockedKeepers{
-		MockChannelKeeper:      NewMockChannelKeeper(ctrl),
-		MockConnectionKeeper:   NewMockConnectionKeeper(ctrl),
-		MockClientKeeper:       NewMockClientKeeper(ctrl),
-		MockStakingKeeper:      NewMockStakingKeeper(ctrl),
-		MockSlashingKeeper:     NewMockSlashingKeeper(ctrl),
-		MockAccountKeeper:      NewMockAccountKeeper(ctrl),
-		MockBankKeeper:         NewMockBankKeeper(ctrl),
-		MockIBCTransferKeeper:  NewMockIBCTransferKeeper(ctrl),
-		MockIBCCoreKeeper:      NewMockIBCCoreKeeper(ctrl),
-		MockDistributionKeeper: NewMockDistributionKeeper(ctrl),
+		MockChannelKeeper:    NewMockChannelKeeper(ctrl),
+		MockConnectionKeeper: NewMockConnectionKeeper(ctrl),
+		MockClientKeeper:     NewMockClientKeeper(ctrl),
+		MockStakingKeeper:    NewMockStakingKeeper(ctrl),
+		MockSlashingKeeper:   NewMockSlashingKeeper(ctrl),
+		MockAccountKeeper:    NewMockAccountKeeper(ctrl),
+		MockBankKeeper:       NewMockBankKeeper(ctrl),
+		MockIBCCoreKeeper:    NewMockIBCCoreKeeper(ctrl),
 	}
 }
 
@@ -111,7 +107,6 @@ func NewInMemProviderKeeper(params InMemKeeperParams, mocks MockedKeepers) provi
 		mocks.MockStakingKeeper,
 		mocks.MockSlashingKeeper,
 		mocks.MockAccountKeeper,
-		mocks.MockDistributionKeeper,
 		mocks.MockBankKeeper,
 		// mocks.MockGovKeeper,
 		govkeeper.Keeper{}, // HACK: to make parts of the test work
@@ -133,7 +128,6 @@ func NewInMemConsumerKeeper(params InMemKeeperParams, mocks MockedKeepers) consu
 		mocks.MockSlashingKeeper,
 		mocks.MockBankKeeper,
 		mocks.MockAccountKeeper,
-		mocks.MockIBCTransferKeeper,
 		mocks.MockIBCCoreKeeper,
 		authtypes.FeeCollectorName,
 		authtypes.NewModuleAddress(govtypes.ModuleName).String(),
