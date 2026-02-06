@@ -27,6 +27,9 @@ func TestCollectFeesFromConsumers(t *testing.T) {
 	k.SetConsumerPhase(ctx, consumer1, providertypes.CONSUMER_PHASE_LAUNCHED)
 
 	feesPerBlock := sdk.NewInt64Coin("photon", 10)
+	providerParams := k.GetParams(ctx)
+	providerParams.FeesPerBlock = feesPerBlock
+	k.SetParams(ctx, providerParams)
 
 	gomock.InOrder(
 		mocks.MockBankKeeper.EXPECT().
@@ -43,7 +46,7 @@ func TestCollectFeesFromConsumers(t *testing.T) {
 			Return(nil),
 	)
 
-	total, err := k.CollectFeesFromConsumers(ctx, feesPerBlock)
+	total, err := k.CollectFeesFromConsumers(ctx)
 	require.NoError(t, err)
 	require.Equal(t, sdk.NewInt64Coin("photon", 20), total)
 }
@@ -59,6 +62,9 @@ func TestCollectFeesFromConsumersSkipsWhenInsufficient(t *testing.T) {
 	k.SetConsumerPhase(ctx, consumer1, providertypes.CONSUMER_PHASE_LAUNCHED)
 
 	feesPerBlock := sdk.NewInt64Coin("photon", 10)
+	providerParams := k.GetParams(ctx)
+	providerParams.FeesPerBlock = feesPerBlock
+	k.SetParams(ctx, providerParams)
 
 	gomock.InOrder(
 		mocks.MockBankKeeper.EXPECT().
@@ -72,7 +78,7 @@ func TestCollectFeesFromConsumersSkipsWhenInsufficient(t *testing.T) {
 			Return(nil),
 	)
 
-	total, err := k.CollectFeesFromConsumers(ctx, feesPerBlock)
+	total, err := k.CollectFeesFromConsumers(ctx)
 	require.NoError(t, err)
 	require.Equal(t, sdk.NewInt64Coin("photon", 10), total)
 }

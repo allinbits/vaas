@@ -13,7 +13,8 @@ import (
 // For each consumer, it checks if the consumer has enough balance to pay the fees.
 // If a consumer doesn't have enough funds, the provider should inform the consumer
 // to stop operations.
-func (k Keeper) CollectFeesFromConsumers(ctx sdk.Context, feesPerBlock sdk.Coin) (sdk.Coin, error) {
+func (k Keeper) CollectFeesFromConsumers(ctx sdk.Context) (sdk.Coin, error) {
+	feesPerBlock := k.GetFeesPerBlock(ctx)
 	totalFeesCollected := sdk.NewCoin(feesPerBlock.Denom, math.ZeroInt())
 
 	// Get all active consumer IDs
