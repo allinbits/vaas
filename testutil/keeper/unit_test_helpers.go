@@ -103,7 +103,6 @@ func NewInMemProviderKeeper(params InMemKeeperParams, mocks MockedKeepers) provi
 	return providerkeeper.NewKeeper(
 		params.Cdc,
 		storeService,
-		*params.ParamsSubspace,
 		mocks.MockChannelKeeper,
 		mocks.MockConnectionKeeper,
 		mocks.MockClientKeeper,

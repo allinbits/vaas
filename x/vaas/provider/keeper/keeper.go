@@ -87,7 +87,7 @@ type Keeper struct {
 
 // NewKeeper creates a new provider Keeper instance
 func NewKeeper(
-	cdc codec.BinaryCodec, storeService corestoretypes.KVStoreService, paramSpace paramtypes.Subspace,
+	cdc codec.BinaryCodec, storeService corestoretypes.KVStoreService,
 	channelKeeper vaastypes.ChannelKeeper,
 	connectionKeeper vaastypes.ConnectionKeeper, clientKeeper vaastypes.ClientKeeper,
 	stakingKeeper vaastypes.StakingKeeper, slashingKeeper vaastypes.SlashingKeeper,
@@ -1299,26 +1299,4 @@ func (k Keeper) GetLastProviderConsensusValSet(ctx context.Context) ([]types.Con
 	}
 
 	return validators, nil
-}
-
-// NewKeeperWithStoreKey creates a provider keeper using a store key (for backwards compatibility in tests)
-func NewKeeperWithStoreKey(
-	cdc codec.BinaryCodec, storeService corestoretypes.KVStoreService,
-	channelKeeper vaastypes.ChannelKeeper,
-	connectionKeeper vaastypes.ConnectionKeeper, clientKeeper vaastypes.ClientKeeper,
-	stakingKeeper vaastypes.StakingKeeper, slashingKeeper vaastypes.SlashingKeeper,
-	accountKeeper vaastypes.AccountKeeper,
-	distributionKeeper vaastypes.DistributionKeeper, bankKeeper vaastypes.BankKeeper,
-	govKeeper govkeeper.Keeper,
-	authority string,
-	validatorAddressCodec, consensusAddressCodec addresscodec.Codec,
-	feeCollectorName string,
-) Keeper {
-	return NewKeeper(
-		cdc, storeService, paramtypes.Subspace{},
-		channelKeeper, connectionKeeper, clientKeeper,
-		stakingKeeper, slashingKeeper, accountKeeper,
-		distributionKeeper, bankKeeper, govKeeper,
-		authority, validatorAddressCodec, consensusAddressCodec, feeCollectorName,
-	)
 }
