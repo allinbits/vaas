@@ -27,7 +27,7 @@ func TestCollectFeesFromConsumers(t *testing.T) {
 	k.SetConsumerPhase(ctx, consumer1, providertypes.CONSUMER_PHASE_LAUNCHED)
 
 	feesPerBlock := sdk.NewInt64Coin("photon", 10)
-	providerParams := k.GetParams(ctx)
+	providerParams := providertypes.DefaultParams()
 	providerParams.FeesPerBlock = feesPerBlock
 	k.SetParams(ctx, providerParams)
 
@@ -62,7 +62,7 @@ func TestCollectFeesFromConsumersSkipsWhenInsufficient(t *testing.T) {
 	k.SetConsumerPhase(ctx, consumer1, providertypes.CONSUMER_PHASE_LAUNCHED)
 
 	feesPerBlock := sdk.NewInt64Coin("photon", 10)
-	providerParams := k.GetParams(ctx)
+	providerParams := providertypes.DefaultParams()
 	providerParams.FeesPerBlock = feesPerBlock
 	k.SetParams(ctx, providerParams)
 
