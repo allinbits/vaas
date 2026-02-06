@@ -31,6 +31,7 @@ import (
 	cryptocodec "github.com/cosmos/cosmos-sdk/crypto/codec"
 	"github.com/cosmos/cosmos-sdk/crypto/keys/ed25519"
 	cryptotypes "github.com/cosmos/cosmos-sdk/crypto/types"
+	"github.com/cosmos/cosmos-sdk/runtime"
 	sdk "github.com/cosmos/cosmos-sdk/types"
 	authtypes "github.com/cosmos/cosmos-sdk/x/auth/types"
 	govkeeper "github.com/cosmos/cosmos-sdk/x/gov/keeper"
@@ -98,9 +99,10 @@ func NewMockedKeepers(ctrl *gomock.Controller) MockedKeepers {
 
 // NewInMemProviderKeeper instantiates an in-mem provider keeper from params and mocked keepers
 func NewInMemProviderKeeper(params InMemKeeperParams, mocks MockedKeepers) providerkeeper.Keeper {
+	storeService := runtime.NewKVStoreService(params.StoreKey)
 	return providerkeeper.NewKeeper(
 		params.Cdc,
-		params.StoreKey,
+		storeService,
 		mocks.MockChannelKeeper,
 		mocks.MockConnectionKeeper,
 		mocks.MockClientKeeper,
@@ -119,9 +121,11 @@ func NewInMemProviderKeeper(params InMemKeeperParams, mocks MockedKeepers) provi
 
 // NewInMemConsumerKeeper instantiates an in-mem consumer keeper from params and mocked keepers
 func NewInMemConsumerKeeper(params InMemKeeperParams, mocks MockedKeepers) consumerkeeper.Keeper {
+	storeService := runtime.NewKVStoreService(params.StoreKey)
+
 	return consumerkeeper.NewKeeper(
 		params.Cdc,
-		params.StoreKey,
+		storeService,
 		mocks.MockChannelKeeper,
 		mocks.MockConnectionKeeper,
 		mocks.MockClientKeeper,

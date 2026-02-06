@@ -1,6 +1,7 @@
 package keeper
 
 import (
+	"context"
 	"fmt"
 	"time"
 
@@ -17,8 +18,8 @@ import (
 	ibchost "github.com/cosmos/ibc-go/v10/modules/core/exported"
 	ibctmtypes "github.com/cosmos/ibc-go/v10/modules/light-clients/07-tendermint"
 
+	"cosmossdk.io/collections"
 	errorsmod "cosmossdk.io/errors"
-	storetypes "cosmossdk.io/store/types"
 
 	sdk "github.com/cosmos/cosmos-sdk/types"
 	sdkerrors "github.com/cosmos/cosmos-sdk/types/errors"
@@ -69,7 +70,7 @@ func (k Keeper) BeginBlockLaunchConsumers(ctx sdk.Context) error {
 
 	consumerIds, err := k.ConsumeIdsFromTimeQueue(
 		ctx,
-		types.SpawnTimeToConsumerIdsKeyPrefix(),
+		k.SpawnTimeToConsumerIds,
 		k.GetConsumersToBeLaunched,
 		k.DeleteAllConsumersToBeLaunched,
 		k.AppendConsumerToBeLaunched,
@@ -120,27 +121,35 @@ func (k Keeper) BeginBlockLaunchConsumers(ctx sdk.Context) error {
 // The number of ids return is limited to 'limit'. The ids returned are removed from the time queue.
 func (k Keeper) ConsumeIdsFromTimeQueue(
 	ctx sdk.Context,
-	timeQueueKeyPrefix byte,
-	getIds func(sdk.Context, time.Time) (types.ConsumerIds, error),
-	deleteAllIds func(sdk.Context, time.Time),
-	appendId func(sdk.Context, string, time.Time) error,
+	timeQueue collections.Map[[]byte, types.ConsumerIds],
+	getIds func(context.Context, time.Time) (types.ConsumerIds, error),
+	deleteAllIds func(context.Context, time.Time),
+	appendId func(context.Context, string, time.Time) error,
 	limit int,
 ) ([]string, error) {
-	store := ctx.KVStore(k.storeKey)
-
 	result := []string{}
 	nextTime := []string{}
 	timestampsToDelete := []time.Time{}
 
-	iterator := storetypes.KVStorePrefixIterator(store, []byte{timeQueueKeyPrefix})
-	defer iterator.Close()
-	for ; iterator.Valid(); iterator.Next() {
+	iter, err := timeQueue.Iterate(ctx, nil)
+	if err != nil {
+		return result, fmt.Errorf("iterating time queue: %w", err)
+	}
+	defer iter.Close()
+
+	for ; iter.Valid(); iter.Next() {
 		if len(result) >= limit {
 			break
 		}
-		ts, err := types.ParseTime(timeQueueKeyPrefix, iterator.Key())
+
+		kv, err := iter.KeyValue()
 		if err != nil {
-			return result, fmt.Errorf("parsing removal time: %w", err)
+			return result, fmt.Errorf("getting key-value from iterator: %w", err)
+		}
+
+		ts, err := bytesToTime(kv.Key)
+		if err != nil {
+			return result, fmt.Errorf("parsing time from key: %w", err)
 		}
 		if ts.After(ctx.BlockTime()) {
 			break
@@ -527,7 +536,7 @@ func (k Keeper) StopAndPrepareForConsumerRemoval(ctx sdk.Context, consumerId str
 func (k Keeper) BeginBlockRemoveConsumers(ctx sdk.Context) error {
 	consumerIds, err := k.ConsumeIdsFromTimeQueue(
 		ctx,
-		types.RemovalTimeToConsumerIdsKeyPrefix(),
+		k.RemovalTimeToConsumerIds,
 		k.GetConsumersToBeRemoved,
 		k.DeleteAllConsumersToBeRemoved,
 		k.AppendConsumerToBeRemoved,
@@ -603,163 +612,4 @@ func (k Keeper) DeleteConsumerChain(ctx sdk.Context, consumerId string) (err err
 	k.Logger(ctx).Info("consumer chain deleted from provider", "consumerId", consumerId)
 
 	return nil
-}
-
-//
-// Setters and Getters
-//
-
-// GetConsumerRemovalTime returns the removal time associated with the to-be-removed chain with consumer id
-func (k Keeper) GetConsumerRemovalTime(ctx sdk.Context, consumerId string) (time.Time, error) {
-	store := ctx.KVStore(k.storeKey)
-	buf := store.Get(types.ConsumerIdToRemovalTimeKey(consumerId))
-	if buf == nil {
-		return time.Time{}, fmt.Errorf("failed to retrieve removal time for consumer id (%s)", consumerId)
-	}
-	var removalTime time.Time
-	if err := removalTime.UnmarshalBinary(buf); err != nil {
-		return removalTime, fmt.Errorf("failed to unmarshal removal time for consumer id (%s): %w", consumerId, err)
-	}
-	return removalTime, nil
-}
-
-// SetConsumerRemovalTime sets the removal time associated with this consumer id
-func (k Keeper) SetConsumerRemovalTime(ctx sdk.Context, consumerId string, removalTime time.Time) error {
-	store := ctx.KVStore(k.storeKey)
-	buf, err := removalTime.MarshalBinary()
-	if err != nil {
-		return fmt.Errorf("failed to marshal removal time (%+v) for consumer id (%s): %w", removalTime, consumerId, err)
-	}
-	store.Set(types.ConsumerIdToRemovalTimeKey(consumerId), buf)
-	return nil
-}
-
-// DeleteConsumerRemovalTime deletes the removal time associated with this consumer id
-func (k Keeper) DeleteConsumerRemovalTime(ctx sdk.Context, consumerId string) {
-	store := ctx.KVStore(k.storeKey)
-	store.Delete(types.ConsumerIdToRemovalTimeKey(consumerId))
-}
-
-// getConsumerIdsBasedOnTime returns all the consumer ids stored under this specific `key(time)`
-func (k Keeper) getConsumerIdsBasedOnTime(ctx sdk.Context, key func(time.Time) []byte, time time.Time) (types.ConsumerIds, error) {
-	store := ctx.KVStore(k.storeKey)
-	bz := store.Get(key(time))
-	if bz == nil {
-		return types.ConsumerIds{}, nil
-	}
-
-	var consumerIds types.ConsumerIds
-
-	if err := consumerIds.Unmarshal(bz); err != nil {
-		return types.ConsumerIds{}, fmt.Errorf("failed to unmarshal consumer ids: %w", err)
-	}
-	return consumerIds, nil
-}
-
-// appendConsumerIdOnTime appends the consumer id on all the other consumer ids under `key(time)`
-func (k Keeper) appendConsumerIdOnTime(ctx sdk.Context, consumerId string, key func(time.Time) []byte, time time.Time) error {
-	store := ctx.KVStore(k.storeKey)
-
-	consumers, err := k.getConsumerIdsBasedOnTime(ctx, key, time)
-	if err != nil {
-		return err
-	}
-
-	consumersWithAppend := types.ConsumerIds{
-		Ids: append(consumers.Ids, consumerId),
-	}
-
-	bz, err := consumersWithAppend.Marshal()
-	if err != nil {
-		return err
-	}
-
-	store.Set(key(time), bz)
-	return nil
-}
-
-// removeConsumerIdFromTime removes consumer id stored under `key(time)`
-func (k Keeper) removeConsumerIdFromTime(ctx sdk.Context, consumerId string, key func(time.Time) []byte, time time.Time) error {
-	store := ctx.KVStore(k.storeKey)
-
-	consumers, err := k.getConsumerIdsBasedOnTime(ctx, key, time)
-	if err != nil {
-		return err
-	}
-
-	if len(consumers.Ids) == 0 {
-		return fmt.Errorf("no consumer ids found for this time: %s", time.String())
-	}
-
-	// find the index of the consumer we want to remove
-	index := -1
-	for i := 0; i < len(consumers.Ids); i++ {
-		if consumers.Ids[i] == consumerId {
-			index = i
-			break
-		}
-	}
-
-	if index == -1 {
-		return fmt.Errorf("failed to find consumer id (%s)", consumerId)
-	}
-
-	if len(consumers.Ids) == 1 {
-		store.Delete(key(time))
-		return nil
-	}
-
-	consumersWithRemoval := types.ConsumerIds{
-		Ids: append(consumers.Ids[:index], consumers.Ids[index+1:]...),
-	}
-
-	bz, err := consumersWithRemoval.Marshal()
-	if err != nil {
-		return err
-	}
-
-	store.Set(key(time), bz)
-	return nil
-}
-
-// GetConsumersToBeLaunched returns all the consumer ids of chains stored under this spawn time
-func (k Keeper) GetConsumersToBeLaunched(ctx sdk.Context, spawnTime time.Time) (types.ConsumerIds, error) {
-	return k.getConsumerIdsBasedOnTime(ctx, types.SpawnTimeToConsumerIdsKey, spawnTime)
-}
-
-// AppendConsumerToBeLaunched appends the provider consumer id for the given spawn time
-func (k Keeper) AppendConsumerToBeLaunched(ctx sdk.Context, consumerId string, spawnTime time.Time) error {
-	return k.appendConsumerIdOnTime(ctx, consumerId, types.SpawnTimeToConsumerIdsKey, spawnTime)
-}
-
-// RemoveConsumerToBeLaunched removes consumer id from if stored for this specific spawn time
-func (k Keeper) RemoveConsumerToBeLaunched(ctx sdk.Context, consumerId string, spawnTime time.Time) error {
-	return k.removeConsumerIdFromTime(ctx, consumerId, types.SpawnTimeToConsumerIdsKey, spawnTime)
-}
-
-// DeleteAllConsumersToBeLaunched deletes all consumer to be launched at this specific spawn time
-func (k Keeper) DeleteAllConsumersToBeLaunched(ctx sdk.Context, spawnTime time.Time) {
-	store := ctx.KVStore(k.storeKey)
-	store.Delete(types.SpawnTimeToConsumerIdsKey(spawnTime))
-}
-
-// GetConsumersToBeRemoved returns all the consumer ids of chains stored under this removal time
-func (k Keeper) GetConsumersToBeRemoved(ctx sdk.Context, removalTime time.Time) (types.ConsumerIds, error) {
-	return k.getConsumerIdsBasedOnTime(ctx, types.RemovalTimeToConsumerIdsKey, removalTime)
-}
-
-// AppendConsumerToBeRemoved appends the provider consumer id for the given removal time
-func (k Keeper) AppendConsumerToBeRemoved(ctx sdk.Context, consumerId string, removalTime time.Time) error {
-	return k.appendConsumerIdOnTime(ctx, consumerId, types.RemovalTimeToConsumerIdsKey, removalTime)
-}
-
-// RemoveConsumerToBeRemoved removes consumer id from the given removal time
-func (k Keeper) RemoveConsumerToBeRemoved(ctx sdk.Context, consumerId string, removalTime time.Time) error {
-	return k.removeConsumerIdFromTime(ctx, consumerId, types.RemovalTimeToConsumerIdsKey, removalTime)
-}
-
-// DeleteAllConsumersToBeRemoved deletes all consumer to be removed at this specific removal time
-func (k Keeper) DeleteAllConsumersToBeRemoved(ctx sdk.Context, removalTime time.Time) {
-	store := ctx.KVStore(k.storeKey)
-	store.Delete(types.RemovalTimeToConsumerIdsKey(removalTime))
 }
