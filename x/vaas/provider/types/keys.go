@@ -50,7 +50,7 @@ const (
 
 	LastProviderConsensusValsKeyName = "LastProviderConsensusValsKey"
 
-	ConsumerAddrsToPruneV2KeyName = "ConsumerAddrsToPruneV2Key"
+	ConsumerAddrsToPruneKeyName = "ConsumerAddrsToPruneKey"
 
 	ConsumerIdKeyName = "ConsumerIdKey"
 
@@ -98,7 +98,7 @@ var (
 	ValidatorsByConsumerAddrPrefix         = collections.NewPrefix(10)
 	EquivocationEvidenceMinHeightPrefix    = collections.NewPrefix(11)
 	ConsumerValidatorPrefix                = collections.NewPrefix(12)
-	ConsumerAddrsToPruneV2Prefix           = collections.NewPrefix(13)
+	ConsumerAddrsToPrunePrefix             = collections.NewPrefix(13)
 	LastProviderConsensusVals              = collections.NewPrefix(14)
 	ConsumerIdPrefix                       = collections.NewPrefix(15)
 	ConsumerIdToChainIdPrefix              = collections.NewPrefix(16)

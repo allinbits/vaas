@@ -85,10 +85,10 @@ message ValidatorByConsumerAddr {
   bytes provider_addr = 3;
 }
 
-// Used to serialize the ConsumerAddrsToPruneV2 index from key assignment
-// ConsumerAddrsToPruneV2: (chainID, pruneTs time.Time) -> consumerAddrs
+// Used to serialize the ConsumerAddrsToPrune index from key assignment
+// ConsumerAddrsToPrune: (chainID, pruneTs time.Time) -> consumerAddrs
 // AddressList
-message ConsumerAddrsToPruneV2 {
+message ConsumerAddrsToPrune {
   string chain_id = 1;
   google.protobuf.Timestamp prune_ts = 2
       [ (gogoproto.stdtime) = true, (gogoproto.nullable) = false ];
