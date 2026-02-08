@@ -143,14 +143,12 @@ func (msg MsgSubmitConsumerDoubleVoting) ValidateBasic() error {
 // NewMsgCreateConsumer creates a new MsgCreateConsumer instance
 func NewMsgCreateConsumer(submitter, chainId string, metadata ConsumerMetadata,
 	initializationParameters *ConsumerInitializationParameters,
-	infractionParameters *InfractionParameters,
 ) (*MsgCreateConsumer, error) {
 	return &MsgCreateConsumer{
 		Submitter:                submitter,
 		ChainId:                  chainId,
 		Metadata:                 metadata,
 		InitializationParameters: initializationParameters,
-		InfractionParameters:     infractionParameters,
 	}, nil
 }
 
@@ -195,19 +193,13 @@ func (msg MsgCreateConsumer) ValidateBasic() error {
 		}
 	}
 
-	if msg.InfractionParameters != nil {
-		if err := ValidateInfractionParameters(*msg.InfractionParameters); err != nil {
-			return errorsmod.Wrapf(ErrInvalidMsgCreateConsumer, "InfractionParameters: %s", err.Error())
-		}
-	}
-
 	return nil
 }
 
 // NewMsgUpdateConsumer creates a new MsgUpdateConsumer instance
 func NewMsgUpdateConsumer(owner, consumerId, ownerAddress string, metadata *ConsumerMetadata,
 	initializationParameters *ConsumerInitializationParameters,
-	newChainId string, infractionParameters *InfractionParameters,
+	newChainId string,
 ) (*MsgUpdateConsumer, error) {
 	return &MsgUpdateConsumer{
 		Owner:                    owner,
@@ -216,7 +208,6 @@ func NewMsgUpdateConsumer(owner, consumerId, ownerAddress string, metadata *Cons
 		Metadata:                 metadata,
 		InitializationParameters: initializationParameters,
 		NewChainId:               newChainId,
-		InfractionParameters:     infractionParameters,
 	}, nil
 }
 
@@ -237,12 +228,6 @@ func (msg MsgUpdateConsumer) ValidateBasic() error {
 	if msg.InitializationParameters != nil {
 		if err := ValidateInitializationParameters(*msg.InitializationParameters); err != nil {
 			return errorsmod.Wrapf(ErrInvalidMsgUpdateConsumer, "InitializationParameters: %s", err.Error())
-		}
-	}
-
-	if msg.InfractionParameters != nil {
-		if err := ValidateInfractionParameters(*msg.InfractionParameters); err != nil {
-			return errorsmod.Wrapf(ErrInvalidMsgUpdateConsumer, "InfractionParameters: %s", err.Error())
 		}
 	}
 
@@ -383,29 +368,6 @@ func ValidateInitializationParameters(initializationParameters ConsumerInitializ
 
 	if err := vaastypes.ValidateConnectionIdentifier(initializationParameters.ConnectionId); err != nil {
 		return errorsmod.Wrapf(ErrInvalidConsumerInitializationParameters, "ConnectionId: %s", err.Error())
-	}
-
-	return nil
-}
-
-// ValidateInfractionParameters validates that all the provided infraction parameters are in the expected range
-func ValidateInfractionParameters(initializationParameters InfractionParameters) error {
-	if initializationParameters.DoubleSign != nil {
-		if initializationParameters.DoubleSign.JailDuration < 0 {
-			return errorsmod.Wrap(ErrInvalidConsumerInfractionParameters, "DoubleSign.JailDuration cannot be negative")
-		}
-		if err := vaastypes.ValidateFraction(initializationParameters.DoubleSign.SlashFraction); err != nil {
-			return errorsmod.Wrapf(ErrInvalidConsumerInfractionParameters, "DoubleSign.SlashFraction: %s", err.Error())
-		}
-	}
-
-	if initializationParameters.Downtime != nil {
-		if initializationParameters.Downtime.JailDuration < 0 {
-			return errorsmod.Wrap(ErrInvalidConsumerInfractionParameters, "Downtime.JailDuration cannot be negative")
-		}
-		if err := vaastypes.ValidateFraction(initializationParameters.Downtime.SlashFraction); err != nil {
-			return errorsmod.Wrapf(ErrInvalidConsumerInfractionParameters, "Downtime.SlashFraction: %s", err.Error())
-		}
 	}
 
 	return nil
