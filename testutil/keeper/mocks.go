@@ -124,6 +124,21 @@ func (mr *MockStakingKeeperMockRecorder) GetLastValidatorPower(ctx, operator any
 	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "GetLastValidatorPower", reflect.TypeOf((*MockStakingKeeper)(nil).GetLastValidatorPower), ctx, operator)
 }
 
+// GetLastTotalPower mocks base method.
+func (m *MockStakingKeeper) GetLastTotalPower(ctx context.Context) (math.Int, error) {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "GetLastTotalPower", ctx)
+	ret0, _ := ret[0].(math.Int)
+	ret1, _ := ret[1].(error)
+	return ret0, ret1
+}
+
+// GetLastTotalPower indicates an expected call of GetLastTotalPower.
+func (mr *MockStakingKeeperMockRecorder) GetLastTotalPower(ctx any) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "GetLastTotalPower", reflect.TypeOf((*MockStakingKeeper)(nil).GetLastTotalPower), ctx)
+}
+
 // GetRedelegationsFromSrcValidator mocks base method.
 func (m *MockStakingKeeper) GetRedelegationsFromSrcValidator(ctx context.Context, valAddr types.ValAddress) ([]types0.Redelegation, error) {
 	m.ctrl.T.Helper()
@@ -357,6 +372,20 @@ func (m *MockStakingKeeper) UnbondingTime(ctx context.Context) (time.Duration, e
 func (mr *MockStakingKeeperMockRecorder) UnbondingTime(ctx any) *gomock.Call {
 	mr.mock.ctrl.T.Helper()
 	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "UnbondingTime", reflect.TypeOf((*MockStakingKeeper)(nil).UnbondingTime), ctx)
+}
+
+// ValidatorAddressCodec mocks base method.
+func (m *MockStakingKeeper) ValidatorAddressCodec() address.Codec {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "ValidatorAddressCodec")
+	ret0, _ := ret[0].(address.Codec)
+	return ret0
+}
+
+// ValidatorAddressCodec indicates an expected call of ValidatorAddressCodec.
+func (mr *MockStakingKeeperMockRecorder) ValidatorAddressCodec() *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "ValidatorAddressCodec", reflect.TypeOf((*MockStakingKeeper)(nil).ValidatorAddressCodec))
 }
 
 // MockSlashingKeeper is a mock of SlashingKeeper interface.
@@ -750,6 +779,20 @@ func (m *MockBankKeeper) GetBalance(ctx context.Context, addr types.AccAddress, 
 func (mr *MockBankKeeperMockRecorder) GetBalance(ctx, addr, denom any) *gomock.Call {
 	mr.mock.ctrl.T.Helper()
 	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "GetBalance", reflect.TypeOf((*MockBankKeeper)(nil).GetBalance), ctx, addr, denom)
+}
+
+// SendCoinsFromModuleToAccount mocks base method.
+func (m *MockBankKeeper) SendCoinsFromModuleToAccount(ctx context.Context, senderModule string, recipientAddr types.AccAddress, amt types.Coins) error {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "SendCoinsFromModuleToAccount", ctx, senderModule, recipientAddr, amt)
+	ret0, _ := ret[0].(error)
+	return ret0
+}
+
+// SendCoinsFromModuleToAccount indicates an expected call of SendCoinsFromModuleToAccount.
+func (mr *MockBankKeeperMockRecorder) SendCoinsFromModuleToAccount(ctx, senderModule, recipientAddr, amt any) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "SendCoinsFromModuleToAccount", reflect.TypeOf((*MockBankKeeper)(nil).SendCoinsFromModuleToAccount), ctx, senderModule, recipientAddr, amt)
 }
 
 // SendCoinsFromModuleToModule mocks base method.

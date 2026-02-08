@@ -155,6 +155,17 @@ func (am AppModule) BeginBlock(ctx context.Context) error {
 		return err
 	}
 
+	// Collect fees from consumer chains
+	collectedFees, err := am.keeper.CollectFeesFromConsumers(sdkCtx)
+	if err != nil {
+		return err
+	}
+
+	// Distribute collected fees to validators
+	if err := am.keeper.DistributeFeesToValidators(sdkCtx, collectedFees); err != nil {
+		return err
+	}
+
 	return nil
 }
 

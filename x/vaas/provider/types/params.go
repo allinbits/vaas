@@ -9,6 +9,10 @@ import (
 	clienttypes "github.com/cosmos/ibc-go/v10/modules/core/02-client/types"
 	commitmenttypes "github.com/cosmos/ibc-go/v10/modules/core/23-commitment/types"
 	ibctmtypes "github.com/cosmos/ibc-go/v10/modules/light-clients/07-tendermint"
+
+	"cosmossdk.io/math"
+
+	sdk "github.com/cosmos/cosmos-sdk/types"
 )
 
 const (
@@ -30,6 +34,9 @@ const (
 	DefaultMaxProviderConsensusValidators = 180
 )
 
+// DefaultFeesPerBlock is the default amount that each consumer chain must pay per block
+var DefaultFeesPerBlock = sdk.NewCoin("photon", math.NewInt(1000)) // Default fees per block
+
 // NewParams creates new provider parameters with provided arguments
 func NewParams(
 	cs *ibctmtypes.ClientState,
@@ -37,6 +44,7 @@ func NewParams(
 	vaasTimeoutPeriod time.Duration,
 	blocksPerEpoch int64,
 	maxProviderConsensusValidators int64,
+	feesPerBlock sdk.Coin,
 ) Params {
 	return Params{
 		TemplateClient:                 cs,
@@ -44,6 +52,7 @@ func NewParams(
 		VaasTimeoutPeriod:              vaasTimeoutPeriod,
 		BlocksPerEpoch:                 blocksPerEpoch,
 		MaxProviderConsensusValidators: maxProviderConsensusValidators,
+		FeesPerBlock:                   feesPerBlock,
 	}
 }
 
@@ -71,6 +80,7 @@ func DefaultParams() Params {
 		vaastypes.DefaultVAASTimeoutPeriod,
 		DefaultBlocksPerEpoch,
 		DefaultMaxProviderConsensusValidators,
+		DefaultFeesPerBlock,
 	)
 }
 
@@ -93,6 +103,24 @@ func (p Params) Validate() error {
 	}
 	if err := vaastypes.ValidatePositiveInt64(p.MaxProviderConsensusValidators); err != nil {
 		return fmt.Errorf("max provider consensus validators is invalid: %s", err)
+	}
+	if err := validateFeesPerBlock(p.FeesPerBlock); err != nil {
+		return err
+	}
+
+	return nil
+}
+
+func validateFeesPerBlock(i interface{}) error {
+	coin, ok := i.(sdk.Coin)
+	if !ok {
+		return fmt.Errorf("invalid parameter type: %T", i)
+	}
+	if !coin.IsValid() {
+		return fmt.Errorf("fees per block coin is invalid")
+	}
+	if coin.IsZero() || coin.IsNegative() {
+		return fmt.Errorf("fees per block must be positive")
 	}
 	return nil
 }
