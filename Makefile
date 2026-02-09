@@ -173,19 +173,13 @@ consumer-start: consumer-init consumer-create
 ###                                 Relayer                                 ###
 ###############################################################################
 
-HERMES ?= $(shell which hermes)
+HERMES ?= ./hermes
 HERMES_CONFIG ?= $(HOME)/.vaas-hermes/config.toml
 
 HERMES_CMD = $(HERMES) --config $(HERMES_CONFIG)
 
-# Check Hermes IBC relayer installation
-relayer-install:
-	@echo "checking Hermes IBC relayer..."
-	@if [ "$(HERMES)" != "" ]; then echo "Found Hermes binary"; else echo "Could not find Hermes relayer in PATH. Please follow app/README.md to install it." && exit 1; fi
-	@$(HERMES) version
-
 # Create Hermes configuration
-relayer-config: relayer-install
+relayer-config:
 	@chmod +x ./scripts/hermes-config.sh
 	@./scripts/hermes-config.sh
 
@@ -288,6 +282,7 @@ localnet-start: build-apps
 	done
 	@echo ""
 	@echo "Step 3/6: Configuring relayer..."
+	@if [ -x $(HERMES) ]; then echo "  Found Hermes binary"; else echo "  Could not find Hermes binary. Please follow app/README.md to install it." && $(MAKE) localnet-clean && exit 1; fi
 	@$(MAKE) relayer-setup > /tmp/vaas-hermes.log 2>&1
 	@echo ""
 	@echo "Step 4/6: Starting relayer in background..."

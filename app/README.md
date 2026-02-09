@@ -9,19 +9,20 @@ This guide explains how to run a local VAAS (Validator-as-a-Service) testnet wit
 
 ### Install Hermes
 
+Install hermes in the root directory of the repository.
+
 ```bash
 # macOS ARM64
-curl -L https://github.com/informalsystems/hermes/releases/download/v1.13.3/hermes-v1.13.3-aarch64-apple-darwin.tar.gz | tar -xz -C ~/.local/bin/
+curl -L https://github.com/informalsystems/hermes/releases/download/v1.13.3/hermes-v1.13.3-aarch64-apple-darwin.tar.gz | tar -xz -C .
 
 
 # linux amd64
-curl -L https://github.com/informalsystems/hermes/releases/download/v1.13.3/hermes-v1.13.3-x86_64-unknown-linux-gnu.tar.gz | tar -xz -C ~/.local/bin/
+curl -L https://github.com/informalsystems/hermes/releases/download/v1.13.3/hermes-v1.13.3-x86_64-unknown-linux-gnu.tar.gz | tar -xz -C .
 
-# Verify installation (assuming binary is in your $PATH)
-hermes version
+# Verify installation
+./hermes version
 ```
 
-Make sure that `~/.local/bin` is in your $PATH, or use `/usr/local/bin` instead if it applies to your system.
 
 ## Quick Start
 
