@@ -314,3 +314,27 @@ localnet-start: build-apps
 	@echo "  To stop: make localnet-clean"
 
 .PHONY: localnet-clean localnet-start
+
+###############################################################################
+###                            Docker E2E Tests                             ###
+###############################################################################
+
+# Build the chain Docker image (provider + consumer binaries)
+docker-build-debug:
+	@echo "Building VAAS e2e chain image..."
+	docker build -t cosmos/vaas-e2e -f tests/e2e/docker/e2e.Dockerfile .
+
+# Build the Hermes relayer Docker image
+docker-build-hermes:
+	@echo "Building Hermes e2e image..."
+	cd tests/e2e/docker && docker build -t ghcr.io/cosmos/hermes-e2e:1.0.0 -f hermes.Dockerfile .
+
+# Build all Docker images needed for e2e tests
+docker-build-all: docker-build-debug docker-build-hermes
+
+# Run the e2e integration test suite
+test-e2e: docker-build-all
+	@echo "Running e2e tests..."
+	cd tests/e2e && go test -timeout=25m -v ./...
+
+.PHONY: docker-build-debug docker-build-hermes docker-build-all test-e2e
