@@ -1,6 +1,7 @@
 package ante
 
 import (
+	"context"
 	"fmt"
 	"strings"
 
@@ -10,7 +11,7 @@ import (
 type (
 	// ConsumerKeeper defines the interface required by a consumer module keeper.
 	ConsumerKeeper interface {
-		GetProviderChannel(ctx sdk.Context) (string, bool)
+		GetProviderChannel(ctx context.Context) (string, bool)
 	}
 
 	// MsgFilterDecorator defines an AnteHandler decorator that enables message

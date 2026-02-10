@@ -384,7 +384,7 @@ func New(
 
 	app.ProviderKeeper = ibcproviderkeeper.NewKeeper(
 		appCodec,
-		keys[providertypes.StoreKey],
+		runtime.NewKVStoreService(keys[providertypes.StoreKey]),
 		app.IBCKeeper.ChannelKeeper,
 		app.IBCKeeper.ConnectionKeeper,
 		app.IBCKeeper.ClientKeeper,
