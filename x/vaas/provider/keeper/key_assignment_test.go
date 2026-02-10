@@ -244,7 +244,7 @@ func TestGetAllConsumerAddrsToPrune(t *testing.T) {
 
 	chainIDs := []string{"consumer-1", "consumer-2", "consumer-3"}
 	numAssignments := 10
-	testAssignments := []types.ConsumerAddrsToPruneV2{}
+	testAssignments := []types.ConsumerAddrsToPrune{}
 	for i := 0; i < numAssignments; i++ {
 		consumerAddresses := types.AddressList{}
 		for j := 0; j < 2*(i+1); j++ {
@@ -252,7 +252,7 @@ func TestGetAllConsumerAddrsToPrune(t *testing.T) {
 			consumerAddresses.Addresses = append(consumerAddresses.Addresses, addr)
 		}
 		testAssignments = append(testAssignments,
-			types.ConsumerAddrsToPruneV2{
+			types.ConsumerAddrsToPrune{
 				ChainId:       chainIDs[rng.Intn(len(chainIDs))],
 				PruneTs:       time.Now().UTC(),
 				ConsumerAddrs: &consumerAddresses,
@@ -273,7 +273,7 @@ func TestGetAllConsumerAddrsToPrune(t *testing.T) {
 			break
 		}
 	}
-	expectedGetAllOrder := []types.ConsumerAddrsToPruneV2{}
+	expectedGetAllOrder := []types.ConsumerAddrsToPrune{}
 	for _, assignment := range testAssignments {
 		if assignment.ChainId == chainID {
 			expectedGetAllOrder = append(expectedGetAllOrder, assignment)

@@ -176,7 +176,7 @@ func NewKeeper(
 		// Key assignment collections
 		ValidatorConsumerPubKey: collections.NewMap(sb, types.ConsumerValidatorsPrefix, "validator_consumer_pub_key", collections.PairKeyCodec(collections.StringKey, collections.BytesKey), collections.BytesValue),
 		ValidatorByConsumerAddr: collections.NewMap(sb, types.ValidatorsByConsumerAddrPrefix, "validator_by_consumer_addr", collections.PairKeyCodec(collections.StringKey, collections.BytesKey), collections.BytesValue),
-		ConsumerAddrsToPrune:    collections.NewMap(sb, types.ConsumerAddrsToPruneV2Prefix, "consumer_addrs_to_prune", collections.PairKeyCodec(collections.StringKey, collections.BytesKey), codec.CollValue[types.AddressList](cdc)),
+		ConsumerAddrsToPrune:    collections.NewMap(sb, types.ConsumerAddrsToPrunePrefix, "consumer_addrs_to_prune", collections.PairKeyCodec(collections.StringKey, collections.BytesKey), codec.CollValue[types.AddressList](cdc)),
 
 		// Validator set collections
 		ConsumerValidators:        collections.NewMap(sb, types.ConsumerValidatorPrefix, "consumer_validators", collections.PairKeyCodec(collections.StringKey, collections.BytesKey), codec.CollValue[types.ConsensusValidator](cdc)),
@@ -1079,7 +1079,7 @@ func (k Keeper) DeleteConsumerAddrsToPrune(ctx context.Context, consumerId strin
 }
 
 // GetAllConsumerAddrsToPrune gets all consumer addresses that can be eventually pruned for a given consumerId.
-func (k Keeper) GetAllConsumerAddrsToPrune(ctx context.Context, consumerId string) (consumerAddrsToPrune []types.ConsumerAddrsToPruneV2) {
+func (k Keeper) GetAllConsumerAddrsToPrune(ctx context.Context, consumerId string) (consumerAddrsToPrune []types.ConsumerAddrsToPrune) {
 	iter, err := k.ConsumerAddrsToPrune.Iterate(ctx, collections.NewPrefixedPairRange[string, []byte](consumerId))
 	if err != nil {
 		return consumerAddrsToPrune
@@ -1095,7 +1095,7 @@ func (k Keeper) GetAllConsumerAddrsToPrune(ctx context.Context, consumerId strin
 		if err != nil {
 			continue
 		}
-		consumerAddrsToPrune = append(consumerAddrsToPrune, types.ConsumerAddrsToPruneV2{
+		consumerAddrsToPrune = append(consumerAddrsToPrune, types.ConsumerAddrsToPrune{
 			PruneTs:       ts,
 			ConsumerAddrs: &kv.Value,
 			ChainId:       consumerId,
