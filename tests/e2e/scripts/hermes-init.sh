@@ -1,10 +1,6 @@
 #!/bin/sh
-# Hermes relayer bootstrap script for VAAS e2e tests.
-# This script is used as a reference — the test suite generates
-# the actual bootstrap script dynamically with correct chain IDs
-# and mnemonic.
-#
-# Usage: This script is mounted into the Hermes container and executed
+# Hermes relayer initialization script for VAAS e2e tests.
+# This script is mounted into the Hermes container and executed
 # as the entrypoint. It imports relayer keys and starts Hermes.
 
 set -e
