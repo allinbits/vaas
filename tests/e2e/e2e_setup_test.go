@@ -2,7 +2,6 @@ package e2e
 
 import (
 	"context"
-	"encoding/json"
 	"fmt"
 	"os"
 	"os/exec"
@@ -70,47 +69,26 @@ func (s *IntegrationTestSuite) SetupSuite() {
 	s.dkrNet, err = s.dkrPool.CreateNetwork(dockerNetwork)
 	s.Require().NoError(err, "failed to create docker network")
 
-	// =========================================================================
-	// Step 1: Initialize and start provider chain
-	// =========================================================================
 	s.T().Log("step 1: initializing provider chain...")
 	s.provider = &chain{id: providerChainID}
 	s.initAndStartProvider()
 
-	// =========================================================================
-	// Step 2: Register consumer chain on provider
-	// =========================================================================
 	s.T().Log("step 2: registering consumer chain on provider...")
 	s.registerConsumerOnProvider()
 
-	// =========================================================================
-	// Step 3: Fetch consumer genesis from provider
-	// =========================================================================
 	s.T().Log("step 3: fetching consumer genesis from provider...")
 	consumerGenesisJSON := s.fetchConsumerGenesis()
 
-	// =========================================================================
-	// Step 4: Initialize and start consumer chain
-	// =========================================================================
 	s.T().Log("step 4: initializing consumer chain...")
 	s.consumer = &chain{id: consumerChainID}
 	s.initAndStartConsumer(consumerGenesisJSON)
 
-	// =========================================================================
-	// Step 5: Setup Hermes relayer
-	// =========================================================================
 	s.T().Log("step 5: setting up Hermes relayer...")
 	s.startHermesRelayer()
 
-	// =========================================================================
-	// Step 6: Create IBC connection and VAAS channel
-	// =========================================================================
 	s.T().Log("step 6: creating IBC connection and VAAS channel...")
 	s.createIBCConnectionAndChannel()
 
-	// =========================================================================
-	// Step 7: Trigger VSC
-	// =========================================================================
 	s.T().Log("step 7: triggering validator set change...")
 	s.triggerVSC()
 
@@ -187,7 +165,6 @@ func (s *IntegrationTestSuite) cleanupStaleContainers() {
 
 // initAndStartProvider initializes the provider chain using a temporary Docker
 // container for init commands, then starts the actual chain container.
-// This follows the same sequence as the Makefile provider-start target.
 func (s *IntegrationTestSuite) initAndStartProvider() {
 	// Create host directory for provider data
 	providerDir, err := os.MkdirTemp("", "vaas-e2e-provider-")
@@ -744,17 +721,6 @@ func (s *IntegrationTestSuite) triggerVSC() {
 	s.T().Log("WARNING: VSC packet may not have been relayed within timeout")
 }
 
-// dockerExecMust runs a command in a Docker container, failing the test on error.
-func (s *IntegrationTestSuite) dockerExecMust(ctx context.Context, containerID string, cmd []string) {
-	stdout, stderr, err := s.dockerExec(ctx, containerID, cmd)
-	if err != nil {
-		s.T().Logf("cmd: %v", cmd)
-		s.T().Logf("stdout: %s", stdout.String())
-		s.T().Logf("stderr: %s", stderr.String())
-	}
-	s.Require().NoError(err, "docker exec failed for cmd: %v", cmd)
-}
-
 // generateHermesConfig creates the Hermes TOML configuration for both chains.
 func (s *IntegrationTestSuite) generateHermesConfig() string {
 	providerHost := fmt.Sprintf("%s-val0", providerChainID)
@@ -895,22 +861,7 @@ hermes start
 `, relayerMnemonic, providerChainID, consumerChainID)
 }
 
-// patchGenesisJSON reads a genesis.json file, applies a mutation function,
-// and writes it back.
-func (s *IntegrationTestSuite) patchGenesisJSON(path string, mutate func(map[string]interface{})) {
-	bz, err := os.ReadFile(path)
-	s.Require().NoError(err, "failed to read genesis file")
 
-	var genesis map[string]interface{}
-	s.Require().NoError(json.Unmarshal(bz, &genesis), "failed to unmarshal genesis")
-
-	mutate(genesis)
-
-	out, err := json.MarshalIndent(genesis, "", "  ")
-	s.Require().NoError(err, "failed to marshal genesis")
-
-	s.Require().NoError(os.WriteFile(path, out, 0o600), "failed to write genesis")
-}
 
 // waitForChainHeight polls a CometBFT RPC endpoint until the chain reaches
 // the given block height.

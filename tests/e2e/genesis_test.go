@@ -40,3 +40,20 @@ func patchConsumerGenesisWithProviderData(genesisFilePath string, consumerGenesi
 
 	return os.WriteFile(genesisFilePath, out, 0o600)
 }
+
+// patchGenesisJSON reads a genesis.json file, applies a mutation function,
+// and writes it back.
+func (s *IntegrationTestSuite) patchGenesisJSON(path string, mutate func(map[string]interface{})) {
+	bz, err := os.ReadFile(path)
+	s.Require().NoError(err, "failed to read genesis file")
+
+	var genesis map[string]interface{}
+	s.Require().NoError(json.Unmarshal(bz, &genesis), "failed to unmarshal genesis")
+
+	mutate(genesis)
+
+	out, err := json.MarshalIndent(genesis, "", "  ")
+	s.Require().NoError(err, "failed to marshal genesis")
+
+	s.Require().NoError(os.WriteFile(path, out, 0o600), "failed to write genesis")
+}

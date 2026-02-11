@@ -67,3 +67,15 @@ func (s *IntegrationTestSuite) executeHermesCommand(ctx context.Context, cmd []s
 
 	return stdout, stderr, nil
 }
+
+
+// dockerExecMust runs a command in a Docker container, failing the test on error.
+func (s *IntegrationTestSuite) dockerExecMust(ctx context.Context, containerID string, cmd []string) {
+	stdout, stderr, err := s.dockerExec(ctx, containerID, cmd)
+	if err != nil {
+		s.T().Logf("cmd: %v", cmd)
+		s.T().Logf("stdout: %s", stdout.String())
+		s.T().Logf("stderr: %s", stderr.String())
+	}
+	s.Require().NoError(err, "docker exec failed for cmd: %v", cmd)
+}
