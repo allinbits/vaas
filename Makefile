@@ -327,7 +327,7 @@ docker-build-debug:
 # Build the Hermes relayer Docker image
 docker-build-hermes:
 	@echo "Building Hermes e2e image..."
-	cd tests/e2e/docker && docker build -t ghcr.io/cosmos/hermes-e2e:1.0.0 -f hermes.Dockerfile .
+	cd tests/e2e/docker && docker build -t ghcr.io/cosmos/hermes-e2e:1.13.1 -f hermes.Dockerfile .
 
 # Build all Docker images needed for e2e tests
 docker-build-all: docker-build-debug docker-build-hermes

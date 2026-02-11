@@ -13,7 +13,7 @@ import (
 // 3. Provider has the consumer chain registered
 // 4. Consumer has provider info
 // 5. Validator sets match between provider and consumer
-func (s *IntegrationTestSuite) TestVAASLifecycle() {
+func (s *IntegrationTestSuite) testVAASLifecycle() {
 	// 1. Verify provider is producing blocks
 	s.T().Log("verifying provider is producing blocks...")
 	providerHeight, err := s.queryProviderBlockHeight()
@@ -50,31 +50,35 @@ func (s *IntegrationTestSuite) TestVAASLifecycle() {
 }
 
 // TestProviderBlockProduction verifies the provider chain continues to produce blocks.
-func (s *IntegrationTestSuite) TestProviderBlockProduction() {
-	height1, err := s.queryProviderBlockHeight()
-	s.Require().NoError(err)
+func (s *IntegrationTestSuite) testProviderBlockProduction() {
+	s.Run("check provider block production", func() {
+		height1, err := s.queryProviderBlockHeight()
+		s.Require().NoError(err)
 
-	time.Sleep(5 * time.Second)
+		time.Sleep(5 * time.Second)
 
-	height2, err := s.queryProviderBlockHeight()
-	s.Require().NoError(err)
+		height2, err := s.queryProviderBlockHeight()
+		s.Require().NoError(err)
 
-	s.Require().Greater(height2, height1, "provider should continue producing blocks")
-	s.T().Logf("provider produced %d blocks in 5s (from %d to %d)", height2-height1, height1, height2)
+		s.Require().Greater(height2, height1, "provider should continue producing blocks")
+		s.T().Logf("provider produced %d blocks in 5s (from %d to %d)", height2-height1, height1, height2)
+	})
 }
 
 // TestConsumerBlockProduction verifies the consumer chain continues to produce blocks.
-func (s *IntegrationTestSuite) TestConsumerBlockProduction() {
-	height1, err := s.queryConsumerBlockHeight()
-	s.Require().NoError(err)
+func (s *IntegrationTestSuite) testConsumerBlockProduction() {
+	s.Run("check consumer block production", func() {
+		height1, err := s.queryConsumerBlockHeight()
+		s.Require().NoError(err)
 
-	time.Sleep(5 * time.Second)
+		time.Sleep(5 * time.Second)
 
-	height2, err := s.queryConsumerBlockHeight()
-	s.Require().NoError(err)
+		height2, err := s.queryConsumerBlockHeight()
+		s.Require().NoError(err)
 
-	s.Require().Greater(height2, height1, "consumer should continue producing blocks")
-	s.T().Logf("consumer produced %d blocks in 5s (from %d to %d)", height2-height1, height1, height2)
+		s.Require().Greater(height2, height1, "consumer should continue producing blocks")
+		s.T().Logf("consumer produced %d blocks in 5s (from %d to %d)", height2-height1, height1, height2)
+	})
 }
 
 // verifyValidatorSetSync checks that the validator public keys on the consumer
@@ -122,7 +126,7 @@ func extractPubKeys(validators []map[string]interface{}) []string {
 
 // TestConsumerChainRegistration verifies that the consumer chain is properly
 // registered on the provider.
-func (s *IntegrationTestSuite) TestConsumerChainRegistration() {
+func (s *IntegrationTestSuite) testConsumerChainRegistration() {
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 	defer cancel()
 

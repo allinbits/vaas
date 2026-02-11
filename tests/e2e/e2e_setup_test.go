@@ -9,6 +9,7 @@ import (
 	"path/filepath"
 	"strings"
 	"time"
+	"testing"
 
 	"github.com/ory/dockertest/v3"
 	"github.com/ory/dockertest/v3/docker"
@@ -17,7 +18,8 @@ import (
 
 const (
 	e2eChainImage   = "cosmos/vaas-e2e"
-	hermesImage     = "ghcr.io/cosmos/hermes-e2e:1.0.0"
+	hermesImage    = "ghcr.io/cosmos/hermes-e2e"
+	hermesImageTag = "1.13.1"
 	dockerNetwork   = "vaas-e2e-testnet"
 	relayerMnemonic = "abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon art"
 )
@@ -37,7 +39,12 @@ type IntegrationTestSuite struct {
 	consumerValRes []*dockertest.Resource
 }
 
-// SetupSuite orchestrates the full provider-consumer-relayer lifecycle:
+// TestIntegrationTestSuite is the entry point for the e2e test suite.
+func TestIntegrationTestSuite(t *testing.T) {
+	suite.Run(t, new(IntegrationTestSuite))
+}
+
+// SetupSuite:
 // 1. Create Docker pool and network
 // 2. Initialize and start provider chain
 // 3. Register consumer on provider
@@ -55,6 +62,9 @@ func (s *IntegrationTestSuite) SetupSuite() {
 	s.Require().NoError(err, "failed to create docker pool")
 
 	s.dkrPool.MaxWait = 5 * time.Minute
+
+	// Remove stale containers from previous failed runs
+	s.cleanupStaleContainers()
 
 	// Create Docker network
 	s.dkrNet, err = s.dkrPool.CreateNetwork(dockerNetwork)
@@ -148,6 +158,31 @@ func (s *IntegrationTestSuite) TearDownSuite() {
 	for _, dir := range s.tmpDirs {
 		_ = os.RemoveAll(dir)
 	}
+}
+
+// cleanupStaleContainers removes containers from previous failed test runs.
+func (s *IntegrationTestSuite) cleanupStaleContainers() {
+	staleNames := []string{
+		"provider-init",
+		"consumer-init",
+		fmt.Sprintf("%s-val0", providerChainID),
+		fmt.Sprintf("%s-val0", consumerChainID),
+		"hermes-relayer",
+	}
+	for _, name := range staleNames {
+		c, err := s.dkrPool.Client.InspectContainer(name)
+		if err != nil {
+			continue // container doesn't exist
+		}
+		s.T().Logf("removing stale container: %s", name)
+		_ = s.dkrPool.Client.RemoveContainer(docker.RemoveContainerOptions{
+			ID:            c.ID,
+			Force:         true,
+			RemoveVolumes: true,
+		})
+	}
+	// Also remove stale network
+	_ = s.dkrPool.Client.RemoveNetwork(dockerNetwork)
 }
 
 // initAndStartProvider initializes the provider chain using a temporary Docker
@@ -293,6 +328,22 @@ func (s *IntegrationTestSuite) initAndStartProvider() {
 		),
 	})
 
+	// Bind RPC to all interfaces so the host and other containers can reach it
+	s.dockerExecMust(ctx, initResource.Container.ID, []string{
+		"sh", "-c", fmt.Sprintf(
+			`sed -i 's#laddr = "tcp://127.0.0.1:26657"#laddr = "tcp://0.0.0.0:26657"#g' %s/config/config.toml`,
+			providerHomePath,
+		),
+	})
+
+	// Bind gRPC to all interfaces so Hermes and the host can reach it
+	s.dockerExecMust(ctx, initResource.Container.ID, []string{
+		"sh", "-c", fmt.Sprintf(
+			`sed -i 's#address = "localhost:9090"#address = "0.0.0.0:9090"#g' %s/config/app.toml`,
+			providerHomePath,
+		),
+	})
+
 	// Purge init container
 	s.Require().NoError(s.dkrPool.Purge(initResource))
 
@@ -350,7 +401,7 @@ func (s *IntegrationTestSuite) registerConsumerOnProvider() {
 		"sh", "-c", fmt.Sprintf("echo '%s' > /tmp/create_consumer.json", createConsumerJSON),
 	})
 
-	stdout, stderr, err := s.dockerExec(ctx, s.providerValRes[0].Container.ID, []string{
+	_, _, err := s.dockerExec(ctx, s.providerValRes[0].Container.ID, []string{
 		providerBinary, "tx", "provider", "create-consumer", "/tmp/create_consumer.json",
 		"--from", "val",
 		"--home", providerHomePath,
@@ -361,10 +412,7 @@ func (s *IntegrationTestSuite) registerConsumerOnProvider() {
 		"--fees", "10000" + bondDenom,
 		"-y",
 	})
-	s.T().Logf("create-consumer stdout: %s", stdout.String())
-	if stderr.Len() > 0 {
-		s.T().Logf("create-consumer stderr: %s", stderr.String())
-	}
+
 	s.Require().NoError(err, "failed to create consumer on provider")
 
 	// Wait for the tx to be included
@@ -494,6 +542,22 @@ func (s *IntegrationTestSuite) initAndStartConsumer(consumerGenesisJSON []byte) 
 		"--home", consumerHomePath,
 	})
 
+	// Bind RPC to all interfaces so the host and other containers can reach it
+	s.dockerExecMust(ctx, initResource.Container.ID, []string{
+		"sh", "-c", fmt.Sprintf(
+			`sed -i 's#laddr = "tcp://127.0.0.1:26657"#laddr = "tcp://0.0.0.0:26657"#g' %s/config/config.toml`,
+			consumerHomePath,
+		),
+	})
+
+	// Bind gRPC to all interfaces so Hermes and the host can reach it
+	s.dockerExecMust(ctx, initResource.Container.ID, []string{
+		"sh", "-c", fmt.Sprintf(
+			`sed -i 's#address = "localhost:9090"#address = "0.0.0.0:9090"#g' %s/config/app.toml`,
+			consumerHomePath,
+		),
+	})
+
 	// Purge init container
 	s.Require().NoError(s.dkrPool.Purge(initResource))
 
@@ -577,6 +641,7 @@ func (s *IntegrationTestSuite) startHermesRelayer() {
 		&dockertest.RunOptions{
 			Name:       "hermes-relayer",
 			Repository: hermesImage,
+			Tag:        hermesImageTag,
 			NetworkID:  s.dkrNet.Network.ID,
 			Mounts: []string{
 				fmt.Sprintf("%s/.hermes:/home/hermes/.hermes", hermesDir),
@@ -607,22 +672,19 @@ func (s *IntegrationTestSuite) createIBCConnectionAndChannel() {
 	defer cancel()
 
 	// Create connection using genesis clients (07-tendermint-0)
-	stdout, stderr, err := s.executeHermesCommand(ctx, []string{
+	_, _, err := s.executeHermesCommand(ctx, []string{
 		"hermes", "create", "connection",
 		"--a-chain", consumerChainID,
 		"--a-client", "07-tendermint-0",
 		"--b-client", "07-tendermint-0",
 	})
-	s.T().Logf("hermes create connection stdout: %s", stdout.String())
-	if stderr.Len() > 0 {
-		s.T().Logf("hermes create connection stderr: %s", stderr.String())
-	}
+	
 	s.Require().NoError(err, "failed to create IBC connection")
 
 	time.Sleep(5 * time.Second)
 
 	// Create VAAS channel (consumer/provider ports, ordered, version "1")
-	stdout, stderr, err = s.executeHermesCommand(ctx, []string{
+	_, _, err = s.executeHermesCommand(ctx, []string{
 		"hermes", "create", "channel",
 		"--a-chain", consumerChainID,
 		"--a-connection", "connection-0",
@@ -631,10 +693,7 @@ func (s *IntegrationTestSuite) createIBCConnectionAndChannel() {
 		"--order", "ordered",
 		"--channel-version", "1",
 	})
-	s.T().Logf("hermes create channel stdout: %s", stdout.String())
-	if stderr.Len() > 0 {
-		s.T().Logf("hermes create channel stderr: %s", stderr.String())
-	}
+
 	s.Require().NoError(err, "failed to create VAAS channel")
 
 	s.T().Log("IBC connection and VAAS channel created")
@@ -655,7 +714,7 @@ func (s *IntegrationTestSuite) triggerVSC() {
 	valAddr := strings.TrimSpace(stdout.String())
 
 	// Delegate to trigger validator set change
-	stdout, stderr, err := s.dockerExec(ctx, s.providerValRes[0].Container.ID, []string{
+	_, _, err = s.dockerExec(ctx, s.providerValRes[0].Container.ID, []string{
 		providerBinary, "tx", "staking", "delegate", valAddr, "1000000" + bondDenom,
 		"--from", "user",
 		"--home", providerHomePath,
@@ -664,10 +723,6 @@ func (s *IntegrationTestSuite) triggerVSC() {
 		"--fees", "10000" + bondDenom,
 		"-y",
 	})
-	s.T().Logf("delegation stdout: %s", stdout.String())
-	if stderr.Len() > 0 {
-		s.T().Logf("delegation stderr: %s", stderr.String())
-	}
 	s.Require().NoError(err, "failed to delegate on provider")
 
 	s.T().Log("delegation sent, waiting for VSC packet relay...")
@@ -733,6 +788,8 @@ port = 3031
 
 [telemetry]
 enabled = false
+host = '127.0.0.1'
+port = 3001
 
 [[chains]]
 id = '%s'
@@ -744,6 +801,7 @@ trusted_node = true
 account_prefix = 'cosmos'
 key_name = 'relayer'
 key_store_type = 'Test'
+key_store_folder = '/home/hermes/.hermes/keys'
 store_prefix = 'ibc'
 default_gas = 100000
 max_gas = 3000000
@@ -784,6 +842,7 @@ trusted_node = true
 account_prefix = 'cosmos'
 key_name = 'relayer'
 key_store_type = 'Test'
+key_store_folder = '/home/hermes/.hermes/keys'
 store_prefix = 'ibc'
 default_gas = 100000
 max_gas = 3000000
