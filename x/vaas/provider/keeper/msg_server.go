@@ -103,9 +103,13 @@ func (k msgServer) AssignConsumerKey(goCtx context.Context, msg *types.MsgAssign
 func (k msgServer) SubmitConsumerMisbehaviour(goCtx context.Context, msg *types.MsgSubmitConsumerMisbehaviour) (*types.MsgSubmitConsumerMisbehaviourResponse, error) {
 	ctx := sdk.UnwrapSDKContext(goCtx)
 
+	if msg == nil {
+		return nil, errorsmod.Wrap(types.ErrInvalidMsgSubmitConsumerMisbehaviour, "message cannot be nil")
+	}
+
 	if msg.Misbehaviour == nil ||
-		msg.Misbehaviour.Header1 == nil || msg.Misbehaviour.Header1.Header == nil ||
-		msg.Misbehaviour.Header2 == nil || msg.Misbehaviour.Header2.Header == nil {
+		msg.Misbehaviour.Header1 == nil || msg.Misbehaviour.Header1.SignedHeader == nil || msg.Misbehaviour.Header1.SignedHeader.Header == nil ||
+		msg.Misbehaviour.Header2 == nil || msg.Misbehaviour.Header2.SignedHeader == nil || msg.Misbehaviour.Header2.SignedHeader.Header == nil {
 		return nil, errorsmod.Wrap(types.ErrInvalidMsgSubmitConsumerMisbehaviour, "misbehaviour cannot be nil")
 	}
 
@@ -113,7 +117,7 @@ func (k msgServer) SubmitConsumerMisbehaviour(goCtx context.Context, msg *types.
 		return nil, err
 	}
 
-	chainID := msg.Misbehaviour.Header1.Header.ChainID
+	chainID := msg.Misbehaviour.Header1.SignedHeader.Header.ChainID
 	ctx.EventManager().EmitEvent(
 		sdk.NewEvent(
 			vaastypes.EventTypeSubmitConsumerMisbehaviour,
@@ -134,34 +138,52 @@ func (k msgServer) SubmitConsumerMisbehaviour(goCtx context.Context, msg *types.
 func (k msgServer) SubmitConsumerDoubleVoting(goCtx context.Context, msg *types.MsgSubmitConsumerDoubleVoting) (*types.MsgSubmitConsumerDoubleVotingResponse, error) {
 	ctx := sdk.UnwrapSDKContext(goCtx)
 
+	if msg == nil {
+		return nil, errorsmod.Wrap(types.ErrInvalidMsgSubmitConsumerDoubleVoting, "message cannot be nil")
+	}
+	if msg.DuplicateVoteEvidence == nil {
+		return nil, errorsmod.Wrap(types.ErrInvalidMsgSubmitConsumerDoubleVoting, "duplicate vote evidence cannot be nil")
+	}
+
 	evidence, err := tmtypes.DuplicateVoteEvidenceFromProto(msg.DuplicateVoteEvidence)
 	if err != nil {
 		return nil, err
 	}
+	if evidence.VoteA == nil || evidence.VoteB == nil {
+		return nil, errorsmod.Wrap(vaastypes.ErrInvalidDoubleVotingEvidence, "duplicate vote evidence must include both votes")
+	}
 
-	if msg.InfractionBlockHeader == nil || msg.InfractionBlockHeader.Header == nil {
+	if msg.InfractionBlockHeader == nil ||
+		msg.InfractionBlockHeader.SignedHeader == nil ||
+		msg.InfractionBlockHeader.SignedHeader.Header == nil {
 		return nil, errorsmod.Wrapf(vaastypes.ErrInvalidDoubleVotingEvidence, "infraction block header cannot be nil")
+	}
+	if msg.InfractionBlockHeader.ValidatorSet == nil {
+		return nil, errorsmod.Wrapf(vaastypes.ErrInvalidDoubleVotingEvidence, "infraction block header validator set cannot be nil")
 	}
 
 	consumerChainId, err := k.GetConsumerChainId(ctx, msg.ConsumerId)
 	if err != nil {
 		return nil, err
 	}
-	if msg.InfractionBlockHeader.Header.ChainID != consumerChainId {
+	headerChainID := msg.InfractionBlockHeader.SignedHeader.Header.ChainID
+	if headerChainID != consumerChainId {
 		return nil, errorsmod.Wrapf(
 			vaastypes.ErrInvalidDoubleVotingEvidence,
 			"infraction block header chain id (%s) does not match consumer chain id (%s) (consumerId: %s)",
-			msg.InfractionBlockHeader.Header.ChainID,
+			headerChainID,
 			consumerChainId,
 			msg.ConsumerId,
 		)
 	}
-	if msg.InfractionBlockHeader.Header.Height != evidence.VoteA.Height {
+	headerHeight := msg.InfractionBlockHeader.SignedHeader.Header.Height
+	if headerHeight != evidence.VoteA.Height || headerHeight != evidence.VoteB.Height {
 		return nil, errorsmod.Wrapf(
 			vaastypes.ErrInvalidDoubleVotingEvidence,
-			"infraction block header height (%d) does not match duplicate vote evidence height (%d) (consumerId: %s)",
-			msg.InfractionBlockHeader.Header.Height,
+			"infraction block header height (%d) does not match duplicate vote evidence height (%d/%d) (consumerId: %s)",
+			headerHeight,
 			evidence.VoteA.Height,
+			evidence.VoteB.Height,
 			msg.ConsumerId,
 		)
 	}
