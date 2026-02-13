@@ -95,10 +95,17 @@ func NewMsgSubmitConsumerMisbehaviour(
 
 // ValidateBasic implements the sdk.HasValidateBasic interface.
 func (msg MsgSubmitConsumerMisbehaviour) ValidateBasic() error {
+	if _, err := sdk.AccAddressFromBech32(msg.Submitter); err != nil {
+		return errorsmod.Wrapf(ErrInvalidMsgSubmitConsumerMisbehaviour, "Submitter: %s", err.Error())
+	}
+
 	if err := vaastypes.ValidateConsumerId(msg.ConsumerId); err != nil {
 		return errorsmod.Wrapf(ErrInvalidMsgSubmitConsumerMisbehaviour, "ConsumerId: %s", err.Error())
 	}
 
+	if msg.Misbehaviour == nil {
+		return errorsmod.Wrapf(ErrInvalidMsgSubmitConsumerMisbehaviour, "Misbehaviour cannot be nil")
+	}
 	if err := msg.Misbehaviour.ValidateBasic(); err != nil {
 		return errorsmod.Wrapf(ErrInvalidMsgSubmitConsumerMisbehaviour, "Misbehaviour: %s", err.Error())
 	}
@@ -121,16 +128,29 @@ func NewMsgSubmitConsumerDoubleVoting(
 
 // ValidateBasic implements the sdk.HasValidateBasic interface.
 func (msg MsgSubmitConsumerDoubleVoting) ValidateBasic() error {
-	if dve, err := cmttypes.DuplicateVoteEvidenceFromProto(msg.DuplicateVoteEvidence); err != nil {
+	if _, err := sdk.AccAddressFromBech32(msg.Submitter); err != nil {
+		return errorsmod.Wrapf(ErrInvalidMsgSubmitConsumerDoubleVoting, "Submitter: %s", err.Error())
+	}
+
+	dve, err := cmttypes.DuplicateVoteEvidenceFromProto(msg.DuplicateVoteEvidence)
+	if err != nil {
 		return errorsmod.Wrapf(ErrInvalidMsgSubmitConsumerDoubleVoting, "DuplicateVoteEvidence: %s", err.Error())
-	} else {
-		if err = dve.ValidateBasic(); err != nil {
-			return errorsmod.Wrapf(ErrInvalidMsgSubmitConsumerDoubleVoting, "DuplicateVoteEvidence: %s", err.Error())
-		}
+	}
+	if err := dve.ValidateBasic(); err != nil {
+		return errorsmod.Wrapf(ErrInvalidMsgSubmitConsumerDoubleVoting, "DuplicateVoteEvidence: %s", err.Error())
 	}
 
 	if err := ValidateHeaderForConsumerDoubleVoting(msg.InfractionBlockHeader); err != nil {
 		return errorsmod.Wrapf(ErrInvalidMsgSubmitConsumerDoubleVoting, "ValidateTendermintHeader: %s", err.Error())
+	}
+
+	if msg.InfractionBlockHeader.Header.Height != dve.VoteA.Height {
+		return errorsmod.Wrapf(
+			ErrInvalidMsgSubmitConsumerDoubleVoting,
+			"infraction block header height (%d) does not match duplicate vote evidence height (%d)",
+			msg.InfractionBlockHeader.Header.Height,
+			dve.VoteA.Height,
+		)
 	}
 
 	if err := vaastypes.ValidateConsumerId(msg.ConsumerId); err != nil {
@@ -278,16 +298,8 @@ func ValidateHeaderForConsumerDoubleVoting(header *ibctmtypes.Header) error {
 		return errors.New("infraction block header cannot be nil")
 	}
 
-	if header.SignedHeader == nil {
-		return errors.New("signed header in infraction block header cannot be nil")
-	}
-
-	if header.SignedHeader.Header == nil {
-		return errors.New("invalid signed header in infraction block header, 'SignedHeader.Header' is nil")
-	}
-
-	if header.ValidatorSet == nil {
-		return errors.New("invalid infraction block header, validator set is nil")
+	if err := header.ValidateBasic(); err != nil {
+		return err
 	}
 
 	return nil

@@ -79,11 +79,23 @@ func (k Keeper) HandleConsumerDoubleVoting(
 		return err
 	}
 
+	alreadyTombstoned := false
 	if err = k.SlashValidator(ctx, providerAddr, infractionParams.DoubleSign); err != nil {
-		return err
+		// Make repeated (already-processed) evidence submissions idempotent.
+		if errors.Is(err, slashingtypes.ErrValidatorTombstoned) {
+			alreadyTombstoned = true
+		} else {
+			return err
+		}
 	}
-	if err = k.JailAndTombstoneValidator(ctx, providerAddr, infractionParams.DoubleSign); err != nil {
-		return err
+	if !alreadyTombstoned {
+		if err = k.JailAndTombstoneValidator(ctx, providerAddr, infractionParams.DoubleSign); err != nil {
+			if errors.Is(err, slashingtypes.ErrValidatorTombstoned) {
+				alreadyTombstoned = true
+			} else {
+				return err
+			}
+		}
 	}
 
 	k.Logger(ctx).Info(
@@ -91,6 +103,7 @@ func (k Keeper) HandleConsumerDoubleVoting(
 		"consumerId", consumerId,
 		"chainId", chainId,
 		"byzantine validator address", providerAddr.String(),
+		"already_tombstoned", alreadyTombstoned,
 	)
 
 	return nil
@@ -166,14 +179,14 @@ func (k Keeper) VerifyDoubleVotingEvidence(
 // Light Client Attack (IBC misbehavior) section
 //
 
-// HandleConsumerMisbehaviour checks if the given IBC misbehaviour corresponds to an equivocation light client attack,
-// and in this case, slashes, jails, and tombstones
+// HandleConsumerMisbehaviour checks if the given IBC misbehaviour corresponds to an equivocation light client attack.
+// VAAS only validates and logs misbehaviour submissions (no slashing/jailing/tombstoning).
 func (k Keeper) HandleConsumerMisbehaviour(ctx sdk.Context, consumerId string, misbehaviour ibctmtypes.Misbehaviour) error {
 	logger := k.Logger(ctx)
 
 	// Check that the misbehaviour is valid and that the client consensus states at trusted heights are within trusting period
 	if err := k.CheckMisbehaviour(ctx, consumerId, misbehaviour); err != nil {
-		logger.Info("Misbehaviour rejected", err.Error())
+		logger.Info("misbehaviour rejected", "error", err.Error())
 
 		return err
 	}
@@ -189,45 +202,20 @@ func (k Keeper) HandleConsumerMisbehaviour(ctx sdk.Context, consumerId string, m
 	}
 
 	provAddrs := make([]types.ProviderConsAddress, 0, len(byzantineValidators))
-
-	// get default infraction parameters (per-consumer params removed)
-	infractionParams, err := types.DefaultConsumerInfractionParameters(ctx, k.slashingKeeper)
-	if err != nil {
-		return err
-	}
-
-	// slash, jail, and tombstone the Byzantine validators
 	for _, v := range byzantineValidators {
 		providerAddr := k.GetProviderAddrFromConsumerAddr(
 			ctx,
 			consumerId,
 			types.NewConsumerConsAddress(sdk.ConsAddress(v.Address.Bytes())),
 		)
-		err := k.SlashValidator(ctx, providerAddr, infractionParams.DoubleSign)
-		if err != nil {
-			logger.Error("failed to slash validator: %s", err)
-			continue
-		}
-		err = k.JailAndTombstoneValidator(ctx, providerAddr, infractionParams.DoubleSign)
-		// JailAndTombstoneValidator should never return an error if
-		// SlashValidator succeeded because both methods fail if the malicious
-		// validator is either or both !found, unbonded and tombstoned.
-		if err != nil {
-			panic(err)
-		}
-
 		provAddrs = append(provAddrs, providerAddr)
 	}
 
-	// Return an error if no validators were punished
-	if len(provAddrs) == 0 {
-		return fmt.Errorf("failed to slash, jail, or tombstone all validators: %v", byzantineValidators)
-	}
-
 	logger.Info(
-		"confirmed equivocation light client attack",
+		"confirmed equivocation light client attack (no slashing applied)",
 		"consumerId", consumerId,
-		"byzantine validators slashed, jailed and tombstoned", provAddrs,
+		"chainId", misbehaviour.Header1.Header.ChainID,
+		"byzantine_validators", provAddrs,
 	)
 
 	return nil
