@@ -271,3 +271,7 @@ func (k Keeper) ApplyAndReturnValidatorSetUpdates(context.Context) (updates []ab
 func (k Keeper) GetAllValidators(ctx context.Context) ([]stakingtypes.Validator, error) {
 	return []stakingtypes.Validator{}, nil
 }
+
+func (k Keeper) GetBondedValidatorsByPower(goCtx context.Context) ([]stakingtypes.Validator, error) {
+	return []stakingtypes.Validator{}, nil
+}
