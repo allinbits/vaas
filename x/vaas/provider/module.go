@@ -155,17 +155,16 @@ func (am AppModule) BeginBlock(ctx context.Context) error {
 		return err
 	}
 
-	// Collect fees from consumer chains
+	// Collect fees from consumer chains. Failures here should not halt block processing.
 	collectedFees, err := am.keeper.CollectFeesFromConsumers(sdkCtx)
 	if err != nil {
-		return err
+		sdkCtx.Logger().Error("failed to collect fees from consumers", "err", err)
+	} else {
+		// Distribute collected fees to validators. Failures here should also not halt block processing.
+		if err := am.keeper.DistributeFeesToValidators(sdkCtx, collectedFees); err != nil {
+			sdkCtx.Logger().Error("failed to distribute collected fees to validators", "err", err)
+		}
 	}
-
-	// Distribute collected fees to validators
-	if err := am.keeper.DistributeFeesToValidators(sdkCtx, collectedFees); err != nil {
-		return err
-	}
-
 	return nil
 }
 

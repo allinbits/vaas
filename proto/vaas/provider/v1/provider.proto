@@ -41,8 +41,8 @@ message Params {
 
   // The fee charged per block for consumer chain operation.
   cosmos.base.v1beta1.Coin fees_per_block = 6 [
-    (gogoproto.castrepeated) = "github.com/cosmos/cosmos-sdk/types.Coins",
-    (amino.encoding) = "legacy_coins",
+    (gogoproto.casttype) = "github.com/cosmos/cosmos-sdk/types.Coin",
+    (amino.encoding) = "legacy_coin",
     (amino.dont_omitempty) = true,
     (gogoproto.nullable) = false
   ];

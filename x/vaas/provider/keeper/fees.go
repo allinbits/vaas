@@ -90,7 +90,8 @@ func (k Keeper) DistributeFeesToValidators(ctx sdk.Context, totalFees sdk.Coin) 
 		}
 
 		// Calculate validator's share: (validatorPower / totalPower) * totalFees
-		valPower := math.NewInt(val.GetConsensusPower(sdk.DefaultPowerReduction))
+		powerReduction := k.stakingKeeper.PowerReduction(ctx)
+		valPower := math.NewInt(val.GetConsensusPower(powerReduction))
 		valShare := totalFees.Amount.Mul(valPower).Quo(totalPower)
 		if valShare.IsZero() {
 			continue
