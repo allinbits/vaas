@@ -3,6 +3,8 @@ package keeper
 import (
 	"fmt"
 
+	"github.com/allinbits/vaas/x/vaas/provider/types"
+
 	"cosmossdk.io/math"
 
 	sdk "github.com/cosmos/cosmos-sdk/types"
@@ -20,6 +22,11 @@ func (k Keeper) CollectFeesFromConsumers(ctx sdk.Context) (sdk.Coin, error) {
 	// Get all active consumer IDs
 	consumerIds := k.GetAllActiveConsumerIds(ctx)
 	for _, consumerId := range consumerIds {
+		// Only collect fees from LAUNCHED consumers
+		// REGISTERED and INITIALIZED consumers are not yet running and shouldn't be charged
+		if k.GetConsumerPhase(ctx, consumerId) != types.CONSUMER_PHASE_LAUNCHED {
+			continue
+		}
 		// Get the consumer's module account address
 		// Each consumer has a module account in the format "consumer-<consumerId>"
 		consumerModuleAccAddr := authtypes.NewModuleAddress(fmt.Sprintf("consumer-%s", consumerId))
