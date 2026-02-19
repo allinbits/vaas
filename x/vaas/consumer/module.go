@@ -22,6 +22,7 @@ import (
 	sdk "github.com/cosmos/cosmos-sdk/types"
 	"github.com/cosmos/cosmos-sdk/types/module"
 	simtypes "github.com/cosmos/cosmos-sdk/types/simulation"
+	stakingtypes "github.com/cosmos/cosmos-sdk/x/staking/types"
 )
 
 var (
@@ -119,6 +120,8 @@ func (AppModule) RegisterInvariants(ir sdk.InvariantRegistry) {
 func (am AppModule) RegisterServices(cfg module.Configurator) {
 	consumertypes.RegisterMsgServer(cfg.MsgServer(), keeper.NewMsgServerImpl(&am.keeper))
 	consumertypes.RegisterQueryServer(cfg.QueryServer(), am.keeper)
+	// Register staking query server so Hermes can query staking params for IBC client creation
+	stakingtypes.RegisterQueryServer(cfg.QueryServer(), keeper.NewStakingQueryServer(&am.keeper))
 	// Note: Migrations are not registered as this is a fresh module start
 }
 

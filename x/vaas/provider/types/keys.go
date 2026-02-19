@@ -10,6 +10,9 @@ const (
 	// ModuleName defines the VAAS provider module name
 	ModuleName = "provider"
 
+	// StoreKey is the store key string for IBC provider
+	StoreKey = ModuleName
+
 	// RouterKey is the message route for IBC transfer
 	RouterKey = ModuleName
 
