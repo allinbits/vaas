@@ -109,21 +109,6 @@ func (mr *MockStakingKeeperMockRecorder) GetHistoricalInfo(ctx, height any) *gom
 	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "GetHistoricalInfo", reflect.TypeOf((*MockStakingKeeper)(nil).GetHistoricalInfo), ctx, height)
 }
 
-// GetLastValidatorPower mocks base method.
-func (m *MockStakingKeeper) GetLastValidatorPower(ctx context.Context, operator types.ValAddress) (int64, error) {
-	m.ctrl.T.Helper()
-	ret := m.ctrl.Call(m, "GetLastValidatorPower", ctx, operator)
-	ret0, _ := ret[0].(int64)
-	ret1, _ := ret[1].(error)
-	return ret0, ret1
-}
-
-// GetLastValidatorPower indicates an expected call of GetLastValidatorPower.
-func (mr *MockStakingKeeperMockRecorder) GetLastValidatorPower(ctx, operator any) *gomock.Call {
-	mr.mock.ctrl.T.Helper()
-	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "GetLastValidatorPower", reflect.TypeOf((*MockStakingKeeper)(nil).GetLastValidatorPower), ctx, operator)
-}
-
 // GetLastTotalPower mocks base method.
 func (m *MockStakingKeeper) GetLastTotalPower(ctx context.Context) (math.Int, error) {
 	m.ctrl.T.Helper()
@@ -137,6 +122,21 @@ func (m *MockStakingKeeper) GetLastTotalPower(ctx context.Context) (math.Int, er
 func (mr *MockStakingKeeperMockRecorder) GetLastTotalPower(ctx any) *gomock.Call {
 	mr.mock.ctrl.T.Helper()
 	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "GetLastTotalPower", reflect.TypeOf((*MockStakingKeeper)(nil).GetLastTotalPower), ctx)
+}
+
+// GetLastValidatorPower mocks base method.
+func (m *MockStakingKeeper) GetLastValidatorPower(ctx context.Context, operator types.ValAddress) (int64, error) {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "GetLastValidatorPower", ctx, operator)
+	ret0, _ := ret[0].(int64)
+	ret1, _ := ret[1].(error)
+	return ret0, ret1
+}
+
+// GetLastValidatorPower indicates an expected call of GetLastValidatorPower.
+func (mr *MockStakingKeeperMockRecorder) GetLastValidatorPower(ctx, operator any) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "GetLastValidatorPower", reflect.TypeOf((*MockStakingKeeper)(nil).GetLastValidatorPower), ctx, operator)
 }
 
 // GetRedelegationsFromSrcValidator mocks base method.
