@@ -28,5 +28,4 @@ var (
 	ErrInvalidMsgAssignConsumerKey             = errorsmod.Register(ModuleName, 46, "invalid assign consumer key message")
 	ErrInvalidMsgSubmitConsumerMisbehaviour    = errorsmod.Register(ModuleName, 47, "invalid submit consumer misbehaviour message")
 	ErrInvalidMsgSubmitConsumerDoubleVoting    = errorsmod.Register(ModuleName, 48, "invalid submit consumer double voting message")
-	ErrInvalidConsumerInfractionParameters     = errorsmod.Register(ModuleName, 54, "invalid consumer infraction parameters")
 )

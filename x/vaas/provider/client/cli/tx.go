@@ -238,23 +238,11 @@ where create_consumer.json has the following structure:
     "ccv_timeout_period": 2419200000000000,
     "historical_entries": 10000,
     "connection_id": ""
-  },
-  "infraction_parameters":{
-   "double_sign":{
-      "slash_fraction": "0.05",
-      "jail_duration": 9223372036854775807,
-      "tombstone": true
-   },
-   "downtime":{
-      "slash_fraction": "0.0001",
-      "jail_duration": 600000000000,
-      "tombstone": false
-   }
   }
 }
 
 Note that both 'chain_id' and 'metadata' are mandatory;
-and 'initialization_parameters' and 'infraction_parameters' are optional. 
+and 'initialization_parameters' is optional. 
 The parameters not provided are set to their zero value. 
 `, version.AppName)),
 		Args: cobra.ExactArgs(1),
@@ -281,8 +269,7 @@ The parameters not provided are set to their zero value.
 				return fmt.Errorf("consumer data unmarshalling failed: %w", err)
 			}
 
-			msg, err := types.NewMsgCreateConsumer(submitter, consCreate.ChainId, consCreate.Metadata, consCreate.InitializationParameters,
-				consCreate.InfractionParameters)
+			msg, err := types.NewMsgCreateConsumer(submitter, consCreate.ChainId, consCreate.Metadata, consCreate.InitializationParameters)
 			if err != nil {
 				return err
 			}
@@ -328,30 +315,18 @@ where update_consumer.json has the following structure:
     },
     "genesis_hash": "",
     "binary_hash": "",
-    "spawn_time": "2024-08-29T12:26:16.529913Z",
-    "unbonding_period": 1728000000000000,
-    "ccv_timeout_period": 2419200000000000,
-    "historical_entries": 10000,
-    "connection_id": ""
-   },
-   "infraction_parameters":{
-    "double_sign":{
-       "slash_fraction": "0.05",
-       "jail_duration": 9223372036854775807,
-       "tombstone": true
-    },
-    "downtime":{
-       "slash_fraction": "0.0001",
-       "jail_duration": 600000000000,
-       "tombstone": false
-    }
+   "spawn_time": "2024-08-29T12:26:16.529913Z",
+   "unbonding_period": 1728000000000000,
+   "ccv_timeout_period": 2419200000000000,
+   "historical_entries": 10000,
+   "connection_id": ""
    },
    "new_chain_id": "newConsumer-1" // is optional and can be empty (i.e., "new_chain_id": "")
 }
 
 Note that only 'consumer_id' is mandatory. The others are optional.
 Not providing one of them will leave the existing values unchanged.
-Providing one of 'metadata', 'initialization_parameters', or 'infraction_parameters'
+Providing one of 'metadata' or 'initialization_parameters'
 will update all the containing fields.
 If one of the fields is missing, it will be set to its zero value.
 `, version.AppName)),
@@ -385,7 +360,7 @@ If one of the fields is missing, it will be set to its zero value.
 			}
 
 			msg, err := types.NewMsgUpdateConsumer(owner, consUpdate.ConsumerId, consUpdate.NewOwnerAddress, consUpdate.Metadata,
-				consUpdate.InitializationParameters, consUpdate.NewChainId, consUpdate.InfractionParameters)
+				consUpdate.InitializationParameters, consUpdate.NewChainId)
 			if err != nil {
 				return err
 			}

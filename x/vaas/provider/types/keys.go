@@ -78,12 +78,6 @@ const (
 	ClientIdToConsumerIdKeyName = "ClientIdToConsumerIdKey"
 
 	PrioritylistKeyName = "PrioritylistKey"
-
-	ConsumerIdToInfractionParametersKeyName = "ConsumerIdToInfractionParametersKey"
-
-	ConsumerIdToQueuedInfractionParametersKeyName = "ConsumerIdToQueuedInfractionParametersKeyName"
-
-	InfractionScheduledTimeToConsumerIdsKeyName = "InfractionScheduledTimeToConsumerIdsKeyName"
 )
 
 // Collection key prefixes for use with cosmossdk.io/collections
@@ -114,9 +108,6 @@ var (
 	SpawnTimeToConsumerIdsPrefix           = collections.NewPrefix(23)
 	RemovalTimeToConsumerIdsPrefix         = collections.NewPrefix(24)
 	ClientIdToConsumerIdPrefix             = collections.NewPrefix(25)
-	PrioritylistPrefix                     = collections.NewPrefix(26)
-	ConsumerIdToInfractionParamsPrefix     = collections.NewPrefix(27)
-	ConsumerIdToQueuedInfractionPrefix     = collections.NewPrefix(28)
-	InfractionScheduledTimePrefix          = collections.NewPrefix(29)
+	PriorityListPrefix                     = collections.NewPrefix(26)
 	ParametersPrefix                       = collections.NewPrefix(0xFF)
 )
