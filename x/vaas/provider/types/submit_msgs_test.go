@@ -167,3 +167,20 @@ func TestMsgSubmitConsumerDoubleVotingValidateBasic_AcceptsValidMsg(t *testing.T
 	require.NoError(t, msg.ValidateBasic())
 }
 
+func TestMsgSubmitConsumerDoubleVotingValidateBasic_RejectsChainIDMismatch(t *testing.T) {
+	setupBech32Cfg()
+
+	submitter := sdk.AccAddress(make([]byte, 20)).String()
+	ev, _ := makeValidDoubleVoteEvidenceAndHeader(t, "consumer-1", 10)
+	_, headerWrongChainID := makeValidDoubleVoteEvidenceAndHeader(t, "consumer-2", 10)
+
+	msg := types.MsgSubmitConsumerDoubleVoting{
+		Submitter:             submitter,
+		DuplicateVoteEvidence: ev,
+		InfractionBlockHeader: headerWrongChainID,
+		ConsumerId:            "1",
+	}
+
+	err := msg.ValidateBasic()
+	require.Error(t, err)
+}
