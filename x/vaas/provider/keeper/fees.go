@@ -88,8 +88,11 @@ func (k Keeper) DistributeFeesToValidators(ctx sdk.Context, totalFees sdk.Coin) 
 		return fmt.Errorf("total voting power is zero")
 	}
 
+	// Track distributed amount to handle remainder
+	distributedAmount := math.ZeroInt()
+
 	// Distribute fees proportionally to each validator based on voting power
-	for _, val := range validators {
+	for i, val := range validators {
 		// Get validator operator address
 		valAddr, err := k.stakingKeeper.ValidatorAddressCodec().StringToBytes(val.GetOperator())
 		if err != nil {
@@ -100,6 +103,12 @@ func (k Keeper) DistributeFeesToValidators(ctx sdk.Context, totalFees sdk.Coin) 
 		powerReduction := k.stakingKeeper.PowerReduction(ctx)
 		valPower := math.NewInt(val.GetConsensusPower(powerReduction))
 		valShare := totalFees.Amount.Mul(valPower).Quo(totalPower)
+
+		// If this is the last validator, assign the remainder to ensure all fees are distributed
+		if i == len(validators)-1 {
+			valShare = totalFees.Amount.Sub(distributedAmount)
+		}
+
 		if valShare.IsZero() {
 			continue
 		}
@@ -109,6 +118,8 @@ func (k Keeper) DistributeFeesToValidators(ctx sdk.Context, totalFees sdk.Coin) 
 		if err := k.bankKeeper.SendCoinsFromModuleToAccount(ctx, k.feeCollectorName, valAddr, coins); err != nil {
 			return fmt.Errorf("failed to send fees to validator %s: %w", val.GetOperator(), err)
 		}
+
+		distributedAmount = distributedAmount.Add(valShare)
 	}
 
 	return nil
