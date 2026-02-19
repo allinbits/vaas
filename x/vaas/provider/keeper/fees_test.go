@@ -120,6 +120,10 @@ func TestDistributeFeesToValidators(t *testing.T) {
 	mocks.MockStakingKeeper.EXPECT().
 		GetLastTotalPower(gomock.Any()).
 		Return(math.NewInt(30), nil)
+	mocks.MockStakingKeeper.EXPECT().
+		PowerReduction(gomock.Any()).
+		Return(sdk.DefaultPowerReduction).
+		AnyTimes()
 	mocks.MockBankKeeper.EXPECT().
 		SendCoinsFromModuleToAccount(gomock.Any(), authtypes.FeeCollectorName, sdk.AccAddress(valAddr1), sdk.NewCoins(sdk.NewInt64Coin("photon", 100))).
 		Return(nil)
