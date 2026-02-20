@@ -2,9 +2,12 @@ package e2e
 
 import (
 	"context"
+	"encoding/base64"
 	"strings"
 	"time"
-	"strconv"
+
+	cmtservice "github.com/cosmos/cosmos-sdk/client/grpc/cmtservice"
+	cryptotypes "github.com/cosmos/cosmos-sdk/crypto/types"
 )
 
 // testProviderBlockProduction verifies the provider chain continues to produce blocks.
@@ -77,8 +80,8 @@ func (s *IntegrationTestSuite) testValidatorSetSync() {
 		s.Require().NoError(err, "failed to query consumer validators")
 
 		// Extract pub keys  and vp from both chains
-		providerPubKeys, providerVP := extractPubKeys(providerVals)
-		consumerPubKeys, consumerVP := extractPubKeys(consumerVals)
+		providerPubKeys, providerVP := s.extractPubKeys(providerVals)
+		consumerPubKeys, consumerVP := s.extractPubKeys(consumerVals)
 
 		s.Require().Equal(len(providerPubKeys), 1)
 		s.Require().Equal(len(providerPubKeys), len(consumerPubKeys))
@@ -114,7 +117,7 @@ func (s *IntegrationTestSuite) testValidatorSetSync() {
 		s.Require().Eventually( func() bool {
 			providerValsAfter, err := s.queryProviderNetValidators()
 			s.Require().NoError(err, "failed to query provider validators")
-			_ , providerVPAfter = extractPubKeys(providerValsAfter)
+			_ , providerVPAfter = s.extractPubKeys(providerValsAfter)
 			return providerVPAfter[0] == providerVP[0] + 1
 		},
 		10*time.Second,
@@ -127,7 +130,7 @@ func (s *IntegrationTestSuite) testValidatorSetSync() {
 			func() bool {
 				consumerValsAfter, err := s.queryConsumerNetValidators()
 				s.Require().NoError(err, "failed to query consumer validators")
-				_, consumerVPAfter = extractPubKeys(consumerValsAfter)
+				_, consumerVPAfter = s.extractPubKeys(consumerValsAfter)
 				return consumerVPAfter[0] == providerVPAfter[0]
 			},
 			50*time.Second,
@@ -138,18 +141,14 @@ func (s *IntegrationTestSuite) testValidatorSetSync() {
 }
 
 // extractPubKeys extracts the public key values from a validator set query result.
-func extractPubKeys(validators []map[string]interface{}) ([]string,[]uint64) {
+func (s *IntegrationTestSuite) extractPubKeys(validators []*cmtservice.Validator) ([]string, []uint64) {
 	var keys []string
 	var vp []uint64
 	for _, v := range validators {
-		if pk, ok := v["pub_key"].(map[string]interface{}); ok {
-				if val, ok := pk["value"].(string); ok {
-					keys = append(keys, val)
-				}
-		}
-		if vp_val, err := strconv.ParseUint(v["voting_power"].(string),10,64); err == nil {
-				vp = append(vp, vp_val)
-		}
+		var pubKey cryptotypes.PubKey
+		s.Require().NoError(s.cdc.UnpackAny(v.PubKey, &pubKey))
+		keys = append(keys, base64.StdEncoding.EncodeToString(pubKey.Bytes()))
+		vp = append(vp, uint64(v.VotingPower))
 	}
 	return keys, vp
 }

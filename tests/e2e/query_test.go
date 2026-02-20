@@ -2,63 +2,85 @@ package e2e
 
 import (
 	"context"
-	"encoding/json"
 	"fmt"
 	"strings"
+
+	cmtservice "github.com/cosmos/cosmos-sdk/client/grpc/cmtservice"
+	banktypes "github.com/cosmos/cosmos-sdk/x/bank/types"
+	stakingtypes "github.com/cosmos/cosmos-sdk/x/staking/types"
 )
 
-// queryProviderStatus queries the provider chain status via RPC.
-func (s *IntegrationTestSuite) queryProviderStatus() (map[string]interface{}, error) {
-	bz, err := httpGet("http://localhost:26657/status")
-	if err != nil {
-		return nil, err
-	}
-
-	var result map[string]interface{}
-	if err := json.Unmarshal(bz, &result); err != nil {
-		return nil, err
-	}
-	return result, nil
+// providerRESTEndpoint returns the provider chain's REST HTTP endpoint using the Docker-assigned host port.
+func (s *IntegrationTestSuite) providerRESTEndpoint() string {
+	return fmt.Sprintf("http://%s", s.providerValRes[0].GetHostPort("1317/tcp"))
 }
 
-// queryConsumerStatus queries the consumer chain status via RPC.
-func (s *IntegrationTestSuite) queryConsumerStatus() (map[string]interface{}, error) {
-	bz, err := httpGet("http://localhost:26667/status")
-	if err != nil {
-		return nil, err
-	}
+// consumerRESTEndpoint returns the consumer chain's REST HTTP endpoint using the Docker-assigned host port.
+func (s *IntegrationTestSuite) consumerRESTEndpoint() string {
+	return fmt.Sprintf("http://%s", s.consumerValRes[0].GetHostPort("1317/tcp"))
+}
 
-	var result map[string]interface{}
-	if err := json.Unmarshal(bz, &result); err != nil {
-		return nil, err
-	}
-	return result, nil
+// providerRPCEndpoint returns the provider chain's RPC HTTP endpoint using the Docker-assigned host port.
+func (s *IntegrationTestSuite) providerRPCEndpoint() string {
+	return fmt.Sprintf("http://%s", s.providerValRes[0].GetHostPort("26657/tcp"))
+}
+
+// consumerRPCEndpoint returns the consumer chain's RPC HTTP endpoint using the Docker-assigned host port.
+func (s *IntegrationTestSuite) consumerRPCEndpoint() string {
+	return fmt.Sprintf("http://%s", s.consumerValRes[0].GetHostPort("26657/tcp"))
 }
 
 // queryProviderBlockHeight returns the current block height of the provider chain.
 func (s *IntegrationTestSuite) queryProviderBlockHeight() (int64, error) {
-	return queryBlockHeight("http://localhost:26657")
+	return queryBlockHeight(s.providerRPCEndpoint())
 }
 
 // queryConsumerBlockHeight returns the current block height of the consumer chain.
 func (s *IntegrationTestSuite) queryConsumerBlockHeight() (int64, error) {
-	return queryBlockHeight("http://localhost:26667")
+	return queryBlockHeight(s.consumerRPCEndpoint())
 }
 
-// queryProviderValidators queries the provider for its validator set using REST API.
-func (s *IntegrationTestSuite) queryProviderValidators() ([]map[string]interface{}, error) {
-	bz, err := httpGet("http://localhost:1317/cosmos/staking/v1beta1/validators")
+// queryNetValidators queries the current consensus validator set via the REST API.
+func (s *IntegrationTestSuite) queryNetValidators(restEndpoint string) ([]*cmtservice.Validator, error) {
+	body, err := httpGet(fmt.Sprintf("%s/cosmos/base/tendermint/v1beta1/validatorsets/latest", restEndpoint))
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("failed to execute HTTP request: %w", err)
 	}
 
-	var result struct {
-		Validators []map[string]interface{} `json:"validators"`
-	}
-	if err := json.Unmarshal(bz, &result); err != nil {
+	var res cmtservice.GetLatestValidatorSetResponse
+	if err := s.cdc.UnmarshalJSON(body, &res); err != nil {
 		return nil, err
 	}
-	return result.Validators, nil
+	return res.Validators, nil
+}
+
+// queryProviderNetValidators queries the provider chain for the latest consensus validator set.
+func (s *IntegrationTestSuite) queryProviderNetValidators() ([]*cmtservice.Validator, error) {
+	return s.queryNetValidators(s.providerRESTEndpoint())
+}
+
+// queryConsumerNetValidators queries the consumer chain for the latest consensus validator set.
+func (s *IntegrationTestSuite) queryConsumerNetValidators() ([]*cmtservice.Validator, error) {
+	return s.queryNetValidators(s.consumerRESTEndpoint())
+}
+
+// queryValidators queries the staking validator set via the REST API.
+func (s *IntegrationTestSuite) queryValidators(restEndpoint string) ([]stakingtypes.Validator, error) {
+	body, err := httpGet(fmt.Sprintf("%s/cosmos/staking/v1beta1/validators", restEndpoint))
+	if err != nil {
+		return nil, fmt.Errorf("failed to execute HTTP request: %w", err)
+	}
+
+	var res stakingtypes.QueryValidatorsResponse
+	if err := s.cdc.UnmarshalJSON(body, &res); err != nil {
+		return nil, err
+	}
+	return res.Validators, nil
+}
+
+// queryProviderValidators queries the provider for its staking validator set via the REST API.
+func (s *IntegrationTestSuite) queryProviderValidators() ([]stakingtypes.Validator, error) {
+	return s.queryValidators(s.providerRESTEndpoint())
 }
 
 // queryConsumerProviderInfo queries the consumer chain for its provider info
@@ -90,77 +112,33 @@ func (s *IntegrationTestSuite) queryProviderConsumerChains(ctx context.Context) 
 }
 
 // queryBalance queries an account balance via the REST API.
-func (s *IntegrationTestSuite) queryBalance(apiEndpoint, address, denom string) (string, error) {
-	bz, err := httpGet(fmt.Sprintf("%s/cosmos/bank/v1beta1/balances/%s", apiEndpoint, address))
+func (s *IntegrationTestSuite) queryBalance(restEndpoint, address, denom string) (string, error) {
+	body, err := httpGet(fmt.Sprintf("%s/cosmos/bank/v1beta1/balances/%s", restEndpoint, address))
 	if err != nil {
+		return "", fmt.Errorf("failed to execute HTTP request: %w", err)
+	}
+
+	var res banktypes.QueryAllBalancesResponse
+	if err := s.cdc.UnmarshalJSON(body, &res); err != nil {
 		return "", err
 	}
 
-	var result struct {
-		Balances []struct {
-			Denom  string `json:"denom"`
-			Amount string `json:"amount"`
-		} `json:"balances"`
-	}
-	if err := json.Unmarshal(bz, &result); err != nil {
-		return "", err
-	}
-
-	for _, b := range result.Balances {
-		if b.Denom == denom {
-			return b.Amount, nil
+	for _, coin := range res.Balances {
+		if coin.Denom == denom {
+			return coin.Amount.String(), nil
 		}
 	}
-
 	return "0", nil
 }
 
 // queryProviderBalance queries an account balance on the provider chain.
 func (s *IntegrationTestSuite) queryProviderBalance(address, denom string) (string, error) {
-	return s.queryBalance("http://localhost:1317", address, denom)
+	return s.queryBalance(s.providerRESTEndpoint(), address, denom)
 }
 
 // queryConsumerBalance queries an account balance on the consumer chain.
 func (s *IntegrationTestSuite) queryConsumerBalance(address, denom string) (string, error) {
-	return s.queryBalance("http://localhost:1327", address, denom)
-}
-
-// queryProviderNetValidators queries the provider chain for the latest validators
-// at a specific block height via RPC.
-func (s *IntegrationTestSuite) queryProviderNetValidators() ([]map[string]interface{}, error) {
-	bz, err := httpGet("http://localhost:26657/validators")
-	if err != nil {
-		return nil, err
-	}
-
-	var result struct {
-		Result struct {
-			Validators []map[string]interface{} `json:"validators"`
-		} `json:"result"`
-	}
-	if err := json.Unmarshal(bz, &result); err != nil {
-		return nil, err
-	}
-	return result.Result.Validators, nil
-}
-
-// queryConsumerNetValidators queries the consumer chain for the latest validators
-// at a specific block height via RPC.
-func (s *IntegrationTestSuite) queryConsumerNetValidators() ([]map[string]interface{}, error) {
-	bz, err := httpGet("http://localhost:26667/validators")
-	if err != nil {
-		return nil, err
-	}
-
-	var result struct {
-		Result struct {
-			Validators []map[string]interface{} `json:"validators"`
-		} `json:"result"`
-	}
-	if err := json.Unmarshal(bz, &result); err != nil {
-		return nil, err
-	}
-	return result.Result.Validators, nil
+	return s.queryBalance(s.consumerRESTEndpoint(), address, denom)
 }
 
 // queryProviderConsumerGenesis queries the provider for a specific consumer's genesis.

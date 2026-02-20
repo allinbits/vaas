@@ -14,6 +14,10 @@ import (
 	"github.com/ory/dockertest/v3"
 	"github.com/ory/dockertest/v3/docker"
 	"github.com/stretchr/testify/suite"
+
+	"github.com/cosmos/cosmos-sdk/codec"
+	codectypes "github.com/cosmos/cosmos-sdk/codec/types"
+	"github.com/cosmos/cosmos-sdk/std"
 )
 
 const (
@@ -29,6 +33,7 @@ const (
 type IntegrationTestSuite struct {
 	suite.Suite
 
+	cdc            codec.Codec
 	tmpDirs        []string
 	provider       *chain
 	consumer       *chain
@@ -37,6 +42,13 @@ type IntegrationTestSuite struct {
 	hermesResource *dockertest.Resource
 	providerValRes []*dockertest.Resource
 	consumerValRes []*dockertest.Resource
+}
+
+// makeCodec creates a proto codec with the standard cosmos SDK interfaces registered.
+func makeCodec() codec.Codec {
+	registry := codectypes.NewInterfaceRegistry()
+	std.RegisterInterfaces(registry)
+	return codec.NewProtoCodec(registry)
 }
 
 // TestIntegrationTestSuite is the entry point for the e2e test suite.
@@ -60,6 +72,8 @@ func testDir() string {
 // 7. Trigger VSC
 func (s *IntegrationTestSuite) SetupSuite() {
 	s.T().Log("setting up e2e integration test suite...")
+
+	s.cdc = makeCodec()
 
 	var err error
 
