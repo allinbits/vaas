@@ -335,6 +335,6 @@ docker-build-all: docker-build-debug docker-build-hermes
 # Run the e2e integration test suite
 test-e2e: docker-build-all
 	@echo "Running e2e tests..."
-	go test -timeout=25m -v ./tests/e2e/...
+	go test -tags e2e -timeout=25m -v ./tests/e2e/...
 
 .PHONY: docker-build-debug docker-build-hermes docker-build-all test-e2e
