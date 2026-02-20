@@ -107,6 +107,7 @@ func (s *IntegrationTestSuite) testValidatorSetSync() {
 			"--fees", "10000" + bondDenom,
 			"-y",
 		})
+		s.Require().NoError(err, "failed to perform delegation")
 
 		// Check increase in VP for Val0 on Provider
 		var providerVPAfter []uint64

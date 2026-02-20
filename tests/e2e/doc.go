@@ -1,5 +1,5 @@
 // Package e2e defines the integration (end-to-end) test suite for the
-// VAAS (Validating as a Service) provider-consumer chain setup.
+// VAAS (Validation as a Service) provider-consumer chain setup.
 //
 // It uses Docker containers (via dockertest) to run a provider chain,
 // a consumer chain, and a Hermes IBC relayer, validating the full
