@@ -1,5 +1,3 @@
-//go:build e2e
-
 // Package e2e defines the integration (end-to-end) test suite for the
 // VAAS (Validation as a Service) provider-consumer chain setup.
 //
