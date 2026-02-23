@@ -12,7 +12,7 @@ rundep=go run -modfile devdeps/go.mod
 build:
 	go build ./...
 
-test: docker-build-all
+test:
 	go test -timeout=25m -v ./...
 
 lint_cmd=$(rundep) github.com/golangci/golangci-lint/cmd/golangci-lint
