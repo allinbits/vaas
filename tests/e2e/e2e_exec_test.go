@@ -6,12 +6,16 @@ import (
 	"bytes"
 	"context"
 	"fmt"
+	"time"
 
 	"github.com/ory/dockertest/v3/docker"
 )
 
 // dockerExec runs a command in the specified Docker container and returns stdout/stderr.
-func (s *IntegrationTestSuite) dockerExec(ctx context.Context, containerID string, cmd []string) (bytes.Buffer, bytes.Buffer, error) {
+func (s *IntegrationTestSuite) dockerExec(containerID string, cmd []string) (bytes.Buffer, bytes.Buffer, error) {
+	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	defer cancel()
+
 	var stdout, stderr bytes.Buffer
 
 	exec, err := s.dkrPool.Client.CreateExec(docker.CreateExecOptions{
@@ -41,8 +45,11 @@ func (s *IntegrationTestSuite) dockerExec(ctx context.Context, containerID strin
 
 // executeHermesCommand runs a command in the Hermes relayer container.
 // Uses the container's default user instead of "nonroot".
-func (s *IntegrationTestSuite) executeHermesCommand(ctx context.Context, cmd []string) (bytes.Buffer, bytes.Buffer, error) {
+func (s *IntegrationTestSuite) executeHermesCommand(cmd []string) (bytes.Buffer, bytes.Buffer, error) {
 	s.Require().NotNil(s.hermesResource, "hermes container not started")
+
+	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Minute)
+	defer cancel()
 
 	var stdout, stderr bytes.Buffer
 
@@ -72,8 +79,8 @@ func (s *IntegrationTestSuite) executeHermesCommand(ctx context.Context, cmd []s
 
 
 // dockerExecMust runs a command in a Docker container, failing the test on error.
-func (s *IntegrationTestSuite) dockerExecMust(ctx context.Context, containerID string, cmd []string) {
-	stdout, stderr, err := s.dockerExec(ctx, containerID, cmd)
+func (s *IntegrationTestSuite) dockerExecMust(containerID string, cmd []string) {
+	stdout, stderr, err := s.dockerExec(containerID, cmd)
 	if err != nil {
 		s.T().Logf("cmd: %v", cmd)
 		s.T().Logf("stdout: %s", stdout.String())

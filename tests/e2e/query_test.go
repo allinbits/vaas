@@ -3,7 +3,6 @@
 package e2e
 
 import (
-	"context"
 	"fmt"
 	"strings"
 
@@ -88,8 +87,8 @@ func (s *IntegrationTestSuite) queryProviderValidators() ([]stakingtypes.Validat
 // queryConsumerProviderInfo queries the consumer chain for its provider info
 // using Docker exec (since the consumer REST API may not be accessible for
 // this specific query).
-func (s *IntegrationTestSuite) queryConsumerProviderInfo(ctx context.Context) (string, error) {
-	stdout, _, err := s.dockerExec(ctx, s.consumerValRes[0].Container.ID, []string{
+func (s *IntegrationTestSuite) queryConsumerProviderInfo() (string, error) {
+	stdout, _, err := s.dockerExec(s.consumerValRes[0].Container.ID, []string{
 		consumerBinary, "query", "vaasconsumer", "provider-info",
 		"--home", consumerHomePath,
 		"--output", "json",
@@ -101,8 +100,8 @@ func (s *IntegrationTestSuite) queryConsumerProviderInfo(ctx context.Context) (s
 }
 
 // queryProviderConsumerChains queries the provider for registered consumer chains.
-func (s *IntegrationTestSuite) queryProviderConsumerChains(ctx context.Context) (string, error) {
-	stdout, _, err := s.dockerExec(ctx, s.providerValRes[0].Container.ID, []string{
+func (s *IntegrationTestSuite) queryProviderConsumerChains() (string, error) {
+	stdout, _, err := s.dockerExec(s.providerValRes[0].Container.ID, []string{
 		providerBinary, "query", "provider", "list-consumer-chains",
 		"--home", providerHomePath,
 		"--output", "json",
@@ -144,8 +143,8 @@ func (s *IntegrationTestSuite) queryConsumerBalance(address, denom string) (stri
 }
 
 // queryProviderConsumerGenesis queries the provider for a specific consumer's genesis.
-func (s *IntegrationTestSuite) queryProviderConsumerGenesis(ctx context.Context, consumerID string) (string, error) {
-	stdout, stderr, err := s.dockerExec(ctx, s.providerValRes[0].Container.ID, []string{
+func (s *IntegrationTestSuite) queryProviderConsumerGenesis(consumerID string) (string, error) {
+	stdout, stderr, err := s.dockerExec(s.providerValRes[0].Container.ID, []string{
 		providerBinary, "query", "provider", "consumer-genesis", consumerID,
 		"--home", providerHomePath,
 		"--output", "json",

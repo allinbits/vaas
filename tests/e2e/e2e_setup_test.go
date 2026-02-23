@@ -301,9 +301,6 @@ func (s *IntegrationTestSuite) initAndStartProvider() {
 
 // registerConsumerOnProvider creates a consumer chain registration on the provider.
 func (s *IntegrationTestSuite) registerConsumerOnProvider() {
-	ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
-	defer cancel()
-
 	// Read consumer JSON template and substitute chain ID
 	templatePath := filepath.Join(testDir(), "testdata", "create_consumer.json")
 	templateBytes, err := os.ReadFile(templatePath)
@@ -312,11 +309,11 @@ func (s *IntegrationTestSuite) registerConsumerOnProvider() {
 	createConsumerJSON := strings.ReplaceAll(string(templateBytes), "CONSUMER_CHAIN_ID", consumerChainID)
 
 	// Write JSON to container and execute tx
-	s.dockerExecMust(ctx, s.providerValRes[0].Container.ID, []string{
+	s.dockerExecMust(s.providerValRes[0].Container.ID, []string{
 		"sh", "-c", fmt.Sprintf("echo '%s' > /tmp/create_consumer.json", createConsumerJSON),
 	})
 
-	_, _, err = s.dockerExec(ctx, s.providerValRes[0].Container.ID, []string{
+	_, _, err = s.dockerExec(s.providerValRes[0].Container.ID, []string{
 		providerBinary, "tx", "provider", "create-consumer", "/tmp/create_consumer.json",
 		"--from", "val",
 		"--home", providerHomePath,
@@ -336,15 +333,12 @@ func (s *IntegrationTestSuite) registerConsumerOnProvider() {
 
 // fetchConsumerGenesis queries the provider for the consumer genesis data.
 func (s *IntegrationTestSuite) fetchConsumerGenesis() []byte {
-	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Minute)
-	defer cancel()
-
 	var output string
 	var lastErr error
 
 	// Retry fetching consumer genesis (it may take a few blocks)
 	for i := 0; i < 30; i++ {
-		stdout, _, err := s.dockerExec(ctx, s.providerValRes[0].Container.ID, []string{
+		stdout, _, err := s.dockerExec(s.providerValRes[0].Container.ID, []string{
 			providerBinary, "query", "provider", "consumer-genesis", "0",
 			"--home", providerHomePath,
 			"--output", "json",
@@ -494,11 +488,8 @@ func (s *IntegrationTestSuite) startHermesRelayer() {
 // createIBCConnectionAndChannel creates the IBC connection using genesis clients
 // and then creates the VAAS channel.
 func (s *IntegrationTestSuite) createIBCConnectionAndChannel() {
-	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Minute)
-	defer cancel()
-
 	// Create connection using genesis clients (07-tendermint-0)
-	_, _, err := s.executeHermesCommand(ctx, []string{
+	_, _, err := s.executeHermesCommand([]string{
 		"hermes", "create", "connection",
 		"--a-chain", consumerChainID,
 		"--a-client", "07-tendermint-0",
@@ -510,7 +501,7 @@ func (s *IntegrationTestSuite) createIBCConnectionAndChannel() {
 	time.Sleep(5 * time.Second)
 
 	// Create VAAS channel (consumer/provider ports, ordered, version "1")
-	_, _, err = s.executeHermesCommand(ctx, []string{
+	_, _, err = s.executeHermesCommand([]string{
 		"hermes", "create", "channel",
 		"--a-chain", consumerChainID,
 		"--a-connection", "connection-0",
@@ -527,11 +518,8 @@ func (s *IntegrationTestSuite) createIBCConnectionAndChannel() {
 
 // triggerVSC triggers a validator set change on the provider.
 func (s *IntegrationTestSuite) triggerVSC() {
-	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Minute)
-	defer cancel()
-
 	// Get validator operator address
-	stdout, _, err := s.dockerExec(ctx, s.providerValRes[0].Container.ID, []string{
+	stdout, _, err := s.dockerExec(s.providerValRes[0].Container.ID, []string{
 		providerBinary, "keys", "show", "val", "--bech", "val", "-a",
 		"--home", providerHomePath,
 		"--keyring-backend", "test",
@@ -540,7 +528,7 @@ func (s *IntegrationTestSuite) triggerVSC() {
 	valAddr := strings.TrimSpace(stdout.String())
 
 	// Delegate to trigger validator set change
-	_, _, err = s.dockerExec(ctx, s.providerValRes[0].Container.ID, []string{
+	_, _, err = s.dockerExec(s.providerValRes[0].Container.ID, []string{
 		providerBinary, "tx", "staking", "delegate", valAddr, "1000000" + bondDenom,
 		"--from", "user",
 		"--home", providerHomePath,
@@ -557,7 +545,7 @@ func (s *IntegrationTestSuite) triggerVSC() {
 	for i := 0; i < 60; i++ {
 		time.Sleep(2 * time.Second)
 
-		stdout, _, err := s.dockerExec(ctx, s.consumerValRes[0].Container.ID, []string{
+		stdout, _, err := s.dockerExec(s.consumerValRes[0].Container.ID, []string{
 			consumerBinary, "query", "vaasconsumer", "provider-info",
 			"--home", consumerHomePath,
 		})

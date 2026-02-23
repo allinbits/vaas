@@ -3,7 +3,6 @@
 package e2e
 
 import (
-	"context"
 	"encoding/base64"
 	"strings"
 	"time"
@@ -50,9 +49,7 @@ func (s *IntegrationTestSuite) testConsumerBlockProduction() {
 // testConsumerOnProvider verifies the consumer chain is registered on the provider.
 func (s *IntegrationTestSuite) testConsumerOnProvider() {
 	s.Run("consumer chain registered on provider", func() {
-		ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
-		defer cancel()
-		chainsOutput, err := s.queryProviderConsumerChains(ctx)
+		chainsOutput, err := s.queryProviderConsumerChains()
 		s.Require().NoError(err, "failed to query consumer chains")
 		//s.T().Logf("consumer chains: %s", chainsOutput)
 		s.Require().Contains(chainsOutput, consumerChainID, "consumer chain should be registered on provider")
@@ -62,9 +59,7 @@ func (s *IntegrationTestSuite) testConsumerOnProvider() {
 // testProviderConsumerChains verifies the consumer chain is registered on the provider.
 func (s *IntegrationTestSuite) testProviderOnConsumer() {
 	s.Run("provider chain registered on consumer", func() {
-		ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
-		defer cancel()
-		providerInfo, err := s.queryConsumerProviderInfo(ctx)
+		providerInfo, err := s.queryConsumerProviderInfo()
 		s.Require().NoError(err, "failed to query provider info from consumer")
 		//s.T().Logf("provider info: %s", providerInfo)
 		s.Require().Contains(providerInfo, providerChainID, "provider chain should be registered on consumer")
@@ -91,10 +86,8 @@ func (s *IntegrationTestSuite) testValidatorSetSync() {
 		s.Require().Equal(providerVP[0], consumerVP[0])
 
 		// Increase delegation of val on provider chain
-		ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
-		defer cancel()
 		// Get validator operator address
-		stdout, _, err := s.dockerExec(ctx, s.providerValRes[0].Container.ID, []string{
+		stdout, _, err := s.dockerExec(s.providerValRes[0].Container.ID, []string{
 			providerBinary, "keys", "show", "val", "--bech", "val", "-a",
 			"--home", providerHomePath,
 			"--keyring-backend", "test",
@@ -103,7 +96,7 @@ func (s *IntegrationTestSuite) testValidatorSetSync() {
 		valAddr := strings.TrimSpace(stdout.String())
 
 		// Delegate to trigger validator set change
-		_, _, err = s.dockerExec(ctx, s.providerValRes[0].Container.ID, []string{
+		_, _, err = s.dockerExec(s.providerValRes[0].Container.ID, []string{
 			providerBinary, "tx", "staking", "delegate", valAddr, "1000000" + bondDenom,
 			"--from", "user",
 			"--home", providerHomePath,
