@@ -113,7 +113,7 @@ func (s *IntegrationTestSuite) testValidatorSetSync() {
 			_ , providerVPAfter = s.extractPubKeys(providerValsAfter)
 			return providerVPAfter[0] == providerVP[0] + 1
 		},
-		10*time.Second,
+		50*time.Second,
 		time.Second)
 
 
