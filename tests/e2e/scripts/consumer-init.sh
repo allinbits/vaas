@@ -41,8 +41,6 @@ sed -i 's#address = "tcp://localhost:1317"#address = "tcp://0.0.0.0:1317"#g' "$H
 # Bind gRPC to all interfaces
 sed -i 's#address = "localhost:9090"#address = "0.0.0.0:9090"#g' "$HOME_DIR/config/app.toml"
 
-# Make all files readable/writable by the host process (needed in CI where
-# the test runner runs as a different UID than the nonroot container user).
-chmod -R 777 "$HOME_DIR"
+find "$HOME_DIR" -mindepth 1 -exec chmod 777 {} +
 
 echo "Consumer init complete."

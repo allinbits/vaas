@@ -1,6 +1,7 @@
 package e2e
 
 import (
+	"bytes"
 	"context"
 	"fmt"
 	"os"
@@ -211,7 +212,16 @@ func (s *IntegrationTestSuite) runInitContainer(name, scriptPath, containerScrip
 
 	exitCode, err := s.dkrPool.Client.WaitContainerWithContext(initResource.Container.ID, ctx)
 	s.Require().NoError(err, "%s container wait failed", name)
-	s.Require().Equal(0, exitCode, "%s container exited with code %d", name, exitCode)
+
+	var logBuf bytes.Buffer
+	_ = s.dkrPool.Client.Logs(docker.LogsOptions{
+		Container:    initResource.Container.ID,
+		OutputStream: &logBuf,
+		ErrorStream:  &logBuf,
+		Stdout:       true,
+		Stderr:       true,
+	})
+	s.Require().Equal(0, exitCode, "%s container exited with code %d\noutput:\n%s", name, exitCode, logBuf.String())
 
 	s.Require().NoError(s.dkrPool.Purge(initResource), "failed to purge %s container", name)
 }
