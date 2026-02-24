@@ -200,6 +200,94 @@ func TestSubmitConsumerDoubleVotingRejectsNilHeaderSignedHeader(t *testing.T) {
 	})
 }
 
+func TestSubmitConsumerDoubleVotingRejectsMismatchedChainID(t *testing.T) {
+	providerKeeper, ctx, ctrl, _ := testkeeper.GetProviderKeeperAndCtx(t, testkeeper.NewInMemKeeperParams(t))
+	defer ctrl.Finish()
+
+	msgServer := providerkeeper.NewMsgServerImpl(&providerKeeper)
+
+	consumerID := "0"
+	storedChainID := "consumer-chain-id"
+	differentChainID := "different-chain-id"
+	providerKeeper.SetConsumerChainId(ctx, consumerID, storedChainID)
+
+	height := int64(12)
+	evidence := makeDuplicateVoteEvidenceProto(t, differentChainID, height)
+
+	// Create a header with a different chain_id than the stored consumer chain_id
+	signer := tmtypes.NewMockPV()
+	validator := tmtypes.NewValidator(signer.PrivKey.PubKey(), 1)
+	valSet := tmtypes.NewValidatorSet([]*tmtypes.Validator{validator})
+
+	header := makeHeader(t, differentChainID, height, valSet, signer)
+
+	msg := &providertypes.MsgSubmitConsumerDoubleVoting{
+		ConsumerId:            consumerID,
+		Submitter:             "submitter",
+		DuplicateVoteEvidence: evidence,
+		InfractionBlockHeader: header,
+	}
+
+	require.NotPanics(t, func() {
+		_, err := msgServer.SubmitConsumerDoubleVoting(ctx, msg)
+		require.Error(t, err)
+		require.Contains(t, err.Error(), "infraction block header chain id")
+		require.Contains(t, err.Error(), "does not match consumer chain id")
+	})
+}
+
+func TestSubmitConsumerDoubleVotingRejectsMismatchedHeights(t *testing.T) {
+	providerKeeper, ctx, ctrl, _ := testkeeper.GetProviderKeeperAndCtx(t, testkeeper.NewInMemKeeperParams(t))
+	defer ctrl.Finish()
+
+	msgServer := providerkeeper.NewMsgServerImpl(&providerKeeper)
+
+	consumerID := "0"
+	chainID := "consumer-chain-id"
+	providerKeeper.SetConsumerChainId(ctx, consumerID, chainID)
+
+	evidenceHeight := int64(12)
+	headerHeight := int64(15)
+	evidence := makeDuplicateVoteEvidenceProto(t, chainID, evidenceHeight)
+
+	signer := tmtypes.NewMockPV()
+	validator := tmtypes.NewValidator(signer.PrivKey.PubKey(), 1)
+	valSet := tmtypes.NewValidatorSet([]*tmtypes.Validator{validator})
+
+	header := makeHeader(t, chainID, headerHeight, valSet, signer)
+
+	msg := &providertypes.MsgSubmitConsumerDoubleVoting{
+		ConsumerId:            consumerID,
+		Submitter:             "submitter",
+		DuplicateVoteEvidence: evidence,
+		InfractionBlockHeader: header,
+	}
+
+	require.NotPanics(t, func() {
+		_, err := msgServer.SubmitConsumerDoubleVoting(ctx, msg)
+		require.Error(t, err)
+		require.Contains(t, err.Error(), "infraction block header height")
+		require.Contains(t, err.Error(), "does not match duplicate vote evidence height")
+	})
+}
+
+func makeHeader(t *testing.T, chainID string, height int64, valSet *tmtypes.ValidatorSet, signer tmtypes.PrivValidator) *ibctmtypes.Header {
+	t.Helper()
+
+	tmSignedHeader := tmtypes.SignedHeader{
+		Header: &tmtypes.Header{
+			ChainID: chainID,
+			Height:  height,
+			Time:    time.Now().UTC(),
+		},
+	}
+
+	return &ibctmtypes.Header{
+		SignedHeader: tmSignedHeader.ToProto(),
+		ValidatorSet: valSet,
+	}
+}
+
 func makeDuplicateVoteEvidenceProto(t *testing.T, chainID string, height int64) *tmproto.DuplicateVoteEvidence {
 	t.Helper()
 

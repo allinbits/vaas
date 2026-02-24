@@ -145,14 +145,6 @@ func (k msgServer) SubmitConsumerDoubleVoting(goCtx context.Context, msg *types.
 		return nil, errorsmod.Wrap(types.ErrInvalidMsgSubmitConsumerDoubleVoting, "duplicate vote evidence cannot be nil")
 	}
 
-	evidence, err := tmtypes.DuplicateVoteEvidenceFromProto(msg.DuplicateVoteEvidence)
-	if err != nil {
-		return nil, err
-	}
-	if evidence.VoteA == nil || evidence.VoteB == nil {
-		return nil, errorsmod.Wrap(vaastypes.ErrInvalidDoubleVotingEvidence, "duplicate vote evidence must include both votes")
-	}
-
 	if msg.InfractionBlockHeader == nil ||
 		msg.InfractionBlockHeader.SignedHeader == nil ||
 		msg.InfractionBlockHeader.SignedHeader.Header == nil {
@@ -175,6 +167,14 @@ func (k msgServer) SubmitConsumerDoubleVoting(goCtx context.Context, msg *types.
 			consumerChainId,
 			msg.ConsumerId,
 		)
+	}
+
+	evidence, err := tmtypes.DuplicateVoteEvidenceFromProto(msg.DuplicateVoteEvidence)
+	if err != nil {
+		return nil, err
+	}
+	if evidence.VoteA == nil || evidence.VoteB == nil {
+		return nil, errorsmod.Wrap(vaastypes.ErrInvalidDoubleVotingEvidence, "duplicate vote evidence must include both votes")
 	}
 	headerHeight := msg.InfractionBlockHeader.SignedHeader.Header.Height
 	if headerHeight != evidence.VoteA.Height || headerHeight != evidence.VoteB.Height {

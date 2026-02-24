@@ -298,6 +298,14 @@ func ValidateHeaderForConsumerDoubleVoting(header *ibctmtypes.Header) error {
 		return errors.New("infraction block header cannot be nil")
 	}
 
+	if header.SignedHeader == nil || header.SignedHeader.Header == nil {
+		return errors.New("infraction block header signed header or header cannot be nil")
+	}
+
+	if header.ValidatorSet == nil {
+		return errors.New("infraction block header validator set cannot be nil")
+	}
+
 	if err := header.ValidateBasic(); err != nil {
 		return err
 	}
