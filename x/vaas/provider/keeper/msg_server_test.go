@@ -219,7 +219,7 @@ func TestSubmitConsumerDoubleVotingRejectsMismatchedChainID(t *testing.T) {
 	validator := tmtypes.NewValidator(signer.PrivKey.PubKey(), 1)
 	valSet := tmtypes.NewValidatorSet([]*tmtypes.Validator{validator})
 
-	header := makeHeader(t, differentChainID, height, valSet, signer)
+	header := makeHeader(t, differentChainID, height, valSet)
 
 	msg := &providertypes.MsgSubmitConsumerDoubleVoting{
 		ConsumerId:            consumerID,
@@ -254,7 +254,7 @@ func TestSubmitConsumerDoubleVotingRejectsMismatchedHeights(t *testing.T) {
 	validator := tmtypes.NewValidator(signer.PrivKey.PubKey(), 1)
 	valSet := tmtypes.NewValidatorSet([]*tmtypes.Validator{validator})
 
-	header := makeHeader(t, chainID, headerHeight, valSet, signer)
+	header := makeHeader(t, chainID, headerHeight, valSet)
 
 	msg := &providertypes.MsgSubmitConsumerDoubleVoting{
 		ConsumerId:            consumerID,
@@ -271,7 +271,7 @@ func TestSubmitConsumerDoubleVotingRejectsMismatchedHeights(t *testing.T) {
 	})
 }
 
-func makeHeader(t *testing.T, chainID string, height int64, valSet *tmtypes.ValidatorSet, signer tmtypes.PrivValidator) *ibctmtypes.Header {
+func makeHeader(t *testing.T, chainID string, height int64, valSet *tmtypes.ValidatorSet) *ibctmtypes.Header {
 	t.Helper()
 
 	tmSignedHeader := tmtypes.SignedHeader{
@@ -281,10 +281,12 @@ func makeHeader(t *testing.T, chainID string, height int64, valSet *tmtypes.Vali
 			Time:    time.Now().UTC(),
 		},
 	}
+	protoValSet, err := valSet.ToProto()
+	require.NoError(t, err)
 
 	return &ibctmtypes.Header{
 		SignedHeader: tmSignedHeader.ToProto(),
-		ValidatorSet: valSet,
+		ValidatorSet: protoValSet,
 	}
 }
 
