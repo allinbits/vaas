@@ -1,0 +1,112 @@
+[global]
+log_level = 'info'
+
+[mode]
+[mode.clients]
+enabled = true
+refresh = true
+misbehaviour = false
+
+[mode.connections]
+enabled = true
+
+[mode.channels]
+enabled = true
+
+[mode.packets]
+enabled = true
+clear_interval = 100
+clear_on_start = true
+tx_confirmation = false
+
+[rest]
+enabled = true
+host = '0.0.0.0'
+port = 3031
+
+[telemetry]
+enabled = false
+host = '127.0.0.1'
+port = 3001
+
+[[chains]]
+id = 'PROVIDER_CHAIN_ID'
+type = 'CosmosSdk'
+rpc_addr = 'http://PROVIDER_CHAIN_ID-val0:26657'
+grpc_addr = 'http://PROVIDER_CHAIN_ID-val0:9090'
+rpc_timeout = '10s'
+trusted_node = true
+account_prefix = 'cosmos'
+key_name = 'relayer'
+key_store_type = 'Test'
+key_store_folder = '/home/hermes/.hermes/keys'
+store_prefix = 'ibc'
+default_gas = 100000
+max_gas = 3000000
+gas_multiplier = 1.2
+max_msg_num = 30
+max_tx_size = 180000
+clock_drift = '5s'
+max_block_time = '30s'
+ccv_consumer_chain = false
+
+[chains.event_source]
+mode = 'push'
+url = 'ws://PROVIDER_CHAIN_ID-val0:26657/websocket'
+batch_delay = '500ms'
+
+[chains.trust_threshold]
+numerator = '1'
+denominator = '3'
+
+[chains.gas_price]
+price = 0.01
+denom = 'uatone'
+
+[chains.packet_filter]
+policy = 'allow'
+list = [['consumer', '*'], ['provider', '*'], ['transfer', '*']]
+
+[chains.address_type]
+derivation = 'cosmos'
+
+[[chains]]
+id = 'CONSUMER_CHAIN_ID'
+type = 'CosmosSdk'
+rpc_addr = 'http://CONSUMER_CHAIN_ID-val0:26657'
+grpc_addr = 'http://CONSUMER_CHAIN_ID-val0:9090'
+rpc_timeout = '10s'
+trusted_node = true
+account_prefix = 'cosmos'
+key_name = 'relayer'
+key_store_type = 'Test'
+key_store_folder = '/home/hermes/.hermes/keys'
+store_prefix = 'ibc'
+default_gas = 100000
+max_gas = 3000000
+gas_multiplier = 1.2
+max_msg_num = 30
+max_tx_size = 180000
+clock_drift = '5s'
+max_block_time = '30s'
+ccv_consumer_chain = false
+
+[chains.event_source]
+mode = 'push'
+url = 'ws://CONSUMER_CHAIN_ID-val0:26657/websocket'
+batch_delay = '500ms'
+
+[chains.trust_threshold]
+numerator = '1'
+denominator = '3'
+
+[chains.gas_price]
+price = 0.01
+denom = 'uatone'
+
+[chains.packet_filter]
+policy = 'allow'
+list = [['consumer', '*'], ['provider', '*'], ['transfer', '*']]
+
+[chains.address_type]
+derivation = 'cosmos'
