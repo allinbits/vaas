@@ -1,0 +1,33 @@
+{
+  "chain_id": "CONSUMER_CHAIN_ID",
+  "metadata": {
+    "name": "consumer",
+    "description": "e2e test consumer chain",
+    "metadata": "{}"
+  },
+  "initialization_parameters": {
+    "initial_height": {
+      "revision_number": 0,
+      "revision_height": 1
+    },
+    "genesis_hash": "",
+    "binary_hash": "",
+    "spawn_time": "2024-01-01T00:00:00Z",
+    "unbonding_period": 1728000000000000,
+    "vaas_timeout_period": 2419200000000000,
+    "historical_entries": 10000,
+    "connection_id": ""
+  },
+  "infraction_parameters": {
+    "double_sign": {
+      "slash_fraction": "0.05",
+      "jail_duration": 9223372036854775807,
+      "tombstone": true
+    },
+    "downtime": {
+      "slash_fraction": "0.0001",
+      "jail_duration": 600000000000,
+      "tombstone": false
+    }
+  }
+}
