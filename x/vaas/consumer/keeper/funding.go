@@ -15,17 +15,22 @@ func (k Keeper) GetFeeCollectorAccountAddress(ctx context.Context) (sdk.AccAddre
 	return feeCollectorAccount.GetAddress(), true
 }
 
-func (k Keeper) HasFeeCollectorFunds(ctx context.Context, denoms []string) bool {
+func (k Keeper) HasFeeCollectorFundsForAmount(ctx context.Context, requiredAmount sdk.Coins) bool {
+	if requiredAmount.IsZero() {
+		return true
+	}
+
 	feeCollectorAddr, found := k.GetFeeCollectorAccountAddress(ctx)
 	if !found {
 		return false
 	}
 
-	for _, denom := range denoms {
-		if denom == "" {
+	for _, requiredCoin := range requiredAmount {
+		if requiredCoin.Denom == "" || !requiredCoin.Amount.IsPositive() {
 			continue
 		}
-		if k.bankKeeper.GetBalance(ctx, feeCollectorAddr, denom).Amount.IsPositive() {
+		balance := k.bankKeeper.GetBalance(ctx, feeCollectorAddr, requiredCoin.Denom)
+		if balance.Amount.GTE(requiredCoin.Amount) {
 			return true
 		}
 	}

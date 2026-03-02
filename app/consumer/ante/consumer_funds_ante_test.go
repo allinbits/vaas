@@ -19,7 +19,7 @@ type mockConsumerFundsKeeper struct {
 	providerChannelFound bool
 	feeCollectorAddr     sdk.AccAddress
 	feeCollectorFound    bool
-	feeCollectorFunded   bool
+	balances             map[string]int64
 }
 
 func (m mockConsumerFundsKeeper) GetProviderChannel(context.Context) (string, bool) {
@@ -33,12 +33,21 @@ func (m mockConsumerFundsKeeper) GetFeeCollectorAccountAddress(context.Context) 
 	return m.feeCollectorAddr, true
 }
 
-func (m mockConsumerFundsKeeper) HasFeeCollectorFunds(context.Context, []string) bool {
-	return m.feeCollectorFunded
+func (m mockConsumerFundsKeeper) HasFeeCollectorFundsForAmount(_ context.Context, requiredAmount sdk.Coins) bool {
+	for _, coin := range requiredAmount {
+		if balance, ok := m.balances[coin.Denom]; ok && balance >= coin.Amount.Int64() {
+			return true
+		}
+	}
+	return false
 }
 
 type mockTx struct {
-	msgs []sdk.Msg
+	msgs       []sdk.Msg
+	fee        sdk.Coins
+	gas        uint64
+	feePayer   []byte
+	feeGranter []byte
 }
 
 func (m mockTx) GetMsgs() []sdk.Msg {
@@ -47,6 +56,22 @@ func (m mockTx) GetMsgs() []sdk.Msg {
 
 func (m mockTx) GetMsgsV2() ([]protov2.Message, error) {
 	return nil, nil
+}
+
+func (m mockTx) GetGas() uint64 {
+	return m.gas
+}
+
+func (m mockTx) GetFee() sdk.Coins {
+	return m.fee
+}
+
+func (m mockTx) FeePayer() []byte {
+	return m.feePayer
+}
+
+func (m mockTx) FeeGranter() []byte {
+	return m.feeGranter
 }
 
 func TestConsumerFundsDecoratorSkipsGateBeforeProviderChannel(t *testing.T) {
@@ -62,11 +87,15 @@ func TestConsumerFundsDecoratorSkipsGateBeforeProviderChannel(t *testing.T) {
 		providerChannelFound: false,
 		feeCollectorAddr:     collector,
 		feeCollectorFound:    true,
-		feeCollectorFunded:   false,
+		balances:             map[string]int64{},
 	})
 
 	nextCalled := false
-	_, err := decorator.AnteHandle(ctx, mockTx{msgs: []sdk.Msg{msg}}, false, func(ctx sdk.Context, tx sdk.Tx, simulate bool) (sdk.Context, error) {
+	_, err := decorator.AnteHandle(ctx, mockTx{
+		msgs: []sdk.Msg{msg},
+		fee:  sdk.NewCoins(sdk.NewInt64Coin("uatone", 10)),
+		gas:  100,
+	}, false, func(ctx sdk.Context, tx sdk.Tx, simulate bool) (sdk.Context, error) {
 		nextCalled = true
 		return ctx, nil
 	})
@@ -87,11 +116,17 @@ func TestConsumerFundsDecoratorBlocksNonTopUpTxWhenUnderfunded(t *testing.T) {
 		providerChannelFound: true,
 		feeCollectorAddr:     collector,
 		feeCollectorFound:    true,
-		feeCollectorFunded:   false,
+		balances: map[string]int64{
+			"uatone": 9,
+		},
 	})
 
 	nextCalled := false
-	_, err := decorator.AnteHandle(ctx, mockTx{msgs: []sdk.Msg{msg}}, false, func(ctx sdk.Context, tx sdk.Tx, simulate bool) (sdk.Context, error) {
+	_, err := decorator.AnteHandle(ctx, mockTx{
+		msgs: []sdk.Msg{msg},
+		fee:  sdk.NewCoins(sdk.NewInt64Coin("uatone", 10)),
+		gas:  100,
+	}, false, func(ctx sdk.Context, tx sdk.Tx, simulate bool) (sdk.Context, error) {
 		nextCalled = true
 		return ctx, nil
 	})
@@ -113,11 +148,15 @@ func TestConsumerFundsDecoratorAllowsTopUpTxWhenUnderfunded(t *testing.T) {
 		providerChannelFound: true,
 		feeCollectorAddr:     collector,
 		feeCollectorFound:    true,
-		feeCollectorFunded:   false,
+		balances:             map[string]int64{},
 	})
 
 	nextCalled := false
-	_, err := decorator.AnteHandle(ctx, mockTx{msgs: []sdk.Msg{msg}}, false, func(ctx sdk.Context, tx sdk.Tx, simulate bool) (sdk.Context, error) {
+	_, err := decorator.AnteHandle(ctx, mockTx{
+		msgs: []sdk.Msg{msg},
+		fee:  sdk.NewCoins(sdk.NewInt64Coin("uatone", 10)),
+		gas:  100,
+	}, false, func(ctx sdk.Context, tx sdk.Tx, simulate bool) (sdk.Context, error) {
 		nextCalled = true
 		return ctx, nil
 	})
@@ -125,7 +164,7 @@ func TestConsumerFundsDecoratorAllowsTopUpTxWhenUnderfunded(t *testing.T) {
 	require.True(t, nextCalled)
 }
 
-func TestConsumerFundsDecoratorAllowsTxWhenFunded(t *testing.T) {
+func TestConsumerFundsDecoratorAllowsTxWhenExactlyFunded(t *testing.T) {
 	collector := testAccAddress(1)
 	msg := &banktypes.MsgSend{
 		FromAddress: testAccAddress(2).String(),
@@ -138,11 +177,17 @@ func TestConsumerFundsDecoratorAllowsTxWhenFunded(t *testing.T) {
 		providerChannelFound: true,
 		feeCollectorAddr:     collector,
 		feeCollectorFound:    true,
-		feeCollectorFunded:   true,
+		balances: map[string]int64{
+			"uatone": 10,
+		},
 	})
 
 	nextCalled := false
-	_, err := decorator.AnteHandle(ctx, mockTx{msgs: []sdk.Msg{msg}}, false, func(ctx sdk.Context, tx sdk.Tx, simulate bool) (sdk.Context, error) {
+	_, err := decorator.AnteHandle(ctx, mockTx{
+		msgs: []sdk.Msg{msg},
+		fee:  sdk.NewCoins(sdk.NewInt64Coin("uatone", 10)),
+		gas:  100,
+	}, false, func(ctx sdk.Context, tx sdk.Tx, simulate bool) (sdk.Context, error) {
 		nextCalled = true
 		return ctx, nil
 	})
@@ -161,11 +206,15 @@ func TestConsumerFundsDecoratorBlocksWhenFeeCollectorMissing(t *testing.T) {
 	decorator := NewConsumerFundsDecorator(mockConsumerFundsKeeper{
 		providerChannelFound: true,
 		feeCollectorFound:    false,
-		feeCollectorFunded:   false,
+		balances:             map[string]int64{},
 	})
 
 	nextCalled := false
-	_, err := decorator.AnteHandle(ctx, mockTx{msgs: []sdk.Msg{msg}}, false, func(ctx sdk.Context, tx sdk.Tx, simulate bool) (sdk.Context, error) {
+	_, err := decorator.AnteHandle(ctx, mockTx{
+		msgs: []sdk.Msg{msg},
+		fee:  sdk.NewCoins(sdk.NewInt64Coin("uatone", 10)),
+		gas:  100,
+	}, false, func(ctx sdk.Context, tx sdk.Tx, simulate bool) (sdk.Context, error) {
 		nextCalled = true
 		return ctx, nil
 	})

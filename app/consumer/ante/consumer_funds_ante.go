@@ -2,12 +2,9 @@ package ante
 
 import (
 	"context"
-	"strings"
-
 	consumertypes "github.com/allinbits/vaas/x/vaas/consumer/types"
-
+	sdkmath "cosmossdk.io/math"
 	errorsmod "cosmossdk.io/errors"
-
 	sdk "github.com/cosmos/cosmos-sdk/types"
 	"github.com/cosmos/cosmos-sdk/x/authz"
 	banktypes "github.com/cosmos/cosmos-sdk/x/bank/types"
@@ -19,7 +16,7 @@ type (
 	ConsumerFundsKeeper interface {
 		GetProviderChannel(ctx context.Context) (string, bool)
 		GetFeeCollectorAccountAddress(ctx context.Context) (sdk.AccAddress, bool)
-		HasFeeCollectorFunds(ctx context.Context, denoms []string) bool
+		HasFeeCollectorFundsForAmount(ctx context.Context, requiredAmount sdk.Coins) bool
 	}
 
 	ConsumerFundsDecorator struct {
@@ -39,9 +36,9 @@ func (cfd ConsumerFundsDecorator) AnteHandle(ctx sdk.Context, tx sdk.Tx, simulat
 		return next(ctx, tx, simulate)
 	}
 
-	requiredDenoms := getRequiredFundingDenoms(ctx)
+	requiredAmount := getRequiredFundingAmount(ctx, tx)
 
-	if cfd.ConsumerKeeper.HasFeeCollectorFunds(ctx, requiredDenoms) {
+	if cfd.ConsumerKeeper.HasFeeCollectorFundsForAmount(ctx, requiredAmount) {
 		return next(ctx, tx, simulate)
 	}
 
@@ -50,15 +47,16 @@ func (cfd ConsumerFundsDecorator) AnteHandle(ctx sdk.Context, tx sdk.Tx, simulat
 		return ctx, errorsmod.Wrap(consumertypes.ErrConsumerAccountUnderfunded, "consumer fee collector account not found")
 	}
 
+	requiredDenoms := denomsFromCoins(requiredAmount)
 	if isTopUpTx(tx.GetMsgs(), feeCollectorAddr.String(), requiredDenoms) {
 		return next(ctx, tx, simulate)
 	}
 
 	return ctx, errorsmod.Wrapf(
 		consumertypes.ErrConsumerAccountUnderfunded,
-		"consumer fee collector account %s has no funds in required denoms (%s)",
+		"consumer fee collector account %s has insufficient funds; required at least one of (%s)",
 		feeCollectorAddr.String(),
-		strings.Join(requiredDenoms, ","),
+		requiredAmount.String(),
 	)
 }
 
@@ -80,6 +78,61 @@ func getRequiredFundingDenoms(ctx sdk.Context) []string {
 		return []string{defaultFundingDenom}
 	}
 	return requiredDenoms
+}
+
+func getRequiredFundingAmount(ctx sdk.Context, tx sdk.Tx) sdk.Coins {
+	feeTx, ok := tx.(sdk.FeeTx)
+	if ok {
+		fee := feeTx.GetFee()
+		if !fee.IsZero() {
+			return fee
+		}
+
+		minGasRequired := getRequiredMinGasFees(ctx, feeTx.GetGas())
+		if !minGasRequired.IsZero() {
+			return minGasRequired
+		}
+	}
+
+	// Fallback: require a minimal positive amount in known gas denoms so
+	// the gating still protects the chain even for non-standard/zero-fee txs.
+	denoms := getRequiredFundingDenoms(ctx)
+	minimal := make(sdk.Coins, 0, len(denoms))
+	for _, denom := range denoms {
+		minimal = append(minimal, sdk.NewInt64Coin(denom, 1))
+	}
+	return minimal
+}
+
+func getRequiredMinGasFees(ctx sdk.Context, gas uint64) sdk.Coins {
+	minGasPrices := ctx.MinGasPrices()
+	if minGasPrices.IsZero() {
+		return sdk.Coins{}
+	}
+
+	requiredFees := make(sdk.Coins, 0, len(minGasPrices))
+	gasDec := sdkmath.LegacyNewDec(int64(gas))
+	for _, gasPrice := range minGasPrices {
+		feeAmount := gasPrice.Amount.Mul(gasDec).Ceil().RoundInt()
+		requiredFees = append(requiredFees, sdk.NewCoin(gasPrice.Denom, feeAmount))
+	}
+
+	return requiredFees
+}
+
+func denomsFromCoins(coins sdk.Coins) []string {
+	denoms := make([]string, 0, len(coins))
+	for _, coin := range coins {
+		if coin.Denom == "" {
+			continue
+		}
+		denoms = append(denoms, coin.Denom)
+	}
+
+	if len(denoms) == 0 {
+		return []string{defaultFundingDenom}
+	}
+	return denoms
 }
 
 func isTopUpTx(msgs []sdk.Msg, feeCollectorAddr string, denoms []string) bool {
