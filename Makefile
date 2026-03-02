@@ -13,7 +13,7 @@ build:
 	go build ./...
 
 test:
-	go test -timeout=25m -v ./...
+	go test -timeout=25m -v $(shell go list ./... | grep -v 'github.com/allinbits/vaas/tests/e2e')
 
 lint_cmd=$(rundep) github.com/golangci/golangci-lint/cmd/golangci-lint
 lint:
@@ -335,6 +335,6 @@ docker-build-all: docker-build-debug docker-build-hermes
 # Run the e2e integration test suite
 test-e2e: docker-build-all
 	@echo "Running e2e tests..."
-	go test -timeout=25m -v ./tests/e2e/...
+	cd tests/e2e && go test -timeout=25m -v ./...
 
 .PHONY: docker-build-debug docker-build-hermes docker-build-all test-e2e
