@@ -153,6 +153,28 @@ func (msg MsgSubmitConsumerDoubleVoting) ValidateBasic() error {
 		)
 	}
 
+	// Validate that evidence signatures are valid for the infraction header chain ID.
+	valset, err := cmttypes.ValidatorSetFromProto(msg.InfractionBlockHeader.ValidatorSet)
+	if err != nil {
+		return errorsmod.Wrapf(ErrInvalidMsgSubmitConsumerDoubleVoting, "InfractionBlockHeader.ValidatorSet: %s", err.Error())
+	}
+	_, validator := valset.GetByAddress(dve.VoteA.ValidatorAddress)
+	if validator == nil {
+		return errorsmod.Wrapf(
+			ErrInvalidMsgSubmitConsumerDoubleVoting,
+			"misbehaving validator %X cannot be found in infraction block header validator set",
+			dve.VoteA.ValidatorAddress,
+		)
+	}
+
+	headerChainID := msg.InfractionBlockHeader.Header.ChainID
+	if err := dve.VoteA.Verify(headerChainID, validator.PubKey); err != nil {
+		return errorsmod.Wrapf(ErrInvalidMsgSubmitConsumerDoubleVoting, "DuplicateVoteEvidence.VoteA: %s", err.Error())
+	}
+	if err := dve.VoteB.Verify(headerChainID, validator.PubKey); err != nil {
+		return errorsmod.Wrapf(ErrInvalidMsgSubmitConsumerDoubleVoting, "DuplicateVoteEvidence.VoteB: %s", err.Error())
+	}
+
 	if err := vaastypes.ValidateConsumerId(msg.ConsumerId); err != nil {
 		return errorsmod.Wrapf(ErrInvalidMsgSubmitConsumerDoubleVoting, "ConsumerId: %s", err.Error())
 	}

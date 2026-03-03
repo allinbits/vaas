@@ -5,8 +5,8 @@ import (
 	"testing"
 	"time"
 
-	cmtversion "github.com/cometbft/cometbft/proto/tendermint/version"
 	tmproto "github.com/cometbft/cometbft/proto/tendermint/types"
+	cmtversion "github.com/cometbft/cometbft/proto/tendermint/version"
 	tmtypes "github.com/cometbft/cometbft/types"
 	cometversion "github.com/cometbft/cometbft/version"
 
@@ -171,16 +171,32 @@ func TestMsgSubmitConsumerDoubleVotingValidateBasic_RejectsChainIDMismatch(t *te
 	setupBech32Cfg()
 
 	submitter := sdk.AccAddress(make([]byte, 20)).String()
-	ev, _ := makeValidDoubleVoteEvidenceAndHeader(t, "consumer-1", 10)
-	_, headerWrongChainID := makeValidDoubleVoteEvidenceAndHeader(t, "consumer-2", 10)
+	height := int64(10)
+	blockTime := time.Now().UTC()
+
+	signer := tmtypes.NewMockPV()
+	val := tmtypes.NewValidator(signer.PrivKey.PubKey(), 1)
+	valSet := tmtypes.NewValidatorSet([]*tmtypes.Validator{val})
+
+	blockID1 := cryptoutil.MakeBlockID([]byte("blockhash"), 1000, []byte("partshash"))
+	blockID2 := cryptoutil.MakeBlockID([]byte("blockhash2"), 1000, []byte("partshash"))
+
+	vote1 := cryptoutil.MakeAndSignVote(blockID1, height, blockTime, valSet, signer, "consumer-1")
+	vote2 := cryptoutil.MakeAndSignVote(blockID2, height, blockTime, valSet, signer, "consumer-1")
+
+	dve, err := tmtypes.NewDuplicateVoteEvidence(vote1, vote2, blockTime, valSet)
+	require.NoError(t, err)
+
+	headerWrongChainID := makeValidIBCTMHeader(t, "consumer-2", height, valSet, blockTime)
 
 	msg := types.MsgSubmitConsumerDoubleVoting{
 		Submitter:             submitter,
-		DuplicateVoteEvidence: ev,
+		DuplicateVoteEvidence: dve.ToProto(),
 		InfractionBlockHeader: headerWrongChainID,
 		ConsumerId:            "1",
 	}
 
-	err := msg.ValidateBasic()
+	err = msg.ValidateBasic()
 	require.Error(t, err)
+	require.Contains(t, err.Error(), "DuplicateVoteEvidence.VoteA")
 }
