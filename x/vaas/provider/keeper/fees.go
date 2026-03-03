@@ -113,11 +113,9 @@ func (k Keeper) DistributeFeesToValidators(ctx sdk.Context, totalFees sdk.Coin) 
 			continue
 		}
 
-		// Send coins from fee_collector to validator account
-		coins := sdk.NewCoins(sdk.NewCoin(totalFees.Denom, valShare))
-		if err := k.bankKeeper.SendCoinsFromModuleToAccount(ctx, k.feeCollectorName, valAddr, coins); err != nil {
-			return fmt.Errorf("failed to send fees to validator %s: %w", val.GetOperator(), err)
-		}
+		// Allocate fees to validator via distribution module so delegators also receive rewards.
+		decCoins := sdk.NewDecCoinsFromCoins(sdk.NewCoin(totalFees.Denom, valShare))
+		k.distributionKeeper.AllocateTokensToValidator(ctx, val, decCoins)
 
 		distributedAmount = distributedAmount.Add(valShare)
 	}
