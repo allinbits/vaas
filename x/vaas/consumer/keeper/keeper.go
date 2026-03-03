@@ -22,6 +22,7 @@ import (
 
 	"github.com/cosmos/cosmos-sdk/codec"
 	sdk "github.com/cosmos/cosmos-sdk/types"
+	authtypes "github.com/cosmos/cosmos-sdk/x/auth/types"
 	stakingtypes "github.com/cosmos/cosmos-sdk/x/staking/types"
 )
 
@@ -46,6 +47,7 @@ type Keeper struct {
 	authKeeper              vaastypes.AccountKeeper
 	ibcCoreKeeper           vaastypes.IBCCoreKeeper
 	feeCollectorName        string
+	feeCollectorAddress     sdk.AccAddress
 
 	validatorAddressCodec addresscodec.Codec
 	consensusAddressCodec addresscodec.Codec
@@ -94,6 +96,7 @@ func NewKeeper(
 		authKeeper:              accountKeeper,
 		ibcCoreKeeper:           ibcCoreKeeper,
 		feeCollectorName:        feeCollectorName,
+		feeCollectorAddress:     authtypes.NewModuleAddress(feeCollectorName),
 		standaloneStakingKeeper: nil,
 		validatorAddressCodec:   validatorAddressCodec,
 		consensusAddressCodec:   consensusAddressCodec,

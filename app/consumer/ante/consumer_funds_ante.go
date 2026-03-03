@@ -12,13 +12,16 @@ import (
 	consumertypes "github.com/allinbits/vaas/x/vaas/consumer/types"
 )
 
-const defaultFundingDenom = "uatone"
+const (
+	defaultFundingDenom = "uatone"
+	maxAuthzExecDepth   = 4
+)
 
 type (
 	ConsumerFundsKeeper interface {
 		GetProviderChannel(ctx context.Context) (string, bool)
 		GetFeeCollectorAccountAddress(ctx context.Context) (sdk.AccAddress, bool)
-		HasFeeCollectorFundsForAmount(ctx context.Context, requiredAmount sdk.Coins) bool
+		HasFeeCollectorFundsForCoin(ctx context.Context, requiredCoin sdk.Coin) bool
 	}
 
 	ConsumerFundsDecorator struct {
@@ -38,9 +41,9 @@ func (cfd ConsumerFundsDecorator) AnteHandle(ctx sdk.Context, tx sdk.Tx, simulat
 		return next(ctx, tx, simulate)
 	}
 
-	requiredAmount := getRequiredFundingAmount(ctx, tx)
+	requiredCoin := getRequiredFundingCoin(ctx, tx)
 
-	if cfd.ConsumerKeeper.HasFeeCollectorFundsForAmount(ctx, requiredAmount) {
+	if cfd.ConsumerKeeper.HasFeeCollectorFundsForCoin(ctx, requiredCoin) {
 		return next(ctx, tx, simulate)
 	}
 
@@ -49,108 +52,73 @@ func (cfd ConsumerFundsDecorator) AnteHandle(ctx sdk.Context, tx sdk.Tx, simulat
 		return ctx, errorsmod.Wrap(consumertypes.ErrConsumerAccountUnderfunded, "consumer fee collector account not found")
 	}
 
-	requiredDenoms := denomsFromCoins(requiredAmount)
-	if isTopUpTx(tx.GetMsgs(), feeCollectorAddr.String(), requiredDenoms) {
+	if isTopUpTx(tx.GetMsgs(), feeCollectorAddr.String(), requiredCoin.Denom) {
 		return next(ctx, tx, simulate)
 	}
 
 	return ctx, errorsmod.Wrapf(
 		consumertypes.ErrConsumerAccountUnderfunded,
-		"consumer fee collector account %s has insufficient funds; required at least one of (%s)",
+		"consumer fee collector account %s has insufficient funds; required %s",
 		feeCollectorAddr.String(),
-		requiredAmount.String(),
+		requiredCoin.String(),
 	)
 }
 
-func getRequiredFundingDenoms(ctx sdk.Context) []string {
-	seenDenoms := map[string]struct{}{}
-	requiredDenoms := make([]string, 0, len(ctx.MinGasPrices()))
+func getBillingDenom(ctx sdk.Context) string {
 	for _, decCoin := range ctx.MinGasPrices() {
 		if decCoin.Denom == "" {
 			continue
 		}
-		if _, exists := seenDenoms[decCoin.Denom]; exists {
-			continue
-		}
-		seenDenoms[decCoin.Denom] = struct{}{}
-		requiredDenoms = append(requiredDenoms, decCoin.Denom)
+		return decCoin.Denom
 	}
-
-	if len(requiredDenoms) == 0 {
-		return []string{defaultFundingDenom}
-	}
-	return requiredDenoms
+	return defaultFundingDenom
 }
 
-func getRequiredFundingAmount(ctx sdk.Context, tx sdk.Tx) sdk.Coins {
+func getRequiredFundingCoin(ctx sdk.Context, tx sdk.Tx) sdk.Coin {
+	billingDenom := getBillingDenom(ctx)
 	feeTx, ok := tx.(sdk.FeeTx)
 	if ok {
-		fee := feeTx.GetFee()
-		if !fee.IsZero() {
-			return fee
+		feeAmount := feeTx.GetFee().AmountOf(billingDenom)
+		if feeAmount.IsPositive() {
+			return sdk.NewCoin(billingDenom, feeAmount)
 		}
 
-		minGasRequired := getRequiredMinGasFees(ctx, feeTx.GetGas())
-		if !minGasRequired.IsZero() {
+		minGasRequired := getRequiredMinGasFee(ctx, feeTx.GetGas(), billingDenom)
+		if minGasRequired.Amount.IsPositive() {
 			return minGasRequired
 		}
 	}
 
 	// Fallback: require a minimal positive amount in known gas denoms so
 	// the gating still protects the chain even for non-standard/zero-fee txs.
-	denoms := getRequiredFundingDenoms(ctx)
-	minimal := make(sdk.Coins, 0, len(denoms))
-	for _, denom := range denoms {
-		minimal = append(minimal, sdk.NewInt64Coin(denom, 1))
-	}
-	return minimal
+	return sdk.NewInt64Coin(billingDenom, 1)
 }
 
-func getRequiredMinGasFees(ctx sdk.Context, gas uint64) sdk.Coins {
-	minGasPrices := ctx.MinGasPrices()
-	if minGasPrices.IsZero() {
-		return sdk.Coins{}
+func getRequiredMinGasFee(ctx sdk.Context, gas uint64, denom string) sdk.Coin {
+	if gas == 0 {
+		return sdk.NewCoin(denom, sdkmath.ZeroInt())
 	}
 
-	requiredFees := make(sdk.Coins, 0, len(minGasPrices))
-	gasDec := sdkmath.LegacyNewDec(int64(gas))
-	for _, gasPrice := range minGasPrices {
-		feeAmount := gasPrice.Amount.Mul(gasDec).Ceil().RoundInt()
-		requiredFees = append(requiredFees, sdk.NewCoin(gasPrice.Denom, feeAmount))
-	}
-
-	return requiredFees
-}
-
-func denomsFromCoins(coins sdk.Coins) []string {
-	denoms := make([]string, 0, len(coins))
-	for _, coin := range coins {
-		if coin.Denom == "" {
+	for _, gasPrice := range ctx.MinGasPrices() {
+		if gasPrice.Denom != denom {
 			continue
 		}
-		denoms = append(denoms, coin.Denom)
+
+		gasDec := sdkmath.LegacyNewDec(int64(gas))
+		feeAmount := gasPrice.Amount.Mul(gasDec).Ceil().RoundInt()
+		return sdk.NewCoin(denom, feeAmount)
 	}
 
-	if len(denoms) == 0 {
-		return []string{defaultFundingDenom}
-	}
-	return denoms
+	return sdk.NewCoin(denom, sdkmath.ZeroInt())
 }
 
-func isTopUpTx(msgs []sdk.Msg, feeCollectorAddr string, denoms []string) bool {
+func isTopUpTx(msgs []sdk.Msg, feeCollectorAddr string, denom string) bool {
 	if len(msgs) == 0 {
 		return false
 	}
 
-	allowedDenoms := map[string]struct{}{}
-	for _, denom := range denoms {
-		if denom != "" {
-			allowedDenoms[denom] = struct{}{}
-		}
-	}
-
 	for _, msg := range msgs {
-		if !isTopUpMsg(msg, feeCollectorAddr, allowedDenoms) {
+		if !isTopUpMsg(msg, feeCollectorAddr, denom, 0) {
 			return false
 		}
 	}
@@ -158,13 +126,13 @@ func isTopUpTx(msgs []sdk.Msg, feeCollectorAddr string, denoms []string) bool {
 	return true
 }
 
-func isTopUpMsg(msg sdk.Msg, feeCollectorAddr string, allowedDenoms map[string]struct{}) bool {
+func isTopUpMsg(msg sdk.Msg, feeCollectorAddr string, denom string, authzDepth int) bool {
 	switch m := msg.(type) {
 	case *banktypes.MsgSend:
 		if m.ToAddress != feeCollectorAddr {
 			return false
 		}
-		return hasAllowedPositiveCoins(m.Amount, allowedDenoms)
+		return hasAllowedPositiveCoins(m.Amount, denom)
 
 	case *banktypes.MsgMultiSend:
 		// Keep the top-up surface narrow while underfunded: exactly one output
@@ -178,16 +146,21 @@ func isTopUpMsg(msg sdk.Msg, feeCollectorAddr string, allowedDenoms map[string]s
 			return false
 		}
 
-		return hasAllowedPositiveCoins(output.Coins, allowedDenoms)
+		return hasAllowedPositiveCoins(output.Coins, denom)
 
 	case *authz.MsgExec:
+		// Bound nested MsgExec recursion to avoid pathological CPU usage.
+		if authzDepth >= maxAuthzExecDepth {
+			return false
+		}
+
 		nestedMsgs, err := m.GetMessages()
 		if err != nil || len(nestedMsgs) == 0 {
 			return false
 		}
 
 		for _, nestedMsg := range nestedMsgs {
-			if !isTopUpMsg(nestedMsg, feeCollectorAddr, allowedDenoms) {
+			if !isTopUpMsg(nestedMsg, feeCollectorAddr, denom, authzDepth+1) {
 				return false
 			}
 		}
@@ -197,9 +170,9 @@ func isTopUpMsg(msg sdk.Msg, feeCollectorAddr string, allowedDenoms map[string]s
 	return false
 }
 
-func hasAllowedPositiveCoins(coins sdk.Coins, allowedDenoms map[string]struct{}) bool {
+func hasAllowedPositiveCoins(coins sdk.Coins, denom string) bool {
 	for _, coin := range coins {
-		if _, allowed := allowedDenoms[coin.Denom]; allowed && coin.Amount.IsPositive() {
+		if coin.Denom == denom && coin.Amount.IsPositive() {
 			return true
 		}
 	}

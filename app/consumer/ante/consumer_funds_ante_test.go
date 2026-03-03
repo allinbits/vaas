@@ -11,6 +11,7 @@ import (
 	errorsmod "cosmossdk.io/errors"
 
 	sdk "github.com/cosmos/cosmos-sdk/types"
+	"github.com/cosmos/cosmos-sdk/x/authz"
 	banktypes "github.com/cosmos/cosmos-sdk/x/bank/types"
 	"github.com/stretchr/testify/require"
 )
@@ -33,13 +34,9 @@ func (m mockConsumerFundsKeeper) GetFeeCollectorAccountAddress(context.Context) 
 	return m.feeCollectorAddr, true
 }
 
-func (m mockConsumerFundsKeeper) HasFeeCollectorFundsForAmount(_ context.Context, requiredAmount sdk.Coins) bool {
-	for _, coin := range requiredAmount {
-		if balance, ok := m.balances[coin.Denom]; ok && balance >= coin.Amount.Int64() {
-			return true
-		}
-	}
-	return false
+func (m mockConsumerFundsKeeper) HasFeeCollectorFundsForCoin(_ context.Context, requiredCoin sdk.Coin) bool {
+	balance, ok := m.balances[requiredCoin.Denom]
+	return ok && balance >= requiredCoin.Amount.Int64()
 }
 
 type mockTx struct {
@@ -212,6 +209,44 @@ func TestConsumerFundsDecoratorBlocksWhenFeeCollectorMissing(t *testing.T) {
 	nextCalled := false
 	_, err := decorator.AnteHandle(ctx, mockTx{
 		msgs: []sdk.Msg{msg},
+		fee:  sdk.NewCoins(sdk.NewInt64Coin("uatone", 10)),
+		gas:  100,
+	}, false, func(ctx sdk.Context, tx sdk.Tx, simulate bool) (sdk.Context, error) {
+		nextCalled = true
+		return ctx, nil
+	})
+	require.Error(t, err)
+	require.True(t, errorsmod.IsOf(err, consumertypes.ErrConsumerAccountUnderfunded))
+	require.False(t, nextCalled)
+}
+
+func TestConsumerFundsDecoratorRejectsDeepNestedAuthzTopUp(t *testing.T) {
+	collector := testAccAddress(1)
+
+	topUpMsg := &banktypes.MsgSend{
+		FromAddress: testAccAddress(2).String(),
+		ToAddress:   collector.String(),
+		Amount:      sdk.NewCoins(sdk.NewInt64Coin("uatone", 10)),
+	}
+
+	var nested sdk.Msg = topUpMsg
+	grantee := testAccAddress(4)
+	for i := 0; i < maxAuthzExecDepth+1; i++ {
+		msgExec := authz.NewMsgExec(grantee, []sdk.Msg{nested})
+		nested = &msgExec
+	}
+
+	ctx := sdk.Context{}.WithMinGasPrices(sdk.NewDecCoinsFromCoins(sdk.NewInt64Coin("uatone", 1)))
+	decorator := NewConsumerFundsDecorator(mockConsumerFundsKeeper{
+		providerChannelFound: true,
+		feeCollectorAddr:     collector,
+		feeCollectorFound:    true,
+		balances:             map[string]int64{},
+	})
+
+	nextCalled := false
+	_, err := decorator.AnteHandle(ctx, mockTx{
+		msgs: []sdk.Msg{nested},
 		fee:  sdk.NewCoins(sdk.NewInt64Coin("uatone", 10)),
 		gas:  100,
 	}, false, func(ctx sdk.Context, tx sdk.Tx, simulate bool) (sdk.Context, error) {

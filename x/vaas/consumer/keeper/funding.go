@@ -6,17 +6,15 @@ import (
 	sdk "github.com/cosmos/cosmos-sdk/types"
 )
 
-func (k Keeper) GetFeeCollectorAccountAddress(ctx context.Context) (sdk.AccAddress, bool) {
-	feeCollectorAccount := k.authKeeper.GetModuleAccount(ctx, k.feeCollectorName)
-	if feeCollectorAccount == nil {
+func (k Keeper) GetFeeCollectorAccountAddress(context.Context) (sdk.AccAddress, bool) {
+	if len(k.feeCollectorAddress) == 0 {
 		return nil, false
 	}
-
-	return feeCollectorAccount.GetAddress(), true
+	return k.feeCollectorAddress, true
 }
 
-func (k Keeper) HasFeeCollectorFundsForAmount(ctx context.Context, requiredAmount sdk.Coins) bool {
-	if requiredAmount.IsZero() {
+func (k Keeper) HasFeeCollectorFundsForCoin(ctx context.Context, requiredCoin sdk.Coin) bool {
+	if !requiredCoin.Amount.IsPositive() || requiredCoin.Denom == "" {
 		return true
 	}
 
@@ -25,15 +23,6 @@ func (k Keeper) HasFeeCollectorFundsForAmount(ctx context.Context, requiredAmoun
 		return false
 	}
 
-	for _, requiredCoin := range requiredAmount {
-		if requiredCoin.Denom == "" || !requiredCoin.Amount.IsPositive() {
-			continue
-		}
-		balance := k.bankKeeper.GetBalance(ctx, feeCollectorAddr, requiredCoin.Denom)
-		if balance.Amount.GTE(requiredCoin.Amount) {
-			return true
-		}
-	}
-
-	return false
+	balance := k.bankKeeper.GetBalance(ctx, feeCollectorAddr, requiredCoin.Denom)
+	return balance.Amount.GTE(requiredCoin.Amount)
 }
