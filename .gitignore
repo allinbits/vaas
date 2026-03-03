@@ -3,6 +3,7 @@
 *.out
 coverage.out
 build/
+hermes
 
 # IDEs and editors
 .vscode/

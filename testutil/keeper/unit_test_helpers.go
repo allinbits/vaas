@@ -31,6 +31,7 @@ import (
 	cryptocodec "github.com/cosmos/cosmos-sdk/crypto/codec"
 	"github.com/cosmos/cosmos-sdk/crypto/keys/ed25519"
 	cryptotypes "github.com/cosmos/cosmos-sdk/crypto/types"
+	"github.com/cosmos/cosmos-sdk/runtime"
 	sdk "github.com/cosmos/cosmos-sdk/types"
 	authtypes "github.com/cosmos/cosmos-sdk/x/auth/types"
 	govkeeper "github.com/cosmos/cosmos-sdk/x/gov/keeper"
@@ -78,40 +79,36 @@ type MockedKeepers struct {
 	*MockSlashingKeeper
 	*MockAccountKeeper
 	*MockBankKeeper
-	*MockIBCTransferKeeper
 	*MockIBCCoreKeeper
-	*MockDistributionKeeper
 	// *MockGovKeeper
 }
 
 // NewMockedKeepers instantiates a struct with pointers to properly instantiated mocked keepers.
 func NewMockedKeepers(ctrl *gomock.Controller) MockedKeepers {
 	return MockedKeepers{
-		MockChannelKeeper:      NewMockChannelKeeper(ctrl),
-		MockConnectionKeeper:   NewMockConnectionKeeper(ctrl),
-		MockClientKeeper:       NewMockClientKeeper(ctrl),
-		MockStakingKeeper:      NewMockStakingKeeper(ctrl),
-		MockSlashingKeeper:     NewMockSlashingKeeper(ctrl),
-		MockAccountKeeper:      NewMockAccountKeeper(ctrl),
-		MockBankKeeper:         NewMockBankKeeper(ctrl),
-		MockIBCTransferKeeper:  NewMockIBCTransferKeeper(ctrl),
-		MockIBCCoreKeeper:      NewMockIBCCoreKeeper(ctrl),
-		MockDistributionKeeper: NewMockDistributionKeeper(ctrl),
+		MockChannelKeeper:    NewMockChannelKeeper(ctrl),
+		MockConnectionKeeper: NewMockConnectionKeeper(ctrl),
+		MockClientKeeper:     NewMockClientKeeper(ctrl),
+		MockStakingKeeper:    NewMockStakingKeeper(ctrl),
+		MockSlashingKeeper:   NewMockSlashingKeeper(ctrl),
+		MockAccountKeeper:    NewMockAccountKeeper(ctrl),
+		MockBankKeeper:       NewMockBankKeeper(ctrl),
+		MockIBCCoreKeeper:    NewMockIBCCoreKeeper(ctrl),
 	}
 }
 
 // NewInMemProviderKeeper instantiates an in-mem provider keeper from params and mocked keepers
 func NewInMemProviderKeeper(params InMemKeeperParams, mocks MockedKeepers) providerkeeper.Keeper {
+	storeService := runtime.NewKVStoreService(params.StoreKey)
 	return providerkeeper.NewKeeper(
 		params.Cdc,
-		params.StoreKey,
+		storeService,
 		mocks.MockChannelKeeper,
 		mocks.MockConnectionKeeper,
 		mocks.MockClientKeeper,
 		mocks.MockStakingKeeper,
 		mocks.MockSlashingKeeper,
 		mocks.MockAccountKeeper,
-		mocks.MockDistributionKeeper,
 		mocks.MockBankKeeper,
 		// mocks.MockGovKeeper,
 		govkeeper.Keeper{}, // HACK: to make parts of the test work
@@ -124,16 +121,17 @@ func NewInMemProviderKeeper(params InMemKeeperParams, mocks MockedKeepers) provi
 
 // NewInMemConsumerKeeper instantiates an in-mem consumer keeper from params and mocked keepers
 func NewInMemConsumerKeeper(params InMemKeeperParams, mocks MockedKeepers) consumerkeeper.Keeper {
+	storeService := runtime.NewKVStoreService(params.StoreKey)
+
 	return consumerkeeper.NewKeeper(
 		params.Cdc,
-		params.StoreKey,
+		storeService,
 		mocks.MockChannelKeeper,
 		mocks.MockConnectionKeeper,
 		mocks.MockClientKeeper,
 		mocks.MockSlashingKeeper,
 		mocks.MockBankKeeper,
 		mocks.MockAccountKeeper,
-		mocks.MockIBCTransferKeeper,
 		mocks.MockIBCCoreKeeper,
 		authtypes.FeeCollectorName,
 		authtypes.NewModuleAddress(govtypes.ModuleName).String(),

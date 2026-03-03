@@ -67,7 +67,7 @@ func (c *ConsumerConsAddress) String() string {
 func KeyAssignmentValidateBasic(
 	assignedKeys []ValidatorConsumerPubKey,
 	byConsumerAddrs []ValidatorByConsumerAddr,
-	consumerAddrsToPrune []ConsumerAddrsToPruneV2,
+	consumerAddrsToPrune []ConsumerAddrsToPrune,
 ) error {
 	for _, e := range assignedKeys {
 		if strings.TrimSpace(e.ChainId) == "" {

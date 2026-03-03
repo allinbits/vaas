@@ -30,7 +30,7 @@ message GenesisState {
       [ (gogoproto.nullable) = false ];
 
   // empty for a new chain
-  repeated ConsumerAddrsToPruneV2 consumer_addrs_to_prune_v2 = 7
+  repeated ConsumerAddrsToPrune consumer_addrs_to_prune = 7
       [ (gogoproto.nullable) = false ];
 }
 

@@ -2,7 +2,6 @@ package keeper
 
 import (
 	"bytes"
-	"encoding/binary"
 	"errors"
 	"fmt"
 
@@ -538,37 +537,4 @@ func (k Keeper) SlashValidator(ctx sdk.Context, providerAddr types.ProviderConsA
 
 	_, err = k.stakingKeeper.SlashWithInfractionReason(ctx, consAdrr, 0, totalPower, slashingParams.SlashFraction, stakingtypes.Infraction_INFRACTION_DOUBLE_SIGN)
 	return err
-}
-
-//
-// CRUD section
-//
-
-// SetEquivocationEvidenceMinHeight sets the minimum height
-// of a valid consumer equivocation evidence for a given consumer id
-func (k Keeper) SetEquivocationEvidenceMinHeight(ctx sdk.Context, consumerId string, height uint64) {
-	store := ctx.KVStore(k.storeKey)
-	heightBytes := make([]byte, 8)
-	binary.BigEndian.PutUint64(heightBytes, height)
-
-	store.Set(types.EquivocationEvidenceMinHeightKey(consumerId), heightBytes)
-}
-
-// GetEquivocationEvidenceMinHeight returns the minimum height
-// of a valid consumer equivocation evidence for a given consumer id
-func (k Keeper) GetEquivocationEvidenceMinHeight(ctx sdk.Context, consumerId string) uint64 {
-	store := ctx.KVStore(k.storeKey)
-	bz := store.Get(types.EquivocationEvidenceMinHeightKey(consumerId))
-	if bz == nil {
-		return 0
-	}
-
-	return binary.BigEndian.Uint64(bz)
-}
-
-// DeleteEquivocationEvidenceMinHeight deletes the minimum height
-// of a valid consumer equivocation evidence for a given consumer id
-func (k Keeper) DeleteEquivocationEvidenceMinHeight(ctx sdk.Context, consumerId string) {
-	store := ctx.KVStore(k.storeKey)
-	store.Delete(types.EquivocationEvidenceMinHeightKey(consumerId))
 }

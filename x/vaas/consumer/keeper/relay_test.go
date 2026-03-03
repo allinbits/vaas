@@ -181,7 +181,8 @@ func TestOnRecvVSCPacketV2(t *testing.T) {
 	require.Equal(t, 2, len(pendingChanges.ValidatorUpdates))
 
 	// Verify highest valset update ID
-	highestID := consumerKeeper.GetHighestValsetUpdateID(ctx)
+	highestID, err := consumerKeeper.GetHighestValsetUpdateID(ctx)
+	require.NoError(t, err)
 	require.Equal(t, uint64(1), highestID)
 
 	// Test 2: Second packet with higher valset ID
@@ -189,7 +190,8 @@ func TestOnRecvVSCPacketV2(t *testing.T) {
 	err = consumerKeeper.OnRecvVSCPacketV2(ctx, providerClientID, pd2)
 	require.NoError(t, err, "second packet should succeed")
 
-	highestID = consumerKeeper.GetHighestValsetUpdateID(ctx)
+	highestID, err = consumerKeeper.GetHighestValsetUpdateID(ctx)
+	require.NoError(t, err)
 	require.Equal(t, uint64(2), highestID)
 
 	// Test 3: Packet from different client should fail
@@ -199,7 +201,8 @@ func TestOnRecvVSCPacketV2(t *testing.T) {
 	require.Error(t, err, "packet from different client should fail")
 
 	// Highest ID should not have changed
-	highestID = consumerKeeper.GetHighestValsetUpdateID(ctx)
+	highestID, err = consumerKeeper.GetHighestValsetUpdateID(ctx)
+	require.NoError(t, err)
 	require.Equal(t, uint64(2), highestID)
 }
 
@@ -222,7 +225,8 @@ func TestOnRecvVSCPacketV2OutOfOrder(t *testing.T) {
 	err = consumerKeeper.OnRecvVSCPacketV2(ctx, providerClientID, pd5)
 	require.NoError(t, err)
 
-	highestID := consumerKeeper.GetHighestValsetUpdateID(ctx)
+	highestID, err := consumerKeeper.GetHighestValsetUpdateID(ctx)
+	require.NoError(t, err)
 	require.Equal(t, uint64(5), highestID)
 
 	pendingChanges, _ := consumerKeeper.GetPendingChanges(ctx)
@@ -235,7 +239,8 @@ func TestOnRecvVSCPacketV2OutOfOrder(t *testing.T) {
 	require.NoError(t, err, "out-of-order packet should be acknowledged without error")
 
 	// Highest ID should still be 5
-	highestID = consumerKeeper.GetHighestValsetUpdateID(ctx)
+	highestID, err = consumerKeeper.GetHighestValsetUpdateID(ctx)
+	require.NoError(t, err)
 	require.Equal(t, uint64(5), highestID)
 
 	// Pending changes should still only contain pk1 with power 50
@@ -249,7 +254,8 @@ func TestOnRecvVSCPacketV2OutOfOrder(t *testing.T) {
 	require.NoError(t, err, "duplicate packet should be acknowledged without error")
 
 	// Highest ID should still be 5
-	highestID = consumerKeeper.GetHighestValsetUpdateID(ctx)
+	highestID, err = consumerKeeper.GetHighestValsetUpdateID(ctx)
+	require.NoError(t, err)
 	require.Equal(t, uint64(5), highestID)
 
 	// Send packet with valset ID 6 (should be processed)
@@ -258,7 +264,8 @@ func TestOnRecvVSCPacketV2OutOfOrder(t *testing.T) {
 	err = consumerKeeper.OnRecvVSCPacketV2(ctx, providerClientID, pd6)
 	require.NoError(t, err)
 
-	highestID = consumerKeeper.GetHighestValsetUpdateID(ctx)
+	highestID, err = consumerKeeper.GetHighestValsetUpdateID(ctx)
+	require.NoError(t, err)
 	require.Equal(t, uint64(6), highestID)
 
 	// Pending changes should now include pk2
@@ -317,4 +324,3 @@ func TestOnRecvVSCPacketDuplicateUpdates(t *testing.T) {
 	require.Equal(t, 1, len(gotPendingChanges.ValidatorUpdates))
 	require.Equal(t, valUpdates[1], gotPendingChanges.ValidatorUpdates[0]) // Only latest update should be kept
 }
-

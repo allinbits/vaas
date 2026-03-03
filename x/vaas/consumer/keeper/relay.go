@@ -30,7 +30,11 @@ func (k Keeper) OnRecvVSCPacket(ctx sdk.Context, packet channeltypes.Packet, new
 	// IBC v2: Check for out-of-order packets
 	// If this packet's valset_update_id is not higher than the highest we've seen,
 	// acknowledge but don't process (stale/out-of-order packet)
-	highestID := k.GetHighestValsetUpdateID(ctx)
+	highestID, err := k.GetHighestValsetUpdateID(ctx)
+	if err != nil {
+		return errorsmod.Wrapf(err, "error getting highest valset update ID")
+	}
+
 	if newChanges.ValsetUpdateId <= highestID {
 		k.Logger(ctx).Info("skipping out-of-order VSCPacket",
 			"packetVscID", newChanges.ValsetUpdateId,
@@ -107,7 +111,11 @@ func (k Keeper) OnRecvVSCPacketV2(ctx sdk.Context, sourceClientID string, newCha
 	}
 
 	// IBC v2: Check for out-of-order packets
-	highestID := k.GetHighestValsetUpdateID(ctx)
+	highestID, err := k.GetHighestValsetUpdateID(ctx)
+	if err != nil {
+		return errorsmod.Wrapf(err, "error getting highest valset update ID")
+	}
+
 	if newChanges.ValsetUpdateId <= highestID {
 		k.Logger(ctx).Info("skipping out-of-order VSCPacket (v2)",
 			"packetVscID", newChanges.ValsetUpdateId,

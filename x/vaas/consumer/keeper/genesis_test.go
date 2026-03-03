@@ -296,21 +296,25 @@ func TestHighestValsetUpdateID(t *testing.T) {
 	defer ctrl.Finish()
 
 	// Initially should be 0
-	highestID := consumerKeeper.GetHighestValsetUpdateID(ctx)
+	highestID, err := consumerKeeper.GetHighestValsetUpdateID(ctx)
+	require.NoError(t, err)
 	require.Equal(t, uint64(0), highestID)
 
 	// Set and verify
 	consumerKeeper.SetHighestValsetUpdateID(ctx, 5)
-	highestID = consumerKeeper.GetHighestValsetUpdateID(ctx)
+	highestID, err = consumerKeeper.GetHighestValsetUpdateID(ctx)
+	require.NoError(t, err)
 	require.Equal(t, uint64(5), highestID)
 
 	// Update to higher value
 	consumerKeeper.SetHighestValsetUpdateID(ctx, 10)
-	highestID = consumerKeeper.GetHighestValsetUpdateID(ctx)
+	highestID, err = consumerKeeper.GetHighestValsetUpdateID(ctx)
+	require.NoError(t, err)
 	require.Equal(t, uint64(10), highestID)
 
 	// Can set to lower value (though in practice we only set higher)
 	consumerKeeper.SetHighestValsetUpdateID(ctx, 3)
-	highestID = consumerKeeper.GetHighestValsetUpdateID(ctx)
+	highestID, err = consumerKeeper.GetHighestValsetUpdateID(ctx)
+	require.NoError(t, err)
 	require.Equal(t, uint64(3), highestID)
 }
