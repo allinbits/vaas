@@ -5,15 +5,14 @@ import (
 	"context"
 	"testing"
 
-	consumertypes "github.com/allinbits/vaas/x/vaas/consumer/types"
-	protov2 "google.golang.org/protobuf/proto"
-
 	errorsmod "cosmossdk.io/errors"
-
 	sdk "github.com/cosmos/cosmos-sdk/types"
 	"github.com/cosmos/cosmos-sdk/x/authz"
 	banktypes "github.com/cosmos/cosmos-sdk/x/bank/types"
 	"github.com/stretchr/testify/require"
+	protov2 "google.golang.org/protobuf/proto"
+
+	consumertypes "github.com/allinbits/vaas/x/vaas/consumer/types"
 )
 
 type mockConsumerFundsKeeper struct {
