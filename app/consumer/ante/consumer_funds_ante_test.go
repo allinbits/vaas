@@ -33,9 +33,14 @@ func (m mockConsumerFundsKeeper) GetFeeCollectorAccountAddress(context.Context) 
 	return m.feeCollectorAddr, true
 }
 
-func (m mockConsumerFundsKeeper) HasFeeCollectorFundsForCoin(_ context.Context, requiredCoin sdk.Coin) bool {
-	balance, ok := m.balances[requiredCoin.Denom]
-	return ok && balance >= requiredCoin.Amount.Int64()
+func (m mockConsumerFundsKeeper) HasFeeCollectorFundsForAmount(_ context.Context, requiredAmount sdk.Coins) bool {
+	for _, requiredCoin := range requiredAmount {
+		balance, ok := m.balances[requiredCoin.Denom]
+		if !ok || balance < requiredCoin.Amount.Int64() {
+			return false
+		}
+	}
+	return true
 }
 
 type mockTx struct {
@@ -189,6 +194,44 @@ func TestConsumerFundsDecoratorAllowsTxWhenExactlyFunded(t *testing.T) {
 	})
 	require.NoError(t, err)
 	require.True(t, nextCalled)
+}
+
+func TestConsumerFundsDecoratorRequiresAllFeeDenoms(t *testing.T) {
+	collector := testAccAddress(1)
+	msg := &banktypes.MsgSend{
+		FromAddress: testAccAddress(2).String(),
+		ToAddress:   testAccAddress(3).String(),
+		Amount:      sdk.NewCoins(sdk.NewInt64Coin("uatone", 10)),
+	}
+
+	ctx := sdk.Context{}.WithMinGasPrices(sdk.NewDecCoinsFromCoins(
+		sdk.NewInt64Coin("uatone", 1),
+		sdk.NewInt64Coin("uphoton", 1),
+	))
+	decorator := NewConsumerFundsDecorator(mockConsumerFundsKeeper{
+		providerChannelFound: true,
+		feeCollectorAddr:     collector,
+		feeCollectorFound:    true,
+		balances: map[string]int64{
+			"uatone": 10,
+		},
+	})
+
+	nextCalled := false
+	_, err := decorator.AnteHandle(ctx, mockTx{
+		msgs: []sdk.Msg{msg},
+		fee: sdk.NewCoins(
+			sdk.NewInt64Coin("uatone", 10),
+			sdk.NewInt64Coin("uphoton", 5),
+		),
+		gas: 100,
+	}, false, func(ctx sdk.Context, tx sdk.Tx, simulate bool) (sdk.Context, error) {
+		nextCalled = true
+		return ctx, nil
+	})
+	require.Error(t, err)
+	require.True(t, errorsmod.IsOf(err, consumertypes.ErrConsumerAccountUnderfunded))
+	require.False(t, nextCalled)
 }
 
 func TestConsumerFundsDecoratorBlocksWhenFeeCollectorMissing(t *testing.T) {

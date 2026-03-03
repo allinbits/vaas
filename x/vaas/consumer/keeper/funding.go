@@ -13,8 +13,8 @@ func (k Keeper) GetFeeCollectorAccountAddress(context.Context) (sdk.AccAddress, 
 	return k.feeCollectorAddress, true
 }
 
-func (k Keeper) HasFeeCollectorFundsForCoin(ctx context.Context, requiredCoin sdk.Coin) bool {
-	if !requiredCoin.Amount.IsPositive() || requiredCoin.Denom == "" {
+func (k Keeper) HasFeeCollectorFundsForAmount(ctx context.Context, requiredAmount sdk.Coins) bool {
+	if requiredAmount.IsZero() {
 		return true
 	}
 
@@ -23,6 +23,16 @@ func (k Keeper) HasFeeCollectorFundsForCoin(ctx context.Context, requiredCoin sd
 		return false
 	}
 
-	balance := k.bankKeeper.GetBalance(ctx, feeCollectorAddr, requiredCoin.Denom)
-	return balance.Amount.GTE(requiredCoin.Amount)
+	for _, requiredCoin := range requiredAmount {
+		if requiredCoin.Denom == "" || !requiredCoin.Amount.IsPositive() {
+			continue
+		}
+
+		balance := k.bankKeeper.GetBalance(ctx, feeCollectorAddr, requiredCoin.Denom)
+		if !balance.Amount.GTE(requiredCoin.Amount) {
+			return false
+		}
+	}
+
+	return true
 }
