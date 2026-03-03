@@ -10,6 +10,7 @@ import (
 	sdk "github.com/cosmos/cosmos-sdk/types"
 	"github.com/cosmos/cosmos-sdk/x/authz"
 	banktypes "github.com/cosmos/cosmos-sdk/x/bank/types"
+	channeltypes "github.com/cosmos/ibc-go/v10/modules/core/04-channel/types"
 	"github.com/stretchr/testify/require"
 	protov2 "google.golang.org/protobuf/proto"
 
@@ -252,6 +253,62 @@ func TestConsumerFundsDecoratorBlocksWhenFeeCollectorMissing(t *testing.T) {
 	nextCalled := false
 	_, err := decorator.AnteHandle(ctx, mockTx{
 		msgs: []sdk.Msg{msg},
+		fee:  sdk.NewCoins(sdk.NewInt64Coin("uatone", 10)),
+		gas:  100,
+	}, false, func(ctx sdk.Context, tx sdk.Tx, simulate bool) (sdk.Context, error) {
+		nextCalled = true
+		return ctx, nil
+	})
+	require.Error(t, err)
+	require.True(t, errorsmod.IsOf(err, consumertypes.ErrConsumerAccountUnderfunded))
+	require.False(t, nextCalled)
+}
+
+func TestConsumerFundsDecoratorAllowsIBCCoreTxWhenUnderfunded(t *testing.T) {
+	collector := testAccAddress(1)
+	msg := &channeltypes.MsgRecvPacket{}
+
+	ctx := sdk.Context{}.WithMinGasPrices(sdk.NewDecCoinsFromCoins(sdk.NewInt64Coin("uatone", 1)))
+	decorator := NewConsumerFundsDecorator(mockConsumerFundsKeeper{
+		providerChannelFound: true,
+		feeCollectorAddr:     collector,
+		feeCollectorFound:    true,
+		balances:             map[string]int64{},
+	})
+
+	nextCalled := false
+	_, err := decorator.AnteHandle(ctx, mockTx{
+		msgs: []sdk.Msg{msg},
+		fee:  sdk.NewCoins(sdk.NewInt64Coin("uatone", 10)),
+		gas:  100,
+	}, false, func(ctx sdk.Context, tx sdk.Tx, simulate bool) (sdk.Context, error) {
+		nextCalled = true
+		return ctx, nil
+	})
+	require.NoError(t, err)
+	require.True(t, nextCalled)
+}
+
+func TestConsumerFundsDecoratorBlocksMixedIBCCoreAndNonIBCMessages(t *testing.T) {
+	collector := testAccAddress(1)
+	ibcMsg := &channeltypes.MsgRecvPacket{}
+	bankMsg := &banktypes.MsgSend{
+		FromAddress: testAccAddress(2).String(),
+		ToAddress:   testAccAddress(3).String(),
+		Amount:      sdk.NewCoins(sdk.NewInt64Coin("uatone", 10)),
+	}
+
+	ctx := sdk.Context{}.WithMinGasPrices(sdk.NewDecCoinsFromCoins(sdk.NewInt64Coin("uatone", 1)))
+	decorator := NewConsumerFundsDecorator(mockConsumerFundsKeeper{
+		providerChannelFound: true,
+		feeCollectorAddr:     collector,
+		feeCollectorFound:    true,
+		balances:             map[string]int64{},
+	})
+
+	nextCalled := false
+	_, err := decorator.AnteHandle(ctx, mockTx{
+		msgs: []sdk.Msg{ibcMsg, bankMsg},
 		fee:  sdk.NewCoins(sdk.NewInt64Coin("uatone", 10)),
 		gas:  100,
 	}, false, func(ctx sdk.Context, tx sdk.Tx, simulate bool) (sdk.Context, error) {
