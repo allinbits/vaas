@@ -135,6 +135,50 @@ func TestDistributeFeesToValidators(t *testing.T) {
 	require.NoError(t, err)
 }
 
+func TestDistributeFeesToValidatorsZeroFees(t *testing.T) {
+	params := testkeeper.NewInMemKeeperParams(t)
+	k, ctx, ctrl, _ := testkeeper.GetProviderKeeperAndCtx(t, params)
+	defer ctrl.Finish()
+
+	err := k.DistributeFeesToValidators(ctx, sdk.NewCoin("photon", math.ZeroInt()))
+	require.NoError(t, err)
+}
+
+func TestDistributeFeesToValidatorsSkipsWhenFeesTooSmall(t *testing.T) {
+	params := testkeeper.NewInMemKeeperParams(t)
+	k, ctx, ctrl, mocks := testkeeper.GetProviderKeeperAndCtx(t, params)
+	defer ctrl.Finish()
+
+	val1Tokens := sdk.DefaultPowerReduction.MulRaw(10)
+	val2Tokens := sdk.DefaultPowerReduction.MulRaw(10)
+
+	val1 := stakingtypes.Validator{
+		OperatorAddress: "cosmosvaloper1tiny000000000000000000000000000000000",
+		Tokens:          val1Tokens,
+		DelegatorShares: math.LegacyNewDecFromInt(val1Tokens),
+		Status:          stakingtypes.Bonded,
+	}
+	val2 := stakingtypes.Validator{
+		OperatorAddress: "cosmosvaloper1tiny111111111111111111111111111111111",
+		Tokens:          val2Tokens,
+		DelegatorShares: math.LegacyNewDecFromInt(val2Tokens),
+		Status:          stakingtypes.Bonded,
+	}
+
+	mocks.MockStakingKeeper.EXPECT().
+		GetBondedValidatorsByPower(gomock.Any()).
+		Return([]stakingtypes.Validator{val1, val2}, nil)
+	mocks.MockStakingKeeper.EXPECT().
+		GetLastTotalPower(gomock.Any()).
+		Return(math.NewInt(20), nil)
+	mocks.MockStakingKeeper.EXPECT().
+		PowerReduction(gomock.Any()).
+		Return(sdk.DefaultPowerReduction)
+
+	err := k.DistributeFeesToValidators(ctx, sdk.NewInt64Coin("photon", 1))
+	require.NoError(t, err)
+}
+
 func TestDistributeFeesToValidatorsNoValidators(t *testing.T) {
 	params := testkeeper.NewInMemKeeperParams(t)
 	k, ctx, ctrl, mocks := testkeeper.GetProviderKeeperAndCtx(t, params)

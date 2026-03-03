@@ -27,9 +27,10 @@ func (k Keeper) CollectFeesFromConsumers(ctx sdk.Context) (sdk.Coin, error) {
 		if k.GetConsumerPhase(ctx, consumerId) != types.CONSUMER_PHASE_LAUNCHED {
 			continue
 		}
+		consumerModuleName := fmt.Sprintf("consumer-%s", consumerId)
 		// Get the consumer's module account address
 		// Each consumer has a module account in the format "consumer-<consumerId>"
-		consumerModuleAccAddr := authtypes.NewModuleAddress(fmt.Sprintf("consumer-%s", consumerId))
+		consumerModuleAccAddr := authtypes.NewModuleAddress(consumerModuleName)
 
 		// Check the balance of the consumer account
 		balance := k.bankKeeper.GetBalance(ctx, consumerModuleAccAddr, feesPerBlock.Denom)
@@ -49,7 +50,7 @@ func (k Keeper) CollectFeesFromConsumers(ctx sdk.Context) (sdk.Coin, error) {
 
 		// Transfer fees from consumer account to fee collector
 		feeCoins := sdk.NewCoins(feesPerBlock)
-		if err := k.bankKeeper.SendCoinsFromAccountToModule(ctx, consumerModuleAccAddr, k.feeCollectorName, feeCoins); err != nil {
+		if err := k.bankKeeper.SendCoinsFromModuleToModule(ctx, consumerModuleName, k.feeCollectorName, feeCoins); err != nil {
 			return totalFeesCollected, fmt.Errorf("failed to collect fees from consumer (%s): %w", consumerId, err)
 		}
 		k.Logger(ctx).Debug("collected fees from consumer",
@@ -65,6 +66,10 @@ func (k Keeper) CollectFeesFromConsumers(ctx sdk.Context) (sdk.Coin, error) {
 // DistributeFeesToValidators distributes the collected fees to validators
 // proportionally based on their voting power.
 func (k Keeper) DistributeFeesToValidators(ctx sdk.Context, totalFees sdk.Coin) error {
+	if totalFees.IsZero() {
+		return nil
+	}
+
 	// Get the bonded validators
 	validators, err := k.stakingKeeper.GetBondedValidatorsByPower(ctx)
 	if err != nil {
@@ -88,22 +93,26 @@ func (k Keeper) DistributeFeesToValidators(ctx sdk.Context, totalFees sdk.Coin) 
 
 	// Track distributed amount to handle remainder
 	distributedAmount := math.ZeroInt()
+	hasProportionalShare := false
+	powerReduction := k.stakingKeeper.PowerReduction(ctx)
 
 	// Distribute fees proportionally to each validator based on voting power
 	for i, val := range validators {
-		// Get validator operator address
-		valAddr, err := k.stakingKeeper.ValidatorAddressCodec().StringToBytes(val.GetOperator())
-		if err != nil {
-			return fmt.Errorf("failed to parse validator address: %w", err)
-		}
-
 		// Calculate validator's share: (validatorPower / totalPower) * totalFees
-		powerReduction := k.stakingKeeper.PowerReduction(ctx)
 		valPower := math.NewInt(val.GetConsensusPower(powerReduction))
 		valShare := totalFees.Amount.Mul(valPower).Quo(totalPower)
+		if valShare.IsPositive() {
+			hasProportionalShare = true
+		}
 
 		// If this is the last validator, assign the remainder to ensure all fees are distributed
 		if i == len(validators)-1 {
+			// Skip distribution when all proportional shares round down to zero.
+			// In this case, keeping funds in the fee collector avoids sending all fees
+			// to the last validator purely due to integer division remainder.
+			if !hasProportionalShare {
+				return nil
+			}
 			valShare = totalFees.Amount.Sub(distributedAmount)
 		}
 
@@ -111,9 +120,17 @@ func (k Keeper) DistributeFeesToValidators(ctx sdk.Context, totalFees sdk.Coin) 
 			continue
 		}
 
-		// Allocate fees to validator via distribution module so delegators also receive rewards.
-		decCoins := sdk.NewDecCoinsFromCoins(sdk.NewCoin(totalFees.Denom, valShare))
-		k.distributionKeeper.AllocateTokensToValidator(ctx, val, decCoins)
+		// Get validator operator address
+		valAddr, err := k.stakingKeeper.ValidatorAddressCodec().StringToBytes(val.GetOperator())
+		if err != nil {
+			return fmt.Errorf("failed to parse validator address: %w", err)
+		}
+
+		// Transfer fees from fee collector module account to validator account.
+		feeCoins := sdk.NewCoins(sdk.NewCoin(totalFees.Denom, valShare))
+		if err := k.bankKeeper.SendCoinsFromModuleToAccount(ctx, k.feeCollectorName, sdk.AccAddress(valAddr), feeCoins); err != nil {
+			return fmt.Errorf("failed to distribute fees to validator (%s): %w", val.GetOperator(), err)
+		}
 
 		distributedAmount = distributedAmount.Add(valShare)
 	}
