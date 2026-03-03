@@ -129,8 +129,9 @@ message MsgCreateConsumer {
 
   ConsumerInitializationParameters initialization_parameters = 4;
 
-  // infraction parameters for slashing and jailing
-  InfractionParameters infraction_parameters = 5;
+  // reserved for removed per-consumer infraction parameters
+  reserved 5;
+  reserved "infraction_parameters";
 }
 
 // MsgCreateConsumerResponse defines response type for MsgCreateConsumer
@@ -162,8 +163,9 @@ message MsgUpdateConsumer {
   // This field is optional and can remain empty (i.e., `new_chain_id = ""`) or correspond to the chain id the chain already has.
   string new_chain_id = 6;
 
-  // infraction parameters for slashing and jailing
-  InfractionParameters infraction_parameters = 7;
+  // reserved for removed per-consumer infraction parameters
+  reserved 7;
+  reserved "infraction_parameters";
 }
 
 // MsgUpdateConsumerResponse defines response type for MsgUpdateConsumer messages

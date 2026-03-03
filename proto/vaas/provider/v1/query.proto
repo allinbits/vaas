@@ -138,8 +138,10 @@ message Chain {
   // The metadata of the consumer chain
   ConsumerMetadata metadata = 4  [(gogoproto.nullable) = false ];
   string consumer_id = 5;
-  // Infraction parameters for slashing and jailing
-  InfractionParameters infraction_parameters = 6;
+
+  // reserved for removed per-consumer infraction parameters
+  reserved 6;
+  reserved "infraction_parameters";
 }
 
 message QueryValidatorConsumerAddrRequest {
@@ -257,7 +259,9 @@ message QueryConsumerChainResponse {
   string phase = 4;
   ConsumerMetadata metadata = 5 [ (gogoproto.nullable) = false ];
   ConsumerInitializationParameters init_params = 6;
-  InfractionParameters infraction_parameters = 7;
+  // reserved for removed per-consumer infraction parameters
+  reserved 7;
+  reserved "infraction_parameters";
 
   // corresponds to the id of the client that is created during launch
   string client_id = 8;

@@ -90,18 +90,12 @@ func (k Keeper) GetConsumerChain(ctx sdk.Context, consumerId string) (types.Chai
 		return types.Chain{}, fmt.Errorf("cannot find metadata (%s): %s", consumerId, err.Error())
 	}
 
-	infractionParameters, err := types.DefaultConsumerInfractionParameters(ctx, k.slashingKeeper)
-	if err != nil {
-		return types.Chain{}, fmt.Errorf("cannot get default infraction parameters: %s", err.Error())
-	}
-
 	return types.Chain{
-		ChainId:              chainID,
-		ClientId:             clientID,
-		Phase:                k.GetConsumerPhase(ctx, consumerId).String(),
-		Metadata:             metadata,
-		ConsumerId:           consumerId,
-		InfractionParameters: &infractionParameters,
+		ChainId:    chainID,
+		ClientId:   clientID,
+		Phase:      k.GetConsumerPhase(ctx, consumerId).String(),
+		Metadata:   metadata,
+		ConsumerId: consumerId,
 	}, nil
 }
 
@@ -319,22 +313,17 @@ func (k Keeper) QueryConsumerChain(goCtx context.Context, req *types.QueryConsum
 	}
 
 	initParams, _ := k.GetConsumerInitializationParameters(ctx, consumerId)
-	infractionParams, err := types.DefaultConsumerInfractionParameters(ctx, k.slashingKeeper)
-	if err != nil {
-		return nil, status.Errorf(codes.Internal, "cannot retrieve default infraction parameters: %s", err)
-	}
 
 	clientId, _ := k.GetConsumerClientId(ctx, consumerId)
 
 	return &types.QueryConsumerChainResponse{
-		ChainId:              chainId,
-		ConsumerId:           consumerId,
-		OwnerAddress:         ownerAddress,
-		Phase:                phase.String(),
-		Metadata:             metadata,
-		InitParams:           &initParams,
-		InfractionParameters: &infractionParams,
-		ClientId:             clientId,
+		ChainId:      chainId,
+		ConsumerId:   consumerId,
+		OwnerAddress: ownerAddress,
+		Phase:        phase.String(),
+		Metadata:     metadata,
+		InitParams:   &initParams,
+		ClientId:     clientId,
 	}, nil
 }
 

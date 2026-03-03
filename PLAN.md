@@ -16,7 +16,7 @@ Rewrite `x/vaas/provider` and `x/vaas/consumer` in a new `vaas` folder as a **ne
 | Partial Set Security (PSS) | **REMOVE** | All validators validate all consumers (no opt-in/out) |
 | Power Shaping | **REMOVE** | No caps, allowlists, denylists, etc. |
 | Key Assignment | **KEEP** | Validators can use different keys per consumer |
-| Per-Consumer Infraction Parameters | **KEEP** | Customizable slash/jail params per consumer |
+| Per-Consumer Infraction Parameters | **REMOVE** | Use provider defaults; no per-consumer customization |
 | Slash Packet Throttling | **REMOVE** | Remove all slash-related functionality |
 | Consumer Reward Distribution | **REMOVE** | No cross-chain rewards |
 | Double Voting Evidence | **KEEP** | Handle double voting evidence from consumers |
