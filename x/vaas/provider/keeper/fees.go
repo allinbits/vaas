@@ -48,12 +48,10 @@ func (k Keeper) CollectFeesFromConsumers(ctx sdk.Context) (sdk.Coin, error) {
 		}
 
 		// Transfer fees from consumer account to fee collector
-		consumerModuleName := fmt.Sprintf("consumer-%s", consumerId)
 		feeCoins := sdk.NewCoins(feesPerBlock)
-		if err := k.bankKeeper.SendCoinsFromModuleToModule(ctx, consumerModuleName, k.feeCollectorName, feeCoins); err != nil {
+		if err := k.bankKeeper.SendCoinsFromAccountToModule(ctx, consumerModuleAccAddr, k.feeCollectorName, feeCoins); err != nil {
 			return totalFeesCollected, fmt.Errorf("failed to collect fees from consumer (%s): %w", consumerId, err)
 		}
-
 		k.Logger(ctx).Debug("collected fees from consumer",
 			"consumerId", consumerId,
 			"amount", feeCoins.String(),
