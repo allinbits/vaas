@@ -111,9 +111,6 @@ func (s *IntegrationTestSuite) SetupSuite() {
 	s.T().Log("step 6: creating IBC connection and VAAS channel...")
 	s.createIBCConnectionAndChannel()
 
-	s.T().Log("step 7: triggering validator set change...")
-	s.triggerVSC()
-
 	s.T().Log("e2e test suite setup complete!")
 }
 
@@ -522,48 +519,6 @@ func (s *IntegrationTestSuite) createIBCConnectionAndChannel() {
 	s.Require().NoError(err, "failed to create VAAS channel")
 
 	s.T().Log("IBC connection and VAAS channel created")
-}
-
-// triggerVSC triggers a validator set change on the provider.
-func (s *IntegrationTestSuite) triggerVSC() {
-	// Get validator operator address
-	stdout, _, err := s.dockerExec(s.providerValRes[0].Container.ID, []string{
-		providerBinary, "keys", "show", "val", "--bech", "val", "-a",
-		"--home", providerHomePath,
-		"--keyring-backend", "test",
-	})
-	s.Require().NoError(err, "failed to get validator address")
-	valAddr := strings.TrimSpace(stdout.String())
-
-	// Delegate to trigger validator set change
-	_, _, err = s.dockerExec(s.providerValRes[0].Container.ID, []string{
-		providerBinary, "tx", "staking", "delegate", valAddr, "1000000" + bondDenom,
-		"--from", "user",
-		"--home", providerHomePath,
-		"--keyring-backend", "test",
-		"--chain-id", providerChainID,
-		"--fees", "10000" + bondDenom,
-		"-y",
-	})
-	s.Require().NoError(err, "failed to delegate on provider")
-
-	s.T().Log("delegation sent, waiting for VSC packet relay...")
-
-	// Wait for VSC to be relayed — poll consumer for provider info
-	for i := 0; i < 60; i++ {
-		time.Sleep(2 * time.Second)
-
-		stdout, _, err := s.dockerExec(s.consumerValRes[0].Container.ID, []string{
-			consumerBinary, "query", "vaasconsumer", "provider-info",
-			"--home", consumerHomePath,
-		})
-		if err == nil && stdout.Len() > 0 && !strings.Contains(stdout.String(), "error") {
-			s.T().Logf("VSC relayed after %d seconds", (i+1)*2)
-			return
-		}
-	}
-
-	s.T().Log("WARNING: VSC packet may not have been relayed within timeout")
 }
 
 // generateHermesConfig reads the Hermes config template and substitutes chain IDs.
