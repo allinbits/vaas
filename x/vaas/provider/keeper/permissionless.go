@@ -6,10 +6,11 @@ import (
 	"strconv"
 
 	"github.com/allinbits/vaas/x/vaas/provider/types"
-	sdk "github.com/cosmos/cosmos-sdk/types"
 
 	conntypes "github.com/cosmos/ibc-go/v10/modules/core/03-connection/types"
 	ibctmtypes "github.com/cosmos/ibc-go/v10/modules/light-clients/07-tendermint"
+
+	sdk "github.com/cosmos/cosmos-sdk/types"
 )
 
 // GetConsumerId returns the next to-be-assigned consumer id
