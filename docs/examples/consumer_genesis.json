@@ -1,0 +1,55 @@
+{
+  "vaas": {
+    "params": {
+      "enabled": true,
+      "vaas_timeout_period": "2419200s",
+      "historical_entries": "10000",
+      "unbonding_period": "1209600s"
+    },
+    "provider_client_id": "",
+    "provider_channel_id": "",
+    "new_chain": true,
+    "height_to_valset_update_id": [],
+    "preVAAS": false,
+    "provider": {
+      "client_state": {
+        "@type": "/ibc.lightclients.tendermint.v1.ClientState",
+        "chain_id": "provider-1",
+        "trust_level": {
+          "numerator": "1",
+          "denominator": "3"
+        },
+        "trusting_period": "1209600s",
+        "unbonding_period": "1814400s",
+        "max_clock_drift": "600s",
+        "frozen_height": {
+          "revision_number": "0",
+          "revision_height": "0"
+        },
+        "latest_height": {
+          "revision_number": "0",
+          "revision_height": "1"
+        },
+        "proof_specs": [],
+        "upgrade_path": ["upgrade", "upgradedIBCState"]
+      },
+      "consensus_state": {
+        "@type": "/ibc.lightclients.tendermint.v1.ConsensusState",
+        "timestamp": "2024-01-01T00:00:00Z",
+        "root": {
+          "hash": ""
+        },
+        "next_validators_hash": ""
+      },
+      "initial_val_set": [
+        {
+          "pub_key": {
+            "ed25519": "BASE64_ENCODED_PUBLIC_KEY"
+          },
+          "power": "1000000"
+        }
+      ]
+    },
+    "connection_id": ""
+  }
+}

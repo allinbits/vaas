@@ -465,7 +465,12 @@ func (m *MsgRemoveConsumerResponse) XXX_DiscardUnknown() {
 
 var xxx_messageInfo_MsgRemoveConsumerResponse proto.InternalMessageInfo
 
-// MsgCreateConsumer defines the message that creates a consumer chain
+// MsgCreateConsumer defines the message that creates a consumer chain.
+//
+// IBC v2 Note: In IBC v2 (Eureka), client configuration can be provided directly
+// via initialization_parameters, or an existing client_id can be reused. The
+// template_client in provider params is deprecated in favor of per-consumer
+// client configuration.
 type MsgCreateConsumer struct {
 	// Submitter address. If the message is successfully handled, the ownership of
 	// the consumer chain will given to this address.

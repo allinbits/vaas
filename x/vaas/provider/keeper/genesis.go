@@ -12,6 +12,10 @@ import (
 )
 
 // InitGenesis initializes the CCV provider state and binds to PortID.
+//
+// IBC v2 Note: In IBC v2 (Eureka), ports are not used for routing. The PortID
+// is set for backward compatibility during the migration period. Consumer chain
+// initialization uses client IDs for routing instead of channels.
 func (k Keeper) InitGenesis(ctx sdk.Context, genState *types.GenesisState) []abci.ValidatorUpdate {
 	k.SetPort(ctx, vaastypes.ProviderPortID)
 
@@ -31,6 +35,9 @@ func (k Keeper) InitGenesis(ctx sdk.Context, genState *types.GenesisState) []abc
 			panic(fmt.Errorf("consumer chain genesis could not be persisted: %w", err))
 		}
 		// check if the CCV channel was established
+		// IBC v2 Note: Channel-based mappings are deprecated. In IBC v2 (Eureka),
+		// only client IDs are used for routing. This logic is kept for backward
+		// compatibility during the migration period.
 		if cs.ChannelId != "" {
 			k.SetChannelToConsumerId(ctx, cs.ChannelId, chainID)
 			k.SetConsumerIdToChannelId(ctx, chainID, cs.ChannelId)

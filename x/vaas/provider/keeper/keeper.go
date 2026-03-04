@@ -37,8 +37,12 @@ type Keeper struct {
 
 	storeService corestoretypes.KVStoreService
 
-	cdc              codec.BinaryCodec
-	channelKeeper    vaastypes.ChannelKeeper
+	cdc codec.BinaryCodec
+	// channelKeeper is used for IBC v1 channel-based communication.
+	// Deprecated: Will be replaced by IBCPacketHandler in IBC v2.
+	channelKeeper vaastypes.ChannelKeeper
+	// connectionKeeper is used for IBC v1 connection validation.
+	// Deprecated: Connections are managed internally by IBC core in v2.
 	connectionKeeper vaastypes.ConnectionKeeper
 	accountKeeper    vaastypes.AccountKeeper
 	clientKeeper     vaastypes.ClientKeeper
@@ -51,6 +55,10 @@ type Keeper struct {
 	validatorAddressCodec addresscodec.Codec
 	consensusAddressCodec addresscodec.Codec
 
+	// ibcPacketHandler is used for IBC v2 (Eureka) client-based packet sending.
+	// This field is optional and can be nil if only v1 routing is used.
+	// Set via SetIBCPacketHandler after keeper creation.
+	ibcPacketHandler vaastypes.IBCPacketHandler
 	// Collections schema
 	Schema collections.Schema
 
@@ -190,6 +198,15 @@ func NewKeeper(
 	k.Schema = schema
 
 	return k
+}
+
+// SetIBCPacketHandler sets the IBC v2 packet handler for client-based routing.
+// This method should be called during app wiring if IBC v2 is enabled.
+//
+// IBC v2 Note: The IBCPacketHandler is optional. If not set, only channel-based
+// (v1) routing will be used for packet sending.
+func (k *Keeper) SetIBCPacketHandler(handler vaastypes.IBCPacketHandler) {
+	k.ibcPacketHandler = handler
 }
 
 // GetAuthority returns the x/ccv/provider module's authority.

@@ -114,7 +114,12 @@ message MsgRemoveConsumer {
 // MsgRemoveConsumerResponse defines response type for MsgRemoveConsumer messages
 message MsgRemoveConsumerResponse {}
 
-// MsgCreateConsumer defines the message that creates a consumer chain
+// MsgCreateConsumer defines the message that creates a consumer chain.
+//
+// IBC v2 Note: In IBC v2 (Eureka), client configuration can be provided directly
+// via initialization_parameters, or an existing client_id can be reused. The
+// template_client in provider params is deprecated in favor of per-consumer
+// client configuration.
 message MsgCreateConsumer {
   option (cosmos.msg.v1.signer) = "submitter";
 

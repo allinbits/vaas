@@ -200,11 +200,22 @@ func (m *QueryProviderInfoResponse) GetProvider() ChainInfo {
 	return ChainInfo{}
 }
 
+// ChainInfo contains IBC connection information for a chain.
+//
+// IBC v2 Note: In IBC v2 (Eureka), clientID is the primary routing identifier.
+// connectionID and channelID are deprecated and may be empty for v2-only
+// deployments. These fields are kept for backward compatibility with IBC v1.
 type ChainInfo struct {
-	ChainID      string `protobuf:"bytes,1,opt,name=chainID,proto3" json:"chainID,omitempty"`
-	ClientID     string `protobuf:"bytes,2,opt,name=clientID,proto3" json:"clientID,omitempty"`
+	ChainID string `protobuf:"bytes,1,opt,name=chainID,proto3" json:"chainID,omitempty"`
+	// clientID is the IBC client identifier. This is the primary routing
+	// identifier in IBC v2.
+	ClientID string `protobuf:"bytes,2,opt,name=clientID,proto3" json:"clientID,omitempty"`
+	// connectionID is the IBC connection identifier.
+	// Deprecated: In IBC v2, connections are not used for routing.
 	ConnectionID string `protobuf:"bytes,3,opt,name=connectionID,proto3" json:"connectionID,omitempty"`
-	ChannelID    string `protobuf:"bytes,4,opt,name=channelID,proto3" json:"channelID,omitempty"`
+	// channelID is the IBC channel identifier.
+	// Deprecated: In IBC v2, channels are not used. Use clientID instead.
+	ChannelID string `protobuf:"bytes,4,opt,name=channelID,proto3" json:"channelID,omitempty"`
 }
 
 func (m *ChainInfo) Reset()         { *m = ChainInfo{} }
@@ -325,6 +336,12 @@ const _ = grpc.SupportPackageIsVersion4
 type QueryClient interface {
 	// QueryParams queries the vaas/consumer module parameters.
 	QueryParams(ctx context.Context, in *QueryParamsRequest, opts ...grpc.CallOption) (*QueryParamsResponse, error)
+	// QueryProviderInfo returns information about the provider chain connection.
+	//
+	// IBC v2 Note: This query supports both IBC v1 (channel-based) and IBC v2
+	// (client-based) routing. It first attempts to use v2 client-based info,
+	// then falls back to v1 channel-based info for backward compatibility.
+	// In IBC v2 deployments, channelID and connectionID may be empty.
 	QueryProviderInfo(ctx context.Context, in *QueryProviderInfoRequest, opts ...grpc.CallOption) (*QueryProviderInfoResponse, error)
 }
 
@@ -358,6 +375,12 @@ func (c *queryClient) QueryProviderInfo(ctx context.Context, in *QueryProviderIn
 type QueryServer interface {
 	// QueryParams queries the vaas/consumer module parameters.
 	QueryParams(context.Context, *QueryParamsRequest) (*QueryParamsResponse, error)
+	// QueryProviderInfo returns information about the provider chain connection.
+	//
+	// IBC v2 Note: This query supports both IBC v1 (channel-based) and IBC v2
+	// (client-based) routing. It first attempts to use v2 client-based info,
+	// then falls back to v1 channel-based info for backward compatibility.
+	// In IBC v2 deployments, channelID and connectionID may be empty.
 	QueryProviderInfo(context.Context, *QueryProviderInfoRequest) (*QueryProviderInfoResponse, error)
 }
 

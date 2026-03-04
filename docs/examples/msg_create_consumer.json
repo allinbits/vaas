@@ -1,0 +1,85 @@
+{
+  "_comment": "Example MsgCreateConsumer for IBC v2 deployment",
+
+  "basic_example": {
+    "@type": "/vaas.provider.v1.MsgCreateConsumer",
+    "submitter": "cosmos1...",
+    "chain_id": "consumer-1",
+    "metadata": {
+      "name": "Consumer Chain 1",
+      "description": "A consumer chain secured by the provider",
+      "metadata": "https://github.com/example/consumer-chain"
+    },
+    "initialization_parameters": {
+      "initial_height": {
+        "revision_number": "0",
+        "revision_height": "1"
+      },
+      "genesis_hash": "BASE64_ENCODED_GENESIS_HASH",
+      "binary_hash": "BASE64_ENCODED_BINARY_HASH",
+      "spawn_time": "2024-06-01T12:00:00Z",
+      "unbonding_period": "1209600s",
+      "vaas_timeout_period": "2419200s",
+      "historical_entries": "10000",
+      "connection_id": ""
+    },
+    "infraction_parameters": {
+      "double_sign": {
+        "slash_fraction": "0.050000000000000000",
+        "jail_duration": "9223372036854775807",
+        "tombstone": true
+      },
+      "downtime": {
+        "slash_fraction": "0.000100000000000000",
+        "jail_duration": "600s",
+        "tombstone": false
+      }
+    }
+  },
+
+  "with_existing_client": {
+    "_comment": "Reuse an existing IBC client for the consumer chain",
+    "@type": "/vaas.provider.v1.MsgCreateConsumer",
+    "submitter": "cosmos1...",
+    "chain_id": "consumer-2",
+    "metadata": {
+      "name": "Consumer Chain 2",
+      "description": "Consumer using existing client",
+      "metadata": ""
+    },
+    "initialization_parameters": {
+      "initial_height": {
+        "revision_number": "0",
+        "revision_height": "1"
+      },
+      "genesis_hash": "BASE64_ENCODED_GENESIS_HASH",
+      "binary_hash": "BASE64_ENCODED_BINARY_HASH",
+      "spawn_time": "2024-06-01T12:00:00Z",
+      "unbonding_period": "1209600s",
+      "vaas_timeout_period": "2419200s",
+      "historical_entries": "10000",
+      "connection_id": "connection-0"
+    },
+    "infraction_parameters": null
+  },
+
+  "minimal_example": {
+    "_comment": "Minimal configuration with defaults",
+    "@type": "/vaas.provider.v1.MsgCreateConsumer",
+    "submitter": "cosmos1...",
+    "chain_id": "consumer-3",
+    "metadata": {
+      "name": "Minimal Consumer",
+      "description": "Consumer with minimal configuration",
+      "metadata": ""
+    },
+    "initialization_parameters": {
+      "initial_height": {
+        "revision_number": "0",
+        "revision_height": "1"
+      },
+      "spawn_time": "2024-06-01T12:00:00Z",
+      "unbonding_period": "1209600s"
+    }
+  }
+}

@@ -8,6 +8,22 @@ VAAS allows Cosmos blockchains to lease their proof-of-stake security to consume
 
 ## Features
 
+### IBC v2 (Eureka) Support
+
+VAAS supports both IBC v1 (channel-based) and IBC v2 (client-based) routing:
+
+| Feature | IBC v1 | IBC v2 |
+|---------|--------|--------|
+| Routing | Channel/Port IDs | Client IDs |
+| Packet Order | Strict (ordered channels) | Flexible (out-of-order handling) |
+| Consumer Tracking | Channel ID mapping | Client ID mapping |
+| Application IDs | `provider`/`consumer` ports | `vaas/provider`/`vaas/consumer` |
+
+IBC v2 benefits:
+- **Simpler setup**: No channel handshake required
+- **Out-of-order packets**: Gracefully handles late VSC packets
+- **Client-based routing**: Direct routing via light client IDs
+
 ### Kept from ICS
 
 | Feature | Description |
@@ -32,6 +48,29 @@ VAAS allows Cosmos blockchains to lease their proof-of-stake security to consume
 | Slash Packet Throttling | Simplified slash handling |
 | Per-Consumer Commission Rates | Validators use same commission as provider |
 | Standalone-to-Consumer Changeover | Only new chains as consumers |
+
+## IBC v2 Integration
+
+To enable IBC v2 support in your application:
+
+```go
+import (
+    "github.com/allinbits/vaas/x/vaas/provider"
+    "github.com/allinbits/vaas/x/vaas/consumer"
+    vaastypes "github.com/allinbits/vaas/x/vaas/types"
+)
+
+// Provider chain setup
+providerIBCV2 := provider.NewIBCModuleV2(&providerKeeper)
+ibcRouterV2.AddRoute(vaastypes.ProviderAppID, providerIBCV2)
+providerKeeper.SetIBCPacketHandler(ibcCoreHandler)
+
+// Consumer chain setup
+consumerIBCV2 := consumer.NewIBCModuleV2(&consumerKeeper)
+ibcRouterV2.AddRoute(vaastypes.ConsumerAppID, consumerIBCV2)
+```
+
+The IBC v2 modules implement the `api.IBCModule` interface from ibc-go v10.
 
 ## Learn More
 

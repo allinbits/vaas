@@ -13,6 +13,12 @@ service Query {
     option (google.api.http).get = "/vaas/consumer/params";
   }
 
+  // QueryProviderInfo returns information about the provider chain connection.
+  //
+  // IBC v2 Note: This query supports both IBC v1 (channel-based) and IBC v2
+  // (client-based) routing. It first attempts to use v2 client-based info,
+  // then falls back to v1 channel-based info for backward compatibility.
+  // In IBC v2 deployments, channelID and connectionID may be empty.
   rpc QueryProviderInfo(QueryProviderInfoRequest) returns (QueryProviderInfoResponse) {
     option (google.api.http).get = "/vaas/consumer/provider-info";
   }
@@ -33,9 +39,20 @@ message QueryProviderInfoResponse {
   ChainInfo provider = 2 [ (gogoproto.nullable) = false ];
 }
 
+// ChainInfo contains IBC connection information for a chain.
+//
+// IBC v2 Note: In IBC v2 (Eureka), clientID is the primary routing identifier.
+// connectionID and channelID are deprecated and may be empty for v2-only
+// deployments. These fields are kept for backward compatibility with IBC v1.
 message ChainInfo {
   string chainID = 1;
+  // clientID is the IBC client identifier. This is the primary routing
+  // identifier in IBC v2.
   string clientID = 2;
+  // connectionID is the IBC connection identifier.
+  // Deprecated: In IBC v2, connections are not used for routing.
   string connectionID = 3;
+  // channelID is the IBC channel identifier.
+  // Deprecated: In IBC v2, channels are not used. Use clientID instead.
   string channelID = 4;
 }

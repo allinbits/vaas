@@ -21,6 +21,10 @@ import (
 
 // OnChanOpenInit implements the IBCModule interface
 // this function is called by the relayer.
+//
+// Deprecated: IBC v1 channel handshake callback. In IBC v2 (Eureka), channels are not
+// used - routing is done via client IDs. This callback is kept for backward compatibility
+// during the migration period and will be removed when IBC v2 is fully adopted.
 func (am AppModule) OnChanOpenInit(
 	ctx sdk.Context,
 	order channeltypes.Order,
@@ -63,6 +67,10 @@ func (am AppModule) OnChanOpenInit(
 }
 
 // validateVAASChannelParams validates a VAAS channel
+//
+// Deprecated: IBC v1 channel validation. In IBC v2 (Eureka), channel validation is not
+// required as routing is done via client IDs. This function is kept for backward
+// compatibility during the migration period.
 func validateVAASChannelParams(
 	ctx sdk.Context,
 	keeper keeper.Keeper,
@@ -89,6 +97,10 @@ func validateVAASChannelParams(
 }
 
 // OnChanOpenTry implements the IBCModule interface
+//
+// Deprecated: IBC v1 channel handshake callback. In IBC v2 (Eureka), channels are not
+// used - routing is done via client IDs. This callback is kept for backward compatibility
+// during the migration period and will be removed when IBC v2 is fully adopted.
 func (am AppModule) OnChanOpenTry(
 	ctx sdk.Context,
 	order channeltypes.Order,
@@ -103,6 +115,10 @@ func (am AppModule) OnChanOpenTry(
 
 // OnChanOpenAck implements the IBCModule interface
 // Note: Distribution transfer channel initialization has been removed.
+//
+// Deprecated: IBC v1 channel handshake callback. In IBC v2 (Eureka), channels are not
+// used - routing is done via client IDs. This callback is kept for backward compatibility
+// during the migration period and will be removed when IBC v2 is fully adopted.
 func (am AppModule) OnChanOpenAck(
 	ctx sdk.Context,
 	portID,
@@ -116,24 +132,20 @@ func (am AppModule) OnChanOpenAck(
 			"provider channel: %s already established", providerChannel)
 	}
 
-	var md types.HandshakeMetadata
-	if err := (&md).Unmarshal([]byte(counterpartyMetadata)); err != nil {
-		return errorsmod.Wrapf(types.ErrInvalidHandshakeMetadata,
-			"error unmarshalling ibc-ack metadata: \n%v; \nmetadata: %v", err, counterpartyMetadata)
-	}
-
-	if md.Version != types.Version {
+	// Validate counterparty version directly (HandshakeMetadata removed in IBC v2 migration)
+	if counterpartyMetadata != types.Version {
 		return errorsmod.Wrapf(types.ErrInvalidVersion,
-			"invalid counterparty version: %s, expected %s", md.Version, types.Version)
+			"invalid counterparty version: %s, expected %s", counterpartyMetadata, types.Version)
 	}
-
-	// Note: Distribution functionality has been removed, so we no longer
-	// store the provider fee pool address or initialize transfer channels.
 
 	return nil
 }
 
 // OnChanOpenConfirm implements the IBCModule interface
+//
+// Deprecated: IBC v1 channel handshake callback. In IBC v2 (Eureka), channels are not
+// used - routing is done via client IDs. This callback is kept for backward compatibility
+// during the migration period and will be removed when IBC v2 is fully adopted.
 func (am AppModule) OnChanOpenConfirm(
 	ctx sdk.Context,
 	portID,
@@ -143,6 +155,9 @@ func (am AppModule) OnChanOpenConfirm(
 }
 
 // OnChanCloseInit implements the IBCModule interface
+//
+// Deprecated: IBC v1 channel close callback. In IBC v2 (Eureka), channels are not used.
+// This callback is kept for backward compatibility during the migration period.
 func (am AppModule) OnChanCloseInit(
 	ctx sdk.Context,
 	portID,
@@ -156,6 +171,9 @@ func (am AppModule) OnChanCloseInit(
 }
 
 // OnChanCloseConfirm implements the IBCModule interface
+//
+// Deprecated: IBC v1 channel close callback. In IBC v2 (Eureka), channels are not used.
+// This callback is kept for backward compatibility during the migration period.
 func (am AppModule) OnChanCloseConfirm(
 	ctx sdk.Context,
 	portID,

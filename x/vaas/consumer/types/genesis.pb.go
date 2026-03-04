@@ -35,8 +35,12 @@ type GenesisState struct {
 	// ConsumerParams is a shared type with provider module
 	Params types.ConsumerParams `protobuf:"bytes,1,opt,name=params,proto3" json:"params"`
 	// Client ID of the provider. Empty for a new chain, filled in on restart.
+	// IBC v2 Note: This is the primary identifier for the provider in IBC v2.
 	ProviderClientId string `protobuf:"bytes,2,opt,name=provider_client_id,json=providerClientId,proto3" json:"provider_client_id,omitempty"`
 	// Channel ID of the provider. Empty for a new chain, filled in on restart.
+	// Deprecated: In IBC v2 (Eureka), channels are not used. This field is kept
+	// for backward compatibility during the migration period and will be removed
+	// when IBC v2 is fully adopted.
 	ProviderChannelId string `protobuf:"bytes,3,opt,name=provider_channel_id,json=providerChannelId,proto3" json:"provider_channel_id,omitempty"`
 	// true for new chain, false for chain restart.
 	NewChain bool `protobuf:"varint,4,opt,name=new_chain,json=newChain,proto3" json:"new_chain,omitempty"`
@@ -50,6 +54,9 @@ type GenesisState struct {
 	// the provider chain and a new connection on top of this client are created.
 	// The new client is initialized using provider.client_state and
 	// provider.consensus_state.
+	// Deprecated: In IBC v2 (Eureka), connections are not used. This field is
+	// kept for backward compatibility during the migration period. In IBC v2,
+	// client_id is used directly for routing.
 	ConnectionId string `protobuf:"bytes,11,opt,name=connection_id,json=connectionId,proto3" json:"connection_id,omitempty"`
 }
 

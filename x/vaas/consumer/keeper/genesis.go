@@ -21,6 +21,10 @@ import (
 //  1. A client to the provider was never created, i.e. a new consumer chain is started for the first time.
 //  2. A consumer chain restarts after a client to the provider was created, but the CCV channel handshake is still in progress
 //  3. A consumer chain restarts after the CCV channel handshake was completed.
+//
+// IBC v2 Note: In IBC v2 (Eureka), the channel handshake is replaced by RegisterCounterparty.
+// States 2 and 3 above will be simplified to just "client exists" in IBC v2. The channel-based
+// logic is kept for backward compatibility during the migration period.
 func (k Keeper) InitGenesis(ctx sdk.Context, state *types.GenesisState) []abci.ValidatorUpdate {
 	// PreVAAS is true during the process of a standalone to consumer changeover.
 	// At the PreVAAS point in the process, the standalone chain has just been upgraded to include

@@ -1,0 +1,17 @@
+{
+  "vaas": {
+    "valset_update_id": "1",
+    "consumer_states": [],
+    "valset_update_id_to_height": [],
+    "params": {
+      "template_client": null,
+      "trusting_period_fraction": "0.66",
+      "vaas_timeout_period": "2419200s",
+      "blocks_per_epoch": "600",
+      "max_provider_consensus_validators": "180"
+    },
+    "validator_consumer_pubkeys": [],
+    "validators_by_consumer_addr": [],
+    "consumer_addrs_to_prune_v2": []
+  }
+}

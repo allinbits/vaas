@@ -2,6 +2,7 @@ package keeper
 
 import (
 	"context"
+	"errors"
 	"fmt"
 
 	"github.com/allinbits/vaas/x/vaas/consumer/types"
@@ -31,9 +32,13 @@ type Keeper struct {
 	// should be the x/gov module account.
 	authority string
 
-	storeService     corestoretypes.KVStoreService
-	cdc              codec.BinaryCodec
-	channelKeeper    vaastypes.ChannelKeeper
+	storeService corestoretypes.KVStoreService
+	cdc          codec.BinaryCodec
+	// channelKeeper is used for IBC v1 channel-based communication.
+	// Deprecated: Will be removed in IBC v2 where channels are not used.
+	channelKeeper vaastypes.ChannelKeeper
+	// connectionKeeper is used for IBC v1 connection validation.
+	// Deprecated: Connections are managed internally by IBC core in v2.
 	connectionKeeper vaastypes.ConnectionKeeper
 	clientKeeper     vaastypes.ClientKeeper
 	// standaloneStakingKeeper is the staking keeper that managed proof of stake for a previously standalone chain,
@@ -44,8 +49,10 @@ type Keeper struct {
 	hooks                   vaastypes.ConsumerHooks
 	bankKeeper              vaastypes.BankKeeper
 	authKeeper              vaastypes.AccountKeeper
-	ibcCoreKeeper           vaastypes.IBCCoreKeeper
-	feeCollectorName        string
+	// ibcCoreKeeper is used for IBC v1 channel operations.
+	// Deprecated: Channel operations are not used in IBC v2.
+	ibcCoreKeeper    vaastypes.IBCCoreKeeper
+	feeCollectorName string
 
 	validatorAddressCodec addresscodec.Codec
 	consensusAddressCodec addresscodec.Codec
@@ -66,6 +73,7 @@ type Keeper struct {
 	HeightValsetUpdateIDs collections.Map[uint64, uint64]
 	CrossChainValidators  collections.Map[[]byte, types.CrossChainValidator]
 	HistoricalInfos       collections.Map[int64, stakingtypes.HistoricalInfo]
+	HighestValsetUpdateID collections.Item[uint64]
 }
 
 // NewKeeper creates a new Consumer Keeper instance
@@ -111,6 +119,7 @@ func NewKeeper(
 		HeightValsetUpdateIDs: collections.NewMap(sb, types.HeightValsetUpdateIDPrefix, "height_valset_update_ids", collections.Uint64Key, collections.Uint64Value),
 		CrossChainValidators:  collections.NewMap(sb, types.CrossChainValidatorPrefix, "cross_chain_validators", collections.BytesKey, codec.CollValue[types.CrossChainValidator](cdc)),
 		HistoricalInfos:       collections.NewMap(sb, types.HistoricalInfoPrefix, "historical_infos", collections.Int64Key, codec.CollValue[stakingtypes.HistoricalInfo](cdc)),
+		HighestValsetUpdateID: collections.NewItem(sb, types.HighestValsetUpdateIDPrefix, "highest_valset_update_id", collections.Uint64Value),
 	}
 
 	schema, err := sb.Build()
@@ -487,4 +496,25 @@ func (k Keeper) GetLastBondedValidators(ctx sdk.Context) ([]stakingtypes.Validat
 		return nil, err
 	}
 	return vaastypes.GetLastBondedValidatorsUtil(ctx, k.standaloneStakingKeeper, maxVals)
+}
+
+// SetHighestValsetUpdateID sets the highest valset update ID that has been processed.
+// Used for IBC v2 out-of-order packet handling - packets with lower IDs are ignored.
+func (k Keeper) SetHighestValsetUpdateID(ctx context.Context, id uint64) error {
+	if err := k.HighestValsetUpdateID.Set(ctx, id); err != nil {
+		return fmt.Errorf("failed to set highest valset update ID: %w", err)
+	}
+
+	return nil
+}
+
+// GetHighestValsetUpdateID gets the highest valset update ID that has been processed.
+// Returns 0 if not set. Used for IBC v2 out-of-order packet handling.
+func (k Keeper) GetHighestValsetUpdateID(ctx context.Context) (uint64, error) {
+	val, err := k.HighestValsetUpdateID.Get(ctx)
+	if err != nil && !errors.Is(err, collections.ErrNotFound) {
+		return 0, err
+	}
+
+	return val, nil
 }

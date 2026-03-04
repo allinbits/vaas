@@ -107,23 +107,32 @@ func (s *IntegrationTestSuite) testValidatorSetSync() {
 
 		// Check increase in VP for Val0 on Provider
 		var providerVPAfter []uint64
-		s.Require().Eventually( func() bool {
+		s.Require().Eventually(func() bool {
 			providerValsAfter, err := s.queryProviderNetValidators()
-			s.Require().NoError(err, "failed to query provider validators")
-			_ , providerVPAfter = s.extractPubKeys(providerValsAfter)
-			return providerVPAfter[0] == providerVP[0] + 1
+			if err != nil {
+				return false
+			}
+			_, providerVPAfter = s.extractPubKeys(providerValsAfter)
+			if len(providerVPAfter) == 0 {
+				return false
+			}
+			return providerVPAfter[0] == providerVP[0]+1
 		},
-		50*time.Second,
-		time.Second)
-
+			50*time.Second,
+			time.Second)
 
 		// Check increase in VP for Val0 on Consumer
 		var consumerVPAfter []uint64
 		s.Require().Eventually(
 			func() bool {
 				consumerValsAfter, err := s.queryConsumerNetValidators()
-				s.Require().NoError(err, "failed to query consumer validators")
+				if err != nil {
+					return false
+				}
 				_, consumerVPAfter = s.extractPubKeys(consumerValsAfter)
+				if len(consumerVPAfter) == 0 {
+					return false
+				}
 				return consumerVPAfter[0] == providerVPAfter[0]
 			},
 			50*time.Second,

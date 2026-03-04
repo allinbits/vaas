@@ -87,6 +87,9 @@ func (ConsumerPhase) EnumDescriptor() ([]byte, []int) {
 
 // Params defines the parameters for VAAS Provider module
 type Params struct {
+	// Deprecated: template_client is deprecated in IBC v2. Per-consumer client
+	// configuration should be used instead via ConsumerInitializationParameters.
+	// This field is kept for backward compatibility during the migration period.
 	TemplateClient *_07_tendermint.ClientState `protobuf:"bytes,1,opt,name=template_client,json=templateClient,proto3" json:"template_client,omitempty"`
 	// TrustingPeriodFraction is used to compute the consumer and provider IBC
 	// client's TrustingPeriod from the chain defined UnbondingPeriod
@@ -667,9 +670,15 @@ type ConsumerInitializationParameters struct {
 	// chain initialization. It is used for off-chain confirmation of binary
 	// validity by validators and other parties.
 	BinaryHash []byte `protobuf:"bytes,3,opt,name=binary_hash,json=binaryHash,proto3" json:"binary_hash,omitempty"`
-	// spawn time is the time on the provider chain at which the consumer chain
+	// spawn_time is the time on the provider chain at which the consumer chain
 	// genesis is finalized and all validators will be responsible for starting
 	// their consumer chain validator node.
+	//
+	// IMPORTANT (Option B - New Consumer Chain): The IBC client for the consumer
+	// is created at spawn_time with the provider's current block time as the
+	// consensus state timestamp. For the client to remain valid, the consumer's
+	// genesis_time must satisfy: genesis_time - spawn_time < trusting_period.
+	// If this constraint is violated, relayers will fail with client expiry errors.
 	SpawnTime time.Time `protobuf:"bytes,4,opt,name=spawn_time,json=spawnTime,proto3,stdtime" json:"spawn_time"`
 	// Unbonding period for the consumer,
 	// which should be smaller than that of the provider in general.
@@ -686,6 +695,8 @@ type ConsumerInitializationParameters struct {
 	// Note that a standalone chain can transition to a consumer chain while
 	// maintaining existing IBC channels to other chains by providing a valid
 	// connection_id.
+	// IBC v2 Note: In IBC v2, connections are not required. This field may be
+	// repurposed or replaced with client_id in future versions.
 	ConnectionId string `protobuf:"bytes,8,opt,name=connection_id,json=connectionId,proto3" json:"connection_id,omitempty"`
 }
 
