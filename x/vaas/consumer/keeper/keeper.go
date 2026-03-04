@@ -49,7 +49,6 @@ type Keeper struct {
 	hooks                   vaastypes.ConsumerHooks
 	bankKeeper              vaastypes.BankKeeper
 	authKeeper              vaastypes.AccountKeeper
-	ibcTransferKeeper       vaastypes.IBCTransferKeeper
 	// ibcCoreKeeper is used for IBC v1 channel operations.
 	// Deprecated: Channel operations are not used in IBC v2.
 	ibcCoreKeeper    vaastypes.IBCCoreKeeper

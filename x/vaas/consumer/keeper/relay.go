@@ -86,7 +86,9 @@ func (k Keeper) OnRecvVSCPacket(ctx sdk.Context, packet channeltypes.Packet, new
 	k.Logger(ctx).Debug("block height was mapped to vscID", "height", blockHeight, "vscID", newChanges.ValsetUpdateId)
 
 	// IBC v2: Update the highest valset update ID for out-of-order packet tracking
-	k.SetHighestValsetUpdateID(ctx, newChanges.ValsetUpdateId)
+	if err := k.SetHighestValsetUpdateID(ctx, newChanges.ValsetUpdateId); err != nil {
+		return errorsmod.Wrapf(err, "error setting highest valset update ID")
+	}
 
 	// Note: Slash acks processing removed as slash functionality is not supported
 
@@ -169,7 +171,9 @@ func (k Keeper) OnRecvVSCPacketV2(ctx sdk.Context, sourceClientID string, newCha
 	k.Logger(ctx).Debug("block height was mapped to vscID (v2)", "height", blockHeight, "vscID", newChanges.ValsetUpdateId)
 
 	// Update the highest valset update ID
-	k.SetHighestValsetUpdateID(ctx, newChanges.ValsetUpdateId)
+	if err := k.SetHighestValsetUpdateID(ctx, newChanges.ValsetUpdateId); err != nil {
+		return errorsmod.Wrapf(err, "error setting highest valset update ID")
+	}
 
 	k.Logger(ctx).Info("finished receiving/handling VSCPacket (v2)",
 		"vscID", newChanges.ValsetUpdateId,
