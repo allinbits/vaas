@@ -22,7 +22,6 @@ import (
 
 	"github.com/cosmos/cosmos-sdk/codec"
 	sdk "github.com/cosmos/cosmos-sdk/types"
-	authtypes "github.com/cosmos/cosmos-sdk/x/auth/types"
 	stakingtypes "github.com/cosmos/cosmos-sdk/x/staking/types"
 )
 
@@ -43,11 +42,7 @@ type Keeper struct {
 	standaloneStakingKeeper vaastypes.StakingKeeper
 	slashingKeeper          vaastypes.SlashingKeeper
 	hooks                   vaastypes.ConsumerHooks
-	bankKeeper              vaastypes.BankKeeper
-	authKeeper              vaastypes.AccountKeeper
 	ibcCoreKeeper           vaastypes.IBCCoreKeeper
-	feeCollectorName        string
-	feeCollectorAddress     sdk.AccAddress
 
 	validatorAddressCodec addresscodec.Codec
 	consensusAddressCodec addresscodec.Codec
@@ -64,6 +59,7 @@ type Keeper struct {
 	PreVAAS               collections.Item[uint64]
 	InitialValSet         collections.Item[types.GenesisState]
 	Params                collections.Item[vaastypes.ConsumerParams]
+	ConsumerInDebt        collections.Item[bool]
 	PrevStandaloneChain   collections.Item[[]byte]
 	HeightValsetUpdateIDs collections.Map[uint64, uint64]
 	CrossChainValidators  collections.Map[[]byte, types.CrossChainValidator]
@@ -71,15 +67,13 @@ type Keeper struct {
 }
 
 // NewKeeper creates a new Consumer Keeper instance
-// NOTE: the feeCollectorName is in reference to the consumer-chain fee
-// collector (and not the provider chain)
 func NewKeeper(
 	cdc codec.BinaryCodec, storeService corestoretypes.KVStoreService,
 	channelKeeper vaastypes.ChannelKeeper,
 	connectionKeeper vaastypes.ConnectionKeeper, clientKeeper vaastypes.ClientKeeper,
-	slashingKeeper vaastypes.SlashingKeeper, bankKeeper vaastypes.BankKeeper, accountKeeper vaastypes.AccountKeeper,
+	slashingKeeper vaastypes.SlashingKeeper,
 	ibcCoreKeeper vaastypes.IBCCoreKeeper,
-	feeCollectorName, authority string, validatorAddressCodec,
+	authority string, validatorAddressCodec,
 	consensusAddressCodec addresscodec.Codec,
 ) Keeper {
 	sb := collections.NewSchemaBuilder(storeService)
@@ -92,11 +86,7 @@ func NewKeeper(
 		connectionKeeper:        connectionKeeper,
 		clientKeeper:            clientKeeper,
 		slashingKeeper:          slashingKeeper,
-		bankKeeper:              bankKeeper,
-		authKeeper:              accountKeeper,
 		ibcCoreKeeper:           ibcCoreKeeper,
-		feeCollectorName:        feeCollectorName,
-		feeCollectorAddress:     authtypes.NewModuleAddress(feeCollectorName),
 		standaloneStakingKeeper: nil,
 		validatorAddressCodec:   validatorAddressCodec,
 		consensusAddressCodec:   consensusAddressCodec,
@@ -110,6 +100,7 @@ func NewKeeper(
 		PreVAAS:               collections.NewItem(sb, types.PreVAASPrefix, "pre_vaas", collections.Uint64Value),
 		InitialValSet:         collections.NewItem(sb, types.InitialValSetPrefix, "initial_val_set", codec.CollValue[types.GenesisState](cdc)),
 		Params:                collections.NewItem(sb, types.ParametersPrefix, "params", codec.CollValue[vaastypes.ConsumerParams](cdc)),
+		ConsumerInDebt:        collections.NewItem(sb, types.ConsumerDebtPrefix, "consumer_in_debt", collections.BoolValue),
 		PrevStandaloneChain:   collections.NewItem(sb, types.PrevStandaloneChainPrefix, "prev_standalone_chain", collections.BytesValue),
 		HeightValsetUpdateIDs: collections.NewMap(sb, types.HeightValsetUpdateIDPrefix, "height_valset_update_ids", collections.Uint64Key, collections.Uint64Value),
 		CrossChainValidators:  collections.NewMap(sb, types.CrossChainValidatorPrefix, "cross_chain_validators", collections.BytesKey, codec.CollValue[types.CrossChainValidator](cdc)),
@@ -148,6 +139,7 @@ func NewNonZeroKeeper(cdc codec.BinaryCodec, storeService corestoretypes.KVStore
 		PreVAAS:               collections.NewItem(sb, types.PreVAASPrefix, "pre_vaas", collections.Uint64Value),
 		InitialValSet:         collections.NewItem(sb, types.InitialValSetPrefix, "initial_val_set", codec.CollValue[types.GenesisState](cdc)),
 		Params:                collections.NewItem(sb, types.ParametersPrefix, "params", codec.CollValue[vaastypes.ConsumerParams](cdc)),
+		ConsumerInDebt:        collections.NewItem(sb, types.ConsumerDebtPrefix, "consumer_in_debt", collections.BoolValue),
 		PrevStandaloneChain:   collections.NewItem(sb, types.PrevStandaloneChainPrefix, "prev_standalone_chain", collections.BytesValue),
 		HeightValsetUpdateIDs: collections.NewMap(sb, types.HeightValsetUpdateIDPrefix, "height_valset_update_ids", collections.Uint64Key, collections.Uint64Value),
 		CrossChainValidators:  collections.NewMap(sb, types.CrossChainValidatorPrefix, "cross_chain_validators", collections.BytesKey, codec.CollValue[types.CrossChainValidator](cdc)),
