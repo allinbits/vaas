@@ -1,16 +1,15 @@
 package app
 
 import (
-
-	ibcante "github.com/cosmos/ibc-go/v10/modules/core/ante"
 	errorsmod "cosmossdk.io/errors"
-	ibckeeper "github.com/cosmos/ibc-go/v10/modules/core/keeper"
 	ibcconsumerkeeper "github.com/allinbits/vaas/x/vaas/consumer/keeper"
+	ibcante "github.com/cosmos/ibc-go/v10/modules/core/ante"
+	ibckeeper "github.com/cosmos/ibc-go/v10/modules/core/keeper"
 
+	consumerante "github.com/allinbits/vaas/app/consumer/ante"
 	sdk "github.com/cosmos/cosmos-sdk/types"
 	sdkerrors "github.com/cosmos/cosmos-sdk/types/errors"
 	"github.com/cosmos/cosmos-sdk/x/auth/ante"
-	consumerante "github.com/allinbits/vaas/app/consumer/ante"
 )
 
 // HandlerOptions extend the SDK's AnteHandler options by requiring the IBC
@@ -41,6 +40,7 @@ func NewAnteHandler(options HandlerOptions) (sdk.AnteHandler, error) {
 	anteDecorators := []sdk.AnteDecorator{
 		ante.NewSetUpContextDecorator(),
 		ante.NewExtensionOptionsDecorator(nil),
+		consumerante.NewConsumerFundsDecorator(options.ConsumerKeeper),
 		consumerante.NewMsgFilterDecorator(options.ConsumerKeeper),
 		consumerante.NewDisabledModulesDecorator("/cosmos.evidence", "/cosmos.slashing"),
 		ante.NewValidateBasicDecorator(),

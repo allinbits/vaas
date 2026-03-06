@@ -7,4 +7,7 @@ import (
 // Consumer sentinel errors
 var (
 	ErrNoProposerChannelId = errorsmod.Register(ModuleName, 1, "no established VAAS channel")
+	ErrConsumerInDebt      = errorsmod.Register(ModuleName, 2, "consumer chain is in debt")
+	// Deprecated: use ErrConsumerInDebt.
+	ErrConsumerAccountUnderfunded = ErrConsumerInDebt
 )
