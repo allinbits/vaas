@@ -61,12 +61,14 @@ func TestOnRecvVSCPacket(t *testing.T) {
 		changes2,
 		2,
 	)
+	pd2.ConsumerInDebt = true
 
 	testCases := []struct {
 		name                   string
 		expError               bool
 		packet                 channeltypes.Packet
 		expectedPendingChanges types.ValidatorSetChangePacketData
+		expectedDebtStatus     bool
 	}{
 		{
 			"success on first packet",
@@ -74,6 +76,7 @@ func TestOnRecvVSCPacket(t *testing.T) {
 			channeltypes.NewPacket(pd.GetBytes(), 1, types.ProviderPortID, providerCCVChannelID, types.ConsumerPortID, consumerCCVChannelID,
 				clienttypes.NewHeight(1, 0), 0),
 			types.ValidatorSetChangePacketData{ValidatorUpdates: changes1},
+			false,
 		},
 		{
 			"success on subsequent packet",
@@ -81,6 +84,7 @@ func TestOnRecvVSCPacket(t *testing.T) {
 			channeltypes.NewPacket(pd.GetBytes(), 2, types.ProviderPortID, providerCCVChannelID, types.ConsumerPortID, consumerCCVChannelID,
 				clienttypes.NewHeight(1, 0), 0),
 			types.ValidatorSetChangePacketData{ValidatorUpdates: changes1},
+			false,
 		},
 		{
 			"success on packet with more changes",
@@ -101,6 +105,7 @@ func TestOnRecvVSCPacket(t *testing.T) {
 					Power:  10,
 				},
 			}},
+			true,
 		},
 	}
 
@@ -137,6 +142,7 @@ func TestOnRecvVSCPacket(t *testing.T) {
 			return tc.expectedPendingChanges.ValidatorUpdates[i].PubKey.Compare(tc.expectedPendingChanges.ValidatorUpdates[j].PubKey) == -1
 		})
 		require.Equal(t, tc.expectedPendingChanges, *actualPendingChanges, "pending changes not equal to expected changes after successful packet receive. case: %s", tc.name)
+		require.Equal(t, tc.expectedDebtStatus, consumerKeeper.IsConsumerInDebt(ctx), "consumer debt status mismatch after packet receive. case: %s", tc.name)
 	}
 }
 
@@ -172,6 +178,7 @@ func TestOnRecvVSCPacketDuplicateUpdates(t *testing.T) {
 		valUpdates,
 		1,
 	)
+	vscData.ConsumerInDebt = true
 	packet := channeltypes.NewPacket(vscData.GetBytes(), 2, types.ProviderPortID,
 		providerCCVChannelID, types.ConsumerPortID, consumerCCVChannelID, clienttypes.NewHeight(1, 0), 0)
 
@@ -190,5 +197,5 @@ func TestOnRecvVSCPacketDuplicateUpdates(t *testing.T) {
 	// Confirm that only the latest update is kept, duplicate update is discarded
 	require.Equal(t, 1, len(gotPendingChanges.ValidatorUpdates))
 	require.Equal(t, valUpdates[1], gotPendingChanges.ValidatorUpdates[0]) // Only latest update should be kept
+	require.True(t, consumerKeeper.IsConsumerInDebt(ctx))
 }
-

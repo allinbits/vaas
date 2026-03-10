@@ -49,6 +49,10 @@ func TestCollectFeesFromConsumers(t *testing.T) {
 	total, err := k.CollectFeesFromConsumers(ctx)
 	require.NoError(t, err)
 	require.Equal(t, sdk.NewInt64Coin("photon", 20), total)
+	require.False(t, k.IsConsumerInDebt(ctx, consumer0))
+	require.False(t, k.IsConsumerInDebt(ctx, consumer1))
+	require.False(t, k.HasPendingConsumerDebtPacket(ctx, consumer0))
+	require.False(t, k.HasPendingConsumerDebtPacket(ctx, consumer1))
 }
 
 func TestCollectFeesFromConsumersSkipsWhenInsufficient(t *testing.T) {
@@ -81,6 +85,40 @@ func TestCollectFeesFromConsumersSkipsWhenInsufficient(t *testing.T) {
 	total, err := k.CollectFeesFromConsumers(ctx)
 	require.NoError(t, err)
 	require.Equal(t, sdk.NewInt64Coin("photon", 10), total)
+	require.True(t, k.IsConsumerInDebt(ctx, consumer0))
+	require.True(t, k.HasPendingConsumerDebtPacket(ctx, consumer0))
+	require.False(t, k.IsConsumerInDebt(ctx, consumer1))
+	require.False(t, k.HasPendingConsumerDebtPacket(ctx, consumer1))
+}
+
+func TestCollectFeesFromConsumersClearsDebtWhenRecovered(t *testing.T) {
+	params := testkeeper.NewInMemKeeperParams(t)
+	k, ctx, ctrl, mocks := testkeeper.GetProviderKeeperAndCtx(t, params)
+	defer ctrl.Finish()
+
+	consumer0 := k.FetchAndIncrementConsumerId(ctx)
+	k.SetConsumerPhase(ctx, consumer0, providertypes.CONSUMER_PHASE_LAUNCHED)
+	k.SetConsumerInDebt(ctx, consumer0, true)
+
+	feesPerBlock := sdk.NewInt64Coin("photon", 10)
+	providerParams := providertypes.DefaultParams()
+	providerParams.FeesPerBlock = feesPerBlock
+	k.SetParams(ctx, providerParams)
+
+	gomock.InOrder(
+		mocks.MockBankKeeper.EXPECT().
+			GetBalance(gomock.Any(), authtypes.NewModuleAddress(fmt.Sprintf("consumer-%s", consumer0)), feesPerBlock.Denom).
+			Return(sdk.NewInt64Coin("photon", 25)),
+		mocks.MockBankKeeper.EXPECT().
+			SendCoinsFromModuleToModule(gomock.Any(), fmt.Sprintf("consumer-%s", consumer0), authtypes.FeeCollectorName, sdk.NewCoins(feesPerBlock)).
+			Return(nil),
+	)
+
+	total, err := k.CollectFeesFromConsumers(ctx)
+	require.NoError(t, err)
+	require.Equal(t, sdk.NewInt64Coin("photon", 10), total)
+	require.False(t, k.IsConsumerInDebt(ctx, consumer0))
+	require.True(t, k.HasPendingConsumerDebtPacket(ctx, consumer0))
 }
 
 func TestDistributeFeesToValidators(t *testing.T) {

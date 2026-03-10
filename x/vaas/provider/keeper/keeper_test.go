@@ -143,6 +143,48 @@ func TestPendingVSCs(t *testing.T) {
 	require.Len(t, pending, 0)
 }
 
+func TestConsumerDebtStatus(t *testing.T) {
+	providerKeeper, ctx, ctrl, _ := testkeeper.GetProviderKeeperAndCtx(t, testkeeper.NewInMemKeeperParams(t))
+	defer ctrl.Finish()
+
+	consumerID := CONSUMER_ID
+
+	require.False(t, providerKeeper.IsConsumerInDebt(ctx, consumerID))
+	require.False(t, providerKeeper.HasPendingConsumerDebtPacket(ctx, consumerID))
+
+	providerKeeper.SetConsumerInDebt(ctx, consumerID, true)
+	providerKeeper.SetPendingConsumerDebtPacket(ctx, consumerID)
+	require.True(t, providerKeeper.IsConsumerInDebt(ctx, consumerID))
+	require.True(t, providerKeeper.HasPendingConsumerDebtPacket(ctx, consumerID))
+
+	providerKeeper.DeleteConsumerDebt(ctx, consumerID)
+	providerKeeper.ClearPendingConsumerDebtPacket(ctx, consumerID)
+	require.False(t, providerKeeper.IsConsumerInDebt(ctx, consumerID))
+	require.False(t, providerKeeper.HasPendingConsumerDebtPacket(ctx, consumerID))
+}
+
+func TestQueuePendingConsumerDebtPackets(t *testing.T) {
+	providerKeeper, ctx, ctrl, _ := testkeeper.GetProviderKeeperAndCtx(t, testkeeper.NewInMemKeeperParams(t))
+	defer ctrl.Finish()
+
+	consumerID := CONSUMER_ID
+	providerKeeper.SetConsumerClientId(ctx, consumerID, "client-0")
+	providerKeeper.SetConsumerIdToChannelId(ctx, consumerID, "channel-0")
+	providerKeeper.SetConsumerPhase(ctx, consumerID, providertypes.CONSUMER_PHASE_LAUNCHED)
+	providerKeeper.SetConsumerInDebt(ctx, consumerID, true)
+	providerKeeper.SetPendingConsumerDebtPacket(ctx, consumerID)
+
+	providerKeeper.QueuePendingConsumerDebtPackets(ctx, 7)
+
+	require.False(t, providerKeeper.HasPendingConsumerDebtPacket(ctx, consumerID))
+
+	packets := providerKeeper.GetPendingVSCPackets(ctx, consumerID)
+	require.Len(t, packets, 1)
+	require.Equal(t, uint64(7), packets[0].ValsetUpdateId)
+	require.True(t, packets[0].ConsumerInDebt)
+	require.Empty(t, packets[0].ValidatorUpdates)
+}
+
 // TestInitHeight tests the getter and setter methods for the stored block heights (on provider) when a given consumer chain was started
 func TestInitHeight(t *testing.T) {
 	providerKeeper, ctx, ctrl, _ := testkeeper.GetProviderKeeperAndCtx(t, testkeeper.NewInMemKeeperParams(t))

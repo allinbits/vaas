@@ -34,17 +34,15 @@ func (k Keeper) CollectFeesFromConsumers(ctx sdk.Context) (sdk.Coin, error) {
 
 		// Check the balance of the consumer account
 		balance := k.bankKeeper.GetBalance(ctx, consumerModuleAccAddr, feesPerBlock.Denom)
-		if balance.IsLT(feesPerBlock) {
+		inDebt := balance.IsLT(feesPerBlock)
+		k.UpdateConsumerDebtStatus(ctx, consumerId, inDebt)
+		if inDebt {
 			// Consumer doesn't have enough funds
 			k.Logger(ctx).Error("consumer chain has insufficient funds",
 				"consumerId", consumerId,
 				"balance", balance.Amount.String(),
 				"required", feesPerBlock.String(),
 			)
-
-			// TODO: Implement mechanism to inform the consumer chain to stop
-			// This could involve setting the phase to CONSUMER_PHASE_STOPPED
-			// or sending a message to the consumer chain
 			continue
 		}
 
