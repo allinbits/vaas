@@ -102,16 +102,25 @@ func (k msgServer) AssignConsumerKey(goCtx context.Context, msg *types.MsgAssign
 
 func (k msgServer) SubmitConsumerMisbehaviour(goCtx context.Context, msg *types.MsgSubmitConsumerMisbehaviour) (*types.MsgSubmitConsumerMisbehaviourResponse, error) {
 	ctx := sdk.UnwrapSDKContext(goCtx)
+
+	if msg == nil {
+		return nil, errorsmod.Wrap(types.ErrInvalidMsgSubmitConsumerMisbehaviour, "message cannot be nil")
+	}
+	if err := msg.ValidateBasic(); err != nil {
+		return nil, err
+	}
+
 	if err := k.Keeper.HandleConsumerMisbehaviour(ctx, msg.ConsumerId, *msg.Misbehaviour); err != nil {
 		return nil, err
 	}
 
+	chainID := msg.Misbehaviour.Header1.SignedHeader.Header.ChainID
 	ctx.EventManager().EmitEvent(
 		sdk.NewEvent(
 			vaastypes.EventTypeSubmitConsumerMisbehaviour,
 			sdk.NewAttribute(sdk.AttributeKeyModule, types.ModuleName),
 			sdk.NewAttribute(types.AttributeConsumerId, msg.ConsumerId),
-			sdk.NewAttribute(types.AttributeConsumerChainId, msg.Misbehaviour.Header1.Header.ChainID),
+			sdk.NewAttribute(types.AttributeConsumerChainId, chainID),
 			sdk.NewAttribute(vaastypes.AttributeConsumerMisbehaviour, msg.Misbehaviour.String()),
 			sdk.NewAttribute(vaastypes.AttributeMisbehaviourClientId, msg.Misbehaviour.ClientId),
 			sdk.NewAttribute(vaastypes.AttributeMisbehaviourHeight1, msg.Misbehaviour.Header1.GetHeight().String()),
@@ -125,6 +134,28 @@ func (k msgServer) SubmitConsumerMisbehaviour(goCtx context.Context, msg *types.
 
 func (k msgServer) SubmitConsumerDoubleVoting(goCtx context.Context, msg *types.MsgSubmitConsumerDoubleVoting) (*types.MsgSubmitConsumerDoubleVotingResponse, error) {
 	ctx := sdk.UnwrapSDKContext(goCtx)
+
+	if msg == nil {
+		return nil, errorsmod.Wrap(types.ErrInvalidMsgSubmitConsumerDoubleVoting, "message cannot be nil")
+	}
+	if err := msg.ValidateBasic(); err != nil {
+		return nil, err
+	}
+
+	consumerChainId, err := k.GetConsumerChainId(ctx, msg.ConsumerId)
+	if err != nil {
+		return nil, err
+	}
+	headerChainID := msg.InfractionBlockHeader.SignedHeader.Header.ChainID
+	if headerChainID != consumerChainId {
+		return nil, errorsmod.Wrapf(
+			vaastypes.ErrInvalidDoubleVotingEvidence,
+			"infraction block header chain id (%s) does not match consumer chain id (%s) (consumerId: %s)",
+			headerChainID,
+			consumerChainId,
+			msg.ConsumerId,
+		)
+	}
 
 	evidence, err := tmtypes.DuplicateVoteEvidenceFromProto(msg.DuplicateVoteEvidence)
 	if err != nil {
@@ -165,7 +196,7 @@ func (k msgServer) SubmitConsumerDoubleVoting(goCtx context.Context, msg *types.
 			vaastypes.EventTypeSubmitConsumerDoubleVoting,
 			sdk.NewAttribute(sdk.AttributeKeyModule, types.ModuleName),
 			sdk.NewAttribute(types.AttributeConsumerId, msg.ConsumerId),
-			sdk.NewAttribute(types.AttributeConsumerChainId, msg.InfractionBlockHeader.Header.ChainID),
+			sdk.NewAttribute(types.AttributeConsumerChainId, consumerChainId),
 			sdk.NewAttribute(vaastypes.AttributeConsumerDoubleVoting, msg.DuplicateVoteEvidence.String()),
 			sdk.NewAttribute(types.AttributeSubmitterAddress, msg.Submitter),
 		),
