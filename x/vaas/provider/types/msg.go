@@ -144,11 +144,12 @@ func (msg MsgSubmitConsumerDoubleVoting) ValidateBasic() error {
 		return errorsmod.Wrapf(ErrInvalidMsgSubmitConsumerDoubleVoting, "ValidateTendermintHeader: %s", err.Error())
 	}
 
-	if msg.InfractionBlockHeader.Header.Height != dve.VoteA.Height {
+	header := msg.InfractionBlockHeader.SignedHeader.Header
+	if header.Height != dve.VoteA.Height {
 		return errorsmod.Wrapf(
 			ErrInvalidMsgSubmitConsumerDoubleVoting,
 			"infraction block header height (%d) does not match duplicate vote evidence height (%d)",
-			msg.InfractionBlockHeader.Header.Height,
+			header.Height,
 			dve.VoteA.Height,
 		)
 	}
@@ -167,7 +168,7 @@ func (msg MsgSubmitConsumerDoubleVoting) ValidateBasic() error {
 		)
 	}
 
-	headerChainID := msg.InfractionBlockHeader.Header.ChainID
+	headerChainID := header.ChainID
 	if err := dve.VoteA.Verify(headerChainID, validator.PubKey); err != nil {
 		return errorsmod.Wrapf(ErrInvalidMsgSubmitConsumerDoubleVoting, "DuplicateVoteEvidence.VoteA: %s", err.Error())
 	}

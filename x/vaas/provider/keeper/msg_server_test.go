@@ -1,21 +1,43 @@
 package keeper_test
 
 import (
+	"sync"
 	"testing"
 	"time"
 
 	tmproto "github.com/cometbft/cometbft/proto/tendermint/types"
+	cmtversion "github.com/cometbft/cometbft/proto/tendermint/version"
 	tmtypes "github.com/cometbft/cometbft/types"
+	cometversion "github.com/cometbft/cometbft/version"
 	ibctmtypes "github.com/cosmos/ibc-go/v10/modules/light-clients/07-tendermint"
 	"github.com/stretchr/testify/require"
 
 	"github.com/cosmos/cosmos-sdk/codec/address"
+	sdk "github.com/cosmos/cosmos-sdk/types"
+	clienttypes "github.com/cosmos/ibc-go/v10/modules/core/02-client/types"
 
 	cryptoutil "github.com/allinbits/vaas/testutil/crypto"
 	testkeeper "github.com/allinbits/vaas/testutil/keeper"
 	providerkeeper "github.com/allinbits/vaas/x/vaas/provider/keeper"
 	providertypes "github.com/allinbits/vaas/x/vaas/provider/types"
 )
+
+var keeperBech32CfgOnce sync.Once
+
+func setupKeeperBech32Cfg() {
+	keeperBech32CfgOnce.Do(func() {
+		cfg := sdk.GetConfig()
+		cfg.SetBech32PrefixForAccount("cosmos", "cosmospub")
+		cfg.SetBech32PrefixForValidator("cosmosvaloper", "cosmosvaloperpub")
+		cfg.SetBech32PrefixForConsensusNode("cosmosvalcons", "cosmosvalconspub")
+		cfg.Seal()
+	})
+}
+
+func validSubmitter() string {
+	setupKeeperBech32Cfg()
+	return sdk.AccAddress(make([]byte, 20)).String()
+}
 
 func TestCreateConsumer(t *testing.T) {
 	providerKeeper, ctx, ctrl, _ := testkeeper.GetProviderKeeperAndCtx(t, testkeeper.NewInMemKeeperParams(t))
@@ -159,7 +181,7 @@ func TestSubmitConsumerMisbehaviourRejectsNilSignedHeader(t *testing.T) {
 
 	msg := &providertypes.MsgSubmitConsumerMisbehaviour{
 		ConsumerId: "0",
-		Submitter:  "submitter",
+		Submitter:  validSubmitter(),
 		Misbehaviour: &ibctmtypes.Misbehaviour{
 			Header1: &ibctmtypes.Header{},
 			Header2: &ibctmtypes.Header{},
@@ -169,7 +191,7 @@ func TestSubmitConsumerMisbehaviourRejectsNilSignedHeader(t *testing.T) {
 	require.NotPanics(t, func() {
 		_, err := msgServer.SubmitConsumerMisbehaviour(ctx, msg)
 		require.Error(t, err)
-		require.Contains(t, err.Error(), "misbehaviour cannot be nil")
+		require.Contains(t, err.Error(), "Misbehaviour")
 	})
 }
 
@@ -188,7 +210,7 @@ func TestSubmitConsumerDoubleVotingRejectsNilHeaderSignedHeader(t *testing.T) {
 
 	msg := &providertypes.MsgSubmitConsumerDoubleVoting{
 		ConsumerId:            consumerID,
-		Submitter:             "submitter",
+		Submitter:             validSubmitter(),
 		DuplicateVoteEvidence: evidence,
 		InfractionBlockHeader: header,
 	}
@@ -196,7 +218,7 @@ func TestSubmitConsumerDoubleVotingRejectsNilHeaderSignedHeader(t *testing.T) {
 	require.NotPanics(t, func() {
 		_, err := msgServer.SubmitConsumerDoubleVoting(ctx, msg)
 		require.Error(t, err)
-		require.Contains(t, err.Error(), "infraction block header cannot be nil")
+		require.Contains(t, err.Error(), "ValidateTendermintHeader")
 	})
 }
 
@@ -212,18 +234,12 @@ func TestSubmitConsumerDoubleVotingRejectsMismatchedChainID(t *testing.T) {
 	providerKeeper.SetConsumerChainId(ctx, consumerID, storedChainID)
 
 	height := int64(12)
-	evidence := makeDuplicateVoteEvidenceProto(t, differentChainID, height)
-
-	// Create a header with a different chain_id than the stored consumer chain_id
-	signer := tmtypes.NewMockPV()
-	validator := tmtypes.NewValidator(signer.PrivKey.PubKey(), 1)
-	valSet := tmtypes.NewValidatorSet([]*tmtypes.Validator{validator})
-
+	evidence, valSet := makeDuplicateVoteEvidenceProtoWithValSet(t, differentChainID, height)
 	header := makeHeader(t, differentChainID, height, valSet)
 
 	msg := &providertypes.MsgSubmitConsumerDoubleVoting{
 		ConsumerId:            consumerID,
-		Submitter:             "submitter",
+		Submitter:             validSubmitter(),
 		DuplicateVoteEvidence: evidence,
 		InfractionBlockHeader: header,
 	}
@@ -248,17 +264,12 @@ func TestSubmitConsumerDoubleVotingRejectsMismatchedHeights(t *testing.T) {
 
 	evidenceHeight := int64(12)
 	headerHeight := int64(15)
-	evidence := makeDuplicateVoteEvidenceProto(t, chainID, evidenceHeight)
-
-	signer := tmtypes.NewMockPV()
-	validator := tmtypes.NewValidator(signer.PrivKey.PubKey(), 1)
-	valSet := tmtypes.NewValidatorSet([]*tmtypes.Validator{validator})
-
+	evidence, valSet := makeDuplicateVoteEvidenceProtoWithValSet(t, chainID, evidenceHeight)
 	header := makeHeader(t, chainID, headerHeight, valSet)
 
 	msg := &providertypes.MsgSubmitConsumerDoubleVoting{
 		ConsumerId:            consumerID,
-		Submitter:             "submitter",
+		Submitter:             validSubmitter(),
 		DuplicateVoteEvidence: evidence,
 		InfractionBlockHeader: header,
 	}
@@ -274,23 +285,58 @@ func TestSubmitConsumerDoubleVotingRejectsMismatchedHeights(t *testing.T) {
 func makeHeader(t *testing.T, chainID string, height int64, valSet *tmtypes.ValidatorSet) *ibctmtypes.Header {
 	t.Helper()
 
-	tmSignedHeader := tmtypes.SignedHeader{
-		Header: &tmtypes.Header{
-			ChainID: chainID,
-			Height:  height,
-			Time:    time.Now().UTC(),
+	blockTime := time.Now().UTC()
+	header := tmtypes.Header{
+		Version: cmtversion.Consensus{Block: cometversion.BlockProtocol},
+		ChainID: chainID,
+		Height:  height,
+		Time:    blockTime,
+
+		ValidatorsHash:     valSet.Hash(),
+		NextValidatorsHash: valSet.Hash(),
+		ProposerAddress:    valSet.Proposer.Address,
+	}
+
+	commit := &tmtypes.Commit{
+		Height:  height,
+		Round:   0,
+		BlockID: tmtypes.BlockID{Hash: header.Hash()},
+		Signatures: []tmtypes.CommitSig{
+			{
+				BlockIDFlag:      tmtypes.BlockIDFlagCommit,
+				ValidatorAddress: valSet.Proposer.Address,
+				Timestamp:        blockTime,
+				Signature:        []byte{0x01},
+			},
 		},
 	}
+
+	tmSignedHeader := tmtypes.SignedHeader{
+		Header: &header,
+		Commit: commit,
+	}
+
 	protoValSet, err := valSet.ToProto()
 	require.NoError(t, err)
 
+	revision := clienttypes.ParseChainID(chainID)
+
 	return &ibctmtypes.Header{
-		SignedHeader: tmSignedHeader.ToProto(),
-		ValidatorSet: protoValSet,
+		SignedHeader:      tmSignedHeader.ToProto(),
+		ValidatorSet:      protoValSet,
+		TrustedHeight:     clienttypes.NewHeight(revision, uint64(height-1)),
+		TrustedValidators: protoValSet,
 	}
 }
 
 func makeDuplicateVoteEvidenceProto(t *testing.T, chainID string, height int64) *tmproto.DuplicateVoteEvidence {
+	t.Helper()
+
+	evidence, _ := makeDuplicateVoteEvidenceProtoWithValSet(t, chainID, height)
+	return evidence
+}
+
+func makeDuplicateVoteEvidenceProtoWithValSet(t *testing.T, chainID string, height int64) (*tmproto.DuplicateVoteEvidence, *tmtypes.ValidatorSet) {
 	t.Helper()
 
 	signer := tmtypes.NewMockPV()
@@ -310,5 +356,5 @@ func makeDuplicateVoteEvidenceProto(t *testing.T, chainID string, height int64) 
 		TotalVotingPower: validator.VotingPower,
 		ValidatorPower:   validator.VotingPower,
 		Timestamp:        now,
-	}
+	}, valSet
 }

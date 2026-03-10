@@ -128,10 +128,6 @@ message MsgCreateConsumer {
   ConsumerMetadata metadata = 3 [ (gogoproto.nullable) = false ];
 
   ConsumerInitializationParameters initialization_parameters = 4;
-
-  // reserved for removed per-consumer infraction parameters
-  reserved 5;
-  reserved "infraction_parameters";
 }
 
 // MsgCreateConsumerResponse defines response type for MsgCreateConsumer
@@ -162,10 +158,6 @@ message MsgUpdateConsumer {
   // the chain id CANNOT be updated.
   // This field is optional and can remain empty (i.e., `new_chain_id = ""`) or correspond to the chain id the chain already has.
   string new_chain_id = 6;
-
-  // reserved for removed per-consumer infraction parameters
-  reserved 7;
-  reserved "infraction_parameters";
 }
 
 // MsgUpdateConsumerResponse defines response type for MsgUpdateConsumer messages

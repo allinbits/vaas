@@ -184,14 +184,6 @@ func (k Keeper) VerifyDoubleVotingEvidence(
 func (k Keeper) HandleConsumerMisbehaviour(ctx sdk.Context, consumerId string, misbehaviour ibctmtypes.Misbehaviour) error {
 	logger := k.Logger(ctx)
 
-	// Defensive nil checks
-	if misbehaviour.Header1 == nil || misbehaviour.Header1.SignedHeader == nil || misbehaviour.Header1.SignedHeader.Header == nil {
-		return errorsmod.Wrap(ibcclienttypes.ErrInvalidMisbehaviour, "misbehaviour Header1 or its nested headers are nil")
-	}
-	if misbehaviour.Header2 == nil || misbehaviour.Header2.SignedHeader == nil || misbehaviour.Header2.SignedHeader.Header == nil {
-		return errorsmod.Wrap(ibcclienttypes.ErrInvalidMisbehaviour, "misbehaviour Header2 or its nested headers are nil")
-	}
-
 	// Check that the misbehaviour is valid and that the client consensus states at trusted heights are within trusting period
 	if err := k.CheckMisbehaviour(ctx, consumerId, misbehaviour); err != nil {
 		logger.Info("misbehaviour rejected", "error", err.Error())
@@ -308,14 +300,6 @@ func headerToLightBlock(h ibctmtypes.Header) (*tmtypes.LightBlock, error) {
 // CheckMisbehaviour checks that headers in the given misbehaviour forms
 // a valid light client attack from an ICS consumer chain and that the light client isn't expired
 func (k Keeper) CheckMisbehaviour(ctx sdk.Context, consumerId string, misbehaviour ibctmtypes.Misbehaviour) error {
-	// Defensive nil checks
-	if misbehaviour.Header1 == nil || misbehaviour.Header1.SignedHeader == nil || misbehaviour.Header1.SignedHeader.Header == nil {
-		return errorsmod.Wrap(ibcclienttypes.ErrInvalidMisbehaviour, "misbehaviour Header1 or its nested headers are nil")
-	}
-	if misbehaviour.Header2 == nil || misbehaviour.Header2.SignedHeader == nil || misbehaviour.Header2.SignedHeader.Header == nil {
-		return errorsmod.Wrap(ibcclienttypes.ErrInvalidMisbehaviour, "misbehaviour Header2 or its nested headers are nil")
-	}
-
 	chainId := misbehaviour.Header1.Header.ChainID
 
 	consumerChainId, err := k.GetConsumerChainId(ctx, consumerId)
