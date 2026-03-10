@@ -26,6 +26,7 @@ message ValidatorSetChangePacketData {
     (gogoproto.moretags) = "yaml:\"validator_updates\""
   ];
   uint64 valset_update_id = 2;
+  bool consumer_in_debt = 3;
 }
 
 // Note this type is used during IBC handshake methods for both the consumer and

@@ -33,6 +33,7 @@ const _ = proto.GoGoProtoPackageIsVersion3 // please upgrade the proto package
 type ValidatorSetChangePacketData struct {
 	ValidatorUpdates []types.ValidatorUpdate `protobuf:"bytes,1,rep,name=validator_updates,json=validatorUpdates,proto3" json:"validator_updates" yaml:"validator_updates"`
 	ValsetUpdateId   uint64                  `protobuf:"varint,2,opt,name=valset_update_id,json=valsetUpdateId,proto3" json:"valset_update_id,omitempty"`
+	ConsumerInDebt   bool                    `protobuf:"varint,3,opt,name=consumer_in_debt,json=consumerInDebt,proto3" json:"consumer_in_debt,omitempty"`
 }
 
 func (m *ValidatorSetChangePacketData) Reset()         { *m = ValidatorSetChangePacketData{} }
@@ -80,6 +81,13 @@ func (m *ValidatorSetChangePacketData) GetValsetUpdateId() uint64 {
 		return m.ValsetUpdateId
 	}
 	return 0
+}
+
+func (m *ValidatorSetChangePacketData) GetConsumerInDebt() bool {
+	if m != nil {
+		return m.ConsumerInDebt
+	}
+	return false
 }
 
 // Note this type is used during IBC handshake methods for both the consumer and
@@ -180,6 +188,16 @@ func (m *ValidatorSetChangePacketData) MarshalToSizedBuffer(dAtA []byte) (int, e
 	_ = i
 	var l int
 	_ = l
+	if m.ConsumerInDebt {
+		i--
+		if m.ConsumerInDebt {
+			dAtA[i] = 1
+		} else {
+			dAtA[i] = 0
+		}
+		i--
+		dAtA[i] = 0x18
+	}
 	if m.ValsetUpdateId != 0 {
 		i = encodeVarintWire(dAtA, i, uint64(m.ValsetUpdateId))
 		i--
@@ -257,6 +275,9 @@ func (m *ValidatorSetChangePacketData) Size() (n int) {
 	}
 	if m.ValsetUpdateId != 0 {
 		n += 1 + sovWire(uint64(m.ValsetUpdateId))
+	}
+	if m.ConsumerInDebt {
+		n += 2
 	}
 	return n
 }
@@ -362,6 +383,26 @@ func (m *ValidatorSetChangePacketData) Unmarshal(dAtA []byte) error {
 					break
 				}
 			}
+		case 3:
+			if wireType != 0 {
+				return fmt.Errorf("proto: wrong wireType = %d for field ConsumerInDebt", wireType)
+			}
+			var v int
+			for shift := uint(0); ; shift += 7 {
+				if shift >= 64 {
+					return ErrIntOverflowWire
+				}
+				if iNdEx >= l {
+					return io.ErrUnexpectedEOF
+				}
+				b := dAtA[iNdEx]
+				iNdEx++
+				v |= int(b&0x7F) << shift
+				if b < 0x80 {
+					break
+				}
+			}
+			m.ConsumerInDebt = v != 0
 		default:
 			iNdEx = preIndex
 			skippy, err := skipWire(dAtA[iNdEx:])
