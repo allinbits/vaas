@@ -1151,7 +1151,7 @@ type QueryConsumerChainResponse struct {
 	Metadata     ConsumerMetadata                  `protobuf:"bytes,5,opt,name=metadata,proto3" json:"metadata"`
 	InitParams   *ConsumerInitializationParameters `protobuf:"bytes,6,opt,name=init_params,json=initParams,proto3" json:"init_params,omitempty"`
 	// corresponds to the id of the client that is created during launch
-	ClientId string `protobuf:"bytes,8,opt,name=client_id,json=clientId,proto3" json:"client_id,omitempty"`
+	ClientId string `protobuf:"bytes,7,opt,name=client_id,json=clientId,proto3" json:"client_id,omitempty"`
 }
 
 func (m *QueryConsumerChainResponse) Reset()         { *m = QueryConsumerChainResponse{} }
@@ -2809,7 +2809,7 @@ func (m *QueryConsumerChainResponse) MarshalToSizedBuffer(dAtA []byte) (int, err
 		copy(dAtA[i:], m.ClientId)
 		i = encodeVarintQuery(dAtA, i, uint64(len(m.ClientId)))
 		i--
-		dAtA[i] = 0x42
+		dAtA[i] = 0x3a
 	}
 	if m.InitParams != nil {
 		{
@@ -5857,7 +5857,7 @@ func (m *QueryConsumerChainResponse) Unmarshal(dAtA []byte) error {
 				return err
 			}
 			iNdEx = postIndex
-		case 8:
+		case 7:
 			if wireType != 2 {
 				return fmt.Errorf("proto: wrong wireType = %d for field ClientId", wireType)
 			}

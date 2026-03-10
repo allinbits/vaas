@@ -257,7 +257,7 @@ message QueryConsumerChainResponse {
   ConsumerInitializationParameters init_params = 6;
 
   // corresponds to the id of the client that is created during launch
-  string client_id = 8;
+  string client_id = 7;
 }
 
 message QueryConsumerGenesisTimeRequest {
