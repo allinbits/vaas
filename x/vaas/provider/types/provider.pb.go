@@ -100,7 +100,7 @@ type Params struct {
 	// to the consensus engine on the provider.
 	MaxProviderConsensusValidators int64 `protobuf:"varint,5,opt,name=max_provider_consensus_validators,json=maxProviderConsensusValidators,proto3" json:"max_provider_consensus_validators,omitempty"`
 	// The fee charged per block for consumer chain operation.
-	FeesPerBlock types.Coin `protobuf:"bytes,6,opt,name=fees_per_block,json=feesPerBlock,proto3,castrepeated=github.com/cosmos/cosmos-sdk/types.Coins" json:"fees_per_block"`
+	FeesPerBlock types.Coin `protobuf:"bytes,6,opt,name=fees_per_block,json=feesPerBlock,proto3,casttype=github.com/cosmos/cosmos-sdk/types.Coin" json:"fees_per_block"`
 }
 
 func (m *Params) Reset()         { *m = Params{} }
