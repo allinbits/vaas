@@ -199,3 +199,31 @@ func TestOnRecvVSCPacketDuplicateUpdates(t *testing.T) {
 	require.Equal(t, valUpdates[1], gotPendingChanges.ValidatorUpdates[0]) // Only latest update should be kept
 	require.True(t, consumerKeeper.IsConsumerInDebt(ctx))
 }
+
+func TestOnRecvVSCPacketDebtOnlyPacket(t *testing.T) {
+	consumerCCVChannelID := "consumerCCVChannelID"
+	providerCCVChannelID := "providerCCVChannelID"
+
+	consumerKeeper, ctx, ctrl, _ := testkeeper.GetConsumerKeeperAndCtx(t, testkeeper.NewInMemKeeperParams(t))
+	defer ctrl.Finish()
+	consumerKeeper.SetProviderChannel(ctx, consumerCCVChannelID)
+
+	vscData := types.NewValidatorSetChangePacketData([]abci.ValidatorUpdate{}, 1)
+	vscData.ConsumerInDebt = true
+
+	packet := channeltypes.NewPacket(vscData.GetBytes(), 2, types.ProviderPortID,
+		providerCCVChannelID, types.ConsumerPortID, consumerCCVChannelID, clienttypes.NewHeight(1, 0), 0)
+
+	var decoded types.ValidatorSetChangePacketData
+	err := types.ModuleCdc.UnmarshalJSON(packet.GetData(), &decoded)
+	require.NoError(t, err)
+
+	err = consumerKeeper.OnRecvVSCPacket(ctx, packet, decoded)
+	require.NoError(t, err)
+
+	require.True(t, consumerKeeper.IsConsumerInDebt(ctx))
+
+	pendingChanges, ok := consumerKeeper.GetPendingChanges(ctx)
+	require.True(t, ok)
+	require.Empty(t, pendingChanges.ValidatorUpdates)
+}

@@ -15,11 +15,9 @@ func NewValidatorSetChangePacketData(valUpdates []abci.ValidatorUpdate, valUpdat
 
 // Validate is used for validating the VAAS packet data.
 func (vsc ValidatorSetChangePacketData) Validate() error {
-	// Note that vsc.ValidatorUpdates can be empty in the case of unbonding
-	// operations w/o changes in the voting power of the validators in the validator set
-	if vsc.ValidatorUpdates == nil {
-		return errorsmod.Wrap(ErrInvalidPacketData, "validator updates cannot be nil")
-	}
+	// Note that validator updates can be omitted in JSON encoding for empty
+	// repeated fields. Treat nil and empty slices equivalently here so debt-only
+	// VSC packets remain valid on the wire.
 	// ValsetUpdateId is strictly positive
 	if vsc.ValsetUpdateId == 0 {
 		return errorsmod.Wrap(ErrInvalidPacketData, "valset update id cannot be equal to zero")
