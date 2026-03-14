@@ -70,6 +70,8 @@ type Keeper struct {
 	ConsumerMetadata              collections.Map[string, types.ConsumerMetadata]
 	ConsumerInitParams            collections.Map[string, types.ConsumerInitializationParameters]
 	ConsumerPhase                 collections.Map[string, uint32]
+	ConsumerDebt                  collections.Map[string, bool]
+	PendingConsumerDebtPackets    collections.Map[string, bool]
 	EquivocationEvidenceMinHeight collections.Map[string, uint64]
 	ConsumerRemovalTime           collections.Map[string, []byte]
 	SpawnTimeToConsumerIds        collections.Map[[]byte, types.ConsumerIds]
@@ -168,6 +170,8 @@ func NewKeeper(
 		ConsumerMetadata:              collections.NewMap(sb, types.ConsumerIdToMetadataPrefix, "consumer_metadata", collections.StringKey, codec.CollValue[types.ConsumerMetadata](cdc)),
 		ConsumerInitParams:            collections.NewMap(sb, types.ConsumerIdToInitializationParamsPrefix, "consumer_init_params", collections.StringKey, codec.CollValue[types.ConsumerInitializationParameters](cdc)),
 		ConsumerPhase:                 collections.NewMap(sb, types.ConsumerIdToPhasePrefix, "consumer_phase", collections.StringKey, collections.Uint32Value),
+		ConsumerDebt:                  collections.NewMap(sb, types.ConsumerIdToDebtPrefix, "consumer_debt", collections.StringKey, collections.BoolValue),
+		PendingConsumerDebtPackets:    collections.NewMap(sb, types.PendingConsumerDebtPacketsPrefix, "pending_consumer_debt_packets", collections.StringKey, collections.BoolValue),
 		EquivocationEvidenceMinHeight: collections.NewMap(sb, types.EquivocationEvidenceMinHeightPrefix, "equivocation_evidence_min_height", collections.StringKey, collections.Uint64Value),
 		ConsumerRemovalTime:           collections.NewMap(sb, types.ConsumerIdToRemovalTimePrefix, "consumer_removal_time", collections.StringKey, collections.BytesValue),
 		SpawnTimeToConsumerIds:        collections.NewMap(sb, types.SpawnTimeToConsumerIdsPrefix, "spawn_time_to_consumer_ids", collections.BytesKey, codec.CollValue[types.ConsumerIds](cdc)),

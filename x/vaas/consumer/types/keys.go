@@ -33,4 +33,5 @@ var (
 	InitGenesisHeightPrefix    = collections.NewPrefix(17)
 	PrevStandaloneChainPrefix  = collections.NewPrefix(19)
 	ParametersPrefix           = collections.NewPrefix(22)
+	ConsumerDebtPrefix         = collections.NewPrefix(23)
 )

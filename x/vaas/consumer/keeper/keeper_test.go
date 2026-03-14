@@ -49,6 +49,19 @@ func TestProviderChannel(t *testing.T) {
 	require.Equal(t, "channelID", channelID)
 }
 
+func TestConsumerDebtStatus(t *testing.T) {
+	consumerKeeper, ctx, ctrl, _ := testkeeper.GetConsumerKeeperAndCtx(t, testkeeper.NewInMemKeeperParams(t))
+	defer ctrl.Finish()
+
+	require.False(t, consumerKeeper.IsConsumerInDebt(ctx))
+
+	consumerKeeper.SetConsumerInDebt(ctx, true)
+	require.True(t, consumerKeeper.IsConsumerInDebt(ctx))
+
+	consumerKeeper.SetConsumerInDebt(ctx, false)
+	require.False(t, consumerKeeper.IsConsumerInDebt(ctx))
+}
+
 // TestPendingChanges tests getter, setter, and delete functionality for pending VSCs on a consumer chain
 func TestPendingChanges(t *testing.T) {
 	pk1, err := cryptocodec.ToCmtProtoPublicKey(ed25519.GenPrivKey().PubKey())

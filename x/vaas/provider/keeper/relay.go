@@ -60,6 +60,9 @@ func (k Keeper) EndBlockVSU(ctx sdk.Context) ([]abci.ValidatorUpdate, error) {
 		return []abci.ValidatorUpdate{}, fmt.Errorf("computing the provider consensus validator set: %w", err)
 	}
 
+	valUpdateID := k.GetValidatorSetUpdateId(ctx)
+	k.QueuePendingConsumerDebtPackets(ctx, valUpdateID)
+
 	if k.BlocksUntilNextEpoch(ctx) == 0 {
 		// only queue and send VSCPackets at the boundaries of an epoch
 
@@ -67,10 +70,11 @@ func (k Keeper) EndBlockVSU(ctx sdk.Context) ([]abci.ValidatorUpdate, error) {
 		if err := k.QueueVSCPackets(ctx); err != nil {
 			return []abci.ValidatorUpdate{}, fmt.Errorf("queueing consumer validator updates: %w", err)
 		}
+	}
 
-		// try sending VSC packets to all registered consumer chains;
-		// if the CCV channel is not established for a consumer chain,
-		// the updates will remain queued until the channel is established
+	// Try sending any queued packets every block so debt status transitions do not
+	// wait for the next epoch once they have been queued.
+	if k.HasQueuedVSCPackets(ctx) {
 		if err := k.SendVSCPackets(ctx); err != nil {
 			return []abci.ValidatorUpdate{}, fmt.Errorf("sending consumer validator updates: %w", err)
 		}
@@ -233,6 +237,7 @@ func (k Keeper) QueueVSCPackets(ctx sdk.Context) error {
 		if len(valUpdates) != 0 {
 			// construct validator set change packet data
 			packet := vaastypes.NewValidatorSetChangePacketData(valUpdates, valUpdateID)
+			packet.ConsumerInDebt = k.IsConsumerInDebt(ctx, consumerId)
 			k.AppendPendingVSCPackets(ctx, consumerId, packet)
 			k.Logger(ctx).Info("VSCPacket enqueued:",
 				"consumerId", consumerId,

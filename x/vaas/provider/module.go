@@ -155,6 +155,36 @@ func (am AppModule) BeginBlock(ctx context.Context) error {
 		return err
 	}
 
+	// Collect fees from consumer chains. Failures here should not halt block processing.
+	// To avoid committing partial state changes on error, perform fee collection and distribution
+	// in a cached context and only write back to the main context on success.
+	feeCtx, write := sdkCtx.CacheContext()
+
+	collectedFees, err := am.keeper.CollectFeesFromConsumers(feeCtx)
+	if err != nil {
+		sdkCtx.Logger().Error(
+			"failed to collect fees from consumers",
+			"err", err,
+			"height", sdkCtx.BlockHeight(),
+		)
+		// Do not write cached changes; effectively roll back any partial state from fee collection.
+		return nil
+	}
+
+	// Distribute collected fees to validators. Failures here should also not halt block processing.
+	if err := am.keeper.DistributeFeesToValidators(feeCtx, collectedFees); err != nil {
+		sdkCtx.Logger().Error(
+			"failed to distribute collected fees to validators",
+			"err", err,
+			"height", sdkCtx.BlockHeight(),
+			"collected_fees", collectedFees.String(),
+		)
+		// Do not write cached changes; effectively roll back both collection and distribution.
+		return nil
+	}
+
+	// Both fee collection and distribution succeeded; commit the cached state changes.
+	write()
 	return nil
 }
 
