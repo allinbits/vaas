@@ -199,14 +199,16 @@ func TestEndBlockVSUAssignsUniqueValsetUpdateIDToDebtPacket(t *testing.T) {
 
 	consumerID := CONSUMER_ID
 	channelID := "channel-0"
+	startingValsetUpdateID := uint64(providertypes.DefaultValsetUpdateID)
 
 	providerKeeper.SetConsumerClientId(ctx, consumerID, "client-0")
 	providerKeeper.SetConsumerIdToChannelId(ctx, consumerID, channelID)
 	providerKeeper.SetConsumerPhase(ctx, consumerID, providertypes.CONSUMER_PHASE_LAUNCHED)
 	providerKeeper.SetConsumerInDebt(ctx, consumerID, true)
 	providerKeeper.SetPendingConsumerDebtPacket(ctx, consumerID)
+	providerKeeper.SetValidatorSetUpdateId(ctx, startingValsetUpdateID)
 
-	require.Equal(t, providertypes.DefaultValsetUpdateID, providerKeeper.GetValidatorSetUpdateId(ctx))
+	require.Equal(t, startingValsetUpdateID, providerKeeper.GetValidatorSetUpdateId(ctx))
 
 	mocks.MockStakingKeeper.EXPECT().
 		GetBondedValidatorsByPower(ctx).
@@ -222,7 +224,7 @@ func TestEndBlockVSUAssignsUniqueValsetUpdateIDToDebtPacket(t *testing.T) {
 
 			var packet vaastypes.ValidatorSetChangePacketData
 			require.NoError(t, vaastypes.ModuleCdc.UnmarshalJSON(data, &packet))
-			require.Equal(t, providertypes.DefaultValsetUpdateID, packet.ValsetUpdateId)
+			require.Equal(t, startingValsetUpdateID, packet.ValsetUpdateId)
 			require.True(t, packet.ConsumerInDebt)
 			require.Empty(t, packet.ValidatorUpdates)
 
@@ -232,7 +234,7 @@ func TestEndBlockVSUAssignsUniqueValsetUpdateIDToDebtPacket(t *testing.T) {
 	valUpdates, err := providerKeeper.EndBlockVSU(ctx)
 	require.NoError(t, err)
 	require.Empty(t, valUpdates)
-	require.Equal(t, providertypes.DefaultValsetUpdateID+1, providerKeeper.GetValidatorSetUpdateId(ctx))
+	require.Equal(t, startingValsetUpdateID+1, providerKeeper.GetValidatorSetUpdateId(ctx))
 	require.Empty(t, providerKeeper.GetPendingVSCPackets(ctx, consumerID))
 }
 

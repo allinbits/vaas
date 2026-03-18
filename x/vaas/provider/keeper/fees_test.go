@@ -3,7 +3,6 @@ package keeper_test
 import (
 	"bytes"
 	"errors"
-	"fmt"
 	"testing"
 
 	"cosmossdk.io/math"
