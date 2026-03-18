@@ -11,10 +11,18 @@ import (
 	authtypes "github.com/cosmos/cosmos-sdk/x/auth/types"
 )
 
+// GetConsumerFeePoolAddress returns the deterministic provider-side fee pool
+// account for a consumer. This is a plain account address used for fee funding,
+// not a registered module account in the app's module-account permissions.
+func (k Keeper) GetConsumerFeePoolAddress(consumerId string) sdk.AccAddress {
+	return authtypes.NewModuleAddress(fmt.Sprintf("%s-consumer-fee-pool-%s", types.ModuleName, consumerId))
+}
+
 // CollectFeesFromConsumers collects fees from all active consumer chains.
 // For each consumer, it checks if the consumer has enough balance to pay the fees.
 // If a consumer doesn't have enough funds, the provider should inform the consumer
-// to stop operations.
+// to stop operations. Unexpected per-consumer transfer failures are logged and skipped
+// so one bad consumer account does not block collection from the rest.
 func (k Keeper) CollectFeesFromConsumers(ctx sdk.Context) (sdk.Coin, error) {
 	feesPerBlock := k.GetFeesPerBlock(ctx)
 	totalFeesCollected := sdk.NewCoin(feesPerBlock.Denom, math.ZeroInt())
@@ -27,29 +35,33 @@ func (k Keeper) CollectFeesFromConsumers(ctx sdk.Context) (sdk.Coin, error) {
 		if k.GetConsumerPhase(ctx, consumerId) != types.CONSUMER_PHASE_LAUNCHED {
 			continue
 		}
-		consumerModuleName := fmt.Sprintf("consumer-%s", consumerId)
-		// Get the consumer's module account address
-		// Each consumer has a module account in the format "consumer-<consumerId>"
-		consumerModuleAccAddr := authtypes.NewModuleAddress(consumerModuleName)
+		consumerFeePoolAddr := k.GetConsumerFeePoolAddress(consumerId)
 
-		// Check the balance of the consumer account
-		balance := k.bankKeeper.GetBalance(ctx, consumerModuleAccAddr, feesPerBlock.Denom)
+		// Check the balance of the consumer fee pool account.
+		balance := k.bankKeeper.GetBalance(ctx, consumerFeePoolAddr, feesPerBlock.Denom)
 		inDebt := balance.IsLT(feesPerBlock)
+		wasInDebt := k.IsConsumerInDebt(ctx, consumerId)
 		k.UpdateConsumerDebtStatus(ctx, consumerId, inDebt)
 		if inDebt {
-			// Consumer doesn't have enough funds
-			k.Logger(ctx).Error("consumer chain has insufficient funds",
-				"consumerId", consumerId,
-				"balance", balance.Amount.String(),
-				"required", feesPerBlock.String(),
-			)
+			if wasInDebt {
+				k.Logger(ctx).Debug("consumer chain remains in debt",
+					"consumerId", consumerId,
+					"balance", balance.Amount.String(),
+					"required", feesPerBlock.String(),
+				)
+			}
 			continue
 		}
 
 		// Transfer fees from consumer account to fee collector
 		feeCoins := sdk.NewCoins(feesPerBlock)
-		if err := k.bankKeeper.SendCoinsFromModuleToModule(ctx, consumerModuleName, k.feeCollectorName, feeCoins); err != nil {
-			return totalFeesCollected, fmt.Errorf("failed to collect fees from consumer (%s): %w", consumerId, err)
+		if err := k.bankKeeper.SendCoinsFromAccountToModule(ctx, consumerFeePoolAddr, k.feeCollectorName, feeCoins); err != nil {
+			k.Logger(ctx).Error("failed to collect fees from consumer",
+				"consumerId", consumerId,
+				"amount", feeCoins.String(),
+				"err", err,
+			)
+			continue
 		}
 		k.Logger(ctx).Debug("collected fees from consumer",
 			"consumerId", consumerId,
