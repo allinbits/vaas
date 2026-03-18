@@ -155,10 +155,10 @@ func (am AppModule) BeginBlock(ctx context.Context) error {
 		return err
 	}
 
-	// Collect fees from consumer chains. Failures here should not halt block processing.
-	// To avoid committing partial state changes on error, perform fee collection and distribution
-	// in a cached context and only write back to the main context on success.
-	feeCtx, write := sdkCtx.CacheContext()
+	// Collect fees from consumer chains, including any debt-state transitions.
+	// Commit these changes independently so consumer debt tracking and notifications
+	// remain consistent even if validator fee distribution fails later in BeginBlock.
+	feeCtx, writeFees := sdkCtx.CacheContext()
 
 	collectedFees, err := am.keeper.CollectFeesFromConsumers(feeCtx)
 	if err != nil {
@@ -170,21 +170,23 @@ func (am AppModule) BeginBlock(ctx context.Context) error {
 		// Do not write cached changes; effectively roll back any partial state from fee collection.
 		return nil
 	}
+	writeFees()
 
-	// Distribute collected fees to validators. Failures here should also not halt block processing.
-	if err := am.keeper.DistributeFeesToValidators(feeCtx, collectedFees); err != nil {
+	// Distribute collected fees to validators in a separate cached context so
+	// distribution rollback does not undo the already-committed collection/debt state.
+	distributionCtx, writeDistribution := sdkCtx.CacheContext()
+	if err := am.keeper.DistributeFeesToValidators(distributionCtx, collectedFees); err != nil {
 		sdkCtx.Logger().Error(
 			"failed to distribute collected fees to validators",
 			"err", err,
 			"height", sdkCtx.BlockHeight(),
 			"collected_fees", collectedFees.String(),
 		)
-		// Do not write cached changes; effectively roll back both collection and distribution.
+		// Do not write cached changes; effectively roll back distribution only.
 		return nil
 	}
 
-	// Both fee collection and distribution succeeded; commit the cached state changes.
-	write()
+	writeDistribution()
 	return nil
 }
 
