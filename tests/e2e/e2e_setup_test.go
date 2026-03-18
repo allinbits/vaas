@@ -526,6 +526,11 @@ func (s *IntegrationTestSuite) createIBCConnectionAndChannel() {
 
 // triggerVSC triggers a validator set change on the provider.
 func (s *IntegrationTestSuite) triggerVSC() {
+	providerValsBefore, err := s.queryProviderNetValidators()
+	s.Require().NoError(err, "failed to query provider validators before triggering VSC")
+	providerPubKeysBefore, providerVPBefore := s.extractPubKeys(providerValsBefore)
+	s.Require().Len(providerPubKeysBefore, 1, "expected exactly one provider validator before triggering VSC")
+
 	// Get validator operator address
 	stdout, _, err := s.dockerExec(s.providerValRes[0].Container.ID, []string{
 		providerBinary, "keys", "show", "val", "--bech", "val", "-a",
@@ -547,23 +552,47 @@ func (s *IntegrationTestSuite) triggerVSC() {
 	})
 	s.Require().NoError(err, "failed to delegate on provider")
 
-	s.T().Log("delegation sent, waiting for VSC packet relay...")
+	s.T().Log("delegation sent, waiting for provider and consumer validator power to converge...")
 
-	// Wait for VSC to be relayed — poll consumer for provider info
-	for i := 0; i < 60; i++ {
-		time.Sleep(2 * time.Second)
+	var providerVPAfter uint64
+	s.Require().Eventually(
+		func() bool {
+			providerValsAfter, err := s.queryProviderNetValidators()
+			if err != nil {
+				return false
+			}
 
-		stdout, _, err := s.dockerExec(s.consumerValRes[0].Container.ID, []string{
-			consumerBinary, "query", "vaasconsumer", "provider-info",
-			"--home", consumerHomePath,
-		})
-		if err == nil && stdout.Len() > 0 && !strings.Contains(stdout.String(), "error") {
-			s.T().Logf("VSC relayed after %d seconds", (i+1)*2)
-			return
-		}
-	}
+			providerPubKeysAfter, providerVP := s.extractPubKeys(providerValsAfter)
+			if len(providerPubKeysAfter) != 1 || providerPubKeysAfter[0] != providerPubKeysBefore[0] {
+				return false
+			}
 
-	s.T().Log("WARNING: VSC packet may not have been relayed within timeout")
+			providerVPAfter = providerVP[0]
+			return providerVPAfter == providerVPBefore[0]+1
+		},
+		60*time.Second,
+		time.Second,
+		"provider validator power did not update after delegation",
+	)
+
+	s.Require().Eventually(
+		func() bool {
+			consumerValsAfter, err := s.queryConsumerNetValidators()
+			if err != nil {
+				return false
+			}
+
+			consumerPubKeysAfter, consumerVPAfter := s.extractPubKeys(consumerValsAfter)
+			if len(consumerPubKeysAfter) != 1 || consumerPubKeysAfter[0] != providerPubKeysBefore[0] {
+				return false
+			}
+
+			return consumerVPAfter[0] == providerVPAfter
+		},
+		60*time.Second,
+		time.Second,
+		"initial VSC was not reflected on the consumer validator set",
+	)
 }
 
 // generateHermesConfig reads the Hermes config template and substitutes chain IDs.
