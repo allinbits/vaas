@@ -78,7 +78,7 @@ func (k Keeper) UpdateConsumerDebtStatus(ctx sdk.Context, consumerId string, inD
 	k.Logger(ctx).Info("consumer chain cleared debt status", "consumerId", consumerId)
 }
 
-func (k Keeper) QueuePendingConsumerDebtPackets(ctx sdk.Context, valUpdateID uint64) {
+func (k Keeper) QueuePendingConsumerDebtPackets(ctx sdk.Context, valUpdateID uint64) (queued bool) {
 	for _, consumerId := range k.GetAllConsumersWithIBCClients(ctx) {
 		if k.GetConsumerPhase(ctx, consumerId) != providertypes.CONSUMER_PHASE_LAUNCHED {
 			continue
@@ -94,7 +94,10 @@ func (k Keeper) QueuePendingConsumerDebtPackets(ctx sdk.Context, valUpdateID uin
 		packet.ConsumerInDebt = k.IsConsumerInDebt(ctx, consumerId)
 		k.AppendPendingVSCPackets(ctx, consumerId, packet)
 		k.ClearPendingConsumerDebtPacket(ctx, consumerId)
+		queued = true
 	}
+
+	return queued
 }
 
 func (k Keeper) HasQueuedVSCPackets(ctx sdk.Context) bool {

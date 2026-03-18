@@ -61,7 +61,11 @@ func (k Keeper) EndBlockVSU(ctx sdk.Context) ([]abci.ValidatorUpdate, error) {
 	}
 
 	valUpdateID := k.GetValidatorSetUpdateId(ctx)
-	k.QueuePendingConsumerDebtPackets(ctx, valUpdateID)
+	if k.QueuePendingConsumerDebtPackets(ctx, valUpdateID) {
+		// Debt-only VSC packets must consume their own ID so later validator-set
+		// changes do not reuse the same valset update identifier on the consumer.
+		k.IncrementValidatorSetUpdateId(ctx)
+	}
 
 	if k.BlocksUntilNextEpoch(ctx) == 0 {
 		// only queue and send VSCPackets at the boundaries of an epoch
