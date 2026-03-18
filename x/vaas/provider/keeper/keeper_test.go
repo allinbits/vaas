@@ -200,6 +200,7 @@ func TestEndBlockVSUAssignsUniqueValsetUpdateIDToDebtPacket(t *testing.T) {
 	consumerID := CONSUMER_ID
 	channelID := "channel-0"
 	startingValsetUpdateID := uint64(providertypes.DefaultValsetUpdateID)
+	providerKeeper.SetParams(ctx, providertypes.DefaultParams())
 
 	providerKeeper.SetConsumerClientId(ctx, consumerID, "client-0")
 	providerKeeper.SetConsumerIdToChannelId(ctx, consumerID, channelID)
