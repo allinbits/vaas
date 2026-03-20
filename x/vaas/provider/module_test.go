@@ -38,8 +38,11 @@ func TestBeginBlockCommitsDebtStateWhenDistributionFails(t *testing.T) {
 		GetBalance(gomock.Any(), consumerPayingFeePoolAddr, providerParams.FeesPerBlock.Denom).
 		Return(sdk.NewInt64Coin("photon", 20))
 	mocks.MockBankKeeper.EXPECT().
-		SendCoinsFromAccountToModule(gomock.Any(), consumerPayingFeePoolAddr, authtypes.FeeCollectorName, sdk.NewCoins(providerParams.FeesPerBlock)).
+		SendCoinsFromAccountToModule(gomock.Any(), consumerPayingFeePoolAddr, providertypes.ModuleName, sdk.NewCoins(providerParams.FeesPerBlock)).
 		Return(nil)
+	mocks.MockBankKeeper.EXPECT().
+		GetBalance(gomock.Any(), authtypes.NewModuleAddress(providertypes.ModuleName), providerParams.FeesPerBlock.Denom).
+		Return(providerParams.FeesPerBlock)
 	mocks.MockStakingKeeper.EXPECT().
 		GetBondedValidatorsByPower(gomock.Any()).
 		Return(nil, errors.New("distribution boom"))

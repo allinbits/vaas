@@ -28,10 +28,10 @@ import (
 	"cosmossdk.io/core/appmodule"
 	"cosmossdk.io/log"
 	storetypes "cosmossdk.io/store/types"
+	"cosmossdk.io/x/tx/signing"
 	"cosmossdk.io/x/upgrade"
 	upgradekeeper "cosmossdk.io/x/upgrade/keeper"
 	upgradetypes "cosmossdk.io/x/upgrade/types"
-	"cosmossdk.io/x/tx/signing"
 	"github.com/cosmos/cosmos-sdk/baseapp"
 	"github.com/cosmos/cosmos-sdk/client"
 	"github.com/cosmos/cosmos-sdk/client/flags"
@@ -101,14 +101,13 @@ import (
 	no_valupdates_genutil "github.com/allinbits/vaas/x/vaas/no_valupdates_genutil"
 	no_valupdates_staking "github.com/allinbits/vaas/x/vaas/no_valupdates_staking"
 
-
 	ibcprovider "github.com/allinbits/vaas/x/vaas/provider"
 	ibcproviderkeeper "github.com/allinbits/vaas/x/vaas/provider/keeper"
 	providertypes "github.com/allinbits/vaas/x/vaas/provider/types"
 )
 
 const (
-	AppName = "vaas-provider"
+	AppName     = "vaas-provider"
 	upgradeName = "vaas-v1-to-v2"
 )
 
@@ -149,8 +148,8 @@ var (
 		stakingtypes.BondedPoolName:    {authtypes.Burner, authtypes.Staking},
 		stakingtypes.NotBondedPoolName: {authtypes.Burner, authtypes.Staking},
 		govtypes.ModuleName:            {authtypes.Burner},
-		ibctransfertypes.ModuleName:       {authtypes.Minter, authtypes.Burner},
-
+		providertypes.ModuleName:       nil,
+		ibctransfertypes.ModuleName:    {authtypes.Minter, authtypes.Burner},
 	}
 )
 
@@ -193,7 +192,6 @@ type App struct { // nolint: golint
 	TransferKeeper        ibctransferkeeper.Keeper
 	ProviderKeeper        ibcproviderkeeper.Keeper
 	ConsensusParamsKeeper consensusparamkeeper.Keeper
-
 
 	// the module manager
 	MM *module.Manager
@@ -421,7 +419,6 @@ func New(
 		authtypes.FeeCollectorName,
 		authtypes.NewModuleAddress(govtypes.ModuleName).String(),
 	)
-
 
 	providerModule := ibcprovider.NewAppModule(
 		&app.ProviderKeeper,

@@ -39,10 +39,9 @@ func (k Keeper) CollectFeesFromConsumers(ctx sdk.Context) (sdk.Coin, error) {
 
 		// Check the balance of the consumer fee pool account.
 		balance := k.bankKeeper.GetBalance(ctx, consumerFeePoolAddr, feesPerBlock.Denom)
-		inDebt := balance.IsLT(feesPerBlock)
 		wasInDebt := k.IsConsumerInDebt(ctx, consumerId)
-		k.UpdateConsumerDebtStatus(ctx, consumerId, inDebt)
-		if inDebt {
+		if balance.IsLT(feesPerBlock) {
+			k.UpdateConsumerDebtStatus(ctx, consumerId, true)
 			if wasInDebt {
 				k.Logger(ctx).Debug("consumer chain remains in debt",
 					"consumerId", consumerId,
@@ -53,16 +52,18 @@ func (k Keeper) CollectFeesFromConsumers(ctx sdk.Context) (sdk.Coin, error) {
 			continue
 		}
 
-		// Transfer fees from consumer account to fee collector
+		// Transfer fees from the consumer fee pool into the provider module account.
 		feeCoins := sdk.NewCoins(feesPerBlock)
-		if err := k.bankKeeper.SendCoinsFromAccountToModule(ctx, consumerFeePoolAddr, k.feeCollectorName, feeCoins); err != nil {
+		if err := k.bankKeeper.SendCoinsFromAccountToModule(ctx, consumerFeePoolAddr, types.ModuleName, feeCoins); err != nil {
 			k.Logger(ctx).Error("failed to collect fees from consumer",
 				"consumerId", consumerId,
 				"amount", feeCoins.String(),
 				"err", err,
 			)
+			k.UpdateConsumerDebtStatus(ctx, consumerId, true)
 			continue
 		}
+		k.UpdateConsumerDebtStatus(ctx, consumerId, false)
 		k.Logger(ctx).Debug("collected fees from consumer",
 			"consumerId", consumerId,
 			"amount", feeCoins.String(),
@@ -73,9 +74,11 @@ func (k Keeper) CollectFeesFromConsumers(ctx sdk.Context) (sdk.Coin, error) {
 	return totalFeesCollected, nil
 }
 
-// DistributeFeesToValidators distributes the collected fees to validators
-// proportionally based on their voting power.
-func (k Keeper) DistributeFeesToValidators(ctx sdk.Context, totalFees sdk.Coin) error {
+// DistributeFeesToValidators distributes the provider module account's
+// currently available consumer-fee balance to validators proportionally
+// based on their voting power.
+func (k Keeper) DistributeFeesToValidators(ctx sdk.Context) error {
+	totalFees := k.bankKeeper.GetBalance(ctx, authtypes.NewModuleAddress(types.ModuleName), k.GetFeesPerBlock(ctx).Denom)
 	if totalFees.IsZero() {
 		return nil
 	}
@@ -118,7 +121,7 @@ func (k Keeper) DistributeFeesToValidators(ctx sdk.Context, totalFees sdk.Coin) 
 		// If this is the last validator, assign the remainder to ensure all fees are distributed
 		if i == len(validators)-1 {
 			// Skip distribution when all proportional shares round down to zero.
-			// In this case, keeping funds in the fee collector avoids sending all fees
+			// In this case, keeping funds in the provider module account avoids sending all fees
 			// to the last validator purely due to integer division remainder.
 			if !hasProportionalShare {
 				return nil
@@ -136,9 +139,9 @@ func (k Keeper) DistributeFeesToValidators(ctx sdk.Context, totalFees sdk.Coin) 
 			return fmt.Errorf("failed to parse validator address: %w", err)
 		}
 
-		// Transfer fees from fee collector module account to validator account.
+		// Transfer fees from the provider module account to the validator account.
 		feeCoins := sdk.NewCoins(sdk.NewCoin(totalFees.Denom, valShare))
-		if err := k.bankKeeper.SendCoinsFromModuleToAccount(ctx, k.feeCollectorName, sdk.AccAddress(valAddr), feeCoins); err != nil {
+		if err := k.bankKeeper.SendCoinsFromModuleToAccount(ctx, types.ModuleName, sdk.AccAddress(valAddr), feeCoins); err != nil {
 			return fmt.Errorf("failed to distribute fees to validator (%s): %w", val.GetOperator(), err)
 		}
 

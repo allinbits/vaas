@@ -160,7 +160,7 @@ func (am AppModule) BeginBlock(ctx context.Context) error {
 	// remain consistent even if validator fee distribution fails later in BeginBlock.
 	feeCtx, writeFees := sdkCtx.CacheContext()
 
-	collectedFees, err := am.keeper.CollectFeesFromConsumers(feeCtx)
+	_, err := am.keeper.CollectFeesFromConsumers(feeCtx)
 	if err != nil {
 		sdkCtx.Logger().Error(
 			"failed to collect fees from consumers",
@@ -172,15 +172,14 @@ func (am AppModule) BeginBlock(ctx context.Context) error {
 	}
 	writeFees()
 
-	// Distribute collected fees to validators in a separate cached context so
-	// distribution rollback does not undo the already-committed collection/debt state.
+	// Distribute all currently available provider-held fees in a separate cached context
+	// so distribution rollback does not undo the already-committed collection/debt state.
 	distributionCtx, writeDistribution := sdkCtx.CacheContext()
-	if err := am.keeper.DistributeFeesToValidators(distributionCtx, collectedFees); err != nil {
+	if err := am.keeper.DistributeFeesToValidators(distributionCtx); err != nil {
 		sdkCtx.Logger().Error(
 			"failed to distribute collected fees to validators",
 			"err", err,
 			"height", sdkCtx.BlockHeight(),
-			"collected_fees", collectedFees.String(),
 		)
 		// Do not write cached changes; effectively roll back distribution only.
 		return nil
