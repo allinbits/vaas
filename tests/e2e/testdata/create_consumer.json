@@ -17,17 +17,5 @@
     "vaas_timeout_period": 2419200000000000,
     "historical_entries": 10000,
     "connection_id": ""
-  },
-  "infraction_parameters": {
-    "double_sign": {
-      "slash_fraction": "0.05",
-      "jail_duration": 9223372036854775807,
-      "tombstone": true
-    },
-    "downtime": {
-      "slash_fraction": "0.0001",
-      "jail_duration": 600000000000,
-      "tombstone": false
-    }
   }
 }
