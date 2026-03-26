@@ -1,6 +1,9 @@
 package provider
 
 import (
+	"bytes"
+	"strconv"
+
 	"github.com/allinbits/vaas/x/vaas/provider/keeper"
 	providertypes "github.com/allinbits/vaas/x/vaas/provider/types"
 	vaastypes "github.com/allinbits/vaas/x/vaas/types"
@@ -105,7 +108,7 @@ func (im IBCModuleV2) OnTimeoutPacket(
 			vaastypes.EventTypeTimeout,
 			sdk.NewAttribute(sdk.AttributeKeyModule, providertypes.ModuleName),
 			sdk.NewAttribute("source_client", sourceClient),
-			sdk.NewAttribute("sequence", string(rune(sequence))),
+			sdk.NewAttribute("sequence", strconv.FormatUint(sequence, 10)),
 		),
 	)
 
@@ -122,12 +125,9 @@ func (im IBCModuleV2) OnAcknowledgementPacket(
 	payload channeltypesv2.Payload,
 	relayer sdk.AccAddress,
 ) error {
-	// Parse the acknowledgement to check for errors
-	// In v2, acknowledgements are in a different format
-	// For now, we check if the first byte indicates success (1) or failure (0)
 	ackError := ""
-	if len(acknowledgement) > 0 && acknowledgement[0] == 0 {
-		ackError = string(acknowledgement[1:])
+	if bytes.Equal(acknowledgement, channeltypesv2.ErrorAcknowledgement[:]) {
+		ackError = "error acknowledgement received"
 	}
 
 	if err := im.keeper.OnAcknowledgementPacketV2(ctx, sourceClient, ackError); err != nil {
@@ -139,7 +139,7 @@ func (im IBCModuleV2) OnAcknowledgementPacket(
 			vaastypes.EventTypePacket,
 			sdk.NewAttribute(sdk.AttributeKeyModule, providertypes.ModuleName),
 			sdk.NewAttribute("source_client", sourceClient),
-			sdk.NewAttribute("sequence", string(rune(sequence))),
+			sdk.NewAttribute("sequence", strconv.FormatUint(sequence, 10)),
 		),
 	)
 
