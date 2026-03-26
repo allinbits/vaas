@@ -185,6 +185,10 @@ func (k msgServer) CreateConsumer(goCtx context.Context, msg *types.MsgCreateCon
 	consumerId := k.Keeper.FetchAndIncrementConsumerId(ctx)
 
 	k.Keeper.SetConsumerOwnerAddress(ctx, consumerId, msg.Submitter)
+	if k.Keeper.ChainIdInUse(ctx, msg.ChainId) {
+		return nil, errorsmod.Wrapf(types.ErrDuplicateChainId,
+			"chain ID %s is already registered", msg.ChainId)
+	}
 	k.Keeper.SetConsumerChainId(ctx, consumerId, msg.ChainId)
 	k.Keeper.SetConsumerPhase(ctx, consumerId, types.CONSUMER_PHASE_REGISTERED)
 

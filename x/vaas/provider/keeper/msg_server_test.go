@@ -38,14 +38,14 @@ func TestCreateConsumer(t *testing.T) {
 	phase := providerKeeper.GetConsumerPhase(ctx, "0")
 	require.Equal(t, providertypes.CONSUMER_PHASE_REGISTERED, phase)
 
-	// Create another consumer
+	// Create another consumer with a different chain id
 	consumerMetadata = providertypes.ConsumerMetadata{
 		Name:        "chain name",
 		Description: "description2",
 	}
 	response, err = msgServer.CreateConsumer(ctx,
 		&providertypes.MsgCreateConsumer{
-			Submitter: "submitter2", ChainId: "chainId", Metadata: consumerMetadata,
+			Submitter: "submitter2", ChainId: "chainId2", Metadata: consumerMetadata,
 			InitializationParameters: &providertypes.ConsumerInitializationParameters{},
 		})
 	require.NoError(t, err)
@@ -59,6 +59,36 @@ func TestCreateConsumer(t *testing.T) {
 	require.Equal(t, "submitter2", ownerAddress)
 	phase = providerKeeper.GetConsumerPhase(ctx, "1")
 	require.Equal(t, providertypes.CONSUMER_PHASE_REGISTERED, phase)
+}
+
+func TestCreateConsumerDuplicateChainId(t *testing.T) {
+	providerKeeper, ctx, ctrl, _ := testkeeper.GetProviderKeeperAndCtx(t, testkeeper.NewInMemKeeperParams(t))
+	defer ctrl.Finish()
+
+	msgServer := providerkeeper.NewMsgServerImpl(&providerKeeper)
+
+	consumerMetadata := providertypes.ConsumerMetadata{
+		Name:        "chain name",
+		Description: "description",
+	}
+
+	// Register a consumer with chainId "duplicateChainId"
+	response, err := msgServer.CreateConsumer(ctx,
+		&providertypes.MsgCreateConsumer{
+			Submitter: "submitter1", ChainId: "duplicateChainId", Metadata: consumerMetadata,
+			InitializationParameters: &providertypes.ConsumerInitializationParameters{},
+		})
+	require.NoError(t, err)
+	require.Equal(t, "0", response.ConsumerId)
+
+	// Attempt to register another consumer with the same chainId
+	_, err = msgServer.CreateConsumer(ctx,
+		&providertypes.MsgCreateConsumer{
+			Submitter: "submitter2", ChainId: "duplicateChainId", Metadata: consumerMetadata,
+			InitializationParameters: &providertypes.ConsumerInitializationParameters{},
+		})
+	require.Error(t, err)
+	require.ErrorIs(t, err, providertypes.ErrDuplicateChainId)
 }
 
 func TestUpdateConsumer(t *testing.T) {
