@@ -55,6 +55,14 @@ func (im IBCModuleV2) OnSendPacket(
 		return errorsmod.Wrapf(sdkerrors.ErrInvalidRequest,
 			"invalid destination port: expected %s, got %s", vaastypes.ConsumerAppID, payload.DestinationPort)
 	}
+	if signer.String() != im.keeper.GetAuthority() {
+		return errorsmod.Wrapf(
+			sdkerrors.ErrUnauthorized,
+			"signer %s is different from authority %s",
+			signer.String(),
+			im.keeper.GetAuthority(),
+		)
+	}
 
 	im.keeper.Logger(ctx).Debug("OnSendPacket (v2)",
 		"sourceClient", sourceClient,
