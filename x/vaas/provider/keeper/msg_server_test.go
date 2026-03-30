@@ -162,3 +162,50 @@ func TestUpdateConsumer(t *testing.T) {
 	require.NoError(t, err)
 	require.Equal(t, expectedConsumerMetadata, actualConsumerMetadata)
 }
+
+func TestUpdateConsumerDuplicateChainId(t *testing.T) {
+	providerKeeper, ctx, ctrl, _ := testkeeper.GetProviderKeeperAndCtx(t, testkeeper.NewInMemKeeperParams(t))
+	defer ctrl.Finish()
+
+	msgServer := providerkeeper.NewMsgServerImpl(&providerKeeper)
+
+	// create a chain that register chainId-1
+	chainId1 := "chainId-1"
+	createConsumerResponse, err := msgServer.CreateConsumer(ctx,
+		&providertypes.MsgCreateConsumer{
+			Submitter: "submitter", ChainId: chainId1,
+			Metadata: providertypes.ConsumerMetadata{
+				Name:        "name",
+				Description: "description",
+				Metadata:    "metadata",
+			},
+		})
+	require.NoError(t, err)
+
+	// create a chain that register chainId-2
+	chainId2 := "chainId2-1"
+	createConsumerResponse, err = msgServer.CreateConsumer(ctx,
+		&providertypes.MsgCreateConsumer{
+			Submitter: "submitter", ChainId: chainId2,
+			Metadata: providertypes.ConsumerMetadata{
+				Name:        "name",
+				Description: "description",
+				Metadata:    "metadata",
+			},
+		})
+	require.NoError(t, err)
+	consumerId2 := createConsumerResponse.ConsumerId
+
+	// assert that comsumerId2 cannot use a registered chain id
+	expectedChainId := "chainId-1"
+	_, err = msgServer.UpdateConsumer(ctx,
+		&providertypes.MsgUpdateConsumer{
+			Owner: "submitter", ConsumerId: consumerId2,
+			NewChainId: expectedChainId,
+		})
+	require.Error(t, err)
+	require.ErrorIs(t, err, providertypes.ErrDuplicateChainId)
+	actualChainId, err := providerKeeper.GetConsumerChainId(ctx, consumerId2)
+	require.NoError(t, err)
+	require.Equal(t, chainId2, actualChainId)
+}
