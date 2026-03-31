@@ -132,7 +132,7 @@ func (am AppModule) OnChanOpenAck(
 			"provider channel: %s already established", providerChannel)
 	}
 
-	// Validate counterparty version directly (HandshakeMetadata removed in IBC v2 migration)
+	// Validate counterparty version directly.
 	if counterpartyMetadata != types.Version {
 		return errorsmod.Wrapf(types.ErrInvalidVersion,
 			"invalid counterparty version: %s, expected %s", counterpartyMetadata, types.Version)

@@ -158,6 +158,7 @@ func NewNonZeroKeeper(cdc codec.BinaryCodec, storeService corestoretypes.KVStore
 		HeightValsetUpdateIDs: collections.NewMap(sb, types.HeightValsetUpdateIDPrefix, "height_valset_update_ids", collections.Uint64Key, collections.Uint64Value),
 		CrossChainValidators:  collections.NewMap(sb, types.CrossChainValidatorPrefix, "cross_chain_validators", collections.BytesKey, codec.CollValue[types.CrossChainValidator](cdc)),
 		HistoricalInfos:       collections.NewMap(sb, types.HistoricalInfoPrefix, "historical_infos", collections.Int64Key, codec.CollValue[stakingtypes.HistoricalInfo](cdc)),
+		HighestValsetUpdateID: collections.NewItem(sb, types.HighestValsetUpdateIDPrefix, "highest_valset_update_id", collections.Uint64Value),
 	}
 
 	schema, err := sb.Build()
@@ -509,12 +510,15 @@ func (k Keeper) SetHighestValsetUpdateID(ctx context.Context, id uint64) error {
 }
 
 // GetHighestValsetUpdateID gets the highest valset update ID that has been processed.
-// Returns 0 if not set. Used for IBC v2 out-of-order packet handling.
-func (k Keeper) GetHighestValsetUpdateID(ctx context.Context) (uint64, error) {
+// Returns (0, false) if not set, indicating no packets have been processed yet.
+func (k Keeper) GetHighestValsetUpdateID(ctx context.Context) (uint64, bool, error) {
 	val, err := k.HighestValsetUpdateID.Get(ctx)
-	if err != nil && !errors.Is(err, collections.ErrNotFound) {
-		return 0, err
+	if err != nil {
+		if errors.Is(err, collections.ErrNotFound) {
+			return 0, false, nil
+		}
+		return 0, false, err
 	}
 
-	return val, nil
+	return val, true, nil
 }

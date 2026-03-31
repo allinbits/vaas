@@ -181,7 +181,7 @@ func TestOnRecvVSCPacketV2(t *testing.T) {
 	require.Equal(t, 2, len(pendingChanges.ValidatorUpdates))
 
 	// Verify highest valset update ID
-	highestID, err := consumerKeeper.GetHighestValsetUpdateID(ctx)
+	highestID, _, err := consumerKeeper.GetHighestValsetUpdateID(ctx)
 	require.NoError(t, err)
 	require.Equal(t, uint64(1), highestID)
 
@@ -190,7 +190,7 @@ func TestOnRecvVSCPacketV2(t *testing.T) {
 	err = consumerKeeper.OnRecvVSCPacketV2(ctx, providerClientID, pd2)
 	require.NoError(t, err, "second packet should succeed")
 
-	highestID, err = consumerKeeper.GetHighestValsetUpdateID(ctx)
+	highestID, _, err = consumerKeeper.GetHighestValsetUpdateID(ctx)
 	require.NoError(t, err)
 	require.Equal(t, uint64(2), highestID)
 
@@ -201,7 +201,7 @@ func TestOnRecvVSCPacketV2(t *testing.T) {
 	require.Error(t, err, "packet from different client should fail")
 
 	// Highest ID should not have changed
-	highestID, err = consumerKeeper.GetHighestValsetUpdateID(ctx)
+	highestID, _, err = consumerKeeper.GetHighestValsetUpdateID(ctx)
 	require.NoError(t, err)
 	require.Equal(t, uint64(2), highestID)
 }
@@ -225,7 +225,7 @@ func TestOnRecvVSCPacketV2OutOfOrder(t *testing.T) {
 	err = consumerKeeper.OnRecvVSCPacketV2(ctx, providerClientID, pd5)
 	require.NoError(t, err)
 
-	highestID, err := consumerKeeper.GetHighestValsetUpdateID(ctx)
+	highestID, _, err := consumerKeeper.GetHighestValsetUpdateID(ctx)
 	require.NoError(t, err)
 	require.Equal(t, uint64(5), highestID)
 
@@ -239,7 +239,7 @@ func TestOnRecvVSCPacketV2OutOfOrder(t *testing.T) {
 	require.NoError(t, err, "out-of-order packet should be acknowledged without error")
 
 	// Highest ID should still be 5
-	highestID, err = consumerKeeper.GetHighestValsetUpdateID(ctx)
+	highestID, _, err = consumerKeeper.GetHighestValsetUpdateID(ctx)
 	require.NoError(t, err)
 	require.Equal(t, uint64(5), highestID)
 
@@ -254,7 +254,7 @@ func TestOnRecvVSCPacketV2OutOfOrder(t *testing.T) {
 	require.NoError(t, err, "duplicate packet should be acknowledged without error")
 
 	// Highest ID should still be 5
-	highestID, err = consumerKeeper.GetHighestValsetUpdateID(ctx)
+	highestID, _, err = consumerKeeper.GetHighestValsetUpdateID(ctx)
 	require.NoError(t, err)
 	require.Equal(t, uint64(5), highestID)
 
@@ -264,7 +264,7 @@ func TestOnRecvVSCPacketV2OutOfOrder(t *testing.T) {
 	err = consumerKeeper.OnRecvVSCPacketV2(ctx, providerClientID, pd6)
 	require.NoError(t, err)
 
-	highestID, err = consumerKeeper.GetHighestValsetUpdateID(ctx)
+	highestID, _, err = consumerKeeper.GetHighestValsetUpdateID(ctx)
 	require.NoError(t, err)
 	require.Equal(t, uint64(6), highestID)
 
@@ -323,4 +323,35 @@ func TestOnRecvVSCPacketDuplicateUpdates(t *testing.T) {
 	// Confirm that only the latest update is kept, duplicate update is discarded
 	require.Equal(t, 1, len(gotPendingChanges.ValidatorUpdates))
 	require.Equal(t, valUpdates[1], gotPendingChanges.ValidatorUpdates[0]) // Only latest update should be kept
+}
+
+// TestOnRecvVSCPacketV2FirstPacketNotDropped tests that the first VSC packet is
+// correctly processed when HighestValsetUpdateID has not been set yet.
+func TestOnRecvVSCPacketV2FirstPacketNotDropped(t *testing.T) {
+	providerClientID := "07-tendermint-0"
+
+	pk1, err := cryptocodec.ToCmtProtoPublicKey(ed25519.GenPrivKey().PubKey())
+	require.NoError(t, err)
+
+	consumerKeeper, ctx, ctrl, _ := testkeeper.GetConsumerKeeperAndCtx(t, testkeeper.NewInMemKeeperParams(t))
+	defer ctrl.Finish()
+
+	_, found, err := consumerKeeper.GetHighestValsetUpdateID(ctx)
+	require.NoError(t, err)
+	require.False(t, found, "unset HighestValsetUpdateID should return found=false")
+
+	changes := []abci.ValidatorUpdate{{PubKey: pk1, Power: 100}}
+	pd1 := types.NewValidatorSetChangePacketData(changes, 1)
+
+	err = consumerKeeper.OnRecvVSCPacketV2(ctx, providerClientID, pd1)
+	require.NoError(t, err, "first packet should be processed when no highest ID is set")
+
+	pendingChanges, ok := consumerKeeper.GetPendingChanges(ctx)
+	require.True(t, ok)
+	require.Equal(t, int64(100), pendingChanges.ValidatorUpdates[0].Power)
+
+	highestID, found, err := consumerKeeper.GetHighestValsetUpdateID(ctx)
+	require.NoError(t, err)
+	require.True(t, found)
+	require.Equal(t, uint64(1), highestID)
 }
