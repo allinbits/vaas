@@ -1,3 +1,6 @@
+# command to run dependency utilities
+rundep=go run -modfile devdeps/go.mod
+
 # Note: If you see "sonic only supports go1.17~1.23" warnings, either:
 # - Use Go 1.23: brew install go@1.23
 # - Or ignore it - the warning is harmless, sonic falls back to stdlib JSON
@@ -12,7 +15,7 @@ build:
 test:
 	go test -timeout=25m -v $(shell go list ./... | grep -v 'github.com/allinbits/vaas/tests/e2e')
 
-lint_cmd=go tool github.com/golangci/golangci-lint/cmd/golangci-lint
+lint_cmd=$(rundep) github.com/golangci/golangci-lint/cmd/golangci-lint
 lint:
 	$(lint_cmd) run ./...
 
@@ -20,7 +23,7 @@ lint-fix:
 	$(lint_cmd) run --fix --out-format=tab --issues-exit-code=0
 
 vulncheck:
-	go tool golang.org/x/vuln/cmd/govulncheck ./...
+	$(rundep) golang.org/x/vuln/cmd/govulncheck ./...
 
 mocks-gen:
 	go run go.uber.org/mock/mockgen -package=keeper -destination=testutil/keeper/mocks.go -source=x/vaas/types/expected_keepers.go

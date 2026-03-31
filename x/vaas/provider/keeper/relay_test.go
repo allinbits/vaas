@@ -4,8 +4,8 @@ import (
 	"testing"
 	"time"
 
-	"github.com/golang/mock/gomock"
 	"github.com/stretchr/testify/require"
+	"go.uber.org/mock/gomock"
 
 	abci "github.com/cometbft/cometbft/abci/types"
 
@@ -199,11 +199,11 @@ func TestSendVSCPacketsToChainV2WithHandler(t *testing.T) {
 
 	// Expect SendPacket to be called twice (once for each pending packet)
 	mockHandler.EXPECT().SendPacket(
-		gomock.Any(), // ctx
-		clientId,     // sourceClient
+		gomock.Any(),            // ctx
+		clientId,                // sourceClient
 		vaastypes.ConsumerAppID, // destApp
-		gomock.Any(), // timeoutTimestamp
-		gomock.Any(), // data
+		gomock.Any(),            // timeoutTimestamp
+		gomock.Any(),            // data
 	).Return(uint64(1), nil).Times(1)
 
 	mockHandler.EXPECT().SendPacket(
