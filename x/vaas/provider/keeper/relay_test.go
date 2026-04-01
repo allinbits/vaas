@@ -137,9 +137,9 @@ func TestClientIdToConsumerIdMapping(t *testing.T) {
 	require.False(t, found)
 }
 
-// TestSendVSCPacketsToChainV2NoHandler tests that SendVSCPacketsToChainV2 gracefully
+// TestSendVSCPacketsToChainNoHandler tests that SendVSCPacketsToChain gracefully
 // handles the case when no IBC packet handler is configured.
-func TestSendVSCPacketsToChainV2NoHandler(t *testing.T) {
+func TestSendVSCPacketsToChainNoHandler(t *testing.T) {
 	providerKeeper, ctx, ctrl, _ := testkeeper.GetProviderKeeperAndCtx(t, testkeeper.NewInMemKeeperParams(t))
 	defer ctrl.Finish()
 
@@ -156,9 +156,9 @@ func TestSendVSCPacketsToChainV2NoHandler(t *testing.T) {
 		ValsetUpdateId:   1,
 	})
 
-	// Without setting IBCPacketHandler, SendVSCPacketsToChainV2 should return nil
+	// Without setting IBCPacketHandler, SendVSCPacketsToChain should return nil
 	// and not send any packets (graceful no-op)
-	err := providerKeeper.SendVSCPacketsToChainV2(ctx, consumerId, clientId)
+	err := providerKeeper.SendVSCPacketsToChain(ctx, consumerId, clientId)
 	require.NoError(t, err)
 
 	// Pending packets should still be there since no handler was configured
@@ -166,8 +166,8 @@ func TestSendVSCPacketsToChainV2NoHandler(t *testing.T) {
 	require.Len(t, pending, 1)
 }
 
-// TestSendVSCPacketsToChainV2WithHandler tests SendVSCPacketsToChainV2 with a mock handler.
-func TestSendVSCPacketsToChainV2WithHandler(t *testing.T) {
+// TestSendVSCPacketsToChainWithHandler tests SendVSCPacketsToChain with a mock handler.
+func TestSendVSCPacketsToChainWithHandler(t *testing.T) {
 	providerKeeper, ctx, ctrl, _ := testkeeper.GetProviderKeeperAndCtx(t, testkeeper.NewInMemKeeperParams(t))
 	defer ctrl.Finish()
 
@@ -215,7 +215,7 @@ func TestSendVSCPacketsToChainV2WithHandler(t *testing.T) {
 	).Return(uint64(2), nil).Times(1)
 
 	// Send packets
-	err := providerKeeper.SendVSCPacketsToChainV2(ctx, consumerId, clientId)
+	err := providerKeeper.SendVSCPacketsToChain(ctx, consumerId, clientId)
 	require.NoError(t, err)
 
 	// Pending packets should be deleted after successful send

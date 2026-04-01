@@ -365,12 +365,11 @@ func New(
 	// create static IBC router, add transfer route, then set and seal it
 	ibcRouter := porttypes.NewRouter()
 	ibcRouter.AddRoute(ibctransfertypes.ModuleName, ibcmodule)
-	ibcRouter.AddRoute(vaastypes.ConsumerPortID, consumerModule)
 	app.IBCKeeper.SetRouter(ibcRouter)
 
 	ibcRouterV2 := ibcapi.NewRouter()
 	ibcRouterV2.AddRoute(ibctransfertypes.PortID, transferv2.NewIBCModule(app.TransferKeeper))
-	ibcRouterV2.AddRoute(vaastypes.ConsumerAppID, ibcconsumer.NewIBCModuleV2(&app.ConsumerKeeper))
+	ibcRouterV2.AddRoute(vaastypes.ConsumerAppID, ibcconsumer.NewIBCModule(&app.ConsumerKeeper))
 	app.IBCKeeper.SetRouterV2(ibcRouterV2)
 
 	tmLightClientModule := ibctm.NewLightClientModule(appCodec, app.IBCKeeper.ClientKeeper.GetStoreProvider())

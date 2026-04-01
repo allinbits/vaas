@@ -15,11 +15,11 @@ import (
 	channeltypesv2 "github.com/cosmos/ibc-go/v10/modules/core/04-channel/v2/types"
 )
 
-func TestIBCModuleV2OnSendPacketRequiresAuthority(t *testing.T) {
+func TestIBCModuleOnSendPacketRequiresAuthority(t *testing.T) {
 	providerKeeper, ctx, ctrl, _ := testkeeper.GetProviderKeeperAndCtx(t, testkeeper.NewInMemKeeperParams(t))
 	defer ctrl.Finish()
 
-	module := provider.NewIBCModuleV2(&providerKeeper)
+	module := provider.NewIBCModule(&providerKeeper)
 	payload := channeltypesv2.Payload{
 		SourcePort:      vaastypes.ProviderAppID,
 		DestinationPort: vaastypes.ConsumerAppID,
@@ -34,7 +34,7 @@ func TestIBCModuleV2OnSendPacketRequiresAuthority(t *testing.T) {
 	require.ErrorContains(t, err, "different from authority")
 }
 
-func TestIBCModuleV2OnAcknowledgementPacketHandlesErrorSentinel(t *testing.T) {
+func TestIBCModuleOnAcknowledgementPacketHandlesErrorSentinel(t *testing.T) {
 	providerKeeper, ctx, ctrl, mocks := testkeeper.GetProviderKeeperAndCtx(t, testkeeper.NewInMemKeeperParams(t))
 	defer ctrl.Finish()
 
@@ -47,7 +47,7 @@ func TestIBCModuleV2OnAcknowledgementPacketHandlesErrorSentinel(t *testing.T) {
 
 	mocks.MockStakingKeeper.EXPECT().UnbondingTime(ctx).Return(21*24*time.Hour, nil).Times(1)
 
-	module := provider.NewIBCModuleV2(&providerKeeper)
+	module := provider.NewIBCModule(&providerKeeper)
 	err := module.OnAcknowledgementPacket(
 		ctx,
 		clientID,
@@ -62,7 +62,7 @@ func TestIBCModuleV2OnAcknowledgementPacketHandlesErrorSentinel(t *testing.T) {
 	require.Equal(t, "65", findEventAttributeValue(ctx.EventManager().Events(), vaastypes.EventTypePacket, "sequence"))
 }
 
-func TestIBCModuleV2OnTimeoutPacketFormatsSequence(t *testing.T) {
+func TestIBCModuleOnTimeoutPacketFormatsSequence(t *testing.T) {
 	providerKeeper, ctx, ctrl, mocks := testkeeper.GetProviderKeeperAndCtx(t, testkeeper.NewInMemKeeperParams(t))
 	defer ctrl.Finish()
 
@@ -75,7 +75,7 @@ func TestIBCModuleV2OnTimeoutPacketFormatsSequence(t *testing.T) {
 
 	mocks.MockStakingKeeper.EXPECT().UnbondingTime(ctx).Return(21*24*time.Hour, nil).Times(1)
 
-	module := provider.NewIBCModuleV2(&providerKeeper)
+	module := provider.NewIBCModule(&providerKeeper)
 	err := module.OnTimeoutPacket(
 		ctx,
 		clientID,

@@ -39,11 +39,5 @@ func (k Keeper) QueryProviderInfo(c context.Context, //nolint:golint
 		return nil, status.Errorf(codes.InvalidArgument, "empty request")
 	}
 
-	// Try IBC v2 (client-based) first
-	if resp, err := k.GetProviderInfoV2(ctx); err == nil {
-		return resp, nil
-	}
-
-	// Fall back to IBC v1 (channel-based) for backward compatibility
-	return k.GetProviderInfo(ctx)
+	return k.GetProviderInfoV2(ctx)
 }

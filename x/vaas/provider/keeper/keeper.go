@@ -5,23 +5,17 @@ import (
 	"fmt"
 	"time"
 
-	consumertypes "github.com/allinbits/vaas/x/vaas/consumer/types"
 	"github.com/allinbits/vaas/x/vaas/provider/types"
 	vaastypes "github.com/allinbits/vaas/x/vaas/types"
 
 	tmprotocrypto "github.com/cometbft/cometbft/proto/tendermint/crypto"
 
-	clienttypes "github.com/cosmos/ibc-go/v10/modules/core/02-client/types"
-	conntypes "github.com/cosmos/ibc-go/v10/modules/core/03-connection/types"
-	channeltypes "github.com/cosmos/ibc-go/v10/modules/core/04-channel/types"
 	ibchost "github.com/cosmos/ibc-go/v10/modules/core/exported"
-	ibctmtypes "github.com/cosmos/ibc-go/v10/modules/light-clients/07-tendermint"
 
 	"cosmossdk.io/collections"
 	"cosmossdk.io/collections/indexes"
 	addresscodec "cosmossdk.io/core/address"
 	corestoretypes "cosmossdk.io/core/store"
-	errorsmod "cosmossdk.io/errors"
 	"cosmossdk.io/log"
 
 	"github.com/cosmos/cosmos-sdk/codec"
@@ -377,113 +371,6 @@ func (k Keeper) DeleteConsumerGenesis(ctx context.Context, consumerId string) {
 	if err := k.ConsumerGenesis.Remove(ctx, consumerId); err != nil {
 		panic(fmt.Errorf("failed to delete consumer genesis: %w", err))
 	}
-}
-
-// VerifyConsumerChain verifies that the chain trying to connect on the channel handshake
-// is the expected consumer chain.
-func (k Keeper) VerifyConsumerChain(ctx sdk.Context, channelID string, connectionHops []string) error {
-	if len(connectionHops) != 1 {
-		return errorsmod.Wrap(channeltypes.ErrTooManyConnectionHops, "must have direct connection to provider chain")
-	}
-	connectionID := connectionHops[0]
-	clientId, _, err := k.getUnderlyingClient(ctx, connectionID)
-	if err != nil {
-		return err
-	}
-
-	consumerId, found := k.GetClientIdToConsumerId(ctx, clientId)
-	if !found {
-		return errorsmod.Wrapf(vaastypes.ErrConsumerChainNotFound, "cannot find consumer id associated with client id: %s", clientId)
-	}
-	ccvClientId, found := k.GetConsumerClientId(ctx, consumerId)
-	if !found {
-		return errorsmod.Wrapf(vaastypes.ErrClientNotFound, "cannot find client for consumer chain %s", consumerId)
-	}
-	if ccvClientId != clientId {
-		return errorsmod.Wrapf(types.ErrInvalidConsumerClient, "CCV channel must be built on top of CCV client. expected %s, got %s", ccvClientId, clientId)
-	}
-
-	// Verify that there isn't already a CCV channel for the consumer chain
-	if prevChannel, ok := k.GetConsumerIdToChannelId(ctx, consumerId); ok {
-		return errorsmod.Wrapf(vaastypes.ErrDuplicateChannel, "CCV channel with ID: %s already created for consumer chain %s", prevChannel, consumerId)
-	}
-	return nil
-}
-
-// SetConsumerChain ensures that the consumer chain has not already been
-// set by a different channel, and then sets the consumer chain mappings
-// in keeper, and set the channel status to validating.
-func (k Keeper) SetConsumerChain(ctx sdk.Context, channelID string) error {
-	channel, ok := k.channelKeeper.GetChannel(ctx, vaastypes.ProviderPortID, channelID)
-	if !ok {
-		return errorsmod.Wrapf(channeltypes.ErrChannelNotFound, "channel not found for channel ID: %s", channelID)
-	}
-	if len(channel.ConnectionHops) != 1 {
-		return errorsmod.Wrap(channeltypes.ErrTooManyConnectionHops, "must have direct connection to consumer chain")
-	}
-	connectionID := channel.ConnectionHops[0]
-	clientID, tmClient, err := k.getUnderlyingClient(ctx, connectionID)
-	if err != nil {
-		return err
-	}
-	consumerId, found := k.GetClientIdToConsumerId(ctx, clientID)
-	if !found {
-		return errorsmod.Wrapf(types.ErrNoConsumerId, "cannot find a consumer chain associated for this client: %s", clientID)
-	}
-	// Verify that there isn't already a CCV channel for the consumer chain
-	chainID := tmClient.ChainId
-	if prevChannelID, ok := k.GetConsumerIdToChannelId(ctx, consumerId); ok {
-		return errorsmod.Wrapf(vaastypes.ErrDuplicateChannel, "CCV channel with ID: %s already created for consumer chain with id %s", prevChannelID, consumerId)
-	}
-
-	// the CCV channel is established:
-	// - set channel mappings
-	k.SetConsumerIdToChannelId(ctx, consumerId, channelID)
-	k.SetChannelToConsumerId(ctx, channelID, consumerId)
-	// - set current block height for the consumer chain initialization
-	k.SetInitChainHeight(ctx, consumerId, uint64(ctx.BlockHeight()))
-
-	// emit event on successful addition
-	ctx.EventManager().EmitEvent(
-		sdk.NewEvent(
-			vaastypes.EventTypeChannelEstablished,
-			sdk.NewAttribute(sdk.AttributeKeyModule, consumertypes.ModuleName),
-			sdk.NewAttribute(types.AttributeConsumerId, consumerId),
-			sdk.NewAttribute(types.AttributeConsumerChainId, chainID),
-			sdk.NewAttribute(conntypes.AttributeKeyClientID, clientID),
-			sdk.NewAttribute(channeltypes.AttributeKeyChannelID, channelID),
-			sdk.NewAttribute(conntypes.AttributeKeyConnectionID, connectionID),
-		),
-	)
-	return nil
-}
-
-// Retrieves the underlying client state corresponding to a connection ID.
-func (k Keeper) getUnderlyingClient(ctx sdk.Context, connectionID string) (
-	clientID string, tmClient *ibctmtypes.ClientState, err error,
-) {
-	conn, ok := k.connectionKeeper.GetConnection(ctx, connectionID)
-	if !ok {
-		return "", nil, errorsmod.Wrapf(conntypes.ErrConnectionNotFound,
-			"connection not found for connection ID: %s", connectionID)
-	}
-	clientID = conn.ClientId
-	clientState, ok := k.clientKeeper.GetClientState(ctx, clientID)
-	if !ok {
-		return "", nil, errorsmod.Wrapf(clienttypes.ErrClientNotFound,
-			"client not found for client ID: %s", conn.ClientId)
-	}
-	tmClient, ok = clientState.(*ibctmtypes.ClientState)
-	if !ok {
-		return "", nil, errorsmod.Wrapf(clienttypes.ErrInvalidClientType,
-			"invalid client type. expected %s, got %s", ibchost.Tendermint, clientState.ClientType())
-	}
-	return clientID, tmClient, nil
-}
-
-// chanCloseInit defines a wrapper function for the channel Keeper's function
-func (k Keeper) chanCloseInit(ctx sdk.Context, channelID string) error {
-	return k.channelKeeper.ChanCloseInit(ctx, vaastypes.ProviderPortID, channelID)
 }
 
 func (k Keeper) IncrementValidatorSetUpdateId(ctx context.Context) {

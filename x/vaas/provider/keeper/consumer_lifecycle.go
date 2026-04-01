@@ -13,7 +13,6 @@ import (
 
 	clienttypes "github.com/cosmos/ibc-go/v10/modules/core/02-client/types"
 	conntypes "github.com/cosmos/ibc-go/v10/modules/core/03-connection/types"
-	channeltypes "github.com/cosmos/ibc-go/v10/modules/core/04-channel/types"
 	commitmenttypes "github.com/cosmos/ibc-go/v10/modules/core/23-commitment/types"
 	ibchost "github.com/cosmos/ibc-go/v10/modules/core/exported"
 	ibctmtypes "github.com/cosmos/ibc-go/v10/modules/light-clients/07-tendermint"
@@ -617,19 +616,6 @@ func (k Keeper) DeleteConsumerChain(ctx sdk.Context, consumerId string) (err err
 
 	// close channel and delete the mappings between chain ID and channel ID
 	if channelID, found := k.GetConsumerIdToChannelId(ctx, consumerId); found {
-		// Close the channel for the given channel ID on the condition
-		// that the channel exists and isn't already in the CLOSED state
-		channel, found := k.channelKeeper.GetChannel(ctx, vaastypes.ProviderPortID, channelID)
-		if found && channel.State != channeltypes.CLOSED {
-			err := k.chanCloseInit(ctx, channelID)
-			if err != nil {
-				k.Logger(ctx).Error("channel to consumer chain could not be closed",
-					"consumerId", consumerId,
-					"channelID", channelID,
-					"error", err.Error(),
-				)
-			}
-		}
 		k.DeleteConsumerIdToChannelId(ctx, consumerId)
 		k.DeleteChannelIdToConsumerId(ctx, channelID)
 	}

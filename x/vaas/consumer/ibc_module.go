@@ -3,15 +3,13 @@ package consumer
 import (
 	"fmt"
 	"strconv"
-	"strings"
 
 	"github.com/allinbits/vaas/x/vaas/consumer/keeper"
 	consumertypes "github.com/allinbits/vaas/x/vaas/consumer/types"
-	"github.com/allinbits/vaas/x/vaas/types"
+	vaastypes "github.com/allinbits/vaas/x/vaas/types"
 
-	channeltypes "github.com/cosmos/ibc-go/v10/modules/core/04-channel/types"
-	porttypes "github.com/cosmos/ibc-go/v10/modules/core/05-port/types"
-	ibcexported "github.com/cosmos/ibc-go/v10/modules/core/exported"
+	channeltypesv2 "github.com/cosmos/ibc-go/v10/modules/core/04-channel/v2/types"
+	"github.com/cosmos/ibc-go/v10/modules/core/api"
 
 	errorsmod "cosmossdk.io/errors"
 
@@ -19,280 +17,128 @@ import (
 	sdkerrors "github.com/cosmos/cosmos-sdk/types/errors"
 )
 
-// OnChanOpenInit implements the IBCModule interface
-// this function is called by the relayer.
-//
-// Deprecated: IBC v1 channel handshake callback. In IBC v2 (Eureka), channels are not
-// used - routing is done via client IDs. This callback is kept for backward compatibility
-// during the migration period and will be removed when IBC v2 is fully adopted.
-func (am AppModule) OnChanOpenInit(
-	ctx sdk.Context,
-	order channeltypes.Order,
-	connectionHops []string,
-	portID string,
-	channelID string,
-	counterparty channeltypes.Counterparty,
-	version string,
-) (string, error) {
-	// set to the default version if the provided version is empty according to the ICS26 spec
-	// https://github.com/cosmos/ibc/blob/main/spec/core/ics-026-routing-module/README.md#technical-specification
-	if strings.TrimSpace(version) == "" {
-		version = types.Version
-	}
+var _ api.IBCModule = (*IBCModule)(nil)
 
-	// ensure provider channel hasn't already been created
-	if providerChannel, ok := am.keeper.GetProviderChannel(ctx); ok {
-		return "", errorsmod.Wrapf(types.ErrDuplicateChannel,
-			"provider channel: %s already set", providerChannel)
-	}
-
-	// Validate parameters
-	if err := validateVAASChannelParams(
-		ctx, am.keeper, order, portID, version,
-	); err != nil {
-		return "", err
-	}
-
-	// ensure the counterparty port ID matches the expected provider port ID
-	if counterparty.PortId != types.ProviderPortID {
-		return "", errorsmod.Wrapf(porttypes.ErrInvalidPort,
-			"invalid counterparty port: %s, expected %s", counterparty.PortId, types.ProviderPortID)
-	}
-
-	if err := am.keeper.VerifyProviderChain(ctx, connectionHops); err != nil {
-		return "", err
-	}
-
-	return version, nil
+type IBCModule struct {
+	keeper *keeper.Keeper
 }
 
-// validateVAASChannelParams validates a VAAS channel
-//
-// Deprecated: IBC v1 channel validation. In IBC v2 (Eureka), channel validation is not
-// required as routing is done via client IDs. This function is kept for backward
-// compatibility during the migration period.
-func validateVAASChannelParams(
+func NewIBCModule(k *keeper.Keeper) IBCModule {
+	return IBCModule{keeper: k}
+}
+
+func (im IBCModule) OnSendPacket(
 	ctx sdk.Context,
-	keeper keeper.Keeper,
-	order channeltypes.Order,
-	portID string,
-	version string,
+	sourceClient string,
+	destinationClient string,
+	sequence uint64,
+	payload channeltypesv2.Payload,
+	signer sdk.AccAddress,
 ) error {
-	// Only ordered channels allowed
-	if order != channeltypes.ORDERED {
-		return errorsmod.Wrapf(channeltypes.ErrInvalidChannelOrdering, "expected %s channel, got %s ", channeltypes.ORDERED, order)
-	}
+	im.keeper.Logger(ctx).Error("consumer attempted to send packet",
+		"sourceClient", sourceClient,
+		"destinationClient", destinationClient,
+		"sequence", sequence,
+	)
 
-	// the port ID must match the port ID the VAAS module is bounded to
-	boundPort := keeper.GetPort(ctx)
-	if boundPort != portID {
-		return errorsmod.Wrapf(porttypes.ErrInvalidPort, "invalid port: %s, expected %s", portID, boundPort)
-	}
-
-	// the version must match the expected version
-	if version != types.Version {
-		return errorsmod.Wrapf(types.ErrInvalidVersion, "got %s, expected %s", version, types.Version)
-	}
-	return nil
+	return errorsmod.Wrap(sdkerrors.ErrInvalidRequest, "consumer does not send packets")
 }
 
-// OnChanOpenTry implements the IBCModule interface
-//
-// Deprecated: IBC v1 channel handshake callback. In IBC v2 (Eureka), channels are not
-// used - routing is done via client IDs. This callback is kept for backward compatibility
-// during the migration period and will be removed when IBC v2 is fully adopted.
-func (am AppModule) OnChanOpenTry(
+func (im IBCModule) OnRecvPacket(
 	ctx sdk.Context,
-	order channeltypes.Order,
-	connectionHops []string,
-	portID,
-	channelID string,
-	counterparty channeltypes.Counterparty,
-	counterpartyVersion string,
-) (string, error) {
-	return "", errorsmod.Wrap(types.ErrInvalidChannelFlow, "channel handshake must be initiated by consumer chain")
-}
+	sourceClient string,
+	destinationClient string,
+	sequence uint64,
+	payload channeltypesv2.Payload,
+	relayer sdk.AccAddress,
+) channeltypesv2.RecvPacketResult {
+	logger := im.keeper.Logger(ctx)
 
-// OnChanOpenAck implements the IBCModule interface
-// Note: Distribution transfer channel initialization has been removed.
-//
-// Deprecated: IBC v1 channel handshake callback. In IBC v2 (Eureka), channels are not
-// used - routing is done via client IDs. This callback is kept for backward compatibility
-// during the migration period and will be removed when IBC v2 is fully adopted.
-func (am AppModule) OnChanOpenAck(
-	ctx sdk.Context,
-	portID,
-	channelID string,
-	_ string, // Counter party channel ID is unused per spec
-	counterpartyMetadata string,
-) error {
-	// ensure provider channel has not already been created
-	if providerChannel, ok := am.keeper.GetProviderChannel(ctx); ok {
-		return errorsmod.Wrapf(types.ErrDuplicateChannel,
-			"provider channel: %s already established", providerChannel)
-	}
-
-	// Validate counterparty version directly.
-	if counterpartyMetadata != types.Version {
-		return errorsmod.Wrapf(types.ErrInvalidVersion,
-			"invalid counterparty version: %s, expected %s", counterpartyMetadata, types.Version)
-	}
-
-	return nil
-}
-
-// OnChanOpenConfirm implements the IBCModule interface
-//
-// Deprecated: IBC v1 channel handshake callback. In IBC v2 (Eureka), channels are not
-// used - routing is done via client IDs. This callback is kept for backward compatibility
-// during the migration period and will be removed when IBC v2 is fully adopted.
-func (am AppModule) OnChanOpenConfirm(
-	ctx sdk.Context,
-	portID,
-	channelID string,
-) error {
-	return errorsmod.Wrap(types.ErrInvalidChannelFlow, "channel handshake must be initiated by consumer chain")
-}
-
-// OnChanCloseInit implements the IBCModule interface
-//
-// Deprecated: IBC v1 channel close callback. In IBC v2 (Eureka), channels are not used.
-// This callback is kept for backward compatibility during the migration period.
-func (am AppModule) OnChanCloseInit(
-	ctx sdk.Context,
-	portID,
-	channelID string,
-) error {
-	// allow relayers to close duplicate OPEN channels, if the provider channel has already been established
-	if providerChannel, ok := am.keeper.GetProviderChannel(ctx); ok && providerChannel != channelID {
-		return nil
-	}
-	return errorsmod.Wrap(sdkerrors.ErrInvalidRequest, "user cannot close channel")
-}
-
-// OnChanCloseConfirm implements the IBCModule interface
-//
-// Deprecated: IBC v1 channel close callback. In IBC v2 (Eureka), channels are not used.
-// This callback is kept for backward compatibility during the migration period.
-func (am AppModule) OnChanCloseConfirm(
-	ctx sdk.Context,
-	portID,
-	channelID string,
-) error {
-	return nil
-}
-
-// OnRecvPacket implements the IBCModule interface. A successful acknowledgement
-// is returned if the packet data is successfully decoded and the receive application
-// logic returns without error.
-func (am AppModule) OnRecvPacket(
-	ctx sdk.Context,
-	_ string,
-	packet channeltypes.Packet,
-	_ sdk.AccAddress,
-) ibcexported.Acknowledgement {
-	logger := am.keeper.Logger(ctx)
-	ack := channeltypes.NewResultAcknowledgement([]byte{byte(1)})
-
-	var data types.ValidatorSetChangePacketData
-	var ackErr error
-	if err := types.ModuleCdc.UnmarshalJSON(packet.GetData(), &data); err != nil {
-		ackErr = errorsmod.Wrapf(sdkerrors.ErrInvalidType, "cannot unmarshal VSCPacket data")
-		logger.Error(fmt.Sprintf("%s sequence %d", ackErr.Error(), packet.Sequence))
-		ack = channeltypes.NewErrorAcknowledgement(ackErr)
-	}
-
-	// only attempt the application logic if the packet data
-	// was successfully decoded
-	if ack.Success() {
-		err := am.keeper.OnRecvVSCPacket(ctx, packet, data)
-		if err != nil {
-			ack = channeltypes.NewErrorAcknowledgement(err)
-			ackErr = err
-			logger.Error(fmt.Sprintf("%s sequence %d", ackErr.Error(), packet.Sequence))
-		} else {
-			logger.Info("successfully handled VSCPacket", "sequence", packet.Sequence)
+	if payload.DestinationPort != vaastypes.ConsumerAppID {
+		logger.Error("invalid destination port",
+			"expected", vaastypes.ConsumerAppID,
+			"got", payload.DestinationPort,
+		)
+		return channeltypesv2.RecvPacketResult{
+			Status: channeltypesv2.PacketStatus_Failure,
 		}
 	}
 
-	eventAttributes := []sdk.Attribute{
-		sdk.NewAttribute(sdk.AttributeKeyModule, types.ModuleName),
-		sdk.NewAttribute(types.AttributeValSetUpdateID, strconv.Itoa(int(data.ValsetUpdateId))),
-		sdk.NewAttribute(types.AttributeKeyAckSuccess, fmt.Sprintf("%t", ack.Success())),
+	var data vaastypes.ValidatorSetChangePacketData
+	if err := vaastypes.ModuleCdc.UnmarshalJSON(payload.Value, &data); err != nil {
+		ackErr := errorsmod.Wrapf(sdkerrors.ErrInvalidType, "cannot unmarshal VSCPacket data")
+		logger.Error(fmt.Sprintf("%s sequence %d", ackErr.Error(), sequence))
+		return channeltypesv2.RecvPacketResult{
+			Status: channeltypesv2.PacketStatus_Failure,
+		}
 	}
 
-	if ackErr != nil {
-		eventAttributes = append(eventAttributes, sdk.NewAttribute(types.AttributeKeyAckError, ackErr.Error()))
+	if err := im.keeper.OnRecvVSCPacketV2(ctx, sourceClient, data); err != nil {
+		logger.Error(fmt.Sprintf("%s sequence %d", err.Error(), sequence))
+		return channeltypesv2.RecvPacketResult{
+			Status: channeltypesv2.PacketStatus_Failure,
+		}
 	}
+
+	logger.Info("successfully handled VSCPacket",
+		"sequence", sequence,
+		"sourceClient", sourceClient,
+		"vscID", data.ValsetUpdateId,
+	)
 
 	ctx.EventManager().EmitEvent(
 		sdk.NewEvent(
-			types.EventTypePacket,
-			eventAttributes...,
+			vaastypes.EventTypePacket,
+			sdk.NewAttribute(sdk.AttributeKeyModule, vaastypes.ModuleName),
+			sdk.NewAttribute(vaastypes.AttributeValSetUpdateID, strconv.Itoa(int(data.ValsetUpdateId))),
+			sdk.NewAttribute(vaastypes.AttributeKeyAckSuccess, "true"),
+			sdk.NewAttribute("source_client", sourceClient),
 		),
 	)
 
-	// NOTE: acknowledgement will be written synchronously during IBC handler execution.
-	return ack
+	return channeltypesv2.RecvPacketResult{
+		Status:          channeltypesv2.PacketStatus_Success,
+		Acknowledgement: []byte{byte(1)},
+	}
 }
 
-// OnAcknowledgementPacket implements the IBCModule interface
-func (am AppModule) OnAcknowledgementPacket(
+func (im IBCModule) OnTimeoutPacket(
 	ctx sdk.Context,
-	_ string,
-	packet channeltypes.Packet,
-	acknowledgement []byte,
-	_ sdk.AccAddress,
+	sourceClient string,
+	destinationClient string,
+	sequence uint64,
+	payload channeltypesv2.Payload,
+	relayer sdk.AccAddress,
 ) error {
-	var ack channeltypes.Acknowledgement
-	if err := types.ModuleCdc.UnmarshalJSON(acknowledgement, &ack); err != nil {
-		return errorsmod.Wrapf(sdkerrors.ErrUnknownRequest, "cannot unmarshal consumer packet acknowledgement: %v", err)
-	}
-
-	if err := am.keeper.OnAcknowledgementPacket(ctx, packet, ack); err != nil {
-		return err
-	}
+	im.keeper.Logger(ctx).Error("unexpected timeout on consumer",
+		"sourceClient", sourceClient,
+		"sequence", sequence,
+	)
 
 	ctx.EventManager().EmitEvent(
 		sdk.NewEvent(
-			types.EventTypePacket,
+			vaastypes.EventTypeTimeout,
 			sdk.NewAttribute(sdk.AttributeKeyModule, consumertypes.ModuleName),
-			sdk.NewAttribute(types.AttributeKeyAck, ack.String()),
+			sdk.NewAttribute("source_client", sourceClient),
+			sdk.NewAttribute("sequence", strconv.FormatUint(sequence, 10)),
 		),
 	)
-	switch resp := ack.Response.(type) {
-	case *channeltypes.Acknowledgement_Result:
-		ctx.EventManager().EmitEvent(
-			sdk.NewEvent(
-				types.EventTypePacket,
-				sdk.NewAttribute(types.AttributeKeyAckSuccess, string(resp.Result)),
-			),
-		)
-	case *channeltypes.Acknowledgement_Error:
-		ctx.EventManager().EmitEvent(
-			sdk.NewEvent(
-				types.EventTypePacket,
-				sdk.NewAttribute(types.AttributeKeyAckError, resp.Error),
-			),
-		)
-	}
+
 	return nil
 }
 
-// OnTimeoutPacket implements the IBCModule interface
-// the CCV channel state is changed to CLOSED
-// by the IBC module as the channel is ORDERED
-func (am AppModule) OnTimeoutPacket(
+func (im IBCModule) OnAcknowledgementPacket(
 	ctx sdk.Context,
-	_ string,
-	packet channeltypes.Packet,
-	_ sdk.AccAddress,
+	sourceClient string,
+	destinationClient string,
+	sequence uint64,
+	acknowledgement []byte,
+	payload channeltypesv2.Payload,
+	relayer sdk.AccAddress,
 ) error {
-	ctx.EventManager().EmitEvent(
-		sdk.NewEvent(
-			types.EventTypeTimeout,
-			sdk.NewAttribute(sdk.AttributeKeyModule, consumertypes.ModuleName),
-		),
+	im.keeper.Logger(ctx).Error("unexpected acknowledgement on consumer",
+		"sourceClient", sourceClient,
+		"sequence", sequence,
 	)
 
 	return nil

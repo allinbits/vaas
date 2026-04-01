@@ -4,7 +4,6 @@ import (
 	"fmt"
 
 	"github.com/allinbits/vaas/x/vaas/provider/types"
-	vaastypes "github.com/allinbits/vaas/x/vaas/types"
 
 	abci "github.com/cometbft/cometbft/abci/types"
 
@@ -17,8 +16,6 @@ import (
 // is set for backward compatibility during the migration period. Consumer chain
 // initialization uses client IDs for routing instead of channels.
 func (k Keeper) InitGenesis(ctx sdk.Context, genState *types.GenesisState) []abci.ValidatorUpdate {
-	k.SetPort(ctx, vaastypes.ProviderPortID)
-
 	k.SetValidatorSetUpdateId(ctx, genState.ValsetUpdateId)
 	for _, v2h := range genState.ValsetUpdateIdToHeight {
 		k.SetValsetUpdateBlockHeight(ctx, v2h.ValsetUpdateId, v2h.Height)

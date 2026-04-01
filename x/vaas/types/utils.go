@@ -8,10 +8,8 @@ import (
 	"time"
 
 	abci "github.com/cometbft/cometbft/abci/types"
-	tmprotocrypto "github.com/cometbft/cometbft/proto/tendermint/crypto"
 
-	clienttypes "github.com/cosmos/ibc-go/v10/modules/core/02-client/types"
-	channeltypes "github.com/cosmos/ibc-go/v10/modules/core/04-channel/types"
+	tmprotocrypto "github.com/cometbft/cometbft/proto/tendermint/crypto"
 
 	errorsmod "cosmossdk.io/errors"
 
@@ -60,47 +58,7 @@ func TMCryptoPublicKeyToConsAddr(k tmprotocrypto.PublicKey) (sdk.ConsAddress, er
 	return sdk.GetConsAddress(sdkK), nil
 }
 
-// SendIBCPacket sends an IBC packet with packetData
-// over the source channelID and portID.
-//
-// Deprecated: This is the IBC v1 (channel-based) packet sending function.
-// Use SendIBCPacketV2 for IBC v2 (client-based) routing.
-func SendIBCPacket(
-	ctx sdk.Context,
-	channelKeeper ChannelKeeper,
-	sourceChannelID string,
-	sourcePortID string,
-	packetData []byte,
-	timeoutPeriod time.Duration,
-) error {
-	_, ok := channelKeeper.GetChannel(ctx, sourcePortID, sourceChannelID)
-	if !ok {
-		return errorsmod.Wrapf(channeltypes.ErrChannelNotFound, "channel not found for channel ID: %s", sourceChannelID)
-	}
-
-	_, err := channelKeeper.SendPacket(ctx,
-		sourcePortID,
-		sourceChannelID,
-		clienttypes.Height{}, //  timeout height disabled
-		uint64(ctx.BlockTime().Add(timeoutPeriod).UnixNano()), // timeout timestamp
-		packetData,
-	)
-	return err
-}
-
 // SendIBCPacketV2 sends an IBC packet using IBC v2 (Eureka) client-based routing.
-// This function routes packets directly via client ID without using channels.
-//
-// Parameters:
-//   - ctx: SDK context
-//   - packetHandler: IBC v2 packet handler for sending packets
-//   - sourceClientID: the client ID on the source chain that identifies the destination chain
-//   - destAppID: the application identifier on the destination chain (e.g., "vaas/consumer")
-//   - packetData: the serialized packet data to send
-//   - timeoutPeriod: duration after which the packet times out
-//
-// IBC v2 Note: In IBC v2, packets are routed using client IDs and application IDs
-// instead of channel IDs and port IDs. This provides a simpler routing model.
 func SendIBCPacketV2(
 	ctx sdk.Context,
 	packetHandler IBCPacketHandler,
@@ -119,18 +77,12 @@ func SendIBCPacketV2(
 		packetData,
 	)
 	if err != nil {
-		return 0, errorsmod.Wrap(err, "failed to send IBC v2 packet")
+		return 0, errorsmod.Wrap(err, "failed to send IBC packet")
 	}
 
 	return sequence, nil
 }
 
-func NewErrorAcknowledgementWithLog(ctx sdk.Context, err error) channeltypes.Acknowledgement {
-	ctx.Logger().Error("IBC ErrorAcknowledgement constructed", "error", err)
-	return channeltypes.NewErrorAcknowledgement(err)
-}
-
-// AppendMany appends a variable number of byte slices together
 func AppendMany(byteses ...[]byte) (out []byte) {
 	for _, bytes := range byteses {
 		out = append(out, bytes...)

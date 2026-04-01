@@ -2,12 +2,10 @@ package keeper
 
 import (
 	"github.com/allinbits/vaas/x/vaas/consumer/types"
-	vaastypes "github.com/allinbits/vaas/x/vaas/types"
 
 	abci "github.com/cometbft/cometbft/abci/types"
 
 	conntypes "github.com/cosmos/ibc-go/v10/modules/core/03-connection/types"
-	channeltypes "github.com/cosmos/ibc-go/v10/modules/core/04-channel/types"
 	ibchost "github.com/cosmos/ibc-go/v10/modules/core/exported"
 
 	errorsmod "cosmossdk.io/errors"
@@ -40,20 +38,13 @@ func (k Keeper) InitGenesis(ctx sdk.Context, state *types.GenesisState) []abci.V
 	k.SetInitGenesisHeight(ctx, ctx.BlockHeight()) // Usually 0, but not the case for changeover chains
 
 	k.SetParams(ctx, state.Params)
-	// TODO: Remove enabled flag and find a better way to setup integration tests
-	// See: https://github.com/cosmos/interchain-security/issues/339
 	if !state.Params.Enabled {
 		return nil
 	}
 
-	k.SetPort(ctx, vaastypes.ConsumerPortID)
-
-	// initialValSet is checked in NewChain case by ValidateGenesis
-	// start a new chain
 	if state.NewChain {
 		var clientID string
 		if state.ConnectionId == "" {
-			// create the provider client in InitGenesis for new consumer chain. CCV Handshake must be established with this client id.
 			clientStateBytes, err := state.Provider.ClientState.Marshal()
 			if err != nil {
 				panic(err)
@@ -63,10 +54,8 @@ func (k Keeper) InitGenesis(ctx sdk.Context, state *types.GenesisState) []abci.V
 				panic(err)
 			}
 
-			// this means the client must be tendermint
 			cid, err := k.clientKeeper.CreateClient(ctx, ibchost.Tendermint, clientStateBytes, consensusStateBytes)
 			if err != nil {
-				// If the client creation fails, the chain MUST NOT start
 				panic(err)
 			}
 			clientID = cid
@@ -75,7 +64,6 @@ func (k Keeper) InitGenesis(ctx sdk.Context, state *types.GenesisState) []abci.V
 				"client id", clientID,
 			)
 		} else {
-			// if connection id is provided, then the client is already created
 			connectionEnd, found := k.connectionKeeper.GetConnection(ctx, state.ConnectionId)
 			if !found {
 				panic(errorsmod.Wrapf(conntypes.ErrConnectionNotFound, "could not find connection(%s)", state.ConnectionId))
@@ -88,31 +76,8 @@ func (k Keeper) InitGenesis(ctx sdk.Context, state *types.GenesisState) []abci.V
 			)
 		}
 
-		// set provider client id.
 		k.SetProviderClientID(ctx, clientID)
-
-		// set default value for valset update ID
 		k.SetHeightValsetUpdateID(ctx, uint64(ctx.BlockHeight()), uint64(0))
-
-		if state.ConnectionId != "" {
-			// initiate CCV channel handshake
-			ccvChannelOpenInitMsg := channeltypes.NewMsgChannelOpenInit(
-				vaastypes.ConsumerPortID,
-				vaastypes.Version,
-				channeltypes.ORDERED,
-				[]string{state.ConnectionId},
-				vaastypes.ProviderPortID,
-				"", // signer unused
-			)
-			_, err := k.ChannelOpenInit(ctx, ccvChannelOpenInitMsg)
-			if err != nil {
-				panic(err)
-			}
-
-			// Note that if the connection ID is not provider, we cannot initiate
-			// the connection handshake as the counterparty client ID is unknown
-			// at this point. The connection handshake must be initiated by a relayer.
-		}
 
 	} else {
 		// chain restarts with the CCV channel established

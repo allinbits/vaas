@@ -53,7 +53,7 @@ func GetMocksForSetConsumerChain(ctx sdk.Context, mocks *MockedKeepers,
 	chainIDToInject string,
 ) []any {
 	return []any{
-		mocks.MockChannelKeeper.EXPECT().GetChannel(ctx, types.ProviderPortID, gomock.Any()).Return(
+		mocks.MockChannelKeeper.EXPECT().GetChannel(ctx, types.ProviderAppID, gomock.Any()).Return(
 			channeltypes.Channel{
 				State:          channeltypes.OPEN,
 				ConnectionHops: []string{"connectionID"},
@@ -69,14 +69,8 @@ func GetMocksForSetConsumerChain(ctx sdk.Context, mocks *MockedKeepers,
 	}
 }
 
-// GetMocksForDeleteConsumerChain returns mock expectations needed to call `DeleteConsumerChain`
 func GetMocksForDeleteConsumerChain(ctx sdk.Context, mocks *MockedKeepers) []any {
-	return []any{
-		mocks.MockChannelKeeper.EXPECT().GetChannel(gomock.Any(), types.ProviderPortID, "channelID").Return(
-			channeltypes.Channel{State: channeltypes.OPEN}, true,
-		).Times(1),
-		mocks.MockChannelKeeper.EXPECT().ChanCloseInit(gomock.Any(), types.ProviderPortID, "channelID").Times(1),
-	}
+	return []any{}
 }
 
 func GetMocksForHandleSlashPacket(ctx sdk.Context, mocks MockedKeepers,
@@ -125,17 +119,7 @@ func ExpectCreateClientMock(ctx sdk.Context, mocks MockedKeepers, clientType, cl
 }
 
 func GetMocksForSendIBCPacket(ctx sdk.Context, mocks MockedKeepers, channelID string, times int) []any {
-	return []any{
-		mocks.MockChannelKeeper.EXPECT().GetChannel(ctx, types.ConsumerPortID,
-			"consumerCCVChannelID").Return(channeltypes.Channel{}, true).Times(times),
-		mocks.MockChannelKeeper.EXPECT().SendPacket(ctx,
-			types.ConsumerPortID,
-			"consumerCCVChannelID",
-			gomock.Any(),
-			gomock.Any(),
-			gomock.Any(),
-		).Return(uint64(888), nil).Times(times),
-	}
+	return []any{}
 }
 
 func GetMocksForSlashValidator(

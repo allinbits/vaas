@@ -201,34 +201,7 @@ func SetupForDeleteConsumerChain(t *testing.T, ctx sdk.Context,
 	require.NoError(t, err)
 	// set the mapping consumer ID <> client ID for the consumer chain
 	providerKeeper.SetConsumerClientId(ctx, consumerId, "clientID")
-	// set the channel ID for the consumer chain
-	err = providerKeeper.SetConsumerChain(ctx, "channelID")
-	require.NoError(t, err)
-
-	// set the chain to stopped sto the chain can be deleted
 	providerKeeper.SetConsumerPhase(ctx, consumerId, providertypes.CONSUMER_PHASE_STOPPED)
-}
-
-// TestProviderStateIsCleanedAfterConsumerChainIsDeleted executes test assertions for the provider's state being cleaned
-// after a deleted consumer chain.
-func TestProviderStateIsCleanedAfterConsumerChainIsDeleted(t *testing.T, ctx sdk.Context, providerKeeper providerkeeper.Keeper,
-	consumerId, expectedChannelID string, expErr bool,
-) {
-	t.Helper()
-	_, found := providerKeeper.GetConsumerClientId(ctx, consumerId)
-	require.False(t, found)
-	_, found = providerKeeper.GetConsumerIdToChannelId(ctx, consumerId)
-	require.False(t, found)
-	_, found = providerKeeper.GetChannelIdToConsumerId(ctx, expectedChannelID)
-	require.False(t, found)
-	_, found = providerKeeper.GetInitChainHeight(ctx, consumerId)
-	require.False(t, found)
-
-	// test key assignment state is cleaned
-	require.Empty(t, providerKeeper.GetAllValidatorConsumerPubKeys(ctx, &consumerId))
-	require.Empty(t, providerKeeper.GetAllValidatorsByConsumerAddr(ctx, &consumerId))
-	require.Empty(t, providerKeeper.GetAllConsumerAddrsToPrune(ctx, consumerId))
-	require.Zero(t, providerKeeper.GetEquivocationEvidenceMinHeight(ctx, consumerId))
 }
 
 func GetTestConsumerMetadata() providertypes.ConsumerMetadata {

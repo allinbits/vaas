@@ -73,7 +73,7 @@ func TestIBCV2FullVSCFlow(t *testing.T) {
 	).Return(uint64(1), nil).Times(1)
 
 	// Send packets via v2
-	err = providerKeeper.SendVSCPacketsToChainV2(ctx, consumerId, clientId)
+	err = providerKeeper.SendVSCPacketsToChain(ctx, consumerId, clientId)
 	require.NoError(t, err)
 
 	// Verify packets are cleared after successful send
@@ -135,7 +135,7 @@ func TestIBCV2MultipleConsumers(t *testing.T) {
 
 	// Send packets to all consumers
 	for _, c := range consumers {
-		err := providerKeeper.SendVSCPacketsToChainV2(ctx, c.id, c.clientId)
+		err := providerKeeper.SendVSCPacketsToChain(ctx, c.id, c.clientId)
 		require.NoError(t, err)
 	}
 

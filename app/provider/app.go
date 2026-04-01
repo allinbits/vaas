@@ -442,12 +442,11 @@ func New(
 
 	ibcRouter := porttypes.NewRouter()
 	ibcRouter.AddRoute(ibctransfertypes.ModuleName, transferStack)
-	ibcRouter.AddRoute(providertypes.ModuleName, providerModule)
 	app.IBCKeeper.SetRouter(ibcRouter)
 
 	ibcRouterV2 := ibcapi.NewRouter()
 	ibcRouterV2.AddRoute(ibctransfertypes.PortID, transferv2.NewIBCModule(app.TransferKeeper))
-	ibcRouterV2.AddRoute(vaastypes.ProviderAppID, ibcprovider.NewIBCModuleV2(&app.ProviderKeeper))
+	ibcRouterV2.AddRoute(vaastypes.ProviderAppID, ibcprovider.NewIBCModule(&app.ProviderKeeper))
 	app.IBCKeeper.SetRouterV2(ibcRouterV2)
 
 	govRouter := govv1beta1.NewRouter()
