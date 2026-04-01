@@ -13,9 +13,11 @@ import (
 	"github.com/cosmos/ibc-go/v10/modules/apps/transfer"
 	ibctransferkeeper "github.com/cosmos/ibc-go/v10/modules/apps/transfer/keeper"
 	ibctransfertypes "github.com/cosmos/ibc-go/v10/modules/apps/transfer/types"
+	transferv2 "github.com/cosmos/ibc-go/v10/modules/apps/transfer/v2"
 	ibc "github.com/cosmos/ibc-go/v10/modules/core"
 	ibcconnectiontypes "github.com/cosmos/ibc-go/v10/modules/core/03-connection/types"
 	porttypes "github.com/cosmos/ibc-go/v10/modules/core/05-port/types"
+	ibcapi "github.com/cosmos/ibc-go/v10/modules/core/api"
 	ibcexported "github.com/cosmos/ibc-go/v10/modules/core/exported"
 	ibckeeper "github.com/cosmos/ibc-go/v10/modules/core/keeper"
 	ibctm "github.com/cosmos/ibc-go/v10/modules/light-clients/07-tendermint"
@@ -28,10 +30,10 @@ import (
 	"cosmossdk.io/core/appmodule"
 	"cosmossdk.io/log"
 	storetypes "cosmossdk.io/store/types"
+	"cosmossdk.io/x/tx/signing"
 	"cosmossdk.io/x/upgrade"
 	upgradekeeper "cosmossdk.io/x/upgrade/keeper"
 	upgradetypes "cosmossdk.io/x/upgrade/types"
-	"cosmossdk.io/x/tx/signing"
 	"github.com/cosmos/cosmos-sdk/baseapp"
 	"github.com/cosmos/cosmos-sdk/client"
 	"github.com/cosmos/cosmos-sdk/client/flags"
@@ -101,14 +103,14 @@ import (
 	no_valupdates_genutil "github.com/allinbits/vaas/x/vaas/no_valupdates_genutil"
 	no_valupdates_staking "github.com/allinbits/vaas/x/vaas/no_valupdates_staking"
 
-
 	ibcprovider "github.com/allinbits/vaas/x/vaas/provider"
 	ibcproviderkeeper "github.com/allinbits/vaas/x/vaas/provider/keeper"
 	providertypes "github.com/allinbits/vaas/x/vaas/provider/types"
+	vaastypes "github.com/allinbits/vaas/x/vaas/types"
 )
 
 const (
-	AppName = "vaas-provider"
+	AppName     = "vaas-provider"
 	upgradeName = "vaas-v1-to-v2"
 )
 
@@ -149,8 +151,7 @@ var (
 		stakingtypes.BondedPoolName:    {authtypes.Burner, authtypes.Staking},
 		stakingtypes.NotBondedPoolName: {authtypes.Burner, authtypes.Staking},
 		govtypes.ModuleName:            {authtypes.Burner},
-		ibctransfertypes.ModuleName:       {authtypes.Minter, authtypes.Burner},
-
+		ibctransfertypes.ModuleName:    {authtypes.Minter, authtypes.Burner},
 	}
 )
 
@@ -193,7 +194,6 @@ type App struct { // nolint: golint
 	TransferKeeper        ibctransferkeeper.Keeper
 	ProviderKeeper        ibcproviderkeeper.Keeper
 	ConsensusParamsKeeper consensusparamkeeper.Keeper
-
 
 	// the module manager
 	MM *module.Manager
@@ -422,7 +422,6 @@ func New(
 		authtypes.NewModuleAddress(govtypes.ModuleName).String(),
 	)
 
-
 	providerModule := ibcprovider.NewAppModule(
 		&app.ProviderKeeper,
 	)
@@ -439,16 +438,17 @@ func New(
 		authtypes.NewModuleAddress(govtypes.ModuleName).String(),
 	)
 
-	// // Add an IBC middleware callback to track the consumer rewards
-	// var transferStack porttypes.IBCModule
-	// transferStack = transfer.NewIBCModule(app.TransferKeeper)
-	// transferStack = ibcprovider.NewIBCMiddleware(transferStack, app.ProviderKeeper)
+	transferStack := transfer.NewIBCModule(app.TransferKeeper)
 
-	// create static IBC router, add transfer route, then set and seal it
 	ibcRouter := porttypes.NewRouter()
-	// ibcRouter.AddRoute(ibctransfertypes.ModuleName, transferStack)
+	ibcRouter.AddRoute(ibctransfertypes.ModuleName, transferStack)
 	ibcRouter.AddRoute(providertypes.ModuleName, providerModule)
 	app.IBCKeeper.SetRouter(ibcRouter)
+
+	ibcRouterV2 := ibcapi.NewRouter()
+	ibcRouterV2.AddRoute(ibctransfertypes.PortID, transferv2.NewIBCModule(app.TransferKeeper))
+	ibcRouterV2.AddRoute(vaastypes.ProviderAppID, ibcprovider.NewIBCModuleV2(&app.ProviderKeeper))
+	app.IBCKeeper.SetRouterV2(ibcRouterV2)
 
 	govRouter := govv1beta1.NewRouter()
 	govRouter.
@@ -477,7 +477,6 @@ func New(
 		upgrade.NewAppModule(&app.UpgradeKeeper, app.AccountKeeper.AddressCodec()),
 		ibc.NewAppModule(app.IBCKeeper),
 		ibctm.NewAppModule(tmLightClientModule),
-		params.NewAppModule(app.ParamsKeeper),
 		transfer.NewAppModule(app.TransferKeeper),
 		providerModule,
 	)

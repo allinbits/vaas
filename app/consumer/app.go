@@ -10,17 +10,19 @@ import (
 
 	dbm "github.com/cosmos/cosmos-db"
 
+	"github.com/cosmos/gogoproto/proto"
 	"github.com/cosmos/ibc-go/v10/modules/apps/transfer"
 	ibctransferkeeper "github.com/cosmos/ibc-go/v10/modules/apps/transfer/keeper"
 	ibctransfertypes "github.com/cosmos/ibc-go/v10/modules/apps/transfer/types"
+	transferv2 "github.com/cosmos/ibc-go/v10/modules/apps/transfer/v2"
 	ibc "github.com/cosmos/ibc-go/v10/modules/core"
 	ibcconnectiontypes "github.com/cosmos/ibc-go/v10/modules/core/03-connection/types"
 	porttypes "github.com/cosmos/ibc-go/v10/modules/core/05-port/types"
+	ibcapi "github.com/cosmos/ibc-go/v10/modules/core/api"
 	ibchost "github.com/cosmos/ibc-go/v10/modules/core/exported"
 	ibckeeper "github.com/cosmos/ibc-go/v10/modules/core/keeper"
 	ibctm "github.com/cosmos/ibc-go/v10/modules/light-clients/07-tendermint"
 	ibctesting "github.com/cosmos/ibc-go/v10/testing"
-	"github.com/cosmos/gogoproto/proto"
 
 	"github.com/spf13/cast"
 
@@ -31,10 +33,10 @@ import (
 	"cosmossdk.io/log"
 	storetypes "cosmossdk.io/store/types"
 
+	"cosmossdk.io/x/tx/signing"
 	"cosmossdk.io/x/upgrade"
 	upgradekeeper "cosmossdk.io/x/upgrade/keeper"
 	upgradetypes "cosmossdk.io/x/upgrade/types"
-	"cosmossdk.io/x/tx/signing"
 	"github.com/cosmos/cosmos-sdk/baseapp"
 	"github.com/cosmos/cosmos-sdk/client"
 	"github.com/cosmos/cosmos-sdk/client/flags"
@@ -82,8 +84,8 @@ import (
 	paramsclient "github.com/cosmos/cosmos-sdk/x/params/client"
 	paramskeeper "github.com/cosmos/cosmos-sdk/x/params/keeper"
 	paramstypes "github.com/cosmos/cosmos-sdk/x/params/types"
-	slashingkeeper "github.com/cosmos/cosmos-sdk/x/slashing/keeper"
 	"github.com/cosmos/cosmos-sdk/x/slashing"
+	slashingkeeper "github.com/cosmos/cosmos-sdk/x/slashing/keeper"
 	slashingtypes "github.com/cosmos/cosmos-sdk/x/slashing/types"
 
 	abci "github.com/cometbft/cometbft/abci/types"
@@ -94,11 +96,10 @@ import (
 	ibcconsumerkeeper "github.com/allinbits/vaas/x/vaas/consumer/keeper"
 	ibcconsumertypes "github.com/allinbits/vaas/x/vaas/consumer/types"
 	vaastypes "github.com/allinbits/vaas/x/vaas/types"
-
 )
 
 const (
-	AppName = "vaas-consumer"
+	AppName     = "vaas-consumer"
 	upgradeName = "vaas-v1-to-v2"
 )
 
@@ -134,8 +135,8 @@ var (
 
 	// module account permissions
 	maccPerms = map[string][]string{
-		authtypes.FeeCollectorName:     nil,
-		ibctransfertypes.ModuleName:                   {authtypes.Minter, authtypes.Burner},
+		authtypes.FeeCollectorName:  nil,
+		ibctransfertypes.ModuleName: {authtypes.Minter, authtypes.Burner},
 	}
 )
 
@@ -161,14 +162,12 @@ type App struct { // nolint: golint
 	memKeys map[string]*storetypes.MemoryStoreKey
 
 	// keepers
-	AccountKeeper authkeeper.AccountKeeper
-	BankKeeper    bankkeeper.Keeper
+	AccountKeeper  authkeeper.AccountKeeper
+	BankKeeper     bankkeeper.Keeper
 	SlashingKeeper slashingkeeper.Keeper
 
-
-
 	UpgradeKeeper         upgradekeeper.Keeper
-	ParamsKeeper paramskeeper.Keeper
+	ParamsKeeper          paramskeeper.Keeper
 	IBCKeeper             *ibckeeper.Keeper // IBC Keeper must be a pointer in the app, so we can SetRouter on it correctly
 	TransferKeeper        ibctransferkeeper.Keeper
 	ConsumerKeeper        ibcconsumerkeeper.Keeper
@@ -287,8 +286,6 @@ func New(
 		logger,
 	)
 
-	// consumer keeper satisfies the staking keeper interface
-	// of the slashing module
 	app.SlashingKeeper = slashingkeeper.NewKeeper(
 		appCodec,
 		legacyAmino,
@@ -296,18 +293,6 @@ func New(
 		&app.ConsumerKeeper,
 		authtypes.NewModuleAddress(govtypes.ModuleName).String(),
 	)
-
-	// consumer keeper satisfies the staking keeper interface
-	// of the slashing module
-	app.SlashingKeeper = slashingkeeper.NewKeeper(
-		appCodec,
-		legacyAmino,
-		runtime.NewKVStoreService(keys[slashingtypes.StoreKey]),
-		&app.ConsumerKeeper,
-		authtypes.NewModuleAddress(govtypes.ModuleName).String(),
-	)
-
-
 
 	// get skipUpgradeHeights from the app options
 	skipUpgradeHeights := map[int64]bool{}
@@ -382,6 +367,11 @@ func New(
 	ibcRouter.AddRoute(ibctransfertypes.ModuleName, ibcmodule)
 	ibcRouter.AddRoute(vaastypes.ConsumerPortID, consumerModule)
 	app.IBCKeeper.SetRouter(ibcRouter)
+
+	ibcRouterV2 := ibcapi.NewRouter()
+	ibcRouterV2.AddRoute(ibctransfertypes.PortID, transferv2.NewIBCModule(app.TransferKeeper))
+	ibcRouterV2.AddRoute(vaastypes.ConsumerAppID, ibcconsumer.NewIBCModuleV2(&app.ConsumerKeeper))
+	app.IBCKeeper.SetRouterV2(ibcRouterV2)
 
 	tmLightClientModule := ibctm.NewLightClientModule(appCodec, app.IBCKeeper.ClientKeeper.GetStoreProvider())
 	app.IBCKeeper.ClientKeeper.AddRoute(ibctm.ModuleName, tmLightClientModule)
@@ -727,7 +717,6 @@ func (app *App) GetBaseApp() *baseapp.BaseApp {
 func (app *App) GetStakingKeeper() *ibcconsumerkeeper.Keeper {
 	return &app.ConsumerKeeper
 }
-
 
 // GetIBCKeeper implements the TestingApp interface.
 func (app *App) GetIBCKeeper() *ibckeeper.Keeper {
