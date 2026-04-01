@@ -185,6 +185,14 @@ func (k msgServer) CreateConsumer(goCtx context.Context, msg *types.MsgCreateCon
 	consumerId := k.Keeper.FetchAndIncrementConsumerId(ctx)
 
 	k.Keeper.SetConsumerOwnerAddress(ctx, consumerId, msg.Submitter)
+	chainIdInUse, err := k.Keeper.ChainIdInUse(ctx, msg.ChainId)
+	if err != nil {
+		return nil, err
+	}
+	if chainIdInUse {
+		return nil, errorsmod.Wrapf(types.ErrDuplicateChainId,
+			"chain ID %s is already registered", msg.ChainId)
+	}
 	k.Keeper.SetConsumerChainId(ctx, consumerId, msg.ChainId)
 	k.Keeper.SetConsumerPhase(ctx, consumerId, types.CONSUMER_PHASE_REGISTERED)
 
@@ -289,6 +297,14 @@ func (k msgServer) UpdateConsumer(goCtx context.Context, msg *types.MsgUpdateCon
 
 		if k.IsConsumerPrelaunched(ctx, consumerId) {
 			chainId = msg.NewChainId
+			chainIdInUse, err := k.Keeper.ChainIdInUse(ctx, chainId)
+			if err != nil {
+				return nil, err
+			}
+			if chainIdInUse {
+				return nil, errorsmod.Wrapf(types.ErrDuplicateChainId,
+					"chain ID %s is already registered", chainId)
+			}
 			k.SetConsumerChainId(ctx, consumerId, chainId)
 		} else {
 			// the chain id cannot be updated if the chain is NOT in a prelaunched (i.e., registered or initialized) phase

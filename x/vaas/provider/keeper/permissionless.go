@@ -42,6 +42,26 @@ func (k Keeper) GetConsumerChainId(ctx context.Context, consumerId string) (stri
 	return chainId, nil
 }
 
+// ChainIdInUse verifies if a consumer chainId exists
+func (k Keeper) ChainIdInUse(ctx context.Context, chainId string) (bool, error) {
+	iter, err := k.ConsumerChainId.Iterate(ctx, nil)
+	if err != nil {
+		return false, err
+	}
+	defer iter.Close()
+
+	for ; iter.Valid(); iter.Next() {
+		chainIdinner, err := iter.Value()
+		if err != nil {
+			continue
+		}
+		if chainIdinner == chainId {
+			return true, nil
+		}
+	}
+	return false, nil
+}
+
 // SetConsumerChainId sets the chain id associated with this consumer id
 func (k Keeper) SetConsumerChainId(ctx context.Context, consumerId, chainId string) {
 	if err := k.ConsumerChainId.Set(ctx, consumerId, chainId); err != nil {
