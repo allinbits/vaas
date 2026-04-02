@@ -10,6 +10,7 @@ import (
 	abci "github.com/cometbft/cometbft/abci/types"
 
 	clienttypes "github.com/cosmos/ibc-go/v10/modules/core/02-client/types"
+	channeltypesv2 "github.com/cosmos/ibc-go/v10/modules/core/04-channel/v2/types"
 
 	errorsmod "cosmossdk.io/errors"
 
@@ -148,23 +149,33 @@ func (k Keeper) SendVSCPackets(ctx sdk.Context) error {
 }
 
 func (k Keeper) SendVSCPacketsToChain(ctx sdk.Context, consumerId, clientId string) error {
-	if k.ibcPacketHandler == nil {
-		k.Logger(ctx).Debug("IBC packet handler not configured, skipping send",
+	if k.channelKeeperV2 == nil {
+		k.Logger(ctx).Debug("IBC v2 channel keeper not configured, skipping send",
 			"consumerId", consumerId,
 		)
 		return nil
 	}
 
+	timeoutTimestamp := uint64(ctx.BlockTime().Add(k.GetVAASTimeoutPeriod(ctx)).UnixNano())
+
 	pendingPackets := k.GetPendingVSCPackets(ctx, consumerId)
 	for _, data := range pendingPackets {
-		sequence, err := vaastypes.SendIBCPacketV2(
-			ctx,
-			k.ibcPacketHandler,
-			clientId,
+		payload := channeltypesv2.NewPayload(
+			vaastypes.ProviderAppID,
 			vaastypes.ConsumerAppID,
+			"vaas-v1",
+			"application/x-protobuf",
 			data.GetBytes(),
-			k.GetVAASTimeoutPeriod(ctx),
 		)
+
+		msg := channeltypesv2.NewMsgSendPacket(
+			clientId,
+			timeoutTimestamp,
+			k.authority,
+			payload,
+		)
+
+		resp, err := k.channelKeeperV2.SendPacket(ctx, msg)
 		if err != nil {
 			if errors.Is(err, clienttypes.ErrClientNotActive) {
 				k.Logger(ctx).Info("IBC client expired, cannot send VSC, leaving packet data stored:",
@@ -193,7 +204,7 @@ func (k Keeper) SendVSCPacketsToChain(ctx sdk.Context, consumerId, clientId stri
 			"consumerId", consumerId,
 			"clientId", clientId,
 			"vscid", data.ValsetUpdateId,
-			"sequence", sequence,
+			"sequence", resp.Sequence,
 		)
 	}
 	k.DeletePendingVSCPackets(ctx, consumerId)

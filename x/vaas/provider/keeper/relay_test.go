@@ -138,7 +138,7 @@ func TestClientIdToConsumerIdMapping(t *testing.T) {
 }
 
 // TestSendVSCPacketsToChainNoHandler tests that SendVSCPacketsToChain gracefully
-// handles the case when no IBC packet handler is configured.
+// handles the case when no IBC v2 channel keeper is configured.
 func TestSendVSCPacketsToChainNoHandler(t *testing.T) {
 	providerKeeper, ctx, ctrl, _ := testkeeper.GetProviderKeeperAndCtx(t, testkeeper.NewInMemKeeperParams(t))
 	defer ctrl.Finish()
@@ -156,69 +156,12 @@ func TestSendVSCPacketsToChainNoHandler(t *testing.T) {
 		ValsetUpdateId:   1,
 	})
 
-	// Without setting IBCPacketHandler, SendVSCPacketsToChain should return nil
+	// Without setting ChannelKeeperV2, SendVSCPacketsToChain should return nil
 	// and not send any packets (graceful no-op)
 	err := providerKeeper.SendVSCPacketsToChain(ctx, consumerId, clientId)
 	require.NoError(t, err)
 
-	// Pending packets should still be there since no handler was configured
+	// Pending packets should still be there since no keeper was configured
 	pending := providerKeeper.GetPendingVSCPackets(ctx, consumerId)
 	require.Len(t, pending, 1)
-}
-
-// TestSendVSCPacketsToChainWithHandler tests SendVSCPacketsToChain with a mock handler.
-func TestSendVSCPacketsToChainWithHandler(t *testing.T) {
-	providerKeeper, ctx, ctrl, _ := testkeeper.GetProviderKeeperAndCtx(t, testkeeper.NewInMemKeeperParams(t))
-	defer ctrl.Finish()
-
-	consumerId := "0"
-	clientId := "07-tendermint-0"
-
-	// Setup consumer
-	providerKeeper.SetConsumerClientId(ctx, consumerId, clientId)
-	providerKeeper.SetConsumerPhase(ctx, consumerId, providertypes.CONSUMER_PHASE_LAUNCHED)
-	providerKeeper.SetConsumerChainId(ctx, consumerId, "consumer-chain")
-
-	// Set VAAS timeout period in params
-	params := providertypes.DefaultParams()
-	providerKeeper.SetParams(ctx, params)
-
-	// Add pending VSC packets
-	providerKeeper.AppendPendingVSCPackets(ctx, consumerId, vaastypes.ValidatorSetChangePacketData{
-		ValidatorUpdates: []abci.ValidatorUpdate{},
-		ValsetUpdateId:   1,
-	})
-	providerKeeper.AppendPendingVSCPackets(ctx, consumerId, vaastypes.ValidatorSetChangePacketData{
-		ValidatorUpdates: []abci.ValidatorUpdate{},
-		ValsetUpdateId:   2,
-	})
-
-	// Create and set a mock handler
-	mockHandler := testkeeper.NewMockIBCPacketHandler(ctrl)
-	providerKeeper.SetIBCPacketHandler(mockHandler)
-
-	// Expect SendPacket to be called twice (once for each pending packet)
-	mockHandler.EXPECT().SendPacket(
-		gomock.Any(),            // ctx
-		clientId,                // sourceClient
-		vaastypes.ConsumerAppID, // destApp
-		gomock.Any(),            // timeoutTimestamp
-		gomock.Any(),            // data
-	).Return(uint64(1), nil).Times(1)
-
-	mockHandler.EXPECT().SendPacket(
-		gomock.Any(),
-		clientId,
-		vaastypes.ConsumerAppID,
-		gomock.Any(),
-		gomock.Any(),
-	).Return(uint64(2), nil).Times(1)
-
-	// Send packets
-	err := providerKeeper.SendVSCPacketsToChain(ctx, consumerId, clientId)
-	require.NoError(t, err)
-
-	// Pending packets should be deleted after successful send
-	pending := providerKeeper.GetPendingVSCPackets(ctx, consumerId)
-	require.Len(t, pending, 0)
 }

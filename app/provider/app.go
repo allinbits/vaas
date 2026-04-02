@@ -447,12 +447,7 @@ func New(
 	ibcRouterV2.AddRoute(vaastypes.ProviderAppID, ibcprovider.NewIBCModule(&app.ProviderKeeper))
 	app.IBCKeeper.SetRouterV2(ibcRouterV2)
 
-	app.ProviderKeeper.SetIBCPacketHandler(
-		vaastypes.NewChannelV2Adapter(
-			app.IBCKeeper.ChannelKeeperV2,
-			authtypes.NewModuleAddress(govtypes.ModuleName).String(),
-		),
-	)
+	app.ProviderKeeper.SetChannelKeeperV2(app.IBCKeeper.ChannelKeeperV2)
 
 	govRouter := govv1beta1.NewRouter()
 	govRouter.

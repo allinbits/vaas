@@ -88,20 +88,3 @@ type AccountKeeper interface {
 type IBCTransferKeeper interface {
 	Transfer(context.Context, *transfertypes.MsgTransfer) (*transfertypes.MsgTransferResponse, error)
 }
-
-// IBCPacketHandler defines the expected interface for IBC v2 packet operations.
-// This replaces channel-based packet sending from IBC v1 with client-based routing.
-type IBCPacketHandler interface {
-	// SendPacket sends a packet using IBC v2's client-based routing.
-	// sourceClient is the client ID on the sending chain.
-	// destApp is the application identifier on the destination chain (e.g., "vaas/consumer").
-	// timeoutTimestamp is the absolute timeout in nanoseconds.
-	// data is the packet payload.
-	SendPacket(
-		ctx context.Context,
-		sourceClient string,
-		destApp string,
-		timeoutTimestamp uint64,
-		data []byte,
-	) (sequence uint64, err error)
-}

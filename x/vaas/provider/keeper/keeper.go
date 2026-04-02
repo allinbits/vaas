@@ -10,6 +10,7 @@ import (
 
 	tmprotocrypto "github.com/cometbft/cometbft/proto/tendermint/crypto"
 
+	channelkeeperv2 "github.com/cosmos/ibc-go/v10/modules/core/04-channel/v2/keeper"
 	ibchost "github.com/cosmos/ibc-go/v10/modules/core/exported"
 
 	"cosmossdk.io/collections"
@@ -43,10 +44,7 @@ type Keeper struct {
 	validatorAddressCodec addresscodec.Codec
 	consensusAddressCodec addresscodec.Codec
 
-	// ibcPacketHandler is used for IBC v2 (Eureka) client-based packet sending.
-	// This field is optional and can be nil if only v1 routing is used.
-	// Set via SetIBCPacketHandler after keeper creation.
-	ibcPacketHandler vaastypes.IBCPacketHandler
+	channelKeeperV2 *channelkeeperv2.Keeper
 	// Collections schema
 	Schema collections.Schema
 
@@ -163,13 +161,9 @@ func NewKeeper(
 	return k
 }
 
-// SetIBCPacketHandler sets the IBC v2 packet handler for client-based routing.
-// This method should be called during app wiring if IBC v2 is enabled.
-//
-// IBC v2 Note: The IBCPacketHandler is optional. If not set, only channel-based
-// (v1) routing will be used for packet sending.
-func (k *Keeper) SetIBCPacketHandler(handler vaastypes.IBCPacketHandler) {
-	k.ibcPacketHandler = handler
+// SetChannelKeeperV2 sets the IBC v2 channel keeper for client-based packet sending.
+func (k *Keeper) SetChannelKeeperV2(keeper *channelkeeperv2.Keeper) {
+	k.channelKeeperV2 = keeper
 }
 
 // GetAuthority returns the x/ccv/provider module's authority.

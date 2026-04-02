@@ -5,13 +5,10 @@ import (
 	"reflect"
 	"sort"
 	"strings"
-	"time"
 
 	abci "github.com/cometbft/cometbft/abci/types"
 
 	tmprotocrypto "github.com/cometbft/cometbft/proto/tendermint/crypto"
-
-	errorsmod "cosmossdk.io/errors"
 
 	cryptocodec "github.com/cosmos/cosmos-sdk/crypto/codec"
 	sdk "github.com/cosmos/cosmos-sdk/types"
@@ -56,31 +53,6 @@ func TMCryptoPublicKeyToConsAddr(k tmprotocrypto.PublicKey) (sdk.ConsAddress, er
 		return nil, err
 	}
 	return sdk.GetConsAddress(sdkK), nil
-}
-
-// SendIBCPacketV2 sends an IBC packet using IBC v2 (Eureka) client-based routing.
-func SendIBCPacketV2(
-	ctx sdk.Context,
-	packetHandler IBCPacketHandler,
-	sourceClientID string,
-	destAppID string,
-	packetData []byte,
-	timeoutPeriod time.Duration,
-) (uint64, error) {
-	timeoutTimestamp := uint64(ctx.BlockTime().Add(timeoutPeriod).UnixNano())
-
-	sequence, err := packetHandler.SendPacket(
-		ctx,
-		sourceClientID,
-		destAppID,
-		timeoutTimestamp,
-		packetData,
-	)
-	if err != nil {
-		return 0, errorsmod.Wrap(err, "failed to send IBC packet")
-	}
-
-	return sequence, nil
 }
 
 func AppendMany(byteses ...[]byte) (out []byte) {
