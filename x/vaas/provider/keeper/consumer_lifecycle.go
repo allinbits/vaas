@@ -12,7 +12,6 @@ import (
 	tmtypes "github.com/cometbft/cometbft/types"
 
 	clienttypes "github.com/cosmos/ibc-go/v10/modules/core/02-client/types"
-	conntypes "github.com/cosmos/ibc-go/v10/modules/core/03-connection/types"
 	commitmenttypes "github.com/cosmos/ibc-go/v10/modules/core/23-commitment/types"
 	ibchost "github.com/cosmos/ibc-go/v10/modules/core/exported"
 	ibctmtypes "github.com/cosmos/ibc-go/v10/modules/light-clients/07-tendermint"
@@ -315,11 +314,6 @@ func (k Keeper) CreateConsumerClient(
 	if err != nil {
 		return err
 	}
-	if initializationRecord.ConnectionId != "" {
-		// there is no need to create a client if the connection ID is provided
-		// as the CCV channel will be built on top of the existing client
-		return nil
-	}
 
 	phase := k.GetConsumerPhase(ctx, consumerId)
 	if phase != types.CONSUMER_PHASE_INITIALIZED {
@@ -421,102 +415,32 @@ func (k Keeper) MakeConsumerGenesis(
 		initializationRecord.UnbondingPeriod,
 	)
 
-	var clientState *ibctmtypes.ClientState = nil
-	var tmConsState *ibctmtypes.ConsensusState = nil
-	var preVAAS bool
-	var counterpartyConnectionId string
+	providerUnbondingPeriod, err := k.stakingKeeper.UnbondingTime(ctx)
+	if err != nil {
+		return gen, errorsmod.Wrapf(types.ErrNoUnbondingTime, "unbonding time not found: %s", err)
+	}
+	height := clienttypes.GetSelfHeight(ctx)
 
-	if initializationRecord.ConnectionId == "" {
-		// no connection ID provided
-		preVAAS = false
-		counterpartyConnectionId = ""
+	clientState := k.GetTemplateClient(ctx)
+	clientState.ChainId = ctx.ChainID()
+	clientState.LatestHeight = height
+	trustPeriod, err := vaastypes.CalculateTrustPeriod(providerUnbondingPeriod, k.GetTrustingPeriodFraction(ctx))
+	if err != nil {
+		return gen, errorsmod.Wrapf(sdkerrors.ErrInvalidHeight, "error %s calculating trusting_period for: %s", err, height)
+	}
+	clientState.TrustingPeriod = trustPeriod
+	clientState.UnbondingPeriod = providerUnbondingPeriod
 
-		// create provider client state and consensus state for the consumer to be able
-		// to create a provider client
-
-		providerUnbondingPeriod, err := k.stakingKeeper.UnbondingTime(ctx)
-		if err != nil {
-			return gen, errorsmod.Wrapf(types.ErrNoUnbondingTime, "unbonding time not found: %s", err)
-		}
-		height := clienttypes.GetSelfHeight(ctx)
-
-		clientState = k.GetTemplateClient(ctx)
-		// this is the counter party chain ID for the consumer
-		clientState.ChainId = ctx.ChainID()
-		// this is the latest height the client was updated at, i.e.,
-		// the height of the latest consensus state (see below)
-		clientState.LatestHeight = height
-		trustPeriod, err := vaastypes.CalculateTrustPeriod(providerUnbondingPeriod, k.GetTrustingPeriodFraction(ctx))
-		if err != nil {
-			return gen, errorsmod.Wrapf(sdkerrors.ErrInvalidHeight, "error %s calculating trusting_period for: %s", err, height)
-		}
-		clientState.TrustingPeriod = trustPeriod
-		clientState.UnbondingPeriod = providerUnbondingPeriod
-
-		consState, err := k.getSelfConsensusState(ctx, height)
-		if err != nil {
-			return gen, errorsmod.Wrapf(clienttypes.ErrConsensusStateNotFound, "error %s getting self consensus state for: %s", err, height)
-		}
-		tmConsState = consState
-	} else {
-		// connection ID provided
-		preVAAS = true
-
-		// get the connection end
-		connectionEnd, found := k.connectionKeeper.GetConnection(ctx, initializationRecord.ConnectionId)
-		if !found {
-			return gen, errorsmod.Wrapf(conntypes.ErrConnectionNotFound,
-				"could not find connection(%s)", initializationRecord.ConnectionId)
-		}
-		clientId := connectionEnd.ClientId
-
-		// check that the underlying client is a Tendermint client and that the chain ID matches
-		clientState, found := k.clientKeeper.GetClientState(ctx, clientId)
-		if !found {
-			return gen, errorsmod.Wrapf(clienttypes.ErrClientNotFound,
-				"could not find client(%s) associated with connection(%s)",
-				clientId, initializationRecord.ConnectionId,
-			)
-		}
-		tmClient, ok := clientState.(*ibctmtypes.ClientState)
-		if !ok {
-			return gen, errorsmod.Wrapf(clienttypes.ErrInvalidClientType,
-				"invalid client type. expected %s, got %s",
-				ibchost.Tendermint, clientState.ClientType(),
-			)
-		}
-		consumerChainId, err := k.GetConsumerChainId(ctx, consumerId)
-		if err != nil {
-			return gen, err
-		}
-		if tmClient.ChainId != consumerChainId {
-			return gen, errorsmod.Wrapf(conntypes.ErrInvalidConnectionIdentifier,
-				"invalid connection(%s): expected chain ID %s, got %s",
-				initializationRecord.ConnectionId, consumerChainId, tmClient.ChainId,
-			)
-		}
-
-		// set the counterparty connection ID
-		counterpartyConnectionId = connectionEnd.Counterparty.ConnectionId
-
-		k.SetConsumerClientId(ctx, consumerId, clientId)
-
-		// Set minimum height for equivocation evidence from this consumer chain
-		k.SetEquivocationEvidenceMinHeight(ctx, consumerId, tmClient.LatestHeight.RevisionHeight)
-
-		k.Logger(ctx).Info("use existing client and connection for consumer chain",
-			"consumer id", consumerId,
-			"client id", clientId,
-			"connection id", initializationRecord.ConnectionId,
-		)
+	consState, err := k.getSelfConsensusState(ctx, height)
+	if err != nil {
+		return gen, errorsmod.Wrapf(clienttypes.ErrConsensusStateNotFound, "error %s getting self consensus state for: %s", err, height)
 	}
 
 	gen = *vaastypes.NewInitialConsumerGenesisState(
 		clientState,
-		tmConsState,
+		consState,
 		initialValidatorUpdates,
-		preVAAS,
-		counterpartyConnectionId,
+		false,
 		consumerGenesisParams,
 	)
 

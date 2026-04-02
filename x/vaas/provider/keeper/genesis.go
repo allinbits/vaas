@@ -31,17 +31,7 @@ func (k Keeper) InitGenesis(ctx sdk.Context, genState *types.GenesisState) []abc
 			// the ConsumerGenesis validated in ConsumerState.Validate().
 			panic(fmt.Errorf("consumer chain genesis could not be persisted: %w", err))
 		}
-		// check if the CCV channel was established
-		// IBC v2 Note: Channel-based mappings are deprecated. In IBC v2 (Eureka),
-		// only client IDs are used for routing. This logic is kept for backward
-		// compatibility during the migration period.
-		if cs.ChannelId != "" {
-			k.SetChannelToConsumerId(ctx, cs.ChannelId, chainID)
-			k.SetConsumerIdToChannelId(ctx, chainID, cs.ChannelId)
-			k.SetInitChainHeight(ctx, chainID, cs.InitialHeight)
-		} else {
-			k.AppendPendingVSCPackets(ctx, chainID, cs.PendingValsetChanges...)
-		}
+		k.AppendPendingVSCPackets(ctx, chainID, cs.PendingValsetChanges...)
 	}
 
 	// Import key assignment state
@@ -128,23 +118,12 @@ func (k Keeper) ExportGenesis(ctx sdk.Context) *types.GenesisState {
 
 		// initial consumer chain states
 		cs := types.ConsumerState{
-			ChainId:         consumerId,
-			ClientId:        clientId,
-			ConsumerGenesis: gen,
-			Phase:           k.GetConsumerPhase(ctx, consumerId),
+			ChainId:              consumerId,
+			ClientId:             clientId,
+			ConsumerGenesis:      gen,
+			Phase:                k.GetConsumerPhase(ctx, consumerId),
+			PendingValsetChanges: k.GetPendingVSCPackets(ctx, consumerId),
 		}
-
-		// try to find channel id for the current consumer chain
-		channelId, found := k.GetConsumerIdToChannelId(ctx, consumerId)
-		if found {
-			cs.ChannelId = channelId
-			cs.InitialHeight, found = k.GetInitChainHeight(ctx, consumerId)
-			if !found {
-				panic(fmt.Errorf("cannot find init height for consumer chain %s", consumerId))
-			}
-		}
-
-		cs.PendingValsetChanges = k.GetPendingVSCPackets(ctx, consumerId)
 		consumerStates = append(consumerStates, cs)
 	}
 

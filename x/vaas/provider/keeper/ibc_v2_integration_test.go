@@ -223,10 +223,6 @@ func TestIBCV2DualModeRouting(t *testing.T) {
 	providerKeeper.SetConsumerPhase(ctx, consumerId, providertypes.CONSUMER_PHASE_LAUNCHED)
 	providerKeeper.SetConsumerChainId(ctx, consumerId, "consumer-1")
 
-	// Verify no channel mapping exists
-	_, found := providerKeeper.GetConsumerIdToChannelId(ctx, consumerId)
-	require.False(t, found, "no channel should exist for v2-only consumer")
-
 	// Verify client mapping exists
 	gotClientId, found := providerKeeper.GetConsumerClientId(ctx, consumerId)
 	require.True(t, found)

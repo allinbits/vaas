@@ -36,19 +36,6 @@ func TestProviderClientID(t *testing.T) {
 	require.Equal(t, "someClientID", clientID)
 }
 
-// TestProviderChannel tests getter and setter functionality for the channel ID stored on consumer keeper
-func TestProviderChannel(t *testing.T) {
-	consumerKeeper, ctx, ctrl, _ := testkeeper.GetConsumerKeeperAndCtx(t, testkeeper.NewInMemKeeperParams(t))
-	defer ctrl.Finish()
-
-	_, ok := consumerKeeper.GetProviderChannel(ctx)
-	require.False(t, ok)
-	consumerKeeper.SetProviderChannel(ctx, "channelID")
-	channelID, ok := consumerKeeper.GetProviderChannel(ctx)
-	require.True(t, ok)
-	require.Equal(t, "channelID", channelID)
-}
-
 // TestPendingChanges tests getter, setter, and delete functionality for pending VSCs on a consumer chain
 func TestPendingChanges(t *testing.T) {
 	pk1, err := cryptocodec.ToCmtProtoPublicKey(ed25519.GenPrivKey().PubKey())

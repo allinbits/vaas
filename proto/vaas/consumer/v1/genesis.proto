@@ -19,14 +19,8 @@ import "tendermint/abci/types.proto";
 message GenesisState {
   // ConsumerParams is a shared type with provider module
   vaas.v1.ConsumerParams params = 1 [ (gogoproto.nullable) = false ];
-  // Client ID of the provider. Empty for a new chain, filled in on restart.
-  // IBC v2 Note: This is the primary identifier for the provider in IBC v2.
+  // Client ID of the provider. This is the primary identifier for the provider.
   string provider_client_id = 2;
-  // Channel ID of the provider. Empty for a new chain, filled in on restart.
-  // Deprecated: In IBC v2 (Eureka), channels are not used. This field is kept
-  // for backward compatibility during the migration period and will be removed
-  // when IBC v2 is fully adopted.
-  string provider_channel_id = 3;
   // true for new chain, false for chain restart.
   bool new_chain = 4;
   // HeightToValsetUpdateId nil on new chain, filled in on restart.
@@ -35,15 +29,6 @@ message GenesisState {
   // Flag indicating whether the consumer VAAS module starts in pre-VAAS state
   bool preVAAS = 9;
   vaas.v1.ProviderInfo provider = 10 [ (gogoproto.nullable) = false ];
-  // The ID of the connection end on the consumer chain on top of which the
-  // VAAS channel will be established. If connection_id == "", a new client of
-  // the provider chain and a new connection on top of this client are created.
-  // The new client is initialized using provider.client_state and
-  // provider.consensus_state.
-  // Deprecated: In IBC v2 (Eureka), connections are not used. This field is
-  // kept for backward compatibility during the migration period. In IBC v2,
-  // client_id is used directly for routing.
-  string connection_id = 11;
 }
 
 // HeightValsetUpdateID represents a mapping internal to the consumer VAAS module
