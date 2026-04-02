@@ -6,9 +6,9 @@ const (
 
 	Version = "1"
 
-	ProviderAppID = "vaas/provider"
+	ProviderAppID = "vaasprovider"
 
-	ConsumerAppID = "vaas/consumer"
+	ConsumerAppID = "vaasconsumer"
 
 	RouterKey = ModuleName
 
