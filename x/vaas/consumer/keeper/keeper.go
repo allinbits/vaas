@@ -10,15 +10,11 @@ import (
 
 	tmtypes "github.com/cometbft/cometbft/abci/types"
 
-	clienttypes "github.com/cosmos/ibc-go/v10/modules/core/02-client/types"
-	conntypes "github.com/cosmos/ibc-go/v10/modules/core/03-connection/types"
-	channeltypes "github.com/cosmos/ibc-go/v10/modules/core/04-channel/types"
 	host "github.com/cosmos/ibc-go/v10/modules/core/24-host"
 
 	"cosmossdk.io/collections"
 	addresscodec "cosmossdk.io/core/address"
 	corestoretypes "cosmossdk.io/core/store"
-	errorsmod "cosmossdk.io/errors"
 	"cosmossdk.io/log"
 
 	"github.com/cosmos/cosmos-sdk/codec"
@@ -34,13 +30,7 @@ type Keeper struct {
 
 	storeService corestoretypes.KVStoreService
 	cdc          codec.BinaryCodec
-	// channelKeeper is used for IBC v1 channel-based communication.
-	// Deprecated: Will be removed in IBC v2 where channels are not used.
-	channelKeeper vaastypes.ChannelKeeper
-	// connectionKeeper is used for IBC v1 connection validation.
-	// Deprecated: Connections are managed internally by IBC core in v2.
-	connectionKeeper vaastypes.ConnectionKeeper
-	clientKeeper     vaastypes.ClientKeeper
+	clientKeeper vaastypes.ClientKeeper
 	// standaloneStakingKeeper is the staking keeper that managed proof of stake for a previously standalone chain,
 	// before the chain went through a standalone to consumer changeover.
 	// This keeper is not used for consumers that launched with ICS, and is therefore set after the constructor.
@@ -49,10 +39,7 @@ type Keeper struct {
 	hooks                   vaastypes.ConsumerHooks
 	bankKeeper              vaastypes.BankKeeper
 	authKeeper              vaastypes.AccountKeeper
-	// ibcCoreKeeper is used for IBC v1 channel operations.
-	// Deprecated: Channel operations are not used in IBC v2.
-	ibcCoreKeeper    vaastypes.IBCCoreKeeper
-	feeCollectorName string
+	feeCollectorName        string
 
 	validatorAddressCodec addresscodec.Codec
 	consensusAddressCodec addresscodec.Codec
@@ -63,7 +50,6 @@ type Keeper struct {
 	// State collections
 	Port                  collections.Item[string]
 	ProviderClientID      collections.Item[string]
-	ProviderChannelID     collections.Item[string]
 	PendingChanges        collections.Item[vaastypes.ValidatorSetChangePacketData]
 	InitGenesisHeight     collections.Item[uint64]
 	PreVAAS               collections.Item[uint64]
@@ -81,10 +67,8 @@ type Keeper struct {
 // collector (and not the provider chain)
 func NewKeeper(
 	cdc codec.BinaryCodec, storeService corestoretypes.KVStoreService,
-	channelKeeper vaastypes.ChannelKeeper,
-	connectionKeeper vaastypes.ConnectionKeeper, clientKeeper vaastypes.ClientKeeper,
+	clientKeeper vaastypes.ClientKeeper,
 	slashingKeeper vaastypes.SlashingKeeper, bankKeeper vaastypes.BankKeeper, accountKeeper vaastypes.AccountKeeper,
-	ibcCoreKeeper vaastypes.IBCCoreKeeper,
 	feeCollectorName, authority string, validatorAddressCodec,
 	consensusAddressCodec addresscodec.Codec,
 ) Keeper {
@@ -94,13 +78,10 @@ func NewKeeper(
 		authority:               authority,
 		storeService:            storeService,
 		cdc:                     cdc,
-		channelKeeper:           channelKeeper,
-		connectionKeeper:        connectionKeeper,
 		clientKeeper:            clientKeeper,
 		slashingKeeper:          slashingKeeper,
 		bankKeeper:              bankKeeper,
 		authKeeper:              accountKeeper,
-		ibcCoreKeeper:           ibcCoreKeeper,
 		feeCollectorName:        feeCollectorName,
 		standaloneStakingKeeper: nil,
 		validatorAddressCodec:   validatorAddressCodec,
@@ -109,7 +90,6 @@ func NewKeeper(
 		// Initialize collections
 		Port:                  collections.NewItem(sb, types.PortPrefix, "port", collections.StringValue),
 		ProviderClientID:      collections.NewItem(sb, types.ProviderClientIDPrefix, "provider_client_id", collections.StringValue),
-		ProviderChannelID:     collections.NewItem(sb, types.ProviderChannelIDPrefix, "provider_channel_id", collections.StringValue),
 		PendingChanges:        collections.NewItem(sb, types.PendingChangesPrefix, "pending_changes", codec.CollValue[vaastypes.ValidatorSetChangePacketData](cdc)),
 		InitGenesisHeight:     collections.NewItem(sb, types.InitGenesisHeightPrefix, "init_genesis_height", collections.Uint64Value),
 		PreVAAS:               collections.NewItem(sb, types.PreVAASPrefix, "pre_vaas", collections.Uint64Value),
@@ -148,7 +128,6 @@ func NewNonZeroKeeper(cdc codec.BinaryCodec, storeService corestoretypes.KVStore
 		// Initialize collections with minimal setup for testing
 		Port:                  collections.NewItem(sb, types.PortPrefix, "port", collections.StringValue),
 		ProviderClientID:      collections.NewItem(sb, types.ProviderClientIDPrefix, "provider_client_id", collections.StringValue),
-		ProviderChannelID:     collections.NewItem(sb, types.ProviderChannelIDPrefix, "provider_channel_id", collections.StringValue),
 		PendingChanges:        collections.NewItem(sb, types.PendingChangesPrefix, "pending_changes", codec.CollValue[vaastypes.ValidatorSetChangePacketData](cdc)),
 		InitGenesisHeight:     collections.NewItem(sb, types.InitGenesisHeightPrefix, "init_genesis_height", collections.Uint64Value),
 		PreVAAS:               collections.NewItem(sb, types.PreVAASPrefix, "pre_vaas", collections.Uint64Value),
@@ -203,19 +182,6 @@ func (k *Keeper) SetHooks(sh vaastypes.ConsumerHooks) *Keeper {
 	return k
 }
 
-// ChanCloseInit defines a wrapper function for the channel Keeper's function
-// Following ICS 004: https://github.com/cosmos/ibc/tree/main/spec/core/ics-004-channel-and-packet-semantics#closing-handshake
-func (k Keeper) ChanCloseInit(ctx sdk.Context, portID, channelID string) error {
-	return k.channelKeeper.ChanCloseInit(ctx, portID, channelID)
-}
-
-// ChannelOpenInit defines a wrapper function for the ibcCoreKeeper's function
-func (k Keeper) ChannelOpenInit(ctx sdk.Context, msg *channeltypes.MsgChannelOpenInit) (
-	*channeltypes.MsgChannelOpenInitResponse, error,
-) {
-	return k.ibcCoreKeeper.ChannelOpenInit(ctx, msg)
-}
-
 // GetPort returns the portID for the transfer module. Used in ExportGenesis
 func (k Keeper) GetPort(ctx context.Context) string {
 	port, err := k.Port.Get(ctx)
@@ -247,32 +213,6 @@ func (k Keeper) GetProviderClientID(ctx context.Context) (string, bool) {
 		return "", false
 	}
 	return clientID, true
-}
-
-// SetProviderChannel sets the channelID for the channel to the provider.
-func (k Keeper) SetProviderChannel(ctx context.Context, channelID string) {
-	if err := k.ProviderChannelID.Set(ctx, channelID); err != nil {
-		panic(fmt.Errorf("failed to set provider channel: %w", err))
-	}
-}
-
-// GetProviderChannel gets the channelID for the channel to the provider.
-func (k Keeper) GetProviderChannel(ctx context.Context) (string, bool) {
-	channelID, err := k.ProviderChannelID.Get(ctx)
-	if err != nil {
-		return "", false
-	}
-	if channelID == "" {
-		return "", false
-	}
-	return channelID, true
-}
-
-// DeleteProviderChannel deletes the channelID for the channel to the provider.
-func (k Keeper) DeleteProviderChannel(ctx context.Context) {
-	if err := k.ProviderChannelID.Remove(ctx); err != nil {
-		panic(fmt.Errorf("failed to delete provider channel: %w", err))
-	}
 }
 
 // SetPendingChanges sets the pending validator set change packet that haven't been flushed to ABCI
@@ -355,29 +295,6 @@ func (k Keeper) GetLastStandaloneValidators(ctx sdk.Context) ([]stakingtypes.Val
 		panic("cannot get last standalone validators if not in pre-VAAS state, or if standalone staking keeper is nil")
 	}
 	return k.GetLastBondedValidators(ctx)
-}
-
-// VerifyProviderChain verifies that the chain trying to connect on the channel handshake
-// is the expected provider chain.
-func (k Keeper) VerifyProviderChain(ctx sdk.Context, connectionHops []string) error {
-	if len(connectionHops) != 1 {
-		return errorsmod.Wrap(channeltypes.ErrTooManyConnectionHops, "must have direct connection to provider chain")
-	}
-	connectionID := connectionHops[0]
-	conn, ok := k.connectionKeeper.GetConnection(ctx, connectionID)
-	if !ok {
-		return errorsmod.Wrapf(conntypes.ErrConnectionNotFound, "connection not found for connection ID: %s", connectionID)
-	}
-	// Verify that client id is expected clientID
-	expectedClientId, ok := k.GetProviderClientID(ctx)
-	if !ok {
-		return errorsmod.Wrapf(clienttypes.ErrInvalidClient, "could not find provider client id")
-	}
-	if expectedClientId != conn.ClientId {
-		return errorsmod.Wrapf(clienttypes.ErrInvalidClient, "invalid client: %s, channel must be built on top of client: %s", conn.ClientId, expectedClientId)
-	}
-
-	return nil
 }
 
 // SetHeightValsetUpdateID sets the valset update id for a given block height

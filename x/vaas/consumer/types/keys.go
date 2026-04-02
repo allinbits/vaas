@@ -23,7 +23,6 @@ var (
 	PortPrefix                  = collections.NewPrefix(0)
 	UnbondingTimePrefix         = collections.NewPrefix(2)
 	ProviderClientIDPrefix      = collections.NewPrefix(3)
-	ProviderChannelIDPrefix     = collections.NewPrefix(4)
 	PendingChangesPrefix        = collections.NewPrefix(5)
 	PreVAASPrefix               = collections.NewPrefix(7)
 	InitialValSetPrefix         = collections.NewPrefix(8)

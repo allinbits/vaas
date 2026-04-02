@@ -68,6 +68,10 @@ func (s *IntegrationTestSuite) testProviderOnConsumer() {
 // is synchronized to the one the provider.
 func (s *IntegrationTestSuite) testValidatorSetSync() {
 	s.Run("validator set sync", func() {
+		// TODO: This test requires the ts-relayer to be running and IBC v2
+		// counterparty to be registered on both chains.
+		// See https://github.com/allinbits/ibc-v2-ts-relayer
+		s.T().Skip("skipped: requires ts-relayer for IBC v2 counterparty registration and packet relaying")
 		providerVals, err := s.queryProviderNetValidators()
 		s.Require().NoError(err, "failed to query provider validators")
 

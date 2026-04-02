@@ -6,8 +6,6 @@ import (
 
 	transfertypes "github.com/cosmos/ibc-go/v10/modules/apps/transfer/types"
 	clienttypes "github.com/cosmos/ibc-go/v10/modules/core/02-client/types"
-	conntypes "github.com/cosmos/ibc-go/v10/modules/core/03-connection/types"
-	channeltypes "github.com/cosmos/ibc-go/v10/modules/core/04-channel/types"
 	ibcexported "github.com/cosmos/ibc-go/v10/modules/core/exported"
 
 	addresscodec "cosmossdk.io/core/address"
@@ -58,32 +56,6 @@ type SlashingKeeper interface {
 	IsTombstoned(context.Context, sdk.ConsAddress) bool
 }
 
-// ChannelKeeper defines the expected IBC channel keeper.
-// Deprecated: ChannelKeeper is used for IBC v1 channel-based communication.
-// For IBC v2, use IBCPacketHandler instead. This interface is kept for
-// backward compatibility during the migration period.
-type ChannelKeeper interface {
-	GetChannel(ctx sdk.Context, srcPort, srcChan string) (channel channeltypes.Channel, found bool)
-	SendPacket(
-		ctx sdk.Context,
-		sourcePort string,
-		sourceChannel string,
-		timeoutHeight clienttypes.Height,
-		timeoutTimestamp uint64,
-		data []byte,
-	) (sequence uint64, err error)
-	ChanCloseInit(ctx sdk.Context, portID, channelID string) error
-	GetChannelConnection(ctx sdk.Context, portID, channelID string) (string, conntypes.ConnectionEnd, error)
-}
-
-// ConnectionKeeper defines the expected IBC connection keeper.
-// Deprecated: ConnectionKeeper is used for IBC v1 connection-based routing.
-// In IBC v2, connections are managed internally by the IBC core module.
-// This interface is kept for backward compatibility during the migration period.
-type ConnectionKeeper interface {
-	GetConnection(ctx sdk.Context, connectionID string) (conntypes.ConnectionEnd, bool)
-}
-
 // ClientKeeper defines the expected IBC client keeper
 type ClientKeeper interface {
 	CreateClient(ctx sdk.Context, clientType string, clientState, consensusState []byte) (string, error)
@@ -115,19 +87,6 @@ type AccountKeeper interface {
 // of tokens from the consumer to the provider chain
 type IBCTransferKeeper interface {
 	Transfer(context.Context, *transfertypes.MsgTransfer) (*transfertypes.MsgTransferResponse, error)
-}
-
-// IBCCoreKeeper defines the expected interface needed for opening a channel.
-// Deprecated: IBCCoreKeeper is used for IBC v1 channel-based operations.
-// In IBC v2, channel operations are replaced by client-based routing.
-// This interface is kept for backward compatibility during the migration period.
-// IBCCoreKeeper defines the expected interface needed for opening a
-// channel
-type IBCCoreKeeper interface {
-	ChannelOpenInit(
-		goCtx context.Context,
-		msg *channeltypes.MsgChannelOpenInit,
-	) (*channeltypes.MsgChannelOpenInitResponse, error)
 }
 
 // IBCPacketHandler defines the expected interface for IBC v2 packet operations.

@@ -7,8 +7,6 @@ import (
 	"strings"
 	"time"
 
-	ibchost "github.com/cosmos/ibc-go/v10/modules/core/24-host"
-
 	errorsmod "cosmossdk.io/errors"
 	"cosmossdk.io/math"
 
@@ -62,32 +60,6 @@ func ValidateString(i interface{}) error {
 		return fmt.Errorf("invalid parameter type: %T", i)
 	}
 	return nil
-}
-
-func ValidateDistributionTransmissionChannel(i interface{}) error {
-	// Accept empty string as valid, since this means a new
-	// distribution transmission channel will be created
-	if i == "" {
-		return nil
-	}
-	// Otherwise validate as usual for a channelID
-	return ValidateChannelIdentifier(i)
-}
-
-func ValidateChannelIdentifier(i interface{}) error {
-	value, ok := i.(string)
-	if !ok {
-		return fmt.Errorf("invalid parameter type: %T", i)
-	}
-	return ibchost.ChannelIdentifierValidator(value)
-}
-
-func ValidateConnectionIdentifier(connId string) error {
-	// accept empty string as valid
-	if strings.TrimSpace(connId) == "" {
-		return nil
-	}
-	return ibchost.ConnectionIdentifierValidator(connId)
 }
 
 func ValidateAccAddress(i interface{}) error {

@@ -72,28 +72,22 @@ func NewInMemKeeperParams(tb testing.TB) InMemKeeperParams {
 
 // A struct holding pointers to any mocked external keeper needed for provider/consumer keeper setup.
 type MockedKeepers struct {
-	*MockChannelKeeper
-	*MockConnectionKeeper
 	*MockClientKeeper
 	*MockStakingKeeper
 	*MockSlashingKeeper
 	*MockAccountKeeper
 	*MockBankKeeper
-	*MockIBCCoreKeeper
 	// *MockGovKeeper
 }
 
 // NewMockedKeepers instantiates a struct with pointers to properly instantiated mocked keepers.
 func NewMockedKeepers(ctrl *gomock.Controller) MockedKeepers {
 	return MockedKeepers{
-		MockChannelKeeper:    NewMockChannelKeeper(ctrl),
-		MockConnectionKeeper: NewMockConnectionKeeper(ctrl),
-		MockClientKeeper:     NewMockClientKeeper(ctrl),
-		MockStakingKeeper:    NewMockStakingKeeper(ctrl),
-		MockSlashingKeeper:   NewMockSlashingKeeper(ctrl),
-		MockAccountKeeper:    NewMockAccountKeeper(ctrl),
-		MockBankKeeper:       NewMockBankKeeper(ctrl),
-		MockIBCCoreKeeper:    NewMockIBCCoreKeeper(ctrl),
+		MockClientKeeper:   NewMockClientKeeper(ctrl),
+		MockStakingKeeper:  NewMockStakingKeeper(ctrl),
+		MockSlashingKeeper: NewMockSlashingKeeper(ctrl),
+		MockAccountKeeper:  NewMockAccountKeeper(ctrl),
+		MockBankKeeper:     NewMockBankKeeper(ctrl),
 	}
 }
 
@@ -103,8 +97,6 @@ func NewInMemProviderKeeper(params InMemKeeperParams, mocks MockedKeepers) provi
 	return providerkeeper.NewKeeper(
 		params.Cdc,
 		storeService,
-		mocks.MockChannelKeeper,
-		mocks.MockConnectionKeeper,
 		mocks.MockClientKeeper,
 		mocks.MockStakingKeeper,
 		mocks.MockSlashingKeeper,
@@ -126,13 +118,10 @@ func NewInMemConsumerKeeper(params InMemKeeperParams, mocks MockedKeepers) consu
 	return consumerkeeper.NewKeeper(
 		params.Cdc,
 		storeService,
-		mocks.MockChannelKeeper,
-		mocks.MockConnectionKeeper,
 		mocks.MockClientKeeper,
 		mocks.MockSlashingKeeper,
 		mocks.MockBankKeeper,
 		mocks.MockAccountKeeper,
-		mocks.MockIBCCoreKeeper,
 		authtypes.FeeCollectorName,
 		authtypes.NewModuleAddress(govtypes.ModuleName).String(),
 		address.NewBech32Codec("cosmosvaloper"),

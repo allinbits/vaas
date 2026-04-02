@@ -1,15 +1,12 @@
 package keeper
 
 import (
-	time "time"
+	"time"
 
 	providertypes "github.com/allinbits/vaas/x/vaas/provider/types"
-	"github.com/allinbits/vaas/x/vaas/types"
 	"go.uber.org/mock/gomock"
 
 	clienttypes "github.com/cosmos/ibc-go/v10/modules/core/02-client/types"
-	conntypes "github.com/cosmos/ibc-go/v10/modules/core/03-connection/types"
-	channeltypes "github.com/cosmos/ibc-go/v10/modules/core/04-channel/types"
 	ibctmtypes "github.com/cosmos/ibc-go/v10/modules/light-clients/07-tendermint"
 
 	math "cosmossdk.io/math"
@@ -53,16 +50,6 @@ func GetMocksForSetConsumerChain(ctx sdk.Context, mocks *MockedKeepers,
 	chainIDToInject string,
 ) []any {
 	return []any{
-		mocks.MockChannelKeeper.EXPECT().GetChannel(ctx, types.ProviderAppID, gomock.Any()).Return(
-			channeltypes.Channel{
-				State:          channeltypes.OPEN,
-				ConnectionHops: []string{"connectionID"},
-			},
-			true,
-		).Times(1),
-		mocks.MockConnectionKeeper.EXPECT().GetConnection(ctx, "connectionID").Return(
-			conntypes.ConnectionEnd{ClientId: "clientID"}, true,
-		).Times(1),
 		mocks.MockClientKeeper.EXPECT().GetClientState(ctx, "clientID").Return(
 			&ibctmtypes.ClientState{ChainId: chainIDToInject}, true,
 		).Times(1),

@@ -190,35 +190,6 @@ func TestGetAllConsumersWithIBCClients(t *testing.T) {
 	require.Equal(t, consumerIds, actualConsumerIds)
 }
 
-// TestGetAllChannelToChains tests GetAllChannelToConsumers behaviour correctness
-func TestGetAllChannelToChains(t *testing.T) {
-	pk, ctx, ctrl, _ := testkeeper.GetProviderKeeperAndCtx(t, testkeeper.NewInMemKeeperParams(t))
-	defer ctrl.Finish()
-
-	consumerIds := []string{"2", "1", "4", "3"}
-	var expectedGetAllOrder []struct {
-		ChannelId  string
-		ConsumerId string
-	}
-
-	for i, consumerId := range consumerIds {
-		channelID := fmt.Sprintf("client-%d", len(consumerIds)-i)
-		pk.SetChannelToConsumerId(ctx, channelID, consumerId)
-		expectedGetAllOrder = append(expectedGetAllOrder, struct {
-			ChannelId  string
-			ConsumerId string
-		}{ConsumerId: consumerId, ChannelId: channelID})
-	}
-	// sorting by channelID
-	sort.Slice(expectedGetAllOrder, func(i, j int) bool {
-		return expectedGetAllOrder[i].ChannelId < expectedGetAllOrder[j].ChannelId
-	})
-
-	result := pk.GetAllChannelToConsumers(ctx)
-	require.Len(t, result, len(consumerIds))
-	require.Equal(t, expectedGetAllOrder, result)
-}
-
 // TestConsumerClientId tests the getter, setter, and deletion of the client id <> consumer id mappings
 func TestConsumerClientId(t *testing.T) {
 	providerKeeper, ctx, ctrl, _ := testkeeper.GetProviderKeeperAndCtx(t, testkeeper.NewInMemKeeperParams(t))

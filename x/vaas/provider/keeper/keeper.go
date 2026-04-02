@@ -31,13 +31,7 @@ type Keeper struct {
 
 	storeService corestoretypes.KVStoreService
 
-	cdc codec.BinaryCodec
-	// channelKeeper is used for IBC v1 channel-based communication.
-	// Deprecated: Will be replaced by IBCPacketHandler in IBC v2.
-	channelKeeper vaastypes.ChannelKeeper
-	// connectionKeeper is used for IBC v1 connection validation.
-	// Deprecated: Connections are managed internally by IBC core in v2.
-	connectionKeeper vaastypes.ConnectionKeeper
+	cdc              codec.BinaryCodec
 	accountKeeper    vaastypes.AccountKeeper
 	clientKeeper     vaastypes.ClientKeeper
 	stakingKeeper    vaastypes.StakingKeeper
@@ -57,11 +51,9 @@ type Keeper struct {
 	Schema collections.Schema
 
 	// State collections
-	Port                          collections.Item[string]
 	Params                        collections.Item[types.Params]
 	ValidatorSetUpdateId          collections.Sequence
 	ConsumerId                    collections.Sequence
-	ConsumerChannels              *collections.IndexedMap[string, string, ConsumerChannelIndexes]
 	ConsumerClients               *collections.IndexedMap[string, string, ConsumerClientIndexes]
 	ConsumerGenesis               collections.Map[string, vaastypes.ConsumerGenesisState]
 	ValsetUpdateBlockHeight       collections.Map[uint64, uint64]
@@ -90,8 +82,7 @@ type Keeper struct {
 // NewKeeper creates a new provider Keeper instance
 func NewKeeper(
 	cdc codec.BinaryCodec, storeService corestoretypes.KVStoreService,
-	channelKeeper vaastypes.ChannelKeeper,
-	connectionKeeper vaastypes.ConnectionKeeper, clientKeeper vaastypes.ClientKeeper,
+	clientKeeper vaastypes.ClientKeeper,
 	stakingKeeper vaastypes.StakingKeeper, slashingKeeper vaastypes.SlashingKeeper,
 	accountKeeper vaastypes.AccountKeeper,
 	bankKeeper vaastypes.BankKeeper,
@@ -106,8 +97,6 @@ func NewKeeper(
 		cdc:                   cdc,
 		storeService:          storeService,
 		authority:             authority,
-		channelKeeper:         channelKeeper,
-		connectionKeeper:      connectionKeeper,
 		clientKeeper:          clientKeeper,
 		stakingKeeper:         stakingKeeper,
 		slashingKeeper:        slashingKeeper,
@@ -119,29 +108,9 @@ func NewKeeper(
 		govKeeper:             govKeeper,
 
 		// Initialize collections
-		Port:                 collections.NewItem(sb, types.PortPrefix, "port", collections.StringValue),
 		Params:               collections.NewItem(sb, types.ParametersPrefix, "params", codec.CollValue[types.Params](cdc)),
 		ValidatorSetUpdateId: collections.NewSequence(sb, types.ValidatorSetUpdateIdPrefix, "validator_set_update_id"),
 		ConsumerId:           collections.NewSequence(sb, types.ConsumerIdPrefix, "consumer_id"),
-		ConsumerChannels: collections.NewIndexedMap(
-			sb,
-			types.ConsumerIdToChannelIdPrefix,
-			"consumer_channels",
-			collections.StringKey,
-			collections.StringValue,
-			ConsumerChannelIndexes{
-				ByChannelId: indexes.NewUnique(
-					sb,
-					types.ChannelIdToConsumerIdPrefix,
-					"consumer_channels_by_channel_id",
-					collections.StringKey,
-					collections.StringKey,
-					func(_ string, channelId string) (string, error) {
-						return channelId, nil
-					},
-				),
-			},
-		),
 		ConsumerClients: collections.NewIndexedMap(
 			sb,
 			types.ConsumerIdToClientIdPrefix,
@@ -228,45 +197,6 @@ func (k Keeper) Logger(ctx context.Context) log.Logger {
 	return sdkCtx.Logger().With("module", "x/"+ibchost.ModuleName+"-"+types.ModuleName)
 }
 
-// GetPort returns the portID for the CCV module. Used in ExportGenesis
-func (k Keeper) GetPort(ctx context.Context) string {
-	port, err := k.Port.Get(ctx)
-	if err != nil {
-		return ""
-	}
-	return port
-}
-
-// SetPort sets the portID for the CCV module. Used in InitGenesis
-func (k Keeper) SetPort(ctx context.Context, portID string) {
-	if err := k.Port.Set(ctx, portID); err != nil {
-		panic(fmt.Errorf("failed to set port: %w", err))
-	}
-}
-
-// SetConsumerIdToChannelId sets the mapping from a consumer id to the CCV channel id for that consumer chain.
-func (k Keeper) SetConsumerIdToChannelId(ctx context.Context, consumerId, channelId string) {
-	if err := k.ConsumerChannels.Set(ctx, consumerId, channelId); err != nil {
-		panic(fmt.Errorf("failed to set consumer id to channel id: %w", err))
-	}
-}
-
-// GetConsumerIdToChannelId gets the CCV channelId for the given consumer id
-func (k Keeper) GetConsumerIdToChannelId(ctx context.Context, consumerId string) (string, bool) {
-	channelId, err := k.ConsumerChannels.Get(ctx, consumerId)
-	if err != nil {
-		return "", false
-	}
-	return channelId, true
-}
-
-// DeleteConsumerIdToChannelId deletes the CCV channel id for the given consumer id
-func (k Keeper) DeleteConsumerIdToChannelId(ctx context.Context, consumerId string) {
-	if err := k.ConsumerChannels.Remove(ctx, consumerId); err != nil {
-		panic(fmt.Errorf("failed to delete consumer id to channel id: %w", err))
-	}
-}
-
 // GetAllConsumersWithIBCClients returns the ids of all consumer chains that with IBC clients created.
 func (k Keeper) GetAllConsumersWithIBCClients(ctx context.Context) []string {
 	consumerIds := []string{}
@@ -286,73 +216,6 @@ func (k Keeper) GetAllConsumersWithIBCClients(ctx context.Context) []string {
 	}
 
 	return consumerIds
-}
-
-// SetChannelToConsumerId sets the mapping from the CCV channel id to the consumer id.
-// Note: This is now handled automatically by the ConsumerChannels indexed map.
-// This method is kept for API compatibility but the index is maintained automatically.
-func (k Keeper) SetChannelToConsumerId(ctx context.Context, channelId, consumerId string) {
-	// The reverse index is automatically maintained by ConsumerChannels IndexedMap
-	// This method exists for backwards compatibility
-	if err := k.ConsumerChannels.Set(ctx, consumerId, channelId); err != nil {
-		panic(fmt.Errorf("failed to set channel to consumer id: %w", err))
-	}
-}
-
-// GetChannelIdToConsumerId gets the consumer id for a given CCV channel id
-func (k Keeper) GetChannelIdToConsumerId(ctx context.Context, channelID string) (string, bool) {
-	consumerId, err := k.ConsumerChannels.Indexes.ByChannelId.MatchExact(ctx, channelID)
-	if err != nil {
-		return "", false
-	}
-	return consumerId, true
-}
-
-// DeleteChannelIdToConsumerId deletes the consumer id for a given CCV channel id
-// Note: This is now handled automatically by the ConsumerChannels indexed map.
-func (k Keeper) DeleteChannelIdToConsumerId(ctx context.Context, channelId string) {
-	// Look up the consumerId first, then remove from the indexed map
-	consumerId, err := k.ConsumerChannels.Indexes.ByChannelId.MatchExact(ctx, channelId)
-	if err != nil {
-		return // Not found, nothing to delete
-	}
-	if err := k.ConsumerChannels.Remove(ctx, consumerId); err != nil {
-		panic(fmt.Errorf("failed to delete channel id to consumer id: %w", err))
-	}
-}
-
-// GetAllChannelToConsumers gets all channel to chain mappings.
-// The results are sorted by ChannelId.
-func (k Keeper) GetAllChannelToConsumers(ctx context.Context) (channelsToConsumers []struct {
-	ChannelId  string
-	ConsumerId string
-},
-) {
-	// Iterate over the ByChannelId index to get results sorted by ChannelId
-	iter, err := k.ConsumerChannels.Indexes.ByChannelId.Iterate(ctx, nil)
-	if err != nil {
-		return channelsToConsumers
-	}
-	defer iter.Close()
-
-	for ; iter.Valid(); iter.Next() {
-		// FullKey returns Pair[ReferenceKey, PrimaryKey] = Pair[ChannelId, ConsumerId]
-		fullKey, err := iter.FullKey()
-		if err != nil {
-			continue
-		}
-		channelId := fullKey.K1()
-		consumerId := fullKey.K2()
-		channelsToConsumers = append(channelsToConsumers, struct {
-			ChannelId  string
-			ConsumerId string
-		}{
-			ChannelId:  channelId,
-			ConsumerId: consumerId,
-		})
-	}
-
-	return channelsToConsumers
 }
 
 func (k Keeper) SetConsumerGenesis(ctx context.Context, consumerId string, gen vaastypes.ConsumerGenesisState) error {

@@ -385,8 +385,6 @@ func New(
 	app.ProviderKeeper = ibcproviderkeeper.NewKeeper(
 		appCodec,
 		runtime.NewKVStoreService(keys[providertypes.StoreKey]),
-		app.IBCKeeper.ChannelKeeper,
-		app.IBCKeeper.ConnectionKeeper,
 		app.IBCKeeper.ClientKeeper,
 		app.StakingKeeper,
 		app.SlashingKeeper,
@@ -448,6 +446,13 @@ func New(
 	ibcRouterV2.AddRoute(ibctransfertypes.PortID, transferv2.NewIBCModule(app.TransferKeeper))
 	ibcRouterV2.AddRoute(vaastypes.ProviderAppID, ibcprovider.NewIBCModule(&app.ProviderKeeper))
 	app.IBCKeeper.SetRouterV2(ibcRouterV2)
+
+	app.ProviderKeeper.SetIBCPacketHandler(
+		vaastypes.NewChannelV2Adapter(
+			app.IBCKeeper.ChannelKeeperV2,
+			authtypes.NewModuleAddress(govtypes.ModuleName).String(),
+		),
+	)
 
 	govRouter := govv1beta1.NewRouter()
 	govRouter.

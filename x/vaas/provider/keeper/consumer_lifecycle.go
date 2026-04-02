@@ -538,12 +538,6 @@ func (k Keeper) DeleteConsumerChain(ctx sdk.Context, consumerId string) (err err
 	k.DeleteKeyAssignments(ctx, consumerId)
 	k.DeleteEquivocationEvidenceMinHeight(ctx, consumerId)
 
-	// close channel and delete the mappings between chain ID and channel ID
-	if channelID, found := k.GetConsumerIdToChannelId(ctx, consumerId); found {
-		k.DeleteConsumerIdToChannelId(ctx, consumerId)
-		k.DeleteChannelIdToConsumerId(ctx, channelID)
-	}
-
 	k.DeleteInitChainHeight(ctx, consumerId)
 	k.DeletePendingVSCPackets(ctx, consumerId)
 

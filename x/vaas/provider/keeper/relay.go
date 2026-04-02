@@ -203,8 +203,6 @@ func (k Keeper) SendVSCPacketsToChain(ctx sdk.Context, consumerId, clientId stri
 
 // QueueVSCPackets queues latest validator updates for every consumer chain
 // with the IBC client created.
-//
-// TODO (mpoke): iterate only over consumers with established channel -- GetAllChannelToConsumers
 func (k Keeper) QueueVSCPackets(ctx sdk.Context) error {
 	valUpdateID := k.GetValidatorSetUpdateId(ctx) // current valset update ID
 

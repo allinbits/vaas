@@ -25,17 +25,7 @@ const (
 
 	ParametersKeyName = "ParametersKey"
 
-	PortKeyName = "PortKey"
-
 	ValidatorSetUpdateIdKeyName = "ValidatorSetUpdateIdKey"
-
-	// ConsumerIdToChannelIdKeyName stores the mapping from consumer ID to channel ID.
-	// Deprecated: Used for IBC v1 channel-based communication. Use ConsumerIdToClientIdKeyName for IBC v2.
-	ConsumerIdToChannelIdKeyName = "ConsumerIdToChannelIdKey"
-
-	// ChannelIdToConsumerIdKeyName stores the reverse mapping from channel ID to consumer ID.
-	// Deprecated: Used for IBC v1 channel-based communication. Use ClientIdToConsumerIdKeyName for IBC v2.
-	ChannelIdToConsumerIdKeyName = "ChannelToConsumerIdKey"
 
 	// ConsumerIdToClientIdKeyName stores the mapping from consumer ID to client ID.
 	// This is the primary lookup mechanism for IBC v2 client-based communication.
@@ -96,10 +86,7 @@ const (
 
 // Collection key prefixes for use with cosmossdk.io/collections
 var (
-	PortPrefix                             = collections.NewPrefix(0)
 	ValidatorSetUpdateIdPrefix             = collections.NewPrefix(1)
-	ConsumerIdToChannelIdPrefix            = collections.NewPrefix(2)
-	ChannelIdToConsumerIdPrefix            = collections.NewPrefix(3)
 	ConsumerIdToClientIdPrefix             = collections.NewPrefix(4)
 	ValsetUpdateBlockHeightPrefix          = collections.NewPrefix(5)
 	ConsumerGenesisPrefix                  = collections.NewPrefix(6)

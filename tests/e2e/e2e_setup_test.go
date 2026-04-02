@@ -23,14 +23,12 @@ import (
 
 const (
 	e2eChainImage   = "cosmos/vaas-e2e"
-	hermesImage     = "ghcr.io/cosmos/hermes-e2e"
-	hermesImageTag  = "1.13.1"
 	dockerNetwork   = "vaas-e2e-testnet"
 	relayerMnemonic = "abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon art"
 )
 
 // IntegrationTestSuite is the main e2e test suite that orchestrates
-// provider chain, consumer chain, and Hermes relayer containers.
+// provider chain and consumer chain containers.
 type IntegrationTestSuite struct {
 	suite.Suite
 
@@ -40,7 +38,6 @@ type IntegrationTestSuite struct {
 	consumer       *chain
 	dkrPool        *dockertest.Pool
 	dkrNet         *dockertest.Network
-	hermesResource *dockertest.Resource
 	providerValRes []*dockertest.Resource
 	consumerValRes []*dockertest.Resource
 }
@@ -69,8 +66,9 @@ func testDir() string {
 // 3. Register consumer on provider
 // 4. Fetch consumer genesis from provider
 // 5. Initialize and start consumer chain
-// 6. Setup Hermes relayer with IBC connection and VAAS channel
-// 7. Trigger VSC
+//
+// TODO: IBC v2 counterparty registration and packet relaying requires the ts-relayer.
+// See https://github.com/allinbits/ibc-v2-ts-relayer
 func (s *IntegrationTestSuite) SetupSuite() {
 	s.T().Log("setting up e2e integration test suite...")
 
@@ -105,11 +103,7 @@ func (s *IntegrationTestSuite) SetupSuite() {
 	s.consumer = &chain{id: consumerChainID}
 	s.initAndStartConsumer(consumerGenesisJSON)
 
-	s.T().Log("step 5: setting up Hermes relayer...")
-	s.startHermesRelayer()
-
-	s.T().Log("step 6: creating IBC connection and VAAS channel...")
-	s.createIBCConnectionAndChannel()
+	s.T().Log("step 5: consumer chain started, skipping IBC v2 counterparty registration (requires ts-relayer)")
 
 	s.T().Log("e2e test suite setup complete!")
 }
@@ -121,13 +115,6 @@ func (s *IntegrationTestSuite) TearDownSuite() {
 	if os.Getenv("VAAS_E2E_SKIP_CLEANUP") == "true" {
 		s.T().Log("skipping cleanup (VAAS_E2E_SKIP_CLEANUP=true)")
 		return
-	}
-
-	// Purge Hermes
-	if s.hermesResource != nil {
-		if err := s.dkrPool.Purge(s.hermesResource); err != nil {
-			s.T().Logf("failed to purge hermes: %v", err)
-		}
 	}
 
 	// Purge consumer validators
@@ -164,7 +151,6 @@ func (s *IntegrationTestSuite) cleanupStaleContainers() {
 		"consumer-init",
 		fmt.Sprintf("%s-val0", providerChainID),
 		fmt.Sprintf("%s-val0", consumerChainID),
-		"hermes-relayer",
 	}
 	for _, name := range staleNames {
 		c, err := s.dkrPool.Client.InspectContainer(name)
@@ -439,98 +425,6 @@ func (s *IntegrationTestSuite) initAndStartConsumer(consumerGenesisJSON []byte) 
 	err = s.waitForChainHeight(waitCtx, "http://localhost:26667", 3)
 	s.Require().NoError(err, "consumer failed to produce blocks")
 	s.T().Log("consumer chain is producing blocks")
-}
-
-// startHermesRelayer starts the Hermes relayer container.
-func (s *IntegrationTestSuite) startHermesRelayer() {
-	hermesDir, err := os.MkdirTemp("", "vaas-e2e-hermes-")
-	s.Require().NoError(err)
-	s.tmpDirs = append(s.tmpDirs, hermesDir)
-
-	// Write hermes config
-	hermesConfig := s.generateHermesConfig()
-	s.Require().NoError(os.MkdirAll(filepath.Join(hermesDir, ".hermes"), 0o750))
-	s.Require().NoError(os.WriteFile(filepath.Join(hermesDir, ".hermes", "config.toml"), []byte(hermesConfig), 0o600))
-
-	// Make hermes dir accessible
-	s.Require().NoError(chmodRecursive(hermesDir, 0o777))
-
-	hermesInitScript := filepath.Join(testDir(), "scripts", "hermes-init.sh")
-
-	resource, err := s.dkrPool.RunWithOptions(
-		&dockertest.RunOptions{
-			Name:       "hermes-relayer",
-			Repository: hermesImage,
-			Tag:        hermesImageTag,
-			NetworkID:  s.dkrNet.Network.ID,
-			Env: []string{
-				"PROVIDER_CHAIN_ID=" + providerChainID,
-				"CONSUMER_CHAIN_ID=" + consumerChainID,
-				"RELAYER_MNEMONIC=" + relayerMnemonic,
-			},
-			Mounts: []string{
-				fmt.Sprintf("%s/.hermes:/home/hermes/.hermes", hermesDir),
-				fmt.Sprintf("%s:/home/hermes/hermes-init.sh", hermesInitScript),
-			},
-			PortBindings: map[docker.Port][]docker.PortBinding{
-				"3031/tcp": {{HostIP: "", HostPort: "3031"}},
-			},
-			Entrypoint: []string{"sh", "/home/hermes/hermes-init.sh"},
-		},
-		func(config *docker.HostConfig) {
-			config.RestartPolicy = docker.RestartPolicy{Name: "no"}
-		},
-	)
-	s.Require().NoError(err, "failed to start hermes container")
-
-	s.hermesResource = resource
-	s.T().Logf("hermes container started: %s", resource.Container.ID[:12])
-
-	// Wait for hermes to start
-	time.Sleep(15 * time.Second)
-}
-
-// createIBCConnectionAndChannel creates the IBC connection using genesis clients
-// and then creates the VAAS channel.
-func (s *IntegrationTestSuite) createIBCConnectionAndChannel() {
-	// Create connection using genesis clients (07-tendermint-0)
-	_, _, err := s.executeHermesCommand([]string{
-		"hermes", "create", "connection",
-		"--a-chain", consumerChainID,
-		"--a-client", "07-tendermint-0",
-		"--b-client", "07-tendermint-0",
-	})
-
-	s.Require().NoError(err, "failed to create IBC connection")
-
-	time.Sleep(5 * time.Second)
-
-	// Create VAAS channel (consumer/provider ports, ordered, version "1")
-	_, _, err = s.executeHermesCommand([]string{
-		"hermes", "create", "channel",
-		"--a-chain", consumerChainID,
-		"--a-connection", "connection-0",
-		"--a-port", "consumer",
-		"--b-port", "provider",
-		"--order", "ordered",
-		"--channel-version", "1",
-	})
-
-	s.Require().NoError(err, "failed to create VAAS channel")
-
-	s.T().Log("IBC connection and VAAS channel created")
-}
-
-// generateHermesConfig reads the Hermes config template and substitutes chain IDs.
-func (s *IntegrationTestSuite) generateHermesConfig() string {
-	templatePath := filepath.Join(testDir(), "testdata", "hermes_config.toml")
-	templateBytes, err := os.ReadFile(templatePath)
-	s.Require().NoError(err, "failed to read hermes_config.toml template")
-
-	config := string(templateBytes)
-	config = strings.ReplaceAll(config, "PROVIDER_CHAIN_ID", providerChainID)
-	config = strings.ReplaceAll(config, "CONSUMER_CHAIN_ID", consumerChainID)
-	return config
 }
 
 // waitForChainHeight polls a CometBFT RPC endpoint until the chain reaches

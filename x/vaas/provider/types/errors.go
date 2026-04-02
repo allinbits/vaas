@@ -7,7 +7,6 @@ import (
 // Provider sentinel errors
 var (
 	ErrUnknownConsumerId                       = errorsmod.Register(ModuleName, 3, "no consumer chain with this consumer id")
-	ErrUnknownConsumerChannelId                = errorsmod.Register(ModuleName, 4, "no consumer chain with this channel id")
 	ErrConsumerKeyInUse                        = errorsmod.Register(ModuleName, 10, "consumer key is already in use by a validator")
 	ErrCannotAssignDefaultKeyAssignment        = errorsmod.Register(ModuleName, 11, "cannot re-assign default key assignment")
 	ErrInvalidConsumerClient                   = errorsmod.Register(ModuleName, 16, "VAAS channel is not built on correct client")
