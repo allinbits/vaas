@@ -32,14 +32,15 @@ const (
 type IntegrationTestSuite struct {
 	suite.Suite
 
-	cdc            codec.Codec
-	tmpDirs        []string
-	provider       *chain
-	consumer       *chain
-	dkrPool        *dockertest.Pool
-	dkrNet         *dockertest.Network
-	providerValRes []*dockertest.Resource
-	consumerValRes []*dockertest.Resource
+	cdc               codec.Codec
+	tmpDirs           []string
+	provider          *chain
+	consumer          *chain
+	dkrPool           *dockertest.Pool
+	dkrNet            *dockertest.Network
+	providerValRes    []*dockertest.Resource
+	consumerValRes    []*dockertest.Resource
+	tsRelayerResource *dockertest.Resource
 }
 
 // makeCodec creates a proto codec with the standard cosmos SDK interfaces registered.
@@ -66,9 +67,7 @@ func testDir() string {
 // 3. Register consumer on provider
 // 4. Fetch consumer genesis from provider
 // 5. Initialize and start consumer chain
-//
-// TODO: IBC v2 counterparty registration and packet relaying requires the ts-relayer.
-// See https://github.com/allinbits/ibc-v2-ts-relayer
+// 6. Start ts-relayer and create IBC v2 path
 func (s *IntegrationTestSuite) SetupSuite() {
 	s.T().Log("setting up e2e integration test suite...")
 
@@ -103,7 +102,8 @@ func (s *IntegrationTestSuite) SetupSuite() {
 	s.consumer = &chain{id: consumerChainID}
 	s.initAndStartConsumer(consumerGenesisJSON)
 
-	s.T().Log("step 5: consumer chain started, skipping IBC v2 counterparty registration (requires ts-relayer)")
+	s.T().Log("step 5: starting ts-relayer and creating IBC v2 path...")
+	s.setupTSRelayer()
 
 	s.T().Log("e2e test suite setup complete!")
 }
@@ -116,6 +116,8 @@ func (s *IntegrationTestSuite) TearDownSuite() {
 		s.T().Log("skipping cleanup (VAAS_E2E_SKIP_CLEANUP=true)")
 		return
 	}
+
+	s.stopTSRelayer()
 
 	// Purge consumer validators
 	for _, r := range s.consumerValRes {
@@ -151,6 +153,7 @@ func (s *IntegrationTestSuite) cleanupStaleContainers() {
 		"consumer-init",
 		fmt.Sprintf("%s-val0", providerChainID),
 		fmt.Sprintf("%s-val0", consumerChainID),
+		fmt.Sprintf("%s-%s-ts-relayer", providerChainID, consumerChainID),
 	}
 	for _, name := range staleNames {
 		c, err := s.dkrPool.Client.InspectContainer(name)
@@ -425,6 +428,23 @@ func (s *IntegrationTestSuite) initAndStartConsumer(consumerGenesisJSON []byte) 
 	err = s.waitForChainHeight(waitCtx, "http://localhost:26667", 3)
 	s.Require().NoError(err, "consumer failed to produce blocks")
 	s.T().Log("consumer chain is producing blocks")
+}
+
+// setupTSRelayer starts the ts-relayer container, configures it with
+// mnemonics and gas prices for both chains, and creates an IBC v2 path.
+// The ts-relayer handles counterparty registration and packet relaying.
+func (s *IntegrationTestSuite) setupTSRelayer() {
+	s.startTSRelayer()
+
+	s.tsRelayerAddMnemonic(providerChainID, relayerMnemonic)
+	s.tsRelayerAddMnemonic(consumerChainID, relayerMnemonic)
+	s.tsRelayerAddGasPrice(providerChainID, "0.025"+bondDenom)
+	s.tsRelayerAddGasPrice(consumerChainID, "0.025"+bondDenom)
+
+	s.tsRelayerAddPath(IBCv2)
+
+	s.tsRelayerDumpPaths()
+	s.T().Log("ts-relayer IBC v2 path configured")
 }
 
 // waitForChainHeight polls a CometBFT RPC endpoint until the chain reaches

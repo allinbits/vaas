@@ -68,17 +68,12 @@ func (s *IntegrationTestSuite) testProviderOnConsumer() {
 // is synchronized to the one the provider.
 func (s *IntegrationTestSuite) testValidatorSetSync() {
 	s.Run("validator set sync", func() {
-		// TODO: This test requires the ts-relayer to be running and IBC v2
-		// counterparty to be registered on both chains.
-		// See https://github.com/allinbits/ibc-v2-ts-relayer
-		s.T().Skip("skipped: requires ts-relayer for IBC v2 counterparty registration and packet relaying")
 		providerVals, err := s.queryProviderNetValidators()
 		s.Require().NoError(err, "failed to query provider validators")
 
 		consumerVals, err := s.queryConsumerNetValidators()
 		s.Require().NoError(err, "failed to query consumer validators")
 
-		// Extract pub keys  and vp from both chains
 		providerPubKeys, providerVP := s.extractPubKeys(providerVals)
 		consumerPubKeys, consumerVP := s.extractPubKeys(consumerVals)
 
@@ -87,8 +82,6 @@ func (s *IntegrationTestSuite) testValidatorSetSync() {
 		s.Require().Equal(providerPubKeys[0], consumerPubKeys[0])
 		s.Require().Equal(providerVP[0], consumerVP[0])
 
-		// Increase delegation of val on provider chain
-		// Get validator operator address
 		stdout, _, err := s.dockerExec(s.providerValRes[0].Container.ID, []string{
 			providerBinary, "keys", "show", "val", "--bech", "val", "-a",
 			"--home", providerHomePath,
@@ -97,7 +90,6 @@ func (s *IntegrationTestSuite) testValidatorSetSync() {
 		s.Require().NoError(err, "failed to get validator address")
 		valAddr := strings.TrimSpace(stdout.String())
 
-		// Delegate to trigger validator set change
 		_, _, err = s.dockerExec(s.providerValRes[0].Container.ID, []string{
 			providerBinary, "tx", "staking", "delegate", valAddr, "1000000" + bondDenom,
 			"--from", "user",
@@ -109,7 +101,6 @@ func (s *IntegrationTestSuite) testValidatorSetSync() {
 		})
 		s.Require().NoError(err, "failed to perform delegation")
 
-		// Check increase in VP for Val0 on Provider
 		var providerVPAfter []uint64
 		s.Require().Eventually(func() bool {
 			providerValsAfter, err := s.queryProviderNetValidators()
@@ -139,8 +130,8 @@ func (s *IntegrationTestSuite) testValidatorSetSync() {
 				}
 				return consumerVPAfter[0] == providerVPAfter[0]
 			},
-			50*time.Second,
-			time.Second,
+			3*time.Minute,
+			3*time.Second,
 			"consumer validator set is not updated",
 		)
 	})
