@@ -7,7 +7,6 @@ import (
 	"strings"
 
 	abci "github.com/cometbft/cometbft/abci/types"
-
 	tmprotocrypto "github.com/cometbft/cometbft/proto/tendermint/crypto"
 
 	cryptocodec "github.com/cosmos/cosmos-sdk/crypto/codec"
