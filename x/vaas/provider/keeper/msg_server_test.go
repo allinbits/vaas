@@ -65,14 +65,14 @@ func TestCreateConsumer(t *testing.T) {
 	phase := providerKeeper.GetConsumerPhase(ctx, "0")
 	require.Equal(t, providertypes.CONSUMER_PHASE_REGISTERED, phase)
 
-	// Create another consumer
+	// Create another consumer with a different chain id
 	consumerMetadata = providertypes.ConsumerMetadata{
 		Name:        "chain name",
 		Description: "description2",
 	}
 	response, err = msgServer.CreateConsumer(ctx,
 		&providertypes.MsgCreateConsumer{
-			Submitter: "submitter2", ChainId: "chainId", Metadata: consumerMetadata,
+			Submitter: "submitter2", ChainId: "chainId2", Metadata: consumerMetadata,
 			InitializationParameters: &providertypes.ConsumerInitializationParameters{},
 		})
 	require.NoError(t, err)
@@ -86,6 +86,36 @@ func TestCreateConsumer(t *testing.T) {
 	require.Equal(t, "submitter2", ownerAddress)
 	phase = providerKeeper.GetConsumerPhase(ctx, "1")
 	require.Equal(t, providertypes.CONSUMER_PHASE_REGISTERED, phase)
+}
+
+func TestCreateConsumerDuplicateChainId(t *testing.T) {
+	providerKeeper, ctx, ctrl, _ := testkeeper.GetProviderKeeperAndCtx(t, testkeeper.NewInMemKeeperParams(t))
+	defer ctrl.Finish()
+
+	msgServer := providerkeeper.NewMsgServerImpl(&providerKeeper)
+
+	consumerMetadata := providertypes.ConsumerMetadata{
+		Name:        "chain name",
+		Description: "description",
+	}
+
+	// Register a consumer with chainId "duplicateChainId"
+	response, err := msgServer.CreateConsumer(ctx,
+		&providertypes.MsgCreateConsumer{
+			Submitter: "submitter1", ChainId: "duplicateChainId", Metadata: consumerMetadata,
+			InitializationParameters: &providertypes.ConsumerInitializationParameters{},
+		})
+	require.NoError(t, err)
+	require.Equal(t, "0", response.ConsumerId)
+
+	// Attempt to register another consumer with the same chainId
+	_, err = msgServer.CreateConsumer(ctx,
+		&providertypes.MsgCreateConsumer{
+			Submitter: "submitter2", ChainId: "duplicateChainId", Metadata: consumerMetadata,
+			InitializationParameters: &providertypes.ConsumerInitializationParameters{},
+		})
+	require.Error(t, err)
+	require.ErrorIs(t, err, providertypes.ErrDuplicateChainId)
 }
 
 func TestUpdateConsumer(t *testing.T) {
@@ -158,6 +188,53 @@ func TestUpdateConsumer(t *testing.T) {
 	actualConsumerMetadata, err := providerKeeper.GetConsumerMetadata(ctx, consumerId)
 	require.NoError(t, err)
 	require.Equal(t, expectedConsumerMetadata, actualConsumerMetadata)
+}
+
+func TestUpdateConsumerDuplicateChainId(t *testing.T) {
+	providerKeeper, ctx, ctrl, _ := testkeeper.GetProviderKeeperAndCtx(t, testkeeper.NewInMemKeeperParams(t))
+	defer ctrl.Finish()
+
+	msgServer := providerkeeper.NewMsgServerImpl(&providerKeeper)
+
+	// create a chain that register chainId-1
+	chainId1 := "chainId-1"
+	createConsumerResponse, err := msgServer.CreateConsumer(ctx,
+		&providertypes.MsgCreateConsumer{
+			Submitter: "submitter", ChainId: chainId1,
+			Metadata: providertypes.ConsumerMetadata{
+				Name:        "name",
+				Description: "description",
+				Metadata:    "metadata",
+			},
+		})
+	require.NoError(t, err)
+
+	// create a chain that register chainId-2
+	chainId2 := "chainId2-1"
+	createConsumerResponse, err = msgServer.CreateConsumer(ctx,
+		&providertypes.MsgCreateConsumer{
+			Submitter: "submitter", ChainId: chainId2,
+			Metadata: providertypes.ConsumerMetadata{
+				Name:        "name",
+				Description: "description",
+				Metadata:    "metadata",
+			},
+		})
+	require.NoError(t, err)
+	consumerId2 := createConsumerResponse.ConsumerId
+
+	// assert that comsumerId2 cannot use a registered chain id
+	expectedChainId := "chainId-1"
+	_, err = msgServer.UpdateConsumer(ctx,
+		&providertypes.MsgUpdateConsumer{
+			Owner: "submitter", ConsumerId: consumerId2,
+			NewChainId: expectedChainId,
+		})
+	require.Error(t, err)
+	require.ErrorIs(t, err, providertypes.ErrDuplicateChainId)
+	actualChainId, err := providerKeeper.GetConsumerChainId(ctx, consumerId2)
+	require.NoError(t, err)
+	require.Equal(t, chainId2, actualChainId)
 }
 
 func TestSubmitConsumerMisbehaviourRejectsNilMessage(t *testing.T) {
