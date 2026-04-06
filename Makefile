@@ -128,7 +128,7 @@ consumer-init: build-apps
 consumer-create:
 	@echo "Creating consumer chain on provider..."
 	@mkdir -p /tmp/vaas-test
-	@echo '{"chain_id": "consumer-localnet", "metadata": {"name": "consumer", "description": "test consumer chain", "metadata": "{}"}, "initialization_parameters": {"initial_height": {"revision_number": 0, "revision_height": 1}, "genesis_hash": "", "binary_hash": "", "spawn_time": "2024-01-01T00:00:00Z", "unbonding_period": 1728000000000000, "vaas_timeout_period": 2419200000000000, "historical_entries": 10000, "connection_id": ""}, "infraction_parameters": {"double_sign": {"slash_fraction": "0.05", "jail_duration": 9223372036854775807, "tombstone": true}, "downtime": {"slash_fraction": "0.0001", "jail_duration": 600000000000, "tombstone": false}}}' > /tmp/vaas-test/create_consumer.json
+	@echo '{"chain_id": "consumer-localnet", "metadata": {"name": "consumer", "description": "test consumer chain", "metadata": "{}"}, "initialization_parameters": {"initial_height": {"revision_number": 0, "revision_height": 1}, "genesis_hash": "", "binary_hash": "", "spawn_time": "2024-01-01T00:00:00Z", "unbonding_period": 1728000000000000, "vaas_timeout_period": 2419200000000000, "historical_entries": 10000, "connection_id": ""}}' > /tmp/vaas-test/create_consumer.json
 	$(providerd) tx provider create-consumer /tmp/vaas-test/create_consumer.json --from val --gas auto --gas-adjustment 1.5 --fees 10000uatone -y
 	@echo "Consumer chain created. Wait for spawn time, then run 'make consumer-genesis' to fetch the genesis."
 
