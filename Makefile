@@ -197,8 +197,8 @@ ts-relayer-start:
 	@docker exec vaas-ts-relayer /bin/with_keyring ibc-v2-ts-relayer add-path \
 		-s provider-localnet \
 		-d consumer-localnet \
-		--surl http://localhost:26657 \
-		--durl http://localhost:26667 \
+		--surl http://127.0.0.1:26657 \
+		--durl http://127.0.0.1:26667 \
 		--ibc-version 2
 	@echo "ts-relayer configured and running (log: /tmp/vaas-ts-relayer.log)"
 
@@ -232,7 +232,7 @@ localnet-start: build-apps
 	@echo ""
 	@echo "Step 1/4: Starting provider chain in background..."
 	@$(MAKE) provider-start > /tmp/vaas-provider.log 2>&1 &
-	@echo "  Waiting for provider to produce blocks (http://localhost:26657) ..."
+	@echo "  Waiting for provider to produce blocks..."
 	@for i in $$(seq 1 60); do \
 		HEIGHT=$$(curl -sf http://localhost:26657/status 2>/dev/null | sed -n 's/.*"latest_block_height":"\([0-9]*\)".*/\1/p'); \
 		if [ -n "$$HEIGHT" ] && [ "$$HEIGHT" -gt 0 ] 2>/dev/null; then \
@@ -248,7 +248,7 @@ localnet-start: build-apps
 	@echo ""
 	@echo "Step 2/4: Starting consumer chain in background..."
 	@$(MAKE) consumer-start > /tmp/vaas-consumer.log 2>&1 &
-	@echo "  Waiting for consumer to produce blocks (http://localhost:26667) ..."
+	@echo "  Waiting for consumer to produce blocks..."
 	@for i in $$(seq 1 90); do \
 		HEIGHT=$$(curl -sf http://localhost:26667/status 2>/dev/null | sed -n 's/.*"latest_block_height":"\([0-9]*\)".*/\1/p'); \
 		if [ -n "$$HEIGHT" ] && [ "$$HEIGHT" -gt 0 ] 2>/dev/null; then \
