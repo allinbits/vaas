@@ -170,63 +170,45 @@ consumer-start: consumer-init consumer-create
 .PHONY: consumer-init consumer-create consumer-genesis consumer-run consumer-start
 
 ###############################################################################
-###                                 Relayer                                 ###
+###                               TS Relayer                                ###
 ###############################################################################
 
-HERMES ?= ./hermes
-HERMES_CONFIG ?= $(HOME)/.vaas-hermes/config.toml
+TS_RELAYER ?= ghcr.io/allinbits/ibc-v2-ts-relayer:latest
 
-HERMES_CMD = $(HERMES) --config $(HERMES_CONFIG)
+ts-relayer-start:
+	@echo "Starting ts-relayer..."
+	@docker rm -f vaas-ts-relayer 2>/dev/null || true
+	@docker run -d --name vaas-ts-relayer --network host \
+		--cap-add IPC_LOCK \
+		$(TS_RELAYER)
+	@sleep 3
+	@echo "Configuring ts-relayer..."
+	@docker exec vaas-ts-relayer /bin/with_keyring ibc-v2-ts-relayer add-mnemonic \
+		-c provider-localnet \
+		--mnemonic "abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon art"
+	@docker exec vaas-ts-relayer /bin/with_keyring ibc-v2-ts-relayer add-mnemonic \
+		-c consumer-localnet \
+		--mnemonic "abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon art"
+	@docker exec vaas-ts-relayer /bin/with_keyring ibc-v2-ts-relayer add-gas-price \
+		-c provider-localnet 0.025uatone
+	@docker exec vaas-ts-relayer /bin/with_keyring ibc-v2-ts-relayer add-gas-price \
+		-c consumer-localnet 0.025uatone
+	@echo "Creating IBC v2 path..."
+	@docker exec vaas-ts-relayer /bin/with_keyring ibc-v2-ts-relayer add-path \
+		-s provider-localnet \
+		-d consumer-localnet \
+		--surl http://localhost:26657 \
+		--durl http://localhost:26667 \
+		--ibc-version 2
+	@echo "ts-relayer configured and running (log: /tmp/vaas-ts-relayer.log)"
 
-# Create Hermes configuration
-relayer-config:
-	@chmod +x ./scripts/hermes-config.sh
-	@./scripts/hermes-config.sh
+ts-relayer-stop:
+	@echo "Stopping ts-relayer..."
+	-@docker rm -f vaas-ts-relayer 2>/dev/null || true
 
-# Create relayer keys and fund them (requires both chains running)
-RELAYER_MNEMONIC_FILE = /tmp/vaas-test/relayer_mnemonic.txt
+.PHONY: ts-relayer-start ts-relayer-stop
 
-relayer-keys:
-	@echo "Creating relayer mnemonic file..."
-	@mkdir -p /tmp/vaas-test
-	@echo "abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon art" > $(RELAYER_MNEMONIC_FILE)
-	@echo "Setting up relayer account on provider..."
-	@chmod +x ./scripts/add-relayer-key.sh
-	@./scripts/add-relayer-key.sh ./build/provider $(provider_home)
-	@echo "Funding relayer on provider..."
-	$(providerd) tx bank send val $$($(providerd) keys show relayer -a) 100000000uatone --fees 5000uatone -y
-	@echo "Waiting for provider tx..."
-	@sleep 5
-	@echo "Removing old Hermes keys if they exist..."
-	@rm -rf $(HOME)/.vaas-hermes/keys
-	@echo "Adding relayer key to Hermes for provider..."
-	$(HERMES_CMD) keys add --chain provider-localnet --mnemonic-file $(RELAYER_MNEMONIC_FILE) --key-name relayer
-	@echo "Adding relayer key to Hermes for consumer..."
-	$(HERMES_CMD) keys add --chain consumer-localnet --mnemonic-file $(RELAYER_MNEMONIC_FILE) --key-name relayer
-	@echo "Relayer keys setup complete"
-	@echo "Relayer address: $$($(providerd) keys show relayer -a)"
 
-# Create the CCV/VAAS channel between provider and consumer
-# IMPORTANT: Must use genesis clients (07-tendermint-0) for VAAS channel
-# After a fresh localnet-clean, this will create connection-0
-relayer-channel:
-	@echo "Creating connection using genesis clients (07-tendermint-0)..."
-	$(HERMES_CMD) create connection --a-chain consumer-localnet --a-client 07-tendermint-0 --b-client 07-tendermint-0
-	@sleep 2
-	@echo "Creating VAAS channel on connection-0..."
-	$(HERMES_CMD) create channel --a-chain consumer-localnet --a-connection connection-0 --a-port consumer --b-port provider --order ordered --channel-version 1
-	@echo "Channel created"
-
-# Start the relayer
-relayer-start:
-	@echo "Starting Hermes relayer..."
-	$(HERMES_CMD) start
-
-# Full relayer setup (requires both chains running)
-relayer-setup: relayer-config relayer-keys relayer-channel
-	@echo "Relayer setup complete. Run 'make relayer-start' to start relaying."
-
-.PHONY: relayer-install relayer-config relayer-keys relayer-channel relayer-start relayer-setup
 
 ###############################################################################
 ###                              Full Localnet                              ###
@@ -237,19 +219,18 @@ localnet-clean:
 	@echo "Stopping running processes..."
 	-@pkill -f "provider.*start" 2>/dev/null || true
 	-@pkill -f "consumer.*start" 2>/dev/null || true
-	-@pkill -f hermes 2>/dev/null || true
+	@$(MAKE) ts-relayer-stop
 	@sleep 2
 	rm -rf $(provider_home) $(consumer_home)
-	rm -rf $(HOME)/.vaas-hermes
-	rm -f /tmp/vaas-provider.log /tmp/vaas-consumer.log /tmp/vaas-hermes.log
+	rm -f /tmp/vaas-provider.log /tmp/vaas-consumer.log /tmp/vaas-ts-relayer.log
 	rm -rf /tmp/vaas-test
 	@echo "Localnet data cleaned"
 
-# Start the full localnet: provider, consumer, relayer — all in one command
+# Start the full localnet: provider, consumer, and ts-relayer
 localnet-start: build-apps
 	@echo "=== Starting VAAS Localnet ==="
 	@echo ""
-	@echo "Step 1/6: Starting provider chain in background..."
+	@echo "Step 1/4: Starting provider chain in background..."
 	@$(MAKE) provider-start > /tmp/vaas-provider.log 2>&1 &
 	@echo "  Waiting for provider to produce blocks (http://localhost:26657) ..."
 	@for i in $$(seq 1 60); do \
@@ -265,7 +246,7 @@ localnet-start: build-apps
 		sleep 2; \
 	done
 	@echo ""
-	@echo "Step 2/6: Starting consumer chain in background..."
+	@echo "Step 2/4: Starting consumer chain in background..."
 	@$(MAKE) consumer-start > /tmp/vaas-consumer.log 2>&1 &
 	@echo "  Waiting for consumer to produce blocks (http://localhost:26667) ..."
 	@for i in $$(seq 1 90); do \
@@ -281,15 +262,10 @@ localnet-start: build-apps
 		sleep 2; \
 	done
 	@echo ""
-	@echo "Step 3/6: Configuring relayer..."
-	@if [ -x $(HERMES) ]; then echo "  Found Hermes binary"; else echo "  Could not find Hermes binary. Please follow app/README.md to install it." && $(MAKE) localnet-clean && exit 1; fi
-	@$(MAKE) relayer-setup > /tmp/vaas-hermes.log 2>&1
+	@echo "Step 3/4: Starting ts-relayer..."
+	@$(MAKE) ts-relayer-start > /tmp/vaas-ts-relayer.log 2>&1
 	@echo ""
-	@echo "Step 4/6: Starting relayer in background..."
-	@$(MAKE) relayer-start >> /tmp/vaas-hermes.log 2>&1 &
-	@sleep 3
-	@echo ""
-	@echo "Step 5/6: Triggering valset change to send first VSC packet..."
+	@echo "Step 4/4: Triggering valset change to send first VSC packet..."
 	@VALOPER=$$($(providerd) keys show val --bech val -a 2> /dev/null); \
 	$(providerd) tx staking delegate $$VALOPER 1000000uatone --from user --fees 5000uatone -y > /dev/null 2>&1
 	@echo "  Delegation sent. Waiting for VSC packet to be relayed..."
@@ -309,7 +285,7 @@ localnet-start: build-apps
 	@echo ""
 	@echo "  Provider: http://localhost:26657 (log: /tmp/vaas-provider.log)"
 	@echo "  Consumer: http://localhost:26667 (log: /tmp/vaas-consumer.log)"
-	@echo "  Relayer:                         (log: /tmp/vaas-hermes.log)"
+	@echo "  Relayer:  ts-relayer container   (log: /tmp/vaas-ts-relayer.log)"
 	@echo ""
 	@echo "  To stop: make localnet-clean"
 
@@ -324,17 +300,12 @@ docker-build-debug:
 	@echo "Building VAAS e2e chain image..."
 	docker build -t cosmos/vaas-e2e -f tests/e2e/docker/e2e.Dockerfile .
 
-# Build the Hermes relayer Docker image
-docker-build-hermes:
-	@echo "Building Hermes e2e image..."
-	cd tests/e2e/docker && docker build -t ghcr.io/cosmos/hermes-e2e:1.13.1 -f hermes.Dockerfile .
-
 # Build all Docker images needed for e2e tests
-docker-build-all: docker-build-debug docker-build-hermes
+docker-build-all: docker-build-debug
 
 # Run the e2e integration test suite
 test-e2e: docker-build-all
 	@echo "Running e2e tests..."
 	cd tests/e2e && go test -timeout=25m -v ./...
 
-.PHONY: docker-build-debug docker-build-hermes docker-build-all test-e2e
+.PHONY: docker-build-debug docker-build-all test-e2e
