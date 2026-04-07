@@ -5,6 +5,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"regexp"
 	"strings"
 	"time"
 
@@ -50,6 +51,57 @@ func (s *IntegrationTestSuite) startTSRelayer() {
 	s.Require().NoError(err, "failed to start ts-relayer container")
 	s.tsRelayerResource = resource
 	s.T().Logf("ts-relayer container started: %s", resource.Container.ID[:12])
+
+	time.Sleep(3 * time.Second)
+
+	providerURL := "http://" + s.providerValRes[0].Container.Name[1:] + ":26657"
+	consumerURL := "http://" + s.consumerValRes[0].Container.Name[1:] + ":26657"
+
+	s.verifyTSRelayerConnectivity("provider", providerURL)
+	s.verifyTSRelayerConnectivity("consumer", consumerURL)
+}
+
+func (s *IntegrationTestSuite) verifyTSRelayerConnectivity(chainName, rpcURL string) {
+	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	defer cancel()
+
+	for attempt := 0; attempt < 10; attempt++ {
+		exec, err := s.dkrPool.Client.CreateExec(docker.CreateExecOptions{
+			Context:      ctx,
+			AttachStdout: true,
+			AttachStderr: true,
+			Container:    s.tsRelayerResource.Container.ID,
+			User:         "root",
+			Cmd:          []string{"wget", "-qO-", fmt.Sprintf("%s/status", rpcURL)},
+		})
+		s.Require().NoError(err)
+
+		var out bytes.Buffer
+		err = s.dkrPool.Client.StartExec(exec.ID, docker.StartExecOptions{
+			Context:      ctx,
+			Detach:       false,
+			OutputStream: &out,
+			ErrorStream:  &out,
+		})
+
+		for {
+			inspectExec, err := s.dkrPool.Client.InspectExec(exec.ID)
+			s.Require().NoError(err)
+			if !inspectExec.Running {
+				if inspectExec.ExitCode == 0 && strings.Contains(out.String(), "latest_block_height") {
+					s.T().Logf("ts-relayer can reach %s RPC at %s", chainName, rpcURL)
+					return
+				}
+				break
+			}
+		}
+
+		s.T().Logf("ts-relayer connectivity to %s (%s) attempt %d failed (output=%s)",
+			chainName, rpcURL, attempt+1, out.String())
+		time.Sleep(2 * time.Second)
+	}
+
+	s.Require().Fail("ts-relayer cannot reach %s RPC at %s", chainName, rpcURL)
 }
 
 func (s *IntegrationTestSuite) stopTSRelayer() {
@@ -86,6 +138,9 @@ func (s *IntegrationTestSuite) executeTSRelayerCommand(ctx context.Context, args
 		inspectExec, err := s.dkrPool.Client.InspectExec(exec.ID)
 		s.Require().NoError(err, "ts-relayer inspectExec error: %s", out.String())
 		if !inspectExec.Running {
+			if inspectExec.ExitCode != 0 {
+				s.T().Logf("ts-relayer cmd '%s' full output:\n%s", strings.Join(cmd, " "), out.String())
+			}
 			s.Require().Equal(0, inspectExec.ExitCode, "ts-relayer cmd '%s' failed (exit=%d): %s", strings.Join(cmd, " "), inspectExec.ExitCode, out.String())
 			break
 		}
@@ -129,11 +184,20 @@ func (s *IntegrationTestSuite) tsRelayerAddPath(ibcVersion string) {
 	})
 }
 
+var ansiEscapeRegex = regexp.MustCompile(`\x1b\[[0-9;]*m`)
+
 func (s *IntegrationTestSuite) tsRelayerDumpPaths() []tsRelayerPath {
 	ctx, cancel := context.WithTimeout(context.Background(), time.Minute)
 	defer cancel()
 	out := s.executeTSRelayerCommand(ctx, []string{"dump-paths"})
+	cleaned := ansiEscapeRegex.ReplaceAll(out, []byte{})
+	jsonStart := bytes.Index(cleaned, []byte("\t["))
+	if jsonStart < 0 {
+		jsonStart = bytes.Index(cleaned, []byte("\n["))
+	}
+	jsonStart++
+	s.Require().GreaterOrEqual(jsonStart, 1, "no JSON array found in ts-relayer dump-paths output: %s", cleaned)
 	var paths []tsRelayerPath
-	s.Require().NoError(json.Unmarshal(out, &paths), "parsing ts-relayer dump-paths: %s", out)
+	s.Require().NoError(json.Unmarshal(cleaned[jsonStart:], &paths), "parsing ts-relayer dump-paths: %s", cleaned)
 	return paths
 }
