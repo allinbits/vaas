@@ -140,8 +140,14 @@ func (s *IntegrationTestSuite) executeTSRelayerCommand(ctx context.Context, args
 		if !inspectExec.Running {
 			if inspectExec.ExitCode != 0 {
 				s.T().Logf("ts-relayer cmd '%s' full output:\n%s", strings.Join(cmd, " "), out.String())
+				chainDiag := s.collectChainDiagnostics()
+				ibcDiag := s.collectIBCDiagnostics()
+				s.Require().Equal(0, inspectExec.ExitCode,
+					"ts-relayer cmd '%s' failed (exit=%d): %s\n\nchain diagnostics:\n%s\n\nibc diagnostics:\n%s",
+					strings.Join(cmd, " "), inspectExec.ExitCode, out.String(), chainDiag, ibcDiag)
 			}
-			s.Require().Equal(0, inspectExec.ExitCode, "ts-relayer cmd '%s' failed (exit=%d): %s", strings.Join(cmd, " "), inspectExec.ExitCode, out.String())
+			s.Require().Equal(0, inspectExec.ExitCode, "ts-relayer cmd '%s' failed (exit=%d): %s",
+				strings.Join(cmd, " "), inspectExec.ExitCode, out.String())
 			break
 		}
 	}
@@ -200,4 +206,62 @@ func (s *IntegrationTestSuite) tsRelayerDumpPaths() []tsRelayerPath {
 	var paths []tsRelayerPath
 	s.Require().NoError(json.Unmarshal(cleaned[jsonStart:], &paths), "parsing ts-relayer dump-paths: %s", cleaned)
 	return paths
+}
+
+func (s *IntegrationTestSuite) collectChainDiagnostics() string {
+	var sb strings.Builder
+	for _, chain := range []struct {
+		name string
+		res  []*dockertest.Resource
+	}{
+		{"provider", s.providerValRes},
+		{"consumer", s.consumerValRes},
+	} {
+		for _, r := range chain.res {
+			var logBuf bytes.Buffer
+			_ = s.dkrPool.Client.Logs(docker.LogsOptions{
+				Container:    r.Container.ID,
+				OutputStream: &logBuf,
+				ErrorStream:  &logBuf,
+				Stdout:       true,
+				Stderr:       true,
+				Tail:         "100",
+			})
+			sb.WriteString(fmt.Sprintf("=== %s chain (tail 100) ===\n%s\n", chain.name, logBuf.String()))
+		}
+	}
+	return sb.String()
+}
+
+func (s *IntegrationTestSuite) collectIBCDiagnostics() string {
+	var sb strings.Builder
+	chains := []struct {
+		name      string
+		container *dockertest.Resource
+		binary    string
+		home      string
+	}{
+		{"provider", s.providerValRes[0], providerBinary, providerHomePath},
+		{"consumer", s.consumerValRes[0], consumerBinary, consumerHomePath},
+	}
+	for _, c := range chains {
+		stdout, _, err := s.dockerExec(c.container.Container.ID, []string{
+			c.binary, "query", "ibc", "client", "states", "--home", c.home, "--output", "json",
+		})
+		if err != nil {
+			sb.WriteString(fmt.Sprintf("=== %s ibc client states: ERROR: %v ===\n", c.name, err))
+		} else {
+			sb.WriteString(fmt.Sprintf("=== %s ibc client states ===\n%s\n", c.name, stdout.String()))
+		}
+
+		stdout2, _, err := s.dockerExec(c.container.Container.ID, []string{
+			c.binary, "query", "ibc", "client", "counterparty", "07-tendermint-1", "--home", c.home, "--output", "json",
+		})
+		if err != nil {
+			sb.WriteString(fmt.Sprintf("=== %s ibc counterparty 07-tendermint-1: ERROR: %v (output: %s) ===\n", c.name, err, stdout2.String()))
+		} else {
+			sb.WriteString(fmt.Sprintf("=== %s ibc counterparty 07-tendermint-1 ===\n%s\n", c.name, stdout2.String()))
+		}
+	}
+	return sb.String()
 }
