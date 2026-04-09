@@ -190,9 +190,9 @@ ts-relayer-start:
 		-c consumer-localnet \
 		--mnemonic "abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon art"
 	@docker exec vaas-ts-relayer /bin/with_keyring ibc-v2-ts-relayer add-gas-price \
-		-c provider-localnet 0.025uatone
+		-c provider-localnet --gas-adjustment 2.0 0.025uatone
 	@docker exec vaas-ts-relayer /bin/with_keyring ibc-v2-ts-relayer add-gas-price \
-		-c consumer-localnet 0.025uatone
+		-c consumer-localnet --gas-adjustment 2.0 0.025uatone
 	@echo "Creating IBC v2 path..."
 	@docker exec vaas-ts-relayer /bin/with_keyring ibc-v2-ts-relayer add-path \
 		-s provider-localnet \
