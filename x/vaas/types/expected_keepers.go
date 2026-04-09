@@ -64,6 +64,7 @@ type ClientKeeper interface {
 	GetClientConsensusState(ctx sdk.Context, clientID string, height ibcexported.Height) (ibcexported.ConsensusState,
 		bool)
 	GetStoreProvider() clienttypes.StoreProvider
+	IterateClientStates(ctx sdk.Context, cb func(clientID string, cs ibcexported.ClientState) bool)
 }
 
 // ConsumerHooks event hooks for newly bonded cross-chain validators

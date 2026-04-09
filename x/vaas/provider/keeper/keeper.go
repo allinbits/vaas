@@ -410,6 +410,20 @@ func (k Keeper) GetAllActiveConsumerIds(ctx context.Context) []string {
 	return consumerIds
 }
 
+func (k Keeper) GetAllLaunchedConsumersWithoutClient(ctx context.Context) []string {
+	consumerIds := []string{}
+	for _, consumerId := range k.GetAllConsumerIds(ctx) {
+		if k.GetConsumerPhase(ctx, consumerId) != types.CONSUMER_PHASE_LAUNCHED {
+			continue
+		}
+		if _, found := k.GetConsumerClientId(ctx, consumerId); found {
+			continue
+		}
+		consumerIds = append(consumerIds, consumerId)
+	}
+	return consumerIds
+}
+
 func (k Keeper) UnbondingCanComplete(ctx sdk.Context, id uint64) error {
 	return k.stakingKeeper.UnbondingCanComplete(ctx, id)
 }

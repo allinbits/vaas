@@ -11,6 +11,8 @@ import (
 
 	clienttypes "github.com/cosmos/ibc-go/v10/modules/core/02-client/types"
 	channeltypesv2 "github.com/cosmos/ibc-go/v10/modules/core/04-channel/v2/types"
+	ibcexported "github.com/cosmos/ibc-go/v10/modules/core/exported"
+	ibctmtypes "github.com/cosmos/ibc-go/v10/modules/light-clients/07-tendermint"
 
 	errorsmod "cosmossdk.io/errors"
 
@@ -48,16 +50,14 @@ func (k Keeper) OnTimeoutPacketV2(ctx sdk.Context, sourceClientID string) error 
 // EndBlockVSU contains the EndBlock logic needed for
 // the Validator Set Update sub-protocol
 func (k Keeper) EndBlockVSU(ctx sdk.Context) ([]abci.ValidatorUpdate, error) {
-	// logic to update the provider consensus validator set.
 	valUpdates, err := k.ProviderValidatorUpdates(ctx)
 	if err != nil {
 		return []abci.ValidatorUpdate{}, fmt.Errorf("computing the provider consensus validator set: %w", err)
 	}
 
-	if k.BlocksUntilNextEpoch(ctx) == 0 {
-		// only queue and send VSCPackets at the boundaries of an epoch
+	k.DiscoverConsumerClients(ctx)
 
-		// collect validator updates
+	if k.BlocksUntilNextEpoch(ctx) == 0 {
 		if err := k.QueueVSCPackets(ctx); err != nil {
 			return []abci.ValidatorUpdate{}, fmt.Errorf("queueing consumer validator updates: %w", err)
 		}
@@ -71,6 +71,37 @@ func (k Keeper) EndBlockVSU(ctx sdk.Context) ([]abci.ValidatorUpdate, error) {
 	}
 
 	return valUpdates, nil
+}
+
+func (k Keeper) DiscoverConsumerClients(ctx sdk.Context) {
+	for _, consumerId := range k.GetAllLaunchedConsumersWithoutClient(ctx) {
+		chainId, err := k.GetConsumerChainId(ctx, consumerId)
+		if err != nil {
+			continue
+		}
+
+		var foundClientID string
+		k.clientKeeper.IterateClientStates(ctx, func(clientID string, cs ibcexported.ClientState) bool {
+			tmCs, ok := cs.(*ibctmtypes.ClientState)
+			if !ok {
+				return false
+			}
+			if tmCs.ChainId == chainId {
+				foundClientID = clientID
+				return true
+			}
+			return false
+		})
+
+		if foundClientID != "" {
+			k.SetConsumerClientId(ctx, consumerId, foundClientID)
+			k.Logger(ctx).Info("discovered relayer client for consumer",
+				"consumerId", consumerId,
+				"clientId", foundClientID,
+				"chainId", chainId,
+			)
+		}
+	}
 }
 
 // ProviderValidatorUpdates returns changes in the provider consensus validator set
@@ -164,7 +195,7 @@ func (k Keeper) SendVSCPacketsToChain(ctx sdk.Context, consumerId, clientId stri
 			vaastypes.ProviderAppID,
 			vaastypes.ConsumerAppID,
 			"vaas-v1",
-			"application/x-protobuf",
+			"application/json",
 			data.GetBytes(),
 		)
 
