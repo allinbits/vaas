@@ -552,15 +552,15 @@ func (mr *MockClientKeeperMockRecorder) GetStoreProvider() *gomock.Call {
 }
 
 // IterateClientStates mocks base method.
-func (m *MockClientKeeper) IterateClientStates(ctx types.Context, cb func(string, exported.ClientState) bool) {
+func (m *MockClientKeeper) IterateClientStates(ctx types.Context, storePrefix []byte, cb func(string, exported.ClientState) bool) {
 	m.ctrl.T.Helper()
-	m.ctrl.Call(m, "IterateClientStates", ctx, cb)
+	m.ctrl.Call(m, "IterateClientStates", ctx, storePrefix, cb)
 }
 
 // IterateClientStates indicates an expected call of IterateClientStates.
-func (mr *MockClientKeeperMockRecorder) IterateClientStates(ctx, cb any) *gomock.Call {
+func (mr *MockClientKeeperMockRecorder) IterateClientStates(ctx, storePrefix, cb any) *gomock.Call {
 	mr.mock.ctrl.T.Helper()
-	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "IterateClientStates", reflect.TypeOf((*MockClientKeeper)(nil).IterateClientStates), ctx, cb)
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "IterateClientStates", reflect.TypeOf((*MockClientKeeper)(nil).IterateClientStates), ctx, storePrefix, cb)
 }
 
 // MockConsumerHooks is a mock of ConsumerHooks interface.

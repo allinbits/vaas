@@ -81,7 +81,7 @@ func (k Keeper) DiscoverConsumerClients(ctx sdk.Context) {
 		}
 
 		var foundClientID string
-		k.clientKeeper.IterateClientStates(ctx, func(clientID string, cs ibcexported.ClientState) bool {
+		k.clientKeeper.IterateClientStates(ctx, nil, func(clientID string, cs ibcexported.ClientState) bool {
 			tmCs, ok := cs.(*ibctmtypes.ClientState)
 			if !ok {
 				return false
