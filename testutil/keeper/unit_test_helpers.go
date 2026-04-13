@@ -18,6 +18,7 @@ import (
 
 	dbm "github.com/cosmos/cosmos-db"
 	clienttypes "github.com/cosmos/ibc-go/v10/modules/core/02-client/types"
+	clientv2types "github.com/cosmos/ibc-go/v10/modules/core/02-client/v2/types"
 
 	"cosmossdk.io/log"
 	math "cosmossdk.io/math"
@@ -83,7 +84,7 @@ type MockedKeepers struct {
 
 // NewMockedKeepers instantiates a struct with pointers to properly instantiated mocked keepers.
 func NewMockedKeepers(ctrl *gomock.Controller) MockedKeepers {
-	return MockedKeepers{
+	mocks := MockedKeepers{
 		MockClientKeeper:   NewMockClientKeeper(ctrl),
 		MockClientV2Keeper: NewMockClientV2Keeper(ctrl),
 		MockStakingKeeper:  NewMockStakingKeeper(ctrl),
@@ -91,6 +92,8 @@ func NewMockedKeepers(ctrl *gomock.Controller) MockedKeepers {
 		MockAccountKeeper:  NewMockAccountKeeper(ctrl),
 		MockBankKeeper:     NewMockBankKeeper(ctrl),
 	}
+	mocks.MockClientV2Keeper.EXPECT().GetClientCounterparty(gomock.Any(), gomock.Any()).Return(clientv2types.CounterpartyInfo{}, false).AnyTimes()
+	return mocks
 }
 
 // NewInMemProviderKeeper instantiates an in-mem provider keeper from params and mocked keepers

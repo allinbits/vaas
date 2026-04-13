@@ -12,8 +12,6 @@ import (
 	tmtypes "github.com/cometbft/cometbft/abci/types"
 
 	host "github.com/cosmos/ibc-go/v10/modules/core/24-host"
-	ibcexported "github.com/cosmos/ibc-go/v10/modules/core/exported"
-	ibctmtypes "github.com/cosmos/ibc-go/v10/modules/light-clients/07-tendermint"
 
 	"cosmossdk.io/collections"
 	addresscodec "cosmossdk.io/core/address"
@@ -122,43 +120,25 @@ func (k Keeper) GetAuthority() string {
 	return k.authority
 }
 
-func (k Keeper) FixCounterpartyMerklePrefix(ctx sdk.Context) {
-	providerClientID, err := k.ProviderClientID.Get(ctx)
-	if err != nil {
+func (k Keeper) fixCounterpartyMerklePrefix(ctx sdk.Context, clientID string) {
+	counterparty, found := k.clientV2Keeper.GetClientCounterparty(ctx, clientID)
+	if !found {
 		return
 	}
 
-	k.clientKeeper.IterateClientStates(ctx, nil, func(clientID string, cs ibcexported.ClientState) bool {
-		if clientID == providerClientID {
-			return false
-		}
+	expectedPrefix := [][]byte{[]byte("ibc"), []byte("")}
+	if len(counterparty.MerklePrefix) == len(expectedPrefix) &&
+		bytes.Equal(counterparty.MerklePrefix[0], expectedPrefix[0]) &&
+		bytes.Equal(counterparty.MerklePrefix[1], expectedPrefix[1]) {
+		return
+	}
 
-		tmCs, ok := cs.(*ibctmtypes.ClientState)
-		if !ok {
-			return false
-		}
-
-		if tmCs.ChainId != ctx.ChainID() {
-			counterparty, found := k.clientV2Keeper.GetClientCounterparty(ctx, clientID)
-			if !found {
-				return false
-			}
-
-			expectedPrefix := [][]byte{[]byte("ibc"), []byte("")}
-			if len(counterparty.MerklePrefix) != len(expectedPrefix) ||
-				!bytes.Equal(counterparty.MerklePrefix[0], expectedPrefix[0]) ||
-				!bytes.Equal(counterparty.MerklePrefix[1], expectedPrefix[1]) {
-				counterparty.MerklePrefix = expectedPrefix
-				k.clientV2Keeper.SetClientCounterparty(ctx, clientID, counterparty)
-				k.Logger(ctx).Info("fixed counterparty merkle prefix",
-					"clientId", clientID,
-					"counterpartyClientId", counterparty.ClientId,
-				)
-			}
-		}
-
-		return false
-	})
+	counterparty.MerklePrefix = expectedPrefix
+	k.clientV2Keeper.SetClientCounterparty(ctx, clientID, counterparty)
+	k.Logger(ctx).Info("fixed counterparty merkle prefix",
+		"clientId", clientID,
+		"counterpartyClientId", counterparty.ClientId,
+	)
 }
 
 // Returns a keeper with cdc and storeService set it does not raise any panics during registration (eg with IBCKeeper).

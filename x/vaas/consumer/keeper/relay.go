@@ -33,6 +33,7 @@ func (k Keeper) OnRecvVSCPacketV2(ctx sdk.Context, sourceClientID string, newCha
 	providerClientID, found := k.GetProviderClientID(ctx)
 	if !found {
 		k.SetProviderClientID(ctx, sourceClientID)
+		k.fixCounterpartyMerklePrefix(ctx, sourceClientID)
 		k.Logger(ctx).Info("Provider client established", "clientID", sourceClientID)
 
 		ctx.EventManager().EmitEvent(
