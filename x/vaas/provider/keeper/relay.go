@@ -19,8 +19,6 @@ import (
 	sdk "github.com/cosmos/cosmos-sdk/types"
 )
 
-var cosmosIBCMerklePrefix = [][]byte{[]byte("ibc"), []byte("")}
-
 func (k Keeper) OnAcknowledgementPacketV2(ctx sdk.Context, sourceClientID string, ackError string) error {
 	if ackError != "" {
 		k.Logger(ctx).Error(

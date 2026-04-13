@@ -4,12 +4,10 @@ import (
 	"crypto/rand"
 	"encoding/binary"
 	"testing"
-	"time"
 
 	consumerkeeper "github.com/allinbits/vaas/x/vaas/consumer/keeper"
 	consumertypes "github.com/allinbits/vaas/x/vaas/consumer/types"
 	providerkeeper "github.com/allinbits/vaas/x/vaas/provider/keeper"
-	providertypes "github.com/allinbits/vaas/x/vaas/provider/types"
 	"github.com/allinbits/vaas/x/vaas/types"
 	"github.com/stretchr/testify/require"
 	"go.uber.org/mock/gomock"
@@ -17,11 +15,9 @@ import (
 	tmproto "github.com/cometbft/cometbft/proto/tendermint/types"
 
 	dbm "github.com/cosmos/cosmos-db"
-	clienttypes "github.com/cosmos/ibc-go/v10/modules/core/02-client/types"
 	clientv2types "github.com/cosmos/ibc-go/v10/modules/core/02-client/v2/types"
 
 	"cosmossdk.io/log"
-	math "cosmossdk.io/math"
 	"cosmossdk.io/store"
 	"cosmossdk.io/store/metrics"
 	storetypes "cosmossdk.io/store/types"
@@ -31,12 +27,12 @@ import (
 	codectypes "github.com/cosmos/cosmos-sdk/codec/types"
 	cryptocodec "github.com/cosmos/cosmos-sdk/crypto/codec"
 	"github.com/cosmos/cosmos-sdk/crypto/keys/ed25519"
-	cryptotypes "github.com/cosmos/cosmos-sdk/crypto/types"
 	"github.com/cosmos/cosmos-sdk/runtime"
 	sdk "github.com/cosmos/cosmos-sdk/types"
 	authtypes "github.com/cosmos/cosmos-sdk/x/auth/types"
 	govkeeper "github.com/cosmos/cosmos-sdk/x/gov/keeper"
 	govtypes "github.com/cosmos/cosmos-sdk/x/gov/types"
+	stakingtypes "github.com/cosmos/cosmos-sdk/x/staking/types"
 )
 
 // InMemKeeperParams parameters needed to instantiate an in-memory keeper
@@ -59,7 +55,7 @@ func NewInMemKeeperParams(tb testing.TB) InMemKeeperParams {
 	require.NoError(tb, stateStore.LoadLatestVersion())
 
 	registry := codectypes.NewInterfaceRegistry()
-	cryptocodec.RegisterInterfaces(registry) // Public key implementation registered here
+	cryptocodec.RegisterInterfaces(registry)
 	cdc := codec.NewProtoCodec(registry)
 
 	ctx := sdk.NewContext(stateStore, tmproto.Header{}, false, log.NewNopLogger())
@@ -79,7 +75,6 @@ type MockedKeepers struct {
 	*MockSlashingKeeper
 	*MockAccountKeeper
 	*MockBankKeeper
-	// *MockGovKeeper
 }
 
 // NewMockedKeepers instantiates a struct with pointers to properly instantiated mocked keepers.
@@ -108,7 +103,6 @@ func NewInMemProviderKeeper(params InMemKeeperParams, mocks MockedKeepers) provi
 		mocks.MockSlashingKeeper,
 		mocks.MockAccountKeeper,
 		mocks.MockBankKeeper,
-		// mocks.MockGovKeeper,
 		govkeeper.Keeper{}, // HACK: to make parts of the test work
 		authtypes.NewModuleAddress(govtypes.ModuleName).String(),
 		address.NewBech32Codec("cosmosvaloper"),
@@ -162,76 +156,23 @@ func GetConsumerKeeperAndCtx(t *testing.T, params InMemKeeperParams) (
 	return NewInMemConsumerKeeper(params, mocks), params.Ctx, ctrl, mocks
 }
 
-type PrivateKey struct {
-	PrivKey cryptotypes.PrivKey
+func ExpectCreateClientMock(ctx sdk.Context, mocks MockedKeepers, clientType, clientID string,
+	clientState, consState []byte,
+) *gomock.Call {
+	return mocks.MockClientKeeper.EXPECT().CreateClient(ctx, clientType, clientState, consState).Return(clientID,
+		nil).Times(1)
 }
 
-// SetupForDeleteConsumerChain registers expected mock calls and corresponding state setup
-// which assert that a consumer chain was properly setup to be later deleted with `DeleteConsumerChain`.
-// Note: This function only setups and tests that we correctly setup a consumer chain that we could later delete when
-// calling `DeleteConsumerChain` -- this does NOT necessarily mean that the consumer chain is deleted.
-// Also see `TestProviderStateIsCleanedAfterConsumerChainIsDeleted`.
-func SetupForDeleteConsumerChain(t *testing.T, ctx sdk.Context,
-	providerKeeper *providerkeeper.Keeper, mocks MockedKeepers,
-	consumerId string,
-) {
-	t.Helper()
+func SetupMocksForLastBondedValidatorsExpectation(mockStakingKeeper *MockStakingKeeper, maxValidators uint32, vals []stakingtypes.Validator, times int) {
+	validatorsCall := mockStakingKeeper.EXPECT().GetBondedValidatorsByPower(gomock.Any()).Return(vals, nil)
+	maxValidatorsCall := mockStakingKeeper.EXPECT().MaxValidators(gomock.Any()).Return(maxValidators, nil)
 
-	expectations := GetMocksForCreateConsumerClient(ctx, &mocks,
-		"chainID", clienttypes.NewHeight(0, 5))
-	expectations = append(expectations, GetMocksForSetConsumerChain(ctx, &mocks, "chainID")...)
-
-	gomock.InOrder(expectations...)
-
-	providerKeeper.SetConsumerChainId(ctx, consumerId, "chainID")
-	err := providerKeeper.SetConsumerMetadata(ctx, consumerId, GetTestConsumerMetadata())
-	require.NoError(t, err)
-	err = providerKeeper.SetConsumerInitializationParameters(ctx, consumerId, GetTestInitializationParameters())
-	require.NoError(t, err)
-	// Power shaping parameters removed - all validators validate all consumers
-
-	// set the chain to initialized so that we can create a consumer client
-	providerKeeper.SetConsumerPhase(ctx, consumerId, providertypes.CONSUMER_PHASE_INITIALIZED)
-
-	err = providerKeeper.CreateConsumerClient(ctx, consumerId, []byte{})
-	require.NoError(t, err)
-	// set the mapping consumer ID <> client ID for the consumer chain
-	providerKeeper.SetConsumerClientId(ctx, consumerId, "clientID")
-	providerKeeper.SetConsumerPhase(ctx, consumerId, providertypes.CONSUMER_PHASE_STOPPED)
-}
-
-func GetTestConsumerMetadata() providertypes.ConsumerMetadata {
-	return providertypes.ConsumerMetadata{
-		Name:        "chain name",
-		Description: "description",
-		Metadata:    "metadata",
-	}
-}
-
-func GetTestInitializationParameters() providertypes.ConsumerInitializationParameters {
-	return providertypes.ConsumerInitializationParameters{
-		InitialHeight:     clienttypes.NewHeight(0, 5),
-		GenesisHash:       []byte("gen_hash"),
-		BinaryHash:        []byte("bin_hash"),
-		SpawnTime:         time.Now().UTC(),
-		HistoricalEntries: types.DefaultHistoricalEntries,
-		VaasTimeoutPeriod: types.DefaultVAASTimeoutPeriod,
-		UnbondingPeriod:   types.DefaultConsumerUnbondingPeriod,
-	}
-}
-
-func GetTestInfractionParameters() providertypes.InfractionParameters {
-	return providertypes.InfractionParameters{
-		DoubleSign: &providertypes.SlashJailParameters{
-			JailDuration:  1200 * time.Second,
-			SlashFraction: math.LegacyNewDecWithPrec(5, 1), // 0.5
-			Tombstone:     true,
-		},
-		Downtime: &providertypes.SlashJailParameters{
-			JailDuration:  600 * time.Second,
-			SlashFraction: math.LegacyNewDec(0),
-			Tombstone:     false,
-		},
+	if times == -1 {
+		validatorsCall.AnyTimes()
+		maxValidatorsCall.AnyTimes()
+	} else {
+		validatorsCall.Times(times)
+		maxValidatorsCall.Times(times)
 	}
 }
 
@@ -245,14 +186,4 @@ func GetNewCrossChainValidator(t *testing.T) consumertypes.CrossChainValidator {
 	validator, err := consumertypes.NewCCValidator(privKey.PubKey().Address(), power, privKey.PubKey())
 	require.NoError(t, err)
 	return validator
-}
-
-// Must panics if err is not nil, otherwise returns v.
-// This is useful to get a value from a function that returns a value and an error
-// in a single line.
-func Must[T any](v T, err error) T {
-	if err != nil {
-		panic(err)
-	}
-	return v
 }
