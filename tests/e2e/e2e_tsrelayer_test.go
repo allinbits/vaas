@@ -104,6 +104,36 @@ func (s *IntegrationTestSuite) verifyTSRelayerConnectivity(chainName, rpcURL str
 	s.Require().Fail("ts-relayer cannot reach %s RPC at %s", chainName, rpcURL)
 }
 
+func (s *IntegrationTestSuite) startTSRelayerRelay() {
+	s.T().Log("ts-relayer: starting relay process")
+	ctx, cancel := context.WithTimeout(context.Background(), time.Minute)
+	defer cancel()
+
+	cmd := []string{"/bin/with_keyring", "ibc-v2-ts-relayer", "relay"}
+	exec, err := s.dkrPool.Client.CreateExec(docker.CreateExecOptions{
+		Context:      ctx,
+		AttachStdout: true,
+		AttachStderr: true,
+		Container:    s.tsRelayerResource.Container.ID,
+		User:         "root",
+		Cmd:          cmd,
+	})
+	s.Require().NoError(err, "failed to create relay exec")
+
+	err = s.dkrPool.Client.StartExec(exec.ID, docker.StartExecOptions{
+		Context: ctx,
+		Detach:  true,
+	})
+	s.Require().NoError(err, "failed to start relay process")
+
+	time.Sleep(3 * time.Second)
+
+	inspectExec, err := s.dkrPool.Client.InspectExec(exec.ID)
+	s.Require().NoError(err, "failed to inspect relay exec")
+	s.Require().True(inspectExec.Running, "relay process is not running")
+	s.T().Log("ts-relayer: relay process started")
+}
+
 func (s *IntegrationTestSuite) stopTSRelayer() {
 	if s.tsRelayerResource != nil {
 		s.T().Log("tearing down ts-relayer...")
@@ -172,7 +202,6 @@ func (s *IntegrationTestSuite) tsRelayerAddGasPrice(chainID, gasPrice string) {
 	s.executeTSRelayerCommand(ctx, []string{
 		"add-gas-price",
 		"-c", chainID,
-		"--gas-adjustment", "2.0",
 		gasPrice,
 	})
 }
@@ -187,6 +216,8 @@ func (s *IntegrationTestSuite) tsRelayerAddPath(ibcVersion string) {
 		"-d", consumerChainID,
 		"--surl", "http://" + s.providerValRes[0].Container.Name[1:] + ":26657",
 		"--durl", "http://" + s.consumerValRes[0].Container.Name[1:] + ":26657",
+		"--st", "cosmos",
+		"--dt", "cosmos",
 		"--ibc-version", ibcVersion,
 	})
 }

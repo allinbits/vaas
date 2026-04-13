@@ -444,6 +444,7 @@ func (s *IntegrationTestSuite) setupTSRelayer() {
 	s.tsRelayerAddPath(IBCv2)
 
 	s.tsRelayerDumpPaths()
+	s.startTSRelayerRelay()
 	s.T().Log("ts-relayer IBC v2 path configured")
 }
 

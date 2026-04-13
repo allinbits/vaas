@@ -45,6 +45,7 @@ type Keeper struct {
 	consensusAddressCodec addresscodec.Codec
 
 	channelKeeperV2 *channelkeeperv2.Keeper
+	clientV2Keeper  vaastypes.ClientV2Keeper
 	// Collections schema
 	Schema collections.Schema
 
@@ -164,6 +165,10 @@ func NewKeeper(
 // SetChannelKeeperV2 sets the IBC v2 channel keeper for client-based packet sending.
 func (k *Keeper) SetChannelKeeperV2(keeper *channelkeeperv2.Keeper) {
 	k.channelKeeperV2 = keeper
+}
+
+func (k *Keeper) SetClientV2Keeper(keeper vaastypes.ClientV2Keeper) {
+	k.clientV2Keeper = keeper
 }
 
 // GetAuthority returns the x/ccv/provider module's authority.

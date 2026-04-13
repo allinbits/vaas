@@ -6,6 +6,7 @@ import (
 
 	transfertypes "github.com/cosmos/ibc-go/v10/modules/apps/transfer/types"
 	clienttypes "github.com/cosmos/ibc-go/v10/modules/core/02-client/types"
+	clientv2types "github.com/cosmos/ibc-go/v10/modules/core/02-client/v2/types"
 	ibcexported "github.com/cosmos/ibc-go/v10/modules/core/exported"
 
 	addresscodec "cosmossdk.io/core/address"
@@ -65,6 +66,12 @@ type ClientKeeper interface {
 		bool)
 	GetStoreProvider() clienttypes.StoreProvider
 	IterateClientStates(ctx sdk.Context, storePrefix []byte, cb func(clientID string, cs ibcexported.ClientState) bool)
+}
+
+// ClientV2Keeper defines the expected IBC client v2 keeper for counterparty management
+type ClientV2Keeper interface {
+	SetClientCounterparty(ctx sdk.Context, clientID string, counterparty clientv2types.CounterpartyInfo)
+	GetClientCounterparty(ctx sdk.Context, clientID string) (clientv2types.CounterpartyInfo, bool)
 }
 
 // ConsumerHooks event hooks for newly bonded cross-chain validators
