@@ -148,6 +148,8 @@ func (AppModule) ConsensusVersion() uint64 {
 func (am AppModule) BeginBlock(goCtx context.Context) error {
 	ctx := sdk.UnwrapSDKContext(goCtx)
 
+	am.keeper.FixCounterpartyMerklePrefix(ctx)
+
 	blockHeight := uint64(ctx.BlockHeight())
 	vID := am.keeper.GetHeightValsetUpdateID(ctx, blockHeight)
 	am.keeper.SetHeightValsetUpdateID(ctx, blockHeight+1, vID)

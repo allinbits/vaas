@@ -1,6 +1,7 @@
 package keeper
 
 import (
+	"bytes"
 	"context"
 	"errors"
 	"fmt"
@@ -11,6 +12,7 @@ import (
 	tmtypes "github.com/cometbft/cometbft/abci/types"
 
 	host "github.com/cosmos/ibc-go/v10/modules/core/24-host"
+	ibcexported "github.com/cosmos/ibc-go/v10/modules/core/exported"
 
 	"cosmossdk.io/collections"
 	addresscodec "cosmossdk.io/core/address"
@@ -117,6 +119,31 @@ func NewKeeper(
 // GetAuthority returns the x/ccv/provider module's authority.
 func (k Keeper) GetAuthority() string {
 	return k.authority
+}
+
+func (k Keeper) FixCounterpartyMerklePrefix(ctx sdk.Context) {
+	expectedPrefix := [][]byte{[]byte("ibc"), []byte("")}
+
+	k.clientKeeper.IterateClientStates(ctx, nil, func(clientID string, cs ibcexported.ClientState) bool {
+		counterparty, found := k.clientV2Keeper.GetClientCounterparty(ctx, clientID)
+		if !found {
+			return false
+		}
+
+		if len(counterparty.MerklePrefix) == len(expectedPrefix) &&
+			bytes.Equal(counterparty.MerklePrefix[0], expectedPrefix[0]) &&
+			bytes.Equal(counterparty.MerklePrefix[1], expectedPrefix[1]) {
+			return false
+		}
+
+		counterparty.MerklePrefix = expectedPrefix
+		k.clientV2Keeper.SetClientCounterparty(ctx, clientID, counterparty)
+		k.Logger(ctx).Info("fixed counterparty merkle prefix",
+			"clientId", clientID,
+			"counterpartyClientId", counterparty.ClientId,
+		)
+		return false
+	})
 }
 
 // Returns a keeper with cdc and storeService set it does not raise any panics during registration (eg with IBCKeeper).
