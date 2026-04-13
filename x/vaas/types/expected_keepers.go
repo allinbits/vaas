@@ -57,18 +57,17 @@ type SlashingKeeper interface {
 	IsTombstoned(context.Context, sdk.ConsAddress) bool
 }
 
-// ClientKeeper defines the expected IBC client keeper
+// ClientKeeper defines the expected IBC client keeper for v1 operations.
 type ClientKeeper interface {
 	CreateClient(ctx sdk.Context, clientType string, clientState, consensusState []byte) (string, error)
 	GetClientState(ctx sdk.Context, clientID string) (ibcexported.ClientState, bool)
-	GetLatestClientConsensusState(ctx sdk.Context, clientID string) (ibcexported.ConsensusState, bool)
 	GetClientConsensusState(ctx sdk.Context, clientID string, height ibcexported.Height) (ibcexported.ConsensusState,
 		bool)
 	GetStoreProvider() clienttypes.StoreProvider
 	IterateClientStates(ctx sdk.Context, storePrefix []byte, cb func(clientID string, cs ibcexported.ClientState) bool)
 }
 
-// ClientV2Keeper defines the expected IBC client v2 keeper for counterparty management
+// ClientV2Keeper defines the expected IBC client v2 keeper for counterparty management.
 type ClientV2Keeper interface {
 	SetClientCounterparty(ctx sdk.Context, clientID string, counterparty clientv2types.CounterpartyInfo)
 	GetClientCounterparty(ctx sdk.Context, clientID string) (clientv2types.CounterpartyInfo, bool)

@@ -72,6 +72,7 @@ type Keeper struct {
 func NewKeeper(
 	cdc codec.BinaryCodec, storeService corestoretypes.KVStoreService,
 	clientKeeper vaastypes.ClientKeeper,
+	clientV2Keeper vaastypes.ClientV2Keeper,
 	slashingKeeper vaastypes.SlashingKeeper, bankKeeper vaastypes.BankKeeper, accountKeeper vaastypes.AccountKeeper,
 	feeCollectorName, authority string, validatorAddressCodec,
 	consensusAddressCodec addresscodec.Codec,
@@ -83,6 +84,7 @@ func NewKeeper(
 		storeService:            storeService,
 		cdc:                     cdc,
 		clientKeeper:            clientKeeper,
+		clientV2Keeper:          clientV2Keeper,
 		slashingKeeper:          slashingKeeper,
 		bankKeeper:              bankKeeper,
 		authKeeper:              accountKeeper,
@@ -118,10 +120,6 @@ func NewKeeper(
 // GetAuthority returns the x/ccv/provider module's authority.
 func (k Keeper) GetAuthority() string {
 	return k.authority
-}
-
-func (k *Keeper) SetClientV2Keeper(keeper vaastypes.ClientV2Keeper) {
-	k.clientV2Keeper = keeper
 }
 
 func (k Keeper) FixCounterpartyMerklePrefix(ctx sdk.Context) {

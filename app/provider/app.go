@@ -386,6 +386,7 @@ func New(
 		appCodec,
 		runtime.NewKVStoreService(keys[providertypes.StoreKey]),
 		app.IBCKeeper.ClientKeeper,
+		app.IBCKeeper.ClientV2Keeper,
 		app.StakingKeeper,
 		app.SlashingKeeper,
 		app.AccountKeeper,
@@ -448,7 +449,6 @@ func New(
 	app.IBCKeeper.SetRouterV2(ibcRouterV2)
 
 	app.ProviderKeeper.SetChannelKeeperV2(app.IBCKeeper.ChannelKeeperV2)
-	app.ProviderKeeper.SetClientV2Keeper(app.IBCKeeper.ClientV2Keeper)
 
 	govRouter := govv1beta1.NewRouter()
 	govRouter.

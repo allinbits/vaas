@@ -332,6 +332,7 @@ func New(
 		appCodec,
 		runtime.NewKVStoreService(keys[ibcconsumertypes.StoreKey]),
 		app.IBCKeeper.ClientKeeper,
+		app.IBCKeeper.ClientV2Keeper,
 		app.SlashingKeeper,
 		app.BankKeeper,
 		app.AccountKeeper,
@@ -343,7 +344,6 @@ func New(
 
 	// register slashing module Slashing hooks to the consumer keeper
 	app.ConsumerKeeper = *app.ConsumerKeeper.SetHooks(app.SlashingKeeper.Hooks())
-	app.ConsumerKeeper.SetClientV2Keeper(app.IBCKeeper.ClientV2Keeper)
 	consumerModule := ibcconsumer.NewAppModule(app.ConsumerKeeper)
 
 	app.TransferKeeper = ibctransferkeeper.NewKeeper(

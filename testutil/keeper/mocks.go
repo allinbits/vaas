@@ -19,6 +19,7 @@ import (
 	types "github.com/cosmos/cosmos-sdk/types"
 	types0 "github.com/cosmos/cosmos-sdk/x/staking/types"
 	types1 "github.com/cosmos/ibc-go/v10/modules/core/02-client/types"
+	clientv2types "github.com/cosmos/ibc-go/v10/modules/core/02-client/v2/types"
 	exported "github.com/cosmos/ibc-go/v10/modules/core/exported"
 	gomock "go.uber.org/mock/gomock"
 )
@@ -522,21 +523,6 @@ func (mr *MockClientKeeperMockRecorder) GetClientState(ctx, clientID any) *gomoc
 	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "GetClientState", reflect.TypeOf((*MockClientKeeper)(nil).GetClientState), ctx, clientID)
 }
 
-// GetLatestClientConsensusState mocks base method.
-func (m *MockClientKeeper) GetLatestClientConsensusState(ctx types.Context, clientID string) (exported.ConsensusState, bool) {
-	m.ctrl.T.Helper()
-	ret := m.ctrl.Call(m, "GetLatestClientConsensusState", ctx, clientID)
-	ret0, _ := ret[0].(exported.ConsensusState)
-	ret1, _ := ret[1].(bool)
-	return ret0, ret1
-}
-
-// GetLatestClientConsensusState indicates an expected call of GetLatestClientConsensusState.
-func (mr *MockClientKeeperMockRecorder) GetLatestClientConsensusState(ctx, clientID any) *gomock.Call {
-	mr.mock.ctrl.T.Helper()
-	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "GetLatestClientConsensusState", reflect.TypeOf((*MockClientKeeper)(nil).GetLatestClientConsensusState), ctx, clientID)
-}
-
 // GetStoreProvider mocks base method.
 func (m *MockClientKeeper) GetStoreProvider() types1.StoreProvider {
 	m.ctrl.T.Helper()
@@ -561,6 +547,57 @@ func (m *MockClientKeeper) IterateClientStates(ctx types.Context, storePrefix []
 func (mr *MockClientKeeperMockRecorder) IterateClientStates(ctx, storePrefix, cb any) *gomock.Call {
 	mr.mock.ctrl.T.Helper()
 	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "IterateClientStates", reflect.TypeOf((*MockClientKeeper)(nil).IterateClientStates), ctx, storePrefix, cb)
+}
+
+// MockClientV2Keeper is a mock of ClientV2Keeper interface.
+type MockClientV2Keeper struct {
+	ctrl     *gomock.Controller
+	recorder *MockClientV2KeeperMockRecorder
+	isgomock struct{}
+}
+
+// MockClientV2KeeperMockRecorder is the mock recorder for MockClientV2Keeper.
+type MockClientV2KeeperMockRecorder struct {
+	mock *MockClientV2Keeper
+}
+
+// NewMockClientV2Keeper creates a new mock instance.
+func NewMockClientV2Keeper(ctrl *gomock.Controller) *MockClientV2Keeper {
+	mock := &MockClientV2Keeper{ctrl: ctrl}
+	mock.recorder = &MockClientV2KeeperMockRecorder{mock}
+	return mock
+}
+
+// EXPECT returns an object that allows the caller to indicate expected use.
+func (m *MockClientV2Keeper) EXPECT() *MockClientV2KeeperMockRecorder {
+	return m.recorder
+}
+
+// GetClientCounterparty mocks base method.
+func (m *MockClientV2Keeper) GetClientCounterparty(ctx types.Context, clientID string) (clientv2types.CounterpartyInfo, bool) {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "GetClientCounterparty", ctx, clientID)
+	ret0, _ := ret[0].(clientv2types.CounterpartyInfo)
+	ret1, _ := ret[1].(bool)
+	return ret0, ret1
+}
+
+// GetClientCounterparty indicates an expected call of GetClientCounterparty.
+func (mr *MockClientV2KeeperMockRecorder) GetClientCounterparty(ctx, clientID any) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "GetClientCounterparty", reflect.TypeOf((*MockClientV2Keeper)(nil).GetClientCounterparty), ctx, clientID)
+}
+
+// SetClientCounterparty mocks base method.
+func (m *MockClientV2Keeper) SetClientCounterparty(ctx types.Context, clientID string, counterparty clientv2types.CounterpartyInfo) {
+	m.ctrl.T.Helper()
+	m.ctrl.Call(m, "SetClientCounterparty", ctx, clientID, counterparty)
+}
+
+// SetClientCounterparty indicates an expected call of SetClientCounterparty.
+func (mr *MockClientV2KeeperMockRecorder) SetClientCounterparty(ctx, clientID, counterparty any) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "SetClientCounterparty", reflect.TypeOf((*MockClientV2Keeper)(nil).SetClientCounterparty), ctx, clientID, counterparty)
 }
 
 // MockConsumerHooks is a mock of ConsumerHooks interface.

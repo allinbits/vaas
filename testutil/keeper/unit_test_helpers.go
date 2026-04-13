@@ -73,6 +73,7 @@ func NewInMemKeeperParams(tb testing.TB) InMemKeeperParams {
 // A struct holding pointers to any mocked external keeper needed for provider/consumer keeper setup.
 type MockedKeepers struct {
 	*MockClientKeeper
+	*MockClientV2Keeper
 	*MockStakingKeeper
 	*MockSlashingKeeper
 	*MockAccountKeeper
@@ -84,6 +85,7 @@ type MockedKeepers struct {
 func NewMockedKeepers(ctrl *gomock.Controller) MockedKeepers {
 	return MockedKeepers{
 		MockClientKeeper:   NewMockClientKeeper(ctrl),
+		MockClientV2Keeper: NewMockClientV2Keeper(ctrl),
 		MockStakingKeeper:  NewMockStakingKeeper(ctrl),
 		MockSlashingKeeper: NewMockSlashingKeeper(ctrl),
 		MockAccountKeeper:  NewMockAccountKeeper(ctrl),
@@ -98,6 +100,7 @@ func NewInMemProviderKeeper(params InMemKeeperParams, mocks MockedKeepers) provi
 		params.Cdc,
 		storeService,
 		mocks.MockClientKeeper,
+		mocks.MockClientV2Keeper,
 		mocks.MockStakingKeeper,
 		mocks.MockSlashingKeeper,
 		mocks.MockAccountKeeper,
@@ -119,6 +122,7 @@ func NewInMemConsumerKeeper(params InMemKeeperParams, mocks MockedKeepers) consu
 		params.Cdc,
 		storeService,
 		mocks.MockClientKeeper,
+		mocks.MockClientV2Keeper,
 		mocks.MockSlashingKeeper,
 		mocks.MockBankKeeper,
 		mocks.MockAccountKeeper,

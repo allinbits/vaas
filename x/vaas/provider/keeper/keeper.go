@@ -35,6 +35,7 @@ type Keeper struct {
 	cdc              codec.BinaryCodec
 	accountKeeper    vaastypes.AccountKeeper
 	clientKeeper     vaastypes.ClientKeeper
+	clientV2Keeper   vaastypes.ClientV2Keeper
 	stakingKeeper    vaastypes.StakingKeeper
 	slashingKeeper   vaastypes.SlashingKeeper
 	bankKeeper       vaastypes.BankKeeper
@@ -45,7 +46,6 @@ type Keeper struct {
 	consensusAddressCodec addresscodec.Codec
 
 	channelKeeperV2 *channelkeeperv2.Keeper
-	clientV2Keeper  vaastypes.ClientV2Keeper
 	// Collections schema
 	Schema collections.Schema
 
@@ -82,6 +82,7 @@ type Keeper struct {
 func NewKeeper(
 	cdc codec.BinaryCodec, storeService corestoretypes.KVStoreService,
 	clientKeeper vaastypes.ClientKeeper,
+	clientV2Keeper vaastypes.ClientV2Keeper,
 	stakingKeeper vaastypes.StakingKeeper, slashingKeeper vaastypes.SlashingKeeper,
 	accountKeeper vaastypes.AccountKeeper,
 	bankKeeper vaastypes.BankKeeper,
@@ -97,6 +98,7 @@ func NewKeeper(
 		storeService:          storeService,
 		authority:             authority,
 		clientKeeper:          clientKeeper,
+		clientV2Keeper:        clientV2Keeper,
 		stakingKeeper:         stakingKeeper,
 		slashingKeeper:        slashingKeeper,
 		accountKeeper:         accountKeeper,
@@ -165,10 +167,6 @@ func NewKeeper(
 // SetChannelKeeperV2 sets the IBC v2 channel keeper for client-based packet sending.
 func (k *Keeper) SetChannelKeeperV2(keeper *channelkeeperv2.Keeper) {
 	k.channelKeeperV2 = keeper
-}
-
-func (k *Keeper) SetClientV2Keeper(keeper vaastypes.ClientV2Keeper) {
-	k.clientV2Keeper = keeper
 }
 
 // GetAuthority returns the x/ccv/provider module's authority.

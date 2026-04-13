@@ -93,11 +93,6 @@ func GetMocksForHandleSlashPacket(ctx sdk.Context, mocks MockedKeepers,
 	return calls
 }
 
-func ExpectLatestConsensusStateMock(ctx sdk.Context, mocks MockedKeepers, clientID string, consState *ibctmtypes.ConsensusState) *gomock.Call {
-	return mocks.MockClientKeeper.EXPECT().
-		GetLatestClientConsensusState(ctx, clientID).Return(consState, true).Times(1)
-}
-
 func ExpectCreateClientMock(ctx sdk.Context, mocks MockedKeepers, clientType, clientID string,
 	clientState, consState []byte,
 ) *gomock.Call {
