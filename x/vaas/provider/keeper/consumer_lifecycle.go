@@ -221,13 +221,6 @@ func (k Keeper) HasActiveConsumerValidator(ctx sdk.Context, consumerId string, a
 
 // LaunchConsumer launches the chain with the provided consumer id by creating the consumer client and the respective
 // consumer genesis file.
-//
-// IBC v2 Note: In IBC v2 (Eureka), consumer chains are launched when RegisterCounterparty
-// succeeds on both chains. The current implementation sets CONSUMER_PHASE_LAUNCHED after
-// client creation, but in IBC v2 this will happen after RegisterCounterparty completes.
-// The channel handshake (OnChanOpenConfirm) will no longer be the launch trigger.
-//
-// TODO add unit test for LaunchConsumer
 func (k Keeper) LaunchConsumer(
 	ctx sdk.Context,
 	bondedValidators []stakingtypes.Validator,
@@ -265,10 +258,6 @@ func (k Keeper) LaunchConsumer(
 
 // CreateConsumerClient will create the CCV client for the given consumer chain. The CCV channel must be built
 // on top of the CCV client to ensure connection with the right consumer chain.
-//
-// IBC v2 Note: In IBC v2 (Eureka), channels are not used. The client ID is used directly
-// for packet routing. After client creation, RegisterCounterparty should be called to
-// establish the bi-directional link between provider and consumer.
 //
 // IMPORTANT - Timing Constraint (Option B: New Consumer Chain):
 // The consensus state for the new client is created with the current provider block time

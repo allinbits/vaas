@@ -1,20 +1,20 @@
 syntax = "proto3";
 package vaas.provider.v1;
 
-option go_package = "github.com/allinbits/vaas/x/vaas/provider/types";
-
 import "amino/amino.proto";
-import "google/api/annotations.proto";
-import "google/protobuf/timestamp.proto";
-import "google/protobuf/duration.proto";
-import "google/protobuf/any.proto";
-import "gogoproto/gogo.proto";
-import "cosmos_proto/cosmos.proto";
 import "cosmos/msg/v1/msg.proto";
+import "cosmos_proto/cosmos.proto";
+import "gogoproto/gogo.proto";
+import "google/api/annotations.proto";
+import "google/protobuf/any.proto";
+import "google/protobuf/duration.proto";
+import "google/protobuf/timestamp.proto";
 import "ibc/core/client/v1/client.proto";
-import "vaas/provider/v1/provider.proto";
 import "ibc/lightclients/tendermint/v1/tendermint.proto";
 import "tendermint/types/evidence.proto";
+import "vaas/provider/v1/provider.proto";
+
+option go_package = "github.com/allinbits/vaas/x/vaas/provider/types";
 
 // Msg defines the Msg service.
 service Msg {
@@ -29,7 +29,6 @@ service Msg {
   rpc UpdateParams(MsgUpdateParams) returns (MsgUpdateParamsResponse);
 }
 
-
 message MsgAssignConsumerKey {
   option (cosmos.msg.v1.signer) = "signer";
   option (gogoproto.equal) = false;
@@ -38,7 +37,7 @@ message MsgAssignConsumerKey {
   // the consumer id of the consumer chain to assign a consensus public key to
   string consumer_id = 1;
   // The validator address on the provider
-  string provider_addr = 2 [ (gogoproto.moretags) = "yaml:\"address\"" ];
+  string provider_addr = 2 [(gogoproto.moretags) = "yaml:\"address\""];
   // The consensus public key to use on the consumer.
   // in json string format corresponding to proto-any, ex:
   // `{"@type":"/cosmos.crypto.ed25519.PubKey","key":"Ui5Gf1+mtWUdH8u3xlmzdKID+F3PK0sfXZ73GZ6q6is="}`
@@ -48,7 +47,6 @@ message MsgAssignConsumerKey {
 }
 
 message MsgAssignConsumerKeyResponse {}
-
 
 // MsgSubmitConsumerMisbehaviour defines a message that reports a light client attack,
 // also known as a misbehaviour, observed on a consumer chain
@@ -66,7 +64,6 @@ message MsgSubmitConsumerMisbehaviour {
 }
 
 message MsgSubmitConsumerMisbehaviourResponse {}
-
 
 // MsgSubmitConsumerDoubleVoting defines a message that reports
 // a double signing infraction observed on a consumer chain
@@ -115,11 +112,6 @@ message MsgRemoveConsumer {
 message MsgRemoveConsumerResponse {}
 
 // MsgCreateConsumer defines the message that creates a consumer chain.
-//
-// IBC v2 Note: In IBC v2 (Eureka), client configuration can be provided directly
-// via initialization_parameters, or an existing client_id can be reused. The
-// template_client in provider params is deprecated in favor of per-consumer
-// client configuration.
 message MsgCreateConsumer {
   option (cosmos.msg.v1.signer) = "submitter";
 
@@ -130,7 +122,7 @@ message MsgCreateConsumer {
   // the chain id of the new consumer chain
   string chain_id = 2;
 
-  ConsumerMetadata metadata = 3 [ (gogoproto.nullable) = false ];
+  ConsumerMetadata metadata = 3 [(gogoproto.nullable) = false];
 
   ConsumerInitializationParameters initialization_parameters = 4;
 

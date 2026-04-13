@@ -10,11 +10,7 @@ import (
 	sdk "github.com/cosmos/cosmos-sdk/types"
 )
 
-// InitGenesis initializes the CCV provider state and binds to PortID.
-//
-// IBC v2 Note: In IBC v2 (Eureka), ports are not used for routing. The PortID
-// is set for backward compatibility during the migration period. Consumer chain
-// initialization uses client IDs for routing instead of channels.
+// InitGenesis initializes the CCV provider state.
 func (k Keeper) InitGenesis(ctx sdk.Context, genState *types.GenesisState) []abci.ValidatorUpdate {
 	k.SetValidatorSetUpdateId(ctx, genState.ValsetUpdateId)
 	for _, v2h := range genState.ValsetUpdateIdToHeight {
