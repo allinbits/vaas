@@ -1,7 +1,6 @@
 package keeper
 
 import (
-	"bytes"
 	"context"
 	"errors"
 	"fmt"
@@ -118,27 +117,6 @@ func NewKeeper(
 // GetAuthority returns the x/ccv/provider module's authority.
 func (k Keeper) GetAuthority() string {
 	return k.authority
-}
-
-func (k Keeper) fixCounterpartyMerklePrefix(ctx sdk.Context, clientID string) {
-	counterparty, found := k.clientV2Keeper.GetClientCounterparty(ctx, clientID)
-	if !found {
-		return
-	}
-
-	expectedPrefix := [][]byte{[]byte("ibc"), []byte("")}
-	if len(counterparty.MerklePrefix) == len(expectedPrefix) &&
-		bytes.Equal(counterparty.MerklePrefix[0], expectedPrefix[0]) &&
-		bytes.Equal(counterparty.MerklePrefix[1], expectedPrefix[1]) {
-		return
-	}
-
-	counterparty.MerklePrefix = expectedPrefix
-	k.clientV2Keeper.SetClientCounterparty(ctx, clientID, counterparty)
-	k.Logger(ctx).Info("fixed counterparty merkle prefix",
-		"clientId", clientID,
-		"counterpartyClientId", counterparty.ClientId,
-	)
 }
 
 // Returns a keeper with cdc and storeService set it does not raise any panics during registration (eg with IBCKeeper).

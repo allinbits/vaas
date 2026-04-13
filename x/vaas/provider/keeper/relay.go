@@ -1,7 +1,6 @@
 package keeper
 
 import (
-	"bytes"
 	"errors"
 	"fmt"
 
@@ -98,7 +97,6 @@ func (k Keeper) DiscoverConsumerClients(ctx sdk.Context) {
 
 		if foundClientID != "" {
 			k.SetConsumerClientId(ctx, consumerId, foundClientID)
-			k.fixCounterpartyMerklePrefix(ctx, foundClientID)
 			k.Logger(ctx).Info("discovered relayer client for consumer",
 				"consumerId", consumerId,
 				"clientId", foundClientID,
@@ -106,30 +104,6 @@ func (k Keeper) DiscoverConsumerClients(ctx sdk.Context) {
 			)
 		}
 	}
-}
-
-func (k Keeper) fixCounterpartyMerklePrefix(ctx sdk.Context, clientID string) {
-	if k.clientV2Keeper == nil {
-		return
-	}
-
-	counterparty, found := k.clientV2Keeper.GetClientCounterparty(ctx, clientID)
-	if !found {
-		return
-	}
-
-	if len(counterparty.MerklePrefix) == len(cosmosIBCMerklePrefix) &&
-		bytes.Equal(counterparty.MerklePrefix[0], cosmosIBCMerklePrefix[0]) &&
-		bytes.Equal(counterparty.MerklePrefix[1], cosmosIBCMerklePrefix[1]) {
-		return
-	}
-
-	counterparty.MerklePrefix = cosmosIBCMerklePrefix
-	k.clientV2Keeper.SetClientCounterparty(ctx, clientID, counterparty)
-	k.Logger(ctx).Info("fixed counterparty merkle prefix",
-		"clientId", clientID,
-		"counterpartyClientId", counterparty.ClientId,
-	)
 }
 
 // ProviderValidatorUpdates returns changes in the provider consensus validator set
