@@ -4,7 +4,7 @@
 
 VAAS (Validator-as-a-Service) is a simplified Interchain Security (ICS) implementation for Cosmos blockchains, derived from [interchain-security](https://github.com/cosmos/interchain-security). It lets a provider chain lease its proof-of-stake security to consumer chains via automatic validator synchronization. All active validators validate all consumers — no opt-in/opt-out.
 
-Supports both IBC v1 (channel-based, ordered) and IBC v2/Eureka (client-based, out-of-order). IBC v2 uses application IDs `vaas/provider` and `vaas/consumer` instead of port IDs.
+Supports both IBC v1 (channel-based, ordered) and IBC v2 (client-based, out-of-order). IBC v2 uses application IDs `vaas/provider` and `vaas/consumer` instead of port IDs.
 
 ## Build & Test Commands
 
@@ -48,6 +48,7 @@ The core protocol lives in `x/vaas/` with two symmetric modules:
 Each module has: `keeper/` (business logic + state), `types/` (data structures + params), `client/cli/` (CLI commands), `module.go`, `ibc_module.go` (v1 callbacks), `ibc_module_v2.go` (v2 callbacks).
 
 Two helper modules replace standard Cosmos modules to prevent automatic validator set updates on consumer chains:
+
 - `x/vaas/no_valupdates_staking/` — staking without EndBlock valset exports
 - `x/vaas/no_valupdates_genutil/` — genutil without gentx-based valset init
 
@@ -89,6 +90,7 @@ Under `proto/vaas/`: `v1/` (shared wire types like `ValidatorSetChangePacketData
 ## Lint / Import Ordering
 
 Import groups (enforced by gci in `.golangci.yml`):
+
 1. Standard library
 2. Third-party
 3. `github.com/cometbft/cometbft`

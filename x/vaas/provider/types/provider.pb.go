@@ -662,12 +662,6 @@ type ConsumerInitializationParameters struct {
 	// spawn_time is the time on the provider chain at which the consumer chain
 	// genesis is finalized and all validators will be responsible for starting
 	// their consumer chain validator node.
-	//
-	// IMPORTANT (Option B - New Consumer Chain): The IBC client for the consumer
-	// is created at spawn_time with the provider's current block time as the
-	// consensus state timestamp. For the client to remain valid, the consumer's
-	// genesis_time must satisfy: genesis_time - spawn_time < trusting_period.
-	// If this constraint is violated, relayers will fail with client expiry errors.
 	SpawnTime time.Time `protobuf:"bytes,4,opt,name=spawn_time,json=spawnTime,proto3,stdtime" json:"spawn_time"`
 	// Unbonding period for the consumer,
 	// which should be smaller than that of the provider in general.

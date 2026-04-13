@@ -495,10 +495,6 @@ func (k Keeper) BeginBlockRemoveConsumers(ctx sdk.Context) error {
 }
 
 // DeleteConsumerChain cleans up the state of the given consumer chain.
-//
-// IBC v2 Note: In IBC v2 (Eureka), the channel-based cleanup logic will be removed.
-// Only client-based state needs to be cleaned up. The channel closing logic below
-// is kept for backward compatibility during the migration period.
 func (k Keeper) DeleteConsumerChain(ctx sdk.Context, consumerId string) (err error) {
 	phase := k.GetConsumerPhase(ctx, consumerId)
 	if phase != types.CONSUMER_PHASE_STOPPED {
