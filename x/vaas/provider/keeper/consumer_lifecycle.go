@@ -9,6 +9,7 @@ import (
 	vaastypes "github.com/allinbits/vaas/x/vaas/types"
 
 	abci "github.com/cometbft/cometbft/abci/types"
+	tmtypes "github.com/cometbft/cometbft/types"
 
 	clienttypes "github.com/cosmos/ibc-go/v10/modules/core/02-client/types"
 	commitmenttypes "github.com/cosmos/ibc-go/v10/modules/core/23-commitment/types"
@@ -246,9 +247,20 @@ func (k Keeper) LaunchConsumer(
 		return fmt.Errorf("setting consumer genesis state, consumerId(%s): %w", consumerId, err)
 	}
 
+	updatesAsValSet, err := tmtypes.PB2TM.ValidatorUpdates(initialValUpdates)
+	if err != nil {
+		return fmt.Errorf("unable to create initial validator set from initial validator updates: %w", err)
+	}
+	valsetHash := tmtypes.NewValidatorSet(updatesAsValSet).Hash()
+
+	err = k.CreateConsumerClient(ctx, consumerId, valsetHash)
+	if err != nil {
+		return fmt.Errorf("creating consumer client, consumerId(%s): %w", consumerId, err)
+	}
+
 	k.SetConsumerPhase(ctx, consumerId, types.CONSUMER_PHASE_LAUNCHED)
 
-	k.Logger(ctx).Info("consumer successfully launched (awaiting relayer client)",
+	k.Logger(ctx).Info("consumer successfully launched",
 		"consumerId", consumerId,
 		"valset size", len(initialValUpdates),
 	)

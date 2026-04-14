@@ -30,7 +30,7 @@ func (k Keeper) OnRecvVSCPacketV2(ctx sdk.Context, sourceClientID string, newCha
 		return nil
 	}
 
-	providerClientID, found := k.GetProviderClientID(ctx)
+	_, found = k.GetProviderClientID(ctx)
 	if !found {
 		k.SetProviderClientID(ctx, sourceClientID)
 		k.Logger(ctx).Info("Provider client established", "clientID", sourceClientID)
@@ -42,13 +42,6 @@ func (k Keeper) OnRecvVSCPacketV2(ctx sdk.Context, sourceClientID string, newCha
 				sdk.NewAttribute("client_id", sourceClientID),
 			),
 		)
-	} else if providerClientID != sourceClientID {
-		k.Logger(ctx).Error("VSCPacket received from unexpected client",
-			"expectedClientID", providerClientID,
-			"receivedClientID", sourceClientID,
-		)
-		return errorsmod.Wrapf(types.ErrInvalidProviderClient,
-			"VSCPacket from unexpected client %s; expected: %s", sourceClientID, providerClientID)
 	}
 
 	currentValUpdates := []abci.ValidatorUpdate{}

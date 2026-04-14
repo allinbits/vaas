@@ -88,6 +88,7 @@ func NewMockedKeepers(ctrl *gomock.Controller) MockedKeepers {
 		MockBankKeeper:     NewMockBankKeeper(ctrl),
 	}
 	mocks.MockClientV2Keeper.EXPECT().GetClientCounterparty(gomock.Any(), gomock.Any()).Return(clientv2types.CounterpartyInfo{}, false).AnyTimes()
+	mocks.MockClientV2Keeper.EXPECT().SetClientCounterparty(gomock.Any(), gomock.Any(), gomock.Any()).AnyTimes()
 	return mocks
 }
 

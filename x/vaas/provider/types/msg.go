@@ -326,16 +326,16 @@ func TruncateString(str string, maxLength int) string {
 		return ""
 	}
 
-	truncated := ""
+	var truncated strings.Builder
 	count := 0
 	for _, char := range str {
-		truncated += string(char)
+		truncated.WriteString(string(char))
 		count++
 		if count >= maxLength {
 			break
 		}
 	}
-	return truncated
+	return truncated.String()
 }
 
 // ValidateConsumerMetadata validates that all the provided metadata are in the expected range

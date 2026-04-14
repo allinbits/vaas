@@ -66,11 +66,11 @@ func TestOnRecvVSCPacketV2(t *testing.T) {
 	differentClientID := "07-tendermint-999"
 	pd3 := types.NewValidatorSetChangePacketData(changes1, 3)
 	err = consumerKeeper.OnRecvVSCPacketV2(ctx, differentClientID, pd3)
-	require.Error(t, err, "packet from different client should fail")
+	require.NoError(t, err, "packet from different client should succeed (IBC v2 validates counterparties)")
 
 	highestID, _, err = consumerKeeper.GetHighestValsetUpdateID(ctx)
 	require.NoError(t, err)
-	require.Equal(t, uint64(2), highestID)
+	require.Equal(t, uint64(3), highestID)
 }
 
 func TestOnRecvVSCPacketV2OutOfOrder(t *testing.T) {

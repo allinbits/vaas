@@ -227,7 +227,7 @@ func TestGetAllCCValidator(t *testing.T) {
 
 	numValidators := 4
 	validators := []types.CrossChainValidator{}
-	for i := 0; i < numValidators; i++ {
+	for range numValidators {
 		validators = append(validators, testkeeper.GetNewCrossChainValidator(t))
 	}
 	// sorting by CrossChainValidator.Address

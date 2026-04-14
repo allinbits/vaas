@@ -55,8 +55,6 @@ func (k Keeper) EndBlockVSU(ctx sdk.Context) ([]abci.ValidatorUpdate, error) {
 		return []abci.ValidatorUpdate{}, fmt.Errorf("computing the provider consensus validator set: %w", err)
 	}
 
-	k.DiscoverConsumerClients(ctx)
-
 	if k.BlocksUntilNextEpoch(ctx) == 0 {
 		if err := k.QueueVSCPackets(ctx); err != nil {
 			return []abci.ValidatorUpdate{}, fmt.Errorf("queueing consumer validator updates: %w", err)
@@ -71,37 +69,6 @@ func (k Keeper) EndBlockVSU(ctx sdk.Context) ([]abci.ValidatorUpdate, error) {
 	}
 
 	return valUpdates, nil
-}
-
-func (k Keeper) DiscoverConsumerClients(ctx sdk.Context) {
-	for _, consumerId := range k.GetAllLaunchedConsumersWithoutClient(ctx) {
-		chainId, err := k.GetConsumerChainId(ctx, consumerId)
-		if err != nil {
-			continue
-		}
-
-		var foundClientID string
-		k.clientKeeper.IterateClientStates(ctx, nil, func(clientID string, cs ibcexported.ClientState) bool {
-			tmCs, ok := cs.(*ibctmtypes.ClientState)
-			if !ok {
-				return false
-			}
-			if tmCs.ChainId == chainId {
-				foundClientID = clientID
-				return true
-			}
-			return false
-		})
-
-		if foundClientID != "" {
-			k.SetConsumerClientId(ctx, consumerId, foundClientID)
-			k.Logger(ctx).Info("discovered relayer client for consumer",
-				"consumerId", consumerId,
-				"clientId", foundClientID,
-				"chainId", chainId,
-			)
-		}
-	}
 }
 
 // ProviderValidatorUpdates returns changes in the provider consensus validator set
@@ -123,11 +90,9 @@ func (k Keeper) ProviderValidatorUpdates(ctx sdk.Context) ([]abci.ValidatorUpdat
 	}
 
 	nextValidators := []providertypes.ConsensusValidator{}
-	maxValidators := k.GetMaxProviderConsensusValidators(ctx)
-	// avoid out of range errors by bounding the max validators to the number of bonded validators
-	if maxValidators > int64(len(bondedValidators)) {
-		maxValidators = int64(len(bondedValidators))
-	}
+	maxValidators := min(
+		// avoid out of range errors by bounding the max validators to the number of bonded validators
+		k.GetMaxProviderConsensusValidators(ctx), int64(len(bondedValidators)))
 	for _, val := range bondedValidators[:maxValidators] {
 		nextValidator, err := k.CreateProviderConsensusValidator(ctx, val)
 		if err != nil {
@@ -172,11 +137,54 @@ func (k Keeper) SendVSCPackets(ctx sdk.Context) error {
 			continue
 		}
 
+		clientID = k.discoverActiveConsumerClient(ctx, consumerId, clientID)
+
 		if err := k.SendVSCPacketsToChain(ctx, consumerId, clientID); err != nil {
 			return fmt.Errorf("sending VSCPacket to consumer, consumerId(%s): %w", consumerId, err)
 		}
 	}
 	return nil
+}
+
+// discoverActiveConsumerClient scans for IBC clients pointing to the consumer chain
+// and returns the one with the highest latest height that has a counterparty registered.
+// This allows the provider to use a client being actively updated by a relayer.
+func (k Keeper) discoverActiveConsumerClient(ctx sdk.Context, consumerId, currentClientID string) string {
+	chainID, err := k.GetConsumerChainId(ctx, consumerId)
+	if err != nil {
+		return currentClientID
+	}
+
+	var bestClient string
+	var bestHeight uint64
+
+	k.clientKeeper.IterateClientStates(ctx, nil, func(clientID string, cs ibcexported.ClientState) bool {
+		tmCS, ok := cs.(*ibctmtypes.ClientState)
+		if !ok || tmCS.ChainId != chainID {
+			return false
+		}
+		cp, found := k.clientV2Keeper.GetClientCounterparty(ctx, clientID)
+		if !found || cp.ClientId == "" {
+			return false
+		}
+		height := tmCS.LatestHeight.RevisionHeight
+		if height > bestHeight {
+			bestHeight = height
+			bestClient = clientID
+		}
+		return false
+	})
+
+	if bestClient != "" && bestClient != currentClientID {
+		k.Logger(ctx).Info("discovered active client for consumer, updating mapping",
+			"consumerId", consumerId,
+			"oldClient", currentClientID,
+			"newClient", bestClient,
+		)
+		k.SetConsumerClientId(ctx, consumerId, bestClient)
+		return bestClient
+	}
+	return currentClientID
 }
 
 func (k Keeper) SendVSCPacketsToChain(ctx sdk.Context, consumerId, clientId string) error {
@@ -187,10 +195,7 @@ func (k Keeper) SendVSCPacketsToChain(ctx sdk.Context, consumerId, clientId stri
 		return nil
 	}
 
-	timeoutPeriod := k.GetVAASTimeoutPeriod(ctx)
-	if timeoutPeriod > channeltypesv2.MaxTimeoutDelta {
-		timeoutPeriod = channeltypesv2.MaxTimeoutDelta
-	}
+	timeoutPeriod := min(k.GetVAASTimeoutPeriod(ctx), channeltypesv2.MaxTimeoutDelta)
 	timeoutTimestamp := uint64(ctx.BlockTime().Add(timeoutPeriod).Unix())
 
 	pendingPackets := k.GetPendingVSCPackets(ctx, consumerId)

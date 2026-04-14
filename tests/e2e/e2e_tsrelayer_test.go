@@ -202,6 +202,7 @@ func (s *IntegrationTestSuite) tsRelayerAddGasPrice(chainID, gasPrice string) {
 	s.executeTSRelayerCommand(ctx, []string{
 		"add-gas-price",
 		"-c", chainID,
+		"--gas-adjustment", "2.0",
 		gasPrice,
 	})
 }
@@ -265,6 +266,39 @@ func (s *IntegrationTestSuite) collectChainDiagnostics() string {
 	return sb.String()
 }
 
+func (s *IntegrationTestSuite) collectIBCDiagnosticsLog() {
+	chains := []struct {
+		name      string
+		container *dockertest.Resource
+		binary    string
+		home      string
+	}{
+		{"provider", s.providerValRes[0], providerBinary, providerHomePath},
+		{"consumer", s.consumerValRes[0], consumerBinary, consumerHomePath},
+	}
+	for _, c := range chains {
+		stdout, _, err := s.dockerExec(c.container.Container.ID, []string{
+			c.binary, "query", "ibc", "client", "states", "--home", c.home, "--output", "json",
+		})
+		if err != nil {
+			s.T().Logf("%s ibc client states: ERROR: %v", c.name, err)
+		} else {
+			s.T().Logf("%s ibc client states: %s", c.name, stdout.String())
+		}
+
+		for _, clientID := range []string{"07-tendermint-0", "07-tendermint-1"} {
+			stdout2, _, err := s.dockerExec(c.container.Container.ID, []string{
+				c.binary, "query", "ibc", "client", "counterparty-info", clientID, "--home", c.home, "--output", "json",
+			})
+			if err != nil {
+				s.T().Logf("%s ibc counterparty %s: ERROR: %v (output: %s)", c.name, clientID, err, stdout2.String())
+			} else {
+				s.T().Logf("%s ibc counterparty %s: %s", c.name, clientID, stdout2.String())
+			}
+		}
+	}
+}
+
 func (s *IntegrationTestSuite) collectIBCDiagnostics() string {
 	var sb strings.Builder
 	chains := []struct {
@@ -287,7 +321,7 @@ func (s *IntegrationTestSuite) collectIBCDiagnostics() string {
 		}
 
 		stdout2, _, err := s.dockerExec(c.container.Container.ID, []string{
-			c.binary, "query", "ibc", "client", "counterparty", "07-tendermint-1", "--home", c.home, "--output", "json",
+			c.binary, "query", "ibc", "client", "counterparty-info", "07-tendermint-1", "--home", c.home, "--output", "json",
 		})
 		if err != nil {
 			sb.WriteString(fmt.Sprintf("=== %s ibc counterparty 07-tendermint-1: ERROR: %v (output: %s) ===\n", c.name, err, stdout2.String()))

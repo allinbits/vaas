@@ -18,11 +18,11 @@ import (
 func AccumulateChanges(currentChanges, newChanges []abci.ValidatorUpdate) []abci.ValidatorUpdate {
 	m := make(map[string]abci.ValidatorUpdate)
 
-	for i := 0; i < len(currentChanges); i++ {
+	for i := range currentChanges {
 		m[currentChanges[i].PubKey.String()] = currentChanges[i]
 	}
 
-	for i := 0; i < len(newChanges); i++ {
+	for i := range newChanges {
 		m[newChanges[i].PubKey.String()] = newChanges[i]
 	}
 
@@ -61,7 +61,7 @@ func AppendMany(byteses ...[]byte) (out []byte) {
 	return out
 }
 
-func PanicIfZeroOrNil(x interface{}, nameForPanicMsg string) {
+func PanicIfZeroOrNil(x any, nameForPanicMsg string) {
 	if x == nil || reflect.ValueOf(x).IsZero() {
 		panic("zero or nil value for " + nameForPanicMsg)
 	}

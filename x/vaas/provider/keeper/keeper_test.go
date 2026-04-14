@@ -2,6 +2,7 @@ package keeper_test
 
 import (
 	"fmt"
+	"slices"
 	"sort"
 	"testing"
 
@@ -181,12 +182,8 @@ func TestGetAllConsumersWithIBCClients(t *testing.T) {
 	require.Len(t, actualConsumerIds, len(consumerIds))
 
 	// sort the consumer ids before comparing they are equal
-	sort.Slice(consumerIds, func(i, j int) bool {
-		return consumerIds[i] < consumerIds[j]
-	})
-	sort.Slice(actualConsumerIds, func(i, j int) bool {
-		return actualConsumerIds[i] < actualConsumerIds[j]
-	})
+	slices.Sort(consumerIds)
+	slices.Sort(actualConsumerIds)
 	require.Equal(t, consumerIds, actualConsumerIds)
 }
 

@@ -393,7 +393,7 @@ func (k Keeper) GetAllConsumerIds(ctx context.Context) []string {
 	}
 
 	consumerIds := []string{}
-	for i := uint64(0); i < latestConsumerId; i++ {
+	for i := range latestConsumerId {
 		consumerId := fmt.Sprintf("%d", i)
 		consumerIds = append(consumerIds, consumerId)
 	}
@@ -406,20 +406,6 @@ func (k Keeper) GetAllActiveConsumerIds(ctx context.Context) []string {
 	consumerIds := []string{}
 	for _, consumerId := range k.GetAllConsumerIds(ctx) {
 		if !k.IsConsumerActive(ctx, consumerId) {
-			continue
-		}
-		consumerIds = append(consumerIds, consumerId)
-	}
-	return consumerIds
-}
-
-func (k Keeper) GetAllLaunchedConsumersWithoutClient(ctx context.Context) []string {
-	consumerIds := []string{}
-	for _, consumerId := range k.GetAllConsumerIds(ctx) {
-		if k.GetConsumerPhase(ctx, consumerId) != types.CONSUMER_PHASE_LAUNCHED {
-			continue
-		}
-		if _, found := k.GetConsumerClientId(ctx, consumerId); found {
 			continue
 		}
 		consumerIds = append(consumerIds, consumerId)

@@ -156,16 +156,16 @@ func TestIBCV2ConsumerRejectsUnknownProvider(t *testing.T) {
 	require.True(t, found)
 	require.Equal(t, providerClientID, clientID)
 
-	// Try to send packet from unknown client - should fail
+	// Try to send packet from different client - should succeed
+	// (IBC v2 layer handles counterparty validation)
 	vscPacket2 := types.NewValidatorSetChangePacketData(valUpdates, 2)
 	err = consumerKeeper.OnRecvVSCPacketV2(ctx, unknownClientID, vscPacket2)
-	require.Error(t, err, "packet from unknown client should be rejected")
-	require.Contains(t, err.Error(), "unexpected client")
+	require.NoError(t, err, "packet from different client should succeed (IBC v2 validates counterparties)")
 
-	// Highest ID should still be 1 (packet 2 was rejected)
+	// Highest ID should be updated to 2
 	highestID, _, err := consumerKeeper.GetHighestValsetUpdateID(ctx)
 	require.NoError(t, err)
-	require.Equal(t, uint64(1), highestID)
+	require.Equal(t, uint64(2), highestID)
 }
 
 // TestIBCV2ConsumerProviderInfoQuery tests the v2 provider info query.
