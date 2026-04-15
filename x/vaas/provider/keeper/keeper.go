@@ -10,7 +10,6 @@ import (
 
 	tmprotocrypto "github.com/cometbft/cometbft/proto/tendermint/crypto"
 
-	channelkeeperv2 "github.com/cosmos/ibc-go/v10/modules/core/04-channel/v2/keeper"
 	ibchost "github.com/cosmos/ibc-go/v10/modules/core/exported"
 
 	"cosmossdk.io/collections"
@@ -45,7 +44,7 @@ type Keeper struct {
 	validatorAddressCodec addresscodec.Codec
 	consensusAddressCodec addresscodec.Codec
 
-	channelKeeperV2 *channelkeeperv2.Keeper
+	channelKeeperV2 vaastypes.ChannelV2Keeper
 	// Collections schema
 	Schema collections.Schema
 
@@ -165,7 +164,7 @@ func NewKeeper(
 }
 
 // SetChannelKeeperV2 sets the IBC v2 channel keeper for client-based packet sending.
-func (k *Keeper) SetChannelKeeperV2(keeper *channelkeeperv2.Keeper) {
+func (k *Keeper) SetChannelKeeperV2(keeper vaastypes.ChannelV2Keeper) {
 	k.channelKeeperV2 = keeper
 }
 

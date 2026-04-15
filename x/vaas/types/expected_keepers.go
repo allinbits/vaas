@@ -7,6 +7,7 @@ import (
 	transfertypes "github.com/cosmos/ibc-go/v10/modules/apps/transfer/types"
 	clienttypes "github.com/cosmos/ibc-go/v10/modules/core/02-client/types"
 	clientv2types "github.com/cosmos/ibc-go/v10/modules/core/02-client/v2/types"
+	channeltypesv2 "github.com/cosmos/ibc-go/v10/modules/core/04-channel/v2/types"
 	ibcexported "github.com/cosmos/ibc-go/v10/modules/core/exported"
 
 	addresscodec "cosmossdk.io/core/address"
@@ -88,6 +89,11 @@ type BankKeeper interface {
 type AccountKeeper interface {
 	GetModuleAccount(ctx context.Context, name string) sdk.ModuleAccountI
 	AddressCodec() addresscodec.Codec
+}
+
+// ChannelV2Keeper defines the expected IBC v2 channel keeper for sending packets.
+type ChannelV2Keeper interface {
+	SendPacket(ctx context.Context, msg *channeltypesv2.MsgSendPacket) (*channeltypesv2.MsgSendPacketResponse, error)
 }
 
 // IBCTransferKeeper defines the expected interface needed for distribution transfer
