@@ -12,6 +12,9 @@ import (
 	ibctmtypes "github.com/cosmos/ibc-go/v10/modules/light-clients/07-tendermint"
 )
 
+// GetTemplateClient returns a template Tendermint client state with default values.
+// The returned client state is a starting point that gets customized per-consumer
+// (chain ID, heights, trusting/unbonding periods) before client creation.
 func (k Keeper) GetTemplateClient(ctx context.Context) *ibctmtypes.ClientState {
 	return ibctmtypes.NewClientState(
 		"",
