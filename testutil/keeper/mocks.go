@@ -523,6 +523,20 @@ func (mr *MockClientKeeperMockRecorder) GetClientState(ctx, clientID any) *gomoc
 	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "GetClientState", reflect.TypeOf((*MockClientKeeper)(nil).GetClientState), ctx, clientID)
 }
 
+// GetClientStatus mocks base method.
+func (m *MockClientKeeper) GetClientStatus(ctx types.Context, clientID string) exported.Status {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "GetClientStatus", ctx, clientID)
+	ret0, _ := ret[0].(exported.Status)
+	return ret0
+}
+
+// GetClientStatus indicates an expected call of GetClientStatus.
+func (mr *MockClientKeeperMockRecorder) GetClientStatus(ctx, clientID any) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "GetClientStatus", reflect.TypeOf((*MockClientKeeper)(nil).GetClientStatus), ctx, clientID)
+}
+
 // GetStoreProvider mocks base method.
 func (m *MockClientKeeper) GetStoreProvider() types1.StoreProvider {
 	m.ctrl.T.Helper()

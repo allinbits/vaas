@@ -149,7 +149,13 @@ func (k Keeper) SendVSCPackets(ctx sdk.Context) error {
 // discoverActiveConsumerClient scans for IBC clients pointing to the consumer chain
 // and returns the one with the highest latest height that has a counterparty registered.
 // This allows the provider to use a client being actively updated by a relayer.
+// The current client is only replaced if it is expired or frozen.
 func (k Keeper) discoverActiveConsumerClient(ctx sdk.Context, consumerId, currentClientID string) string {
+	currentStatus := k.clientKeeper.GetClientStatus(ctx, currentClientID)
+	if currentStatus == ibcexported.Active {
+		return currentClientID
+	}
+
 	chainID, err := k.GetConsumerChainId(ctx, consumerId)
 	if err != nil {
 		return currentClientID
@@ -161,6 +167,9 @@ func (k Keeper) discoverActiveConsumerClient(ctx sdk.Context, consumerId, curren
 	k.clientKeeper.IterateClientStates(ctx, nil, func(clientID string, cs ibcexported.ClientState) bool {
 		tmCS, ok := cs.(*ibctmtypes.ClientState)
 		if !ok || tmCS.ChainId != chainID {
+			return false
+		}
+		if k.clientKeeper.GetClientStatus(ctx, clientID) != ibcexported.Active {
 			return false
 		}
 		cp, found := k.clientV2Keeper.GetClientCounterparty(ctx, clientID)
@@ -175,10 +184,11 @@ func (k Keeper) discoverActiveConsumerClient(ctx sdk.Context, consumerId, curren
 		return false
 	})
 
-	if bestClient != "" && bestClient != currentClientID {
-		k.Logger(ctx).Info("discovered active client for consumer, updating mapping",
+	if bestClient != "" {
+		k.Logger(ctx).Info("current client not active, switching to best active client",
 			"consumerId", consumerId,
 			"oldClient", currentClientID,
+			"oldStatus", string(currentStatus),
 			"newClient", bestClient,
 		)
 		k.SetConsumerClientId(ctx, consumerId, bestClient)

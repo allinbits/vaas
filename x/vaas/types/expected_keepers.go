@@ -64,6 +64,7 @@ type ClientKeeper interface {
 	GetClientState(ctx sdk.Context, clientID string) (ibcexported.ClientState, bool)
 	GetClientConsensusState(ctx sdk.Context, clientID string, height ibcexported.Height) (ibcexported.ConsensusState,
 		bool)
+	GetClientStatus(ctx sdk.Context, clientID string) ibcexported.Status
 	GetStoreProvider() clienttypes.StoreProvider
 	IterateClientStates(ctx sdk.Context, storePrefix []byte, cb func(clientID string, cs ibcexported.ClientState) bool)
 }
