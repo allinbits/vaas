@@ -41,19 +41,19 @@ message ConsumerState {
   // ChainID defines the chain ID for the consumer chain
   string chain_id = 1;
   // ClientID defines the IBC client ID for the consumer chain.
-  string client_id = 3;
+  string client_id = 2;
   // InitalHeight defines the initial block height for the consumer chain
-  uint64 initial_height = 4;
+  uint64 initial_height = 3;
   // ConsumerGenesis defines the initial consumer chain genesis states
-  vaas.v1.ConsumerGenesisState consumer_genesis = 5
+  vaas.v1.ConsumerGenesisState consumer_genesis = 4
       [ (gogoproto.nullable) = false ];
   // PendingValsetChanges defines the pending validator set changes for the
   // consumer chain
   repeated vaas.v1.ValidatorSetChangePacketData
-      pending_valset_changes = 6 [ (gogoproto.nullable) = false ];
-  repeated string slash_downtime_ack = 7;
+      pending_valset_changes = 5 [ (gogoproto.nullable) = false ];
+  repeated string slash_downtime_ack = 6;
   // the phase of the consumer chain
-  ConsumerPhase phase = 8;
+  ConsumerPhase phase = 7;
 }
 
 // ValsetUpdateIdToHeight defines the genesis information for the mapping

@@ -22,13 +22,13 @@ message GenesisState {
   // Client ID of the provider. This is the primary identifier for the provider.
   string provider_client_id = 2;
   // true for new chain, false for chain restart.
-  bool new_chain = 4;
+  bool new_chain = 3;
   // HeightToValsetUpdateId nil on new chain, filled in on restart.
-  repeated HeightToValsetUpdateID height_to_valset_update_id = 5
+  repeated HeightToValsetUpdateID height_to_valset_update_id = 4
       [ (gogoproto.nullable) = false ];
   // Flag indicating whether the consumer VAAS module starts in pre-VAAS state
-  bool preVAAS = 9;
-  vaas.v1.ProviderInfo provider = 10 [ (gogoproto.nullable) = false ];
+  bool preVAAS = 5;
+  vaas.v1.ProviderInfo provider = 6 [ (gogoproto.nullable) = false ];
 }
 
 // HeightValsetUpdateID represents a mapping internal to the consumer VAAS module
