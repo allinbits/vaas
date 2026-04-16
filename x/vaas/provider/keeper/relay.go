@@ -127,17 +127,12 @@ func (k Keeper) BlocksUntilNextEpoch(ctx sdk.Context) int64 {
 }
 
 func (k Keeper) SendVSCPackets(ctx sdk.Context) error {
-	for _, consumerId := range k.GetAllConsumersWithIBCClients(ctx) {
-		if k.GetConsumerPhase(ctx, consumerId) != providertypes.CONSUMER_PHASE_LAUNCHED {
-			continue
-		}
-
-		clientID, found := k.GetConsumerClientId(ctx, consumerId)
-		if !found {
-			continue
-		}
-
+	for _, consumerId := range k.GetAllLaunchedConsumerIds(ctx) {
+		clientID, _ := k.GetConsumerClientId(ctx, consumerId)
 		clientID = k.discoverActiveConsumerClient(ctx, consumerId, clientID)
+		if clientID == "" {
+			continue
+		}
 
 		if err := k.SendVSCPacketsToChain(ctx, consumerId, clientID); err != nil {
 			return fmt.Errorf("sending VSCPacket to consumer, consumerId(%s): %w", consumerId, err)
@@ -149,13 +144,15 @@ func (k Keeper) SendVSCPackets(ctx sdk.Context) error {
 // discoverActiveConsumerClient scans for IBC clients pointing to the consumer chain
 // and returns the one with the highest latest height that has a counterparty registered.
 // This allows the provider to use a client being actively updated by a relayer.
-// The current client is only replaced if it is expired or frozen.
+// The current client is only replaced if it is expired, frozen, or has no counterparty.
 func (k Keeper) discoverActiveConsumerClient(ctx sdk.Context, consumerId, currentClientID string) string {
-	currentStatus := k.clientKeeper.GetClientStatus(ctx, currentClientID)
-	if currentStatus == ibcexported.Active {
-		cp, found := k.clientV2Keeper.GetClientCounterparty(ctx, currentClientID)
-		if found && cp.ClientId != "" {
-			return currentClientID
+	if currentClientID != "" {
+		currentStatus := k.clientKeeper.GetClientStatus(ctx, currentClientID)
+		if currentStatus == ibcexported.Active {
+			cp, found := k.clientV2Keeper.GetClientCounterparty(ctx, currentClientID)
+			if found && cp.ClientId != "" {
+				return currentClientID
+			}
 		}
 	}
 
@@ -188,10 +185,9 @@ func (k Keeper) discoverActiveConsumerClient(ctx sdk.Context, consumerId, curren
 	})
 
 	if bestClient != "" {
-		k.Logger(ctx).Info("current client not active, switching to best active client",
+		k.Logger(ctx).Info("switching to discovered active client",
 			"consumerId", consumerId,
 			"oldClient", currentClientID,
-			"oldStatus", string(currentStatus),
 			"newClient", bestClient,
 		)
 		k.SetConsumerClientId(ctx, consumerId, bestClient)
@@ -276,11 +272,7 @@ func (k Keeper) QueueVSCPackets(ctx sdk.Context) error {
 		return fmt.Errorf("getting bonded validators: %w", err)
 	}
 
-	for _, consumerId := range k.GetAllConsumersWithIBCClients(ctx) {
-		if k.GetConsumerPhase(ctx, consumerId) != providertypes.CONSUMER_PHASE_LAUNCHED {
-			// only queue VSCPackets to launched chains
-			continue
-		}
+	for _, consumerId := range k.GetAllLaunchedConsumerIds(ctx) {
 
 		currentValSet, err := k.GetConsumerValSet(ctx, consumerId)
 		if err != nil {
@@ -327,7 +319,7 @@ func (k Keeper) EndBlockCIS(ctx sdk.Context) {
 	k.Logger(ctx).Debug("vscID was mapped to block height", "vscID", valUpdateID, "height", blockHeight)
 
 	// prune previous consumer validator addresses that are no longer needed
-	for _, consumerId := range k.GetAllConsumersWithIBCClients(ctx) {
+	for _, consumerId := range k.GetAllLaunchedConsumerIds(ctx) {
 		k.PruneKeyAssignments(ctx, consumerId)
 	}
 }
