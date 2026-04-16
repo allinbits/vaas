@@ -153,7 +153,10 @@ func (k Keeper) SendVSCPackets(ctx sdk.Context) error {
 func (k Keeper) discoverActiveConsumerClient(ctx sdk.Context, consumerId, currentClientID string) string {
 	currentStatus := k.clientKeeper.GetClientStatus(ctx, currentClientID)
 	if currentStatus == ibcexported.Active {
-		return currentClientID
+		cp, found := k.clientV2Keeper.GetClientCounterparty(ctx, currentClientID)
+		if found && cp.ClientId != "" {
+			return currentClientID
+		}
 	}
 
 	chainID, err := k.GetConsumerChainId(ctx, consumerId)
