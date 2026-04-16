@@ -12,8 +12,6 @@ import (
 	tmtypes "github.com/cometbft/cometbft/types"
 
 	clienttypes "github.com/cosmos/ibc-go/v10/modules/core/02-client/types"
-	conntypes "github.com/cosmos/ibc-go/v10/modules/core/03-connection/types"
-	channeltypes "github.com/cosmos/ibc-go/v10/modules/core/04-channel/types"
 	commitmenttypes "github.com/cosmos/ibc-go/v10/modules/core/23-commitment/types"
 	ibchost "github.com/cosmos/ibc-go/v10/modules/core/exported"
 	ibctmtypes "github.com/cosmos/ibc-go/v10/modules/light-clients/07-tendermint"
@@ -223,9 +221,7 @@ func (k Keeper) HasActiveConsumerValidator(ctx sdk.Context, consumerId string, a
 }
 
 // LaunchConsumer launches the chain with the provided consumer id by creating the consumer client and the respective
-// consumer genesis file
-//
-// TODO add unit test for LaunchConsumer
+// consumer genesis file.
 func (k Keeper) LaunchConsumer(
 	ctx sdk.Context,
 	bondedValidators []stakingtypes.Validator,
@@ -251,17 +247,15 @@ func (k Keeper) LaunchConsumer(
 		return fmt.Errorf("setting consumer genesis state, consumerId(%s): %w", consumerId, err)
 	}
 
-	// compute the hash of the consumer initial validator updates
 	updatesAsValSet, err := tmtypes.PB2TM.ValidatorUpdates(initialValUpdates)
 	if err != nil {
 		return fmt.Errorf("unable to create initial validator set from initial validator updates: %w", err)
 	}
 	valsetHash := tmtypes.NewValidatorSet(updatesAsValSet).Hash()
 
-	// create the consumer client and the genesis
 	err = k.CreateConsumerClient(ctx, consumerId, valsetHash)
 	if err != nil {
-		return fmt.Errorf("crating consumer client, consumerId(%s): %w", consumerId, err)
+		return fmt.Errorf("creating consumer client, consumerId(%s): %w", consumerId, err)
 	}
 
 	k.SetConsumerPhase(ctx, consumerId, types.CONSUMER_PHASE_LAUNCHED)
@@ -269,7 +263,6 @@ func (k Keeper) LaunchConsumer(
 	k.Logger(ctx).Info("consumer successfully launched",
 		"consumerId", consumerId,
 		"valset size", len(initialValUpdates),
-		"valsetHash", string(valsetHash),
 	)
 
 	return nil
@@ -277,6 +270,27 @@ func (k Keeper) LaunchConsumer(
 
 // CreateConsumerClient will create the CCV client for the given consumer chain. The CCV channel must be built
 // on top of the CCV client to ensure connection with the right consumer chain.
+//
+// IMPORTANT - Timing Constraint (Option B: New Consumer Chain):
+// The consensus state for the new client is created with the current provider block time
+// (ctx.BlockTime()). This timestamp will be used by the consumer's IBC client to verify
+// headers from the new consumer chain.
+//
+// For the IBC client to remain valid, the consumer chain's genesis_time must satisfy:
+//
+//	genesis_time - client_creation_time < trusting_period
+//
+// Where:
+//   - client_creation_time = the block time when this function executes (LaunchConsumer is called)
+//   - genesis_time = the time at which the consumer chain starts producing blocks
+//   - trusting_period = calculated from unbonding_period * trusting_period_fraction
+//
+// If this constraint is violated, the client will appear expired before any blocks can be
+// relayed, causing relayers to fail with "trusted state outside of trusting period" errors.
+//
+// Recommended approach: Set the consumer's genesis_time to be close to the expected
+// client_creation_time (spawn_time on the provider), or query the actual client creation
+// timestamp and use it directly as genesis_time.
 func (k Keeper) CreateConsumerClient(
 	ctx sdk.Context,
 	consumerId string,
@@ -285,11 +299,6 @@ func (k Keeper) CreateConsumerClient(
 	initializationRecord, err := k.GetConsumerInitializationParameters(ctx, consumerId)
 	if err != nil {
 		return err
-	}
-	if initializationRecord.ConnectionId != "" {
-		// there is no need to create a client if the connection ID is provided
-		// as the CCV channel will be built on top of the existing client
-		return nil
 	}
 
 	phase := k.GetConsumerPhase(ctx, consumerId)
@@ -321,7 +330,13 @@ func (k Keeper) CreateConsumerClient(
 	clientState.TrustingPeriod = trustPeriod
 	clientState.UnbondingPeriod = consumerUnbondingPeriod
 
-	// Create consensus state
+	// Create consensus state for the new consumer chain.
+	// - Timestamp: Current block time. IMPORTANT: Consumer's genesis_time must be within
+	//   trusting_period of this timestamp, otherwise the client will appear expired.
+	// - Root: SentinelRoot is used as a placeholder since the consumer hasn't produced
+	//   blocks yet. The client will be updated with real app hashes once blocks are relayed.
+	// - NextValidatorsHash: Hash of the initial validator set. This binds the client to
+	//   the expected validators, so the first consumer block must be signed by this set.
 	consensusState := ibctmtypes.NewConsensusState(
 		ctx.BlockTime(),
 		commitmenttypes.NewMerkleRoot([]byte(ibctmtypes.SentinelRoot)),
@@ -386,102 +401,32 @@ func (k Keeper) MakeConsumerGenesis(
 		initializationRecord.UnbondingPeriod,
 	)
 
-	var clientState *ibctmtypes.ClientState = nil
-	var tmConsState *ibctmtypes.ConsensusState = nil
-	var preVAAS bool
-	var counterpartyConnectionId string
+	providerUnbondingPeriod, err := k.stakingKeeper.UnbondingTime(ctx)
+	if err != nil {
+		return gen, errorsmod.Wrapf(types.ErrNoUnbondingTime, "unbonding time not found: %s", err)
+	}
+	height := clienttypes.GetSelfHeight(ctx)
 
-	if initializationRecord.ConnectionId == "" {
-		// no connection ID provided
-		preVAAS = false
-		counterpartyConnectionId = ""
+	clientState := k.GetTemplateClient(ctx)
+	clientState.ChainId = ctx.ChainID()
+	clientState.LatestHeight = height
+	trustPeriod, err := vaastypes.CalculateTrustPeriod(providerUnbondingPeriod, k.GetTrustingPeriodFraction(ctx))
+	if err != nil {
+		return gen, errorsmod.Wrapf(sdkerrors.ErrInvalidHeight, "error %s calculating trusting_period for: %s", err, height)
+	}
+	clientState.TrustingPeriod = trustPeriod
+	clientState.UnbondingPeriod = providerUnbondingPeriod
 
-		// create provider client state and consensus state for the consumer to be able
-		// to create a provider client
-
-		providerUnbondingPeriod, err := k.stakingKeeper.UnbondingTime(ctx)
-		if err != nil {
-			return gen, errorsmod.Wrapf(types.ErrNoUnbondingTime, "unbonding time not found: %s", err)
-		}
-		height := clienttypes.GetSelfHeight(ctx)
-
-		clientState = k.GetTemplateClient(ctx)
-		// this is the counter party chain ID for the consumer
-		clientState.ChainId = ctx.ChainID()
-		// this is the latest height the client was updated at, i.e.,
-		// the height of the latest consensus state (see below)
-		clientState.LatestHeight = height
-		trustPeriod, err := vaastypes.CalculateTrustPeriod(providerUnbondingPeriod, k.GetTrustingPeriodFraction(ctx))
-		if err != nil {
-			return gen, errorsmod.Wrapf(sdkerrors.ErrInvalidHeight, "error %s calculating trusting_period for: %s", err, height)
-		}
-		clientState.TrustingPeriod = trustPeriod
-		clientState.UnbondingPeriod = providerUnbondingPeriod
-
-		consState, err := k.getSelfConsensusState(ctx, height)
-		if err != nil {
-			return gen, errorsmod.Wrapf(clienttypes.ErrConsensusStateNotFound, "error %s getting self consensus state for: %s", err, height)
-		}
-		tmConsState = consState
-	} else {
-		// connection ID provided
-		preVAAS = true
-
-		// get the connection end
-		connectionEnd, found := k.connectionKeeper.GetConnection(ctx, initializationRecord.ConnectionId)
-		if !found {
-			return gen, errorsmod.Wrapf(conntypes.ErrConnectionNotFound,
-				"could not find connection(%s)", initializationRecord.ConnectionId)
-		}
-		clientId := connectionEnd.ClientId
-
-		// check that the underlying client is a Tendermint client and that the chain ID matches
-		clientState, found := k.clientKeeper.GetClientState(ctx, clientId)
-		if !found {
-			return gen, errorsmod.Wrapf(clienttypes.ErrClientNotFound,
-				"could not find client(%s) associated with connection(%s)",
-				clientId, initializationRecord.ConnectionId,
-			)
-		}
-		tmClient, ok := clientState.(*ibctmtypes.ClientState)
-		if !ok {
-			return gen, errorsmod.Wrapf(clienttypes.ErrInvalidClientType,
-				"invalid client type. expected %s, got %s",
-				ibchost.Tendermint, clientState.ClientType(),
-			)
-		}
-		consumerChainId, err := k.GetConsumerChainId(ctx, consumerId)
-		if err != nil {
-			return gen, err
-		}
-		if tmClient.ChainId != consumerChainId {
-			return gen, errorsmod.Wrapf(conntypes.ErrInvalidConnectionIdentifier,
-				"invalid connection(%s): expected chain ID %s, got %s",
-				initializationRecord.ConnectionId, consumerChainId, tmClient.ChainId,
-			)
-		}
-
-		// set the counterparty connection ID
-		counterpartyConnectionId = connectionEnd.Counterparty.ConnectionId
-
-		k.SetConsumerClientId(ctx, consumerId, clientId)
-
-		// Set minimum height for equivocation evidence from this consumer chain
-		k.SetEquivocationEvidenceMinHeight(ctx, consumerId, tmClient.LatestHeight.RevisionHeight)
-
-		k.Logger(ctx).Info("use existing client and connection for consumer chain",
-			"consumer id", consumerId,
-			"client id", clientId,
-			"connection id", initializationRecord.ConnectionId,
-		)
+	consState, err := k.getSelfConsensusState(ctx, height)
+	if err != nil {
+		return gen, errorsmod.Wrapf(clienttypes.ErrConsensusStateNotFound, "error %s getting self consensus state for: %s", err, height)
 	}
 
 	gen = *vaastypes.NewInitialConsumerGenesisState(
 		clientState,
-		tmConsState,
+		consState,
 		initialValidatorUpdates,
-		preVAAS,
-		counterpartyConnectionId,
+		false,
 		consumerGenesisParams,
 	)
 
@@ -561,7 +506,7 @@ func (k Keeper) BeginBlockRemoveConsumers(ctx sdk.Context) error {
 	return nil
 }
 
-// DeleteConsumerChain cleans up the state of the given consumer chain
+// DeleteConsumerChain cleans up the state of the given consumer chain.
 func (k Keeper) DeleteConsumerChain(ctx sdk.Context, consumerId string) (err error) {
 	phase := k.GetConsumerPhase(ctx, consumerId)
 	if phase != types.CONSUMER_PHASE_STOPPED {
@@ -574,25 +519,6 @@ func (k Keeper) DeleteConsumerChain(ctx sdk.Context, consumerId string) (err err
 	// Note: this call panics if the key assignment state is invalid
 	k.DeleteKeyAssignments(ctx, consumerId)
 	k.DeleteEquivocationEvidenceMinHeight(ctx, consumerId)
-
-	// close channel and delete the mappings between chain ID and channel ID
-	if channelID, found := k.GetConsumerIdToChannelId(ctx, consumerId); found {
-		// Close the channel for the given channel ID on the condition
-		// that the channel exists and isn't already in the CLOSED state
-		channel, found := k.channelKeeper.GetChannel(ctx, vaastypes.ProviderPortID, channelID)
-		if found && channel.State != channeltypes.CLOSED {
-			err := k.chanCloseInit(ctx, channelID)
-			if err != nil {
-				k.Logger(ctx).Error("channel to consumer chain could not be closed",
-					"consumerId", consumerId,
-					"channelID", channelID,
-					"error", err.Error(),
-				)
-			}
-		}
-		k.DeleteConsumerIdToChannelId(ctx, consumerId)
-		k.DeleteChannelIdToConsumerId(ctx, channelID)
-	}
 
 	k.DeleteInitChainHeight(ctx, consumerId)
 	k.DeletePendingVSCPackets(ctx, consumerId)

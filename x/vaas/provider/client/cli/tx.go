@@ -236,8 +236,7 @@ where create_consumer.json has the following structure:
     "spawn_time": "2024-08-29T12:26:16.529913Z",
     "unbonding_period": 1728000000000000,
     "ccv_timeout_period": 2419200000000000,
-    "historical_entries": 10000,
-    "connection_id": ""
+    "historical_entries": 10000
   },
   "infraction_parameters":{
    "double_sign":{
@@ -331,8 +330,7 @@ where update_consumer.json has the following structure:
     "spawn_time": "2024-08-29T12:26:16.529913Z",
     "unbonding_period": 1728000000000000,
     "ccv_timeout_period": 2419200000000000,
-    "historical_entries": 10000,
-    "connection_id": ""
+    "historical_entries": 10000
    },
    "infraction_parameters":{
     "double_sign":{

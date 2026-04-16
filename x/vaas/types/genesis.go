@@ -1,8 +1,6 @@
 package types
 
 import (
-	"strings"
-
 	abci "github.com/cometbft/cometbft/abci/types"
 
 	ibctmtypes "github.com/cosmos/ibc-go/v10/modules/light-clients/07-tendermint"
@@ -16,7 +14,6 @@ func NewInitialConsumerGenesisState(
 	consState *ibctmtypes.ConsensusState,
 	initValSet []abci.ValidatorUpdate,
 	preVAAS bool,
-	connectionId string,
 	params ConsumerParams,
 ) *ConsumerGenesisState {
 	return &ConsumerGenesisState{
@@ -27,8 +24,7 @@ func NewInitialConsumerGenesisState(
 			ConsensusState: consState,
 			InitialValSet:  initValSet,
 		},
-		PreVAAS:      preVAAS,
-		ConnectionId: connectionId,
+		PreVAAS: preVAAS,
 	}
 }
 
@@ -60,13 +56,7 @@ func (gs ConsumerGenesisState) Validate() error {
 		// the consumer VAAS module MUST NOT pass validator updates
 		// to the underlying consensus engine
 		if gs.Provider.ClientState != nil || gs.Provider.ConsensusState != nil {
-			return errorsmod.Wrap(ErrInvalidGenesis, "provider client state and consensus state must be nil for a restarting genesis state")
-		}
-		if err := ValidateConnectionIdentifier(gs.ConnectionId); err != nil {
-			return errorsmod.Wrapf(ErrInvalidGenesis, "ConnectionId: %s", err.Error())
-		}
-		if strings.TrimSpace(gs.ConnectionId) == "" {
-			return errorsmod.Wrapf(ErrInvalidGenesis, "ConnectionId cannot be empty when preVAAS is true")
+			return errorsmod.Wrap(ErrInvalidGenesis, "provider client state and consensus state must be nil for a pre-VAAS genesis state")
 		}
 	} else {
 		// consumer chain MUST NOT start in pre-VAAS state, i.e.,
@@ -83,9 +73,6 @@ func (gs ConsumerGenesisState) Validate() error {
 		}
 		if err := gs.Provider.ConsensusState.ValidateBasic(); err != nil {
 			return errorsmod.Wrapf(ErrInvalidGenesis, "provider consensus state invalid for new chain %s", err.Error())
-		}
-		if strings.TrimSpace(gs.ConnectionId) != "" {
-			return errorsmod.Wrapf(ErrInvalidGenesis, "ConnectionId must be empty when preVAAS is false")
 		}
 	}
 	return nil
