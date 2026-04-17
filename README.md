@@ -8,30 +8,48 @@ VAAS allows Cosmos blockchains to lease their proof-of-stake security to consume
 
 ## Features
 
+## IBC v2 support
+
+The VAAS implementation supports IBC v2 only.
+IBC v2 is easily wireable by adding the IBC router v2 in a ibc-go >= 10.x.y compatible chain.
+
 ### Kept from ICS
 
-| Feature | Description |
-|---------|-------------|
-| Consumer Lifecycle | Full lifecycle management (REGISTERED → INITIALIZED → LAUNCHED → STOPPED → DELETED) |
-| Key Assignment | Validators can use different consensus keys per consumer chain |
-| Per-Consumer Infraction Parameters | Customizable slash/jail parameters per consumer |
-| VSC Packets | Validator set updates sent at epoch boundaries |
-| Double Voting Evidence | Handle double voting evidence from consumers |
-| Light Client Misbehavior | Detection and logging of misbehavior |
-| Consumer Metadata | Name, description, metadata for chain discovery |
-| Client/Connection Reuse | Reuse existing IBC client/connection when creating consumer |
+| Feature                            | Description                                                                         |
+| ---------------------------------- | ----------------------------------------------------------------------------------- |
+| Consumer Lifecycle                 | Full lifecycle management (REGISTERED → INITIALIZED → LAUNCHED → STOPPED → DELETED) |
+| Key Assignment                     | Validators can use different consensus keys per consumer chain                      |
+| Per-Consumer Infraction Parameters | Customizable slash/jail parameters per consumer                                     |
+| VSC Packets                        | Validator set updates sent at epoch boundaries                                      |
+| Double Voting Evidence             | Handle double voting evidence from consumers                                        |
+| Light Client Misbehavior           | Detection and logging of misbehavior                                                |
+| Consumer Metadata                  | Name, description, metadata for chain discovery                                     |
+| Client/Connection Reuse            | Reuse existing IBC client when creating consumer                                    |
 
 ### Removed from ICS
 
-| Feature | Reason |
-|---------|--------|
-| Partial Set Security (PSS) | All validators validate all consumers |
-| Top N / Opt-In Chains | No validator selection per consumer |
-| Power Shaping | No caps, allowlists, denylists, priority lists |
-| Consumer Reward Distribution | No cross-chain rewards |
-| Slash Packet Throttling | Simplified slash handling |
-| Per-Consumer Commission Rates | Validators use same commission as provider |
-| Standalone-to-Consumer Changeover | Only new chains as consumers |
+| Feature                           | Reason                                         |
+| --------------------------------- | ---------------------------------------------- |
+| Partial Set Security (PSS)        | All validators validate all consumers          |
+| Top N / Opt-In Chains             | No validator selection per consumer            |
+| Power Shaping                     | No caps, allowlists, denylists, priority lists |
+| Consumer Reward Distribution      | No cross-chain rewards                         |
+| Slash Packet Throttling           | Simplified slash handling                      |
+| Per-Consumer Commission Rates     | Validators use same commission as provider     |
+| IBC v1 Channel Support            | IBC v2 only                                    |
+| Standalone-to-Consumer Changeover | Only new chains as consumers                   |
+
+## Build & Test
+
+```bash
+make build              # go build ./...
+make test               # unit tests (excludes e2e)
+make lint               # golangci-lint
+
+# E2E (Docker-based, spins up provider + consumer + ts-relayer)
+make docker-build-all
+make test-e2e
+```
 
 ## Learn More
 

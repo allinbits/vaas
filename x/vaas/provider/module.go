@@ -162,7 +162,8 @@ func (am AppModule) BeginBlock(ctx context.Context) error {
 func (am AppModule) EndBlock(ctx context.Context) ([]abci.ValidatorUpdate, error) {
 	sdkCtx := sdk.UnwrapSDKContext(ctx)
 
-	// EndBlock logic needed for the Validator Set Update sub-protocol
+	am.keeper.EndBlockCIS(sdkCtx)
+
 	return am.keeper.EndBlockVSU(sdkCtx)
 }
 

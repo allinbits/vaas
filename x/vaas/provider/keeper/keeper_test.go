@@ -1,7 +1,6 @@
 package keeper_test
 
 import (
-	"fmt"
 	"sort"
 	"testing"
 
@@ -164,59 +163,6 @@ func TestInitHeight(t *testing.T) {
 		height, _ := providerKeeper.GetInitChainHeight(ctx, tc.chainID)
 		require.Equal(t, tc.expected, height)
 	}
-}
-
-func TestGetAllConsumersWithIBCClients(t *testing.T) {
-	pk, ctx, ctrl, _ := testkeeper.GetProviderKeeperAndCtx(t, testkeeper.NewInMemKeeperParams(t))
-	defer ctrl.Finish()
-
-	consumerIds := []string{"2", "1", "4", "3"}
-	for i, consumerId := range consumerIds {
-		clientId := fmt.Sprintf("client-%d", len(consumerIds)-i)
-		pk.SetConsumerClientId(ctx, consumerId, clientId)
-		pk.SetConsumerPhase(ctx, consumerId, providertypes.CONSUMER_PHASE_LAUNCHED)
-	}
-
-	actualConsumerIds := pk.GetAllConsumersWithIBCClients(ctx)
-	require.Len(t, actualConsumerIds, len(consumerIds))
-
-	// sort the consumer ids before comparing they are equal
-	sort.Slice(consumerIds, func(i, j int) bool {
-		return consumerIds[i] < consumerIds[j]
-	})
-	sort.Slice(actualConsumerIds, func(i, j int) bool {
-		return actualConsumerIds[i] < actualConsumerIds[j]
-	})
-	require.Equal(t, consumerIds, actualConsumerIds)
-}
-
-// TestGetAllChannelToChains tests GetAllChannelToConsumers behaviour correctness
-func TestGetAllChannelToChains(t *testing.T) {
-	pk, ctx, ctrl, _ := testkeeper.GetProviderKeeperAndCtx(t, testkeeper.NewInMemKeeperParams(t))
-	defer ctrl.Finish()
-
-	consumerIds := []string{"2", "1", "4", "3"}
-	var expectedGetAllOrder []struct {
-		ChannelId  string
-		ConsumerId string
-	}
-
-	for i, consumerId := range consumerIds {
-		channelID := fmt.Sprintf("client-%d", len(consumerIds)-i)
-		pk.SetChannelToConsumerId(ctx, channelID, consumerId)
-		expectedGetAllOrder = append(expectedGetAllOrder, struct {
-			ChannelId  string
-			ConsumerId string
-		}{ConsumerId: consumerId, ChannelId: channelID})
-	}
-	// sorting by channelID
-	sort.Slice(expectedGetAllOrder, func(i, j int) bool {
-		return expectedGetAllOrder[i].ChannelId < expectedGetAllOrder[j].ChannelId
-	})
-
-	result := pk.GetAllChannelToConsumers(ctx)
-	require.Len(t, result, len(consumerIds))
-	require.Equal(t, expectedGetAllOrder, result)
 }
 
 // TestConsumerClientId tests the getter, setter, and deletion of the client id <> consumer id mappings

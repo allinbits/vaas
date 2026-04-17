@@ -142,12 +142,14 @@ func (k Keeper) SetConsumerInitializationParameters(ctx context.Context, consume
 	if err := types.ValidateInitialHeight(parameters.InitialHeight, chainId); err != nil {
 		return fmt.Errorf("invalid initial height for consumer id (%s): %w", consumerId, err)
 	}
+
 	if err := k.ConsumerInitParams.Set(ctx, consumerId, parameters); err != nil {
 		return fmt.Errorf("failed to set initialization parameters for consumer id (%s): %w", consumerId, err)
 	}
 	return nil
 }
 
+// validateExistingIBCLink validates that an existing IBC connection is fully functional.
 // DeleteConsumerInitializationParameters deletes the initialization parameters associated with this consumer id
 func (k Keeper) DeleteConsumerInitializationParameters(ctx context.Context, consumerId string) {
 	if err := k.ConsumerInitParams.Remove(ctx, consumerId); err != nil {

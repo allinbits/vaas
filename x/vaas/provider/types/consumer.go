@@ -6,8 +6,7 @@ import (
 
 func NewConsumerStates(
 	chainID,
-	clientID,
-	channelID string,
+	clientID string,
 	initialHeight uint64,
 	genesis vaastypes.ConsumerGenesisState,
 	pendingValsetChanges []vaastypes.ValidatorSetChangePacketData,
@@ -17,7 +16,6 @@ func NewConsumerStates(
 	return ConsumerState{
 		ChainId:              chainID,
 		ClientId:             clientID,
-		ChannelId:            channelID,
 		InitialHeight:        initialHeight,
 		PendingValsetChanges: pendingValsetChanges,
 		ConsumerGenesis:      genesis,

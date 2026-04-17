@@ -19,8 +19,7 @@ import (
 	types "github.com/cosmos/cosmos-sdk/types"
 	types0 "github.com/cosmos/cosmos-sdk/x/staking/types"
 	types1 "github.com/cosmos/ibc-go/v10/modules/core/02-client/types"
-	types2 "github.com/cosmos/ibc-go/v10/modules/core/03-connection/types"
-	types3 "github.com/cosmos/ibc-go/v10/modules/core/04-channel/types"
+	clientv2types "github.com/cosmos/ibc-go/v10/modules/core/02-client/v2/types"
 	exported "github.com/cosmos/ibc-go/v10/modules/core/exported"
 	gomock "go.uber.org/mock/gomock"
 )
@@ -455,129 +454,6 @@ func (mr *MockSlashingKeeperMockRecorder) Tombstone(arg0, arg1 any) *gomock.Call
 	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "Tombstone", reflect.TypeOf((*MockSlashingKeeper)(nil).Tombstone), arg0, arg1)
 }
 
-// MockChannelKeeper is a mock of ChannelKeeper interface.
-type MockChannelKeeper struct {
-	ctrl     *gomock.Controller
-	recorder *MockChannelKeeperMockRecorder
-	isgomock struct{}
-}
-
-// MockChannelKeeperMockRecorder is the mock recorder for MockChannelKeeper.
-type MockChannelKeeperMockRecorder struct {
-	mock *MockChannelKeeper
-}
-
-// NewMockChannelKeeper creates a new mock instance.
-func NewMockChannelKeeper(ctrl *gomock.Controller) *MockChannelKeeper {
-	mock := &MockChannelKeeper{ctrl: ctrl}
-	mock.recorder = &MockChannelKeeperMockRecorder{mock}
-	return mock
-}
-
-// EXPECT returns an object that allows the caller to indicate expected use.
-func (m *MockChannelKeeper) EXPECT() *MockChannelKeeperMockRecorder {
-	return m.recorder
-}
-
-// ChanCloseInit mocks base method.
-func (m *MockChannelKeeper) ChanCloseInit(ctx types.Context, portID, channelID string) error {
-	m.ctrl.T.Helper()
-	ret := m.ctrl.Call(m, "ChanCloseInit", ctx, portID, channelID)
-	ret0, _ := ret[0].(error)
-	return ret0
-}
-
-// ChanCloseInit indicates an expected call of ChanCloseInit.
-func (mr *MockChannelKeeperMockRecorder) ChanCloseInit(ctx, portID, channelID any) *gomock.Call {
-	mr.mock.ctrl.T.Helper()
-	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "ChanCloseInit", reflect.TypeOf((*MockChannelKeeper)(nil).ChanCloseInit), ctx, portID, channelID)
-}
-
-// GetChannel mocks base method.
-func (m *MockChannelKeeper) GetChannel(ctx types.Context, srcPort, srcChan string) (types3.Channel, bool) {
-	m.ctrl.T.Helper()
-	ret := m.ctrl.Call(m, "GetChannel", ctx, srcPort, srcChan)
-	ret0, _ := ret[0].(types3.Channel)
-	ret1, _ := ret[1].(bool)
-	return ret0, ret1
-}
-
-// GetChannel indicates an expected call of GetChannel.
-func (mr *MockChannelKeeperMockRecorder) GetChannel(ctx, srcPort, srcChan any) *gomock.Call {
-	mr.mock.ctrl.T.Helper()
-	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "GetChannel", reflect.TypeOf((*MockChannelKeeper)(nil).GetChannel), ctx, srcPort, srcChan)
-}
-
-// GetChannelConnection mocks base method.
-func (m *MockChannelKeeper) GetChannelConnection(ctx types.Context, portID, channelID string) (string, types2.ConnectionEnd, error) {
-	m.ctrl.T.Helper()
-	ret := m.ctrl.Call(m, "GetChannelConnection", ctx, portID, channelID)
-	ret0, _ := ret[0].(string)
-	ret1, _ := ret[1].(types2.ConnectionEnd)
-	ret2, _ := ret[2].(error)
-	return ret0, ret1, ret2
-}
-
-// GetChannelConnection indicates an expected call of GetChannelConnection.
-func (mr *MockChannelKeeperMockRecorder) GetChannelConnection(ctx, portID, channelID any) *gomock.Call {
-	mr.mock.ctrl.T.Helper()
-	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "GetChannelConnection", reflect.TypeOf((*MockChannelKeeper)(nil).GetChannelConnection), ctx, portID, channelID)
-}
-
-// SendPacket mocks base method.
-func (m *MockChannelKeeper) SendPacket(ctx types.Context, sourcePort, sourceChannel string, timeoutHeight types1.Height, timeoutTimestamp uint64, data []byte) (uint64, error) {
-	m.ctrl.T.Helper()
-	ret := m.ctrl.Call(m, "SendPacket", ctx, sourcePort, sourceChannel, timeoutHeight, timeoutTimestamp, data)
-	ret0, _ := ret[0].(uint64)
-	ret1, _ := ret[1].(error)
-	return ret0, ret1
-}
-
-// SendPacket indicates an expected call of SendPacket.
-func (mr *MockChannelKeeperMockRecorder) SendPacket(ctx, sourcePort, sourceChannel, timeoutHeight, timeoutTimestamp, data any) *gomock.Call {
-	mr.mock.ctrl.T.Helper()
-	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "SendPacket", reflect.TypeOf((*MockChannelKeeper)(nil).SendPacket), ctx, sourcePort, sourceChannel, timeoutHeight, timeoutTimestamp, data)
-}
-
-// MockConnectionKeeper is a mock of ConnectionKeeper interface.
-type MockConnectionKeeper struct {
-	ctrl     *gomock.Controller
-	recorder *MockConnectionKeeperMockRecorder
-	isgomock struct{}
-}
-
-// MockConnectionKeeperMockRecorder is the mock recorder for MockConnectionKeeper.
-type MockConnectionKeeperMockRecorder struct {
-	mock *MockConnectionKeeper
-}
-
-// NewMockConnectionKeeper creates a new mock instance.
-func NewMockConnectionKeeper(ctrl *gomock.Controller) *MockConnectionKeeper {
-	mock := &MockConnectionKeeper{ctrl: ctrl}
-	mock.recorder = &MockConnectionKeeperMockRecorder{mock}
-	return mock
-}
-
-// EXPECT returns an object that allows the caller to indicate expected use.
-func (m *MockConnectionKeeper) EXPECT() *MockConnectionKeeperMockRecorder {
-	return m.recorder
-}
-
-// GetConnection mocks base method.
-func (m *MockConnectionKeeper) GetConnection(ctx types.Context, connectionID string) (types2.ConnectionEnd, bool) {
-	m.ctrl.T.Helper()
-	ret := m.ctrl.Call(m, "GetConnection", ctx, connectionID)
-	ret0, _ := ret[0].(types2.ConnectionEnd)
-	ret1, _ := ret[1].(bool)
-	return ret0, ret1
-}
-
-// GetConnection indicates an expected call of GetConnection.
-func (mr *MockConnectionKeeperMockRecorder) GetConnection(ctx, connectionID any) *gomock.Call {
-	mr.mock.ctrl.T.Helper()
-	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "GetConnection", reflect.TypeOf((*MockConnectionKeeper)(nil).GetConnection), ctx, connectionID)
-}
-
 // MockClientKeeper is a mock of ClientKeeper interface.
 type MockClientKeeper struct {
 	ctrl     *gomock.Controller
@@ -647,19 +523,18 @@ func (mr *MockClientKeeperMockRecorder) GetClientState(ctx, clientID any) *gomoc
 	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "GetClientState", reflect.TypeOf((*MockClientKeeper)(nil).GetClientState), ctx, clientID)
 }
 
-// GetLatestClientConsensusState mocks base method.
-func (m *MockClientKeeper) GetLatestClientConsensusState(ctx types.Context, clientID string) (exported.ConsensusState, bool) {
+// GetClientStatus mocks base method.
+func (m *MockClientKeeper) GetClientStatus(ctx types.Context, clientID string) exported.Status {
 	m.ctrl.T.Helper()
-	ret := m.ctrl.Call(m, "GetLatestClientConsensusState", ctx, clientID)
-	ret0, _ := ret[0].(exported.ConsensusState)
-	ret1, _ := ret[1].(bool)
-	return ret0, ret1
+	ret := m.ctrl.Call(m, "GetClientStatus", ctx, clientID)
+	ret0, _ := ret[0].(exported.Status)
+	return ret0
 }
 
-// GetLatestClientConsensusState indicates an expected call of GetLatestClientConsensusState.
-func (mr *MockClientKeeperMockRecorder) GetLatestClientConsensusState(ctx, clientID any) *gomock.Call {
+// GetClientStatus indicates an expected call of GetClientStatus.
+func (mr *MockClientKeeperMockRecorder) GetClientStatus(ctx, clientID any) *gomock.Call {
 	mr.mock.ctrl.T.Helper()
-	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "GetLatestClientConsensusState", reflect.TypeOf((*MockClientKeeper)(nil).GetLatestClientConsensusState), ctx, clientID)
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "GetClientStatus", reflect.TypeOf((*MockClientKeeper)(nil).GetClientStatus), ctx, clientID)
 }
 
 // GetStoreProvider mocks base method.
@@ -674,6 +549,69 @@ func (m *MockClientKeeper) GetStoreProvider() types1.StoreProvider {
 func (mr *MockClientKeeperMockRecorder) GetStoreProvider() *gomock.Call {
 	mr.mock.ctrl.T.Helper()
 	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "GetStoreProvider", reflect.TypeOf((*MockClientKeeper)(nil).GetStoreProvider))
+}
+
+// IterateClientStates mocks base method.
+func (m *MockClientKeeper) IterateClientStates(ctx types.Context, storePrefix []byte, cb func(string, exported.ClientState) bool) {
+	m.ctrl.T.Helper()
+	m.ctrl.Call(m, "IterateClientStates", ctx, storePrefix, cb)
+}
+
+// IterateClientStates indicates an expected call of IterateClientStates.
+func (mr *MockClientKeeperMockRecorder) IterateClientStates(ctx, storePrefix, cb any) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "IterateClientStates", reflect.TypeOf((*MockClientKeeper)(nil).IterateClientStates), ctx, storePrefix, cb)
+}
+
+// MockClientV2Keeper is a mock of ClientV2Keeper interface.
+type MockClientV2Keeper struct {
+	ctrl     *gomock.Controller
+	recorder *MockClientV2KeeperMockRecorder
+	isgomock struct{}
+}
+
+// MockClientV2KeeperMockRecorder is the mock recorder for MockClientV2Keeper.
+type MockClientV2KeeperMockRecorder struct {
+	mock *MockClientV2Keeper
+}
+
+// NewMockClientV2Keeper creates a new mock instance.
+func NewMockClientV2Keeper(ctrl *gomock.Controller) *MockClientV2Keeper {
+	mock := &MockClientV2Keeper{ctrl: ctrl}
+	mock.recorder = &MockClientV2KeeperMockRecorder{mock}
+	return mock
+}
+
+// EXPECT returns an object that allows the caller to indicate expected use.
+func (m *MockClientV2Keeper) EXPECT() *MockClientV2KeeperMockRecorder {
+	return m.recorder
+}
+
+// GetClientCounterparty mocks base method.
+func (m *MockClientV2Keeper) GetClientCounterparty(ctx types.Context, clientID string) (clientv2types.CounterpartyInfo, bool) {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "GetClientCounterparty", ctx, clientID)
+	ret0, _ := ret[0].(clientv2types.CounterpartyInfo)
+	ret1, _ := ret[1].(bool)
+	return ret0, ret1
+}
+
+// GetClientCounterparty indicates an expected call of GetClientCounterparty.
+func (mr *MockClientV2KeeperMockRecorder) GetClientCounterparty(ctx, clientID any) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "GetClientCounterparty", reflect.TypeOf((*MockClientV2Keeper)(nil).GetClientCounterparty), ctx, clientID)
+}
+
+// SetClientCounterparty mocks base method.
+func (m *MockClientV2Keeper) SetClientCounterparty(ctx types.Context, clientID string, counterparty clientv2types.CounterpartyInfo) {
+	m.ctrl.T.Helper()
+	m.ctrl.Call(m, "SetClientCounterparty", ctx, clientID, counterparty)
+}
+
+// SetClientCounterparty indicates an expected call of SetClientCounterparty.
+func (mr *MockClientV2KeeperMockRecorder) SetClientCounterparty(ctx, clientID, counterparty any) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "SetClientCounterparty", reflect.TypeOf((*MockClientV2Keeper)(nil).SetClientCounterparty), ctx, clientID, counterparty)
 }
 
 // MockConsumerHooks is a mock of ConsumerHooks interface.
@@ -816,43 +754,4 @@ func (m *MockAccountKeeper) GetModuleAccount(ctx context.Context, name string) t
 func (mr *MockAccountKeeperMockRecorder) GetModuleAccount(ctx, name any) *gomock.Call {
 	mr.mock.ctrl.T.Helper()
 	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "GetModuleAccount", reflect.TypeOf((*MockAccountKeeper)(nil).GetModuleAccount), ctx, name)
-}
-
-// MockIBCCoreKeeper is a mock of IBCCoreKeeper interface.
-type MockIBCCoreKeeper struct {
-	ctrl     *gomock.Controller
-	recorder *MockIBCCoreKeeperMockRecorder
-	isgomock struct{}
-}
-
-// MockIBCCoreKeeperMockRecorder is the mock recorder for MockIBCCoreKeeper.
-type MockIBCCoreKeeperMockRecorder struct {
-	mock *MockIBCCoreKeeper
-}
-
-// NewMockIBCCoreKeeper creates a new mock instance.
-func NewMockIBCCoreKeeper(ctrl *gomock.Controller) *MockIBCCoreKeeper {
-	mock := &MockIBCCoreKeeper{ctrl: ctrl}
-	mock.recorder = &MockIBCCoreKeeperMockRecorder{mock}
-	return mock
-}
-
-// EXPECT returns an object that allows the caller to indicate expected use.
-func (m *MockIBCCoreKeeper) EXPECT() *MockIBCCoreKeeperMockRecorder {
-	return m.recorder
-}
-
-// ChannelOpenInit mocks base method.
-func (m *MockIBCCoreKeeper) ChannelOpenInit(goCtx context.Context, msg *types3.MsgChannelOpenInit) (*types3.MsgChannelOpenInitResponse, error) {
-	m.ctrl.T.Helper()
-	ret := m.ctrl.Call(m, "ChannelOpenInit", goCtx, msg)
-	ret0, _ := ret[0].(*types3.MsgChannelOpenInitResponse)
-	ret1, _ := ret[1].(error)
-	return ret0, ret1
-}
-
-// ChannelOpenInit indicates an expected call of ChannelOpenInit.
-func (mr *MockIBCCoreKeeperMockRecorder) ChannelOpenInit(goCtx, msg any) *gomock.Call {
-	mr.mock.ctrl.T.Helper()
-	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "ChannelOpenInit", reflect.TypeOf((*MockIBCCoreKeeper)(nil).ChannelOpenInit), goCtx, msg)
 }

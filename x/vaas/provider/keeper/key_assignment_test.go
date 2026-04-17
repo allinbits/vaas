@@ -56,7 +56,7 @@ func TestGetAllValidatorConsumerPubKey(t *testing.T) {
 	chainIDs := []string{"consumer-1", "consumer-2", "consumer-3"}
 	numAssignments := 10
 	testAssignments := []types.ValidatorConsumerPubKey{}
-	for i := 0; i < numAssignments; i++ {
+	for i := range numAssignments {
 		consumerKey := cryptotestutil.NewCryptoIdentityFromIntSeed(i).TMProtoCryptoPublicKey()
 		providerAddr := cryptotestutil.NewCryptoIdentityFromIntSeed(numAssignments + i).ProviderConsAddress()
 		testAssignments = append(testAssignments,
@@ -136,7 +136,7 @@ func TestGetAllValidatorsByConsumerAddr(t *testing.T) {
 	chainIDs := []string{"consumer-1", "consumer-2", "consumer-3"}
 	numAssignments := 10
 	testAssignments := []types.ValidatorByConsumerAddr{}
-	for i := 0; i < numAssignments; i++ {
+	for i := range numAssignments {
 		consumerAddr := cryptotestutil.NewCryptoIdentityFromIntSeed(i).ConsumerConsAddress()
 		providerAddr := cryptotestutil.NewCryptoIdentityFromIntSeed(numAssignments + i).ProviderConsAddress()
 		testAssignments = append(testAssignments,
@@ -245,7 +245,7 @@ func TestGetAllConsumerAddrsToPrune(t *testing.T) {
 	chainIDs := []string{"consumer-1", "consumer-2", "consumer-3"}
 	numAssignments := 10
 	testAssignments := []types.ConsumerAddrsToPrune{}
-	for i := 0; i < numAssignments; i++ {
+	for i := range numAssignments {
 		consumerAddresses := types.AddressList{}
 		for j := 0; j < 2*(i+1); j++ {
 			addr := cryptotestutil.NewCryptoIdentityFromIntSeed(i * j).SDKValConsAddress()
@@ -313,7 +313,6 @@ func checkCorrectPruningProperty(ctx sdk.Context, k providerkeeper.Keeper, chain
 
 	good := true
 	for _, valByConsAddr := range k.GetAllValidatorsByConsumerAddr(ctx, nil) {
-		valByConsAddr := valByConsAddr // Fix linter error G601
 		if _, ok := willBePruned[string(valByConsAddr.ConsumerAddr)]; ok {
 			// Address will be pruned, everything is fine.
 			continue
@@ -685,7 +684,7 @@ func TestSimulatedAssignmentsAndUpdateApplication(t *testing.T) {
 	providerIDS := []*cryptotestutil.CryptoIdentity{}
 	// Create some identities which the provider validators can assign to the consumer chain
 	assignableIDS := []*cryptotestutil.CryptoIdentity{}
-	for i := 0; i < NUM_VALIDATORS; i++ {
+	for i := range NUM_VALIDATORS {
 		providerIDS = append(providerIDS, cryptotestutil.NewCryptoIdentityFromIntSeed(i))
 	}
 	// Notice that the assignable identities include the provider identities
@@ -746,7 +745,7 @@ func TestSimulatedAssignmentsAndUpdateApplication(t *testing.T) {
 		mocks.MockStakingKeeper.EXPECT().GetLastValidatorPower(
 			gomock.Any(),
 			gomock.Any(),
-		).DoAndReturn(func(_ interface{}, valAddr sdk.ValAddress) (int64, error) {
+		).DoAndReturn(func(_ any, valAddr sdk.ValAddress) (int64, error) {
 			// When the mocked method is called, locate the appropriate validator
 			// in the provider valset and return its power.
 			for i, id := range providerIDS {
@@ -764,7 +763,7 @@ func TestSimulatedAssignmentsAndUpdateApplication(t *testing.T) {
 		mocks.MockStakingKeeper.EXPECT().GetValidatorByConsAddr(
 			gomock.Any(),
 			gomock.Any(),
-		).DoAndReturn(func(_ interface{}, consP sdk.ConsAddress) (stakingtypes.Validator, bool) {
+		).DoAndReturn(func(_ any, consP sdk.ConsAddress) (stakingtypes.Validator, bool) {
 			for _, id := range providerIDS {
 				if id.SDKValConsAddress().Equals(consP) {
 					return id.SDKStakingValidator(), true
@@ -838,7 +837,7 @@ func TestSimulatedAssignmentsAndUpdateApplication(t *testing.T) {
 		// Simulate a number of 'blocks'
 		// Each block consists of a number of random key assignment tx's
 		// and a random set of validator power updates
-		for block := 0; block < NUM_BLOCKS_PER_EXECUTION; block++ {
+		for range NUM_BLOCKS_PER_EXECUTION {
 			stakingUpdates = getStakingUpdates()
 			assignments = getAssignments()
 
@@ -961,7 +960,7 @@ func TestSimulatedAssignmentsAndUpdateApplication(t *testing.T) {
 		ctrl.Finish()
 	}
 
-	for i := 0; i < NUM_EXECUTIONS; i++ {
+	for range NUM_EXECUTIONS {
 		runRandomExecution()
 	}
 }

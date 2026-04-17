@@ -9,44 +9,25 @@ import (
 	sdk "github.com/cosmos/cosmos-sdk/types"
 )
 
-func (k Keeper) GetProviderInfo(ctx sdk.Context) (*types.QueryProviderInfoResponse, error) { //nolint:golint
-	consumerChannelID, found := k.GetProviderChannel(ctx)
-	if !found {
-		return nil, vaastypes.ErrChannelNotFound
-	}
-	consumerChannel, found := k.channelKeeper.GetChannel(ctx, vaastypes.ConsumerPortID, consumerChannelID)
-	if !found {
-		return nil, vaastypes.ErrChannelNotFound
-	}
-
-	// from channel get connection
-	consumerConnectionID, consumerConnection, err := k.channelKeeper.GetChannelConnection(ctx, vaastypes.ConsumerPortID, consumerChannelID)
-	if err != nil {
-		return nil, err
-	}
-
-	providerChannelID := consumerChannel.Counterparty.ChannelId
-	providerConnection := consumerConnection.Counterparty
-
-	consumerClientState, found := k.clientKeeper.GetClientState(ctx, consumerConnection.ClientId)
+func (k Keeper) GetProviderInfoV2(ctx sdk.Context) (*types.QueryProviderInfoResponse, error) {
+	providerClientID, found := k.GetProviderClientID(ctx)
 	if !found {
 		return nil, vaastypes.ErrClientNotFound
 	}
-	providerChainID := consumerClientState.(*ibctm.ClientState).ChainId
+
+	providerClientState, found := k.clientKeeper.GetClientState(ctx, providerClientID)
+	if !found {
+		return nil, vaastypes.ErrClientNotFound
+	}
+	providerChainID := providerClientState.(*ibctm.ClientState).ChainId
 
 	resp := types.QueryProviderInfoResponse{
 		Consumer: types.ChainInfo{
-			ChainID:      ctx.ChainID(),
-			ClientID:     consumerConnection.ClientId,
-			ConnectionID: consumerConnectionID,
-			ChannelID:    consumerChannelID,
+			ChainID:  ctx.ChainID(),
+			ClientID: providerClientID,
 		},
-
 		Provider: types.ChainInfo{
-			ChainID:      providerChainID,
-			ClientID:     providerConnection.ClientId,
-			ConnectionID: providerConnection.ConnectionId,
-			ChannelID:    providerChannelID,
+			ChainID: providerChainID,
 		},
 	}
 

@@ -11,7 +11,7 @@ import (
 type (
 	// ConsumerKeeper defines the interface required by a consumer module keeper.
 	ConsumerKeeper interface {
-		GetProviderChannel(ctx context.Context) (string, bool)
+		GetProviderClientID(ctx context.Context) (string, bool)
 	}
 
 	// MsgFilterDecorator defines an AnteHandler decorator that enables message
@@ -32,7 +32,7 @@ func (mfd MsgFilterDecorator) AnteHandle(ctx sdk.Context, tx sdk.Tx, simulate bo
 
 	// If the CCV channel has not yet been established, then we must only allow certain
 	// message types.
-	if _, ok := mfd.ConsumerKeeper.GetProviderChannel(ctx); !ok {
+	if _, ok := mfd.ConsumerKeeper.GetProviderClientID(ctx); !ok {
 		if !hasValidMsgsPreCCV(tx.GetMsgs()) {
 			return ctx, fmt.Errorf("tx contains unsupported message types at height %d", currHeight)
 		}

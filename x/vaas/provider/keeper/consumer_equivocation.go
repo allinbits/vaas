@@ -35,10 +35,10 @@ func (k Keeper) HandleConsumerDoubleVoting(
 	pubkey cryptotypes.PubKey,
 ) error {
 	// check that the evidence is for an ICS consumer chain
-	if _, found := k.GetConsumerClientId(ctx, consumerId); !found {
+	if k.GetConsumerPhase(ctx, consumerId) != types.CONSUMER_PHASE_LAUNCHED {
 		return errorsmod.Wrapf(
 			vaastypes.ErrInvalidDoubleVotingEvidence,
-			"cannot find consumer chain %s",
+			"consumer chain %s is not launched",
 			consumerId,
 		)
 	}

@@ -6,8 +6,6 @@ import (
 
 	vaastypes "github.com/allinbits/vaas/x/vaas/types"
 
-	host "github.com/cosmos/ibc-go/v10/modules/core/24-host"
-
 	errorsmod "cosmossdk.io/errors"
 )
 
@@ -74,11 +72,11 @@ func (gs GenesisState) Validate() error {
 // Validate performs a consumer state validation returning an error upon any failure.
 // It ensures that the chain id, client id and consumer genesis states are valid and non-empty.
 func (cs ConsumerState) Validate() error {
-	if err := host.ChannelIdentifierValidator(cs.ChannelId); err != nil {
-		return err
+	if cs.ChainId == "" {
+		return errors.New("chain id cannot be empty")
 	}
-	if err := host.ClientIdentifierValidator(cs.ClientId); err != nil {
-		return err
+	if cs.ClientId == "" {
+		return errors.New("client id cannot be empty")
 	}
 	// validate a new chain genesis
 	if err := cs.ConsumerGenesis.Validate(); err != nil {
