@@ -193,27 +193,6 @@ func (k Keeper) Logger(ctx context.Context) log.Logger {
 	return sdkCtx.Logger().With("module", "x/"+ibchost.ModuleName+"-"+types.ModuleName)
 }
 
-// GetAllConsumersWithIBCClients returns the ids of all consumer chains that with IBC clients created.
-func (k Keeper) GetAllConsumersWithIBCClients(ctx context.Context) []string {
-	consumerIds := []string{}
-
-	iter, err := k.ConsumerClients.Iterate(ctx, nil)
-	if err != nil {
-		return consumerIds
-	}
-	defer iter.Close()
-
-	for ; iter.Valid(); iter.Next() {
-		key, err := iter.Key()
-		if err != nil {
-			continue
-		}
-		consumerIds = append(consumerIds, key)
-	}
-
-	return consumerIds
-}
-
 func (k Keeper) SetConsumerGenesis(ctx context.Context, consumerId string, gen vaastypes.ConsumerGenesisState) error {
 	return k.ConsumerGenesis.Set(ctx, consumerId, gen)
 }
@@ -405,6 +384,18 @@ func (k Keeper) GetAllActiveConsumerIds(ctx context.Context) []string {
 	consumerIds := []string{}
 	for _, consumerId := range k.GetAllConsumerIds(ctx) {
 		if !k.IsConsumerActive(ctx, consumerId) {
+			continue
+		}
+		consumerIds = append(consumerIds, consumerId)
+	}
+	return consumerIds
+}
+
+// GetAllLaunchedConsumerIds returns all consumer ids in the launched phase.
+func (k Keeper) GetAllLaunchedConsumerIds(ctx context.Context) []string {
+	consumerIds := []string{}
+	for _, consumerId := range k.GetAllConsumerIds(ctx) {
+		if k.GetConsumerPhase(ctx, consumerId) != types.CONSUMER_PHASE_LAUNCHED {
 			continue
 		}
 		consumerIds = append(consumerIds, consumerId)

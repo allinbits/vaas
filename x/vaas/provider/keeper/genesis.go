@@ -4,6 +4,7 @@ import (
 	"fmt"
 
 	"github.com/allinbits/vaas/x/vaas/provider/types"
+	vaastypes "github.com/allinbits/vaas/x/vaas/types"
 
 	abci "github.com/cometbft/cometbft/abci/types"
 
@@ -20,7 +21,9 @@ func (k Keeper) InitGenesis(ctx sdk.Context, genState *types.GenesisState) []abc
 	// Set initial state for each consumer chain
 	for _, cs := range genState.ConsumerStates {
 		chainID := cs.ChainId
-		k.SetConsumerClientId(ctx, chainID, cs.ClientId)
+		if cs.ClientId != "" {
+			k.SetConsumerClientId(ctx, chainID, cs.ClientId)
+		}
 		k.SetConsumerPhase(ctx, chainID, cs.Phase)
 		if err := k.SetConsumerGenesis(ctx, chainID, cs.ConsumerGenesis); err != nil {
 			// An error here would indicate something is very wrong,
@@ -98,26 +101,26 @@ func (k Keeper) InitGenesisValUpdates(ctx sdk.Context) []abci.ValidatorUpdate {
 
 // ExportGenesis returns the CCV provider module's exported genesis
 func (k Keeper) ExportGenesis(ctx sdk.Context) *types.GenesisState {
-	launchedConsumerIds := k.GetAllConsumersWithIBCClients(ctx)
+	activeConsumerIds := k.GetAllActiveConsumerIds(ctx)
 
 	// export states for each consumer chains
 	var consumerStates []types.ConsumerState
-	for _, consumerId := range launchedConsumerIds {
-		// no need for the second return value of GetConsumerClientId
-		// as GetAllConsumersWithIBCClients already iterated through
-		// the entire prefix range
+	for _, consumerId := range activeConsumerIds {
 		clientId, _ := k.GetConsumerClientId(ctx, consumerId)
+		phase := k.GetConsumerPhase(ctx, consumerId)
 		gen, found := k.GetConsumerGenesis(ctx, consumerId)
 		if !found {
-			panic(fmt.Errorf("cannot find genesis for consumer chain %s with client %s", consumerId, clientId))
+			if phase != types.CONSUMER_PHASE_REGISTERED && phase != types.CONSUMER_PHASE_INITIALIZED {
+				panic(fmt.Errorf("cannot find genesis for consumer chain %s in phase %d", consumerId, phase))
+			}
+			gen = *vaastypes.DefaultConsumerGenesisState()
 		}
 
-		// initial consumer chain states
 		cs := types.ConsumerState{
 			ChainId:              consumerId,
 			ClientId:             clientId,
 			ConsumerGenesis:      gen,
-			Phase:                k.GetConsumerPhase(ctx, consumerId),
+			Phase:                phase,
 			PendingValsetChanges: k.GetPendingVSCPackets(ctx, consumerId),
 		}
 		consumerStates = append(consumerStates, cs)
@@ -125,7 +128,7 @@ func (k Keeper) ExportGenesis(ctx sdk.Context) *types.GenesisState {
 
 	// ConsumerAddrsToPrune are added only for registered consumer chains
 	consumerAddrsToPrune := []types.ConsumerAddrsToPrune{}
-	for _, chainID := range launchedConsumerIds {
+	for _, chainID := range activeConsumerIds {
 		consumerAddrsToPrune = append(consumerAddrsToPrune, k.GetAllConsumerAddrsToPrune(ctx, chainID)...)
 	}
 

@@ -1,8 +1,6 @@
 package keeper_test
 
 import (
-	"fmt"
-	"slices"
 	"sort"
 	"testing"
 
@@ -165,26 +163,6 @@ func TestInitHeight(t *testing.T) {
 		height, _ := providerKeeper.GetInitChainHeight(ctx, tc.chainID)
 		require.Equal(t, tc.expected, height)
 	}
-}
-
-func TestGetAllConsumersWithIBCClients(t *testing.T) {
-	pk, ctx, ctrl, _ := testkeeper.GetProviderKeeperAndCtx(t, testkeeper.NewInMemKeeperParams(t))
-	defer ctrl.Finish()
-
-	consumerIds := []string{"2", "1", "4", "3"}
-	for i, consumerId := range consumerIds {
-		clientId := fmt.Sprintf("client-%d", len(consumerIds)-i)
-		pk.SetConsumerClientId(ctx, consumerId, clientId)
-		pk.SetConsumerPhase(ctx, consumerId, providertypes.CONSUMER_PHASE_LAUNCHED)
-	}
-
-	actualConsumerIds := pk.GetAllConsumersWithIBCClients(ctx)
-	require.Len(t, actualConsumerIds, len(consumerIds))
-
-	// sort the consumer ids before comparing they are equal
-	slices.Sort(consumerIds)
-	slices.Sort(actualConsumerIds)
-	require.Equal(t, consumerIds, actualConsumerIds)
 }
 
 // TestConsumerClientId tests the getter, setter, and deletion of the client id <> consumer id mappings

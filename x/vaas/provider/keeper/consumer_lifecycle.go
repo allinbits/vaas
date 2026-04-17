@@ -9,11 +9,9 @@ import (
 	vaastypes "github.com/allinbits/vaas/x/vaas/types"
 
 	abci "github.com/cometbft/cometbft/abci/types"
-	tmtypes "github.com/cometbft/cometbft/types"
 
 	clienttypes "github.com/cosmos/ibc-go/v10/modules/core/02-client/types"
 	commitmenttypes "github.com/cosmos/ibc-go/v10/modules/core/23-commitment/types"
-	ibchost "github.com/cosmos/ibc-go/v10/modules/core/exported"
 	ibctmtypes "github.com/cosmos/ibc-go/v10/modules/light-clients/07-tendermint"
 
 	"cosmossdk.io/collections"
@@ -220,13 +218,18 @@ func (k Keeper) HasActiveConsumerValidator(ctx sdk.Context, consumerId string, a
 	return false, nil
 }
 
-// LaunchConsumer launches the chain with the provided consumer id by creating the consumer client and the respective
-// consumer genesis file.
+// LaunchConsumer launches the chain with the provided consumer id by creating the consumer genesis file.
+// The IBC client is not created here; it is discovered later when the relayer creates one.
 func (k Keeper) LaunchConsumer(
 	ctx sdk.Context,
 	bondedValidators []stakingtypes.Validator,
 	consumerId string,
 ) error {
+	initializationRecord, err := k.GetConsumerInitializationParameters(ctx, consumerId)
+	if err != nil {
+		return fmt.Errorf("getting initialization parameters, consumerId(%s): %w", consumerId, err)
+	}
+
 	// compute consumer initial validator set (all validators validate all consumers)
 	initialValUpdates, err := k.ComputeConsumerNextValSet(ctx, bondedValidators, consumerId, []types.ConsensusValidator{})
 	if err != nil {
@@ -247,135 +250,13 @@ func (k Keeper) LaunchConsumer(
 		return fmt.Errorf("setting consumer genesis state, consumerId(%s): %w", consumerId, err)
 	}
 
-	updatesAsValSet, err := tmtypes.PB2TM.ValidatorUpdates(initialValUpdates)
-	if err != nil {
-		return fmt.Errorf("unable to create initial validator set from initial validator updates: %w", err)
-	}
-	valsetHash := tmtypes.NewValidatorSet(updatesAsValSet).Hash()
-
-	err = k.CreateConsumerClient(ctx, consumerId, valsetHash)
-	if err != nil {
-		return fmt.Errorf("creating consumer client, consumerId(%s): %w", consumerId, err)
-	}
+	k.SetEquivocationEvidenceMinHeight(ctx, consumerId, initializationRecord.InitialHeight.RevisionHeight)
 
 	k.SetConsumerPhase(ctx, consumerId, types.CONSUMER_PHASE_LAUNCHED)
 
 	k.Logger(ctx).Info("consumer successfully launched",
 		"consumerId", consumerId,
 		"valset size", len(initialValUpdates),
-	)
-
-	return nil
-}
-
-// CreateConsumerClient will create the CCV client for the given consumer chain. The CCV channel must be built
-// on top of the CCV client to ensure connection with the right consumer chain.
-//
-// IMPORTANT - Timing Constraint (Option B: New Consumer Chain):
-// The consensus state for the new client is created with the current provider block time
-// (ctx.BlockTime()). This timestamp will be used by the consumer's IBC client to verify
-// headers from the new consumer chain.
-//
-// For the IBC client to remain valid, the consumer chain's genesis_time must satisfy:
-//
-//	genesis_time - client_creation_time < trusting_period
-//
-// Where:
-//   - client_creation_time = the block time when this function executes (LaunchConsumer is called)
-//   - genesis_time = the time at which the consumer chain starts producing blocks
-//   - trusting_period = calculated from unbonding_period * trusting_period_fraction
-//
-// If this constraint is violated, the client will appear expired before any blocks can be
-// relayed, causing relayers to fail with "trusted state outside of trusting period" errors.
-//
-// Recommended approach: Set the consumer's genesis_time to be close to the expected
-// client_creation_time (spawn_time on the provider), or query the actual client creation
-// timestamp and use it directly as genesis_time.
-func (k Keeper) CreateConsumerClient(
-	ctx sdk.Context,
-	consumerId string,
-	valsetHash []byte,
-) error {
-	initializationRecord, err := k.GetConsumerInitializationParameters(ctx, consumerId)
-	if err != nil {
-		return err
-	}
-
-	phase := k.GetConsumerPhase(ctx, consumerId)
-	if phase != types.CONSUMER_PHASE_INITIALIZED {
-		return errorsmod.Wrapf(types.ErrInvalidPhase,
-			"cannot create client for consumer chain that is not in the Initialized phase but in phase %d: %s", phase, consumerId)
-	}
-
-	chainId, err := k.GetConsumerChainId(ctx, consumerId)
-	if err != nil {
-		return err
-	}
-
-	// Set minimum height for equivocation evidence from this consumer chain
-	k.SetEquivocationEvidenceMinHeight(ctx, consumerId, initializationRecord.InitialHeight.RevisionHeight)
-
-	// Consumers start out with the unbonding period from the initialization parameters
-	consumerUnbondingPeriod := initializationRecord.UnbondingPeriod
-
-	// Create client state by getting template client from initialization parameters
-	clientState := k.GetTemplateClient(ctx)
-	clientState.ChainId = chainId
-	clientState.LatestHeight = initializationRecord.InitialHeight
-
-	trustPeriod, err := vaastypes.CalculateTrustPeriod(consumerUnbondingPeriod, k.GetTrustingPeriodFraction(ctx))
-	if err != nil {
-		return err
-	}
-	clientState.TrustingPeriod = trustPeriod
-	clientState.UnbondingPeriod = consumerUnbondingPeriod
-
-	// Create consensus state for the new consumer chain.
-	// - Timestamp: Current block time. IMPORTANT: Consumer's genesis_time must be within
-	//   trusting_period of this timestamp, otherwise the client will appear expired.
-	// - Root: SentinelRoot is used as a placeholder since the consumer hasn't produced
-	//   blocks yet. The client will be updated with real app hashes once blocks are relayed.
-	// - NextValidatorsHash: Hash of the initial validator set. This binds the client to
-	//   the expected validators, so the first consumer block must be signed by this set.
-	consensusState := ibctmtypes.NewConsensusState(
-		ctx.BlockTime(),
-		commitmenttypes.NewMerkleRoot([]byte(ibctmtypes.SentinelRoot)),
-		valsetHash,
-	)
-
-	clientStateBytes, err := clientState.Marshal()
-	if err != nil {
-		return err
-	}
-	consensusStateBytes, err := consensusState.Marshal()
-	if err != nil {
-		return err
-	}
-
-	// this means the client must be tendermint
-	clientID, err := k.clientKeeper.CreateClient(ctx, ibchost.Tendermint, clientStateBytes, consensusStateBytes)
-	if err != nil {
-		return err
-	}
-	k.SetConsumerClientId(ctx, consumerId, clientID)
-
-	k.Logger(ctx).Info("consumer client created",
-		"consumer id", consumerId,
-		"client id", clientID,
-	)
-
-	ctx.EventManager().EmitEvent(
-		sdk.NewEvent(
-			types.EventTypeConsumerClientCreated,
-			sdk.NewAttribute(sdk.AttributeKeyModule, types.ModuleName),
-			sdk.NewAttribute(types.AttributeConsumerId, consumerId),
-			sdk.NewAttribute(types.AttributeConsumerChainId, chainId),
-			sdk.NewAttribute(clienttypes.AttributeKeyClientID, clientID),
-			sdk.NewAttribute(types.AttributeInitialHeight, initializationRecord.InitialHeight.String()),
-			sdk.NewAttribute(types.AttributeTrustingPeriod, clientState.TrustingPeriod.String()),
-			sdk.NewAttribute(types.AttributeUnbondingPeriod, clientState.UnbondingPeriod.String()),
-			sdk.NewAttribute(types.AttributeValsetHash, string(valsetHash)),
-		),
 	)
 
 	return nil
