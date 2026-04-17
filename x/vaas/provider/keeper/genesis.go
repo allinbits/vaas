@@ -4,6 +4,7 @@ import (
 	"fmt"
 
 	"github.com/allinbits/vaas/x/vaas/provider/types"
+	vaastypes "github.com/allinbits/vaas/x/vaas/types"
 
 	abci "github.com/cometbft/cometbft/abci/types"
 
@@ -106,16 +107,20 @@ func (k Keeper) ExportGenesis(ctx sdk.Context) *types.GenesisState {
 	var consumerStates []types.ConsumerState
 	for _, consumerId := range activeConsumerIds {
 		clientId, _ := k.GetConsumerClientId(ctx, consumerId)
+		phase := k.GetConsumerPhase(ctx, consumerId)
 		gen, found := k.GetConsumerGenesis(ctx, consumerId)
 		if !found {
-			panic(fmt.Errorf("cannot find genesis for consumer chain %s", consumerId))
+			if phase != types.CONSUMER_PHASE_REGISTERED && phase != types.CONSUMER_PHASE_INITIALIZED {
+				panic(fmt.Errorf("cannot find genesis for consumer chain %s in phase %d", consumerId, phase))
+			}
+			gen = *vaastypes.DefaultConsumerGenesisState()
 		}
 
 		cs := types.ConsumerState{
 			ChainId:              consumerId,
 			ClientId:             clientId,
 			ConsumerGenesis:      gen,
-			Phase:                k.GetConsumerPhase(ctx, consumerId),
+			Phase:                phase,
 			PendingValsetChanges: k.GetPendingVSCPackets(ctx, consumerId),
 		}
 		consumerStates = append(consumerStates, cs)
