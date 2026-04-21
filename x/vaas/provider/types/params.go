@@ -10,8 +10,6 @@ import (
 	commitmenttypes "github.com/cosmos/ibc-go/v10/modules/core/23-commitment/types"
 	ibctmtypes "github.com/cosmos/ibc-go/v10/modules/light-clients/07-tendermint"
 
-	"cosmossdk.io/math"
-
 	sdk "github.com/cosmos/cosmos-sdk/types"
 )
 
@@ -32,10 +30,13 @@ const (
 	// DefaultMaxProviderConsensusValidators is the default maximum number of validators that will
 	// be passed on from the staking module to the consensus engine on the provider.
 	DefaultMaxProviderConsensusValidators = 180
-)
 
-// DefaultFeesPerBlock is the default amount that each consumer chain must pay per block
-var DefaultFeesPerBlock = sdk.NewCoin("photon", math.NewInt(1000)) // Default fees per block
+	// DefaultFeesPerBlockDenom is the base denom charged to each consumer chain per block.
+	DefaultFeesPerBlockDenom = "uphoton"
+
+	// DefaultFeesPerBlockAmount is the default amount (in DefaultFeesPerBlockDenom) charged per block.
+	DefaultFeesPerBlockAmount = int64(1000)
+)
 
 // NewParams creates new provider parameters with provided arguments
 func NewParams(
@@ -80,7 +81,7 @@ func DefaultParams() Params {
 		vaastypes.DefaultVAASTimeoutPeriod,
 		DefaultBlocksPerEpoch,
 		DefaultMaxProviderConsensusValidators,
-		DefaultFeesPerBlock,
+		sdk.NewInt64Coin(DefaultFeesPerBlockDenom, DefaultFeesPerBlockAmount),
 	)
 }
 
