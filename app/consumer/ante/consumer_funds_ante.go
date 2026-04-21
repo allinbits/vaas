@@ -33,16 +33,16 @@ func (cfd ConsumerFundsDecorator) AnteHandle(ctx sdk.Context, tx sdk.Tx, simulat
 		return next(ctx, tx, simulate)
 	}
 
-	// Never block IBC core protocol txs (e.g. MsgRecvPacket) so CCV/IBC
-	// liveness is preserved even while the consumer funding gate is active.
-	// Relayers sign these messages directly with their own keys; authz
-	// wrapping is not part of any realistic relayer flow and is therefore
-	// treated as a non-IBC-core tx and rejected while in debt.
-	if isIBCCoreProtocolTx(tx.GetMsgs()) {
+	// Hot path: not in debt → pass without walking the message list.
+	if !cfd.ConsumerKeeper.IsConsumerInDebt(ctx) {
 		return next(ctx, tx, simulate)
 	}
 
-	if !cfd.ConsumerKeeper.IsConsumerInDebt(ctx) {
+	// In debt: only let /ibc.core.* messages through so CCV/IBC liveness is
+	// preserved. Relayers sign these messages directly with their own keys;
+	// authz wrapping is not part of any realistic relayer flow and is
+	// therefore treated as a non-IBC-core tx and rejected here.
+	if isIBCCoreProtocolTx(tx.GetMsgs()) {
 		return next(ctx, tx, simulate)
 	}
 
