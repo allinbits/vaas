@@ -60,13 +60,6 @@ func (k Keeper) EndBlockVSU(ctx sdk.Context) ([]abci.ValidatorUpdate, error) {
 		return []abci.ValidatorUpdate{}, fmt.Errorf("computing the provider consensus validator set: %w", err)
 	}
 
-	valUpdateID := k.GetValidatorSetUpdateId(ctx)
-	if k.QueuePendingConsumerDebtPackets(ctx, valUpdateID) {
-		// Debt-only VSC packets must consume their own ID so later validator-set
-		// changes do not reuse the same valset update identifier on the consumer.
-		k.IncrementValidatorSetUpdateId(ctx)
-	}
-
 	if k.BlocksUntilNextEpoch(ctx) == 0 {
 		// only queue and send VSCPackets at the boundaries of an epoch
 
@@ -74,11 +67,10 @@ func (k Keeper) EndBlockVSU(ctx sdk.Context) ([]abci.ValidatorUpdate, error) {
 		if err := k.QueueVSCPackets(ctx); err != nil {
 			return []abci.ValidatorUpdate{}, fmt.Errorf("queueing consumer validator updates: %w", err)
 		}
-	}
 
-	// Try sending any queued packets every block so debt status transitions do not
-	// wait for the next epoch once they have been queued.
-	if k.HasQueuedVSCPackets(ctx) {
+		// try sending VSC packets to all registered consumer chains;
+		// if the CCV channel is not established for a consumer chain,
+		// the updates will remain queued until the channel is established
 		if err := k.SendVSCPackets(ctx); err != nil {
 			return []abci.ValidatorUpdate{}, fmt.Errorf("sending consumer validator updates: %w", err)
 		}
@@ -237,18 +229,21 @@ func (k Keeper) QueueVSCPackets(ctx sdk.Context) error {
 			return fmt.Errorf("computing consumer next validator set, consumerId(%s): %w", consumerId, err)
 		}
 
-		// check whether there are changes in the validator set
-		if len(valUpdates) != 0 {
-			// construct validator set change packet data
-			packet := vaastypes.NewValidatorSetChangePacketData(valUpdates, valUpdateID)
-			packet.ConsumerInDebt = k.IsConsumerInDebt(ctx, consumerId)
-			k.AppendPendingVSCPackets(ctx, consumerId, packet)
-			k.Logger(ctx).Info("VSCPacket enqueued:",
-				"consumerId", consumerId,
-				"vscID", valUpdateID,
-				"len updates", len(valUpdates),
-			)
-		}
+		// Always enqueue a VSC packet per launched consumer each epoch, even
+		// when valUpdates is empty. This keeps the packet as the single
+		// source-of-truth for the consumer's debt state: the consumer
+		// receives the current ConsumerInDebt flag every epoch, so debt
+		// transitions propagate at epoch boundaries without needing a
+		// separate mid-epoch notification mechanism. The extra traffic is
+		// bounded: at most one packet per consumer per epoch.
+		packet := vaastypes.NewValidatorSetChangePacketData(valUpdates, valUpdateID)
+		packet.ConsumerInDebt = k.IsConsumerInDebt(ctx, consumerId)
+		k.AppendPendingVSCPackets(ctx, consumerId, packet)
+		k.Logger(ctx).Info("VSCPacket enqueued:",
+			"consumerId", consumerId,
+			"vscID", valUpdateID,
+			"len updates", len(valUpdates),
+		)
 	}
 
 	k.IncrementValidatorSetUpdateId(ctx)

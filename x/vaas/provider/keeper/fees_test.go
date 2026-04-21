@@ -53,8 +53,6 @@ func TestCollectFeesFromConsumers(t *testing.T) {
 	require.Equal(t, sdk.NewInt64Coin("photon", 20), total)
 	require.False(t, k.IsConsumerInDebt(ctx, consumer0))
 	require.False(t, k.IsConsumerInDebt(ctx, consumer1))
-	require.False(t, k.HasPendingConsumerDebtPacket(ctx, consumer0))
-	require.False(t, k.HasPendingConsumerDebtPacket(ctx, consumer1))
 }
 
 func TestCollectFeesFromConsumersSkipsWhenInsufficient(t *testing.T) {
@@ -90,9 +88,7 @@ func TestCollectFeesFromConsumersSkipsWhenInsufficient(t *testing.T) {
 	require.NoError(t, err)
 	require.Equal(t, sdk.NewInt64Coin("photon", 10), total)
 	require.True(t, k.IsConsumerInDebt(ctx, consumer0))
-	require.True(t, k.HasPendingConsumerDebtPacket(ctx, consumer0))
 	require.False(t, k.IsConsumerInDebt(ctx, consumer1))
-	require.False(t, k.HasPendingConsumerDebtPacket(ctx, consumer1))
 }
 
 func TestCollectFeesFromConsumersClearsDebtWhenRecovered(t *testing.T) {
@@ -123,7 +119,6 @@ func TestCollectFeesFromConsumersClearsDebtWhenRecovered(t *testing.T) {
 	require.NoError(t, err)
 	require.Equal(t, sdk.NewInt64Coin("photon", 10), total)
 	require.False(t, k.IsConsumerInDebt(ctx, consumer0))
-	require.True(t, k.HasPendingConsumerDebtPacket(ctx, consumer0))
 }
 
 func TestCollectFeesFromConsumersContinuesWhenTransferFails(t *testing.T) {
@@ -162,9 +157,7 @@ func TestCollectFeesFromConsumersContinuesWhenTransferFails(t *testing.T) {
 	require.NoError(t, err)
 	require.Equal(t, sdk.NewInt64Coin("photon", 10), total)
 	require.True(t, k.IsConsumerInDebt(ctx, consumer0))
-	require.True(t, k.HasPendingConsumerDebtPacket(ctx, consumer0))
 	require.False(t, k.IsConsumerInDebt(ctx, consumer1))
-	require.False(t, k.HasPendingConsumerDebtPacket(ctx, consumer1))
 }
 
 func TestDistributeFeesToValidators(t *testing.T) {

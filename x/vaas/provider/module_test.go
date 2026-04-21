@@ -51,7 +51,5 @@ func TestBeginBlockCommitsDebtStateWhenDistributionFails(t *testing.T) {
 	require.NoError(t, err)
 
 	require.True(t, k.IsConsumerInDebt(ctx, consumerInDebt))
-	require.True(t, k.HasPendingConsumerDebtPacket(ctx, consumerInDebt))
 	require.False(t, k.IsConsumerInDebt(ctx, consumerPaying))
-	require.False(t, k.HasPendingConsumerDebtPacket(ctx, consumerPaying))
 }

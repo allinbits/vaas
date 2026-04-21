@@ -5,18 +5,13 @@ import (
 	"sort"
 	"testing"
 
-	clienttypes "github.com/cosmos/ibc-go/v10/modules/core/02-client/types"
-	channeltypes "github.com/cosmos/ibc-go/v10/modules/core/04-channel/types"
 	ibctesting "github.com/cosmos/ibc-go/v10/testing"
 	"github.com/stretchr/testify/require"
 
 	cryptocodec "github.com/cosmos/cosmos-sdk/crypto/codec"
-	sdk "github.com/cosmos/cosmos-sdk/types"
-	stakingtypes "github.com/cosmos/cosmos-sdk/x/staking/types"
 
 	abci "github.com/cometbft/cometbft/abci/types"
 	tmprotocrypto "github.com/cometbft/cometbft/proto/tendermint/crypto"
-	"go.uber.org/mock/gomock"
 
 	testkeeper "github.com/allinbits/vaas/testutil/keeper"
 	providertypes "github.com/allinbits/vaas/x/vaas/provider/types"
@@ -155,88 +150,12 @@ func TestConsumerDebtStatus(t *testing.T) {
 	consumerID := CONSUMER_ID
 
 	require.False(t, providerKeeper.IsConsumerInDebt(ctx, consumerID))
-	require.False(t, providerKeeper.HasPendingConsumerDebtPacket(ctx, consumerID))
 
 	providerKeeper.SetConsumerInDebt(ctx, consumerID, true)
-	providerKeeper.SetPendingConsumerDebtPacket(ctx, consumerID)
 	require.True(t, providerKeeper.IsConsumerInDebt(ctx, consumerID))
-	require.True(t, providerKeeper.HasPendingConsumerDebtPacket(ctx, consumerID))
 
 	providerKeeper.DeleteConsumerDebt(ctx, consumerID)
-	providerKeeper.ClearPendingConsumerDebtPacket(ctx, consumerID)
 	require.False(t, providerKeeper.IsConsumerInDebt(ctx, consumerID))
-	require.False(t, providerKeeper.HasPendingConsumerDebtPacket(ctx, consumerID))
-}
-
-func TestQueuePendingConsumerDebtPackets(t *testing.T) {
-	providerKeeper, ctx, ctrl, _ := testkeeper.GetProviderKeeperAndCtx(t, testkeeper.NewInMemKeeperParams(t))
-	defer ctrl.Finish()
-
-	consumerID := CONSUMER_ID
-	providerKeeper.SetConsumerClientId(ctx, consumerID, "client-0")
-	providerKeeper.SetConsumerIdToChannelId(ctx, consumerID, "channel-0")
-	providerKeeper.SetConsumerPhase(ctx, consumerID, providertypes.CONSUMER_PHASE_LAUNCHED)
-	providerKeeper.SetConsumerInDebt(ctx, consumerID, true)
-	providerKeeper.SetPendingConsumerDebtPacket(ctx, consumerID)
-
-	queued := providerKeeper.QueuePendingConsumerDebtPackets(ctx, 7)
-
-	require.True(t, queued)
-	require.False(t, providerKeeper.HasPendingConsumerDebtPacket(ctx, consumerID))
-
-	packets := providerKeeper.GetPendingVSCPackets(ctx, consumerID)
-	require.Len(t, packets, 1)
-	require.Equal(t, uint64(7), packets[0].ValsetUpdateId)
-	require.True(t, packets[0].ConsumerInDebt)
-	require.Empty(t, packets[0].ValidatorUpdates)
-}
-
-func TestEndBlockVSUAssignsUniqueValsetUpdateIDToDebtPacket(t *testing.T) {
-	providerKeeper, ctx, ctrl, mocks := testkeeper.GetProviderKeeperAndCtx(t, testkeeper.NewInMemKeeperParams(t))
-	defer ctrl.Finish()
-
-	ctx = ctx.WithBlockHeight(1)
-
-	consumerID := CONSUMER_ID
-	channelID := "channel-0"
-	startingValsetUpdateID := uint64(providertypes.DefaultValsetUpdateID)
-	providerKeeper.SetParams(ctx, providertypes.DefaultParams())
-
-	providerKeeper.SetConsumerClientId(ctx, consumerID, "client-0")
-	providerKeeper.SetConsumerIdToChannelId(ctx, consumerID, channelID)
-	providerKeeper.SetConsumerPhase(ctx, consumerID, providertypes.CONSUMER_PHASE_LAUNCHED)
-	providerKeeper.SetConsumerInDebt(ctx, consumerID, true)
-	providerKeeper.SetPendingConsumerDebtPacket(ctx, consumerID)
-	providerKeeper.SetValidatorSetUpdateId(ctx, startingValsetUpdateID)
-
-	require.Equal(t, startingValsetUpdateID, providerKeeper.GetValidatorSetUpdateId(ctx))
-
-	mocks.MockStakingKeeper.EXPECT().
-		GetBondedValidatorsByPower(ctx).
-		Return([]stakingtypes.Validator{}, nil)
-	mocks.MockChannelKeeper.EXPECT().
-		GetChannel(ctx, vaastypes.ProviderPortID, channelID).
-		Return(channeltypes.Channel{}, true)
-	mocks.MockChannelKeeper.EXPECT().
-		SendPacket(ctx, vaastypes.ProviderPortID, channelID, gomock.Any(), gomock.Any(), gomock.Any()).
-		DoAndReturn(func(_ sdk.Context, sourcePort, sourceChannel string, _ clienttypes.Height, _ uint64, data []byte) (uint64, error) {
-			require.Equal(t, vaastypes.ProviderPortID, sourcePort)
-			require.Equal(t, channelID, sourceChannel)
-
-			var packet vaastypes.ValidatorSetChangePacketData
-			require.NoError(t, vaastypes.ModuleCdc.UnmarshalJSON(data, &packet))
-			require.Equal(t, startingValsetUpdateID, packet.ValsetUpdateId)
-			require.True(t, packet.ConsumerInDebt)
-			require.Empty(t, packet.ValidatorUpdates)
-
-			return uint64(1), nil
-		})
-
-	valUpdates, err := providerKeeper.EndBlockVSU(ctx)
-	require.NoError(t, err)
-	require.Empty(t, valUpdates)
-	require.Equal(t, startingValsetUpdateID+1, providerKeeper.GetValidatorSetUpdateId(ctx))
-	require.Empty(t, providerKeeper.GetPendingVSCPackets(ctx, consumerID))
 }
 
 // TestInitHeight tests the getter and setter methods for the stored block heights (on provider) when a given consumer chain was started

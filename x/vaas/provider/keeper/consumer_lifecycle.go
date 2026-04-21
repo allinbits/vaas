@@ -601,7 +601,6 @@ func (k Keeper) DeleteConsumerChain(ctx sdk.Context, consumerId string) (err err
 
 	k.DeleteConsumerRemovalTime(ctx, consumerId)
 	k.DeleteConsumerDebt(ctx, consumerId)
-	k.ClearPendingConsumerDebtPacket(ctx, consumerId)
 
 	// TODO (PERMISSIONLESS) add newly-added state to be deleted
 
