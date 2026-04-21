@@ -145,14 +145,12 @@ func TestConsumerFundsDecoratorBlocksMixedIBCCoreAndNonIBCMessagesWhenInDebt(t *
 	require.False(t, nextCalled)
 }
 
-func TestConsumerFundsDecoratorAllowsAuthzWrappedIBCCoreTxAtMaxDepth(t *testing.T) {
-	var nested sdk.Msg = &channeltypes.MsgRecvPacket{}
-	grantee := testAccAddress(3)
-
-	for i := 0; i < maxAuthzExecDepth; i++ {
-		msgExec := authz.NewMsgExec(grantee, []sdk.Msg{nested})
-		nested = &msgExec
-	}
+// Authz-wrapped IBC core txs are treated as non-IBC and rejected while the
+// consumer is in debt. Real relayers sign /ibc.core.* messages directly with
+// their own keys, so this path is not needed for CCV liveness.
+func TestConsumerFundsDecoratorRejectsAuthzWrappedIBCCoreTxWhenInDebt(t *testing.T) {
+	ibcMsg := &channeltypes.MsgRecvPacket{}
+	msgExec := authz.NewMsgExec(testAccAddress(3), []sdk.Msg{ibcMsg})
 
 	decorator := NewConsumerFundsDecorator(mockConsumerFundsKeeper{
 		providerChannelFound: true,
@@ -160,30 +158,7 @@ func TestConsumerFundsDecoratorAllowsAuthzWrappedIBCCoreTxAtMaxDepth(t *testing.
 	})
 
 	nextCalled := false
-	_, err := decorator.AnteHandle(sdk.Context{}, mockTx{msgs: []sdk.Msg{nested}}, false, func(ctx sdk.Context, tx sdk.Tx, simulate bool) (sdk.Context, error) {
-		nextCalled = true
-		return ctx, nil
-	})
-	require.NoError(t, err)
-	require.True(t, nextCalled)
-}
-
-func TestConsumerFundsDecoratorRejectsDeepNestedAuthzIBCCoreTxWhenInDebt(t *testing.T) {
-	var nested sdk.Msg = &channeltypes.MsgRecvPacket{}
-	grantee := testAccAddress(3)
-
-	for i := 0; i < maxAuthzExecDepth+1; i++ {
-		msgExec := authz.NewMsgExec(grantee, []sdk.Msg{nested})
-		nested = &msgExec
-	}
-
-	decorator := NewConsumerFundsDecorator(mockConsumerFundsKeeper{
-		providerChannelFound: true,
-		inDebt:               true,
-	})
-
-	nextCalled := false
-	_, err := decorator.AnteHandle(sdk.Context{}, mockTx{msgs: []sdk.Msg{nested}}, false, func(ctx sdk.Context, tx sdk.Tx, simulate bool) (sdk.Context, error) {
+	_, err := decorator.AnteHandle(sdk.Context{}, mockTx{msgs: []sdk.Msg{&msgExec}}, false, func(ctx sdk.Context, tx sdk.Tx, simulate bool) (sdk.Context, error) {
 		nextCalled = true
 		return ctx, nil
 	})

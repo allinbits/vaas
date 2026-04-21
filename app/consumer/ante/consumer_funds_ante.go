@@ -6,12 +6,9 @@ import (
 
 	errorsmod "cosmossdk.io/errors"
 	sdk "github.com/cosmos/cosmos-sdk/types"
-	"github.com/cosmos/cosmos-sdk/x/authz"
 
 	consumertypes "github.com/allinbits/vaas/x/vaas/consumer/types"
 )
-
-const maxAuthzExecDepth = 4
 
 type (
 	ConsumerFundsKeeper interface {
@@ -38,6 +35,9 @@ func (cfd ConsumerFundsDecorator) AnteHandle(ctx sdk.Context, tx sdk.Tx, simulat
 
 	// Never block IBC core protocol txs (e.g. MsgRecvPacket) so CCV/IBC
 	// liveness is preserved even while the consumer funding gate is active.
+	// Relayers sign these messages directly with their own keys; authz
+	// wrapping is not part of any realistic relayer flow and is therefore
+	// treated as a non-IBC-core tx and rejected while in debt.
 	if isIBCCoreProtocolTx(tx.GetMsgs()) {
 		return next(ctx, tx, simulate)
 	}
@@ -58,36 +58,10 @@ func isIBCCoreProtocolTx(msgs []sdk.Msg) bool {
 	}
 
 	for _, msg := range msgs {
-		if !isIBCCoreProtocolMsg(msg, 0) {
+		if !strings.HasPrefix(sdk.MsgTypeURL(msg), "/ibc.core.") {
 			return false
 		}
 	}
 
 	return true
-}
-
-func isIBCCoreProtocolMsg(msg sdk.Msg, authzDepth int) bool {
-	switch m := msg.(type) {
-	case *authz.MsgExec:
-		if authzDepth >= maxAuthzExecDepth {
-			return false
-		}
-
-		nestedMsgs, err := m.GetMessages()
-		if err != nil || len(nestedMsgs) == 0 {
-			return false
-		}
-
-		for _, nestedMsg := range nestedMsgs {
-			if !isIBCCoreProtocolMsg(nestedMsg, authzDepth+1) {
-				return false
-			}
-		}
-
-		return true
-
-	default:
-		msgType := sdk.MsgTypeURL(msg)
-		return strings.HasPrefix(msgType, "/ibc.core.")
-	}
 }
