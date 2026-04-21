@@ -104,48 +104,34 @@ func (k Keeper) DistributeFeesToValidators(ctx sdk.Context) error {
 		return fmt.Errorf("total voting power is zero")
 	}
 
-	// Track distributed amount to handle remainder
-	distributedAmount := math.ZeroInt()
-	hasProportionalShare := false
 	powerReduction := k.stakingKeeper.PowerReduction(ctx)
 
-	// Distribute fees proportionally to each validator based on voting power
-	for i, val := range validators {
-		// Calculate validator's share: (validatorPower / totalPower) * totalFees
+	// Each validator receives the floor of its proportional share. Any
+	// integer-division remainder stays in the provider module account and is
+	// picked up by the next block's GetBalance.
+	//
+	// Note: with heavily skewed voting power, validators whose per-block
+	// proportional share rounds to zero will not earn fees — the dominant
+	// validator drains each block's pool before the remainder can accumulate
+	// enough for smaller validators to cross the 1-coin threshold. Moving to
+	// a DecCoin accumulator (F1-style) would fix this at the cost of extra
+	// state; see also Cosmos SDK x/distribution.
+	for _, val := range validators {
 		valPower := math.NewInt(val.GetConsensusPower(powerReduction))
 		valShare := totalFees.Amount.Mul(valPower).Quo(totalPower)
-		if valShare.IsPositive() {
-			hasProportionalShare = true
-		}
-
-		// If this is the last validator, assign the remainder to ensure all fees are distributed
-		if i == len(validators)-1 {
-			// Skip distribution when all proportional shares round down to zero.
-			// In this case, keeping funds in the provider module account avoids sending all fees
-			// to the last validator purely due to integer division remainder.
-			if !hasProportionalShare {
-				return nil
-			}
-			valShare = totalFees.Amount.Sub(distributedAmount)
-		}
-
 		if valShare.IsZero() {
 			continue
 		}
 
-		// Get validator operator address
 		valAddr, err := k.stakingKeeper.ValidatorAddressCodec().StringToBytes(val.GetOperator())
 		if err != nil {
 			return fmt.Errorf("failed to parse validator address: %w", err)
 		}
 
-		// Transfer fees from the provider module account to the validator account.
 		feeCoins := sdk.NewCoins(sdk.NewCoin(totalFees.Denom, valShare))
 		if err := k.bankKeeper.SendCoinsFromModuleToAccount(ctx, types.ModuleName, sdk.AccAddress(valAddr), feeCoins); err != nil {
 			return fmt.Errorf("failed to distribute fees to validator (%s): %w", val.GetOperator(), err)
 		}
-
-		distributedAmount = distributedAmount.Add(valShare)
 	}
 
 	return nil
