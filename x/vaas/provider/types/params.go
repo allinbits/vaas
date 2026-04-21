@@ -111,26 +111,17 @@ func (p Params) Validate() error {
 	return nil
 }
 
-func validateFeesPerBlock(i interface{}) error {
-	coin, ok := i.(sdk.Coin)
-	if !ok {
-		return fmt.Errorf("invalid parameter type: %T", i)
-	}
+func validateFeesPerBlock(coin sdk.Coin) error {
 	if !coin.IsValid() {
-		return fmt.Errorf("fees per block coin is invalid")
+		return fmt.Errorf("fees per block coin is invalid: %s", coin)
 	}
-	if coin.IsZero() || coin.IsNegative() {
+	if coin.IsZero() {
 		return fmt.Errorf("fees per block must be positive")
 	}
 	return nil
 }
 
-func ValidateTemplateClient(i interface{}) error {
-	cs, ok := i.(ibctmtypes.ClientState)
-	if !ok {
-		return fmt.Errorf("invalid parameter type: %T, expected: %T", i, ibctmtypes.ClientState{})
-	}
-
+func ValidateTemplateClient(cs ibctmtypes.ClientState) error {
 	// copy clientstate to prevent changing original pointer
 	copiedClient := cs
 
