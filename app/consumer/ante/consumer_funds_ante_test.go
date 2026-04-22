@@ -9,6 +9,7 @@ import (
 	sdk "github.com/cosmos/cosmos-sdk/types"
 	"github.com/cosmos/cosmos-sdk/x/authz"
 	banktypes "github.com/cosmos/cosmos-sdk/x/bank/types"
+	govtypes "github.com/cosmos/cosmos-sdk/x/gov/types/v1"
 	channeltypes "github.com/cosmos/ibc-go/v10/modules/core/04-channel/types"
 	"github.com/stretchr/testify/require"
 	protov2 "google.golang.org/protobuf/proto"
@@ -143,6 +144,29 @@ func TestConsumerFundsDecoratorBlocksMixedIBCCoreAndNonIBCMessagesWhenInDebt(t *
 	require.Error(t, err)
 	require.True(t, errorsmod.IsOf(err, consumertypes.ErrConsumerInDebt))
 	require.False(t, nextCalled)
+}
+
+// Governance messages are allowed during debt so the community can vote on
+// recovery (emergency funding, param changes) without off-chain coordination.
+func TestConsumerFundsDecoratorAllowsGovTxWhenInDebt(t *testing.T) {
+	msg := &govtypes.MsgVote{
+		ProposalId: 1,
+		Voter:      testAccAddress(1).String(),
+		Option:     govtypes.OptionYes,
+	}
+
+	decorator := NewConsumerFundsDecorator(mockConsumerFundsKeeper{
+		providerChannelFound: true,
+		inDebt:               true,
+	})
+
+	nextCalled := false
+	_, err := decorator.AnteHandle(sdk.Context{}, mockTx{msgs: []sdk.Msg{msg}}, false, func(ctx sdk.Context, tx sdk.Tx, simulate bool) (sdk.Context, error) {
+		nextCalled = true
+		return ctx, nil
+	})
+	require.NoError(t, err)
+	require.True(t, nextCalled)
 }
 
 // Authz-wrapped IBC core txs are treated as non-IBC and rejected while the
