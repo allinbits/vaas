@@ -202,7 +202,6 @@ func (s *IntegrationTestSuite) tsRelayerAddGasPrice(chainID, gasPrice string) {
 	s.executeTSRelayerCommand(ctx, []string{
 		"add-gas-price",
 		"-c", chainID,
-		"--gas-adjustment", "2.0",
 		gasPrice,
 	})
 }
