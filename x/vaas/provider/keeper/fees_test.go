@@ -26,7 +26,7 @@ func TestCollectFeesFromConsumers(t *testing.T) {
 	k.SetConsumerPhase(ctx, consumer0, providertypes.CONSUMER_PHASE_LAUNCHED)
 	k.SetConsumerPhase(ctx, consumer1, providertypes.CONSUMER_PHASE_LAUNCHED)
 
-	feesPerBlock := sdk.NewInt64Coin("photon", 10)
+	feesPerBlock := sdk.NewInt64Coin("uphoton", 10)
 	providerParams := providertypes.DefaultParams()
 	providerParams.FeesPerBlock = feesPerBlock
 	k.SetParams(ctx, providerParams)
@@ -42,7 +42,7 @@ func TestCollectFeesFromConsumers(t *testing.T) {
 			Return(nil),
 		mocks.MockBankKeeper.EXPECT().
 			GetBalance(gomock.Any(), consumer1FeePoolAddr, feesPerBlock.Denom).
-			Return(sdk.NewInt64Coin("photon", 25)),
+			Return(sdk.NewInt64Coin("uphoton", 25)),
 		mocks.MockBankKeeper.EXPECT().
 			SendCoinsFromAccountToModule(gomock.Any(), consumer1FeePoolAddr, providertypes.ModuleName, sdk.NewCoins(feesPerBlock)).
 			Return(nil),
@@ -50,7 +50,7 @@ func TestCollectFeesFromConsumers(t *testing.T) {
 
 	total, err := k.CollectFeesFromConsumers(ctx)
 	require.NoError(t, err)
-	require.Equal(t, sdk.NewInt64Coin("photon", 20), total)
+	require.Equal(t, sdk.NewInt64Coin("uphoton", 20), total)
 	require.False(t, k.IsConsumerInDebt(ctx, consumer0))
 	require.False(t, k.IsConsumerInDebt(ctx, consumer1))
 }
@@ -65,7 +65,7 @@ func TestCollectFeesFromConsumersSkipsWhenInsufficient(t *testing.T) {
 	k.SetConsumerPhase(ctx, consumer0, providertypes.CONSUMER_PHASE_LAUNCHED)
 	k.SetConsumerPhase(ctx, consumer1, providertypes.CONSUMER_PHASE_LAUNCHED)
 
-	feesPerBlock := sdk.NewInt64Coin("photon", 10)
+	feesPerBlock := sdk.NewInt64Coin("uphoton", 10)
 	providerParams := providertypes.DefaultParams()
 	providerParams.FeesPerBlock = feesPerBlock
 	k.SetParams(ctx, providerParams)
@@ -75,10 +75,10 @@ func TestCollectFeesFromConsumersSkipsWhenInsufficient(t *testing.T) {
 	gomock.InOrder(
 		mocks.MockBankKeeper.EXPECT().
 			GetBalance(gomock.Any(), consumer0FeePoolAddr, feesPerBlock.Denom).
-			Return(sdk.NewInt64Coin("photon", 5)),
+			Return(sdk.NewInt64Coin("uphoton", 5)),
 		mocks.MockBankKeeper.EXPECT().
 			GetBalance(gomock.Any(), consumer1FeePoolAddr, feesPerBlock.Denom).
-			Return(sdk.NewInt64Coin("photon", 12)),
+			Return(sdk.NewInt64Coin("uphoton", 12)),
 		mocks.MockBankKeeper.EXPECT().
 			SendCoinsFromAccountToModule(gomock.Any(), consumer1FeePoolAddr, providertypes.ModuleName, sdk.NewCoins(feesPerBlock)).
 			Return(nil),
@@ -86,7 +86,7 @@ func TestCollectFeesFromConsumersSkipsWhenInsufficient(t *testing.T) {
 
 	total, err := k.CollectFeesFromConsumers(ctx)
 	require.NoError(t, err)
-	require.Equal(t, sdk.NewInt64Coin("photon", 10), total)
+	require.Equal(t, sdk.NewInt64Coin("uphoton", 10), total)
 	require.True(t, k.IsConsumerInDebt(ctx, consumer0))
 	require.False(t, k.IsConsumerInDebt(ctx, consumer1))
 }
@@ -100,7 +100,7 @@ func TestCollectFeesFromConsumersClearsDebtWhenRecovered(t *testing.T) {
 	k.SetConsumerPhase(ctx, consumer0, providertypes.CONSUMER_PHASE_LAUNCHED)
 	k.SetConsumerInDebt(ctx, consumer0, true)
 
-	feesPerBlock := sdk.NewInt64Coin("photon", 10)
+	feesPerBlock := sdk.NewInt64Coin("uphoton", 10)
 	providerParams := providertypes.DefaultParams()
 	providerParams.FeesPerBlock = feesPerBlock
 	k.SetParams(ctx, providerParams)
@@ -109,7 +109,7 @@ func TestCollectFeesFromConsumersClearsDebtWhenRecovered(t *testing.T) {
 	gomock.InOrder(
 		mocks.MockBankKeeper.EXPECT().
 			GetBalance(gomock.Any(), consumer0FeePoolAddr, feesPerBlock.Denom).
-			Return(sdk.NewInt64Coin("photon", 25)),
+			Return(sdk.NewInt64Coin("uphoton", 25)),
 		mocks.MockBankKeeper.EXPECT().
 			SendCoinsFromAccountToModule(gomock.Any(), consumer0FeePoolAddr, providertypes.ModuleName, sdk.NewCoins(feesPerBlock)).
 			Return(nil),
@@ -117,7 +117,7 @@ func TestCollectFeesFromConsumersClearsDebtWhenRecovered(t *testing.T) {
 
 	total, err := k.CollectFeesFromConsumers(ctx)
 	require.NoError(t, err)
-	require.Equal(t, sdk.NewInt64Coin("photon", 10), total)
+	require.Equal(t, sdk.NewInt64Coin("uphoton", 10), total)
 	require.False(t, k.IsConsumerInDebt(ctx, consumer0))
 }
 
@@ -131,7 +131,7 @@ func TestCollectFeesFromConsumersContinuesWhenTransferFails(t *testing.T) {
 	k.SetConsumerPhase(ctx, consumer0, providertypes.CONSUMER_PHASE_LAUNCHED)
 	k.SetConsumerPhase(ctx, consumer1, providertypes.CONSUMER_PHASE_LAUNCHED)
 
-	feesPerBlock := sdk.NewInt64Coin("photon", 10)
+	feesPerBlock := sdk.NewInt64Coin("uphoton", 10)
 	providerParams := providertypes.DefaultParams()
 	providerParams.FeesPerBlock = feesPerBlock
 	k.SetParams(ctx, providerParams)
@@ -141,13 +141,13 @@ func TestCollectFeesFromConsumersContinuesWhenTransferFails(t *testing.T) {
 	gomock.InOrder(
 		mocks.MockBankKeeper.EXPECT().
 			GetBalance(gomock.Any(), consumer0FeePoolAddr, feesPerBlock.Denom).
-			Return(sdk.NewInt64Coin("photon", 15)),
+			Return(sdk.NewInt64Coin("uphoton", 15)),
 		mocks.MockBankKeeper.EXPECT().
 			SendCoinsFromAccountToModule(gomock.Any(), consumer0FeePoolAddr, providertypes.ModuleName, sdk.NewCoins(feesPerBlock)).
 			Return(errors.New("boom")),
 		mocks.MockBankKeeper.EXPECT().
 			GetBalance(gomock.Any(), consumer1FeePoolAddr, feesPerBlock.Denom).
-			Return(sdk.NewInt64Coin("photon", 18)),
+			Return(sdk.NewInt64Coin("uphoton", 18)),
 		mocks.MockBankKeeper.EXPECT().
 			SendCoinsFromAccountToModule(gomock.Any(), consumer1FeePoolAddr, providertypes.ModuleName, sdk.NewCoins(feesPerBlock)).
 			Return(nil),
@@ -155,7 +155,7 @@ func TestCollectFeesFromConsumersContinuesWhenTransferFails(t *testing.T) {
 
 	total, err := k.CollectFeesFromConsumers(ctx)
 	require.NoError(t, err)
-	require.Equal(t, sdk.NewInt64Coin("photon", 10), total)
+	require.Equal(t, sdk.NewInt64Coin("uphoton", 10), total)
 	require.True(t, k.IsConsumerInDebt(ctx, consumer0))
 	require.False(t, k.IsConsumerInDebt(ctx, consumer1))
 }
@@ -191,12 +191,12 @@ func TestDistributeFeesToValidators(t *testing.T) {
 		Status:          stakingtypes.Bonded,
 	}
 	providerParams := providertypes.DefaultParams()
-	providerParams.FeesPerBlock = sdk.NewInt64Coin("photon", 10)
+	providerParams.FeesPerBlock = sdk.NewInt64Coin("uphoton", 10)
 	k.SetParams(ctx, providerParams)
 
 	mocks.MockBankKeeper.EXPECT().
 		GetBalance(gomock.Any(), authtypes.NewModuleAddress(providertypes.ModuleName), providerParams.FeesPerBlock.Denom).
-		Return(sdk.NewInt64Coin("photon", 300))
+		Return(sdk.NewInt64Coin("uphoton", 300))
 	mocks.MockStakingKeeper.EXPECT().
 		GetBondedValidatorsByPower(gomock.Any()).
 		Return([]stakingtypes.Validator{val1, val2}, nil)
@@ -208,10 +208,10 @@ func TestDistributeFeesToValidators(t *testing.T) {
 		Return(sdk.DefaultPowerReduction).
 		AnyTimes()
 	mocks.MockBankKeeper.EXPECT().
-		SendCoinsFromModuleToAccount(gomock.Any(), providertypes.ModuleName, sdk.AccAddress(valAddr1), sdk.NewCoins(sdk.NewInt64Coin("photon", 100))).
+		SendCoinsFromModuleToAccount(gomock.Any(), providertypes.ModuleName, sdk.AccAddress(valAddr1), sdk.NewCoins(sdk.NewInt64Coin("uphoton", 100))).
 		Return(nil)
 	mocks.MockBankKeeper.EXPECT().
-		SendCoinsFromModuleToAccount(gomock.Any(), providertypes.ModuleName, sdk.AccAddress(valAddr2), sdk.NewCoins(sdk.NewInt64Coin("photon", 200))).
+		SendCoinsFromModuleToAccount(gomock.Any(), providertypes.ModuleName, sdk.AccAddress(valAddr2), sdk.NewCoins(sdk.NewInt64Coin("uphoton", 200))).
 		Return(nil)
 
 	err = k.DistributeFeesToValidators(ctx)
@@ -224,12 +224,12 @@ func TestDistributeFeesToValidatorsZeroFees(t *testing.T) {
 	defer ctrl.Finish()
 
 	providerParams := providertypes.DefaultParams()
-	providerParams.FeesPerBlock = sdk.NewInt64Coin("photon", 10)
+	providerParams.FeesPerBlock = sdk.NewInt64Coin("uphoton", 10)
 	k.SetParams(ctx, providerParams)
 
 	mocks.MockBankKeeper.EXPECT().
 		GetBalance(gomock.Any(), authtypes.NewModuleAddress(providertypes.ModuleName), providerParams.FeesPerBlock.Denom).
-		Return(sdk.NewCoin("photon", math.ZeroInt()))
+		Return(sdk.NewCoin("uphoton", math.ZeroInt()))
 
 	err := k.DistributeFeesToValidators(ctx)
 	require.NoError(t, err)
@@ -256,12 +256,12 @@ func TestDistributeFeesToValidatorsSkipsWhenFeesTooSmall(t *testing.T) {
 		Status:          stakingtypes.Bonded,
 	}
 	providerParams := providertypes.DefaultParams()
-	providerParams.FeesPerBlock = sdk.NewInt64Coin("photon", 1)
+	providerParams.FeesPerBlock = sdk.NewInt64Coin("uphoton", 1)
 	k.SetParams(ctx, providerParams)
 
 	mocks.MockBankKeeper.EXPECT().
 		GetBalance(gomock.Any(), authtypes.NewModuleAddress(providertypes.ModuleName), providerParams.FeesPerBlock.Denom).
-		Return(sdk.NewInt64Coin("photon", 1))
+		Return(sdk.NewInt64Coin("uphoton", 1))
 	mocks.MockStakingKeeper.EXPECT().
 		GetBondedValidatorsByPower(gomock.Any()).
 		Return([]stakingtypes.Validator{val1, val2}, nil)
@@ -316,12 +316,12 @@ func TestDistributeFeesToValidatorsRemainderStaysPooled(t *testing.T) {
 	valTail := mkVal(opTail, 1)
 
 	providerParams := providertypes.DefaultParams()
-	providerParams.FeesPerBlock = sdk.NewInt64Coin("photon", 10)
+	providerParams.FeesPerBlock = sdk.NewInt64Coin("uphoton", 10)
 	k.SetParams(ctx, providerParams)
 
 	mocks.MockBankKeeper.EXPECT().
 		GetBalance(gomock.Any(), authtypes.NewModuleAddress(providertypes.ModuleName), providerParams.FeesPerBlock.Denom).
-		Return(sdk.NewInt64Coin("photon", 10))
+		Return(sdk.NewInt64Coin("uphoton", 10))
 	mocks.MockStakingKeeper.EXPECT().
 		GetBondedValidatorsByPower(gomock.Any()).
 		Return([]stakingtypes.Validator{valTop, valMid, valTail}, nil)
@@ -333,7 +333,7 @@ func TestDistributeFeesToValidatorsRemainderStaysPooled(t *testing.T) {
 		Return(sdk.DefaultPowerReduction).
 		AnyTimes()
 	mocks.MockBankKeeper.EXPECT().
-		SendCoinsFromModuleToAccount(gomock.Any(), providertypes.ModuleName, sdk.AccAddress(valAddrTop), sdk.NewCoins(sdk.NewInt64Coin("photon", 9))).
+		SendCoinsFromModuleToAccount(gomock.Any(), providertypes.ModuleName, sdk.AccAddress(valAddrTop), sdk.NewCoins(sdk.NewInt64Coin("uphoton", 9))).
 		Return(nil)
 
 	err = k.DistributeFeesToValidators(ctx)
@@ -346,12 +346,12 @@ func TestDistributeFeesToValidatorsNoValidators(t *testing.T) {
 	defer ctrl.Finish()
 
 	providerParams := providertypes.DefaultParams()
-	providerParams.FeesPerBlock = sdk.NewInt64Coin("photon", 50)
+	providerParams.FeesPerBlock = sdk.NewInt64Coin("uphoton", 50)
 	k.SetParams(ctx, providerParams)
 
 	mocks.MockBankKeeper.EXPECT().
 		GetBalance(gomock.Any(), authtypes.NewModuleAddress(providertypes.ModuleName), providerParams.FeesPerBlock.Denom).
-		Return(sdk.NewInt64Coin("photon", 50))
+		Return(sdk.NewInt64Coin("uphoton", 50))
 	mocks.MockStakingKeeper.EXPECT().
 		GetBondedValidatorsByPower(gomock.Any()).
 		Return([]stakingtypes.Validator{}, nil)

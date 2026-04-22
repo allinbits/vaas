@@ -28,7 +28,7 @@ func TestParams(t *testing.T) {
 		7*24*time.Hour,
 		600,
 		10,
-		sdk.NewInt64Coin("photon", 50),
+		sdk.NewInt64Coin("uphoton", 50),
 	)
 	providerKeeper.SetParams(ctx, newParams)
 	params = providerKeeper.GetParams(ctx)

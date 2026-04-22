@@ -25,7 +25,7 @@ func TestBeginBlockCommitsDebtStateWhenDistributionFails(t *testing.T) {
 	k.SetConsumerPhase(ctx, consumerPaying, providertypes.CONSUMER_PHASE_LAUNCHED)
 
 	providerParams := providertypes.DefaultParams()
-	providerParams.FeesPerBlock = sdk.NewInt64Coin("photon", 10)
+	providerParams.FeesPerBlock = sdk.NewInt64Coin("uphoton", 10)
 	k.SetParams(ctx, providerParams)
 
 	consumerInDebtFeePoolAddr := k.GetConsumerFeePoolAddress(consumerInDebt)
@@ -33,10 +33,10 @@ func TestBeginBlockCommitsDebtStateWhenDistributionFails(t *testing.T) {
 
 	mocks.MockBankKeeper.EXPECT().
 		GetBalance(gomock.Any(), consumerInDebtFeePoolAddr, providerParams.FeesPerBlock.Denom).
-		Return(sdk.NewInt64Coin("photon", 5))
+		Return(sdk.NewInt64Coin("uphoton", 5))
 	mocks.MockBankKeeper.EXPECT().
 		GetBalance(gomock.Any(), consumerPayingFeePoolAddr, providerParams.FeesPerBlock.Denom).
-		Return(sdk.NewInt64Coin("photon", 20))
+		Return(sdk.NewInt64Coin("uphoton", 20))
 	mocks.MockBankKeeper.EXPECT().
 		SendCoinsFromAccountToModule(gomock.Any(), consumerPayingFeePoolAddr, providertypes.ModuleName, sdk.NewCoins(providerParams.FeesPerBlock)).
 		Return(nil)
