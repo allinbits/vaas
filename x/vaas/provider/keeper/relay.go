@@ -10,60 +10,52 @@ import (
 	abci "github.com/cometbft/cometbft/abci/types"
 
 	clienttypes "github.com/cosmos/ibc-go/v10/modules/core/02-client/types"
-	channeltypes "github.com/cosmos/ibc-go/v10/modules/core/04-channel/types"
+	channeltypesv2 "github.com/cosmos/ibc-go/v10/modules/core/04-channel/v2/types"
+	ibcexported "github.com/cosmos/ibc-go/v10/modules/core/exported"
+	ibctmtypes "github.com/cosmos/ibc-go/v10/modules/light-clients/07-tendermint"
 
 	errorsmod "cosmossdk.io/errors"
 
 	sdk "github.com/cosmos/cosmos-sdk/types"
 )
 
-// OnAcknowledgementPacket handles acknowledgments for sent VSC packets
-func (k Keeper) OnAcknowledgementPacket(ctx sdk.Context, packet channeltypes.Packet, ack channeltypes.Acknowledgement) error {
-	if err := ack.GetError(); err != "" {
-		// The VSC packet data could not be successfully decoded.
-		// This should never happen.
+func (k Keeper) OnAcknowledgementPacketV2(ctx sdk.Context, sourceClientID string, ackError string) error {
+	if ackError != "" {
 		k.Logger(ctx).Error(
 			"recv ErrorAcknowledgement",
-			"channelID", packet.SourceChannel,
-			"error", err,
+			"clientID", sourceClientID,
+			"error", ackError,
 		)
-		if consumerId, ok := k.GetChannelIdToConsumerId(ctx, packet.SourceChannel); ok {
+		if consumerId, found := k.GetClientIdToConsumerId(ctx, sourceClientID); found {
 			return k.StopAndPrepareForConsumerRemoval(ctx, consumerId)
 		}
-		return errorsmod.Wrapf(providertypes.ErrUnknownConsumerChannelId, "recv ErrorAcknowledgement on unknown channel %s", packet.SourceChannel)
+		return errorsmod.Wrapf(providertypes.ErrInvalidConsumerClient, "recv ErrorAcknowledgement on unknown client %s", sourceClientID)
 	}
 	return nil
 }
 
-// OnTimeoutPacket aborts the transaction if no chain exists for the destination channel,
-// otherwise it stops the chain
-func (k Keeper) OnTimeoutPacket(ctx sdk.Context, packet channeltypes.Packet) error {
-	consumerId, found := k.GetChannelIdToConsumerId(ctx, packet.SourceChannel)
+func (k Keeper) OnTimeoutPacketV2(ctx sdk.Context, sourceClientID string) error {
+	consumerId, found := k.GetClientIdToConsumerId(ctx, sourceClientID)
 	if !found {
-		k.Logger(ctx).Error("packet timeout, unknown channel:", "channelID", packet.SourceChannel)
-		// abort transaction
-		return errorsmod.Wrap(
-			channeltypes.ErrInvalidChannelState,
-			packet.SourceChannel,
+		k.Logger(ctx).Error("packet timeout, unknown client:", "clientID", sourceClientID)
+		return errorsmod.Wrapf(
+			providertypes.ErrInvalidConsumerClient,
+			"timeout on unknown client %s", sourceClientID,
 		)
 	}
-	k.Logger(ctx).Info("packet timeout, deleting the consumer:", "consumerId", consumerId)
+	k.Logger(ctx).Info("packet timeout, deleting the consumer:", "consumerId", consumerId, "clientId", sourceClientID)
 	return k.StopAndPrepareForConsumerRemoval(ctx, consumerId)
 }
 
 // EndBlockVSU contains the EndBlock logic needed for
 // the Validator Set Update sub-protocol
 func (k Keeper) EndBlockVSU(ctx sdk.Context) ([]abci.ValidatorUpdate, error) {
-	// logic to update the provider consensus validator set.
 	valUpdates, err := k.ProviderValidatorUpdates(ctx)
 	if err != nil {
 		return []abci.ValidatorUpdate{}, fmt.Errorf("computing the provider consensus validator set: %w", err)
 	}
 
 	if k.BlocksUntilNextEpoch(ctx) == 0 {
-		// only queue and send VSCPackets at the boundaries of an epoch
-
-		// collect validator updates
 		if err := k.QueueVSCPackets(ctx); err != nil {
 			return []abci.ValidatorUpdate{}, fmt.Errorf("queueing consumer validator updates: %w", err)
 		}
@@ -98,11 +90,9 @@ func (k Keeper) ProviderValidatorUpdates(ctx sdk.Context) ([]abci.ValidatorUpdat
 	}
 
 	nextValidators := []providertypes.ConsensusValidator{}
-	maxValidators := k.GetMaxProviderConsensusValidators(ctx)
-	// avoid out of range errors by bounding the max validators to the number of bonded validators
-	if maxValidators > int64(len(bondedValidators)) {
-		maxValidators = int64(len(bondedValidators))
-	}
+	maxValidators := min(
+		// avoid out of range errors by bounding the max validators to the number of bonded validators
+		k.GetMaxProviderConsensusValidators(ctx), int64(len(bondedValidators)))
 	for _, val := range bondedValidators[:maxValidators] {
 		nextValidator, err := k.CreateProviderConsensusValidator(ctx, val)
 		if err != nil {
@@ -136,63 +126,135 @@ func (k Keeper) BlocksUntilNextEpoch(ctx sdk.Context) int64 {
 	}
 }
 
-// SendVSCPackets iterates over all consumers chains with created IBC clients
-// and sends pending VSC packets to the chains with established CCV channels.
-// If the CCV channel is not established for a consumer chain,
-// the updates will remain queued until the channel is established
-//
-// TODO (mpoke): iterate only over consumers with established channel -- GetAllChannelToConsumers
 func (k Keeper) SendVSCPackets(ctx sdk.Context) error {
-	for _, consumerId := range k.GetAllConsumersWithIBCClients(ctx) {
-		if k.GetConsumerPhase(ctx, consumerId) != providertypes.CONSUMER_PHASE_LAUNCHED {
-			// only send VSCPackets to launched chains
+	for _, consumerId := range k.GetAllLaunchedConsumerIds(ctx) {
+		clientID, _ := k.GetConsumerClientId(ctx, consumerId)
+		clientID = k.discoverActiveConsumerClient(ctx, consumerId, clientID)
+		if clientID == "" {
 			continue
 		}
 
-		// check if CCV channel is established and send
-		if channelID, found := k.GetConsumerIdToChannelId(ctx, consumerId); found {
-			if err := k.SendVSCPacketsToChain(ctx, consumerId, channelID); err != nil {
-				return fmt.Errorf("sending VSCPacket to consumer, consumerId(%s): %w", consumerId, err)
-			}
+		if err := k.SendVSCPacketsToChain(ctx, consumerId, clientID); err != nil {
+			return fmt.Errorf("sending VSCPacket to consumer, consumerId(%s): %w", consumerId, err)
 		}
 	}
 	return nil
 }
 
-// SendVSCPacketsToChain sends all queued VSC packets to the specified chain
-func (k Keeper) SendVSCPacketsToChain(ctx sdk.Context, consumerId, channelId string) error {
+// discoverActiveConsumerClient scans for IBC clients pointing to the consumer chain
+// and returns the one with the highest latest height that has a counterparty registered.
+// This allows the provider to use a client being actively updated by a relayer.
+// The current client is only replaced if it is expired, frozen, or has no counterparty.
+func (k Keeper) discoverActiveConsumerClient(ctx sdk.Context, consumerId, currentClientID string) string {
+	if currentClientID != "" {
+		currentStatus := k.clientKeeper.GetClientStatus(ctx, currentClientID)
+		if currentStatus == ibcexported.Active {
+			cp, found := k.clientV2Keeper.GetClientCounterparty(ctx, currentClientID)
+			if found && cp.ClientId != "" {
+				return currentClientID
+			}
+		}
+	}
+
+	chainID, err := k.GetConsumerChainId(ctx, consumerId)
+	if err != nil {
+		return currentClientID
+	}
+
+	var bestClient string
+	var bestHeight uint64
+
+	k.clientKeeper.IterateClientStates(ctx, nil, func(clientID string, cs ibcexported.ClientState) bool {
+		tmCS, ok := cs.(*ibctmtypes.ClientState)
+		if !ok || tmCS.ChainId != chainID {
+			return false
+		}
+		if k.clientKeeper.GetClientStatus(ctx, clientID) != ibcexported.Active {
+			return false
+		}
+		cp, found := k.clientV2Keeper.GetClientCounterparty(ctx, clientID)
+		if !found || cp.ClientId == "" {
+			return false
+		}
+		height := tmCS.LatestHeight.RevisionHeight
+		if height > bestHeight {
+			bestHeight = height
+			bestClient = clientID
+		}
+		return false
+	})
+
+	if bestClient != "" {
+		k.Logger(ctx).Info("switching to discovered active client",
+			"consumerId", consumerId,
+			"oldClient", currentClientID,
+			"newClient", bestClient,
+		)
+		k.SetConsumerClientId(ctx, consumerId, bestClient)
+		return bestClient
+	}
+	return currentClientID
+}
+
+func (k Keeper) SendVSCPacketsToChain(ctx sdk.Context, consumerId, clientId string) error {
+	if k.channelKeeperV2 == nil {
+		k.Logger(ctx).Debug("IBC v2 channel keeper not configured, skipping send",
+			"consumerId", consumerId,
+		)
+		return nil
+	}
+
+	timeoutPeriod := min(k.GetVAASTimeoutPeriod(ctx), channeltypesv2.MaxTimeoutDelta)
+	timeoutTimestamp := uint64(ctx.BlockTime().Add(timeoutPeriod).Unix())
+
 	pendingPackets := k.GetPendingVSCPackets(ctx, consumerId)
 	for _, data := range pendingPackets {
-		// send packet over IBC
-		err := vaastypes.SendIBCPacket(
-			ctx,
-			k.channelKeeper,
-			channelId,                // source channel id
-			vaastypes.ProviderPortID, // source port id
+		payload := channeltypesv2.NewPayload(
+			vaastypes.ProviderAppID,
+			vaastypes.ConsumerAppID,
+			"vaas-v1",
+			"application/json",
 			data.GetBytes(),
-			k.GetVAASTimeoutPeriod(ctx),
 		)
+
+		msg := channeltypesv2.NewMsgSendPacket(
+			clientId,
+			timeoutTimestamp,
+			k.authority,
+			payload,
+		)
+
+		resp, err := k.channelKeeperV2.SendPacket(ctx, msg)
 		if err != nil {
 			if errors.Is(err, clienttypes.ErrClientNotActive) {
-				// IBC client is expired!
-				// leave the packet data stored to be sent once the client is upgraded
-				// the client cannot expire during iteration (in the middle of a block)
-				k.Logger(ctx).Info("IBC client is expired, cannot send VSC, leaving packet data stored:",
+				k.Logger(ctx).Info("IBC client expired, cannot send VSC, leaving packet data stored:",
 					"consumerId", consumerId,
+					"clientId", clientId,
 					"vscid", data.ValsetUpdateId,
 				)
 				return nil
 			}
-			// Not able to send packet over IBC!
-			k.Logger(ctx).Error("cannot send VSC, removing consumer:", "consumerId", consumerId, "vscid", data.ValsetUpdateId, "err", err.Error())
+
+			k.Logger(ctx).Error("cannot send VSC, removing consumer:",
+				"consumerId", consumerId,
+				"clientId", clientId,
+				"vscid", data.ValsetUpdateId,
+				"err", err.Error(),
+			)
 
 			err := k.StopAndPrepareForConsumerRemoval(ctx, consumerId)
 			if err != nil {
 				k.Logger(ctx).Info("consumer chain failed to stop:", "consumerId", consumerId, "error", err.Error())
-				// return fmt.Errorf("stopping consumer, consumerId(%s): %w", consumerId, err)
 			}
 			return nil
 		}
+
+		k.Logger(ctx).Info("VSCPacket sent:",
+			"consumerId", consumerId,
+			"clientId", clientId,
+			"vscid", data.ValsetUpdateId,
+			"sequence", resp.Sequence,
+		)
 	}
 	k.DeletePendingVSCPackets(ctx, consumerId)
 
@@ -201,8 +263,6 @@ func (k Keeper) SendVSCPacketsToChain(ctx sdk.Context, consumerId, channelId str
 
 // QueueVSCPackets queues latest validator updates for every consumer chain
 // with the IBC client created.
-//
-// TODO (mpoke): iterate only over consumers with established channel -- GetAllChannelToConsumers
 func (k Keeper) QueueVSCPackets(ctx sdk.Context) error {
 	valUpdateID := k.GetValidatorSetUpdateId(ctx) // current valset update ID
 
@@ -212,11 +272,7 @@ func (k Keeper) QueueVSCPackets(ctx sdk.Context) error {
 		return fmt.Errorf("getting bonded validators: %w", err)
 	}
 
-	for _, consumerId := range k.GetAllConsumersWithIBCClients(ctx) {
-		if k.GetConsumerPhase(ctx, consumerId) != providertypes.CONSUMER_PHASE_LAUNCHED {
-			// only queue VSCPackets to launched chains
-			continue
-		}
+	for _, consumerId := range k.GetAllLaunchedConsumerIds(ctx) {
 
 		currentValSet, err := k.GetConsumerValSet(ctx, consumerId)
 		if err != nil {
@@ -267,7 +323,7 @@ func (k Keeper) EndBlockCIS(ctx sdk.Context) {
 	k.Logger(ctx).Debug("vscID was mapped to block height", "vscID", valUpdateID, "height", blockHeight)
 
 	// prune previous consumer validator addresses that are no longer needed
-	for _, consumerId := range k.GetAllConsumersWithIBCClients(ctx) {
+	for _, consumerId := range k.GetAllLaunchedConsumerIds(ctx) {
 		k.PruneKeyAssignments(ctx, consumerId)
 	}
 }

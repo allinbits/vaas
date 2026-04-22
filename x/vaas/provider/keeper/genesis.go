@@ -11,10 +11,8 @@ import (
 	sdk "github.com/cosmos/cosmos-sdk/types"
 )
 
-// InitGenesis initializes the CCV provider state and binds to PortID.
+// InitGenesis initializes the CCV provider state.
 func (k Keeper) InitGenesis(ctx sdk.Context, genState *types.GenesisState) []abci.ValidatorUpdate {
-	k.SetPort(ctx, vaastypes.ProviderPortID)
-
 	k.SetValidatorSetUpdateId(ctx, genState.ValsetUpdateId)
 	for _, v2h := range genState.ValsetUpdateIdToHeight {
 		k.SetValsetUpdateBlockHeight(ctx, v2h.ValsetUpdateId, v2h.Height)
@@ -23,21 +21,16 @@ func (k Keeper) InitGenesis(ctx sdk.Context, genState *types.GenesisState) []abc
 	// Set initial state for each consumer chain
 	for _, cs := range genState.ConsumerStates {
 		chainID := cs.ChainId
-		k.SetConsumerClientId(ctx, chainID, cs.ClientId)
+		if cs.ClientId != "" {
+			k.SetConsumerClientId(ctx, chainID, cs.ClientId)
+		}
 		k.SetConsumerPhase(ctx, chainID, cs.Phase)
 		if err := k.SetConsumerGenesis(ctx, chainID, cs.ConsumerGenesis); err != nil {
 			// An error here would indicate something is very wrong,
 			// the ConsumerGenesis validated in ConsumerState.Validate().
 			panic(fmt.Errorf("consumer chain genesis could not be persisted: %w", err))
 		}
-		// check if the CCV channel was established
-		if cs.ChannelId != "" {
-			k.SetChannelToConsumerId(ctx, cs.ChannelId, chainID)
-			k.SetConsumerIdToChannelId(ctx, chainID, cs.ChannelId)
-			k.SetInitChainHeight(ctx, chainID, cs.InitialHeight)
-		} else {
-			k.AppendPendingVSCPackets(ctx, chainID, cs.PendingValsetChanges...)
-		}
+		k.AppendPendingVSCPackets(ctx, chainID, cs.PendingValsetChanges...)
 	}
 
 	// Import key assignment state
@@ -108,45 +101,34 @@ func (k Keeper) InitGenesisValUpdates(ctx sdk.Context) []abci.ValidatorUpdate {
 
 // ExportGenesis returns the CCV provider module's exported genesis
 func (k Keeper) ExportGenesis(ctx sdk.Context) *types.GenesisState {
-	launchedConsumerIds := k.GetAllConsumersWithIBCClients(ctx)
+	activeConsumerIds := k.GetAllActiveConsumerIds(ctx)
 
 	// export states for each consumer chains
 	var consumerStates []types.ConsumerState
-	for _, consumerId := range launchedConsumerIds {
-		// no need for the second return value of GetConsumerClientId
-		// as GetAllConsumersWithIBCClients already iterated through
-		// the entire prefix range
+	for _, consumerId := range activeConsumerIds {
 		clientId, _ := k.GetConsumerClientId(ctx, consumerId)
+		phase := k.GetConsumerPhase(ctx, consumerId)
 		gen, found := k.GetConsumerGenesis(ctx, consumerId)
 		if !found {
-			panic(fmt.Errorf("cannot find genesis for consumer chain %s with client %s", consumerId, clientId))
-		}
-
-		// initial consumer chain states
-		cs := types.ConsumerState{
-			ChainId:         consumerId,
-			ClientId:        clientId,
-			ConsumerGenesis: gen,
-			Phase:           k.GetConsumerPhase(ctx, consumerId),
-		}
-
-		// try to find channel id for the current consumer chain
-		channelId, found := k.GetConsumerIdToChannelId(ctx, consumerId)
-		if found {
-			cs.ChannelId = channelId
-			cs.InitialHeight, found = k.GetInitChainHeight(ctx, consumerId)
-			if !found {
-				panic(fmt.Errorf("cannot find init height for consumer chain %s", consumerId))
+			if phase != types.CONSUMER_PHASE_REGISTERED && phase != types.CONSUMER_PHASE_INITIALIZED {
+				panic(fmt.Errorf("cannot find genesis for consumer chain %s in phase %d", consumerId, phase))
 			}
+			gen = *vaastypes.DefaultConsumerGenesisState()
 		}
 
-		cs.PendingValsetChanges = k.GetPendingVSCPackets(ctx, consumerId)
+		cs := types.ConsumerState{
+			ChainId:              consumerId,
+			ClientId:             clientId,
+			ConsumerGenesis:      gen,
+			Phase:                phase,
+			PendingValsetChanges: k.GetPendingVSCPackets(ctx, consumerId),
+		}
 		consumerStates = append(consumerStates, cs)
 	}
 
 	// ConsumerAddrsToPrune are added only for registered consumer chains
 	consumerAddrsToPrune := []types.ConsumerAddrsToPrune{}
-	for _, chainID := range launchedConsumerIds {
+	for _, chainID := range activeConsumerIds {
 		consumerAddrsToPrune = append(consumerAddrsToPrune, k.GetAllConsumerAddrsToPrune(ctx, chainID)...)
 	}
 

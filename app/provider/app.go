@@ -10,17 +10,20 @@ import (
 
 	dbm "github.com/cosmos/cosmos-db"
 	"github.com/cosmos/gogoproto/proto"
+	"github.com/spf13/cast"
+
 	"github.com/cosmos/ibc-go/v10/modules/apps/transfer"
 	ibctransferkeeper "github.com/cosmos/ibc-go/v10/modules/apps/transfer/keeper"
 	ibctransfertypes "github.com/cosmos/ibc-go/v10/modules/apps/transfer/types"
+	transferv2 "github.com/cosmos/ibc-go/v10/modules/apps/transfer/v2"
 	ibc "github.com/cosmos/ibc-go/v10/modules/core"
 	ibcconnectiontypes "github.com/cosmos/ibc-go/v10/modules/core/03-connection/types"
 	porttypes "github.com/cosmos/ibc-go/v10/modules/core/05-port/types"
+	ibcapi "github.com/cosmos/ibc-go/v10/modules/core/api"
 	ibcexported "github.com/cosmos/ibc-go/v10/modules/core/exported"
 	ibckeeper "github.com/cosmos/ibc-go/v10/modules/core/keeper"
 	ibctm "github.com/cosmos/ibc-go/v10/modules/light-clients/07-tendermint"
 	ibctesting "github.com/cosmos/ibc-go/v10/testing"
-	"github.com/spf13/cast"
 
 	autocliv1 "cosmossdk.io/api/cosmos/autocli/v1"
 	reflectionv1 "cosmossdk.io/api/cosmos/reflection/v1"
@@ -104,6 +107,7 @@ import (
 	ibcprovider "github.com/allinbits/vaas/x/vaas/provider"
 	ibcproviderkeeper "github.com/allinbits/vaas/x/vaas/provider/keeper"
 	providertypes "github.com/allinbits/vaas/x/vaas/provider/types"
+	vaastypes "github.com/allinbits/vaas/x/vaas/types"
 )
 
 const (
@@ -383,9 +387,8 @@ func New(
 	app.ProviderKeeper = ibcproviderkeeper.NewKeeper(
 		appCodec,
 		runtime.NewKVStoreService(keys[providertypes.StoreKey]),
-		app.IBCKeeper.ChannelKeeper,
-		app.IBCKeeper.ConnectionKeeper,
 		app.IBCKeeper.ClientKeeper,
+		app.IBCKeeper.ClientV2Keeper,
 		app.StakingKeeper,
 		app.SlashingKeeper,
 		app.AccountKeeper,
@@ -436,16 +439,18 @@ func New(
 		authtypes.NewModuleAddress(govtypes.ModuleName).String(),
 	)
 
-	// // Add an IBC middleware callback to track the consumer rewards
-	// var transferStack porttypes.IBCModule
-	// transferStack = transfer.NewIBCModule(app.TransferKeeper)
-	// transferStack = ibcprovider.NewIBCMiddleware(transferStack, app.ProviderKeeper)
+	transferStack := transfer.NewIBCModule(app.TransferKeeper)
 
-	// create static IBC router, add transfer route, then set and seal it
 	ibcRouter := porttypes.NewRouter()
-	// ibcRouter.AddRoute(ibctransfertypes.ModuleName, transferStack)
-	ibcRouter.AddRoute(providertypes.ModuleName, providerModule)
+	ibcRouter.AddRoute(ibctransfertypes.ModuleName, transferStack)
 	app.IBCKeeper.SetRouter(ibcRouter)
+
+	ibcRouterV2 := ibcapi.NewRouter()
+	ibcRouterV2.AddRoute(ibctransfertypes.PortID, transferv2.NewIBCModule(app.TransferKeeper))
+	ibcRouterV2.AddRoute(vaastypes.ProviderAppID, ibcprovider.NewIBCModule(&app.ProviderKeeper))
+	app.IBCKeeper.SetRouterV2(ibcRouterV2)
+
+	app.ProviderKeeper.SetChannelKeeperV2(app.IBCKeeper.ChannelKeeperV2)
 
 	govRouter := govv1beta1.NewRouter()
 	govRouter.
@@ -474,7 +479,6 @@ func New(
 		upgrade.NewAppModule(&app.UpgradeKeeper, app.AccountKeeper.AddressCodec()),
 		ibc.NewAppModule(app.IBCKeeper),
 		ibctm.NewAppModule(tmLightClientModule),
-		params.NewAppModule(app.ParamsKeeper),
 		transfer.NewAppModule(app.TransferKeeper),
 		providerModule,
 	)

@@ -26,6 +26,7 @@ func (k Keeper) QueryParams(c context.Context, //nolint:golint
 	return &types.QueryParamsResponse{Params: p}, nil
 }
 
+// QueryProviderInfo returns provider information.
 func (k Keeper) QueryProviderInfo(c context.Context, //nolint:golint
 	req *types.QueryProviderInfoRequest,
 ) (*types.QueryProviderInfoResponse, error) {
@@ -34,5 +35,5 @@ func (k Keeper) QueryProviderInfo(c context.Context, //nolint:golint
 		return nil, status.Errorf(codes.InvalidArgument, "empty request")
 	}
 
-	return k.GetProviderInfo(ctx)
+	return k.GetProviderInfoV2(ctx)
 }

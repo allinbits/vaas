@@ -24,23 +24,22 @@ option go_package = "github.com/allinbits/vaas/x/vaas/provider/types";
 
 // Params defines the parameters for VAAS Provider module
 message Params {
-  ibc.lightclients.tendermint.v1.ClientState template_client = 1;
   // TrustingPeriodFraction is used to compute the consumer and provider IBC
   // client's TrustingPeriod from the chain defined UnbondingPeriod
-  string trusting_period_fraction = 2;
+  string trusting_period_fraction = 1;
   // Sent IBC packets will timeout after this duration
-  google.protobuf.Duration vaas_timeout_period = 3
+  google.protobuf.Duration vaas_timeout_period = 2
       [ (gogoproto.nullable) = false, (gogoproto.stdduration) = true ];
 
   // The number of blocks that comprise an epoch.
-  int64 blocks_per_epoch = 4;
+  int64 blocks_per_epoch = 3;
 
   // The maximal number of validators that will be passed
   // to the consensus engine on the provider.
-  int64 max_provider_consensus_validators = 5;
+  int64 max_provider_consensus_validators = 4;
 
   // The fee charged per block for consumer chain operation.
-  cosmos.base.v1beta1.Coin fees_per_block = 6 [
+  cosmos.base.v1beta1.Coin fees_per_block = 5 [
     (gogoproto.casttype) = "github.com/cosmos/cosmos-sdk/types.Coin",
     (amino.encoding) = "legacy_coin",
     (amino.dont_omitempty) = true,
@@ -145,7 +144,7 @@ message ConsumerInitializationParameters {
   // chain initialization. It is used for off-chain confirmation of binary
   // validity by validators and other parties.
   bytes binary_hash = 3;
-  // spawn time is the time on the provider chain at which the consumer chain
+  // spawn_time is the time on the provider chain at which the consumer chain
   // genesis is finalized and all validators will be responsible for starting
   // their consumer chain validator node.
   google.protobuf.Timestamp spawn_time = 4
@@ -168,13 +167,6 @@ message ConsumerInitializationParameters {
   // This param is a part of the cosmos sdk staking module. In the case of
   // a VAAS enabled consumer chain, the VAAS module acts as the staking module.
   int64 historical_entries = 7;
-  // The ID of the connection end on the provider chain on top of which the VAAS
-  // channel will be established. If connection_id == "", a new client of the
-  // consumer chain and a new connection on top of this client are created.
-  // Note that a standalone chain can transition to a consumer chain while
-  // maintaining existing IBC channels to other chains by providing a valid
-  // connection_id.
-  string connection_id = 8;
 }
 
 // ConsumerIds contains consumer ids of chains

@@ -15,8 +15,7 @@
     "spawn_time": "2024-01-01T00:00:00Z",
     "unbonding_period": 1728000000000000,
     "vaas_timeout_period": 2419200000000000,
-    "historical_entries": 10000,
-    "connection_id": ""
+    "historical_entries": 10000
   },
   "infraction_parameters": {
     "double_sign": {

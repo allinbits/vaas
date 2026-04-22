@@ -74,7 +74,6 @@ func (s *IntegrationTestSuite) testValidatorSetSync() {
 		consumerVals, err := s.queryConsumerNetValidators()
 		s.Require().NoError(err, "failed to query consumer validators")
 
-		// Extract pub keys  and vp from both chains
 		providerPubKeys, providerVP := s.extractPubKeys(providerVals)
 		consumerPubKeys, consumerVP := s.extractPubKeys(consumerVals)
 
@@ -83,8 +82,6 @@ func (s *IntegrationTestSuite) testValidatorSetSync() {
 		s.Require().Equal(providerPubKeys[0], consumerPubKeys[0])
 		s.Require().Equal(providerVP[0], consumerVP[0])
 
-		// Increase delegation of val on provider chain
-		// Get validator operator address
 		stdout, _, err := s.dockerExec(s.providerValRes[0].Container.ID, []string{
 			providerBinary, "keys", "show", "val", "--bech", "val", "-a",
 			"--home", providerHomePath,
@@ -93,7 +90,6 @@ func (s *IntegrationTestSuite) testValidatorSetSync() {
 		s.Require().NoError(err, "failed to get validator address")
 		valAddr := strings.TrimSpace(stdout.String())
 
-		// Delegate to trigger validator set change
 		_, _, err = s.dockerExec(s.providerValRes[0].Container.ID, []string{
 			providerBinary, "tx", "staking", "delegate", valAddr, "1000000" + bondDenom,
 			"--from", "user",
@@ -105,29 +101,37 @@ func (s *IntegrationTestSuite) testValidatorSetSync() {
 		})
 		s.Require().NoError(err, "failed to perform delegation")
 
-		// Check increase in VP for Val0 on Provider
 		var providerVPAfter []uint64
-		s.Require().Eventually( func() bool {
+		s.Require().Eventually(func() bool {
 			providerValsAfter, err := s.queryProviderNetValidators()
-			s.Require().NoError(err, "failed to query provider validators")
-			_ , providerVPAfter = s.extractPubKeys(providerValsAfter)
-			return providerVPAfter[0] == providerVP[0] + 1
+			if err != nil {
+				return false
+			}
+			_, providerVPAfter = s.extractPubKeys(providerValsAfter)
+			if len(providerVPAfter) == 0 {
+				return false
+			}
+			return providerVPAfter[0] == providerVP[0]+1
 		},
-		50*time.Second,
-		time.Second)
-
+			50*time.Second,
+			time.Second)
 
 		// Check increase in VP for Val0 on Consumer
 		var consumerVPAfter []uint64
 		s.Require().Eventually(
 			func() bool {
 				consumerValsAfter, err := s.queryConsumerNetValidators()
-				s.Require().NoError(err, "failed to query consumer validators")
+				if err != nil {
+					return false
+				}
 				_, consumerVPAfter = s.extractPubKeys(consumerValsAfter)
+				if len(consumerVPAfter) == 0 {
+					return false
+				}
 				return consumerVPAfter[0] == providerVPAfter[0]
 			},
-			50*time.Second,
-			time.Second,
+			3*time.Minute,
+			3*time.Second,
 			"consumer validator set is not updated",
 		)
 	})

@@ -6,13 +6,9 @@ import (
 	"testing"
 
 	"github.com/stretchr/testify/require"
-	"go.uber.org/mock/gomock"
-
-	conntypes "github.com/cosmos/ibc-go/v10/modules/core/03-connection/types"
 
 	cryptocodec "github.com/cosmos/cosmos-sdk/crypto/codec"
 	"github.com/cosmos/cosmos-sdk/crypto/keys/ed25519"
-	sdk "github.com/cosmos/cosmos-sdk/types"
 	stakingtypes "github.com/cosmos/cosmos-sdk/x/staking/types"
 
 	abci "github.com/cometbft/cometbft/abci/types"
@@ -34,19 +30,6 @@ func TestProviderClientID(t *testing.T) {
 	clientID, ok := consumerKeeper.GetProviderClientID(ctx)
 	require.True(t, ok)
 	require.Equal(t, "someClientID", clientID)
-}
-
-// TestProviderChannel tests getter and setter functionality for the channel ID stored on consumer keeper
-func TestProviderChannel(t *testing.T) {
-	consumerKeeper, ctx, ctrl, _ := testkeeper.GetConsumerKeeperAndCtx(t, testkeeper.NewInMemKeeperParams(t))
-	defer ctrl.Finish()
-
-	_, ok := consumerKeeper.GetProviderChannel(ctx)
-	require.False(t, ok)
-	consumerKeeper.SetProviderChannel(ctx, "channelID")
-	channelID, ok := consumerKeeper.GetProviderChannel(ctx)
-	require.True(t, ok)
-	require.Equal(t, "channelID", channelID)
 }
 
 func TestConsumerDebtStatus(t *testing.T) {
@@ -257,7 +240,7 @@ func TestGetAllCCValidator(t *testing.T) {
 
 	numValidators := 4
 	validators := []types.CrossChainValidator{}
-	for i := 0; i < numValidators; i++ {
+	for range numValidators {
 		validators = append(validators, testkeeper.GetNewCrossChainValidator(t))
 	}
 	// sorting by CrossChainValidator.Address
@@ -274,89 +257,6 @@ func TestGetAllCCValidator(t *testing.T) {
 	result := ck.GetAllCCValidator(ctx)
 	require.Len(t, result, len(validators))
 	require.Equal(t, result, expectedGetAllOrder)
-}
-
-// TestVerifyProviderChain tests the VerifyProviderChain method for the consumer keeper
-func TestVerifyProviderChain(t *testing.T) {
-	testCases := []struct {
-		name string
-		// State-mutating setup specific to this test case
-		mockSetup      func(sdk.Context, testkeeper.MockedKeepers)
-		connectionHops []string
-		expError       bool
-	}{
-		{
-			name: "success",
-			mockSetup: func(ctx sdk.Context, mocks testkeeper.MockedKeepers) {
-				gomock.InOrder(
-					mocks.MockConnectionKeeper.EXPECT().GetConnection(
-						ctx, "connectionID",
-					).Return(conntypes.ConnectionEnd{ClientId: "clientID"}, true).Times(1),
-				)
-			},
-			connectionHops: []string{"connectionID"},
-			expError:       false,
-		},
-		{
-			name: "connection hops is not length 1",
-			mockSetup: func(ctx sdk.Context, mocks testkeeper.MockedKeepers) {
-				// Expect no calls to GetConnection(), VerifyProviderChain will return from first step.
-				gomock.InAnyOrder(
-					mocks.MockConnectionKeeper.EXPECT().GetConnection(gomock.Any(), gomock.Any()).Times(0),
-				)
-			},
-			connectionHops: []string{"connectionID", "otherConnID"},
-			expError:       true,
-		},
-		{
-			name: "connection does not exist",
-			mockSetup: func(ctx sdk.Context, mocks testkeeper.MockedKeepers) {
-				gomock.InOrder(
-					mocks.MockConnectionKeeper.EXPECT().GetConnection(
-						ctx, "connectionID").Return(conntypes.ConnectionEnd{},
-						false, // Found is returned as false
-					).Times(1),
-				)
-			},
-			connectionHops: []string{"connectionID"},
-			expError:       true,
-		},
-		{
-			name: "found clientID does not match expectation",
-			mockSetup: func(ctx sdk.Context, mocks testkeeper.MockedKeepers) {
-				gomock.InOrder(
-					mocks.MockConnectionKeeper.EXPECT().GetConnection(
-						ctx, "connectionID").Return(
-						conntypes.ConnectionEnd{ClientId: "unexpectedClientID"}, true,
-					).Times(1),
-				)
-			},
-			connectionHops: []string{"connectionID"},
-			expError:       true,
-		},
-	}
-
-	for _, tc := range testCases {
-		t.Run(tc.name, func(t *testing.T) {
-			keeperParams := testkeeper.NewInMemKeeperParams(t)
-			consumerKeeper, ctx, ctrl, mocks := testkeeper.GetConsumerKeeperAndCtx(t, keeperParams)
-
-			// Common setup
-			consumerKeeper.SetProviderClientID(ctx, "clientID") // Set expected provider clientID
-
-			// Specific mock setup
-			tc.mockSetup(ctx, mocks)
-
-			err := consumerKeeper.VerifyProviderChain(ctx, tc.connectionHops)
-
-			if tc.expError {
-				require.Error(t, err, "invalid case did not return error")
-			} else {
-				require.NoError(t, err, "valid case returned error")
-			}
-			ctrl.Finish()
-		})
-	}
 }
 
 // TestGetAllHeightToValsetUpdateIDs tests GetAllHeightToValsetUpdateIDs behaviour correctness

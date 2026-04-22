@@ -1,0 +1,333 @@
+package e2e
+
+import (
+	"bytes"
+	"context"
+	"encoding/json"
+	"fmt"
+	"regexp"
+	"strings"
+	"time"
+
+	"github.com/ory/dockertest/v3"
+	"github.com/ory/dockertest/v3/docker"
+)
+
+const (
+	tsRelayerImage    = "ghcr.io/allinbits/ibc-v2-ts-relayer"
+	tsRelayerImageTag = "latest"
+	IBCv2             = "2"
+)
+
+type tsRelayerPath struct {
+	ID       int    `json:"id"`
+	Version  int    `json:"version"`
+	ChainIdA string `json:"chainIdA"`
+	ChainIdB string `json:"chainIdB"`
+	ClientA  string `json:"clientA"`
+	ClientB  string `json:"clientB"`
+	NodeA    string `json:"nodeA"`
+	NodeB    string `json:"nodeB"`
+}
+
+func noRestart(config *docker.HostConfig) {
+	config.RestartPolicy = docker.RestartPolicy{Name: "no"}
+}
+
+func (s *IntegrationTestSuite) startTSRelayer() {
+	s.T().Log("starting ts-relayer container")
+
+	resource, err := s.dkrPool.RunWithOptions(
+		&dockertest.RunOptions{
+			Name:       fmt.Sprintf("%s-%s-ts-relayer", providerChainID, consumerChainID),
+			Repository: tsRelayerImage,
+			Tag:        tsRelayerImageTag,
+			NetworkID:  s.dkrNet.Network.ID,
+			User:       "root",
+			CapAdd:     []string{"IPC_LOCK"},
+		},
+		noRestart,
+	)
+	s.Require().NoError(err, "failed to start ts-relayer container")
+	s.tsRelayerResource = resource
+	s.T().Logf("ts-relayer container started: %s", resource.Container.ID[:12])
+
+	time.Sleep(3 * time.Second)
+
+	providerURL := "http://" + s.providerValRes[0].Container.Name[1:] + ":26657"
+	consumerURL := "http://" + s.consumerValRes[0].Container.Name[1:] + ":26657"
+
+	s.verifyTSRelayerConnectivity("provider", providerURL)
+	s.verifyTSRelayerConnectivity("consumer", consumerURL)
+}
+
+func (s *IntegrationTestSuite) verifyTSRelayerConnectivity(chainName, rpcURL string) {
+	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	defer cancel()
+
+	for attempt := 0; attempt < 10; attempt++ {
+		exec, err := s.dkrPool.Client.CreateExec(docker.CreateExecOptions{
+			Context:      ctx,
+			AttachStdout: true,
+			AttachStderr: true,
+			Container:    s.tsRelayerResource.Container.ID,
+			User:         "root",
+			Cmd:          []string{"wget", "-qO-", fmt.Sprintf("%s/status", rpcURL)},
+		})
+		s.Require().NoError(err)
+
+		var out bytes.Buffer
+		err = s.dkrPool.Client.StartExec(exec.ID, docker.StartExecOptions{
+			Context:      ctx,
+			Detach:       false,
+			OutputStream: &out,
+			ErrorStream:  &out,
+		})
+
+		for {
+			inspectExec, err := s.dkrPool.Client.InspectExec(exec.ID)
+			s.Require().NoError(err)
+			if !inspectExec.Running {
+				if inspectExec.ExitCode == 0 && strings.Contains(out.String(), "latest_block_height") {
+					s.T().Logf("ts-relayer can reach %s RPC at %s", chainName, rpcURL)
+					return
+				}
+				break
+			}
+		}
+
+		s.T().Logf("ts-relayer connectivity to %s (%s) attempt %d failed (output=%s)",
+			chainName, rpcURL, attempt+1, out.String())
+		time.Sleep(2 * time.Second)
+	}
+
+	s.Require().Fail("ts-relayer cannot reach %s RPC at %s", chainName, rpcURL)
+}
+
+func (s *IntegrationTestSuite) startTSRelayerRelay() {
+	s.T().Log("ts-relayer: starting relay process")
+	ctx, cancel := context.WithTimeout(context.Background(), time.Minute)
+	defer cancel()
+
+	cmd := []string{"/bin/with_keyring", "ibc-v2-ts-relayer", "relay"}
+	exec, err := s.dkrPool.Client.CreateExec(docker.CreateExecOptions{
+		Context:      ctx,
+		AttachStdout: true,
+		AttachStderr: true,
+		Container:    s.tsRelayerResource.Container.ID,
+		User:         "root",
+		Cmd:          cmd,
+	})
+	s.Require().NoError(err, "failed to create relay exec")
+
+	err = s.dkrPool.Client.StartExec(exec.ID, docker.StartExecOptions{
+		Context: ctx,
+		Detach:  true,
+	})
+	s.Require().NoError(err, "failed to start relay process")
+
+	time.Sleep(3 * time.Second)
+
+	inspectExec, err := s.dkrPool.Client.InspectExec(exec.ID)
+	s.Require().NoError(err, "failed to inspect relay exec")
+	s.Require().True(inspectExec.Running, "relay process is not running")
+	s.T().Log("ts-relayer: relay process started")
+}
+
+func (s *IntegrationTestSuite) stopTSRelayer() {
+	if s.tsRelayerResource != nil {
+		s.T().Log("tearing down ts-relayer...")
+		s.Require().NoError(s.dkrPool.Purge(s.tsRelayerResource))
+		s.tsRelayerResource = nil
+	}
+}
+
+func (s *IntegrationTestSuite) executeTSRelayerCommand(ctx context.Context, args []string) []byte {
+	tsRelayerBinary := []string{"/bin/with_keyring", "ibc-v2-ts-relayer"}
+	cmd := append(tsRelayerBinary, args...)
+	exec, err := s.dkrPool.Client.CreateExec(docker.CreateExecOptions{
+		Context:      ctx,
+		AttachStdout: true,
+		AttachStderr: true,
+		Container:    s.tsRelayerResource.Container.ID,
+		User:         "root",
+		Cmd:          cmd,
+	})
+	s.Require().NoError(err)
+
+	var out bytes.Buffer
+	err = s.dkrPool.Client.StartExec(exec.ID, docker.StartExecOptions{
+		Context:      ctx,
+		Detach:       false,
+		OutputStream: &out,
+		ErrorStream:  &out,
+	})
+	s.Require().NoError(err, "ts-relayer startExec error: %s", out.String())
+
+	for {
+		inspectExec, err := s.dkrPool.Client.InspectExec(exec.ID)
+		s.Require().NoError(err, "ts-relayer inspectExec error: %s", out.String())
+		if !inspectExec.Running {
+			if inspectExec.ExitCode != 0 {
+				s.T().Logf("ts-relayer cmd '%s' full output:\n%s", strings.Join(cmd, " "), out.String())
+				chainDiag := s.collectChainDiagnostics()
+				ibcDiag := s.collectIBCDiagnostics()
+				s.Require().Equal(0, inspectExec.ExitCode,
+					"ts-relayer cmd '%s' failed (exit=%d): %s\n\nchain diagnostics:\n%s\n\nibc diagnostics:\n%s",
+					strings.Join(cmd, " "), inspectExec.ExitCode, out.String(), chainDiag, ibcDiag)
+			}
+			s.Require().Equal(0, inspectExec.ExitCode, "ts-relayer cmd '%s' failed (exit=%d): %s",
+				strings.Join(cmd, " "), inspectExec.ExitCode, out.String())
+			break
+		}
+	}
+	return out.Bytes()
+}
+
+func (s *IntegrationTestSuite) tsRelayerAddMnemonic(chainID, mnemonic string) {
+	s.T().Logf("ts-relayer: adding mnemonic for chain %s", chainID)
+	ctx, cancel := context.WithTimeout(context.Background(), time.Minute)
+	defer cancel()
+	s.executeTSRelayerCommand(ctx, []string{
+		"add-mnemonic",
+		"-c", chainID,
+		"--mnemonic", mnemonic,
+	})
+}
+
+func (s *IntegrationTestSuite) tsRelayerAddGasPrice(chainID, gasPrice string) {
+	s.T().Logf("ts-relayer: adding gas-price for chain %s", chainID)
+	ctx, cancel := context.WithTimeout(context.Background(), time.Minute)
+	defer cancel()
+	s.executeTSRelayerCommand(ctx, []string{
+		"add-gas-price",
+		"-c", chainID,
+		"--gas-adjustment", "2.0",
+		gasPrice,
+	})
+}
+
+func (s *IntegrationTestSuite) tsRelayerAddPath(ibcVersion string) {
+	s.T().Logf("ts-relayer: adding IBCv%s path between %s and %s", ibcVersion, providerChainID, consumerChainID)
+	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Minute)
+	defer cancel()
+	s.executeTSRelayerCommand(ctx, []string{
+		"add-path",
+		"-s", providerChainID,
+		"-d", consumerChainID,
+		"--surl", "http://" + s.providerValRes[0].Container.Name[1:] + ":26657",
+		"--durl", "http://" + s.consumerValRes[0].Container.Name[1:] + ":26657",
+		"--st", "cosmos",
+		"--dt", "cosmos",
+		"--ibc-version", ibcVersion,
+	})
+}
+
+var ansiEscapeRegex = regexp.MustCompile(`\x1b\[[0-9;]*m`)
+
+func (s *IntegrationTestSuite) tsRelayerDumpPaths() []tsRelayerPath {
+	ctx, cancel := context.WithTimeout(context.Background(), time.Minute)
+	defer cancel()
+	out := s.executeTSRelayerCommand(ctx, []string{"dump-paths"})
+	cleaned := ansiEscapeRegex.ReplaceAll(out, []byte{})
+	jsonStart := bytes.Index(cleaned, []byte("\t["))
+	if jsonStart < 0 {
+		jsonStart = bytes.Index(cleaned, []byte("\n["))
+	}
+	jsonStart++
+	s.Require().GreaterOrEqual(jsonStart, 1, "no JSON array found in ts-relayer dump-paths output: %s", cleaned)
+	var paths []tsRelayerPath
+	s.Require().NoError(json.Unmarshal(cleaned[jsonStart:], &paths), "parsing ts-relayer dump-paths: %s", cleaned)
+	return paths
+}
+
+func (s *IntegrationTestSuite) collectChainDiagnostics() string {
+	var sb strings.Builder
+	for _, chain := range []struct {
+		name string
+		res  []*dockertest.Resource
+	}{
+		{"provider", s.providerValRes},
+		{"consumer", s.consumerValRes},
+	} {
+		for _, r := range chain.res {
+			var logBuf bytes.Buffer
+			_ = s.dkrPool.Client.Logs(docker.LogsOptions{
+				Container:    r.Container.ID,
+				OutputStream: &logBuf,
+				ErrorStream:  &logBuf,
+				Stdout:       true,
+				Stderr:       true,
+				Tail:         "100",
+			})
+			sb.WriteString(fmt.Sprintf("=== %s chain (tail 100) ===\n%s\n", chain.name, logBuf.String()))
+		}
+	}
+	return sb.String()
+}
+
+func (s *IntegrationTestSuite) collectIBCDiagnosticsLog() {
+	chains := []struct {
+		name      string
+		container *dockertest.Resource
+		binary    string
+		home      string
+	}{
+		{"provider", s.providerValRes[0], providerBinary, providerHomePath},
+		{"consumer", s.consumerValRes[0], consumerBinary, consumerHomePath},
+	}
+	for _, c := range chains {
+		stdout, _, err := s.dockerExec(c.container.Container.ID, []string{
+			c.binary, "query", "ibc", "client", "states", "--home", c.home, "--output", "json",
+		})
+		if err != nil {
+			s.T().Logf("%s ibc client states: ERROR: %v", c.name, err)
+		} else {
+			s.T().Logf("%s ibc client states: %s", c.name, stdout.String())
+		}
+
+		for _, clientID := range []string{"07-tendermint-0", "07-tendermint-1"} {
+			stdout2, _, err := s.dockerExec(c.container.Container.ID, []string{
+				c.binary, "query", "ibc", "client", "counterparty-info", clientID, "--home", c.home, "--output", "json",
+			})
+			if err != nil {
+				s.T().Logf("%s ibc counterparty %s: ERROR: %v (output: %s)", c.name, clientID, err, stdout2.String())
+			} else {
+				s.T().Logf("%s ibc counterparty %s: %s", c.name, clientID, stdout2.String())
+			}
+		}
+	}
+}
+
+func (s *IntegrationTestSuite) collectIBCDiagnostics() string {
+	var sb strings.Builder
+	chains := []struct {
+		name      string
+		container *dockertest.Resource
+		binary    string
+		home      string
+	}{
+		{"provider", s.providerValRes[0], providerBinary, providerHomePath},
+		{"consumer", s.consumerValRes[0], consumerBinary, consumerHomePath},
+	}
+	for _, c := range chains {
+		stdout, _, err := s.dockerExec(c.container.Container.ID, []string{
+			c.binary, "query", "ibc", "client", "states", "--home", c.home, "--output", "json",
+		})
+		if err != nil {
+			sb.WriteString(fmt.Sprintf("=== %s ibc client states: ERROR: %v ===\n", c.name, err))
+		} else {
+			sb.WriteString(fmt.Sprintf("=== %s ibc client states ===\n%s\n", c.name, stdout.String()))
+		}
+
+		stdout2, _, err := s.dockerExec(c.container.Container.ID, []string{
+			c.binary, "query", "ibc", "client", "counterparty-info", "07-tendermint-1", "--home", c.home, "--output", "json",
+		})
+		if err != nil {
+			sb.WriteString(fmt.Sprintf("=== %s ibc counterparty 07-tendermint-1: ERROR: %v (output: %s) ===\n", c.name, err, stdout2.String()))
+		} else {
+			sb.WriteString(fmt.Sprintf("=== %s ibc counterparty 07-tendermint-1 ===\n%s\n", c.name, stdout2.String()))
+		}
+	}
+	return sb.String()
+}
