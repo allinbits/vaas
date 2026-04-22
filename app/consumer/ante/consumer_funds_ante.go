@@ -12,7 +12,7 @@ import (
 
 type (
 	ConsumerFundsKeeper interface {
-		GetProviderChannel(ctx context.Context) (string, bool)
+		GetProviderClientID(ctx context.Context) (string, bool)
 		IsConsumerInDebt(ctx context.Context) bool
 	}
 
@@ -28,8 +28,10 @@ func NewConsumerFundsDecorator(k ConsumerFundsKeeper) ConsumerFundsDecorator {
 }
 
 func (cfd ConsumerFundsDecorator) AnteHandle(ctx sdk.Context, tx sdk.Tx, simulate bool, next sdk.AnteHandler) (newCtx sdk.Context, err error) {
-	// Keep startup/bootstrap flow unchanged until the CCV channel is established.
-	if _, hasProviderChannel := cfd.ConsumerKeeper.GetProviderChannel(ctx); !hasProviderChannel {
+	// Keep startup/bootstrap flow unchanged until the provider IBC client
+	// is established — before that point, no VSC packets can reach the
+	// consumer so there is no way to tell it is in debt.
+	if _, hasProviderClient := cfd.ConsumerKeeper.GetProviderClientID(ctx); !hasProviderClient {
 		return next(ctx, tx, simulate)
 	}
 

@@ -18,12 +18,12 @@ import (
 )
 
 type mockConsumerFundsKeeper struct {
-	providerChannelFound bool
-	inDebt               bool
+	providerClientFound bool
+	inDebt              bool
 }
 
-func (m mockConsumerFundsKeeper) GetProviderChannel(context.Context) (string, bool) {
-	return "channel-0", m.providerChannelFound
+func (m mockConsumerFundsKeeper) GetProviderClientID(context.Context) (string, bool) {
+	return "07-tendermint-0", m.providerClientFound
 }
 
 func (m mockConsumerFundsKeeper) IsConsumerInDebt(context.Context) bool {
@@ -50,7 +50,7 @@ func TestConsumerFundsDecoratorSkipsGateBeforeProviderChannel(t *testing.T) {
 	}
 
 	decorator := NewConsumerFundsDecorator(mockConsumerFundsKeeper{
-		providerChannelFound: false,
+		providerClientFound: false,
 		inDebt:               true,
 	})
 
@@ -71,7 +71,7 @@ func TestConsumerFundsDecoratorAllowsNonIBCTxWhenNotInDebt(t *testing.T) {
 	}
 
 	decorator := NewConsumerFundsDecorator(mockConsumerFundsKeeper{
-		providerChannelFound: true,
+		providerClientFound: true,
 		inDebt:               false,
 	})
 
@@ -92,7 +92,7 @@ func TestConsumerFundsDecoratorBlocksNonIBCTxWhenInDebt(t *testing.T) {
 	}
 
 	decorator := NewConsumerFundsDecorator(mockConsumerFundsKeeper{
-		providerChannelFound: true,
+		providerClientFound: true,
 		inDebt:               true,
 	})
 
@@ -110,7 +110,7 @@ func TestConsumerFundsDecoratorAllowsIBCCoreTxWhenInDebt(t *testing.T) {
 	msg := &channeltypes.MsgRecvPacket{}
 
 	decorator := NewConsumerFundsDecorator(mockConsumerFundsKeeper{
-		providerChannelFound: true,
+		providerClientFound: true,
 		inDebt:               true,
 	})
 
@@ -132,7 +132,7 @@ func TestConsumerFundsDecoratorBlocksMixedIBCCoreAndNonIBCMessagesWhenInDebt(t *
 	}
 
 	decorator := NewConsumerFundsDecorator(mockConsumerFundsKeeper{
-		providerChannelFound: true,
+		providerClientFound: true,
 		inDebt:               true,
 	})
 
@@ -156,7 +156,7 @@ func TestConsumerFundsDecoratorAllowsGovTxWhenInDebt(t *testing.T) {
 	}
 
 	decorator := NewConsumerFundsDecorator(mockConsumerFundsKeeper{
-		providerChannelFound: true,
+		providerClientFound: true,
 		inDebt:               true,
 	})
 
@@ -177,7 +177,7 @@ func TestConsumerFundsDecoratorRejectsAuthzWrappedIBCCoreTxWhenInDebt(t *testing
 	msgExec := authz.NewMsgExec(testAccAddress(3), []sdk.Msg{ibcMsg})
 
 	decorator := NewConsumerFundsDecorator(mockConsumerFundsKeeper{
-		providerChannelFound: true,
+		providerClientFound: true,
 		inDebt:               true,
 	})
 
