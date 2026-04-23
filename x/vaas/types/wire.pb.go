@@ -31,7 +31,13 @@ const _ = proto.GoGoProtoPackageIsVersion3 // please upgrade the proto package
 type ValidatorSetChangePacketData struct {
 	ValidatorUpdates []types.ValidatorUpdate `protobuf:"bytes,1,rep,name=validator_updates,json=validatorUpdates,proto3" json:"validator_updates" yaml:"validator_updates"`
 	ValsetUpdateId   uint64                  `protobuf:"varint,2,opt,name=valset_update_id,json=valsetUpdateId,proto3" json:"valset_update_id,omitempty"`
-	ConsumerInDebt   bool                    `protobuf:"varint,3,opt,name=consumer_in_debt,json=consumerInDebt,proto3" json:"consumer_in_debt,omitempty"`
+	// consumer_in_debt signals whether the consumer chain has fallen behind
+	// on its per-block fee payments to the provider. The provider stamps the
+	// current value on every VSC packet so the consumer reconciles its local
+	// debt flag each epoch. When true, the consumer's ante gate rejects
+	// non-/ibc.core.* and non-/cosmos.gov.* messages until the provider
+	// collects fees successfully and propagates false on the next VSC.
+	ConsumerInDebt bool `protobuf:"varint,3,opt,name=consumer_in_debt,json=consumerInDebt,proto3" json:"consumer_in_debt,omitempty"`
 }
 
 func (m *ValidatorSetChangePacketData) Reset()         { *m = ValidatorSetChangePacketData{} }

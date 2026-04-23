@@ -19,10 +19,23 @@ import "tendermint/abci/types.proto";
 // set for consumer chain changes (due to new bonding/unbonding messages or
 // slashing events).
 message ValidatorSetChangePacketData {
+  // validator_updates is the delta between the consumer's previous
+  // validator set and the provider's current one for this epoch. May be
+  // empty when the validator set did not change during the epoch; the
+  // packet is still sent so consumer_in_debt stays in sync.
   repeated .tendermint.abci.ValidatorUpdate validator_updates = 1 [
     (gogoproto.nullable) = false,
     (gogoproto.moretags) = "yaml:\"validator_updates\""
   ];
+  // valset_update_id is the provider's monotonically increasing counter
+  // identifying this update. The consumer uses it to detect and drop
+  // out-of-order packets delivered over IBC v2's unordered channel.
   uint64 valset_update_id = 2;
+  // consumer_in_debt signals whether the consumer chain has fallen behind
+  // on its per-block fee payments to the provider. The provider stamps the
+  // current value on every VSC packet so the consumer reconciles its local
+  // debt flag each epoch. When true, the consumer's ante gate rejects
+  // non-/ibc.core.* and non-/cosmos.gov.* messages until the provider
+  // collects fees successfully and propagates false on the next VSC.
   bool consumer_in_debt = 3;
 }
