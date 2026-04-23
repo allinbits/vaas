@@ -146,6 +146,26 @@ func TestConsumerFundsDecoratorBlocksMixedIBCCoreAndNonIBCMessagesWhenInDebt(t *
 	require.False(t, nextCalled)
 }
 
+// An empty tx (zero messages) is treated as not-allowed and rejected while
+// the consumer is in debt. Empty txs normally get caught by ValidateBasic
+// later in the ante chain, but this decorator runs first so it must refuse
+// them explicitly rather than falling through an empty loop.
+func TestConsumerFundsDecoratorBlocksEmptyTxWhenInDebt(t *testing.T) {
+	decorator := NewConsumerFundsDecorator(mockConsumerFundsKeeper{
+		providerClientFound: true,
+		inDebt:              true,
+	})
+
+	nextCalled := false
+	_, err := decorator.AnteHandle(sdk.Context{}, mockTx{msgs: nil}, false, func(ctx sdk.Context, tx sdk.Tx, simulate bool) (sdk.Context, error) {
+		nextCalled = true
+		return ctx, nil
+	})
+	require.Error(t, err)
+	require.True(t, errorsmod.IsOf(err, consumertypes.ErrConsumerInDebt))
+	require.False(t, nextCalled)
+}
+
 // Governance messages are allowed during debt so the community can vote on
 // recovery (emergency funding, param changes) without off-chain coordination.
 func TestConsumerFundsDecoratorAllowsGovTxWhenInDebt(t *testing.T) {
