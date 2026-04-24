@@ -15,6 +15,7 @@ import (
 	"github.com/cosmos/cosmos-sdk/codec/address"
 	"github.com/cosmos/cosmos-sdk/crypto/keys/ed25519"
 	sdk "github.com/cosmos/cosmos-sdk/types"
+	sdkerrors "github.com/cosmos/cosmos-sdk/types/errors"
 	authtypes "github.com/cosmos/cosmos-sdk/x/auth/types"
 	stakingtypes "github.com/cosmos/cosmos-sdk/x/staking/types"
 	"github.com/stretchr/testify/require"
@@ -126,7 +127,11 @@ func TestCollectFeesFromConsumersClearsDebtWhenRecovered(t *testing.T) {
 	require.False(t, k.IsConsumerInDebt(ctx, consumer0))
 }
 
-func TestCollectFeesFromConsumersContinuesWhenTransferFails(t *testing.T) {
+// TestCollectFeesFromConsumersContinuesOnGenericError: a non-insufficient-
+// funds error from the bank keeper (chain-config issue) is logged and
+// skipped without flipping the debt flag — consumer0 remains not-in-debt
+// because its pool is funded and the error is not its fault.
+func TestCollectFeesFromConsumersContinuesOnGenericError(t *testing.T) {
 	params := testkeeper.NewInMemKeeperParams(t)
 	k, ctx, ctrl, mocks := testkeeper.GetProviderKeeperAndCtx(t, params)
 	defer ctrl.Finish()
@@ -149,7 +154,7 @@ func TestCollectFeesFromConsumersContinuesWhenTransferFails(t *testing.T) {
 			Return(sdk.NewInt64Coin("uphoton", 15)),
 		mocks.MockBankKeeper.EXPECT().
 			SendCoinsFromAccountToModule(gomock.Any(), consumer0FeePoolAddr, providertypes.ModuleName, sdk.NewCoins(feesPerBlock)).
-			Return(errors.New("boom")),
+			Return(errors.New("bank send restriction")),
 		mocks.MockBankKeeper.EXPECT().
 			GetBalance(gomock.Any(), consumer1FeePoolAddr, feesPerBlock.Denom).
 			Return(sdk.NewInt64Coin("uphoton", 18)),
@@ -161,8 +166,40 @@ func TestCollectFeesFromConsumersContinuesWhenTransferFails(t *testing.T) {
 	total, err := k.CollectFeesFromConsumers(ctx)
 	require.NoError(t, err)
 	require.Equal(t, sdk.NewInt64Coin("uphoton", 10), total)
-	require.True(t, k.IsConsumerInDebt(ctx, consumer0))
+	require.False(t, k.IsConsumerInDebt(ctx, consumer0))
 	require.False(t, k.IsConsumerInDebt(ctx, consumer1))
+}
+
+// TestCollectFeesFromConsumersMarksDebtOnInsufficientFunds: when GetBalance
+// reports enough but SendCoins returns ErrInsufficientFunds (e.g. vesting
+// lockup), the consumer is correctly marked as in debt.
+func TestCollectFeesFromConsumersMarksDebtOnInsufficientFunds(t *testing.T) {
+	params := testkeeper.NewInMemKeeperParams(t)
+	k, ctx, ctrl, mocks := testkeeper.GetProviderKeeperAndCtx(t, params)
+	defer ctrl.Finish()
+
+	consumer0 := k.FetchAndIncrementConsumerId(ctx)
+	k.SetConsumerPhase(ctx, consumer0, providertypes.CONSUMER_PHASE_LAUNCHED)
+
+	feesPerBlock := sdk.NewInt64Coin("uphoton", 10)
+	providerParams := providertypes.DefaultParams()
+	providerParams.FeesPerBlock = feesPerBlock
+	k.SetParams(ctx, providerParams)
+	consumer0FeePoolAddr := k.GetConsumerFeePoolAddress(consumer0)
+
+	gomock.InOrder(
+		mocks.MockBankKeeper.EXPECT().
+			GetBalance(gomock.Any(), consumer0FeePoolAddr, feesPerBlock.Denom).
+			Return(sdk.NewInt64Coin("uphoton", 15)),
+		mocks.MockBankKeeper.EXPECT().
+			SendCoinsFromAccountToModule(gomock.Any(), consumer0FeePoolAddr, providertypes.ModuleName, sdk.NewCoins(feesPerBlock)).
+			Return(sdkerrors.ErrInsufficientFunds.Wrapf("spendable 5 < 10")),
+	)
+
+	total, err := k.CollectFeesFromConsumers(ctx)
+	require.NoError(t, err)
+	require.Equal(t, sdk.NewCoin("uphoton", math.ZeroInt()), total)
+	require.True(t, k.IsConsumerInDebt(ctx, consumer0))
 }
 
 // Helpers for the distribution tests.

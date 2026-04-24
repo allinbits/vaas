@@ -7,9 +7,11 @@ import (
 
 	cmtproto "github.com/cometbft/cometbft/proto/tendermint/types"
 
+	errorsmod "cosmossdk.io/errors"
 	"cosmossdk.io/math"
 
 	sdk "github.com/cosmos/cosmos-sdk/types"
+	sdkerrors "github.com/cosmos/cosmos-sdk/types/errors"
 	authtypes "github.com/cosmos/cosmos-sdk/x/auth/types"
 	stakingtypes "github.com/cosmos/cosmos-sdk/x/staking/types"
 )
@@ -58,12 +60,26 @@ func (k Keeper) CollectFeesFromConsumers(ctx sdk.Context) (sdk.Coin, error) {
 		// Transfer fees from the consumer fee pool into the provider module account.
 		feeCoins := sdk.NewCoins(feesPerBlock)
 		if err := k.bankKeeper.SendCoinsFromAccountToModule(ctx, consumerFeePoolAddr, types.ModuleName, feeCoins); err != nil {
-			k.Logger(ctx).Error("failed to collect fees from consumer",
+			if errorsmod.IsOf(err, sdkerrors.ErrInsufficientFunds) {
+				// Real underfunding — e.g. GetBalance reported the full balance
+				// but vesting lockup reduced the spendable portion below the
+				// fee. Mark as debt so the consumer is notified.
+				k.Logger(ctx).Info("consumer fee pool underfunded after balance check",
+					"consumerId", consumerId,
+					"err", err,
+				)
+				k.UpdateConsumerDebtStatus(ctx, consumerId, true)
+				continue
+			}
+			// Any other error is a chain-config / bug condition (blocked
+			// address, denom send disabled, send restriction, etc.), not a
+			// consumer fault. Log loudly but leave the debt flag untouched
+			// to avoid misleading the operator, who has a funded pool.
+			k.Logger(ctx).Error("failed to collect fees from consumer; chain-config issue likely",
 				"consumerId", consumerId,
 				"amount", feeCoins.String(),
 				"err", err,
 			)
-			k.UpdateConsumerDebtStatus(ctx, consumerId, true)
 			continue
 		}
 		k.UpdateConsumerDebtStatus(ctx, consumerId, false)
