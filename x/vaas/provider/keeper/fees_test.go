@@ -175,19 +175,17 @@ func TestDistributeFeesToValidators(t *testing.T) {
 	valOp2, err := valAddrCodec.BytesToString(valAddr2)
 	require.NoError(t, err)
 
-	val1Tokens := sdk.DefaultPowerReduction.MulRaw(10)
-	val2Tokens := sdk.DefaultPowerReduction.MulRaw(20)
-
+	// Tokens differ intentionally to assert the split does NOT depend on stake.
 	val1 := stakingtypes.Validator{
 		OperatorAddress: valOp1,
-		Tokens:          val1Tokens,
-		DelegatorShares: math.LegacyNewDecFromInt(val1Tokens),
+		Tokens:          sdk.DefaultPowerReduction.MulRaw(10),
+		DelegatorShares: math.LegacyNewDecFromInt(sdk.DefaultPowerReduction.MulRaw(10)),
 		Status:          stakingtypes.Bonded,
 	}
 	val2 := stakingtypes.Validator{
 		OperatorAddress: valOp2,
-		Tokens:          val2Tokens,
-		DelegatorShares: math.LegacyNewDecFromInt(val2Tokens),
+		Tokens:          sdk.DefaultPowerReduction.MulRaw(20),
+		DelegatorShares: math.LegacyNewDecFromInt(sdk.DefaultPowerReduction.MulRaw(20)),
 		Status:          stakingtypes.Bonded,
 	}
 	providerParams := providertypes.DefaultParams()
@@ -200,18 +198,12 @@ func TestDistributeFeesToValidators(t *testing.T) {
 	mocks.MockStakingKeeper.EXPECT().
 		GetBondedValidatorsByPower(gomock.Any()).
 		Return([]stakingtypes.Validator{val1, val2}, nil)
-	mocks.MockStakingKeeper.EXPECT().
-		GetLastTotalPower(gomock.Any()).
-		Return(math.NewInt(30), nil)
-	mocks.MockStakingKeeper.EXPECT().
-		PowerReduction(gomock.Any()).
-		Return(sdk.DefaultPowerReduction).
-		AnyTimes()
+	// Equal split: 300 / 2 = 150 each, regardless of stake.
 	mocks.MockBankKeeper.EXPECT().
-		SendCoinsFromModuleToAccount(gomock.Any(), providertypes.ModuleName, sdk.AccAddress(valAddr1), sdk.NewCoins(sdk.NewInt64Coin("uphoton", 100))).
+		SendCoinsFromModuleToAccount(gomock.Any(), providertypes.ModuleName, sdk.AccAddress(valAddr1), sdk.NewCoins(sdk.NewInt64Coin("uphoton", 150))).
 		Return(nil)
 	mocks.MockBankKeeper.EXPECT().
-		SendCoinsFromModuleToAccount(gomock.Any(), providertypes.ModuleName, sdk.AccAddress(valAddr2), sdk.NewCoins(sdk.NewInt64Coin("uphoton", 200))).
+		SendCoinsFromModuleToAccount(gomock.Any(), providertypes.ModuleName, sdk.AccAddress(valAddr2), sdk.NewCoins(sdk.NewInt64Coin("uphoton", 150))).
 		Return(nil)
 
 	err = k.DistributeFeesToValidators(ctx)
@@ -240,46 +232,37 @@ func TestDistributeFeesToValidatorsSkipsWhenFeesTooSmall(t *testing.T) {
 	k, ctx, ctrl, mocks := testkeeper.GetProviderKeeperAndCtx(t, params)
 	defer ctrl.Finish()
 
-	val1Tokens := sdk.DefaultPowerReduction.MulRaw(10)
-	val2Tokens := sdk.DefaultPowerReduction.MulRaw(10)
+	mkVal := func(op string) stakingtypes.Validator {
+		return stakingtypes.Validator{
+			OperatorAddress: op,
+			Tokens:          sdk.DefaultPowerReduction,
+			DelegatorShares: math.LegacyNewDecFromInt(sdk.DefaultPowerReduction),
+			Status:          stakingtypes.Bonded,
+		}
+	}
+	val1 := mkVal("cosmosvaloper1tiny000000000000000000000000000000000")
+	val2 := mkVal("cosmosvaloper1tiny111111111111111111111111111111111")
 
-	val1 := stakingtypes.Validator{
-		OperatorAddress: "cosmosvaloper1tiny000000000000000000000000000000000",
-		Tokens:          val1Tokens,
-		DelegatorShares: math.LegacyNewDecFromInt(val1Tokens),
-		Status:          stakingtypes.Bonded,
-	}
-	val2 := stakingtypes.Validator{
-		OperatorAddress: "cosmosvaloper1tiny111111111111111111111111111111111",
-		Tokens:          val2Tokens,
-		DelegatorShares: math.LegacyNewDecFromInt(val2Tokens),
-		Status:          stakingtypes.Bonded,
-	}
 	providerParams := providertypes.DefaultParams()
 	providerParams.FeesPerBlock = sdk.NewInt64Coin("uphoton", 1)
 	k.SetParams(ctx, providerParams)
 
+	// Pool holds 1 coin, 2 validators → floor(1/2) = 0 per validator; leave pooled.
 	mocks.MockBankKeeper.EXPECT().
 		GetBalance(gomock.Any(), authtypes.NewModuleAddress(providertypes.ModuleName), providerParams.FeesPerBlock.Denom).
 		Return(sdk.NewInt64Coin("uphoton", 1))
 	mocks.MockStakingKeeper.EXPECT().
 		GetBondedValidatorsByPower(gomock.Any()).
 		Return([]stakingtypes.Validator{val1, val2}, nil)
-	mocks.MockStakingKeeper.EXPECT().
-		GetLastTotalPower(gomock.Any()).
-		Return(math.NewInt(20), nil)
-	mocks.MockStakingKeeper.EXPECT().
-		PowerReduction(gomock.Any()).
-		Return(sdk.DefaultPowerReduction)
 
 	err := k.DistributeFeesToValidators(ctx)
 	require.NoError(t, err)
 }
 
-// TestDistributeFeesToValidatorsRemainderStaysPooled checks that when
-// proportional shares don't divide evenly, only the floor shares are sent
-// and the integer-division remainder stays in the provider module account
-// to be picked up by the next block.
+// TestDistributeFeesToValidatorsRemainderStaysPooled checks that when the
+// equal split does not divide evenly, each validator still gets an equal
+// floor share and the remainder stays in the provider module account to be
+// picked up by the next block.
 func TestDistributeFeesToValidatorsRemainderStaysPooled(t *testing.T) {
 	params := testkeeper.NewInMemKeeperParams(t)
 	k, ctx, ctrl, mocks := testkeeper.GetProviderKeeperAndCtx(t, params)
@@ -288,32 +271,29 @@ func TestDistributeFeesToValidatorsRemainderStaysPooled(t *testing.T) {
 	valAddrCodec := address.NewBech32Codec("cosmosvaloper")
 	mocks.MockStakingKeeper.EXPECT().ValidatorAddressCodec().Return(valAddrCodec).AnyTimes()
 
-	valAddrTop := bytes.Repeat([]byte{1}, 20)
-	valAddrMid := bytes.Repeat([]byte{2}, 20)
-	valAddrTail := bytes.Repeat([]byte{3}, 20)
-	opTop, err := valAddrCodec.BytesToString(valAddrTop)
+	valAddr1 := bytes.Repeat([]byte{1}, 20)
+	valAddr2 := bytes.Repeat([]byte{2}, 20)
+	valAddr3 := bytes.Repeat([]byte{3}, 20)
+	op1, err := valAddrCodec.BytesToString(valAddr1)
 	require.NoError(t, err)
-	opMid, err := valAddrCodec.BytesToString(valAddrMid)
+	op2, err := valAddrCodec.BytesToString(valAddr2)
 	require.NoError(t, err)
-	opTail, err := valAddrCodec.BytesToString(valAddrTail)
+	op3, err := valAddrCodec.BytesToString(valAddr3)
 	require.NoError(t, err)
 
-	mkVal := func(op string, powerMul int64) stakingtypes.Validator {
-		tokens := sdk.DefaultPowerReduction.MulRaw(powerMul)
+	mkVal := func(op string) stakingtypes.Validator {
 		return stakingtypes.Validator{
 			OperatorAddress: op,
-			Tokens:          tokens,
-			DelegatorShares: math.LegacyNewDecFromInt(tokens),
+			Tokens:          sdk.DefaultPowerReduction,
+			DelegatorShares: math.LegacyNewDecFromInt(sdk.DefaultPowerReduction),
 			Status:          stakingtypes.Bonded,
 		}
 	}
 
-	// Powers 97 / 1 / 1, totalFees 10, totalPower 99. Floor shares are 9/0/0;
-	// only the top validator's 9 coins are sent — the remaining 1 coin stays
-	// pooled in the provider module account.
-	valTop := mkVal(opTop, 97)
-	valMid := mkVal(opMid, 1)
-	valTail := mkVal(opTail, 1)
+	// 10 coins, 3 validators → each gets floor(10/3) = 3, 1 coin stays pooled.
+	val1 := mkVal(op1)
+	val2 := mkVal(op2)
+	val3 := mkVal(op3)
 
 	providerParams := providertypes.DefaultParams()
 	providerParams.FeesPerBlock = sdk.NewInt64Coin("uphoton", 10)
@@ -324,17 +304,13 @@ func TestDistributeFeesToValidatorsRemainderStaysPooled(t *testing.T) {
 		Return(sdk.NewInt64Coin("uphoton", 10))
 	mocks.MockStakingKeeper.EXPECT().
 		GetBondedValidatorsByPower(gomock.Any()).
-		Return([]stakingtypes.Validator{valTop, valMid, valTail}, nil)
-	mocks.MockStakingKeeper.EXPECT().
-		GetLastTotalPower(gomock.Any()).
-		Return(math.NewInt(99), nil)
-	mocks.MockStakingKeeper.EXPECT().
-		PowerReduction(gomock.Any()).
-		Return(sdk.DefaultPowerReduction).
-		AnyTimes()
-	mocks.MockBankKeeper.EXPECT().
-		SendCoinsFromModuleToAccount(gomock.Any(), providertypes.ModuleName, sdk.AccAddress(valAddrTop), sdk.NewCoins(sdk.NewInt64Coin("uphoton", 9))).
-		Return(nil)
+		Return([]stakingtypes.Validator{val1, val2, val3}, nil)
+	expected := sdk.NewCoins(sdk.NewInt64Coin("uphoton", 3))
+	for _, addr := range [][]byte{valAddr1, valAddr2, valAddr3} {
+		mocks.MockBankKeeper.EXPECT().
+			SendCoinsFromModuleToAccount(gomock.Any(), providertypes.ModuleName, sdk.AccAddress(addr), expected).
+			Return(nil)
+	}
 
 	err = k.DistributeFeesToValidators(ctx)
 	require.NoError(t, err)

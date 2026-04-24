@@ -74,62 +74,43 @@ func (k Keeper) CollectFeesFromConsumers(ctx sdk.Context) (sdk.Coin, error) {
 	return totalFeesCollected, nil
 }
 
-// DistributeFeesToValidators distributes the provider module account's
-// currently available consumer-fee balance to validators proportionally
-// based on their voting power.
+// DistributeFeesToValidators splits the provider module account's currently
+// available consumer-fee balance equally among all bonded validators.
+//
+// The service consumers pay for (being validated) is delivered roughly evenly
+// by each validator, independent of their stake — a high-stake validator does
+// not run more consensus than a low-stake one — so the pay matches the work
+// rather than the stake. A follow-up should restrict the split to validators
+// that actually signed the previous block (penalize downtime), similar to
+// Cosmos SDK x/distribution.
 func (k Keeper) DistributeFeesToValidators(ctx sdk.Context) error {
 	totalFees := k.bankKeeper.GetBalance(ctx, authtypes.NewModuleAddress(types.ModuleName), k.GetFeesPerBlock(ctx).Denom)
 	if totalFees.IsZero() {
 		return nil
 	}
 
-	// Get the bonded validators
 	validators, err := k.stakingKeeper.GetBondedValidatorsByPower(ctx)
 	if err != nil {
 		return fmt.Errorf("failed to get bonded validators: %w", err)
 	}
-
 	if len(validators) == 0 {
-		// No validators to distribute to, return early
 		return nil
 	}
 
-	// Retrieve total voting power from staking keeper state.
-	totalPower, err := k.stakingKeeper.GetLastTotalPower(ctx)
-	if err != nil {
-		return fmt.Errorf("failed to get total voting power: %w", err)
+	// Equal split. Any integer-division remainder stays in the provider
+	// module account and is picked up by the next block's GetBalance.
+	share := totalFees.Amount.Quo(math.NewInt(int64(len(validators))))
+	if share.IsZero() {
+		return nil
 	}
+	shareCoins := sdk.NewCoins(sdk.NewCoin(totalFees.Denom, share))
 
-	if totalPower.IsZero() {
-		return fmt.Errorf("total voting power is zero")
-	}
-
-	powerReduction := k.stakingKeeper.PowerReduction(ctx)
-
-	// Each validator receives the floor of its proportional share. Any
-	// integer-division remainder stays in the provider module account and is
-	// picked up by the next block's GetBalance.
-	//
-	// Note: with heavily skewed voting power, validators whose per-block
-	// proportional share rounds to zero will not earn fees — the dominant
-	// validator drains each block's pool before the remainder can accumulate
-	// enough for smaller validators to cross the 1-coin threshold. Moving to
-	// a DecCoin accumulator (F1-style) would fix this at the cost of extra
-	// state; see also Cosmos SDK x/distribution.
 	for _, val := range validators {
-		valPower := math.NewInt(val.GetConsensusPower(powerReduction))
-		valShare := totalFees.Amount.Mul(valPower).Quo(totalPower)
-		if valShare.IsZero() {
-			continue
-		}
-
 		valAddr, err := k.stakingKeeper.ValidatorAddressCodec().StringToBytes(val.GetOperator())
 		if err != nil {
 			return fmt.Errorf("failed to parse validator address: %w", err)
 		}
-
-		feeCoins := sdk.NewCoins(sdk.NewCoin(totalFees.Denom, valShare))
-		if err := k.bankKeeper.SendCoinsFromModuleToAccount(ctx, types.ModuleName, sdk.AccAddress(valAddr), feeCoins); err != nil {
+		if err := k.bankKeeper.SendCoinsFromModuleToAccount(ctx, types.ModuleName, sdk.AccAddress(valAddr), shareCoins); err != nil {
 			return fmt.Errorf("failed to distribute fees to validator (%s): %w", val.GetOperator(), err)
 		}
 	}
