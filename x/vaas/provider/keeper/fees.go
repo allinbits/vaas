@@ -5,10 +5,13 @@ import (
 
 	"github.com/allinbits/vaas/x/vaas/provider/types"
 
+	cmtproto "github.com/cometbft/cometbft/proto/tendermint/types"
+
 	"cosmossdk.io/math"
 
 	sdk "github.com/cosmos/cosmos-sdk/types"
 	authtypes "github.com/cosmos/cosmos-sdk/x/auth/types"
+	stakingtypes "github.com/cosmos/cosmos-sdk/x/staking/types"
 )
 
 // GetConsumerFeePoolAddress returns the deterministic provider-side fee pool
@@ -75,37 +78,67 @@ func (k Keeper) CollectFeesFromConsumers(ctx sdk.Context) (sdk.Coin, error) {
 }
 
 // DistributeFeesToValidators splits the provider module account's currently
-// available consumer-fee balance equally among all bonded validators.
+// available consumer-fee balance equally among the validators that both
+// signed the previous block AND are still bonded in the current block.
 //
 // The service consumers pay for (being validated) is delivered roughly evenly
-// by each validator, independent of their stake — a high-stake validator does
-// not run more consensus than a low-stake one — so the pay matches the work
-// rather than the stake. A follow-up should restrict the split to validators
-// that actually signed the previous block (penalize downtime), similar to
-// Cosmos SDK x/distribution.
+// by each signing validator, independent of their stake, so the pay matches
+// the work rather than the stake. Bonded validators that did not sign are
+// skipped, which penalizes downtime in the same way Cosmos SDK x/distribution
+// does via BeginBlock VoteInfos. Signers that have since unbonded or been
+// removed from the set forfeit their share — we only pay current participants.
 func (k Keeper) DistributeFeesToValidators(ctx sdk.Context) error {
 	totalFees := k.bankKeeper.GetBalance(ctx, authtypes.NewModuleAddress(types.ModuleName), k.GetFeesPerBlock(ctx).Denom)
 	if totalFees.IsZero() {
 		return nil
 	}
 
-	validators, err := k.stakingKeeper.GetBondedValidatorsByPower(ctx)
+	// Fetch the full bonded set once and index by consensus address. The
+	// signers in VoteInfos are matched against this map so we only pay
+	// validators that are still bonded in the current block.
+	bonded, err := k.stakingKeeper.GetBondedValidatorsByPower(ctx)
 	if err != nil {
 		return fmt.Errorf("failed to get bonded validators: %w", err)
 	}
-	if len(validators) == 0 {
+	byCons := make(map[string]stakingtypes.Validator, len(bonded))
+	for _, v := range bonded {
+		consAddr, err := v.GetConsAddr()
+		if err != nil {
+			k.Logger(ctx).Debug("skipping bonded validator with unreadable consensus pubkey",
+				"operator", v.GetOperator(),
+				"err", err,
+			)
+			continue
+		}
+		byCons[string(consAddr)] = v
+	}
+
+	// VoteInfos carries the previous block's LastCommit with a BlockIdFlag
+	// indicating whether each validator signed, voted nil, or was absent.
+	eligible := make([]stakingtypes.Validator, 0, len(ctx.VoteInfos()))
+	for _, vote := range ctx.VoteInfos() {
+		if vote.BlockIdFlag != cmtproto.BlockIDFlagCommit {
+			continue
+		}
+		v, ok := byCons[string(vote.Validator.Address)]
+		if !ok {
+			continue // signer no longer bonded
+		}
+		eligible = append(eligible, v)
+	}
+	if len(eligible) == 0 {
 		return nil
 	}
 
 	// Equal split. Any integer-division remainder stays in the provider
 	// module account and is picked up by the next block's GetBalance.
-	share := totalFees.Amount.Quo(math.NewInt(int64(len(validators))))
+	share := totalFees.Amount.Quo(math.NewInt(int64(len(eligible))))
 	if share.IsZero() {
 		return nil
 	}
 	shareCoins := sdk.NewCoins(sdk.NewCoin(totalFees.Denom, share))
 
-	for _, val := range validators {
+	for _, val := range eligible {
 		valAddr, err := k.stakingKeeper.ValidatorAddressCodec().StringToBytes(val.GetOperator())
 		if err != nil {
 			return fmt.Errorf("failed to parse validator address: %w", err)
