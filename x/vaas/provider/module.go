@@ -155,25 +155,11 @@ func (am AppModule) BeginBlock(ctx context.Context) error {
 		return err
 	}
 
-	// Collect fees from consumer chains, including any debt-state transitions.
-	// Commit these changes independently so consumer debt tracking and notifications
-	// remain consistent even if validator fee distribution fails later in BeginBlock.
-	feeCtx, writeFees := sdkCtx.CacheContext()
+	am.keeper.CollectFeesFromConsumers(sdkCtx)
 
-	_, err := am.keeper.CollectFeesFromConsumers(feeCtx)
-	if err != nil {
-		sdkCtx.Logger().Error(
-			"failed to collect fees from consumers",
-			"err", err,
-			"height", sdkCtx.BlockHeight(),
-		)
-		// Do not write cached changes; effectively roll back any partial state from fee collection.
-		return nil
-	}
-	writeFees()
-
-	// Distribute all currently available provider-held fees in a separate cached context
-	// so distribution rollback does not undo the already-committed collection/debt state.
+	// Distribute all currently available provider-held fees in a cached context
+	// so a distribution failure does not undo the already-committed collection
+	// and debt state from the call above.
 	distributionCtx, writeDistribution := sdkCtx.CacheContext()
 	if err := am.keeper.DistributeFeesToValidators(distributionCtx); err != nil {
 		sdkCtx.Logger().Error(

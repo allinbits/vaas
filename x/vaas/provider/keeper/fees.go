@@ -25,10 +25,12 @@ func (k Keeper) GetConsumerFeePoolAddress(consumerId string) sdk.AccAddress {
 
 // CollectFeesFromConsumers collects fees from all active consumer chains.
 // For each consumer, it checks if the consumer has enough balance to pay the fees.
-// If a consumer doesn't have enough funds, the provider should inform the consumer
-// to stop operations. Unexpected per-consumer transfer failures are logged and skipped
-// so one bad consumer account does not block collection from the rest.
-func (k Keeper) CollectFeesFromConsumers(ctx sdk.Context) (sdk.Coin, error) {
+// If a consumer doesn't have enough funds, it is marked as in debt; the flag
+// is then propagated on the next VSC packet so the consumer's ante gate
+// blocks non-IBC, non-gov user transactions until the pool is funded again.
+// Unexpected per-consumer transfer failures are logged and skipped so one
+// bad consumer account does not block collection from the rest.
+func (k Keeper) CollectFeesFromConsumers(ctx sdk.Context) sdk.Coin {
 	feesPerBlock := k.GetFeesPerBlock(ctx)
 	totalFeesCollected := sdk.NewCoin(feesPerBlock.Denom, math.ZeroInt())
 
@@ -42,32 +44,12 @@ func (k Keeper) CollectFeesFromConsumers(ctx sdk.Context) (sdk.Coin, error) {
 		}
 		consumerFeePoolAddr := k.GetConsumerFeePoolAddress(consumerId)
 
-		// Check the balance of the consumer fee pool account.
-		balance := k.bankKeeper.GetBalance(ctx, consumerFeePoolAddr, feesPerBlock.Denom)
-		wasInDebt := k.IsConsumerInDebt(ctx, consumerId)
-		if balance.IsLT(feesPerBlock) {
-			k.UpdateConsumerDebtStatus(ctx, consumerId, true)
-			if wasInDebt {
-				k.Logger(ctx).Debug("consumer chain remains in debt",
-					"consumerId", consumerId,
-					"balance", balance.Amount.String(),
-					"required", feesPerBlock.String(),
-				)
-			}
-			continue
-		}
-
 		// Transfer fees from the consumer fee pool into the provider module account.
+		// SendCoins enforces spendable balance, so the underfunded case (including
+		// vesting lockup) surfaces here as ErrInsufficientFunds.
 		feeCoins := sdk.NewCoins(feesPerBlock)
 		if err := k.bankKeeper.SendCoinsFromAccountToModule(ctx, consumerFeePoolAddr, types.ModuleName, feeCoins); err != nil {
 			if errorsmod.IsOf(err, sdkerrors.ErrInsufficientFunds) {
-				// Real underfunding — e.g. GetBalance reported the full balance
-				// but vesting lockup reduced the spendable portion below the
-				// fee. Mark as debt so the consumer is notified.
-				k.Logger(ctx).Info("consumer fee pool underfunded after balance check",
-					"consumerId", consumerId,
-					"err", err,
-				)
 				k.UpdateConsumerDebtStatus(ctx, consumerId, true)
 				continue
 			}
@@ -90,7 +72,7 @@ func (k Keeper) CollectFeesFromConsumers(ctx sdk.Context) (sdk.Coin, error) {
 
 		totalFeesCollected = totalFeesCollected.Add(feesPerBlock)
 	}
-	return totalFeesCollected, nil
+	return totalFeesCollected
 }
 
 // DistributeFeesToValidators splits the provider module account's currently

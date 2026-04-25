@@ -14,6 +14,7 @@ import (
 	"github.com/cosmos/cosmos-sdk/codec/address"
 	"github.com/cosmos/cosmos-sdk/crypto/keys/ed25519"
 	sdk "github.com/cosmos/cosmos-sdk/types"
+	sdkerrors "github.com/cosmos/cosmos-sdk/types/errors"
 	authtypes "github.com/cosmos/cosmos-sdk/x/auth/types"
 	stakingtypes "github.com/cosmos/cosmos-sdk/x/staking/types"
 	"github.com/stretchr/testify/require"
@@ -21,9 +22,9 @@ import (
 )
 
 // TestBeginBlockCommitsDebtStateWhenDistributionFails verifies that when the
-// distribution step errors, the cached fee-collection state (including the
-// consumer-in-debt flag) is still committed — the two phases run in separate
-// CacheContexts on purpose.
+// distribution step errors, the fee-collection state (including the
+// consumer-in-debt flag) is still committed — distribution runs in its own
+// CacheContext so its rollback does not undo collection.
 func TestBeginBlockCommitsDebtStateWhenDistributionFails(t *testing.T) {
 	params := testkeeper.NewInMemKeeperParams(t)
 	k, ctx, ctrl, mocks := testkeeper.GetProviderKeeperAndCtx(t, params)
@@ -64,13 +65,10 @@ func TestBeginBlockCommitsDebtStateWhenDistributionFails(t *testing.T) {
 		},
 	})
 
-	// Collection phase.
+	// Collection phase: one consumer underfunded (ErrInsufficientFunds), one pays.
 	mocks.MockBankKeeper.EXPECT().
-		GetBalance(gomock.Any(), consumerInDebtFeePoolAddr, providerParams.FeesPerBlock.Denom).
-		Return(sdk.NewInt64Coin("uphoton", 5))
-	mocks.MockBankKeeper.EXPECT().
-		GetBalance(gomock.Any(), consumerPayingFeePoolAddr, providerParams.FeesPerBlock.Denom).
-		Return(sdk.NewInt64Coin("uphoton", 20))
+		SendCoinsFromAccountToModule(gomock.Any(), consumerInDebtFeePoolAddr, providertypes.ModuleName, sdk.NewCoins(providerParams.FeesPerBlock)).
+		Return(sdkerrors.ErrInsufficientFunds.Wrapf("spendable 5 < 10"))
 	mocks.MockBankKeeper.EXPECT().
 		SendCoinsFromAccountToModule(gomock.Any(), consumerPayingFeePoolAddr, providertypes.ModuleName, sdk.NewCoins(providerParams.FeesPerBlock)).
 		Return(nil)

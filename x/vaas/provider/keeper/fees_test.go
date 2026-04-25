@@ -41,21 +41,14 @@ func TestCollectFeesFromConsumers(t *testing.T) {
 
 	gomock.InOrder(
 		mocks.MockBankKeeper.EXPECT().
-			GetBalance(gomock.Any(), consumer0FeePoolAddr, feesPerBlock.Denom).
-			Return(feesPerBlock),
-		mocks.MockBankKeeper.EXPECT().
 			SendCoinsFromAccountToModule(gomock.Any(), consumer0FeePoolAddr, providertypes.ModuleName, sdk.NewCoins(feesPerBlock)).
 			Return(nil),
-		mocks.MockBankKeeper.EXPECT().
-			GetBalance(gomock.Any(), consumer1FeePoolAddr, feesPerBlock.Denom).
-			Return(sdk.NewInt64Coin("uphoton", 25)),
 		mocks.MockBankKeeper.EXPECT().
 			SendCoinsFromAccountToModule(gomock.Any(), consumer1FeePoolAddr, providertypes.ModuleName, sdk.NewCoins(feesPerBlock)).
 			Return(nil),
 	)
 
-	total, err := k.CollectFeesFromConsumers(ctx)
-	require.NoError(t, err)
+	total := k.CollectFeesFromConsumers(ctx)
 	require.Equal(t, sdk.NewInt64Coin("uphoton", 20), total)
 	require.False(t, k.IsConsumerInDebt(ctx, consumer0))
 	require.False(t, k.IsConsumerInDebt(ctx, consumer1))
@@ -80,18 +73,14 @@ func TestCollectFeesFromConsumersSkipsWhenInsufficient(t *testing.T) {
 
 	gomock.InOrder(
 		mocks.MockBankKeeper.EXPECT().
-			GetBalance(gomock.Any(), consumer0FeePoolAddr, feesPerBlock.Denom).
-			Return(sdk.NewInt64Coin("uphoton", 5)),
-		mocks.MockBankKeeper.EXPECT().
-			GetBalance(gomock.Any(), consumer1FeePoolAddr, feesPerBlock.Denom).
-			Return(sdk.NewInt64Coin("uphoton", 12)),
+			SendCoinsFromAccountToModule(gomock.Any(), consumer0FeePoolAddr, providertypes.ModuleName, sdk.NewCoins(feesPerBlock)).
+			Return(sdkerrors.ErrInsufficientFunds.Wrapf("spendable 5 < 10")),
 		mocks.MockBankKeeper.EXPECT().
 			SendCoinsFromAccountToModule(gomock.Any(), consumer1FeePoolAddr, providertypes.ModuleName, sdk.NewCoins(feesPerBlock)).
 			Return(nil),
 	)
 
-	total, err := k.CollectFeesFromConsumers(ctx)
-	require.NoError(t, err)
+	total := k.CollectFeesFromConsumers(ctx)
 	require.Equal(t, sdk.NewInt64Coin("uphoton", 10), total)
 	require.True(t, k.IsConsumerInDebt(ctx, consumer0))
 	require.False(t, k.IsConsumerInDebt(ctx, consumer1))
@@ -112,17 +101,11 @@ func TestCollectFeesFromConsumersClearsDebtWhenRecovered(t *testing.T) {
 	k.SetParams(ctx, providerParams)
 	consumer0FeePoolAddr := k.GetConsumerFeePoolAddress(consumer0)
 
-	gomock.InOrder(
-		mocks.MockBankKeeper.EXPECT().
-			GetBalance(gomock.Any(), consumer0FeePoolAddr, feesPerBlock.Denom).
-			Return(sdk.NewInt64Coin("uphoton", 25)),
-		mocks.MockBankKeeper.EXPECT().
-			SendCoinsFromAccountToModule(gomock.Any(), consumer0FeePoolAddr, providertypes.ModuleName, sdk.NewCoins(feesPerBlock)).
-			Return(nil),
-	)
+	mocks.MockBankKeeper.EXPECT().
+		SendCoinsFromAccountToModule(gomock.Any(), consumer0FeePoolAddr, providertypes.ModuleName, sdk.NewCoins(feesPerBlock)).
+		Return(nil)
 
-	total, err := k.CollectFeesFromConsumers(ctx)
-	require.NoError(t, err)
+	total := k.CollectFeesFromConsumers(ctx)
 	require.Equal(t, sdk.NewInt64Coin("uphoton", 10), total)
 	require.False(t, k.IsConsumerInDebt(ctx, consumer0))
 }
@@ -150,56 +133,17 @@ func TestCollectFeesFromConsumersContinuesOnGenericError(t *testing.T) {
 
 	gomock.InOrder(
 		mocks.MockBankKeeper.EXPECT().
-			GetBalance(gomock.Any(), consumer0FeePoolAddr, feesPerBlock.Denom).
-			Return(sdk.NewInt64Coin("uphoton", 15)),
-		mocks.MockBankKeeper.EXPECT().
 			SendCoinsFromAccountToModule(gomock.Any(), consumer0FeePoolAddr, providertypes.ModuleName, sdk.NewCoins(feesPerBlock)).
 			Return(errors.New("bank send restriction")),
-		mocks.MockBankKeeper.EXPECT().
-			GetBalance(gomock.Any(), consumer1FeePoolAddr, feesPerBlock.Denom).
-			Return(sdk.NewInt64Coin("uphoton", 18)),
 		mocks.MockBankKeeper.EXPECT().
 			SendCoinsFromAccountToModule(gomock.Any(), consumer1FeePoolAddr, providertypes.ModuleName, sdk.NewCoins(feesPerBlock)).
 			Return(nil),
 	)
 
-	total, err := k.CollectFeesFromConsumers(ctx)
-	require.NoError(t, err)
+	total := k.CollectFeesFromConsumers(ctx)
 	require.Equal(t, sdk.NewInt64Coin("uphoton", 10), total)
 	require.False(t, k.IsConsumerInDebt(ctx, consumer0))
 	require.False(t, k.IsConsumerInDebt(ctx, consumer1))
-}
-
-// TestCollectFeesFromConsumersMarksDebtOnInsufficientFunds: when GetBalance
-// reports enough but SendCoins returns ErrInsufficientFunds (e.g. vesting
-// lockup), the consumer is correctly marked as in debt.
-func TestCollectFeesFromConsumersMarksDebtOnInsufficientFunds(t *testing.T) {
-	params := testkeeper.NewInMemKeeperParams(t)
-	k, ctx, ctrl, mocks := testkeeper.GetProviderKeeperAndCtx(t, params)
-	defer ctrl.Finish()
-
-	consumer0 := k.FetchAndIncrementConsumerId(ctx)
-	k.SetConsumerPhase(ctx, consumer0, providertypes.CONSUMER_PHASE_LAUNCHED)
-
-	feesPerBlock := sdk.NewInt64Coin("uphoton", 10)
-	providerParams := providertypes.DefaultParams()
-	providerParams.FeesPerBlock = feesPerBlock
-	k.SetParams(ctx, providerParams)
-	consumer0FeePoolAddr := k.GetConsumerFeePoolAddress(consumer0)
-
-	gomock.InOrder(
-		mocks.MockBankKeeper.EXPECT().
-			GetBalance(gomock.Any(), consumer0FeePoolAddr, feesPerBlock.Denom).
-			Return(sdk.NewInt64Coin("uphoton", 15)),
-		mocks.MockBankKeeper.EXPECT().
-			SendCoinsFromAccountToModule(gomock.Any(), consumer0FeePoolAddr, providertypes.ModuleName, sdk.NewCoins(feesPerBlock)).
-			Return(sdkerrors.ErrInsufficientFunds.Wrapf("spendable 5 < 10")),
-	)
-
-	total, err := k.CollectFeesFromConsumers(ctx)
-	require.NoError(t, err)
-	require.Equal(t, sdk.NewCoin("uphoton", math.ZeroInt()), total)
-	require.True(t, k.IsConsumerInDebt(ctx, consumer0))
 }
 
 // Helpers for the distribution tests.
