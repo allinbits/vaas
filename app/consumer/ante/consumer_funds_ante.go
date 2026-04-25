@@ -65,10 +65,6 @@ func (cfd ConsumerFundsDecorator) AnteHandle(ctx sdk.Context, tx sdk.Tx, simulat
 }
 
 func isAllowedDuringDebtTx(msgs []sdk.Msg) bool {
-	if len(msgs) == 0 {
-		return false
-	}
-
 	for _, msg := range msgs {
 		url := sdk.MsgTypeURL(msg)
 		if !strings.HasPrefix(url, "/ibc.core.") && !strings.HasPrefix(url, "/cosmos.gov.") {
