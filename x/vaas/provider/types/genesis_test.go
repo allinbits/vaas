@@ -4,16 +4,15 @@ import (
 	"testing"
 	"time"
 
+	"github.com/allinbits/vaas/testutil/crypto"
+	"github.com/allinbits/vaas/x/vaas/provider/types"
+	vaastypes "github.com/allinbits/vaas/x/vaas/types"
+	tmtypes "github.com/cometbft/cometbft/types"
+	sdk "github.com/cosmos/cosmos-sdk/types"
 	clienttypes "github.com/cosmos/ibc-go/v10/modules/core/02-client/types"
 	commitmenttypes "github.com/cosmos/ibc-go/v10/modules/core/23-commitment/types"
 	ibctmtypes "github.com/cosmos/ibc-go/v10/modules/light-clients/07-tendermint"
 	"github.com/stretchr/testify/require"
-
-	tmtypes "github.com/cometbft/cometbft/types"
-
-	"github.com/allinbits/vaas/testutil/crypto"
-	"github.com/allinbits/vaas/x/vaas/provider/types"
-	vaastypes "github.com/allinbits/vaas/x/vaas/types"
 )
 
 func TestValidateGenesisState(t *testing.T) {
@@ -60,7 +59,7 @@ func TestValidateGenesisState(t *testing.T) {
 				nil,
 				[]types.ConsumerState{{ChainId: "chainid-1", ClientId: "client-id", ConsumerGenesis: getInitialConsumerGenesis(t, "chainid-1", false)}},
 				types.NewParams(
-					types.DefaultTrustingPeriodFraction, time.Hour, 600, 180),
+					types.DefaultTrustingPeriodFraction, time.Hour, 600, 180, sdk.NewInt64Coin("uphoton", 42)),
 				nil,
 				nil,
 				nil,
@@ -100,8 +99,8 @@ func TestValidateGenesisState(t *testing.T) {
 				nil,
 				[]types.ConsumerState{{ChainId: "chainid-1", ClientId: "client-id"}},
 				types.NewParams(
-					"0.0",
-					vaastypes.DefaultVAASTimeoutPeriod, 600, 180),
+					"0.0", // 0 trusting period fraction here
+					vaastypes.DefaultVAASTimeoutPeriod, 600, 180, sdk.NewInt64Coin("uphoton", 42)),
 				nil,
 				nil,
 				nil,
@@ -116,8 +115,8 @@ func TestValidateGenesisState(t *testing.T) {
 				[]types.ConsumerState{{ChainId: "chainid-1", ClientId: "client-id"}},
 				types.NewParams(
 					types.DefaultTrustingPeriodFraction,
-					0,
-					600, 180),
+					0, // 0 ccv timeout here
+					600, 180, sdk.NewInt64Coin("uphoton", 42)),
 				nil,
 				nil,
 				nil,

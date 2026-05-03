@@ -142,6 +142,21 @@ func TestPendingVSCs(t *testing.T) {
 	require.Len(t, pending, 0)
 }
 
+func TestConsumerDebtStatus(t *testing.T) {
+	providerKeeper, ctx, ctrl, _ := testkeeper.GetProviderKeeperAndCtx(t, testkeeper.NewInMemKeeperParams(t))
+	defer ctrl.Finish()
+
+	consumerID := CONSUMER_ID
+
+	require.False(t, providerKeeper.IsConsumerInDebt(ctx, consumerID))
+
+	providerKeeper.SetConsumerInDebt(ctx, consumerID, true)
+	require.True(t, providerKeeper.IsConsumerInDebt(ctx, consumerID))
+
+	providerKeeper.DeleteConsumerDebt(ctx, consumerID)
+	require.False(t, providerKeeper.IsConsumerInDebt(ctx, consumerID))
+}
+
 // TestInitHeight tests the getter and setter methods for the stored block heights (on provider) when a given consumer chain was started
 func TestInitHeight(t *testing.T) {
 	providerKeeper, ctx, ctrl, _ := testkeeper.GetProviderKeeperAndCtx(t, testkeeper.NewInMemKeeperParams(t))

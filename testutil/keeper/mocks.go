@@ -18,8 +18,10 @@ import (
 	math "cosmossdk.io/math"
 	types "github.com/cosmos/cosmos-sdk/types"
 	types0 "github.com/cosmos/cosmos-sdk/x/staking/types"
-	types1 "github.com/cosmos/ibc-go/v10/modules/core/02-client/types"
-	clientv2types "github.com/cosmos/ibc-go/v10/modules/core/02-client/v2/types"
+	types1 "github.com/cosmos/ibc-go/v10/modules/apps/transfer/types"
+	types2 "github.com/cosmos/ibc-go/v10/modules/core/02-client/types"
+	types3 "github.com/cosmos/ibc-go/v10/modules/core/02-client/v2/types"
+	types4 "github.com/cosmos/ibc-go/v10/modules/core/04-channel/v2/types"
 	exported "github.com/cosmos/ibc-go/v10/modules/core/exported"
 	gomock "go.uber.org/mock/gomock"
 )
@@ -358,6 +360,20 @@ func (mr *MockStakingKeeperMockRecorder) UnbondingTime(ctx any) *gomock.Call {
 	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "UnbondingTime", reflect.TypeOf((*MockStakingKeeper)(nil).UnbondingTime), ctx)
 }
 
+// ValidatorAddressCodec mocks base method.
+func (m *MockStakingKeeper) ValidatorAddressCodec() address.Codec {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "ValidatorAddressCodec")
+	ret0, _ := ret[0].(address.Codec)
+	return ret0
+}
+
+// ValidatorAddressCodec indicates an expected call of ValidatorAddressCodec.
+func (mr *MockStakingKeeperMockRecorder) ValidatorAddressCodec() *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "ValidatorAddressCodec", reflect.TypeOf((*MockStakingKeeper)(nil).ValidatorAddressCodec))
+}
+
 // MockSlashingKeeper is a mock of SlashingKeeper interface.
 type MockSlashingKeeper struct {
 	ctrl     *gomock.Controller
@@ -538,10 +554,10 @@ func (mr *MockClientKeeperMockRecorder) GetClientStatus(ctx, clientID any) *gomo
 }
 
 // GetStoreProvider mocks base method.
-func (m *MockClientKeeper) GetStoreProvider() types1.StoreProvider {
+func (m *MockClientKeeper) GetStoreProvider() types2.StoreProvider {
 	m.ctrl.T.Helper()
 	ret := m.ctrl.Call(m, "GetStoreProvider")
-	ret0, _ := ret[0].(types1.StoreProvider)
+	ret0, _ := ret[0].(types2.StoreProvider)
 	return ret0
 }
 
@@ -588,10 +604,10 @@ func (m *MockClientV2Keeper) EXPECT() *MockClientV2KeeperMockRecorder {
 }
 
 // GetClientCounterparty mocks base method.
-func (m *MockClientV2Keeper) GetClientCounterparty(ctx types.Context, clientID string) (clientv2types.CounterpartyInfo, bool) {
+func (m *MockClientV2Keeper) GetClientCounterparty(ctx types.Context, clientID string) (types3.CounterpartyInfo, bool) {
 	m.ctrl.T.Helper()
 	ret := m.ctrl.Call(m, "GetClientCounterparty", ctx, clientID)
-	ret0, _ := ret[0].(clientv2types.CounterpartyInfo)
+	ret0, _ := ret[0].(types3.CounterpartyInfo)
 	ret1, _ := ret[1].(bool)
 	return ret0, ret1
 }
@@ -603,7 +619,7 @@ func (mr *MockClientV2KeeperMockRecorder) GetClientCounterparty(ctx, clientID an
 }
 
 // SetClientCounterparty mocks base method.
-func (m *MockClientV2Keeper) SetClientCounterparty(ctx types.Context, clientID string, counterparty clientv2types.CounterpartyInfo) {
+func (m *MockClientV2Keeper) SetClientCounterparty(ctx types.Context, clientID string, counterparty types3.CounterpartyInfo) {
 	m.ctrl.T.Helper()
 	m.ctrl.Call(m, "SetClientCounterparty", ctx, clientID, counterparty)
 }
@@ -690,6 +706,34 @@ func (mr *MockBankKeeperMockRecorder) GetBalance(ctx, addr, denom any) *gomock.C
 	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "GetBalance", reflect.TypeOf((*MockBankKeeper)(nil).GetBalance), ctx, addr, denom)
 }
 
+// SendCoinsFromAccountToModule mocks base method.
+func (m *MockBankKeeper) SendCoinsFromAccountToModule(ctx context.Context, senderAddr types.AccAddress, recipientModule string, amt types.Coins) error {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "SendCoinsFromAccountToModule", ctx, senderAddr, recipientModule, amt)
+	ret0, _ := ret[0].(error)
+	return ret0
+}
+
+// SendCoinsFromAccountToModule indicates an expected call of SendCoinsFromAccountToModule.
+func (mr *MockBankKeeperMockRecorder) SendCoinsFromAccountToModule(ctx, senderAddr, recipientModule, amt any) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "SendCoinsFromAccountToModule", reflect.TypeOf((*MockBankKeeper)(nil).SendCoinsFromAccountToModule), ctx, senderAddr, recipientModule, amt)
+}
+
+// SendCoinsFromModuleToAccount mocks base method.
+func (m *MockBankKeeper) SendCoinsFromModuleToAccount(ctx context.Context, senderModule string, recipientAddr types.AccAddress, amt types.Coins) error {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "SendCoinsFromModuleToAccount", ctx, senderModule, recipientAddr, amt)
+	ret0, _ := ret[0].(error)
+	return ret0
+}
+
+// SendCoinsFromModuleToAccount indicates an expected call of SendCoinsFromModuleToAccount.
+func (mr *MockBankKeeperMockRecorder) SendCoinsFromModuleToAccount(ctx, senderModule, recipientAddr, amt any) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "SendCoinsFromModuleToAccount", reflect.TypeOf((*MockBankKeeper)(nil).SendCoinsFromModuleToAccount), ctx, senderModule, recipientAddr, amt)
+}
+
 // SendCoinsFromModuleToModule mocks base method.
 func (m *MockBankKeeper) SendCoinsFromModuleToModule(ctx context.Context, senderModule, recipientModule string, amt types.Coins) error {
 	m.ctrl.T.Helper()
@@ -754,4 +798,82 @@ func (m *MockAccountKeeper) GetModuleAccount(ctx context.Context, name string) t
 func (mr *MockAccountKeeperMockRecorder) GetModuleAccount(ctx, name any) *gomock.Call {
 	mr.mock.ctrl.T.Helper()
 	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "GetModuleAccount", reflect.TypeOf((*MockAccountKeeper)(nil).GetModuleAccount), ctx, name)
+}
+
+// MockChannelV2Keeper is a mock of ChannelV2Keeper interface.
+type MockChannelV2Keeper struct {
+	ctrl     *gomock.Controller
+	recorder *MockChannelV2KeeperMockRecorder
+	isgomock struct{}
+}
+
+// MockChannelV2KeeperMockRecorder is the mock recorder for MockChannelV2Keeper.
+type MockChannelV2KeeperMockRecorder struct {
+	mock *MockChannelV2Keeper
+}
+
+// NewMockChannelV2Keeper creates a new mock instance.
+func NewMockChannelV2Keeper(ctrl *gomock.Controller) *MockChannelV2Keeper {
+	mock := &MockChannelV2Keeper{ctrl: ctrl}
+	mock.recorder = &MockChannelV2KeeperMockRecorder{mock}
+	return mock
+}
+
+// EXPECT returns an object that allows the caller to indicate expected use.
+func (m *MockChannelV2Keeper) EXPECT() *MockChannelV2KeeperMockRecorder {
+	return m.recorder
+}
+
+// SendPacket mocks base method.
+func (m *MockChannelV2Keeper) SendPacket(ctx context.Context, msg *types4.MsgSendPacket) (*types4.MsgSendPacketResponse, error) {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "SendPacket", ctx, msg)
+	ret0, _ := ret[0].(*types4.MsgSendPacketResponse)
+	ret1, _ := ret[1].(error)
+	return ret0, ret1
+}
+
+// SendPacket indicates an expected call of SendPacket.
+func (mr *MockChannelV2KeeperMockRecorder) SendPacket(ctx, msg any) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "SendPacket", reflect.TypeOf((*MockChannelV2Keeper)(nil).SendPacket), ctx, msg)
+}
+
+// MockIBCTransferKeeper is a mock of IBCTransferKeeper interface.
+type MockIBCTransferKeeper struct {
+	ctrl     *gomock.Controller
+	recorder *MockIBCTransferKeeperMockRecorder
+	isgomock struct{}
+}
+
+// MockIBCTransferKeeperMockRecorder is the mock recorder for MockIBCTransferKeeper.
+type MockIBCTransferKeeperMockRecorder struct {
+	mock *MockIBCTransferKeeper
+}
+
+// NewMockIBCTransferKeeper creates a new mock instance.
+func NewMockIBCTransferKeeper(ctrl *gomock.Controller) *MockIBCTransferKeeper {
+	mock := &MockIBCTransferKeeper{ctrl: ctrl}
+	mock.recorder = &MockIBCTransferKeeperMockRecorder{mock}
+	return mock
+}
+
+// EXPECT returns an object that allows the caller to indicate expected use.
+func (m *MockIBCTransferKeeper) EXPECT() *MockIBCTransferKeeperMockRecorder {
+	return m.recorder
+}
+
+// Transfer mocks base method.
+func (m *MockIBCTransferKeeper) Transfer(arg0 context.Context, arg1 *types1.MsgTransfer) (*types1.MsgTransferResponse, error) {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "Transfer", arg0, arg1)
+	ret0, _ := ret[0].(*types1.MsgTransferResponse)
+	ret1, _ := ret[1].(error)
+	return ret0, ret1
+}
+
+// Transfer indicates an expected call of Transfer.
+func (mr *MockIBCTransferKeeperMockRecorder) Transfer(arg0, arg1 any) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "Transfer", reflect.TypeOf((*MockIBCTransferKeeper)(nil).Transfer), arg0, arg1)
 }

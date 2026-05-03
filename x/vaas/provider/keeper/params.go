@@ -10,6 +10,8 @@ import (
 	clienttypes "github.com/cosmos/ibc-go/v10/modules/core/02-client/types"
 	commitmenttypes "github.com/cosmos/ibc-go/v10/modules/core/23-commitment/types"
 	ibctmtypes "github.com/cosmos/ibc-go/v10/modules/light-clients/07-tendermint"
+
+	sdk "github.com/cosmos/cosmos-sdk/types"
 )
 
 // GetTemplateClient returns a template Tendermint client state with default values.
@@ -52,6 +54,12 @@ func (k Keeper) GetBlocksPerEpoch(ctx context.Context) int64 {
 func (k Keeper) GetMaxProviderConsensusValidators(ctx context.Context) int64 {
 	params := k.GetParams(ctx)
 	return params.MaxProviderConsensusValidators
+}
+
+// GetFeesPerBlock returns the fees that each consumer chain must pay per block
+func (k Keeper) GetFeesPerBlock(ctx context.Context) sdk.Coin {
+	params := k.GetParams(ctx)
+	return params.FeesPerBlock
 }
 
 // GetParams returns the paramset for the provider module

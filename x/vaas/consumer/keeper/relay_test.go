@@ -222,3 +222,25 @@ func TestOnRecvVSCPacketV2DuplicateUpdates(t *testing.T) {
 	require.Equal(t, 1, len(gotPendingChanges.ValidatorUpdates))
 	require.Equal(t, valUpdates[1], gotPendingChanges.ValidatorUpdates[0])
 }
+
+// TestOnRecvVSCPacketV2DebtStatus verifies each received VSC packet
+// overwrites the consumer's in-debt flag with the value carried by the
+// packet, including on empty-update "heartbeat" packets.
+func TestOnRecvVSCPacketV2DebtStatus(t *testing.T) {
+	providerClientID := "07-tendermint-0"
+
+	consumerKeeper, ctx, ctrl, _ := testkeeper.GetConsumerKeeperAndCtx(t, testkeeper.NewInMemKeeperParams(t))
+	defer ctrl.Finish()
+
+	require.False(t, consumerKeeper.IsConsumerInDebt(ctx))
+
+	pd1 := types.NewValidatorSetChangePacketData(nil, 1)
+	pd1.ConsumerInDebt = true
+	require.NoError(t, consumerKeeper.OnRecvVSCPacketV2(ctx, providerClientID, pd1))
+	require.True(t, consumerKeeper.IsConsumerInDebt(ctx))
+
+	pd2 := types.NewValidatorSetChangePacketData(nil, 2)
+	pd2.ConsumerInDebt = false
+	require.NoError(t, consumerKeeper.OnRecvVSCPacketV2(ctx, providerClientID, pd2))
+	require.False(t, consumerKeeper.IsConsumerInDebt(ctx))
+}

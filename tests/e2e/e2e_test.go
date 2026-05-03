@@ -7,4 +7,5 @@ func (s *IntegrationTestSuite) TestVAAS() {
 	s.testConsumerOnProvider()
 	s.testProviderOnConsumer()
 	s.testValidatorSetSync()
+	s.testConsumerDebtFlow()
 }

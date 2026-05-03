@@ -4,6 +4,7 @@ go 1.25.0
 
 require (
 	github.com/golangci/golangci-lint v1.64.8
+	go.uber.org/mock v0.6.0
 	golang.org/x/vuln v1.1.4
 )
 

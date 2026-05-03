@@ -44,6 +44,9 @@ func (k Keeper) OnRecvVSCPacketV2(ctx sdk.Context, sourceClientID string, newCha
 		)
 	}
 
+	k.SetConsumerInDebt(ctx, newChanges.ConsumerInDebt)
+
+	// Set pending changes by accumulating changes from this packet with all prior changes
 	currentValUpdates := []abci.ValidatorUpdate{}
 	currentChanges, exists := k.GetPendingChanges(ctx)
 	if exists {

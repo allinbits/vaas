@@ -33,4 +33,5 @@ var (
 	PrevStandaloneChainPrefix   = collections.NewPrefix(19)
 	ParametersPrefix            = collections.NewPrefix(22)
 	HighestValsetUpdateIDPrefix = collections.NewPrefix(23)
+	ConsumerDebtPrefix          = collections.NewPrefix(24)
 )

@@ -4,4 +4,8 @@ import (
 	errorsmod "cosmossdk.io/errors"
 )
 
-var ErrInvalidProviderClient = errorsmod.Register(ModuleName, 2, "invalid provider client")
+// Consumer sentinel errors
+var (
+	ErrInvalidProviderClient = errorsmod.Register(ModuleName, 2, "invalid provider client")
+	ErrConsumerInDebt        = errorsmod.Register(ModuleName, 3, "consumer chain is in debt")
+)

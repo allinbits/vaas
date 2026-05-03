@@ -56,6 +56,7 @@ type Keeper struct {
 	PreVAAS               collections.Item[uint64]
 	InitialValSet         collections.Item[types.GenesisState]
 	Params                collections.Item[vaastypes.ConsumerParams]
+	ConsumerInDebt        collections.Item[bool]
 	PrevStandaloneChain   collections.Item[[]byte]
 	HeightValsetUpdateIDs collections.Map[uint64, uint64]
 	CrossChainValidators  collections.Map[[]byte, types.CrossChainValidator]
@@ -98,6 +99,7 @@ func NewKeeper(
 		PreVAAS:               collections.NewItem(sb, types.PreVAASPrefix, "pre_vaas", collections.Uint64Value),
 		InitialValSet:         collections.NewItem(sb, types.InitialValSetPrefix, "initial_val_set", codec.CollValue[types.GenesisState](cdc)),
 		Params:                collections.NewItem(sb, types.ParametersPrefix, "params", codec.CollValue[vaastypes.ConsumerParams](cdc)),
+		ConsumerInDebt:        collections.NewItem(sb, types.ConsumerDebtPrefix, "consumer_in_debt", collections.BoolValue),
 		PrevStandaloneChain:   collections.NewItem(sb, types.PrevStandaloneChainPrefix, "prev_standalone_chain", collections.BytesValue),
 		HeightValsetUpdateIDs: collections.NewMap(sb, types.HeightValsetUpdateIDPrefix, "height_valset_update_ids", collections.Uint64Key, collections.Uint64Value),
 		CrossChainValidators:  collections.NewMap(sb, types.CrossChainValidatorPrefix, "cross_chain_validators", collections.BytesKey, codec.CollValue[types.CrossChainValidator](cdc)),
@@ -136,6 +138,7 @@ func NewNonZeroKeeper(cdc codec.BinaryCodec, storeService corestoretypes.KVStore
 		PreVAAS:               collections.NewItem(sb, types.PreVAASPrefix, "pre_vaas", collections.Uint64Value),
 		InitialValSet:         collections.NewItem(sb, types.InitialValSetPrefix, "initial_val_set", codec.CollValue[types.GenesisState](cdc)),
 		Params:                collections.NewItem(sb, types.ParametersPrefix, "params", codec.CollValue[vaastypes.ConsumerParams](cdc)),
+		ConsumerInDebt:        collections.NewItem(sb, types.ConsumerDebtPrefix, "consumer_in_debt", collections.BoolValue),
 		PrevStandaloneChain:   collections.NewItem(sb, types.PrevStandaloneChainPrefix, "prev_standalone_chain", collections.BytesValue),
 		HeightValsetUpdateIDs: collections.NewMap(sb, types.HeightValsetUpdateIDPrefix, "height_valset_update_ids", collections.Uint64Key, collections.Uint64Value),
 		CrossChainValidators:  collections.NewMap(sb, types.CrossChainValidatorPrefix, "cross_chain_validators", collections.BytesKey, codec.CollValue[types.CrossChainValidator](cdc)),

@@ -4,10 +4,11 @@ import (
 	"testing"
 	"time"
 
-	"github.com/stretchr/testify/require"
-
 	testkeeper "github.com/allinbits/vaas/testutil/keeper"
 	providertypes "github.com/allinbits/vaas/x/vaas/provider/types"
+	"github.com/stretchr/testify/require"
+
+	sdk "github.com/cosmos/cosmos-sdk/types"
 )
 
 // TestParams tests the getting/setting of provider ccv module params.
@@ -27,6 +28,7 @@ func TestParams(t *testing.T) {
 		7*24*time.Hour,
 		600,
 		10,
+		sdk.NewInt64Coin("uphoton", 50),
 	)
 	providerKeeper.SetParams(ctx, newParams)
 	params = providerKeeper.GetParams(ctx)

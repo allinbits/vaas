@@ -5,6 +5,8 @@ import (
 	"time"
 
 	vaastypes "github.com/allinbits/vaas/x/vaas/types"
+
+	sdk "github.com/cosmos/cosmos-sdk/types"
 )
 
 const (
@@ -24,6 +26,12 @@ const (
 	// DefaultMaxProviderConsensusValidators is the default maximum number of validators that will
 	// be passed on from the staking module to the consensus engine on the provider.
 	DefaultMaxProviderConsensusValidators = 180
+
+	// DefaultFeesPerBlockDenom is the base denom charged to each consumer chain per block.
+	DefaultFeesPerBlockDenom = "uphoton"
+
+	// DefaultFeesPerBlockAmount is the default amount (in DefaultFeesPerBlockDenom) charged per block.
+	DefaultFeesPerBlockAmount = int64(1000)
 )
 
 // NewParams creates new provider parameters with provided arguments
@@ -32,12 +40,14 @@ func NewParams(
 	vaasTimeoutPeriod time.Duration,
 	blocksPerEpoch int64,
 	maxProviderConsensusValidators int64,
+	feesPerBlock sdk.Coin,
 ) Params {
 	return Params{
 		TrustingPeriodFraction:         trustingPeriodFraction,
 		VaasTimeoutPeriod:              vaasTimeoutPeriod,
 		BlocksPerEpoch:                 blocksPerEpoch,
 		MaxProviderConsensusValidators: maxProviderConsensusValidators,
+		FeesPerBlock:                   feesPerBlock,
 	}
 }
 
@@ -47,6 +57,7 @@ func DefaultParams() Params {
 		vaastypes.DefaultVAASTimeoutPeriod,
 		DefaultBlocksPerEpoch,
 		DefaultMaxProviderConsensusValidators,
+		sdk.NewInt64Coin(DefaultFeesPerBlockDenom, DefaultFeesPerBlockAmount),
 	)
 }
 
@@ -63,6 +74,20 @@ func (p Params) Validate() error {
 	}
 	if err := vaastypes.ValidatePositiveInt64(p.MaxProviderConsensusValidators); err != nil {
 		return fmt.Errorf("max provider consensus validators is invalid: %s", err)
+	}
+	if err := validateFeesPerBlock(p.FeesPerBlock); err != nil {
+		return err
+	}
+
+	return nil
+}
+
+func validateFeesPerBlock(coin sdk.Coin) error {
+	if !coin.IsValid() {
+		return fmt.Errorf("fees per block coin is invalid: %s", coin)
+	}
+	if coin.IsZero() {
+		return fmt.Errorf("fees per block must be positive")
 	}
 	return nil
 }
