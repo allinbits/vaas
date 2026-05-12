@@ -1,6 +1,18 @@
 # VAAS Module Rewrite Summary
 
-This document summarizes the rewrite of the CCV (Cross-Chain Validation) provider and consumer modules from `github.com/cosmos/interchain-security/v7` into a new `vaas` folder as a standalone Go module with package path `github.com/allinbits/vaas`.
+This document records how VAAS was ported from
+[`github.com/cosmos/interchain-security/v7`](https://github.com/cosmos/interchain-security)
+into the standalone Go module `github.com/allinbits/vaas`. Its purpose is to
+explain the **diff against the ICS codebase VAAS was ported from** — what was
+removed, what was kept, and why — for readers familiar with the original
+Interchain Security code. VAAS is now an independent project; there is no
+intent or path to upstream changes back to `interchain-security`.
+
+> **NOTE:** this is a historical comparison. The function-level diffs in
+> the "Code Changes Made" section below describe edits performed during the
+> port; subsequent cleanup has removed some of the resulting no-op stubs
+> entirely. For current behavior, consult the code, [AGENTS.md](AGENTS.md),
+> and [`docs/consumer-lifecycle.md`](docs/consumer-lifecycle.md).
 
 ## Overview
 
@@ -129,50 +141,53 @@ The rewrite simplifies the interchain security modules by removing several featu
 
 ## File Structure
 
-```
+```text
 vaas/
 ├── go.mod                      # module github.com/allinbits/vaas
 ├── go.sum
 ├── REWRITE_SUMMARY.md          # This document
+├── app/                        # provider + consumer Cosmos SDK apps and CLIs
+├── docs/                       # protocol documentation
+├── proto/vaas/                 # protobuf definitions
+├── tests/e2e/                  # Docker-based e2e suite (ts-relayer)
 ├── testutil/
-│   ├── crypto/                 # Test crypto utilities
-│   └── keeper/                 # Test keeper utilities
-└── x/
-    └── ccv/
-        ├── provider/
-        │   ├── keeper/         # Provider keeper implementation
-        │   ├── types/          # Provider types (includes .pb.go files)
-        │   ├── client/cli/     # CLI commands
-        │   ├── module.go       # Module definition
-        │   └── ibc_module.go   # IBC callbacks
-        ├── consumer/
-        │   ├── keeper/         # Consumer keeper implementation
-        │   ├── types/          # Consumer types (includes .pb.go files)
-        │   ├── client/cli/     # CLI commands
-        │   ├── module.go       # Module definition
-        │   └── ibc_module.go   # IBC callbacks
-        └── types/              # Shared types
+│   ├── crypto/                 # test crypto utilities
+│   └── keeper/                 # in-memory keeper + generated mocks
+└── x/vaas/
+    ├── provider/
+    │   ├── keeper/             # provider keeper
+    │   ├── types/              # provider types (includes .pb.go files)
+    │   ├── client/cli/         # CLI commands
+    │   ├── module.go           # module definition
+    │   └── ibc_module.go       # IBC v2 callbacks (api.IBCModule)
+    ├── consumer/
+    │   ├── keeper/             # consumer keeper
+    │   ├── types/              # consumer types (includes .pb.go files)
+    │   ├── client/cli/         # CLI commands
+    │   ├── module.go           # module definition
+    │   └── ibc_module.go       # IBC v2 callbacks (api.IBCModule)
+    ├── no_valupdates_staking/  # staking without valset exports (consumer)
+    ├── no_valupdates_genutil/  # genutil without gentx valset init (consumer)
+    └── types/                  # shared types
 ```
 
-## Test Status
+## Testing
 
-### Tests Passing
-- `x/vaas/consumer/keeper` - Genesis, keeper, params, validators tests
-- `x/vaas/consumer/types` - Genesis, keys, params tests
-- `x/vaas/provider/keeper` - Consumer equivocation, hooks, keeper, key assignment, msg server, params, permissionless tests
-- `x/vaas/provider/types` - Genesis, keys, msg, params tests
-- `x/vaas/types` - Shared params, utils, wire tests
+Unit tests live alongside their source files (`*_test.go`) and rely on the
+in-memory keeper helpers in `testutil/keeper/`. Mocks are regenerated from
+`x/vaas/types/expected_keepers.go` via `make mocks-gen`. Docker-based e2e
+tests are under `tests/e2e/`.
 
-### Tests Removed (tested removed features)
-- Provider: relay, staking keeper interface, validator set update, consumer lifecycle, genesis, grpc query
-- Consumer: relay (slash packet sending)
+When tests for features that were removed entirely (e.g. slash throttling,
+reward distribution, PSS, power shaping) were not ported.
 
 ## Build & Test Commands
 
 ```bash
-cd vaas
-go build ./...
-go test ./...
+make build      # go build ./...
+make test       # unit tests (25m timeout, excludes e2e)
+make lint       # golangci-lint
+make test-e2e   # Docker-based e2e (requires Docker)
 ```
 
 ## Migration Notes
@@ -186,9 +201,15 @@ go test ./...
 
 ## Dependencies
 
-The module uses the same dependencies as the original interchain-security v7:
-- Cosmos SDK v0.53
-- IBC-Go v10.1.1
-- CometBFT
+VAAS targets the same family of dependencies as interchain-security v7,
+adjusted for the AtomOne ecosystem. See [`go.mod`](go.mod) for the exact
+pinned versions; at the time of writing:
+
+- Cosmos SDK v0.53.0, replaced via `go.mod` `replace` directive with the
+  AtomOne fork (`github.com/atomone-hub/cosmos-sdk v0.50.14-atomone.x`).
+- IBC-Go v10.2.0 (IBC v2 routing is used; see
+  [`x/vaas/provider/ibc_module.go`](x/vaas/provider/ibc_module.go) and
+  [`x/vaas/consumer/ibc_module.go`](x/vaas/consumer/ibc_module.go)).
+- CometBFT v0.38.20.
 
 All imports were updated from `github.com/cosmos/interchain-security/v7` to `github.com/allinbits/vaas`.

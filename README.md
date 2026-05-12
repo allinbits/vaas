@@ -6,12 +6,20 @@
 
 VAAS allows Cosmos blockchains to lease their proof-of-stake security to consumer chains. All active validators on the provider chain automatically validate all consumer chains - there is no opt-in/opt-out mechanism.
 
+## IBC v2 only
+
+VAAS uses IBC v2 exclusively — no channel handshake, no port reservations.
+The provider and consumer modules register on `ibcRouterV2` under the
+application IDs `vaasprovider` and `vaasconsumer`. After a consumer launches,
+a relayer (the localnet and e2e suites use
+[`ts-relayer`](https://github.com/allinbits/ibc-v2-ts-relayer)) creates an
+IBC v2 client on each chain pointing at the counterparty and registers the
+path. The provider then discovers its consumer client at the next epoch
+boundary; all VSC packets flow over that client. Wiring VAAS into a host app
+just means adding the v2 routes — see [`app/provider/app.go`](app/provider/app.go)
+and [`app/consumer/app.go`](app/consumer/app.go) for reference.
+
 ## Features
-
-## IBC v2 support
-
-The VAAS implementation supports IBC v2 only.
-IBC v2 is easily wireable by adding the IBC router v2 in a ibc-go >= 10.x.y compatible chain.
 
 ### Kept from ICS
 
@@ -50,6 +58,15 @@ make lint               # golangci-lint
 make docker-build-all
 make test-e2e
 ```
+
+## Documentation
+
+- [Localnet setup](app/README.md) — run a provider, a consumer, and `ts-relayer` locally
+- [Consumer lifecycle](docs/consumer-lifecycle.md) — phases, on-chain effects, operator/relayer responsibilities
+- [Contributor guide (AGENTS.md)](AGENTS.md) — architecture, build/test commands, code layout
+- [Design rationale (DESIGN_RATIONALE.md)](DESIGN_RATIONALE.md) — why VAAS is shaped the way it is
+- [Diff vs the ICS codebase VAAS ported from (REWRITE_SUMMARY.md)](REWRITE_SUMMARY.md) — what was removed/kept in the port
+- [PLAN.old.md](PLAN.old.md) — the original pre-port rewrite plan, kept for archival reference
 
 ## Learn More
 
