@@ -5,7 +5,6 @@ const (
 	EventTypeTimeout                    = "timeout"
 	EventTypePacket                     = "vaas_packet"
 	EventTypeChannelEstablished         = "channel_established"
-	EventTypeFeeTransferChannelOpened   = "fee_transfer_channel_opened"
 	EventTypeConsumerClientCreated      = "consumer_client_created"
 	EventTypeAssignConsumerKey          = "assign_consumer_key"
 	EventTypeSubmitConsumerMisbehaviour = "submit_consumer_misbehaviour"

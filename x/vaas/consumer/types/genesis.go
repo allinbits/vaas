@@ -11,8 +11,6 @@ import (
 )
 
 // NewRestartGenesisState returns a consumer GenesisState that has already been established.
-// Note: OutstandingDowntimeSlashing and LastTransmissionBlockHeight are deprecated
-// as slash and distribution features have been removed.
 func NewRestartGenesisState(
 	clientID string,
 	initValSet []abci.ValidatorUpdate,
