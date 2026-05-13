@@ -412,7 +412,7 @@ func (k Keeper) DeleteConsumerChain(ctx sdk.Context, consumerId string) (err err
 	// TODO (PERMISSIONLESS) add newly-added state to be deleted
 
 	// Note that we do not delete ConsumerIdToChainIdKey and ConsumerIdToPhase, as well
-	// as consumer metadata, initialization and power-shaping parameters.
+	// as consumer metadata and initialization parameters.
 	// This is to enable block explorers and front ends to show information of
 	// consumer chains that were removed without needing an archive node.
 
