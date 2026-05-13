@@ -5,6 +5,7 @@ package vaas.provider.v1;
 option go_package = "github.com/allinbits/vaas/x/vaas/provider/types";
 
 import "gogoproto/gogo.proto";
+import "google/protobuf/timestamp.proto";
 import "vaas/v1/shared_consumer.proto";
 import "vaas/v1/wire.proto";
 import "vaas/provider/v1/provider.proto";
@@ -54,6 +55,25 @@ message ConsumerState {
   repeated string slash_downtime_ack = 6;
   // the phase of the consumer chain
   ConsumerPhase phase = 7;
+  // OwnerAddress is the bech32 address that authorises owner-only operations
+  // (UpdateConsumer, RemoveConsumer, key assignment, etc.) on the consumer.
+  // Always non-empty for any existing consumer record; set at REGISTERED.
+  string owner_address = 8;
+  // Metadata is the owner-supplied descriptor (name/description/repo).
+  // Preserved through DELETED so block explorers can show information
+  // about removed chains without an archive node.
+  vaas.provider.v1.ConsumerMetadata metadata = 9;
+  // InitParams are the owner-supplied launch parameters: spawn time,
+  // initial height, genesis hash, binary hash, etc. Preserved through
+  // DELETED for the same explorer reason. Carries the spawn_time used
+  // to re-derive the keeper's spawn-time queue, and the initial_height
+  // used to re-derive equivocation_evidence_min_height, at InitGenesis.
+  vaas.provider.v1.ConsumerInitializationParameters init_params = 10;
+  // RemovalTime is the wall-clock time at which a STOPPED consumer is
+  // scheduled to transition to DELETED. Set only when phase == STOPPED;
+  // absent otherwise. Used to re-derive the keeper's removal-time queue.
+  google.protobuf.Timestamp removal_time = 11
+      [ (gogoproto.stdtime) = true ];
 }
 
 // ValsetUpdateIdToHeight defines the genesis information for the mapping
