@@ -34,7 +34,9 @@ work-in-progress.
    client at the next epoch boundary.
 4. **Forward-only consumer lifecycle.** `REGISTERED → INITIALIZED → LAUNCHED
    → STOPPED → DELETED`, with a single rollback path (failed launch → back to
-   `REGISTERED`). No standalone-to-consumer changeover.
+   `REGISTERED`). Standalone-to-consumer changeover is not currently
+   supported; see [`docs/consumer-transition.md`](docs/consumer-transition.md)
+   for the future-work considerations.
 5. **Provider authority for control-plane messages.** `OnSendPacket` requires
    the keeper's authority as signer; consumers never send packets back
    (`OnRecvPacket` on the provider is a failure path; `OnSendPacket` on the
@@ -112,9 +114,11 @@ this list points to the rough areas, not the specific tickets.
   question; a draft PR proposes a slash-packet-based path.
 - **Timeout policy.** A VSC packet timeout currently has heavy consequences
   (consumer removal); whether this is the right default is open.
-- **Dead state and naming debt.** Some collections from earlier iterations
-  (`PreVAAS`, `PrevStandaloneChain`) are still wired in but unused; some
-  error codes registered in the shared types module are no longer raised.
+- **Standalone-to-consumer transition.** The `PreVAAS` / `PrevStandaloneChain`
+  collections and the `standaloneStakingKeeper` plumbing in the consumer
+  module are dead today but preserved deliberately as a reference for a
+  future transition implementation; see
+  [`docs/consumer-transition.md`](docs/consumer-transition.md).
 
 ## Explicit Non-Goals
 
@@ -125,7 +129,6 @@ back without a strong, documented reason:
 - Per-consumer power shaping (caps, priority lists)
 - Slash packet throttling / slash meters
 - Cross-chain reward distribution
-- Standalone-to-consumer changeover
 - Per-consumer commission rates
 - IBC v1 channel routing for VAAS messages
 - Inactive provider validators participating in consumer security (ADR-017)

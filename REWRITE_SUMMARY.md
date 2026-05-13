@@ -38,7 +38,7 @@ The rewrite simplifies the interchain security modules by removing several featu
 | **Slash Packet Sending** | All slash-related removed |
 | **Slash Packet Throttling/Retry** | All slash-related removed |
 | **Reward Distribution to Provider** | Consistent with provider removal |
-| **Standalone-to-Consumer Changeover** | Only new chains as consumers |
+| **Standalone-to-Consumer Changeover** | Not currently supported; the consumer-keeper wiring is preserved as a reference for future transition work (see [docs/consumer-transition.md](docs/consumer-transition.md)) |
 | **Outstanding Downtime Flag** | Part of slash removal |
 
 ## Features Kept

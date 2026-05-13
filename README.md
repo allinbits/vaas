@@ -45,7 +45,10 @@ and [`app/consumer/app.go`](app/consumer/app.go) for reference.
 | Slash Packet Throttling           | Simplified slash handling                      |
 | Per-Consumer Commission Rates     | Validators use same commission as provider     |
 | IBC v1 Channel Support            | IBC v2 only                                    |
-| Standalone-to-Consumer Changeover | Only new chains as consumers                   |
+| Standalone-to-Consumer Changeover | Not currently supported (future work)          |
+
+See [docs/consumer-transition.md](docs/consumer-transition.md) for the
+consequences and requirements of a future standalone-to-consumer transition.
 
 ## Build & Test
 
