@@ -1,12 +1,14 @@
 package keeper
 
 import (
+	"errors"
 	"fmt"
 
 	"github.com/allinbits/vaas/x/vaas/provider/types"
-	vaastypes "github.com/allinbits/vaas/x/vaas/types"
 
 	abci "github.com/cometbft/cometbft/abci/types"
+
+	"cosmossdk.io/collections"
 
 	sdk "github.com/cosmos/cosmos-sdk/types"
 )
@@ -99,47 +101,87 @@ func (k Keeper) InitGenesisValUpdates(ctx sdk.Context) []abci.ValidatorUpdate {
 	return valUpdates
 }
 
-// ExportGenesis returns the CCV provider module's exported genesis
+// ExportGenesis returns the CCV provider module's exported genesis.
+//
+// Per-consumer state is exported for every consumer id (across all phases
+// including DELETED) so that state-export software upgrades preserve the
+// audit trail that the keeper itself maintains (see DeleteConsumerChain in
+// consumer_lifecycle.go for the policy of keeping owner/metadata/init_params
+// past deletion).
+//
+// Spawn-time queue, removal-time queue, equivocation-evidence-min-height,
+// and per-consumer debt are NOT exported because they are derivable from
+// the per-consumer fields above and / or other module state at InitGenesis.
 func (k Keeper) ExportGenesis(ctx sdk.Context) *types.GenesisState {
-	activeConsumerIds := k.GetAllActiveConsumerIds(ctx)
+	allConsumerIds := k.GetAllConsumerIds(ctx)
 
-	// export states for each consumer chains
-	var consumerStates []types.ConsumerState
-	for _, consumerId := range activeConsumerIds {
-		clientId, _ := k.GetConsumerClientId(ctx, consumerId)
+	consumerStates := make([]types.ConsumerState, 0, len(allConsumerIds))
+	for _, consumerId := range allConsumerIds {
 		phase := k.GetConsumerPhase(ctx, consumerId)
-		gen, found := k.GetConsumerGenesis(ctx, consumerId)
-		if !found {
-			if phase != types.CONSUMER_PHASE_REGISTERED && phase != types.CONSUMER_PHASE_INITIALIZED {
-				panic(fmt.Errorf("cannot find genesis for consumer chain %s in phase %d", consumerId, phase))
+
+		chainId, err := k.GetConsumerChainId(ctx, consumerId)
+		if err != nil {
+			if errors.Is(err, collections.ErrNotFound) {
+				// A consumer id without a chain id is a keeper invariant
+				// violation; skip this entry rather than emit a partial record.
+				continue
 			}
-			gen = *vaastypes.DefaultConsumerGenesisState()
+			panic(fmt.Errorf("export: failed to read chain id for consumer %s: %w", consumerId, err))
 		}
 
 		cs := types.ConsumerState{
-			ChainId:              consumerId,
-			ClientId:             clientId,
-			ConsumerGenesis:      gen,
+			ChainId:              chainId,
 			Phase:                phase,
 			PendingValsetChanges: k.GetPendingVSCPackets(ctx, consumerId),
 		}
+
+		if owner, err := k.GetConsumerOwnerAddress(ctx, consumerId); err == nil {
+			cs.OwnerAddress = owner
+		} else if !errors.Is(err, collections.ErrNotFound) {
+			panic(fmt.Errorf("export: failed to read owner for consumer %s: %w", consumerId, err))
+		}
+
+		if md, err := k.GetConsumerMetadata(ctx, consumerId); err == nil {
+			cs.Metadata = &md
+		} else if !errors.Is(err, collections.ErrNotFound) {
+			panic(fmt.Errorf("export: failed to read metadata for consumer %s: %w", consumerId, err))
+		}
+
+		if ip, err := k.GetConsumerInitializationParameters(ctx, consumerId); err == nil {
+			cs.InitParams = &ip
+		} else if !errors.Is(err, collections.ErrNotFound) {
+			panic(fmt.Errorf("export: failed to read init params for consumer %s: %w", consumerId, err))
+		}
+
+		if clientId, ok := k.GetConsumerClientId(ctx, consumerId); ok {
+			cs.ClientId = clientId
+		}
+		if gen, ok := k.GetConsumerGenesis(ctx, consumerId); ok {
+			cs.ConsumerGenesis = gen
+		}
+
+		if rt, err := k.GetConsumerRemovalTime(ctx, consumerId); err == nil {
+			rtCopy := rt // copy to avoid aliasing the loop-local variable
+			cs.RemovalTime = &rtCopy
+		} else if !errors.Is(err, collections.ErrNotFound) {
+			panic(fmt.Errorf("export: failed to read removal time for consumer %s: %w", consumerId, err))
+		}
+
 		consumerStates = append(consumerStates, cs)
 	}
 
-	// ConsumerAddrsToPrune are added only for registered consumer chains
 	consumerAddrsToPrune := []types.ConsumerAddrsToPrune{}
-	for _, chainID := range activeConsumerIds {
-		consumerAddrsToPrune = append(consumerAddrsToPrune, k.GetAllConsumerAddrsToPrune(ctx, chainID)...)
+	for _, consumerId := range allConsumerIds {
+		consumerAddrsToPrune = append(consumerAddrsToPrune,
+			k.GetAllConsumerAddrsToPrune(ctx, consumerId)...)
 	}
-
-	params := k.GetParams(ctx)
 
 	// TODO (PERMISSIONLESS)
 	return types.NewGenesisState(
 		k.GetValidatorSetUpdateId(ctx),
 		k.GetAllValsetUpdateBlockHeights(ctx),
 		consumerStates,
-		params,
+		k.GetParams(ctx),
 		k.GetAllValidatorConsumerPubKeys(ctx, nil),
 		k.GetAllValidatorsByConsumerAddr(ctx, nil),
 		consumerAddrsToPrune,
