@@ -5,8 +5,11 @@ import (
 	"time"
 
 	"github.com/stretchr/testify/require"
+	"go.uber.org/mock/gomock"
 
 	clienttypes "github.com/cosmos/ibc-go/v10/modules/core/02-client/types"
+
+	stakingtypes "github.com/cosmos/cosmos-sdk/x/staking/types"
 
 	testkeeper "github.com/allinbits/vaas/testutil/keeper"
 	providertypes "github.com/allinbits/vaas/x/vaas/provider/types"
@@ -137,4 +140,119 @@ func TestExportGenesisIncludesNewFields(t *testing.T) {
 	require.NotNil(t, byID["consumer-delta"].RemovalTime, "STOPPED must carry removal_time")
 	require.Equal(t, removalTime, *byID["consumer-delta"].RemovalTime)
 	require.Equal(t, providertypes.CONSUMER_PHASE_DELETED, byID["consumer-epsilon"].Phase)
+}
+
+func TestInitGenesisRestoresPerConsumerStateAndDerivedQueues(t *testing.T) {
+	pk, ctx, ctrl, mocks := testkeeper.GetProviderKeeperAndCtx(t, testkeeper.NewInMemKeeperParams(t))
+	defer ctrl.Finish()
+
+	// InitGenesis calls InitGenesisValUpdates which queries the bonded validator set.
+	// MaxValidators is not called (GetMaxProviderConsensusValidators reads from keeper params),
+	// so we only expect GetBondedValidatorsByPower once.
+	mocks.MockStakingKeeper.EXPECT().GetBondedValidatorsByPower(gomock.Any()).Return([]stakingtypes.Validator{}, nil).Times(1)
+
+	owner := "cosmos1exampleowner000000000000000000000000xyz"
+	md := providertypes.ConsumerMetadata{Name: "n", Description: "d", Metadata: "m"}
+	spawnAt := time.Unix(1_700_000_000, 0).UTC()
+	removeAt := time.Unix(1_800_000_000, 0).UTC()
+	initialHeight := clienttypes.Height{RevisionNumber: 0, RevisionHeight: 42}
+	ip := providertypes.ConsumerInitializationParameters{
+		InitialHeight:     initialHeight,
+		GenesisHash:       []byte("g"),
+		BinaryHash:        []byte("b"),
+		SpawnTime:         spawnAt,
+		UnbondingPeriod:   time.Hour,
+		VaasTimeoutPeriod: time.Hour,
+		HistoricalEntries: 10,
+	}
+	cg := *vaastypes.DefaultConsumerGenesisState()
+	cg.NewChain = true
+
+	gs := &providertypes.GenesisState{
+		ValsetUpdateId: 1,
+		Params:         providertypes.DefaultParams(),
+		ConsumerStates: []providertypes.ConsumerState{
+			{ChainId: "consumer-alpha", Phase: providertypes.CONSUMER_PHASE_REGISTERED,
+				OwnerAddress: owner, Metadata: &md},
+			{ChainId: "consumer-beta", Phase: providertypes.CONSUMER_PHASE_INITIALIZED,
+				OwnerAddress: owner, Metadata: &md, InitParams: &ip},
+			{ChainId: "consumer-gamma", Phase: providertypes.CONSUMER_PHASE_LAUNCHED,
+				OwnerAddress: owner, Metadata: &md, InitParams: &ip,
+				ClientId: "07-tendermint-0", ConsumerGenesis: cg},
+			{ChainId: "consumer-delta", Phase: providertypes.CONSUMER_PHASE_STOPPED,
+				OwnerAddress: owner, Metadata: &md, InitParams: &ip,
+				ClientId: "07-tendermint-1", ConsumerGenesis: cg, RemovalTime: &removeAt},
+			{ChainId: "consumer-epsilon", Phase: providertypes.CONSUMER_PHASE_DELETED,
+				OwnerAddress: owner, Metadata: &md, InitParams: &ip},
+		},
+	}
+
+	require.NoError(t, gs.Validate(), "test fixture must validate")
+
+	_ = pk.InitGenesis(ctx, gs)
+
+	// Sanity check: the sequence counter must have advanced so that
+	// GetAllConsumerIds returns all 5 imported consumers.
+	allIds := pk.GetAllConsumerIds(ctx)
+	require.Equal(t, []string{"0", "1", "2", "3", "4"}, allIds,
+		"GetAllConsumerIds must return all imported consumer ids in order")
+
+	// ConsumerStates are imported in order; InitGenesis allocates numeric ids
+	// starting at "0":
+	//   "0" → consumer-alpha  (REGISTERED)
+	//   "1" → consumer-beta   (INITIALIZED)
+	//   "2" → consumer-gamma  (LAUNCHED)
+	//   "3" → consumer-delta  (STOPPED)
+	//   "4" → consumer-epsilon (DELETED)
+	idChain := []struct{ consumerId, chainId string }{
+		{"0", "consumer-alpha"},
+		{"1", "consumer-beta"},
+		{"2", "consumer-gamma"},
+		{"3", "consumer-delta"},
+		{"4", "consumer-epsilon"},
+	}
+
+	// Per-consumer fields: chain id, owner, metadata must be present on all five.
+	for _, entry := range idChain {
+		gotChain, err := pk.GetConsumerChainId(ctx, entry.consumerId)
+		require.NoError(t, err, "chain id missing for consumer %s", entry.consumerId)
+		require.Equal(t, entry.chainId, gotChain)
+
+		gotOwner, err := pk.GetConsumerOwnerAddress(ctx, entry.consumerId)
+		require.NoError(t, err, "owner missing for consumer %s", entry.consumerId)
+		require.Equal(t, owner, gotOwner)
+
+		gotMd, err := pk.GetConsumerMetadata(ctx, entry.consumerId)
+		require.NoError(t, err, "metadata missing for consumer %s", entry.consumerId)
+		require.Equal(t, md, gotMd)
+	}
+
+	// init_params are set on INITIALIZED, LAUNCHED, STOPPED, DELETED (ids 1–4).
+	for _, consumerId := range []string{"1", "2", "3", "4"} {
+		gotIp, err := pk.GetConsumerInitializationParameters(ctx, consumerId)
+		require.NoError(t, err, "init_params missing for consumer %s", consumerId)
+		require.Equal(t, ip, gotIp)
+	}
+
+	// Spawn queue: only INITIALIZED (id "1") is enqueued at init_params.spawn_time.
+	spawnIds, err := pk.GetConsumersToBeLaunched(ctx, spawnAt)
+	require.NoError(t, err)
+	require.Equal(t, []string{"1"}, spawnIds.Ids)
+
+	// Removal queue: only STOPPED (id "3") is enqueued at removal_time.
+	removeIds, err := pk.GetConsumersToBeRemoved(ctx, removeAt)
+	require.NoError(t, err)
+	require.Equal(t, []string{"3"}, removeIds.Ids)
+
+	// EquivocationEvidenceMinHeight: set for LAUNCHED ("2") and STOPPED ("3") only.
+	require.Equal(t, initialHeight.RevisionHeight, pk.GetEquivocationEvidenceMinHeight(ctx, "2"))
+	require.Equal(t, initialHeight.RevisionHeight, pk.GetEquivocationEvidenceMinHeight(ctx, "3"))
+	require.Zero(t, pk.GetEquivocationEvidenceMinHeight(ctx, "0"))
+	require.Zero(t, pk.GetEquivocationEvidenceMinHeight(ctx, "1"))
+	require.Zero(t, pk.GetEquivocationEvidenceMinHeight(ctx, "4"))
+
+	// RemovalTime: per-consumer collection set for STOPPED (id "3").
+	rt, err := pk.GetConsumerRemovalTime(ctx, "3")
+	require.NoError(t, err)
+	require.Equal(t, removeAt, rt)
 }
