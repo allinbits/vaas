@@ -1,6 +1,7 @@
 package keeper_test
 
 import (
+	"sort"
 	"testing"
 	"time"
 
@@ -255,4 +256,104 @@ func TestInitGenesisRestoresPerConsumerStateAndDerivedQueues(t *testing.T) {
 	rt, err := pk.GetConsumerRemovalTime(ctx, "3")
 	require.NoError(t, err)
 	require.Equal(t, removeAt, rt)
+}
+
+// TestGenesisRoundTrip verifies that ExportGenesis -> Validate -> fresh
+// keeper -> InitGenesis -> ExportGenesis produces an equal GenesisState
+// across all five consumer phases.
+func TestGenesisRoundTrip(t *testing.T) {
+	pkA, ctxA, ctrlA, stakingA := testkeeper.GetProviderKeeperAndCtx(t, testkeeper.NewInMemKeeperParams(t))
+	defer ctrlA.Finish()
+
+	owner := "cosmos1exampleowner000000000000000000000000xyz"
+	md := providertypes.ConsumerMetadata{Name: "n", Description: "d", Metadata: "m"}
+	spawnAt := time.Unix(1_700_000_000, 0).UTC()
+	removeAt := time.Unix(1_800_000_000, 0).UTC()
+	ip := providertypes.ConsumerInitializationParameters{
+		InitialHeight:     clienttypes.Height{RevisionNumber: 0, RevisionHeight: 42},
+		GenesisHash:       []byte("g"),
+		BinaryHash:        []byte("b"),
+		SpawnTime:         spawnAt,
+		UnbondingPeriod:   time.Hour,
+		VaasTimeoutPeriod: time.Hour,
+		HistoricalEntries: 10,
+	}
+	cg := *vaastypes.DefaultConsumerGenesisState()
+	cg.NewChain = true
+
+	// Seed keeper A by going through FetchAndIncrementConsumerId for each
+	// consumer, mirroring what production code does at MsgCreateConsumer time.
+	// This produces consumer ids "0".."4" in alpha..epsilon order.
+	type seed struct {
+		chainId  string
+		phase    providertypes.ConsumerPhase
+		clientId string
+		setRT    bool
+		setSpawn bool // → enqueue spawn
+		setRem   bool // → enqueue removal + setMinHeight
+		setMinHt bool // → setEquivocationEvidenceMinHeight (LAUNCHED+STOPPED)
+	}
+	seeds := []seed{
+		{"consumer-alpha", providertypes.CONSUMER_PHASE_REGISTERED, "", false, false, false, false},
+		{"consumer-beta", providertypes.CONSUMER_PHASE_INITIALIZED, "", false, true, false, false},
+		{"consumer-gamma", providertypes.CONSUMER_PHASE_LAUNCHED, "07-tendermint-0", false, false, false, true},
+		{"consumer-delta", providertypes.CONSUMER_PHASE_STOPPED, "07-tendermint-1", true, false, true, true},
+		{"consumer-epsilon", providertypes.CONSUMER_PHASE_DELETED, "", false, false, false, false},
+	}
+	for _, s := range seeds {
+		id := pkA.FetchAndIncrementConsumerId(ctxA)
+		pkA.SetConsumerChainId(ctxA, id, s.chainId)
+		pkA.SetConsumerPhase(ctxA, id, s.phase)
+		pkA.SetConsumerOwnerAddress(ctxA, id, owner)
+		require.NoError(t, pkA.SetConsumerMetadata(ctxA, id, md))
+		// init_params present for INITIALIZED..DELETED (every phase except REGISTERED).
+		if s.phase != providertypes.CONSUMER_PHASE_REGISTERED {
+			require.NoError(t, pkA.SetConsumerInitializationParameters(ctxA, id, ip))
+		}
+		if s.clientId != "" {
+			pkA.SetConsumerClientId(ctxA, id, s.clientId)
+		}
+		if s.phase == providertypes.CONSUMER_PHASE_LAUNCHED || s.phase == providertypes.CONSUMER_PHASE_STOPPED {
+			require.NoError(t, pkA.SetConsumerGenesis(ctxA, id, cg))
+		}
+		if s.setRT {
+			require.NoError(t, pkA.SetConsumerRemovalTime(ctxA, id, removeAt))
+		}
+		if s.setSpawn {
+			require.NoError(t, pkA.AppendConsumerToBeLaunched(ctxA, id, spawnAt))
+		}
+		if s.setRem {
+			require.NoError(t, pkA.AppendConsumerToBeRemoved(ctxA, id, removeAt))
+		}
+		if s.setMinHt {
+			pkA.SetEquivocationEvidenceMinHeight(ctxA, id, ip.InitialHeight.RevisionHeight)
+		}
+	}
+	pkA.SetParams(ctxA, providertypes.DefaultParams())
+	pkA.SetValidatorSetUpdateId(ctxA, 1)
+
+	expA := pkA.ExportGenesis(ctxA)
+	require.NoError(t, expA.Validate(), "first export must validate")
+
+	// Fresh keeper B.
+	pkB, ctxB, ctrlB, stakingB := testkeeper.GetProviderKeeperAndCtx(t, testkeeper.NewInMemKeeperParams(t))
+	defer ctrlB.Finish()
+
+	// InitGenesisValUpdates reads from staking; mock it on both keepers.
+	stakingA.MockStakingKeeper.EXPECT().GetBondedValidatorsByPower(gomock.Any()).Return(nil, nil).AnyTimes()
+	stakingB.MockStakingKeeper.EXPECT().GetBondedValidatorsByPower(gomock.Any()).Return(nil, nil).AnyTimes()
+
+	_ = pkB.InitGenesis(ctxB, expA)
+	expB := pkB.ExportGenesis(ctxB)
+
+	// Order-independent comparison on ConsumerStates (the only slice whose
+	// order is not part of the contract).
+	sort.Slice(expA.ConsumerStates, func(i, j int) bool {
+		return expA.ConsumerStates[i].ChainId < expA.ConsumerStates[j].ChainId
+	})
+	sort.Slice(expB.ConsumerStates, func(i, j int) bool {
+		return expB.ConsumerStates[i].ChainId < expB.ConsumerStates[j].ChainId
+	})
+
+	require.Equal(t, expA, expB, "round-trip must be a fixed point")
 }

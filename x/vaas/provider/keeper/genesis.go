@@ -74,7 +74,9 @@ func (k Keeper) InitGenesis(ctx sdk.Context, genState *types.GenesisState) []abc
 				panic(fmt.Errorf("init: set removal time for %s: %w", consumerId, err))
 			}
 		}
-		k.AppendPendingVSCPackets(ctx, consumerId, cs.PendingValsetChanges...)
+		if len(cs.PendingValsetChanges) > 0 {
+			k.AppendPendingVSCPackets(ctx, consumerId, cs.PendingValsetChanges...)
+		}
 
 		allocs = append(allocs, allocated{id: consumerId, cs: cs})
 	}
