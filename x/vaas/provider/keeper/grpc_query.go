@@ -102,6 +102,7 @@ func (k Keeper) GetConsumerChain(ctx sdk.Context, consumerId string) (types.Chai
 		Metadata:             metadata,
 		ConsumerId:           consumerId,
 		InfractionParameters: &infractionParameters,
+		FeePoolAddress:       k.GetConsumerFeePoolAddress(consumerId).String(),
 	}, nil
 }
 
@@ -335,6 +336,7 @@ func (k Keeper) QueryConsumerChain(goCtx context.Context, req *types.QueryConsum
 		InitParams:           &initParams,
 		InfractionParameters: &infractionParams,
 		ClientId:             clientId,
+		FeePoolAddress:       k.GetConsumerFeePoolAddress(consumerId).String(),
 	}, nil
 }
 

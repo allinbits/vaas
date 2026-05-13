@@ -140,6 +140,9 @@ message Chain {
   string consumer_id = 5;
   // Infraction parameters for slashing and jailing
   InfractionParameters infraction_parameters = 6;
+  // The deterministic provider-side account that must be funded
+  // to cover per-block fees for this consumer chain.
+  string fee_pool_address = 7;
 }
 
 message QueryValidatorConsumerAddrRequest {
@@ -261,6 +264,9 @@ message QueryConsumerChainResponse {
 
   // corresponds to the id of the client that is created during launch
   string client_id = 8;
+  // The deterministic provider-side account that must be funded
+  // to cover per-block fees for this consumer chain.
+  string fee_pool_address = 9;
 }
 
 message QueryConsumerGenesisTimeRequest {
