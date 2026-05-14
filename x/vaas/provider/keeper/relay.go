@@ -307,15 +307,10 @@ func (k Keeper) QueueVSCPackets(ctx sdk.Context) error {
 	return nil
 }
 
-// BeginBlockCIS contains the BeginBlock logic needed for the Consumer Initiated Slashing sub-protocol.
-// Slash throttling has been removed.
-func (k Keeper) BeginBlockCIS(ctx sdk.Context) {
-	// Slash throttling removed - no-op
-}
-
-// EndBlockCIS contains the EndBlock logic needed for
-// the Consumer Initiated Slashing sub-protocol
-func (k Keeper) EndBlockCIS(ctx sdk.Context) {
+// EndBlockTrackValsetUpdates records the height-to-VSC-ID mapping for the
+// next block and prunes per-consumer key-assignment entries that are no
+// longer reachable.
+func (k Keeper) EndBlockTrackValsetUpdates(ctx sdk.Context) {
 	// set the ValsetUpdateBlockHeight
 	blockHeight := uint64(ctx.BlockHeight()) + 1
 	valUpdateID := k.GetValidatorSetUpdateId(ctx)

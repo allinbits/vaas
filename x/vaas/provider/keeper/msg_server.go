@@ -259,7 +259,7 @@ func (k msgServer) CreateConsumer(goCtx context.Context, msg *types.MsgCreateCon
 	return &resp, nil
 }
 
-// UpdateConsumer updates the metadata, power-shaping or initialization parameters of a consumer chain
+// UpdateConsumer updates the metadata or initialization parameters of a consumer chain
 func (k msgServer) UpdateConsumer(goCtx context.Context, msg *types.MsgUpdateConsumer) (*types.MsgUpdateConsumerResponse, error) {
 	ctx := sdk.UnwrapSDKContext(goCtx)
 	resp := types.MsgUpdateConsumerResponse{}
