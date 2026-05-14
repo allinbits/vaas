@@ -179,7 +179,7 @@ func (am AppModule) BeginBlock(ctx context.Context) error {
 func (am AppModule) EndBlock(ctx context.Context) ([]abci.ValidatorUpdate, error) {
 	sdkCtx := sdk.UnwrapSDKContext(ctx)
 
-	am.keeper.EndBlockCIS(sdkCtx)
+	am.keeper.EndBlockTrackValsetUpdates(sdkCtx)
 
 	return am.keeper.EndBlockVSU(sdkCtx)
 }
