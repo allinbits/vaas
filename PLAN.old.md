@@ -1,5 +1,12 @@
 # VAAS Rewrite Plan
 
+> **Historical document.** This was the original plan drafted *before* the
+> port of `interchain-security` into VAAS, when the new module was still
+> being scoped. Paths, function names, and tooling assumptions reflect that
+> moment and are no longer accurate. It is kept verbatim for archival
+> reference. For the current authoritative statement of why VAAS is shaped
+> the way it is, see [`DESIGN_RATIONALE.md`](DESIGN_RATIONALE.md).
+
 Rewrite `x/vaas/provider` and `x/vaas/consumer` in a new `vaas` folder as a **new Go module** with package path `github.com/allinbits/vaas`.
 
 ---
