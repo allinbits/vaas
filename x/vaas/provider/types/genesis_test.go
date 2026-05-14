@@ -31,7 +31,7 @@ func TestValidateGenesisState(t *testing.T) {
 			ChainId:         chainID,
 			ClientId:        clientID,
 			Phase:           types.CONSUMER_PHASE_LAUNCHED,
-			OwnerAddress:    "cosmos1exampleowner",
+			OwnerAddress:    sdk.AccAddress([]byte("vaas-test-owner-1234")).String(),
 			InitParams:      testInitParams,
 			ConsumerGenesis: getInitialConsumerGenesis(t, chainID, preVAAS),
 		}
@@ -219,7 +219,7 @@ func TestConsumerStateValidatePerPhase(t *testing.T) {
 		return types.ConsumerState{
 			ChainId:         "test-consumer",
 			Phase:           phase,
-			OwnerAddress:    "cosmos1exampleowner",
+			OwnerAddress:    sdk.AccAddress([]byte("vaas-test-owner-1234")).String(),
 			ConsumerGenesis: *vaastypes.DefaultConsumerGenesisState(),
 		}
 	}
@@ -235,6 +235,10 @@ func TestConsumerStateValidatePerPhase(t *testing.T) {
 			*cs = base(types.CONSUMER_PHASE_REGISTERED)
 			cs.OwnerAddress = ""
 		}, "owner address"},
+		{"REGISTERED invalid owner bech32", func(cs *types.ConsumerState) {
+			*cs = base(types.CONSUMER_PHASE_REGISTERED)
+			cs.OwnerAddress = "cosmos1notavalidchecksum"
+		}, "invalid owner address"},
 		{"REGISTERED with stray client_id", func(cs *types.ConsumerState) {
 			*cs = base(types.CONSUMER_PHASE_REGISTERED)
 			cs.ClientId = "07-tendermint-0"

@@ -7,6 +7,8 @@ import (
 	vaastypes "github.com/allinbits/vaas/x/vaas/types"
 
 	errorsmod "cosmossdk.io/errors"
+
+	sdk "github.com/cosmos/cosmos-sdk/types"
 )
 
 func NewGenesisState(
@@ -78,6 +80,9 @@ func (cs ConsumerState) Validate() error {
 	}
 	if cs.OwnerAddress == "" {
 		return errors.New("owner address cannot be empty")
+	}
+	if _, err := sdk.AccAddressFromBech32(cs.OwnerAddress); err != nil {
+		return fmt.Errorf("invalid owner address %q: %w", cs.OwnerAddress, err)
 	}
 	for _, pVSC := range cs.PendingValsetChanges {
 		if pVSC.ValsetUpdateId == 0 {

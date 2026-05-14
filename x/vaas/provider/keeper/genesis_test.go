@@ -10,6 +10,7 @@ import (
 
 	clienttypes "github.com/cosmos/ibc-go/v10/modules/core/02-client/types"
 
+	sdk "github.com/cosmos/cosmos-sdk/types"
 	stakingtypes "github.com/cosmos/cosmos-sdk/x/staking/types"
 
 	testkeeper "github.com/allinbits/vaas/testutil/keeper"
@@ -56,7 +57,7 @@ func TestExportGenesisIncludesNewFields(t *testing.T) {
 	pk, ctx, ctrl, _ := testkeeper.GetProviderKeeperAndCtx(t, testkeeper.NewInMemKeeperParams(t))
 	defer ctrl.Finish()
 
-	owner := "cosmos1exampleowner000000000000000000000000xyz"
+	owner := sdk.AccAddress([]byte("vaas-test-owner-1234")).String()
 	metadata := providertypes.ConsumerMetadata{Name: "n", Description: "d", Metadata: "m"}
 	initParams := providertypes.ConsumerInitializationParameters{
 		InitialHeight:     clienttypes.Height{RevisionNumber: 0, RevisionHeight: 42},
@@ -152,7 +153,7 @@ func TestInitGenesisRestoresPerConsumerStateAndDerivedQueues(t *testing.T) {
 	// so we only expect GetBondedValidatorsByPower once.
 	mocks.MockStakingKeeper.EXPECT().GetBondedValidatorsByPower(gomock.Any()).Return([]stakingtypes.Validator{}, nil).Times(1)
 
-	owner := "cosmos1exampleowner000000000000000000000000xyz"
+	owner := sdk.AccAddress([]byte("vaas-test-owner-1234")).String()
 	md := providertypes.ConsumerMetadata{Name: "n", Description: "d", Metadata: "m"}
 	spawnAt := time.Unix(1_700_000_000, 0).UTC()
 	removeAt := time.Unix(1_800_000_000, 0).UTC()
@@ -265,7 +266,7 @@ func TestGenesisRoundTrip(t *testing.T) {
 	pkA, ctxA, ctrlA, stakingA := testkeeper.GetProviderKeeperAndCtx(t, testkeeper.NewInMemKeeperParams(t))
 	defer ctrlA.Finish()
 
-	owner := "cosmos1exampleowner000000000000000000000000xyz"
+	owner := sdk.AccAddress([]byte("vaas-test-owner-1234")).String()
 	md := providertypes.ConsumerMetadata{Name: "n", Description: "d", Metadata: "m"}
 	spawnAt := time.Unix(1_700_000_000, 0).UTC()
 	removeAt := time.Unix(1_800_000_000, 0).UTC()
