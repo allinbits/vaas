@@ -72,11 +72,34 @@ for users, balances, or contracts.
   normally.
 
 **For IBC connections to other chains**
-- IBC clients pointing at the chain's old validator set need to update
-  past the transition height; this is the same kind of update they
-  perform after any validator-set change.
-- IBC connections to the new provider must be created (the relayer
-  is responsible).
+- Existing IBC light clients on third-party chains that track this chain
+  go **stale** at the transition height. Tendermint light clients accept a
+  new header only if validators signing it overlap with the previously
+  trusted set by at least the client's trust level (1/3 by default). A
+  standalone-to-consumer transition rotates the validator set wholesale
+  to the provider's set, so the overlap is effectively zero and the light
+  client cannot follow the update — it gets stuck at the pre-transition
+  height and any packets relayed against it will fail to verify.
+- Counterparty chains have two recovery paths, both off-chain
+  coordination:
+  - **Gov-gated client substitution** ([`MsgRecoverClient`](https://ibc.cosmos.network/main/ibc/proto-docs.html#ibc.core.client.v1.MsgRecoverClient)
+    in IBC-go): the counterparty chain's governance votes to substitute
+    the stale client with a freshly-created one tracking the new
+    (provider-driven) validator set. This preserves the existing
+    connection and channels, so balances and packet sequences are
+    retained.
+  - **Full reconnection**: tear down the existing client/connection/
+    channels and create new ones from scratch. Cheaper to execute but
+    loses channel state, in-flight packets, and any client-side
+    invariants the counterparty relied on.
+- New IBC v2 clients between the consumer (post-transition) and the
+  provider must be created by the relayer as part of the standard
+  consumer launch flow.
+- **Operational implication.** Chain operators and counterparty teams
+  must coordinate the transition height well in advance so counterparty
+  governance proposals (or reconnection runbooks) can be staged and
+  executed. This is the highest user-visible cost of a transition and
+  should be treated as a hard prerequisite more than a follow-up.
 
 ---
 
@@ -117,7 +140,15 @@ for users, balances, or contracts.
    relayer's responsibility; for a transition this needs to be scheduled
    to land just before the transition height.
 
-6. **Slashing window for prior misbehaviour.** The provider must respect
+6. **Counterparty client-recovery coordination.** Every third-party chain
+   that runs an IBC light client tracking the transitioning chain must
+   pre-stage a `MsgRecoverClient` governance proposal (or a full
+   reconnection runbook) targeting the transition height — see the
+   *For IBC connections to other chains* note above. Without this,
+   existing connections go stale and packet traffic halts on those
+   lanes. This is a prerequisite for transition more than a follow-up.
+
+7. **Slashing window for prior misbehaviour.** The provider must respect
    the chain's prior unbonding period for slashing equivocations that
    happened on the chain *before* the transition. Implementation needs
    to decide whether to forward this evidence to the consumer's residual
