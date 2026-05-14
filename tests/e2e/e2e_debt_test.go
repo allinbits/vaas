@@ -1,21 +1,28 @@
 package e2e
 
 import (
-	"fmt"
+	"encoding/json"
 	"strings"
 	"time"
-
-	sdk "github.com/cosmos/cosmos-sdk/types"
-	authtypes "github.com/cosmos/cosmos-sdk/x/auth/types"
 )
 
-// consumerFeePoolAddress computes the provider-side fee pool account for a
-// given consumer id. Mirrors keeper.GetConsumerFeePoolAddress:
-//
-//	authtypes.NewModuleAddress(fmt.Sprintf("%s-consumer-fee-pool-%s",
-//	    providertypes.ModuleName, consumerId))
-func consumerFeePoolAddress(consumerID string) sdk.AccAddress {
-	return authtypes.NewModuleAddress(fmt.Sprintf("provider-consumer-fee-pool-%s", consumerID))
+// queryConsumerFeePoolAddress returns the provider-side fee pool account for a
+// given consumer id by querying the provider chain.
+func (s *IntegrationTestSuite) queryConsumerFeePoolAddress(consumerID string) string {
+	stdout, _, err := s.dockerExec(s.providerValRes[0].Container.ID, []string{
+		providerBinary, "query", "provider", "consumer-chain", consumerID,
+		"--home", providerHomePath,
+		"--output", "json",
+	})
+	s.Require().NoError(err, "failed to query consumer-chain %s", consumerID)
+
+	var res struct {
+		FeePoolAddress string `json:"fee_pool_address"`
+	}
+	s.Require().NoError(json.Unmarshal(stdout.Bytes(), &res),
+		"failed to decode consumer-chain response: %s", stdout.String())
+	s.Require().NotEmpty(res.FeePoolAddress, "fee_pool_address is empty for consumer %s", consumerID)
+	return res.FeePoolAddress
 }
 
 // consumerUserBech32 returns the bech32 address of the consumer's "user"
@@ -75,7 +82,7 @@ func (s *IntegrationTestSuite) providerFundAddress(addr, amount string) {
 func (s *IntegrationTestSuite) testConsumerDebtFlow() {
 	s.Run("consumer debt flow", func() {
 		// First consumer registered in this suite has id "0".
-		feePoolAddr := consumerFeePoolAddress("0").String()
+		feePoolAddr := s.queryConsumerFeePoolAddress("0")
 		s.T().Logf("consumer fee pool address: %s", feePoolAddr)
 
 		s.T().Log("waiting for consumer to enter debt (bank send should be rejected)...")

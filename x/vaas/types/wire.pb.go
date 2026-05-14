@@ -29,8 +29,15 @@ const _ = proto.GoGoProtoPackageIsVersion3 // please upgrade the proto package
 // set for consumer chain changes (due to new bonding/unbonding messages or
 // slashing events).
 type ValidatorSetChangePacketData struct {
+	// validator_updates is the delta between the consumer's previous
+	// validator set and the provider's current one for this epoch. May be
+	// empty when the validator set did not change during the epoch; the
+	// packet is still sent so consumer_in_debt stays in sync.
 	ValidatorUpdates []types.ValidatorUpdate `protobuf:"bytes,1,rep,name=validator_updates,json=validatorUpdates,proto3" json:"validator_updates" yaml:"validator_updates"`
-	ValsetUpdateId   uint64                  `protobuf:"varint,2,opt,name=valset_update_id,json=valsetUpdateId,proto3" json:"valset_update_id,omitempty"`
+	// valset_update_id is the provider's monotonically increasing counter
+	// identifying this update. The consumer uses it to detect and drop
+	// out-of-order packets delivered over IBC v2's unordered channel.
+	ValsetUpdateId uint64 `protobuf:"varint,2,opt,name=valset_update_id,json=valsetUpdateId,proto3" json:"valset_update_id,omitempty"`
 	// consumer_in_debt signals whether the consumer chain has fallen behind
 	// on its per-block fee payments to the provider. The provider stamps the
 	// current value on every VSC packet so the consumer reconciles its local
