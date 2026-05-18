@@ -4,8 +4,6 @@ import (
 	"encoding/json"
 	"log"
 
-	storetypes "cosmossdk.io/store/types"
-
 	servertypes "github.com/cosmos/cosmos-sdk/server/types"
 	sdk "github.com/cosmos/cosmos-sdk/types"
 	slashingtypes "github.com/cosmos/cosmos-sdk/x/slashing/types"
@@ -71,8 +69,6 @@ func (app *App) prepForZeroHeightGenesis(ctx sdk.Context, jailAllowedAddrs []str
 		}
 		allowedAddrsMap[addr] = true
 	}
-
-
 
 	/* Handle fee distribution state. */
 
@@ -214,14 +210,15 @@ func (app *App) prepForZeroHeightGenesis(ctx sdk.Context, jailAllowedAddrs []str
 		panic(err)
 	}
 
-	// Iterate through validators by power descending, reset bond heights, and
-	// update bond intra-tx counters.
-	store := ctx.KVStore(app.keys[stakingtypes.StoreKey])
-	iter := storetypes.KVStoreReversePrefixIterator(store, stakingtypes.ValidatorsKey)
-	counter := int16(0)
+	// Iterate through validators, reset bond heights, and update bond
+	// intra-tx counters.
+	if err := app.StakingKeeper.IterateValidators(ctx, func(_ int64, val stakingtypes.ValidatorI) (stop bool) {
+		valAddrBytes, err := app.StakingKeeper.ValidatorAddressCodec().StringToBytes(val.GetOperator())
+		if err != nil {
+			panic(err)
+		}
+		addr := sdk.ValAddress(valAddrBytes)
 
-	for ; iter.Valid(); iter.Next() {
-		addr := sdk.ValAddress(iter.Key()[1:])
 		validator, err := app.StakingKeeper.GetValidator(ctx, addr)
 		if err != nil {
 			panic("expected validator, not found")
@@ -232,11 +229,11 @@ func (app *App) prepForZeroHeightGenesis(ctx sdk.Context, jailAllowedAddrs []str
 			validator.Jailed = true
 		}
 
-		app.StakingKeeper.SetValidator(ctx, validator)
-		counter++
-	}
-
-	if err := iter.Close(); err != nil {
+		if err := app.StakingKeeper.SetValidator(ctx, validator); err != nil {
+			panic(err)
+		}
+		return false
+	}); err != nil {
 		panic(err)
 	}
 
