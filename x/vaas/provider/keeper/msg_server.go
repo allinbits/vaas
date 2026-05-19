@@ -15,6 +15,8 @@ import (
 
 	cryptocodec "github.com/cosmos/cosmos-sdk/crypto/codec"
 	sdk "github.com/cosmos/cosmos-sdk/types"
+	authtypes "github.com/cosmos/cosmos-sdk/x/auth/types"
+	disttypes "github.com/cosmos/cosmos-sdk/x/distribution/types"
 	govtypes "github.com/cosmos/cosmos-sdk/x/gov/types"
 	stakingtypes "github.com/cosmos/cosmos-sdk/x/staking/types"
 )
@@ -475,14 +477,166 @@ func (k msgServer) RemoveConsumer(goCtx context.Context, msg *types.MsgRemoveCon
 }
 
 // FundConsumerFeePool deposits funds into a consumer's fee pool.
-func (k msgServer) FundConsumerFeePool(_ context.Context, _ *types.MsgFundConsumerFeePool) (*types.MsgFundConsumerFeePoolResponse, error) {
-	panic("not implemented")
+func (k msgServer) FundConsumerFeePool(
+	goCtx context.Context, msg *types.MsgFundConsumerFeePool,
+) (*types.MsgFundConsumerFeePoolResponse, error) {
+	ctx := sdk.UnwrapSDKContext(goCtx)
+
+	// Phase + existence check
+	phase := k.GetConsumerPhase(ctx, msg.ConsumerId)
+	if phase == types.CONSUMER_PHASE_UNSPECIFIED {
+		return nil, errorsmod.Wrapf(types.ErrUnknownConsumerId,
+			"consumer %s does not exist", msg.ConsumerId)
+	}
+	if phase == types.CONSUMER_PHASE_DELETED {
+		return nil, errorsmod.Wrapf(types.ErrInvalidPhase,
+			"consumer %s is deleted", msg.ConsumerId)
+	}
+
+	// Denom check (stateful — reads params)
+	params := k.GetParams(ctx)
+	if msg.Amount.Denom != params.FeesPerBlock.Denom {
+		return nil, errorsmod.Wrapf(types.ErrInvalidFundDenom,
+			"expected denom %s, got %s", params.FeesPerBlock.Denom, msg.Amount.Denom)
+	}
+
+	poolAddr := k.GetConsumerFeePoolAddress(msg.ConsumerId)
+	providerAddr := authtypes.NewModuleAddress(types.ModuleName)
+	coins := sdk.NewCoins(msg.Amount)
+
+	// Determine depositor identity and source-of-funds path.
+	var depositor sdk.AccAddress
+	if msg.Signer == k.GetAuthority() {
+		if err := k.distributionKeeper.DistributeFromFeePool(ctx, coins, providerAddr); err != nil {
+			return nil, err
+		}
+		depositor = authtypes.NewModuleAddress(disttypes.ModuleName)
+	} else {
+		signerAddr, err := sdk.AccAddressFromBech32(msg.Signer)
+		if err != nil {
+			return nil, err
+		}
+		if err := k.bankKeeper.SendCoinsFromAccountToModule(
+			ctx, signerAddr, types.ModuleName, coins,
+		); err != nil {
+			return nil, err
+		}
+		depositor = signerAddr
+	}
+
+	// Mint shares using PRE-deposit balance.
+	if err := k.MintShares(ctx, msg.ConsumerId, depositor, msg.Amount); err != nil {
+		return nil, err
+	}
+
+	// Second hop: provider module → fee pool address (SendRestriction allows this).
+	if err := k.bankKeeper.SendCoinsFromModuleToAccount(
+		ctx, types.ModuleName, poolAddr, coins,
+	); err != nil {
+		return nil, err
+	}
+
+	ctx.EventManager().EmitEvent(sdk.NewEvent(
+		types.EventTypeConsumerFeePoolFund,
+		sdk.NewAttribute(types.AttributeConsumerId, msg.ConsumerId),
+		sdk.NewAttribute(types.AttributeDepositor, depositor.String()),
+		sdk.NewAttribute(types.AttributeAmount, msg.Amount.String()),
+	))
+	return &types.MsgFundConsumerFeePoolResponse{}, nil
 }
 
-func (k msgServer) WithdrawConsumerFeePool(_ context.Context, _ *types.MsgWithdrawConsumerFeePool) (*types.MsgWithdrawConsumerFeePoolResponse, error) {
-	panic("not implemented")
+// WithdrawConsumerFeePool burns the depositor's shares across one or more
+// denoms and returns the corresponding tokens. The handler is atomic: any
+// per-denom failure rolls back share burns from prior denoms in the same
+// request. When the signer is the gov authority, the tokens are routed back
+// to the community pool rather than to the signer.
+func (k msgServer) WithdrawConsumerFeePool(
+	goCtx context.Context, msg *types.MsgWithdrawConsumerFeePool,
+) (*types.MsgWithdrawConsumerFeePoolResponse, error) {
+	ctx := sdk.UnwrapSDKContext(goCtx)
+
+	// Resolve depositor identity
+	isGov := msg.Signer == k.GetAuthority()
+	var depositor sdk.AccAddress
+	if isGov {
+		depositor = authtypes.NewModuleAddress(disttypes.ModuleName)
+	} else {
+		addr, err := sdk.AccAddressFromBech32(msg.Signer)
+		if err != nil {
+			return nil, err
+		}
+		depositor = addr
+	}
+
+	// Process per-denom, accumulate. The share-burn loop runs inside a
+	// cache-context so a mid-loop failure rolls back any prior burns, even
+	// when the handler is invoked outside of the SDK tx machinery (e.g.
+	// nested calls or direct invocations in tests).
+	cachedCtx, write := ctx.CacheContext()
+	delivered := sdk.NewCoins()
+	for _, amt := range msg.Amount {
+		tokens, err := k.WithdrawShares(cachedCtx, msg.ConsumerId, depositor, amt)
+		if err != nil {
+			return nil, err
+		}
+		if !tokens.Amount.IsZero() {
+			delivered = delivered.Add(tokens)
+		}
+	}
+	write()
+
+	if delivered.IsZero() {
+		return &types.MsgWithdrawConsumerFeePoolResponse{Amount: delivered}, nil
+	}
+
+	poolAddr := k.GetConsumerFeePoolAddress(msg.ConsumerId)
+	providerAddr := authtypes.NewModuleAddress(types.ModuleName)
+	if err := k.bankKeeper.SendCoinsFromAccountToModule(
+		ctx, poolAddr, types.ModuleName, delivered,
+	); err != nil {
+		return nil, err
+	}
+	if isGov {
+		if err := k.distributionKeeper.FundCommunityPool(ctx, delivered, providerAddr); err != nil {
+			return nil, err
+		}
+	} else {
+		if err := k.bankKeeper.SendCoinsFromModuleToAccount(
+			ctx, types.ModuleName, depositor, delivered,
+		); err != nil {
+			return nil, err
+		}
+	}
+
+	ctx.EventManager().EmitEvent(sdk.NewEvent(
+		types.EventTypeConsumerFeePoolWithdraw,
+		sdk.NewAttribute(types.AttributeConsumerId, msg.ConsumerId),
+		sdk.NewAttribute(types.AttributeDepositor, depositor.String()),
+		sdk.NewAttribute(types.AttributeRecipient, depositor.String()),
+		sdk.NewAttribute(types.AttributeAmount, delivered.String()),
+	))
+	return &types.MsgWithdrawConsumerFeePoolResponse{Amount: delivered}, nil
 }
 
-func (k msgServer) SweepConsumerFeePool(_ context.Context, _ *types.MsgSweepConsumerFeePool) (*types.MsgSweepConsumerFeePoolResponse, error) {
-	panic("not implemented")
+func (k msgServer) SweepConsumerFeePool(
+	goCtx context.Context, msg *types.MsgSweepConsumerFeePool,
+) (*types.MsgSweepConsumerFeePoolResponse, error) {
+	ctx := sdk.UnwrapSDKContext(goCtx)
+
+	ownerAddr, err := k.GetConsumerOwnerAddress(ctx, msg.ConsumerId)
+	if err != nil {
+		return nil, errorsmod.Wrapf(types.ErrNoOwnerAddress,
+			"consumer %s has no owner: %s", msg.ConsumerId, err)
+	}
+	if msg.Signer != ownerAddr {
+		return nil, errorsmod.Wrapf(types.ErrUnauthorized,
+			"only consumer owner %s may sweep, got %s", ownerAddr, msg.Signer)
+	}
+
+	// The msgServer's SweepConsumerFeePool shadows the embedded Keeper's
+	// SweepConsumerFeePool. Call the keeper's via the embedded field.
+	if err := k.Keeper.SweepConsumerFeePool(ctx, msg.ConsumerId, msg.Denoms); err != nil {
+		return nil, errorsmod.Wrap(types.ErrFeePoolSweepFailed, err.Error())
+	}
+	return &types.MsgSweepConsumerFeePoolResponse{}, nil
 }
