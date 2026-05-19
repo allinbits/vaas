@@ -9,6 +9,9 @@ import (
 	"github.com/stretchr/testify/require"
 	"go.uber.org/mock/gomock"
 
+	"cosmossdk.io/collections"
+	"cosmossdk.io/math"
+
 	clienttypes "github.com/cosmos/ibc-go/v10/modules/core/02-client/types"
 
 	sdk "github.com/cosmos/cosmos-sdk/types"
@@ -402,4 +405,76 @@ func TestGenesisRoundTrip(t *testing.T) {
 	})
 
 	require.Equal(t, expA, expB, "round-trip must be a fixed point")
+}
+
+func TestExportGenesis_IncludesShares(t *testing.T) {
+	k, ctx, ctrl, _ := testkeeper.GetProviderKeeperAndCtx(t, testkeeper.NewInMemKeeperParams(t))
+	defer ctrl.Finish()
+
+	k.SetParams(ctx, providertypes.DefaultParams())
+
+	alice := sdk.AccAddress([]byte("alice___________"))
+	bob := sdk.AccAddress([]byte("bob_____________"))
+	require.NoError(t, k.ConsumerFeePoolShares.Set(ctx,
+		collections.Join3("0", alice, "uphoton"), math.NewInt(60)))
+	require.NoError(t, k.ConsumerFeePoolShares.Set(ctx,
+		collections.Join3("0", bob, "uphoton"), math.NewInt(40)))
+	require.NoError(t, k.ConsumerFeePoolTotalShares.Set(ctx,
+		collections.Join("0", "uphoton"), math.NewInt(100)))
+
+	gs := k.ExportGenesis(ctx)
+	require.Len(t, gs.ConsumerFeePoolShares, 2)
+	found := map[string]math.Int{}
+	for _, s := range gs.ConsumerFeePoolShares {
+		found[s.Depositor] = s.Shares
+	}
+	require.Equal(t, math.NewInt(60), found[alice.String()])
+	require.Equal(t, math.NewInt(40), found[bob.String()])
+}
+
+func TestInitGenesis_RebuildsDerivedCollections(t *testing.T) {
+	k, ctx, ctrl, mocks := testkeeper.GetProviderKeeperAndCtx(t, testkeeper.NewInMemKeeperParams(t))
+	defer ctrl.Finish()
+
+	// InitGenesisValUpdates queries the staking keeper for the validator set.
+	mocks.MockStakingKeeper.EXPECT().GetBondedValidatorsByPower(gomock.Any()).Return(nil, nil).Times(1)
+
+	alice := sdk.AccAddress([]byte("alice___________"))
+	bob := sdk.AccAddress([]byte("bob_____________"))
+	gs := &providertypes.GenesisState{
+		Params: providertypes.DefaultParams(),
+		ConsumerStates: []providertypes.ConsumerState{
+			{
+				ChainId:         "0",
+				Phase:           providertypes.CONSUMER_PHASE_LAUNCHED,
+				ConsumerGenesis: *vaastypes.DefaultConsumerGenesisState(),
+			},
+			{
+				ChainId:         "1",
+				Phase:           providertypes.CONSUMER_PHASE_DELETED,
+				ConsumerGenesis: *vaastypes.DefaultConsumerGenesisState(),
+			},
+		},
+		ConsumerFeePoolShares: []providertypes.ConsumerFeePoolShare{
+			{ConsumerId: "0", Depositor: alice.String(), Denom: "uphoton", Shares: math.NewInt(60)},
+			{ConsumerId: "0", Depositor: bob.String(), Denom: "uphoton", Shares: math.NewInt(40)},
+		},
+	}
+
+	k.InitGenesis(ctx, gs)
+
+	s, err := k.ConsumerFeePoolShares.Get(ctx, collections.Join3("0", alice, "uphoton"))
+	require.NoError(t, err)
+	require.Equal(t, math.NewInt(60), s)
+
+	total, err := k.ConsumerFeePoolTotalShares.Get(ctx, collections.Join("0", "uphoton"))
+	require.NoError(t, err)
+	require.Equal(t, math.NewInt(100), total)
+
+	cid, err := k.FeePoolAddressToConsumerId.Get(ctx, k.GetConsumerFeePoolAddress("0"))
+	require.NoError(t, err)
+	require.Equal(t, "0", cid)
+
+	_, err = k.FeePoolAddressToConsumerId.Get(ctx, k.GetConsumerFeePoolAddress("1"))
+	require.ErrorIs(t, err, collections.ErrNotFound)
 }

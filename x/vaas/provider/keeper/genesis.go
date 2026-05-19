@@ -11,6 +11,7 @@ import (
 	abci "github.com/cometbft/cometbft/abci/types"
 
 	"cosmossdk.io/collections"
+	"cosmossdk.io/math"
 
 	sdk "github.com/cosmos/cosmos-sdk/types"
 )
@@ -139,6 +140,66 @@ func (k Keeper) InitGenesis(ctx sdk.Context, genState *types.GenesisState) []abc
 		}
 	}
 
+	// Load primary share records
+	for _, s := range genState.ConsumerFeePoolShares {
+		addr, err := sdk.AccAddressFromBech32(s.Depositor)
+		if err != nil {
+			panic(fmt.Errorf("invalid depositor in genesis: %w", err))
+		}
+		if err := k.ConsumerFeePoolShares.Set(ctx,
+			collections.Join3(s.ConsumerId, addr, s.Denom), s.Shares,
+		); err != nil {
+			panic(err)
+		}
+	}
+
+	// Rebuild totals by summing per (consumer_id, denom)
+	totals := map[string]map[string]math.Int{}
+	for _, s := range genState.ConsumerFeePoolShares {
+		if _, ok := totals[s.ConsumerId]; !ok {
+			totals[s.ConsumerId] = map[string]math.Int{}
+		}
+		if cur, ok := totals[s.ConsumerId][s.Denom]; ok {
+			totals[s.ConsumerId][s.Denom] = cur.Add(s.Shares)
+		} else {
+			totals[s.ConsumerId][s.Denom] = s.Shares
+		}
+	}
+	for consumerId, byDenom := range totals {
+		for denom, sum := range byDenom {
+			if err := k.ConsumerFeePoolTotalShares.Set(ctx,
+				collections.Join(consumerId, denom), sum,
+			); err != nil {
+				panic(err)
+			}
+		}
+	}
+
+	// Rebuild reverse-lookup from non-DELETED consumers (read phase collection)
+	phaseIter, err := k.ConsumerPhase.Iterate(ctx, nil)
+	if err != nil {
+		panic(err)
+	}
+	defer phaseIter.Close()
+	for ; phaseIter.Valid(); phaseIter.Next() {
+		consumerId, err := phaseIter.Key()
+		if err != nil {
+			panic(err)
+		}
+		phaseRaw, err := phaseIter.Value()
+		if err != nil {
+			panic(err)
+		}
+		if types.ConsumerPhase(phaseRaw) == types.CONSUMER_PHASE_DELETED {
+			continue
+		}
+		if err := k.FeePoolAddressToConsumerId.Set(ctx,
+			k.GetConsumerFeePoolAddress(consumerId), consumerId,
+		); err != nil {
+			panic(err)
+		}
+	}
+
 	k.SetParams(ctx, genState.Params)
 	return k.InitGenesisValUpdates(ctx)
 }
@@ -257,7 +318,7 @@ func (k Keeper) ExportGenesis(ctx sdk.Context) *types.GenesisState {
 	}
 
 	// TODO (PERMISSIONLESS)
-	return types.NewGenesisState(
+	gs := types.NewGenesisState(
 		k.GetValidatorSetUpdateId(ctx),
 		k.GetAllValsetUpdateBlockHeights(ctx),
 		consumerStates,
@@ -266,4 +327,64 @@ func (k Keeper) ExportGenesis(ctx sdk.Context) *types.GenesisState {
 		k.GetAllValidatorsByConsumerAddr(ctx, nil),
 		consumerAddrsToPrune,
 	)
+
+	// Export share records
+	iter, err := k.ConsumerFeePoolShares.Iterate(ctx, nil)
+	if err != nil {
+		panic(err)
+	}
+	defer iter.Close()
+	for ; iter.Valid(); iter.Next() {
+		key, err := iter.Key()
+		if err != nil {
+			panic(err)
+		}
+		val, err := iter.Value()
+		if err != nil {
+			panic(err)
+		}
+		gs.ConsumerFeePoolShares = append(gs.ConsumerFeePoolShares, types.ConsumerFeePoolShare{
+			ConsumerId: key.K1(),
+			Depositor:  key.K2().String(),
+			Denom:      key.K3(),
+			Shares:     val,
+		})
+	}
+
+	// Sanity check: rebuild totals from shares and warn on divergence
+	recomputed := map[string]math.Int{}
+	for _, s := range gs.ConsumerFeePoolShares {
+		key := s.ConsumerId + "|" + s.Denom
+		if cur, ok := recomputed[key]; ok {
+			recomputed[key] = cur.Add(s.Shares)
+		} else {
+			recomputed[key] = s.Shares
+		}
+	}
+	totIter, err := k.ConsumerFeePoolTotalShares.Iterate(ctx, nil)
+	if err != nil {
+		panic(err)
+	}
+	for ; totIter.Valid(); totIter.Next() {
+		key, err := totIter.Key()
+		if err != nil {
+			panic(err)
+		}
+		val, err := totIter.Value()
+		if err != nil {
+			panic(err)
+		}
+		composite := key.K1() + "|" + key.K2()
+		expected, ok := recomputed[composite]
+		if !ok || !expected.Equal(val) {
+			k.Logger(ctx).Error(
+				"fee-pool total_shares mismatch at export",
+				"consumer_id", key.K1(), "denom", key.K2(),
+				"stored", val.String(),
+			)
+		}
+	}
+	totIter.Close()
+
+	return gs
 }
