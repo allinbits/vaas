@@ -32,10 +32,10 @@ type Keeper struct {
 
 	storeService corestoretypes.KVStoreService
 
-	cdc              codec.BinaryCodec
-	accountKeeper    vaastypes.AccountKeeper
-	clientKeeper     vaastypes.ClientKeeper
-	clientV2Keeper   vaastypes.ClientV2Keeper
+	cdc                codec.BinaryCodec
+	accountKeeper      vaastypes.AccountKeeper
+	clientKeeper       vaastypes.ClientKeeper
+	clientV2Keeper     vaastypes.ClientV2Keeper
 	stakingKeeper      vaastypes.StakingKeeper
 	slashingKeeper     vaastypes.SlashingKeeper
 	bankKeeper         vaastypes.BankKeeper
@@ -92,10 +92,10 @@ func NewKeeper(
 	clientV2Keeper vaastypes.ClientV2Keeper,
 	stakingKeeper vaastypes.StakingKeeper, slashingKeeper vaastypes.SlashingKeeper,
 	accountKeeper vaastypes.AccountKeeper,
-	bankKeeper         vaastypes.BankKeeper,
+	bankKeeper vaastypes.BankKeeper,
 	distributionKeeper vaastypes.DistributionKeeper,
-	govKeeper          govkeeper.Keeper,
-	authority          string,
+	govKeeper govkeeper.Keeper,
+	authority string,
 	validatorAddressCodec, consensusAddressCodec addresscodec.Codec,
 	feeCollectorName string,
 ) Keeper {
