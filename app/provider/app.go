@@ -399,6 +399,7 @@ func New(
 		authcodec.NewBech32Codec(sdk.GetConfig().GetBech32ConsensusAddrPrefix()),
 		authtypes.FeeCollectorName,
 	)
+	app.BankKeeper.AppendSendRestriction(app.ProviderKeeper.FeePoolSendRestriction())
 
 	govConfig := govtypes.DefaultConfig()
 	app.GovKeeper = govkeeper.NewKeeper(
