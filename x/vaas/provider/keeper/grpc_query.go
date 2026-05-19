@@ -12,10 +12,13 @@ import (
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
 
+	"cosmossdk.io/collections"
 	errorsmod "cosmossdk.io/errors"
 
 	sdk "github.com/cosmos/cosmos-sdk/types"
 	"github.com/cosmos/cosmos-sdk/types/query"
+	authtypes "github.com/cosmos/cosmos-sdk/x/auth/types"
+	disttypes "github.com/cosmos/cosmos-sdk/x/distribution/types"
 )
 
 var _ types.QueryServer = Keeper{}
@@ -321,12 +324,118 @@ func (k Keeper) QueryConsumerChain(goCtx context.Context, req *types.QueryConsum
 	}, nil
 }
 
-func (k Keeper) ConsumerFeePoolClaim(_ context.Context, _ *types.QueryConsumerFeePoolClaimRequest) (*types.QueryConsumerFeePoolClaimResponse, error) {
-	panic("not implemented")
+func (k Keeper) ConsumerFeePoolClaim(
+	goCtx context.Context, req *types.QueryConsumerFeePoolClaimRequest,
+) (*types.QueryConsumerFeePoolClaimResponse, error) {
+	if req == nil {
+		return nil, status.Error(codes.InvalidArgument, "empty request")
+	}
+	ctx := sdk.UnwrapSDKContext(goCtx)
+
+	depositorBech := req.Depositor
+	if depositorBech == k.GetAuthority() {
+		depositorBech = authtypes.NewModuleAddress(disttypes.ModuleName).String()
+	}
+	depositor, err := sdk.AccAddressFromBech32(depositorBech)
+	if err != nil {
+		return nil, status.Errorf(codes.InvalidArgument, "invalid depositor: %s", err)
+	}
+
+	coins := sdk.NewCoins()
+	prefix := collections.NewPrefixedPairRange[string, string](req.ConsumerId)
+	iter, err := k.ConsumerFeePoolTotalShares.Iterate(ctx, prefix)
+	if err != nil {
+		return nil, status.Errorf(codes.Internal, "iterate totals: %s", err)
+	}
+	defer iter.Close()
+	for ; iter.Valid(); iter.Next() {
+		key, err := iter.Key()
+		if err != nil {
+			return nil, status.Errorf(codes.Internal, "key: %s", err)
+		}
+		denom := key.K2()
+		claim := k.ComputeClaim(ctx, req.ConsumerId, depositor, denom)
+		if claim.IsPositive() {
+			coins = coins.Add(sdk.NewCoin(denom, claim))
+		}
+	}
+	return &types.QueryConsumerFeePoolClaimResponse{Claim: coins}, nil
 }
 
-func (k Keeper) ConsumerFeePoolClaims(_ context.Context, _ *types.QueryConsumerFeePoolClaimsRequest) (*types.QueryConsumerFeePoolClaimsResponse, error) {
-	panic("not implemented")
+func (k Keeper) ConsumerFeePoolClaims(
+	goCtx context.Context, req *types.QueryConsumerFeePoolClaimsRequest,
+) (*types.QueryConsumerFeePoolClaimsResponse, error) {
+	if req == nil {
+		return nil, status.Error(codes.InvalidArgument, "empty request")
+	}
+	ctx := sdk.UnwrapSDKContext(goCtx)
+
+	type acc struct {
+		addr  sdk.AccAddress
+		coins sdk.Coins
+	}
+	perDepositor := map[string]*acc{}
+
+	prefix := collections.NewPrefixedTripleRange[string, sdk.AccAddress, string](req.ConsumerId)
+	iter, err := k.ConsumerFeePoolShares.Iterate(ctx, prefix)
+	if err != nil {
+		return nil, status.Errorf(codes.Internal, "%s", err)
+	}
+	for ; iter.Valid(); iter.Next() {
+		key, _ := iter.Key()
+		addr := key.K2()
+		denom := key.K3()
+		claim := k.ComputeClaim(ctx, req.ConsumerId, addr, denom)
+		if claim.IsZero() {
+			continue
+		}
+		if entry, ok := perDepositor[addr.String()]; ok {
+			entry.coins = entry.coins.Add(sdk.NewCoin(denom, claim))
+		} else {
+			perDepositor[addr.String()] = &acc{
+				addr:  addr,
+				coins: sdk.NewCoins(sdk.NewCoin(denom, claim)),
+			}
+		}
+	}
+	iter.Close()
+
+	keys := make([]string, 0, len(perDepositor))
+	for key := range perDepositor {
+		keys = append(keys, key)
+	}
+	sort.Strings(keys)
+
+	offset, limit := uint64(0), uint64(100)
+	if req.Pagination != nil {
+		offset = req.Pagination.Offset
+		if req.Pagination.Limit > 0 {
+			limit = req.Pagination.Limit
+		}
+	}
+
+	end := offset + limit
+	if end > uint64(len(keys)) {
+		end = uint64(len(keys))
+	}
+	if offset > uint64(len(keys)) {
+		offset = uint64(len(keys))
+	}
+
+	claims := make([]types.DepositorClaim, 0, end-offset)
+	for _, key := range keys[offset:end] {
+		entry := perDepositor[key]
+		claims = append(claims, types.DepositorClaim{
+			Depositor: entry.addr.String(),
+			Claim:     entry.coins,
+		})
+	}
+	return &types.QueryConsumerFeePoolClaimsResponse{
+		Claims: claims,
+		Pagination: &query.PageResponse{
+			Total: uint64(len(keys)),
+		},
+	}, nil
 }
 
 func (k Keeper) QueryConsumerGenesisTime(goCtx context.Context, req *types.QueryConsumerGenesisTimeRequest) (*types.QueryConsumerGenesisTimeResponse, error) {
