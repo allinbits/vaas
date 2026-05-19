@@ -20,18 +20,23 @@ func NewStakingQueryServer(k *Keeper) StakingQueryServer {
 	return StakingQueryServer{keeper: k}
 }
 
-// Params returns staking params - required by Hermes for IBC client creation
+// Params returns the subset of staking params that have a meaningful value on a
+// VAAS consumer chain. The endpoint exists so IBC relayers (e.g. Hermes,
+// ts-relayer) can read UnbondingTime when deriving the trusting_period of a
+// Tendermint light client targeting this chain.
+//
+// Consumer chains have no local validator selection, no local bonding, and no
+// local commission — the active set is dictated by the provider via VSC
+// packets. The remaining staking.Params fields (BondDenom, MaxValidators,
+// MaxEntries, MinCommissionRate) are therefore left at their zero values
+// rather than fabricated, so callers are not misled.
 func (s StakingQueryServer) Params(goCtx context.Context, req *stakingtypes.QueryParamsRequest) (*stakingtypes.QueryParamsResponse, error) {
 	ctx := sdk.UnwrapSDKContext(goCtx)
 	params := s.keeper.GetConsumerParams(ctx)
 
-	// Return staking-compatible params with unbonding period from consumer params
 	stakingParams := stakingtypes.Params{
 		UnbondingTime:     params.UnbondingPeriod,
-		MaxValidators:     100,
-		MaxEntries:        7,
 		HistoricalEntries: uint32(params.HistoricalEntries),
-		BondDenom:         "uatone",
 		MinCommissionRate: math.LegacyZeroDec(),
 	}
 
