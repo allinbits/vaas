@@ -2,6 +2,7 @@ syntax = "proto3";
 package vaas.provider.v1;
 
 import "amino/amino.proto";
+import "cosmos/base/v1beta1/coin.proto";
 import "cosmos/msg/v1/msg.proto";
 import "cosmos_proto/cosmos.proto";
 import "gogoproto/gogo.proto";
@@ -27,6 +28,9 @@ service Msg {
   rpc UpdateConsumer(MsgUpdateConsumer) returns (MsgUpdateConsumerResponse);
   rpc RemoveConsumer(MsgRemoveConsumer) returns (MsgRemoveConsumerResponse);
   rpc UpdateParams(MsgUpdateParams) returns (MsgUpdateParamsResponse);
+  rpc FundConsumerFeePool(MsgFundConsumerFeePool) returns (MsgFundConsumerFeePoolResponse);
+  rpc WithdrawConsumerFeePool(MsgWithdrawConsumerFeePool) returns (MsgWithdrawConsumerFeePoolResponse);
+  rpc SweepConsumerFeePool(MsgSweepConsumerFeePool) returns (MsgSweepConsumerFeePoolResponse);
 }
 
 message MsgAssignConsumerKey {
@@ -165,3 +169,68 @@ message MsgUpdateConsumer {
 
 // MsgUpdateConsumerResponse defines response type for MsgUpdateConsumer messages
 message MsgUpdateConsumerResponse {}
+
+// MsgFundConsumerFeePool deposits a single-denom amount into a consumer's
+// fee pool and credits the signer with shares. If the signer is the gov
+// module authority, funds are pulled from the community pool and the
+// distribution module account is credited as the depositor.
+message MsgFundConsumerFeePool {
+  option (cosmos.msg.v1.signer) = "signer";
+  option (gogoproto.equal) = false;
+  option (gogoproto.goproto_getters) = false;
+
+  string signer = 1 [(cosmos_proto.scalar) = "cosmos.AddressString"];
+  string consumer_id = 2;
+  cosmos.base.v1beta1.Coin amount = 3 [
+    (gogoproto.nullable) = false,
+    (amino.dont_omitempty) = true
+  ];
+}
+
+message MsgFundConsumerFeePoolResponse {}
+
+// MsgWithdrawConsumerFeePool withdraws tokens from the signer's share in a
+// consumer fee pool across one or more denoms. The transaction is atomic:
+// if any denom in `amount` fails its share check, the whole tx aborts.
+// If the signer is the gov module authority, the withdrawal targets the
+// distribution module account's shares and tokens are routed back to the
+// community pool.
+message MsgWithdrawConsumerFeePool {
+  option (cosmos.msg.v1.signer) = "signer";
+  option (gogoproto.equal) = false;
+  option (gogoproto.goproto_getters) = false;
+
+  string signer = 1 [(cosmos_proto.scalar) = "cosmos.AddressString"];
+  string consumer_id = 2;
+  repeated cosmos.base.v1beta1.Coin amount = 3 [
+    (gogoproto.nullable) = false,
+    (gogoproto.castrepeated) = "github.com/cosmos/cosmos-sdk/types.Coins",
+    (amino.dont_omitempty) = true
+  ];
+}
+
+message MsgWithdrawConsumerFeePoolResponse {
+  // total tokens actually delivered (may be less than requested due to
+  // truncation in the partial-withdraw branch)
+  repeated cosmos.base.v1beta1.Coin amount = 1 [
+    (gogoproto.nullable) = false,
+    (gogoproto.castrepeated) = "github.com/cosmos/cosmos-sdk/types.Coins"
+  ];
+}
+
+// MsgSweepConsumerFeePool distributes a consumer fee pool's balance pro-rata
+// to all share-holders across the specified denoms (or all denoms if `denoms`
+// is empty). Truncation residue per denom is forwarded to the community pool.
+// Only the consumer owner may sign.
+message MsgSweepConsumerFeePool {
+  option (cosmos.msg.v1.signer) = "signer";
+  option (gogoproto.equal) = false;
+  option (gogoproto.goproto_getters) = false;
+
+  string signer = 1 [(cosmos_proto.scalar) = "cosmos.AddressString"];
+  string consumer_id = 2;
+  // empty = all denoms with shares or balance for this consumer
+  repeated string denoms = 3;
+}
+
+message MsgSweepConsumerFeePoolResponse {}

@@ -321,6 +321,14 @@ func (k Keeper) QueryConsumerChain(goCtx context.Context, req *types.QueryConsum
 	}, nil
 }
 
+func (k Keeper) ConsumerFeePoolClaim(_ context.Context, _ *types.QueryConsumerFeePoolClaimRequest) (*types.QueryConsumerFeePoolClaimResponse, error) {
+	panic("not implemented")
+}
+
+func (k Keeper) ConsumerFeePoolClaims(_ context.Context, _ *types.QueryConsumerFeePoolClaimsRequest) (*types.QueryConsumerFeePoolClaimsResponse, error) {
+	panic("not implemented")
+}
+
 func (k Keeper) QueryConsumerGenesisTime(goCtx context.Context, req *types.QueryConsumerGenesisTimeRequest) (*types.QueryConsumerGenesisTimeResponse, error) {
 	if req == nil {
 		return nil, status.Errorf(codes.InvalidArgument, "empty request")

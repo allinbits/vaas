@@ -466,3 +466,16 @@ func (k msgServer) RemoveConsumer(goCtx context.Context, msg *types.MsgRemoveCon
 
 	return &resp, err
 }
+
+// FundConsumerFeePool deposits funds into a consumer's fee pool.
+func (k msgServer) FundConsumerFeePool(_ context.Context, _ *types.MsgFundConsumerFeePool) (*types.MsgFundConsumerFeePoolResponse, error) {
+	panic("not implemented")
+}
+
+func (k msgServer) WithdrawConsumerFeePool(_ context.Context, _ *types.MsgWithdrawConsumerFeePool) (*types.MsgWithdrawConsumerFeePoolResponse, error) {
+	panic("not implemented")
+}
+
+func (k msgServer) SweepConsumerFeePool(_ context.Context, _ *types.MsgSweepConsumerFeePool) (*types.MsgSweepConsumerFeePoolResponse, error) {
+	panic("not implemented")
+}

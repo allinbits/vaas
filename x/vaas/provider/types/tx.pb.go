@@ -9,6 +9,8 @@ import (
 	types "github.com/cometbft/cometbft/proto/tendermint/types"
 	_ "github.com/cosmos/cosmos-proto"
 	_ "github.com/cosmos/cosmos-sdk/codec/types"
+	github_com_cosmos_cosmos_sdk_types "github.com/cosmos/cosmos-sdk/types"
+	types1 "github.com/cosmos/cosmos-sdk/types"
 	_ "github.com/cosmos/cosmos-sdk/types/msgservice"
 	_ "github.com/cosmos/cosmos-sdk/types/tx/amino"
 	_ "github.com/cosmos/gogoproto/gogoproto"
@@ -730,6 +732,256 @@ func (m *MsgUpdateConsumerResponse) XXX_DiscardUnknown() {
 
 var xxx_messageInfo_MsgUpdateConsumerResponse proto.InternalMessageInfo
 
+// MsgFundConsumerFeePool deposits a single-denom amount into a consumer's
+// fee pool and credits the signer with shares. If the signer is the gov
+// module authority, funds are pulled from the community pool and the
+// distribution module account is credited as the depositor.
+type MsgFundConsumerFeePool struct {
+	Signer     string      `protobuf:"bytes,1,opt,name=signer,proto3" json:"signer,omitempty"`
+	ConsumerId string      `protobuf:"bytes,2,opt,name=consumer_id,json=consumerId,proto3" json:"consumer_id,omitempty"`
+	Amount     types1.Coin `protobuf:"bytes,3,opt,name=amount,proto3" json:"amount"`
+}
+
+func (m *MsgFundConsumerFeePool) Reset()         { *m = MsgFundConsumerFeePool{} }
+func (m *MsgFundConsumerFeePool) String() string { return proto.CompactTextString(m) }
+func (*MsgFundConsumerFeePool) ProtoMessage()    {}
+func (*MsgFundConsumerFeePool) Descriptor() ([]byte, []int) {
+	return fileDescriptor_a07778b1d094765c, []int{14}
+}
+func (m *MsgFundConsumerFeePool) XXX_Unmarshal(b []byte) error {
+	return m.Unmarshal(b)
+}
+func (m *MsgFundConsumerFeePool) XXX_Marshal(b []byte, deterministic bool) ([]byte, error) {
+	if deterministic {
+		return xxx_messageInfo_MsgFundConsumerFeePool.Marshal(b, m, deterministic)
+	} else {
+		b = b[:cap(b)]
+		n, err := m.MarshalToSizedBuffer(b)
+		if err != nil {
+			return nil, err
+		}
+		return b[:n], nil
+	}
+}
+func (m *MsgFundConsumerFeePool) XXX_Merge(src proto.Message) {
+	xxx_messageInfo_MsgFundConsumerFeePool.Merge(m, src)
+}
+func (m *MsgFundConsumerFeePool) XXX_Size() int {
+	return m.Size()
+}
+func (m *MsgFundConsumerFeePool) XXX_DiscardUnknown() {
+	xxx_messageInfo_MsgFundConsumerFeePool.DiscardUnknown(m)
+}
+
+var xxx_messageInfo_MsgFundConsumerFeePool proto.InternalMessageInfo
+
+type MsgFundConsumerFeePoolResponse struct {
+}
+
+func (m *MsgFundConsumerFeePoolResponse) Reset()         { *m = MsgFundConsumerFeePoolResponse{} }
+func (m *MsgFundConsumerFeePoolResponse) String() string { return proto.CompactTextString(m) }
+func (*MsgFundConsumerFeePoolResponse) ProtoMessage()    {}
+func (*MsgFundConsumerFeePoolResponse) Descriptor() ([]byte, []int) {
+	return fileDescriptor_a07778b1d094765c, []int{15}
+}
+func (m *MsgFundConsumerFeePoolResponse) XXX_Unmarshal(b []byte) error {
+	return m.Unmarshal(b)
+}
+func (m *MsgFundConsumerFeePoolResponse) XXX_Marshal(b []byte, deterministic bool) ([]byte, error) {
+	if deterministic {
+		return xxx_messageInfo_MsgFundConsumerFeePoolResponse.Marshal(b, m, deterministic)
+	} else {
+		b = b[:cap(b)]
+		n, err := m.MarshalToSizedBuffer(b)
+		if err != nil {
+			return nil, err
+		}
+		return b[:n], nil
+	}
+}
+func (m *MsgFundConsumerFeePoolResponse) XXX_Merge(src proto.Message) {
+	xxx_messageInfo_MsgFundConsumerFeePoolResponse.Merge(m, src)
+}
+func (m *MsgFundConsumerFeePoolResponse) XXX_Size() int {
+	return m.Size()
+}
+func (m *MsgFundConsumerFeePoolResponse) XXX_DiscardUnknown() {
+	xxx_messageInfo_MsgFundConsumerFeePoolResponse.DiscardUnknown(m)
+}
+
+var xxx_messageInfo_MsgFundConsumerFeePoolResponse proto.InternalMessageInfo
+
+// MsgWithdrawConsumerFeePool withdraws tokens from the signer's share in a
+// consumer fee pool across one or more denoms. The transaction is atomic:
+// if any denom in `amount` fails its share check, the whole tx aborts.
+// If the signer is the gov module authority, the withdrawal targets the
+// distribution module account's shares and tokens are routed back to the
+// community pool.
+type MsgWithdrawConsumerFeePool struct {
+	Signer     string                                   `protobuf:"bytes,1,opt,name=signer,proto3" json:"signer,omitempty"`
+	ConsumerId string                                   `protobuf:"bytes,2,opt,name=consumer_id,json=consumerId,proto3" json:"consumer_id,omitempty"`
+	Amount     github_com_cosmos_cosmos_sdk_types.Coins `protobuf:"bytes,3,rep,name=amount,proto3,castrepeated=github.com/cosmos/cosmos-sdk/types.Coins" json:"amount"`
+}
+
+func (m *MsgWithdrawConsumerFeePool) Reset()         { *m = MsgWithdrawConsumerFeePool{} }
+func (m *MsgWithdrawConsumerFeePool) String() string { return proto.CompactTextString(m) }
+func (*MsgWithdrawConsumerFeePool) ProtoMessage()    {}
+func (*MsgWithdrawConsumerFeePool) Descriptor() ([]byte, []int) {
+	return fileDescriptor_a07778b1d094765c, []int{16}
+}
+func (m *MsgWithdrawConsumerFeePool) XXX_Unmarshal(b []byte) error {
+	return m.Unmarshal(b)
+}
+func (m *MsgWithdrawConsumerFeePool) XXX_Marshal(b []byte, deterministic bool) ([]byte, error) {
+	if deterministic {
+		return xxx_messageInfo_MsgWithdrawConsumerFeePool.Marshal(b, m, deterministic)
+	} else {
+		b = b[:cap(b)]
+		n, err := m.MarshalToSizedBuffer(b)
+		if err != nil {
+			return nil, err
+		}
+		return b[:n], nil
+	}
+}
+func (m *MsgWithdrawConsumerFeePool) XXX_Merge(src proto.Message) {
+	xxx_messageInfo_MsgWithdrawConsumerFeePool.Merge(m, src)
+}
+func (m *MsgWithdrawConsumerFeePool) XXX_Size() int {
+	return m.Size()
+}
+func (m *MsgWithdrawConsumerFeePool) XXX_DiscardUnknown() {
+	xxx_messageInfo_MsgWithdrawConsumerFeePool.DiscardUnknown(m)
+}
+
+var xxx_messageInfo_MsgWithdrawConsumerFeePool proto.InternalMessageInfo
+
+type MsgWithdrawConsumerFeePoolResponse struct {
+	// total tokens actually delivered (may be less than requested due to
+	// truncation in the partial-withdraw branch)
+	Amount github_com_cosmos_cosmos_sdk_types.Coins `protobuf:"bytes,1,rep,name=amount,proto3,castrepeated=github.com/cosmos/cosmos-sdk/types.Coins" json:"amount"`
+}
+
+func (m *MsgWithdrawConsumerFeePoolResponse) Reset()         { *m = MsgWithdrawConsumerFeePoolResponse{} }
+func (m *MsgWithdrawConsumerFeePoolResponse) String() string { return proto.CompactTextString(m) }
+func (*MsgWithdrawConsumerFeePoolResponse) ProtoMessage()    {}
+func (*MsgWithdrawConsumerFeePoolResponse) Descriptor() ([]byte, []int) {
+	return fileDescriptor_a07778b1d094765c, []int{17}
+}
+func (m *MsgWithdrawConsumerFeePoolResponse) XXX_Unmarshal(b []byte) error {
+	return m.Unmarshal(b)
+}
+func (m *MsgWithdrawConsumerFeePoolResponse) XXX_Marshal(b []byte, deterministic bool) ([]byte, error) {
+	if deterministic {
+		return xxx_messageInfo_MsgWithdrawConsumerFeePoolResponse.Marshal(b, m, deterministic)
+	} else {
+		b = b[:cap(b)]
+		n, err := m.MarshalToSizedBuffer(b)
+		if err != nil {
+			return nil, err
+		}
+		return b[:n], nil
+	}
+}
+func (m *MsgWithdrawConsumerFeePoolResponse) XXX_Merge(src proto.Message) {
+	xxx_messageInfo_MsgWithdrawConsumerFeePoolResponse.Merge(m, src)
+}
+func (m *MsgWithdrawConsumerFeePoolResponse) XXX_Size() int {
+	return m.Size()
+}
+func (m *MsgWithdrawConsumerFeePoolResponse) XXX_DiscardUnknown() {
+	xxx_messageInfo_MsgWithdrawConsumerFeePoolResponse.DiscardUnknown(m)
+}
+
+var xxx_messageInfo_MsgWithdrawConsumerFeePoolResponse proto.InternalMessageInfo
+
+func (m *MsgWithdrawConsumerFeePoolResponse) GetAmount() github_com_cosmos_cosmos_sdk_types.Coins {
+	if m != nil {
+		return m.Amount
+	}
+	return nil
+}
+
+// MsgSweepConsumerFeePool distributes a consumer fee pool's balance pro-rata
+// to all share-holders across the specified denoms (or all denoms if `denoms`
+// is empty). Truncation residue per denom is forwarded to the community pool.
+// Only the consumer owner may sign.
+type MsgSweepConsumerFeePool struct {
+	Signer     string `protobuf:"bytes,1,opt,name=signer,proto3" json:"signer,omitempty"`
+	ConsumerId string `protobuf:"bytes,2,opt,name=consumer_id,json=consumerId,proto3" json:"consumer_id,omitempty"`
+	// empty = all denoms with shares or balance for this consumer
+	Denoms []string `protobuf:"bytes,3,rep,name=denoms,proto3" json:"denoms,omitempty"`
+}
+
+func (m *MsgSweepConsumerFeePool) Reset()         { *m = MsgSweepConsumerFeePool{} }
+func (m *MsgSweepConsumerFeePool) String() string { return proto.CompactTextString(m) }
+func (*MsgSweepConsumerFeePool) ProtoMessage()    {}
+func (*MsgSweepConsumerFeePool) Descriptor() ([]byte, []int) {
+	return fileDescriptor_a07778b1d094765c, []int{18}
+}
+func (m *MsgSweepConsumerFeePool) XXX_Unmarshal(b []byte) error {
+	return m.Unmarshal(b)
+}
+func (m *MsgSweepConsumerFeePool) XXX_Marshal(b []byte, deterministic bool) ([]byte, error) {
+	if deterministic {
+		return xxx_messageInfo_MsgSweepConsumerFeePool.Marshal(b, m, deterministic)
+	} else {
+		b = b[:cap(b)]
+		n, err := m.MarshalToSizedBuffer(b)
+		if err != nil {
+			return nil, err
+		}
+		return b[:n], nil
+	}
+}
+func (m *MsgSweepConsumerFeePool) XXX_Merge(src proto.Message) {
+	xxx_messageInfo_MsgSweepConsumerFeePool.Merge(m, src)
+}
+func (m *MsgSweepConsumerFeePool) XXX_Size() int {
+	return m.Size()
+}
+func (m *MsgSweepConsumerFeePool) XXX_DiscardUnknown() {
+	xxx_messageInfo_MsgSweepConsumerFeePool.DiscardUnknown(m)
+}
+
+var xxx_messageInfo_MsgSweepConsumerFeePool proto.InternalMessageInfo
+
+type MsgSweepConsumerFeePoolResponse struct {
+}
+
+func (m *MsgSweepConsumerFeePoolResponse) Reset()         { *m = MsgSweepConsumerFeePoolResponse{} }
+func (m *MsgSweepConsumerFeePoolResponse) String() string { return proto.CompactTextString(m) }
+func (*MsgSweepConsumerFeePoolResponse) ProtoMessage()    {}
+func (*MsgSweepConsumerFeePoolResponse) Descriptor() ([]byte, []int) {
+	return fileDescriptor_a07778b1d094765c, []int{19}
+}
+func (m *MsgSweepConsumerFeePoolResponse) XXX_Unmarshal(b []byte) error {
+	return m.Unmarshal(b)
+}
+func (m *MsgSweepConsumerFeePoolResponse) XXX_Marshal(b []byte, deterministic bool) ([]byte, error) {
+	if deterministic {
+		return xxx_messageInfo_MsgSweepConsumerFeePoolResponse.Marshal(b, m, deterministic)
+	} else {
+		b = b[:cap(b)]
+		n, err := m.MarshalToSizedBuffer(b)
+		if err != nil {
+			return nil, err
+		}
+		return b[:n], nil
+	}
+}
+func (m *MsgSweepConsumerFeePoolResponse) XXX_Merge(src proto.Message) {
+	xxx_messageInfo_MsgSweepConsumerFeePoolResponse.Merge(m, src)
+}
+func (m *MsgSweepConsumerFeePoolResponse) XXX_Size() int {
+	return m.Size()
+}
+func (m *MsgSweepConsumerFeePoolResponse) XXX_DiscardUnknown() {
+	xxx_messageInfo_MsgSweepConsumerFeePoolResponse.DiscardUnknown(m)
+}
+
+var xxx_messageInfo_MsgSweepConsumerFeePoolResponse proto.InternalMessageInfo
+
 func init() {
 	proto.RegisterType((*MsgAssignConsumerKey)(nil), "vaas.provider.v1.MsgAssignConsumerKey")
 	proto.RegisterType((*MsgAssignConsumerKeyResponse)(nil), "vaas.provider.v1.MsgAssignConsumerKeyResponse")
@@ -745,81 +997,103 @@ func init() {
 	proto.RegisterType((*MsgCreateConsumerResponse)(nil), "vaas.provider.v1.MsgCreateConsumerResponse")
 	proto.RegisterType((*MsgUpdateConsumer)(nil), "vaas.provider.v1.MsgUpdateConsumer")
 	proto.RegisterType((*MsgUpdateConsumerResponse)(nil), "vaas.provider.v1.MsgUpdateConsumerResponse")
+	proto.RegisterType((*MsgFundConsumerFeePool)(nil), "vaas.provider.v1.MsgFundConsumerFeePool")
+	proto.RegisterType((*MsgFundConsumerFeePoolResponse)(nil), "vaas.provider.v1.MsgFundConsumerFeePoolResponse")
+	proto.RegisterType((*MsgWithdrawConsumerFeePool)(nil), "vaas.provider.v1.MsgWithdrawConsumerFeePool")
+	proto.RegisterType((*MsgWithdrawConsumerFeePoolResponse)(nil), "vaas.provider.v1.MsgWithdrawConsumerFeePoolResponse")
+	proto.RegisterType((*MsgSweepConsumerFeePool)(nil), "vaas.provider.v1.MsgSweepConsumerFeePool")
+	proto.RegisterType((*MsgSweepConsumerFeePoolResponse)(nil), "vaas.provider.v1.MsgSweepConsumerFeePoolResponse")
 }
 
 func init() { proto.RegisterFile("vaas/provider/v1/tx.proto", fileDescriptor_a07778b1d094765c) }
 
 var fileDescriptor_a07778b1d094765c = []byte{
-	// 1104 bytes of a gzipped FileDescriptorProto
-	0x1f, 0x8b, 0x08, 0x00, 0x00, 0x00, 0x00, 0x00, 0x02, 0xff, 0xb4, 0x57, 0x4d, 0x6f, 0xdc, 0x44,
-	0x18, 0x5e, 0xe7, 0xab, 0xed, 0x24, 0xa4, 0xc4, 0xa4, 0x64, 0x77, 0x29, 0xbb, 0xa9, 0x11, 0xb4,
-	0x14, 0xb0, 0x49, 0x90, 0x5a, 0x29, 0x42, 0x48, 0xf9, 0x40, 0x62, 0x85, 0x56, 0x44, 0xae, 0xe8,
-	0x01, 0x10, 0xd6, 0xd8, 0x9e, 0x7a, 0x47, 0xb1, 0x67, 0x2c, 0xcf, 0xec, 0xa6, 0xcb, 0x09, 0x71,
-	0x40, 0x88, 0x13, 0x1c, 0xb8, 0xf7, 0x27, 0xf4, 0xc0, 0x8f, 0xe8, 0xb1, 0x70, 0x42, 0x1c, 0x2a,
-	0x94, 0x48, 0x94, 0x33, 0xbf, 0x00, 0x79, 0x3c, 0xf6, 0xda, 0x5e, 0xef, 0x07, 0x85, 0x5e, 0x56,
-	0x9e, 0xf7, 0x7d, 0xde, 0x8f, 0x79, 0xde, 0x67, 0x3c, 0x5e, 0xd0, 0x18, 0x40, 0xc8, 0x8c, 0x30,
-	0xa2, 0x03, 0xec, 0xa2, 0xc8, 0x18, 0xec, 0x18, 0xfc, 0xbe, 0x1e, 0x46, 0x94, 0x53, 0xf5, 0xc5,
-	0xd8, 0xa5, 0xa7, 0x2e, 0x7d, 0xb0, 0xd3, 0xdc, 0x80, 0x01, 0x26, 0xd4, 0x10, 0xbf, 0x09, 0xa8,
-	0xb9, 0xe5, 0x50, 0x16, 0x50, 0x66, 0x04, 0xcc, 0x8b, 0x83, 0x03, 0xe6, 0x49, 0x47, 0x23, 0x71,
-	0x58, 0x62, 0x65, 0x24, 0x0b, 0xe9, 0xda, 0xf4, 0xa8, 0x47, 0x13, 0x7b, 0xfc, 0x24, 0xad, 0x57,
-	0x3d, 0x4a, 0x3d, 0x1f, 0x19, 0x30, 0xc4, 0x06, 0x24, 0x84, 0x72, 0xc8, 0x31, 0x25, 0x69, 0x4c,
-	0x43, 0x7a, 0xc5, 0xca, 0xee, 0xdf, 0x33, 0x20, 0x19, 0x4a, 0x57, 0xab, 0xec, 0x72, 0xfb, 0x91,
-	0x88, 0x95, 0xfe, 0x76, 0xd9, 0xcf, 0x71, 0x80, 0x18, 0x87, 0x41, 0x98, 0x02, 0xb0, 0xed, 0x18,
-	0x0e, 0x8d, 0x90, 0xe1, 0xf8, 0x18, 0x11, 0x1e, 0x6f, 0x24, 0x79, 0x92, 0x00, 0x23, 0x06, 0xf8,
-	0xd8, 0xeb, 0xf1, 0xc4, 0xcc, 0x0c, 0x8e, 0x88, 0x8b, 0xa2, 0x00, 0x27, 0xe0, 0xd1, 0x2a, 0xcd,
-	0x98, 0xf3, 0xf3, 0x61, 0x88, 0x98, 0x81, 0x62, 0x12, 0x89, 0x83, 0x52, 0xc0, 0x18, 0xed, 0x19,
-	0xcf, 0x02, 0xa0, 0xfd, 0xae, 0x80, 0xcd, 0x2e, 0xf3, 0xf6, 0x19, 0xc3, 0x1e, 0x39, 0xa4, 0x84,
-	0xf5, 0x03, 0x14, 0x7d, 0x8c, 0x86, 0x6a, 0x1b, 0xac, 0x3a, 0x72, 0x69, 0x61, 0xb7, 0xae, 0x6c,
-	0x2b, 0x37, 0x96, 0x4c, 0x90, 0x9a, 0x3a, 0xae, 0x7a, 0x1b, 0xbc, 0x90, 0xe6, 0xb2, 0xa0, 0xeb,
-	0x46, 0xf5, 0x85, 0x6d, 0xe5, 0xc6, 0xa5, 0x03, 0xf5, 0xef, 0x27, 0xed, 0xf5, 0x21, 0x0c, 0xfc,
-	0x3d, 0x2d, 0xb6, 0x22, 0xc6, 0x34, 0x73, 0x2d, 0x05, 0xee, 0xbb, 0x6e, 0xa4, 0x5e, 0x03, 0x6b,
-	0x59, 0xe6, 0x13, 0x34, 0xac, 0x2f, 0xc6, 0x71, 0x66, 0x56, 0x2d, 0x2e, 0xfe, 0x2e, 0x58, 0x89,
-	0xfb, 0x41, 0x51, 0x7d, 0x49, 0x24, 0xad, 0xff, 0xfa, 0xf3, 0x3b, 0x9b, 0x72, 0xb6, 0xfb, 0x49,
-	0xd6, 0x3b, 0x3c, 0xc2, 0xc4, 0x33, 0x25, 0x6e, 0xef, 0xa5, 0xef, 0x1e, 0xb4, 0x6b, 0x7f, 0x3d,
-	0x68, 0xd7, 0xbe, 0x79, 0xfa, 0xf0, 0xa6, 0x34, 0x6a, 0x2d, 0x70, 0xb5, 0x6a, 0x6f, 0x26, 0x62,
-	0x21, 0x25, 0x0c, 0x69, 0x67, 0x0a, 0x78, 0xb5, 0xcb, 0xbc, 0x3b, 0x7d, 0x3b, 0xc0, 0x3c, 0x05,
-	0x74, 0x31, 0xb3, 0x51, 0x0f, 0x0e, 0x30, 0xed, 0x47, 0xea, 0x2d, 0x70, 0x89, 0x09, 0x2f, 0x47,
-	0x91, 0xe0, 0x60, 0x5a, 0x2f, 0x23, 0xa8, 0x7a, 0x0c, 0xd6, 0x82, 0x5c, 0x1e, 0xc1, 0xcd, 0xea,
-	0xee, 0xdb, 0x3a, 0xb6, 0x1d, 0x3d, 0x3f, 0x60, 0x3d, 0x37, 0xd2, 0xc1, 0x8e, 0x9e, 0xaf, 0x6d,
-	0x16, 0x32, 0x94, 0xe7, 0xb1, 0x58, 0x9e, 0xc7, 0xde, 0xcb, 0x79, 0x06, 0x46, 0xad, 0x68, 0xd7,
-	0xc1, 0xeb, 0x53, 0xf7, 0x98, 0xb1, 0xf1, 0xcb, 0x42, 0x05, 0x1b, 0x47, 0xb4, 0x6f, 0xfb, 0xe8,
-	0x2e, 0xe5, 0x98, 0x78, 0xcf, 0xcc, 0x86, 0x05, 0xb6, 0xdc, 0x7e, 0xe8, 0x63, 0x07, 0x72, 0x64,
-	0x0d, 0x28, 0x47, 0x56, 0x2a, 0x53, 0x49, 0xcc, 0xf5, 0x3c, 0x0f, 0x42, 0xc8, 0xfa, 0x51, 0x1a,
-	0x70, 0x97, 0x72, 0xf4, 0xa1, 0x84, 0x9b, 0x57, 0xdc, 0x2a, 0xb3, 0xfa, 0x25, 0xd8, 0xc2, 0xe4,
-	0x5e, 0x04, 0x9d, 0xf8, 0x38, 0x5a, 0xb6, 0x4f, 0x9d, 0x13, 0xab, 0x87, 0xa0, 0x8b, 0x22, 0x41,
-	0xd4, 0xea, 0xee, 0x1b, 0xb3, 0x98, 0xff, 0x48, 0xa0, 0xcd, 0x2b, 0xa3, 0x34, 0x07, 0x71, 0x96,
-	0xc4, 0x5c, 0x26, 0x7f, 0xe9, 0x3f, 0x91, 0x9f, 0xa7, 0x34, 0x23, 0xff, 0x47, 0x05, 0x5c, 0xee,
-	0x32, 0xef, 0xd3, 0xd0, 0x85, 0x1c, 0x1d, 0xc3, 0x08, 0x06, 0x2c, 0xa6, 0x1b, 0xf6, 0x79, 0x8f,
-	0x46, 0x98, 0x0f, 0x67, 0xd3, 0x9d, 0x41, 0xd5, 0x5b, 0x60, 0x25, 0x14, 0x19, 0x24, 0xbb, 0x75,
-	0xbd, 0xfc, 0x86, 0xd5, 0x93, 0x0a, 0x07, 0x4b, 0x8f, 0x9e, 0xb4, 0x6b, 0xa6, 0x44, 0xef, 0xad,
-	0x8b, 0xe6, 0xb3, 0x3c, 0x5a, 0x03, 0x6c, 0x95, 0x5a, 0xca, 0xda, 0x0d, 0xc1, 0x46, 0x97, 0x79,
-	0x26, 0x0a, 0xe8, 0x00, 0xa5, 0xfb, 0x9a, 0xfd, 0xca, 0xd0, 0xc1, 0x32, 0x3d, 0x8d, 0x4f, 0xf5,
-	0xc2, 0x8c, 0xcd, 0x24, 0xb0, 0x3d, 0x10, 0x37, 0x94, 0x3c, 0x6b, 0xaf, 0x80, 0xc6, 0x58, 0xc5,
-	0xac, 0x9d, 0xef, 0x17, 0x45, 0x3f, 0x87, 0x11, 0x82, 0x7c, 0xd4, 0xcf, 0xb3, 0xca, 0xb5, 0x01,
-	0x2e, 0x3a, 0x3d, 0x88, 0x49, 0xbc, 0x09, 0xd1, 0xa9, 0x79, 0x41, 0xac, 0x3b, 0xae, 0x7a, 0x04,
-	0x2e, 0x06, 0x88, 0x43, 0x17, 0x72, 0x28, 0x95, 0xa5, 0x8d, 0x93, 0x9b, 0x9d, 0x32, 0x89, 0x94,
-	0x34, 0x67, 0x91, 0x2a, 0x05, 0x0d, 0x4c, 0x30, 0xc7, 0xd0, 0xc7, 0x5f, 0x89, 0x1b, 0xc4, 0x12,
-	0x13, 0x40, 0x1c, 0x45, 0x4c, 0x88, 0x6b, 0x75, 0x77, 0x77, 0x72, 0xda, 0x4e, 0x21, 0xf4, 0x38,
-	0x8b, 0x34, 0xeb, 0x78, 0x82, 0x47, 0xfd, 0x1c, 0xe4, 0x84, 0x9d, 0x2f, 0xb6, 0x2c, 0x4f, 0xc7,
-	0x58, 0xb1, 0x4e, 0x06, 0xcf, 0x15, 0xd8, 0xc4, 0x15, 0x56, 0x29, 0x9b, 0x91, 0xe6, 0xdf, 0x17,
-	0x93, 0x2a, 0xce, 0x22, 0x9d, 0xd4, 0x4c, 0x8d, 0x68, 0x7f, 0x26, 0xa3, 0x4c, 0x54, 0x97, 0x8d,
-	0x32, 0x53, 0x8e, 0x32, 0x97, 0x72, 0xca, 0x65, 0x16, 0xc6, 0xa4, 0x78, 0x04, 0x36, 0x08, 0x3a,
-	0xb5, 0x04, 0xda, 0x92, 0x17, 0x55, 0x72, 0x13, 0x4d, 0x49, 0x7e, 0x99, 0xa0, 0xd3, 0x4f, 0xe2,
-	0x08, 0x69, 0x56, 0x3f, 0xc8, 0xc9, 0x61, 0x69, 0x5e, 0x39, 0xcc, 0x2b, 0x84, 0xe5, 0xe7, 0x20,
-	0x84, 0x6d, 0xb0, 0x16, 0x6f, 0x3b, 0x93, 0xf7, 0x8a, 0x90, 0x37, 0x20, 0xe8, 0xf4, 0x50, 0x2a,
-	0x7c, 0xa2, 0x54, 0x2e, 0xfc, 0x0f, 0x52, 0x19, 0x3f, 0xd0, 0xc5, 0x39, 0xa7, 0x32, 0xd9, 0xfd,
-	0x69, 0x05, 0x2c, 0x76, 0x99, 0xa7, 0x9e, 0x80, 0x8d, 0xf1, 0x4f, 0x93, 0x8a, 0x1e, 0xaa, 0xae,
-	0xf9, 0xa6, 0x3e, 0x1f, 0x2e, 0xd3, 0xe6, 0xb7, 0x0a, 0x68, 0x4e, 0xf9, 0x16, 0x30, 0x2a, 0xd3,
-	0x4d, 0x0e, 0x68, 0xde, 0xfe, 0x97, 0x01, 0x53, 0x1a, 0x29, 0x5c, 0xc3, 0xf3, 0x34, 0x92, 0x0f,
-	0x98, 0xab, 0x91, 0xaa, 0x5b, 0x49, 0xb5, 0xc1, 0x7a, 0xe9, 0x9d, 0xfa, 0x5a, 0x65, 0xaa, 0x22,
-	0xa8, 0xf9, 0xd6, 0x1c, 0xa0, 0x7c, 0x8d, 0xd2, 0x61, 0xaf, 0xae, 0x51, 0x04, 0x4d, 0xa8, 0x51,
-	0x2d, 0xa7, 0xb8, 0x46, 0xe9, 0xae, 0xaa, 0xae, 0x51, 0x04, 0x4d, 0xa8, 0x51, 0x7d, 0x07, 0xa9,
-	0x5f, 0x80, 0xb5, 0xc2, 0xed, 0x7d, 0x6d, 0x4a, 0x83, 0x09, 0xa4, 0xf9, 0xe6, 0x4c, 0x48, 0x9a,
-	0xbd, 0xb9, 0xfc, 0xf5, 0xd3, 0x87, 0x37, 0x95, 0x83, 0xce, 0xa3, 0xb3, 0x96, 0xf2, 0xf8, 0xac,
-	0xa5, 0xfc, 0x71, 0xd6, 0x52, 0x7e, 0x38, 0x6f, 0xd5, 0x1e, 0x9f, 0xb7, 0x6a, 0xbf, 0x9d, 0xb7,
-	0x6a, 0x9f, 0x19, 0x1e, 0xe6, 0xbd, 0xbe, 0xad, 0x3b, 0x34, 0x30, 0xa0, 0xef, 0x63, 0x62, 0x63,
-	0xce, 0x0c, 0xf1, 0xf9, 0x7f, 0xdf, 0x28, 0xfe, 0x0b, 0x10, 0x1f, 0x58, 0xf6, 0x8a, 0xf8, 0x03,
-	0xf0, 0xde, 0x3f, 0x01, 0x00, 0x00, 0xff, 0xff, 0x54, 0xa0, 0xc5, 0xf0, 0x9a, 0x0d, 0x00, 0x00,
+	// 1349 bytes of a gzipped FileDescriptorProto
+	0x1f, 0x8b, 0x08, 0x00, 0x00, 0x00, 0x00, 0x00, 0x02, 0xff, 0xbc, 0x58, 0x4d, 0x6c, 0x1b, 0x45,
+	0x14, 0xce, 0xe6, 0xaf, 0xcd, 0x24, 0xb4, 0x64, 0x9b, 0x36, 0xb6, 0x29, 0x76, 0xba, 0x08, 0x1a,
+	0x4a, 0xbb, 0xdb, 0x04, 0x68, 0xa5, 0xa8, 0x42, 0x6a, 0x12, 0x2a, 0x22, 0x64, 0x11, 0x6d, 0x45,
+	0x91, 0x00, 0x61, 0xcd, 0xee, 0x4e, 0xd7, 0xa3, 0x78, 0x67, 0xcc, 0xce, 0xd8, 0x69, 0x90, 0x90,
+	0x10, 0x07, 0x04, 0x9c, 0xe0, 0xc8, 0xad, 0x47, 0xc4, 0xa9, 0x07, 0xce, 0x9c, 0x7b, 0x2c, 0x9c,
+	0x10, 0x87, 0x82, 0x52, 0x89, 0x72, 0xe2, 0xc0, 0x1d, 0x09, 0xed, 0xec, 0xec, 0x78, 0x6d, 0x8f,
+	0x7f, 0x5a, 0xa0, 0x97, 0xc4, 0x33, 0xef, 0x7b, 0x7f, 0xdf, 0x7b, 0x33, 0xf3, 0xb4, 0xa0, 0xd8,
+	0x86, 0x90, 0x39, 0xcd, 0x98, 0xb6, 0x71, 0x80, 0x62, 0xa7, 0xbd, 0xe6, 0xf0, 0x5b, 0x76, 0x33,
+	0xa6, 0x9c, 0x9a, 0x4f, 0x27, 0x22, 0x3b, 0x13, 0xd9, 0xed, 0xb5, 0xd2, 0x22, 0x8c, 0x30, 0xa1,
+	0x8e, 0xf8, 0x9b, 0x82, 0x4a, 0x65, 0x9f, 0xb2, 0x88, 0x32, 0xc7, 0x83, 0x0c, 0x39, 0xed, 0x35,
+	0x0f, 0x71, 0xb8, 0xe6, 0xf8, 0x14, 0x13, 0x29, 0x5f, 0x96, 0xf2, 0x88, 0x85, 0x89, 0xf1, 0x88,
+	0x85, 0x52, 0x50, 0x4c, 0x05, 0x35, 0xb1, 0x72, 0xd2, 0x85, 0x14, 0x2d, 0x85, 0x34, 0xa4, 0xe9,
+	0x7e, 0xf2, 0x4b, 0xee, 0x9e, 0x0e, 0x29, 0x0d, 0x1b, 0xc8, 0x81, 0x4d, 0xec, 0x40, 0x42, 0x28,
+	0x87, 0x1c, 0x53, 0x92, 0xe9, 0x14, 0xa5, 0x54, 0xac, 0xbc, 0xd6, 0x4d, 0x07, 0x92, 0x83, 0x2c,
+	0xc4, 0x5e, 0x51, 0xd0, 0x8a, 0x85, 0xae, 0x94, 0x57, 0x7a, 0xe5, 0x1c, 0x47, 0x88, 0x71, 0x18,
+	0x35, 0x33, 0x00, 0xf6, 0x7c, 0xc7, 0xa7, 0x31, 0x72, 0xfc, 0x06, 0x46, 0x84, 0x27, 0x89, 0xa4,
+	0xbf, 0x24, 0xc0, 0x49, 0x00, 0x0d, 0x1c, 0xd6, 0x79, 0xba, 0xcd, 0x1c, 0x8e, 0x48, 0x80, 0xe2,
+	0x08, 0xa7, 0xe0, 0xce, 0x2a, 0xb3, 0x98, 0x93, 0xf3, 0x83, 0x26, 0x62, 0x0e, 0x4a, 0x48, 0x26,
+	0x3e, 0xca, 0x00, 0x7d, 0x65, 0x51, 0x75, 0x10, 0x00, 0xeb, 0x17, 0x03, 0x2c, 0x55, 0x59, 0x78,
+	0x95, 0x31, 0x1c, 0x92, 0x2d, 0x4a, 0x58, 0x2b, 0x42, 0xf1, 0x9b, 0xe8, 0xc0, 0xac, 0x80, 0x79,
+	0x5f, 0x2e, 0x6b, 0x38, 0x28, 0x18, 0x2b, 0xc6, 0xea, 0xb4, 0x0b, 0xb2, 0xad, 0x9d, 0xc0, 0xbc,
+	0x0c, 0x9e, 0xca, 0x6c, 0xd5, 0x60, 0x10, 0xc4, 0x85, 0xc9, 0x15, 0x63, 0x75, 0x6e, 0xd3, 0xfc,
+	0xeb, 0x7e, 0xe5, 0xd8, 0x01, 0x8c, 0x1a, 0x1b, 0x56, 0xb2, 0x8b, 0x18, 0xb3, 0xdc, 0x85, 0x0c,
+	0x78, 0x35, 0x08, 0x62, 0xf3, 0x0c, 0x58, 0x50, 0x96, 0xf7, 0xd0, 0x41, 0x61, 0x2a, 0xd1, 0x73,
+	0x95, 0xb7, 0xc4, 0xf9, 0x45, 0x30, 0x9b, 0xc4, 0x83, 0xe2, 0xc2, 0xb4, 0x30, 0x5a, 0xf8, 0xe9,
+	0xfb, 0x0b, 0x4b, 0xb2, 0xb6, 0x57, 0x53, 0xab, 0xd7, 0x79, 0x8c, 0x49, 0xe8, 0x4a, 0xdc, 0xc6,
+	0x89, 0xcf, 0x6f, 0x57, 0x26, 0xfe, 0xb8, 0x5d, 0x99, 0xf8, 0xf4, 0xe1, 0x9d, 0x73, 0x72, 0xd3,
+	0x2a, 0x83, 0xd3, 0xba, 0xdc, 0x5c, 0xc4, 0x9a, 0x94, 0x30, 0x64, 0x1d, 0x1a, 0xe0, 0xd9, 0x2a,
+	0x0b, 0xaf, 0xb7, 0xbc, 0x08, 0xf3, 0x0c, 0x50, 0xc5, 0xcc, 0x43, 0x75, 0xd8, 0xc6, 0xb4, 0x15,
+	0x9b, 0x97, 0xc0, 0x1c, 0x13, 0x52, 0x8e, 0x62, 0xc1, 0xc1, 0xb0, 0x58, 0x3a, 0x50, 0x73, 0x17,
+	0x2c, 0x44, 0x39, 0x3b, 0x82, 0x9b, 0xf9, 0xf5, 0xf3, 0x36, 0xf6, 0x7c, 0x3b, 0x5f, 0x60, 0x3b,
+	0x57, 0xd2, 0xf6, 0x9a, 0x9d, 0xf7, 0xed, 0x76, 0x59, 0xe8, 0xad, 0xc7, 0x54, 0x6f, 0x3d, 0x36,
+	0x4e, 0xe5, 0x19, 0xe8, 0x84, 0x62, 0x9d, 0x05, 0xcf, 0x0f, 0xcd, 0x51, 0xb1, 0xf1, 0xe3, 0xa4,
+	0x86, 0x8d, 0x6d, 0xda, 0xf2, 0x1a, 0xe8, 0x06, 0xe5, 0x98, 0x84, 0x8f, 0xcd, 0x46, 0x0d, 0x2c,
+	0x07, 0xad, 0x66, 0x03, 0xfb, 0x90, 0xa3, 0x5a, 0x9b, 0x72, 0x54, 0xcb, 0xda, 0x54, 0x12, 0x73,
+	0x36, 0xcf, 0x83, 0x68, 0x64, 0x7b, 0x3b, 0x53, 0xb8, 0x41, 0x39, 0x7a, 0x5d, 0xc2, 0xdd, 0x93,
+	0x81, 0x6e, 0xdb, 0xfc, 0x00, 0x2c, 0x63, 0x72, 0x33, 0x86, 0x7e, 0x72, 0x1c, 0x6b, 0x5e, 0x83,
+	0xfa, 0x7b, 0xb5, 0x3a, 0x82, 0x01, 0x8a, 0x05, 0x51, 0xf3, 0xeb, 0x2f, 0x8c, 0x62, 0xfe, 0x0d,
+	0x81, 0x76, 0x4f, 0x76, 0xcc, 0x6c, 0x26, 0x56, 0xd2, 0xed, 0x5e, 0xf2, 0xa7, 0xff, 0x15, 0xf9,
+	0x79, 0x4a, 0x15, 0xf9, 0x5f, 0x1b, 0xe0, 0x78, 0x95, 0x85, 0x6f, 0x37, 0x03, 0xc8, 0xd1, 0x2e,
+	0x8c, 0x61, 0xc4, 0x12, 0xba, 0x61, 0x8b, 0xd7, 0x69, 0x8c, 0xf9, 0xc1, 0x68, 0xba, 0x15, 0xd4,
+	0xbc, 0x04, 0x66, 0x9b, 0xc2, 0x82, 0x64, 0xb7, 0x60, 0xf7, 0xde, 0xc0, 0x76, 0xea, 0x61, 0x73,
+	0xfa, 0xee, 0xfd, 0xca, 0x84, 0x2b, 0xd1, 0x1b, 0xc7, 0x44, 0xf0, 0xca, 0x8e, 0x55, 0x04, 0xcb,
+	0x3d, 0x21, 0xa9, 0x70, 0x9b, 0x60, 0xb1, 0xca, 0x42, 0x17, 0x45, 0xb4, 0x8d, 0xb2, 0xbc, 0x46,
+	0x5f, 0x19, 0x36, 0x98, 0xa1, 0xfb, 0xc9, 0xa9, 0x9e, 0x1c, 0x91, 0x4c, 0x0a, 0xdb, 0x00, 0x49,
+	0x40, 0xe9, 0x6f, 0xeb, 0x19, 0x50, 0xec, 0xf3, 0xa8, 0xc2, 0xf9, 0x72, 0x4a, 0xc4, 0xb3, 0x15,
+	0x23, 0xc8, 0x3b, 0xf1, 0x3c, 0x6e, 0xbb, 0x16, 0xc1, 0x51, 0xbf, 0x0e, 0x31, 0x49, 0x92, 0x10,
+	0x91, 0xba, 0x47, 0xc4, 0x7a, 0x27, 0x30, 0xb7, 0xc1, 0xd1, 0x08, 0x71, 0x18, 0x40, 0x0e, 0x65,
+	0x67, 0x59, 0xfd, 0xe4, 0xaa, 0x53, 0x26, 0x91, 0x92, 0x66, 0xa5, 0x69, 0x52, 0x50, 0xc4, 0x04,
+	0x73, 0x0c, 0x1b, 0xf8, 0x23, 0xf1, 0x82, 0xd4, 0x44, 0x05, 0x10, 0x47, 0x31, 0x13, 0xcd, 0x35,
+	0xbf, 0xbe, 0x3e, 0xd8, 0xec, 0x4e, 0x97, 0xea, 0xae, 0xd2, 0x74, 0x0b, 0x78, 0x80, 0xc4, 0x7c,
+	0x0f, 0xe4, 0x1a, 0x3b, 0xef, 0x6c, 0x46, 0x9e, 0x8e, 0x3e, 0x67, 0x3b, 0x0a, 0x9e, 0x73, 0xb0,
+	0x84, 0x35, 0xbb, 0xb2, 0x6d, 0x3a, 0x3d, 0x7f, 0x45, 0x54, 0xaa, 0xbb, 0x16, 0x59, 0xa5, 0x46,
+	0xf6, 0x88, 0xf5, 0x7b, 0x5a, 0xca, 0xb4, 0xeb, 0x54, 0x29, 0x55, 0xe7, 0x18, 0x63, 0x75, 0x4e,
+	0xaf, 0x9b, 0xc9, 0xbe, 0x56, 0xdc, 0x06, 0x8b, 0x04, 0xed, 0xd7, 0x04, 0xba, 0x26, 0x1f, 0xaa,
+	0xf4, 0x25, 0x1a, 0x62, 0xfc, 0x38, 0x41, 0xfb, 0x6f, 0x25, 0x1a, 0x72, 0xdb, 0x7c, 0x2d, 0xd7,
+	0x0e, 0xd3, 0xe3, 0xb6, 0xc3, 0xb8, 0x8d, 0x30, 0xf3, 0x3f, 0x34, 0xc2, 0x0a, 0x58, 0x48, 0xd2,
+	0x56, 0xed, 0x3d, 0x2b, 0xda, 0x1b, 0x10, 0xb4, 0xbf, 0x25, 0x3b, 0x7c, 0x60, 0xab, 0x1c, 0xf9,
+	0x0f, 0x5a, 0xa5, 0xff, 0x40, 0x77, 0xd7, 0x59, 0x1d, 0xe8, 0x1f, 0x0c, 0x70, 0xaa, 0xca, 0xc2,
+	0x6b, 0x2d, 0x12, 0x64, 0xb2, 0x6b, 0x08, 0xed, 0x52, 0xda, 0xc8, 0xcd, 0x06, 0xc6, 0x78, 0xb3,
+	0x81, 0xae, 0x19, 0xe6, 0xba, 0x9a, 0xe1, 0x0a, 0x98, 0x85, 0x11, 0x6d, 0x11, 0x2e, 0xcf, 0x74,
+	0xd1, 0x96, 0xf6, 0x92, 0x69, 0xd4, 0x96, 0xd3, 0xa8, 0xbd, 0x45, 0x31, 0xd9, 0x9c, 0x4b, 0x8e,
+	0xf2, 0xb7, 0x0f, 0xef, 0x9c, 0x33, 0x5c, 0xa9, 0xa3, 0x1f, 0x3d, 0x56, 0x40, 0x59, 0x1f, 0xbf,
+	0x4a, 0xf1, 0x4f, 0x03, 0x94, 0xaa, 0x2c, 0x7c, 0x07, 0xf3, 0x7a, 0x10, 0xc3, 0xfd, 0x27, 0x90,
+	0x66, 0x3d, 0x97, 0xe6, 0xd4, 0xf0, 0x34, 0x5f, 0x4d, 0xd2, 0xfc, 0xee, 0xd7, 0xca, 0x6a, 0x88,
+	0x79, 0xbd, 0xe5, 0xd9, 0x3e, 0x8d, 0xe4, 0x6c, 0x2d, 0xff, 0x5d, 0x60, 0xc1, 0x5e, 0x3a, 0x72,
+	0x0a, 0x05, 0x36, 0x06, 0x25, 0x5f, 0x18, 0xc0, 0x1a, 0x9c, 0xb0, 0xba, 0x21, 0x7c, 0x15, 0xa5,
+	0x31, 0x2a, 0xca, 0x8b, 0x8f, 0x1a, 0x65, 0x16, 0xa0, 0xf5, 0x8d, 0x21, 0xde, 0xb6, 0xeb, 0xfb,
+	0x08, 0x35, 0x9f, 0x00, 0xf3, 0xa7, 0xc0, 0x6c, 0x80, 0x08, 0x8d, 0x98, 0x60, 0x7e, 0xce, 0x95,
+	0x2b, 0x3d, 0x4f, 0x67, 0x40, 0x65, 0x40, 0x68, 0x19, 0x47, 0xeb, 0x7f, 0x1f, 0x05, 0x53, 0x55,
+	0x16, 0x9a, 0x7b, 0x60, 0xb1, 0x7f, 0x72, 0xd7, 0x1c, 0x51, 0xdd, 0x14, 0x5c, 0xb2, 0xc7, 0xc3,
+	0xa9, 0xc2, 0x7c, 0x66, 0x80, 0xd2, 0x90, 0x51, 0xd9, 0xd1, 0x9a, 0x1b, 0xac, 0x50, 0xba, 0xfc,
+	0x88, 0x0a, 0x43, 0x02, 0xe9, 0x9a, 0x52, 0xc7, 0x09, 0x24, 0xaf, 0x30, 0x56, 0x20, 0xba, 0xa1,
+	0xcd, 0xf4, 0xc0, 0xb1, 0x9e, 0x91, 0xe3, 0x39, 0xad, 0xa9, 0x6e, 0x50, 0xe9, 0xa5, 0x31, 0x40,
+	0x79, 0x1f, 0x3d, 0x6f, 0xa1, 0xde, 0x47, 0x37, 0x68, 0x80, 0x0f, 0xfd, 0x6d, 0x9b, 0xf8, 0xe8,
+	0x19, 0xe5, 0xf4, 0x3e, 0xba, 0x41, 0x03, 0x7c, 0xe8, 0x47, 0x34, 0xf3, 0x7d, 0xb0, 0xd0, 0x35,
+	0xdc, 0x9e, 0x19, 0x12, 0x60, 0x0a, 0x29, 0xbd, 0x38, 0x12, 0xa2, 0xac, 0x7f, 0x08, 0x4e, 0xe8,
+	0xde, 0x8a, 0x55, 0xad, 0x05, 0x0d, 0xb2, 0x74, 0x71, 0x5c, 0xa4, 0x72, 0xf9, 0x31, 0x58, 0x1e,
+	0x74, 0x77, 0x9f, 0xd7, 0x1a, 0x1b, 0x80, 0x2e, 0xbd, 0xf2, 0x28, 0x68, 0xe5, 0x9e, 0x83, 0x25,
+	0xed, 0xed, 0xa5, 0x27, 0x4d, 0x07, 0x2d, 0xad, 0x8d, 0x0d, 0xcd, 0xbc, 0x96, 0x66, 0x3e, 0x49,
+	0xee, 0xf9, 0xcd, 0x9d, 0xbb, 0x87, 0x65, 0xe3, 0xde, 0x61, 0xd9, 0xf8, 0xed, 0xb0, 0x6c, 0x7c,
+	0xf5, 0xa0, 0x3c, 0x71, 0xef, 0x41, 0x79, 0xe2, 0xe7, 0x07, 0xe5, 0x89, 0x77, 0x9d, 0xdc, 0x55,
+	0x0c, 0x1b, 0x0d, 0x4c, 0x3c, 0xcc, 0x99, 0x23, 0xbe, 0x42, 0xdc, 0x72, 0xba, 0x3f, 0x46, 0x88,
+	0x7b, 0xd9, 0x9b, 0x15, 0xdf, 0x21, 0x5e, 0xfe, 0x27, 0x00, 0x00, 0xff, 0xff, 0x65, 0x47, 0x0d,
+	0xe3, 0x41, 0x12, 0x00, 0x00,
 }
 
 // Reference imports to suppress errors if they are not otherwise used.
@@ -841,6 +1115,9 @@ type MsgClient interface {
 	UpdateConsumer(ctx context.Context, in *MsgUpdateConsumer, opts ...grpc.CallOption) (*MsgUpdateConsumerResponse, error)
 	RemoveConsumer(ctx context.Context, in *MsgRemoveConsumer, opts ...grpc.CallOption) (*MsgRemoveConsumerResponse, error)
 	UpdateParams(ctx context.Context, in *MsgUpdateParams, opts ...grpc.CallOption) (*MsgUpdateParamsResponse, error)
+	FundConsumerFeePool(ctx context.Context, in *MsgFundConsumerFeePool, opts ...grpc.CallOption) (*MsgFundConsumerFeePoolResponse, error)
+	WithdrawConsumerFeePool(ctx context.Context, in *MsgWithdrawConsumerFeePool, opts ...grpc.CallOption) (*MsgWithdrawConsumerFeePoolResponse, error)
+	SweepConsumerFeePool(ctx context.Context, in *MsgSweepConsumerFeePool, opts ...grpc.CallOption) (*MsgSweepConsumerFeePoolResponse, error)
 }
 
 type msgClient struct {
@@ -914,6 +1191,33 @@ func (c *msgClient) UpdateParams(ctx context.Context, in *MsgUpdateParams, opts 
 	return out, nil
 }
 
+func (c *msgClient) FundConsumerFeePool(ctx context.Context, in *MsgFundConsumerFeePool, opts ...grpc.CallOption) (*MsgFundConsumerFeePoolResponse, error) {
+	out := new(MsgFundConsumerFeePoolResponse)
+	err := c.cc.Invoke(ctx, "/vaas.provider.v1.Msg/FundConsumerFeePool", in, out, opts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *msgClient) WithdrawConsumerFeePool(ctx context.Context, in *MsgWithdrawConsumerFeePool, opts ...grpc.CallOption) (*MsgWithdrawConsumerFeePoolResponse, error) {
+	out := new(MsgWithdrawConsumerFeePoolResponse)
+	err := c.cc.Invoke(ctx, "/vaas.provider.v1.Msg/WithdrawConsumerFeePool", in, out, opts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *msgClient) SweepConsumerFeePool(ctx context.Context, in *MsgSweepConsumerFeePool, opts ...grpc.CallOption) (*MsgSweepConsumerFeePoolResponse, error) {
+	out := new(MsgSweepConsumerFeePoolResponse)
+	err := c.cc.Invoke(ctx, "/vaas.provider.v1.Msg/SweepConsumerFeePool", in, out, opts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
 // MsgServer is the server API for Msg service.
 type MsgServer interface {
 	AssignConsumerKey(context.Context, *MsgAssignConsumerKey) (*MsgAssignConsumerKeyResponse, error)
@@ -923,6 +1227,9 @@ type MsgServer interface {
 	UpdateConsumer(context.Context, *MsgUpdateConsumer) (*MsgUpdateConsumerResponse, error)
 	RemoveConsumer(context.Context, *MsgRemoveConsumer) (*MsgRemoveConsumerResponse, error)
 	UpdateParams(context.Context, *MsgUpdateParams) (*MsgUpdateParamsResponse, error)
+	FundConsumerFeePool(context.Context, *MsgFundConsumerFeePool) (*MsgFundConsumerFeePoolResponse, error)
+	WithdrawConsumerFeePool(context.Context, *MsgWithdrawConsumerFeePool) (*MsgWithdrawConsumerFeePoolResponse, error)
+	SweepConsumerFeePool(context.Context, *MsgSweepConsumerFeePool) (*MsgSweepConsumerFeePoolResponse, error)
 }
 
 // UnimplementedMsgServer can be embedded to have forward compatible implementations.
@@ -949,6 +1256,15 @@ func (*UnimplementedMsgServer) RemoveConsumer(ctx context.Context, req *MsgRemov
 }
 func (*UnimplementedMsgServer) UpdateParams(ctx context.Context, req *MsgUpdateParams) (*MsgUpdateParamsResponse, error) {
 	return nil, status.Errorf(codes.Unimplemented, "method UpdateParams not implemented")
+}
+func (*UnimplementedMsgServer) FundConsumerFeePool(ctx context.Context, req *MsgFundConsumerFeePool) (*MsgFundConsumerFeePoolResponse, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method FundConsumerFeePool not implemented")
+}
+func (*UnimplementedMsgServer) WithdrawConsumerFeePool(ctx context.Context, req *MsgWithdrawConsumerFeePool) (*MsgWithdrawConsumerFeePoolResponse, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method WithdrawConsumerFeePool not implemented")
+}
+func (*UnimplementedMsgServer) SweepConsumerFeePool(ctx context.Context, req *MsgSweepConsumerFeePool) (*MsgSweepConsumerFeePoolResponse, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method SweepConsumerFeePool not implemented")
 }
 
 func RegisterMsgServer(s grpc1.Server, srv MsgServer) {
@@ -1081,6 +1397,60 @@ func _Msg_UpdateParams_Handler(srv interface{}, ctx context.Context, dec func(in
 	return interceptor(ctx, in, info, handler)
 }
 
+func _Msg_FundConsumerFeePool_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(MsgFundConsumerFeePool)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(MsgServer).FundConsumerFeePool(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: "/vaas.provider.v1.Msg/FundConsumerFeePool",
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(MsgServer).FundConsumerFeePool(ctx, req.(*MsgFundConsumerFeePool))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _Msg_WithdrawConsumerFeePool_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(MsgWithdrawConsumerFeePool)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(MsgServer).WithdrawConsumerFeePool(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: "/vaas.provider.v1.Msg/WithdrawConsumerFeePool",
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(MsgServer).WithdrawConsumerFeePool(ctx, req.(*MsgWithdrawConsumerFeePool))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _Msg_SweepConsumerFeePool_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(MsgSweepConsumerFeePool)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(MsgServer).SweepConsumerFeePool(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: "/vaas.provider.v1.Msg/SweepConsumerFeePool",
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(MsgServer).SweepConsumerFeePool(ctx, req.(*MsgSweepConsumerFeePool))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
 var _Msg_serviceDesc = grpc.ServiceDesc{
 	ServiceName: "vaas.provider.v1.Msg",
 	HandlerType: (*MsgServer)(nil),
@@ -1112,6 +1482,18 @@ var _Msg_serviceDesc = grpc.ServiceDesc{
 		{
 			MethodName: "UpdateParams",
 			Handler:    _Msg_UpdateParams_Handler,
+		},
+		{
+			MethodName: "FundConsumerFeePool",
+			Handler:    _Msg_FundConsumerFeePool_Handler,
+		},
+		{
+			MethodName: "WithdrawConsumerFeePool",
+			Handler:    _Msg_WithdrawConsumerFeePool_Handler,
+		},
+		{
+			MethodName: "SweepConsumerFeePool",
+			Handler:    _Msg_SweepConsumerFeePool_Handler,
 		},
 	},
 	Streams:  []grpc.StreamDesc{},
@@ -1670,6 +2052,233 @@ func (m *MsgUpdateConsumerResponse) MarshalToSizedBuffer(dAtA []byte) (int, erro
 	return len(dAtA) - i, nil
 }
 
+func (m *MsgFundConsumerFeePool) Marshal() (dAtA []byte, err error) {
+	size := m.Size()
+	dAtA = make([]byte, size)
+	n, err := m.MarshalToSizedBuffer(dAtA[:size])
+	if err != nil {
+		return nil, err
+	}
+	return dAtA[:n], nil
+}
+
+func (m *MsgFundConsumerFeePool) MarshalTo(dAtA []byte) (int, error) {
+	size := m.Size()
+	return m.MarshalToSizedBuffer(dAtA[:size])
+}
+
+func (m *MsgFundConsumerFeePool) MarshalToSizedBuffer(dAtA []byte) (int, error) {
+	i := len(dAtA)
+	_ = i
+	var l int
+	_ = l
+	{
+		size, err := m.Amount.MarshalToSizedBuffer(dAtA[:i])
+		if err != nil {
+			return 0, err
+		}
+		i -= size
+		i = encodeVarintTx(dAtA, i, uint64(size))
+	}
+	i--
+	dAtA[i] = 0x1a
+	if len(m.ConsumerId) > 0 {
+		i -= len(m.ConsumerId)
+		copy(dAtA[i:], m.ConsumerId)
+		i = encodeVarintTx(dAtA, i, uint64(len(m.ConsumerId)))
+		i--
+		dAtA[i] = 0x12
+	}
+	if len(m.Signer) > 0 {
+		i -= len(m.Signer)
+		copy(dAtA[i:], m.Signer)
+		i = encodeVarintTx(dAtA, i, uint64(len(m.Signer)))
+		i--
+		dAtA[i] = 0xa
+	}
+	return len(dAtA) - i, nil
+}
+
+func (m *MsgFundConsumerFeePoolResponse) Marshal() (dAtA []byte, err error) {
+	size := m.Size()
+	dAtA = make([]byte, size)
+	n, err := m.MarshalToSizedBuffer(dAtA[:size])
+	if err != nil {
+		return nil, err
+	}
+	return dAtA[:n], nil
+}
+
+func (m *MsgFundConsumerFeePoolResponse) MarshalTo(dAtA []byte) (int, error) {
+	size := m.Size()
+	return m.MarshalToSizedBuffer(dAtA[:size])
+}
+
+func (m *MsgFundConsumerFeePoolResponse) MarshalToSizedBuffer(dAtA []byte) (int, error) {
+	i := len(dAtA)
+	_ = i
+	var l int
+	_ = l
+	return len(dAtA) - i, nil
+}
+
+func (m *MsgWithdrawConsumerFeePool) Marshal() (dAtA []byte, err error) {
+	size := m.Size()
+	dAtA = make([]byte, size)
+	n, err := m.MarshalToSizedBuffer(dAtA[:size])
+	if err != nil {
+		return nil, err
+	}
+	return dAtA[:n], nil
+}
+
+func (m *MsgWithdrawConsumerFeePool) MarshalTo(dAtA []byte) (int, error) {
+	size := m.Size()
+	return m.MarshalToSizedBuffer(dAtA[:size])
+}
+
+func (m *MsgWithdrawConsumerFeePool) MarshalToSizedBuffer(dAtA []byte) (int, error) {
+	i := len(dAtA)
+	_ = i
+	var l int
+	_ = l
+	if len(m.Amount) > 0 {
+		for iNdEx := len(m.Amount) - 1; iNdEx >= 0; iNdEx-- {
+			{
+				size, err := m.Amount[iNdEx].MarshalToSizedBuffer(dAtA[:i])
+				if err != nil {
+					return 0, err
+				}
+				i -= size
+				i = encodeVarintTx(dAtA, i, uint64(size))
+			}
+			i--
+			dAtA[i] = 0x1a
+		}
+	}
+	if len(m.ConsumerId) > 0 {
+		i -= len(m.ConsumerId)
+		copy(dAtA[i:], m.ConsumerId)
+		i = encodeVarintTx(dAtA, i, uint64(len(m.ConsumerId)))
+		i--
+		dAtA[i] = 0x12
+	}
+	if len(m.Signer) > 0 {
+		i -= len(m.Signer)
+		copy(dAtA[i:], m.Signer)
+		i = encodeVarintTx(dAtA, i, uint64(len(m.Signer)))
+		i--
+		dAtA[i] = 0xa
+	}
+	return len(dAtA) - i, nil
+}
+
+func (m *MsgWithdrawConsumerFeePoolResponse) Marshal() (dAtA []byte, err error) {
+	size := m.Size()
+	dAtA = make([]byte, size)
+	n, err := m.MarshalToSizedBuffer(dAtA[:size])
+	if err != nil {
+		return nil, err
+	}
+	return dAtA[:n], nil
+}
+
+func (m *MsgWithdrawConsumerFeePoolResponse) MarshalTo(dAtA []byte) (int, error) {
+	size := m.Size()
+	return m.MarshalToSizedBuffer(dAtA[:size])
+}
+
+func (m *MsgWithdrawConsumerFeePoolResponse) MarshalToSizedBuffer(dAtA []byte) (int, error) {
+	i := len(dAtA)
+	_ = i
+	var l int
+	_ = l
+	if len(m.Amount) > 0 {
+		for iNdEx := len(m.Amount) - 1; iNdEx >= 0; iNdEx-- {
+			{
+				size, err := m.Amount[iNdEx].MarshalToSizedBuffer(dAtA[:i])
+				if err != nil {
+					return 0, err
+				}
+				i -= size
+				i = encodeVarintTx(dAtA, i, uint64(size))
+			}
+			i--
+			dAtA[i] = 0xa
+		}
+	}
+	return len(dAtA) - i, nil
+}
+
+func (m *MsgSweepConsumerFeePool) Marshal() (dAtA []byte, err error) {
+	size := m.Size()
+	dAtA = make([]byte, size)
+	n, err := m.MarshalToSizedBuffer(dAtA[:size])
+	if err != nil {
+		return nil, err
+	}
+	return dAtA[:n], nil
+}
+
+func (m *MsgSweepConsumerFeePool) MarshalTo(dAtA []byte) (int, error) {
+	size := m.Size()
+	return m.MarshalToSizedBuffer(dAtA[:size])
+}
+
+func (m *MsgSweepConsumerFeePool) MarshalToSizedBuffer(dAtA []byte) (int, error) {
+	i := len(dAtA)
+	_ = i
+	var l int
+	_ = l
+	if len(m.Denoms) > 0 {
+		for iNdEx := len(m.Denoms) - 1; iNdEx >= 0; iNdEx-- {
+			i -= len(m.Denoms[iNdEx])
+			copy(dAtA[i:], m.Denoms[iNdEx])
+			i = encodeVarintTx(dAtA, i, uint64(len(m.Denoms[iNdEx])))
+			i--
+			dAtA[i] = 0x1a
+		}
+	}
+	if len(m.ConsumerId) > 0 {
+		i -= len(m.ConsumerId)
+		copy(dAtA[i:], m.ConsumerId)
+		i = encodeVarintTx(dAtA, i, uint64(len(m.ConsumerId)))
+		i--
+		dAtA[i] = 0x12
+	}
+	if len(m.Signer) > 0 {
+		i -= len(m.Signer)
+		copy(dAtA[i:], m.Signer)
+		i = encodeVarintTx(dAtA, i, uint64(len(m.Signer)))
+		i--
+		dAtA[i] = 0xa
+	}
+	return len(dAtA) - i, nil
+}
+
+func (m *MsgSweepConsumerFeePoolResponse) Marshal() (dAtA []byte, err error) {
+	size := m.Size()
+	dAtA = make([]byte, size)
+	n, err := m.MarshalToSizedBuffer(dAtA[:size])
+	if err != nil {
+		return nil, err
+	}
+	return dAtA[:n], nil
+}
+
+func (m *MsgSweepConsumerFeePoolResponse) MarshalTo(dAtA []byte) (int, error) {
+	size := m.Size()
+	return m.MarshalToSizedBuffer(dAtA[:size])
+}
+
+func (m *MsgSweepConsumerFeePoolResponse) MarshalToSizedBuffer(dAtA []byte) (int, error) {
+	i := len(dAtA)
+	_ = i
+	var l int
+	_ = l
+	return len(dAtA) - i, nil
+}
+
 func encodeVarintTx(dAtA []byte, offset int, v uint64) int {
 	offset -= sovTx(v)
 	base := offset
@@ -1901,6 +2510,104 @@ func (m *MsgUpdateConsumer) Size() (n int) {
 }
 
 func (m *MsgUpdateConsumerResponse) Size() (n int) {
+	if m == nil {
+		return 0
+	}
+	var l int
+	_ = l
+	return n
+}
+
+func (m *MsgFundConsumerFeePool) Size() (n int) {
+	if m == nil {
+		return 0
+	}
+	var l int
+	_ = l
+	l = len(m.Signer)
+	if l > 0 {
+		n += 1 + l + sovTx(uint64(l))
+	}
+	l = len(m.ConsumerId)
+	if l > 0 {
+		n += 1 + l + sovTx(uint64(l))
+	}
+	l = m.Amount.Size()
+	n += 1 + l + sovTx(uint64(l))
+	return n
+}
+
+func (m *MsgFundConsumerFeePoolResponse) Size() (n int) {
+	if m == nil {
+		return 0
+	}
+	var l int
+	_ = l
+	return n
+}
+
+func (m *MsgWithdrawConsumerFeePool) Size() (n int) {
+	if m == nil {
+		return 0
+	}
+	var l int
+	_ = l
+	l = len(m.Signer)
+	if l > 0 {
+		n += 1 + l + sovTx(uint64(l))
+	}
+	l = len(m.ConsumerId)
+	if l > 0 {
+		n += 1 + l + sovTx(uint64(l))
+	}
+	if len(m.Amount) > 0 {
+		for _, e := range m.Amount {
+			l = e.Size()
+			n += 1 + l + sovTx(uint64(l))
+		}
+	}
+	return n
+}
+
+func (m *MsgWithdrawConsumerFeePoolResponse) Size() (n int) {
+	if m == nil {
+		return 0
+	}
+	var l int
+	_ = l
+	if len(m.Amount) > 0 {
+		for _, e := range m.Amount {
+			l = e.Size()
+			n += 1 + l + sovTx(uint64(l))
+		}
+	}
+	return n
+}
+
+func (m *MsgSweepConsumerFeePool) Size() (n int) {
+	if m == nil {
+		return 0
+	}
+	var l int
+	_ = l
+	l = len(m.Signer)
+	if l > 0 {
+		n += 1 + l + sovTx(uint64(l))
+	}
+	l = len(m.ConsumerId)
+	if l > 0 {
+		n += 1 + l + sovTx(uint64(l))
+	}
+	if len(m.Denoms) > 0 {
+		for _, s := range m.Denoms {
+			l = len(s)
+			n += 1 + l + sovTx(uint64(l))
+		}
+	}
+	return n
+}
+
+func (m *MsgSweepConsumerFeePoolResponse) Size() (n int) {
 	if m == nil {
 		return 0
 	}
@@ -3444,6 +4151,631 @@ func (m *MsgUpdateConsumerResponse) Unmarshal(dAtA []byte) error {
 		}
 		if fieldNum <= 0 {
 			return fmt.Errorf("proto: MsgUpdateConsumerResponse: illegal tag %d (wire type %d)", fieldNum, wire)
+		}
+		switch fieldNum {
+		default:
+			iNdEx = preIndex
+			skippy, err := skipTx(dAtA[iNdEx:])
+			if err != nil {
+				return err
+			}
+			if (skippy < 0) || (iNdEx+skippy) < 0 {
+				return ErrInvalidLengthTx
+			}
+			if (iNdEx + skippy) > l {
+				return io.ErrUnexpectedEOF
+			}
+			iNdEx += skippy
+		}
+	}
+
+	if iNdEx > l {
+		return io.ErrUnexpectedEOF
+	}
+	return nil
+}
+func (m *MsgFundConsumerFeePool) Unmarshal(dAtA []byte) error {
+	l := len(dAtA)
+	iNdEx := 0
+	for iNdEx < l {
+		preIndex := iNdEx
+		var wire uint64
+		for shift := uint(0); ; shift += 7 {
+			if shift >= 64 {
+				return ErrIntOverflowTx
+			}
+			if iNdEx >= l {
+				return io.ErrUnexpectedEOF
+			}
+			b := dAtA[iNdEx]
+			iNdEx++
+			wire |= uint64(b&0x7F) << shift
+			if b < 0x80 {
+				break
+			}
+		}
+		fieldNum := int32(wire >> 3)
+		wireType := int(wire & 0x7)
+		if wireType == 4 {
+			return fmt.Errorf("proto: MsgFundConsumerFeePool: wiretype end group for non-group")
+		}
+		if fieldNum <= 0 {
+			return fmt.Errorf("proto: MsgFundConsumerFeePool: illegal tag %d (wire type %d)", fieldNum, wire)
+		}
+		switch fieldNum {
+		case 1:
+			if wireType != 2 {
+				return fmt.Errorf("proto: wrong wireType = %d for field Signer", wireType)
+			}
+			var stringLen uint64
+			for shift := uint(0); ; shift += 7 {
+				if shift >= 64 {
+					return ErrIntOverflowTx
+				}
+				if iNdEx >= l {
+					return io.ErrUnexpectedEOF
+				}
+				b := dAtA[iNdEx]
+				iNdEx++
+				stringLen |= uint64(b&0x7F) << shift
+				if b < 0x80 {
+					break
+				}
+			}
+			intStringLen := int(stringLen)
+			if intStringLen < 0 {
+				return ErrInvalidLengthTx
+			}
+			postIndex := iNdEx + intStringLen
+			if postIndex < 0 {
+				return ErrInvalidLengthTx
+			}
+			if postIndex > l {
+				return io.ErrUnexpectedEOF
+			}
+			m.Signer = string(dAtA[iNdEx:postIndex])
+			iNdEx = postIndex
+		case 2:
+			if wireType != 2 {
+				return fmt.Errorf("proto: wrong wireType = %d for field ConsumerId", wireType)
+			}
+			var stringLen uint64
+			for shift := uint(0); ; shift += 7 {
+				if shift >= 64 {
+					return ErrIntOverflowTx
+				}
+				if iNdEx >= l {
+					return io.ErrUnexpectedEOF
+				}
+				b := dAtA[iNdEx]
+				iNdEx++
+				stringLen |= uint64(b&0x7F) << shift
+				if b < 0x80 {
+					break
+				}
+			}
+			intStringLen := int(stringLen)
+			if intStringLen < 0 {
+				return ErrInvalidLengthTx
+			}
+			postIndex := iNdEx + intStringLen
+			if postIndex < 0 {
+				return ErrInvalidLengthTx
+			}
+			if postIndex > l {
+				return io.ErrUnexpectedEOF
+			}
+			m.ConsumerId = string(dAtA[iNdEx:postIndex])
+			iNdEx = postIndex
+		case 3:
+			if wireType != 2 {
+				return fmt.Errorf("proto: wrong wireType = %d for field Amount", wireType)
+			}
+			var msglen int
+			for shift := uint(0); ; shift += 7 {
+				if shift >= 64 {
+					return ErrIntOverflowTx
+				}
+				if iNdEx >= l {
+					return io.ErrUnexpectedEOF
+				}
+				b := dAtA[iNdEx]
+				iNdEx++
+				msglen |= int(b&0x7F) << shift
+				if b < 0x80 {
+					break
+				}
+			}
+			if msglen < 0 {
+				return ErrInvalidLengthTx
+			}
+			postIndex := iNdEx + msglen
+			if postIndex < 0 {
+				return ErrInvalidLengthTx
+			}
+			if postIndex > l {
+				return io.ErrUnexpectedEOF
+			}
+			if err := m.Amount.Unmarshal(dAtA[iNdEx:postIndex]); err != nil {
+				return err
+			}
+			iNdEx = postIndex
+		default:
+			iNdEx = preIndex
+			skippy, err := skipTx(dAtA[iNdEx:])
+			if err != nil {
+				return err
+			}
+			if (skippy < 0) || (iNdEx+skippy) < 0 {
+				return ErrInvalidLengthTx
+			}
+			if (iNdEx + skippy) > l {
+				return io.ErrUnexpectedEOF
+			}
+			iNdEx += skippy
+		}
+	}
+
+	if iNdEx > l {
+		return io.ErrUnexpectedEOF
+	}
+	return nil
+}
+func (m *MsgFundConsumerFeePoolResponse) Unmarshal(dAtA []byte) error {
+	l := len(dAtA)
+	iNdEx := 0
+	for iNdEx < l {
+		preIndex := iNdEx
+		var wire uint64
+		for shift := uint(0); ; shift += 7 {
+			if shift >= 64 {
+				return ErrIntOverflowTx
+			}
+			if iNdEx >= l {
+				return io.ErrUnexpectedEOF
+			}
+			b := dAtA[iNdEx]
+			iNdEx++
+			wire |= uint64(b&0x7F) << shift
+			if b < 0x80 {
+				break
+			}
+		}
+		fieldNum := int32(wire >> 3)
+		wireType := int(wire & 0x7)
+		if wireType == 4 {
+			return fmt.Errorf("proto: MsgFundConsumerFeePoolResponse: wiretype end group for non-group")
+		}
+		if fieldNum <= 0 {
+			return fmt.Errorf("proto: MsgFundConsumerFeePoolResponse: illegal tag %d (wire type %d)", fieldNum, wire)
+		}
+		switch fieldNum {
+		default:
+			iNdEx = preIndex
+			skippy, err := skipTx(dAtA[iNdEx:])
+			if err != nil {
+				return err
+			}
+			if (skippy < 0) || (iNdEx+skippy) < 0 {
+				return ErrInvalidLengthTx
+			}
+			if (iNdEx + skippy) > l {
+				return io.ErrUnexpectedEOF
+			}
+			iNdEx += skippy
+		}
+	}
+
+	if iNdEx > l {
+		return io.ErrUnexpectedEOF
+	}
+	return nil
+}
+func (m *MsgWithdrawConsumerFeePool) Unmarshal(dAtA []byte) error {
+	l := len(dAtA)
+	iNdEx := 0
+	for iNdEx < l {
+		preIndex := iNdEx
+		var wire uint64
+		for shift := uint(0); ; shift += 7 {
+			if shift >= 64 {
+				return ErrIntOverflowTx
+			}
+			if iNdEx >= l {
+				return io.ErrUnexpectedEOF
+			}
+			b := dAtA[iNdEx]
+			iNdEx++
+			wire |= uint64(b&0x7F) << shift
+			if b < 0x80 {
+				break
+			}
+		}
+		fieldNum := int32(wire >> 3)
+		wireType := int(wire & 0x7)
+		if wireType == 4 {
+			return fmt.Errorf("proto: MsgWithdrawConsumerFeePool: wiretype end group for non-group")
+		}
+		if fieldNum <= 0 {
+			return fmt.Errorf("proto: MsgWithdrawConsumerFeePool: illegal tag %d (wire type %d)", fieldNum, wire)
+		}
+		switch fieldNum {
+		case 1:
+			if wireType != 2 {
+				return fmt.Errorf("proto: wrong wireType = %d for field Signer", wireType)
+			}
+			var stringLen uint64
+			for shift := uint(0); ; shift += 7 {
+				if shift >= 64 {
+					return ErrIntOverflowTx
+				}
+				if iNdEx >= l {
+					return io.ErrUnexpectedEOF
+				}
+				b := dAtA[iNdEx]
+				iNdEx++
+				stringLen |= uint64(b&0x7F) << shift
+				if b < 0x80 {
+					break
+				}
+			}
+			intStringLen := int(stringLen)
+			if intStringLen < 0 {
+				return ErrInvalidLengthTx
+			}
+			postIndex := iNdEx + intStringLen
+			if postIndex < 0 {
+				return ErrInvalidLengthTx
+			}
+			if postIndex > l {
+				return io.ErrUnexpectedEOF
+			}
+			m.Signer = string(dAtA[iNdEx:postIndex])
+			iNdEx = postIndex
+		case 2:
+			if wireType != 2 {
+				return fmt.Errorf("proto: wrong wireType = %d for field ConsumerId", wireType)
+			}
+			var stringLen uint64
+			for shift := uint(0); ; shift += 7 {
+				if shift >= 64 {
+					return ErrIntOverflowTx
+				}
+				if iNdEx >= l {
+					return io.ErrUnexpectedEOF
+				}
+				b := dAtA[iNdEx]
+				iNdEx++
+				stringLen |= uint64(b&0x7F) << shift
+				if b < 0x80 {
+					break
+				}
+			}
+			intStringLen := int(stringLen)
+			if intStringLen < 0 {
+				return ErrInvalidLengthTx
+			}
+			postIndex := iNdEx + intStringLen
+			if postIndex < 0 {
+				return ErrInvalidLengthTx
+			}
+			if postIndex > l {
+				return io.ErrUnexpectedEOF
+			}
+			m.ConsumerId = string(dAtA[iNdEx:postIndex])
+			iNdEx = postIndex
+		case 3:
+			if wireType != 2 {
+				return fmt.Errorf("proto: wrong wireType = %d for field Amount", wireType)
+			}
+			var msglen int
+			for shift := uint(0); ; shift += 7 {
+				if shift >= 64 {
+					return ErrIntOverflowTx
+				}
+				if iNdEx >= l {
+					return io.ErrUnexpectedEOF
+				}
+				b := dAtA[iNdEx]
+				iNdEx++
+				msglen |= int(b&0x7F) << shift
+				if b < 0x80 {
+					break
+				}
+			}
+			if msglen < 0 {
+				return ErrInvalidLengthTx
+			}
+			postIndex := iNdEx + msglen
+			if postIndex < 0 {
+				return ErrInvalidLengthTx
+			}
+			if postIndex > l {
+				return io.ErrUnexpectedEOF
+			}
+			m.Amount = append(m.Amount, types1.Coin{})
+			if err := m.Amount[len(m.Amount)-1].Unmarshal(dAtA[iNdEx:postIndex]); err != nil {
+				return err
+			}
+			iNdEx = postIndex
+		default:
+			iNdEx = preIndex
+			skippy, err := skipTx(dAtA[iNdEx:])
+			if err != nil {
+				return err
+			}
+			if (skippy < 0) || (iNdEx+skippy) < 0 {
+				return ErrInvalidLengthTx
+			}
+			if (iNdEx + skippy) > l {
+				return io.ErrUnexpectedEOF
+			}
+			iNdEx += skippy
+		}
+	}
+
+	if iNdEx > l {
+		return io.ErrUnexpectedEOF
+	}
+	return nil
+}
+func (m *MsgWithdrawConsumerFeePoolResponse) Unmarshal(dAtA []byte) error {
+	l := len(dAtA)
+	iNdEx := 0
+	for iNdEx < l {
+		preIndex := iNdEx
+		var wire uint64
+		for shift := uint(0); ; shift += 7 {
+			if shift >= 64 {
+				return ErrIntOverflowTx
+			}
+			if iNdEx >= l {
+				return io.ErrUnexpectedEOF
+			}
+			b := dAtA[iNdEx]
+			iNdEx++
+			wire |= uint64(b&0x7F) << shift
+			if b < 0x80 {
+				break
+			}
+		}
+		fieldNum := int32(wire >> 3)
+		wireType := int(wire & 0x7)
+		if wireType == 4 {
+			return fmt.Errorf("proto: MsgWithdrawConsumerFeePoolResponse: wiretype end group for non-group")
+		}
+		if fieldNum <= 0 {
+			return fmt.Errorf("proto: MsgWithdrawConsumerFeePoolResponse: illegal tag %d (wire type %d)", fieldNum, wire)
+		}
+		switch fieldNum {
+		case 1:
+			if wireType != 2 {
+				return fmt.Errorf("proto: wrong wireType = %d for field Amount", wireType)
+			}
+			var msglen int
+			for shift := uint(0); ; shift += 7 {
+				if shift >= 64 {
+					return ErrIntOverflowTx
+				}
+				if iNdEx >= l {
+					return io.ErrUnexpectedEOF
+				}
+				b := dAtA[iNdEx]
+				iNdEx++
+				msglen |= int(b&0x7F) << shift
+				if b < 0x80 {
+					break
+				}
+			}
+			if msglen < 0 {
+				return ErrInvalidLengthTx
+			}
+			postIndex := iNdEx + msglen
+			if postIndex < 0 {
+				return ErrInvalidLengthTx
+			}
+			if postIndex > l {
+				return io.ErrUnexpectedEOF
+			}
+			m.Amount = append(m.Amount, types1.Coin{})
+			if err := m.Amount[len(m.Amount)-1].Unmarshal(dAtA[iNdEx:postIndex]); err != nil {
+				return err
+			}
+			iNdEx = postIndex
+		default:
+			iNdEx = preIndex
+			skippy, err := skipTx(dAtA[iNdEx:])
+			if err != nil {
+				return err
+			}
+			if (skippy < 0) || (iNdEx+skippy) < 0 {
+				return ErrInvalidLengthTx
+			}
+			if (iNdEx + skippy) > l {
+				return io.ErrUnexpectedEOF
+			}
+			iNdEx += skippy
+		}
+	}
+
+	if iNdEx > l {
+		return io.ErrUnexpectedEOF
+	}
+	return nil
+}
+func (m *MsgSweepConsumerFeePool) Unmarshal(dAtA []byte) error {
+	l := len(dAtA)
+	iNdEx := 0
+	for iNdEx < l {
+		preIndex := iNdEx
+		var wire uint64
+		for shift := uint(0); ; shift += 7 {
+			if shift >= 64 {
+				return ErrIntOverflowTx
+			}
+			if iNdEx >= l {
+				return io.ErrUnexpectedEOF
+			}
+			b := dAtA[iNdEx]
+			iNdEx++
+			wire |= uint64(b&0x7F) << shift
+			if b < 0x80 {
+				break
+			}
+		}
+		fieldNum := int32(wire >> 3)
+		wireType := int(wire & 0x7)
+		if wireType == 4 {
+			return fmt.Errorf("proto: MsgSweepConsumerFeePool: wiretype end group for non-group")
+		}
+		if fieldNum <= 0 {
+			return fmt.Errorf("proto: MsgSweepConsumerFeePool: illegal tag %d (wire type %d)", fieldNum, wire)
+		}
+		switch fieldNum {
+		case 1:
+			if wireType != 2 {
+				return fmt.Errorf("proto: wrong wireType = %d for field Signer", wireType)
+			}
+			var stringLen uint64
+			for shift := uint(0); ; shift += 7 {
+				if shift >= 64 {
+					return ErrIntOverflowTx
+				}
+				if iNdEx >= l {
+					return io.ErrUnexpectedEOF
+				}
+				b := dAtA[iNdEx]
+				iNdEx++
+				stringLen |= uint64(b&0x7F) << shift
+				if b < 0x80 {
+					break
+				}
+			}
+			intStringLen := int(stringLen)
+			if intStringLen < 0 {
+				return ErrInvalidLengthTx
+			}
+			postIndex := iNdEx + intStringLen
+			if postIndex < 0 {
+				return ErrInvalidLengthTx
+			}
+			if postIndex > l {
+				return io.ErrUnexpectedEOF
+			}
+			m.Signer = string(dAtA[iNdEx:postIndex])
+			iNdEx = postIndex
+		case 2:
+			if wireType != 2 {
+				return fmt.Errorf("proto: wrong wireType = %d for field ConsumerId", wireType)
+			}
+			var stringLen uint64
+			for shift := uint(0); ; shift += 7 {
+				if shift >= 64 {
+					return ErrIntOverflowTx
+				}
+				if iNdEx >= l {
+					return io.ErrUnexpectedEOF
+				}
+				b := dAtA[iNdEx]
+				iNdEx++
+				stringLen |= uint64(b&0x7F) << shift
+				if b < 0x80 {
+					break
+				}
+			}
+			intStringLen := int(stringLen)
+			if intStringLen < 0 {
+				return ErrInvalidLengthTx
+			}
+			postIndex := iNdEx + intStringLen
+			if postIndex < 0 {
+				return ErrInvalidLengthTx
+			}
+			if postIndex > l {
+				return io.ErrUnexpectedEOF
+			}
+			m.ConsumerId = string(dAtA[iNdEx:postIndex])
+			iNdEx = postIndex
+		case 3:
+			if wireType != 2 {
+				return fmt.Errorf("proto: wrong wireType = %d for field Denoms", wireType)
+			}
+			var stringLen uint64
+			for shift := uint(0); ; shift += 7 {
+				if shift >= 64 {
+					return ErrIntOverflowTx
+				}
+				if iNdEx >= l {
+					return io.ErrUnexpectedEOF
+				}
+				b := dAtA[iNdEx]
+				iNdEx++
+				stringLen |= uint64(b&0x7F) << shift
+				if b < 0x80 {
+					break
+				}
+			}
+			intStringLen := int(stringLen)
+			if intStringLen < 0 {
+				return ErrInvalidLengthTx
+			}
+			postIndex := iNdEx + intStringLen
+			if postIndex < 0 {
+				return ErrInvalidLengthTx
+			}
+			if postIndex > l {
+				return io.ErrUnexpectedEOF
+			}
+			m.Denoms = append(m.Denoms, string(dAtA[iNdEx:postIndex]))
+			iNdEx = postIndex
+		default:
+			iNdEx = preIndex
+			skippy, err := skipTx(dAtA[iNdEx:])
+			if err != nil {
+				return err
+			}
+			if (skippy < 0) || (iNdEx+skippy) < 0 {
+				return ErrInvalidLengthTx
+			}
+			if (iNdEx + skippy) > l {
+				return io.ErrUnexpectedEOF
+			}
+			iNdEx += skippy
+		}
+	}
+
+	if iNdEx > l {
+		return io.ErrUnexpectedEOF
+	}
+	return nil
+}
+func (m *MsgSweepConsumerFeePoolResponse) Unmarshal(dAtA []byte) error {
+	l := len(dAtA)
+	iNdEx := 0
+	for iNdEx < l {
+		preIndex := iNdEx
+		var wire uint64
+		for shift := uint(0); ; shift += 7 {
+			if shift >= 64 {
+				return ErrIntOverflowTx
+			}
+			if iNdEx >= l {
+				return io.ErrUnexpectedEOF
+			}
+			b := dAtA[iNdEx]
+			iNdEx++
+			wire |= uint64(b&0x7F) << shift
+			if b < 0x80 {
+				break
+			}
+		}
+		fieldNum := int32(wire >> 3)
+		wireType := int(wire & 0x7)
+		if wireType == 4 {
+			return fmt.Errorf("proto: MsgSweepConsumerFeePoolResponse: wiretype end group for non-group")
+		}
+		if fieldNum <= 0 {
+			return fmt.Errorf("proto: MsgSweepConsumerFeePoolResponse: illegal tag %d (wire type %d)", fieldNum, wire)
 		}
 		switch fieldNum {
 		default:

@@ -28,4 +28,8 @@ var (
 	ErrInvalidMsgSubmitConsumerDoubleVoting    = errorsmod.Register(ModuleName, 20, "invalid submit consumer double voting message")
 	ErrInvalidConsumerInfractionParameters     = errorsmod.Register(ModuleName, 21, "invalid consumer infraction parameters")
 	ErrDuplicateChainId                        = errorsmod.Register(ModuleName, 22, "consumer chain-id is already in use")
+	ErrPoolEmpty                               = errorsmod.Register(ModuleName, 23, "consumer fee pool has zero balance for the requested denom")
+	ErrUnsolicitedFeePoolDeposit               = errorsmod.Register(ModuleName, 24, "direct sends to consumer fee pool addresses are not permitted; use MsgFundConsumerFeePool")
+	ErrInvalidFundDenom                        = errorsmod.Register(ModuleName, 25, "deposit denom does not match the current fees_per_block denom")
+	ErrFeePoolSweepFailed                      = errorsmod.Register(ModuleName, 26, "consumer fee pool sweep failed")
 )

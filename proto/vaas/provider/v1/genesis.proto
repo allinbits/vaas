@@ -6,6 +6,8 @@ option go_package = "github.com/allinbits/vaas/x/vaas/provider/types";
 
 import "gogoproto/gogo.proto";
 import "google/protobuf/timestamp.proto";
+import "cosmos_proto/cosmos.proto";
+import "cosmos/base/v1beta1/coin.proto";
 import "vaas/v1/shared_consumer.proto";
 import "vaas/v1/wire.proto";
 import "vaas/provider/v1/provider.proto";
@@ -32,6 +34,9 @@ message GenesisState {
 
   // empty for a new chain
   repeated ConsumerAddrsToPrune consumer_addrs_to_prune = 7
+      [ (gogoproto.nullable) = false ];
+  // empty for a new chain
+  repeated ConsumerFeePoolShare consumer_fee_pool_shares = 8
       [ (gogoproto.nullable) = false ];
 }
 
@@ -83,4 +88,18 @@ message ConsumerState {
 message ValsetUpdateIdToHeight {
   uint64 valset_update_id = 1;
   uint64 height = 2;
+}
+
+// ConsumerFeePoolShare is a single depositor's share holding in a consumer
+// fee pool, scoped to one denom. The triple (consumer_id, depositor, denom)
+// is unique.
+message ConsumerFeePoolShare {
+  string consumer_id = 1;
+  string depositor = 2 [(cosmos_proto.scalar) = "cosmos.AddressString"];
+  string denom = 3;
+  string shares = 4 [
+    (cosmos_proto.scalar) = "cosmos.Int",
+    (gogoproto.customtype) = "cosmossdk.io/math.Int",
+    (gogoproto.nullable) = false
+  ];
 }

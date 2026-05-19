@@ -17,6 +17,7 @@ import (
 	errorsmod "cosmossdk.io/errors"
 
 	sdk "github.com/cosmos/cosmos-sdk/types"
+	sdkerrors "github.com/cosmos/cosmos-sdk/types/errors"
 )
 
 const (
@@ -39,6 +40,9 @@ var (
 	_ sdk.Msg = (*MsgCreateConsumer)(nil)
 	_ sdk.Msg = (*MsgUpdateConsumer)(nil)
 	_ sdk.Msg = (*MsgRemoveConsumer)(nil)
+	_ sdk.Msg = (*MsgFundConsumerFeePool)(nil)
+	_ sdk.Msg = (*MsgWithdrawConsumerFeePool)(nil)
+	_ sdk.Msg = (*MsgSweepConsumerFeePool)(nil)
 
 	_ sdk.HasValidateBasic = (*MsgAssignConsumerKey)(nil)
 	_ sdk.HasValidateBasic = (*MsgSubmitConsumerMisbehaviour)(nil)
@@ -46,6 +50,9 @@ var (
 	_ sdk.HasValidateBasic = (*MsgCreateConsumer)(nil)
 	_ sdk.HasValidateBasic = (*MsgUpdateConsumer)(nil)
 	_ sdk.HasValidateBasic = (*MsgRemoveConsumer)(nil)
+	_ sdk.HasValidateBasic = (*MsgFundConsumerFeePool)(nil)
+	_ sdk.HasValidateBasic = (*MsgWithdrawConsumerFeePool)(nil)
+	_ sdk.HasValidateBasic = (*MsgSweepConsumerFeePool)(nil)
 )
 
 // NewMsgAssignConsumerKey creates a new MsgAssignConsumerKey instance.
@@ -415,6 +422,59 @@ func ValidateInitialHeight(initialHeight clienttypes.Height, chainID string) err
 	revision := clienttypes.ParseChainID(chainID)
 	if initialHeight.RevisionNumber != revision {
 		return fmt.Errorf("chain ID (%s) doesn't match revision number (%d)", chainID, initialHeight.RevisionNumber)
+	}
+	return nil
+}
+
+// ValidateBasic implements the sdk.HasValidateBasic interface.
+func (msg MsgFundConsumerFeePool) ValidateBasic() error {
+	if _, err := sdk.AccAddressFromBech32(msg.Signer); err != nil {
+		return errorsmod.Wrapf(sdkerrors.ErrInvalidAddress, "invalid signer: %s", err)
+	}
+	if strings.TrimSpace(msg.ConsumerId) == "" {
+		return errorsmod.Wrap(ErrNoConsumerId, "consumer_id must not be empty")
+	}
+	if err := msg.Amount.Validate(); err != nil {
+		return errorsmod.Wrapf(ErrInvalidFundDenom, "invalid amount: %s", err)
+	}
+	if !msg.Amount.IsPositive() {
+		return errorsmod.Wrap(ErrInvalidFundDenom, "amount must be positive")
+	}
+	return nil
+}
+
+// ValidateBasic implements the sdk.HasValidateBasic interface.
+func (msg MsgWithdrawConsumerFeePool) ValidateBasic() error {
+	if _, err := sdk.AccAddressFromBech32(msg.Signer); err != nil {
+		return errorsmod.Wrapf(sdkerrors.ErrInvalidAddress, "invalid signer: %s", err)
+	}
+	if strings.TrimSpace(msg.ConsumerId) == "" {
+		return errorsmod.Wrap(ErrNoConsumerId, "consumer_id must not be empty")
+	}
+	if len(msg.Amount) == 0 {
+		return errorsmod.Wrap(ErrInvalidFundDenom, "amount must not be empty")
+	}
+	if err := msg.Amount.Validate(); err != nil {
+		return errorsmod.Wrapf(ErrInvalidFundDenom, "invalid amount: %s", err)
+	}
+	if !msg.Amount.IsAllPositive() {
+		return errorsmod.Wrap(ErrInvalidFundDenom, "amounts must be positive")
+	}
+	return nil
+}
+
+// ValidateBasic implements the sdk.HasValidateBasic interface.
+func (msg MsgSweepConsumerFeePool) ValidateBasic() error {
+	if _, err := sdk.AccAddressFromBech32(msg.Signer); err != nil {
+		return errorsmod.Wrapf(sdkerrors.ErrInvalidAddress, "invalid signer: %s", err)
+	}
+	if strings.TrimSpace(msg.ConsumerId) == "" {
+		return errorsmod.Wrap(ErrNoConsumerId, "consumer_id must not be empty")
+	}
+	for _, d := range msg.Denoms {
+		if err := sdk.ValidateDenom(d); err != nil {
+			return errorsmod.Wrapf(ErrInvalidFundDenom, "invalid denom %q: %s", d, err)
+		}
 	}
 	return nil
 }
