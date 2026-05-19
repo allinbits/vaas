@@ -877,3 +877,55 @@ func (mr *MockIBCTransferKeeperMockRecorder) Transfer(arg0, arg1 any) *gomock.Ca
 	mr.mock.ctrl.T.Helper()
 	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "Transfer", reflect.TypeOf((*MockIBCTransferKeeper)(nil).Transfer), arg0, arg1)
 }
+
+// MockDistributionKeeper is a mock of DistributionKeeper interface.
+type MockDistributionKeeper struct {
+	ctrl     *gomock.Controller
+	recorder *MockDistributionKeeperMockRecorder
+	isgomock struct{}
+}
+
+// MockDistributionKeeperMockRecorder is the mock recorder for MockDistributionKeeper.
+type MockDistributionKeeperMockRecorder struct {
+	mock *MockDistributionKeeper
+}
+
+// NewMockDistributionKeeper creates a new mock instance.
+func NewMockDistributionKeeper(ctrl *gomock.Controller) *MockDistributionKeeper {
+	mock := &MockDistributionKeeper{ctrl: ctrl}
+	mock.recorder = &MockDistributionKeeperMockRecorder{mock}
+	return mock
+}
+
+// EXPECT returns an object that allows the caller to indicate expected use.
+func (m *MockDistributionKeeper) EXPECT() *MockDistributionKeeperMockRecorder {
+	return m.recorder
+}
+
+// DistributeFromFeePool mocks base method.
+func (m *MockDistributionKeeper) DistributeFromFeePool(ctx context.Context, amount types.Coins, receiveAddr types.AccAddress) error {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "DistributeFromFeePool", ctx, amount, receiveAddr)
+	ret0, _ := ret[0].(error)
+	return ret0
+}
+
+// DistributeFromFeePool indicates an expected call of DistributeFromFeePool.
+func (mr *MockDistributionKeeperMockRecorder) DistributeFromFeePool(ctx, amount, receiveAddr any) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "DistributeFromFeePool", reflect.TypeOf((*MockDistributionKeeper)(nil).DistributeFromFeePool), ctx, amount, receiveAddr)
+}
+
+// FundCommunityPool mocks base method.
+func (m *MockDistributionKeeper) FundCommunityPool(ctx context.Context, amount types.Coins, sender types.AccAddress) error {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "FundCommunityPool", ctx, amount, sender)
+	ret0, _ := ret[0].(error)
+	return ret0
+}
+
+// FundCommunityPool indicates an expected call of FundCommunityPool.
+func (mr *MockDistributionKeeperMockRecorder) FundCommunityPool(ctx, amount, sender any) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "FundCommunityPool", reflect.TypeOf((*MockDistributionKeeper)(nil).FundCommunityPool), ctx, amount, sender)
+}

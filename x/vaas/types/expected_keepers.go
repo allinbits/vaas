@@ -105,3 +105,10 @@ type ChannelV2Keeper interface {
 type IBCTransferKeeper interface {
 	Transfer(context.Context, *transfertypes.MsgTransfer) (*transfertypes.MsgTransferResponse, error)
 }
+
+// DistributionKeeper defines the expected interface needed to fund and spend
+// from the cosmos-sdk x/distribution community pool.
+type DistributionKeeper interface {
+	FundCommunityPool(ctx context.Context, amount sdk.Coins, sender sdk.AccAddress) error
+	DistributeFromFeePool(ctx context.Context, amount sdk.Coins, receiveAddr sdk.AccAddress) error
+}

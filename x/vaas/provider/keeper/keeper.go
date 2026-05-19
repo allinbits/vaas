@@ -17,6 +17,7 @@ import (
 	addresscodec "cosmossdk.io/core/address"
 	corestoretypes "cosmossdk.io/core/store"
 	"cosmossdk.io/log"
+	"cosmossdk.io/math"
 
 	"github.com/cosmos/cosmos-sdk/codec"
 	sdk "github.com/cosmos/cosmos-sdk/types"
@@ -35,11 +36,12 @@ type Keeper struct {
 	accountKeeper    vaastypes.AccountKeeper
 	clientKeeper     vaastypes.ClientKeeper
 	clientV2Keeper   vaastypes.ClientV2Keeper
-	stakingKeeper    vaastypes.StakingKeeper
-	slashingKeeper   vaastypes.SlashingKeeper
-	bankKeeper       vaastypes.BankKeeper
-	govKeeper        govkeeper.Keeper
-	feeCollectorName string
+	stakingKeeper      vaastypes.StakingKeeper
+	slashingKeeper     vaastypes.SlashingKeeper
+	bankKeeper         vaastypes.BankKeeper
+	distributionKeeper vaastypes.DistributionKeeper
+	govKeeper          govkeeper.Keeper
+	feeCollectorName   string
 
 	validatorAddressCodec addresscodec.Codec
 	consensusAddressCodec addresscodec.Codec
@@ -76,6 +78,11 @@ type Keeper struct {
 	// Validator set collections
 	ConsumerValidators        collections.Map[collections.Pair[uint64, []byte], types.ConsensusValidator]
 	LastProviderConsensusVals collections.Map[[]byte, types.ConsensusValidator]
+
+	// Fee pool collections
+	ConsumerFeePoolShares      collections.Map[collections.Triple[string, sdk.AccAddress, string], math.Int]
+	ConsumerFeePoolTotalShares collections.Map[collections.Pair[string, string], math.Int]
+	FeePoolAddressToConsumerId collections.Map[sdk.AccAddress, string]
 }
 
 // NewKeeper creates a new provider Keeper instance
@@ -85,9 +92,10 @@ func NewKeeper(
 	clientV2Keeper vaastypes.ClientV2Keeper,
 	stakingKeeper vaastypes.StakingKeeper, slashingKeeper vaastypes.SlashingKeeper,
 	accountKeeper vaastypes.AccountKeeper,
-	bankKeeper vaastypes.BankKeeper,
-	govKeeper govkeeper.Keeper,
-	authority string,
+	bankKeeper         vaastypes.BankKeeper,
+	distributionKeeper vaastypes.DistributionKeeper,
+	govKeeper          govkeeper.Keeper,
+	authority          string,
 	validatorAddressCodec, consensusAddressCodec addresscodec.Codec,
 	feeCollectorName string,
 ) Keeper {
@@ -103,6 +111,7 @@ func NewKeeper(
 		slashingKeeper:        slashingKeeper,
 		accountKeeper:         accountKeeper,
 		bankKeeper:            bankKeeper,
+		distributionKeeper:    distributionKeeper,
 		feeCollectorName:      feeCollectorName,
 		validatorAddressCodec: validatorAddressCodec,
 		consensusAddressCodec: consensusAddressCodec,
@@ -155,6 +164,26 @@ func NewKeeper(
 		ConsumerValidators:        collections.NewMap(sb, types.ConsumerValidatorPrefix, "consumer_validators", collections.PairKeyCodec(collections.Uint64Key, collections.BytesKey), codec.CollValue[types.ConsensusValidator](cdc)),
 		LastProviderConsensusVals: collections.NewMap(sb, types.LastProviderConsensusVals, "last_provider_consensus_vals", collections.BytesKey, codec.CollValue[types.ConsensusValidator](cdc)),
 	}
+
+	// Fee pool collections
+	k.ConsumerFeePoolShares = collections.NewMap(
+		sb, types.ConsumerFeePoolSharesKeyPrefix,
+		types.ConsumerFeePoolSharesKeyName,
+		collections.TripleKeyCodec(collections.StringKey, sdk.AccAddressKey, collections.StringKey),
+		sdk.IntValue,
+	)
+	k.ConsumerFeePoolTotalShares = collections.NewMap(
+		sb, types.ConsumerFeePoolTotalSharesKeyPrefix,
+		types.ConsumerFeePoolTotalSharesKeyName,
+		collections.PairKeyCodec(collections.StringKey, collections.StringKey),
+		sdk.IntValue,
+	)
+	k.FeePoolAddressToConsumerId = collections.NewMap(
+		sb, types.FeePoolAddressToConsumerIdKeyPrefix,
+		types.FeePoolAddressToConsumerIdKeyName,
+		sdk.AccAddressKey,
+		collections.StringValue,
+	)
 
 	schema, err := sb.Build()
 	if err != nil {

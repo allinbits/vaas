@@ -392,6 +392,7 @@ func New(
 		app.SlashingKeeper,
 		app.AccountKeeper,
 		app.BankKeeper,
+		app.DistrKeeper,
 		govkeeper.Keeper{}, // will be set after the GovKeeper is created
 		authtypes.NewModuleAddress(govtypes.ModuleName).String(),
 		authcodec.NewBech32Codec(sdk.GetConfig().GetBech32ValidatorAddrPrefix()),
