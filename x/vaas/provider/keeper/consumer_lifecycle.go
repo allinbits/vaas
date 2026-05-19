@@ -394,6 +394,12 @@ func (k Keeper) DeleteConsumerChain(ctx sdk.Context, consumerId uint64) (err err
 		return fmt.Errorf("cannot delete non-stopped chain: %d", consumerId)
 	}
 
+	// Auto-sweep the fee pool. If it fails, abort the delete; consumer
+	// stays STOPPED so funds aren't silently stranded.
+	if err := k.SweepConsumerFeePool(ctx, consumerId, nil); err != nil {
+		return errorsmod.Wrap(types.ErrFeePoolSweepFailed, err.Error())
+	}
+
 	// clean up states
 	k.DeleteConsumerClientId(ctx, consumerId)
 	k.DeleteConsumerGenesis(ctx, consumerId)
