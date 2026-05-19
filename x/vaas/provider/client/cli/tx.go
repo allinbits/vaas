@@ -37,6 +37,9 @@ func GetTxCmd() *cobra.Command {
 	cmd.AddCommand(NewCreateConsumerCmd())
 	cmd.AddCommand(NewUpdateConsumerCmd())
 	cmd.AddCommand(NewRemoveConsumerCmd())
+	cmd.AddCommand(NewFundConsumerFeePoolCmd())
+	cmd.AddCommand(NewWithdrawConsumerFeePoolCmd())
+	cmd.AddCommand(NewSweepConsumerFeePoolCmd())
 
 	return cmd
 }
@@ -454,5 +457,85 @@ Example:
 
 	_ = cmd.MarkFlagRequired(flags.FlagFrom)
 
+	return cmd
+}
+
+func NewFundConsumerFeePoolCmd() *cobra.Command {
+	cmd := &cobra.Command{
+		Use:   "fund-consumer-fee-pool [consumer-id] [amount]",
+		Short: "Deposit funds into a consumer's fee pool, crediting the signer with shares",
+		Args:  cobra.ExactArgs(2),
+		RunE: func(cmd *cobra.Command, args []string) error {
+			clientCtx, err := client.GetClientTxContext(cmd)
+			if err != nil {
+				return err
+			}
+			amount, err := sdk.ParseCoinNormalized(args[1])
+			if err != nil {
+				return err
+			}
+			msg := &types.MsgFundConsumerFeePool{
+				Signer:     clientCtx.GetFromAddress().String(),
+				ConsumerId: args[0],
+				Amount:     amount,
+			}
+			return tx.GenerateOrBroadcastTxCLI(clientCtx, cmd.Flags(), msg)
+		},
+	}
+	flags.AddTxFlagsToCmd(cmd)
+	return cmd
+}
+
+func NewWithdrawConsumerFeePoolCmd() *cobra.Command {
+	cmd := &cobra.Command{
+		Use:   "withdraw-consumer-fee-pool [consumer-id] [coins]",
+		Short: "Withdraw tokens from your share in a consumer's fee pool (multi-denom)",
+		Args:  cobra.ExactArgs(2),
+		RunE: func(cmd *cobra.Command, args []string) error {
+			clientCtx, err := client.GetClientTxContext(cmd)
+			if err != nil {
+				return err
+			}
+			coins, err := sdk.ParseCoinsNormalized(args[1])
+			if err != nil {
+				return err
+			}
+			msg := &types.MsgWithdrawConsumerFeePool{
+				Signer:     clientCtx.GetFromAddress().String(),
+				ConsumerId: args[0],
+				Amount:     coins,
+			}
+			return tx.GenerateOrBroadcastTxCLI(clientCtx, cmd.Flags(), msg)
+		},
+	}
+	flags.AddTxFlagsToCmd(cmd)
+	return cmd
+}
+
+func NewSweepConsumerFeePoolCmd() *cobra.Command {
+	cmd := &cobra.Command{
+		Use:   "sweep-consumer-fee-pool [consumer-id]",
+		Short: "Owner-triggered pro-rata distribution of a consumer's fee pool",
+		Args:  cobra.ExactArgs(1),
+		RunE: func(cmd *cobra.Command, args []string) error {
+			clientCtx, err := client.GetClientTxContext(cmd)
+			if err != nil {
+				return err
+			}
+			denomsCSV, _ := cmd.Flags().GetString("denoms")
+			var denoms []string
+			if strings.TrimSpace(denomsCSV) != "" {
+				denoms = strings.Split(denomsCSV, ",")
+			}
+			msg := &types.MsgSweepConsumerFeePool{
+				Signer:     clientCtx.GetFromAddress().String(),
+				ConsumerId: args[0],
+				Denoms:     denoms,
+			}
+			return tx.GenerateOrBroadcastTxCLI(clientCtx, cmd.Flags(), msg)
+		},
+	}
+	cmd.Flags().String("denoms", "", "comma-separated denoms to sweep (default: all denoms with shares or balance)")
+	flags.AddTxFlagsToCmd(cmd)
 	return cmd
 }
