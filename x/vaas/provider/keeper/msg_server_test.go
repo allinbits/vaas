@@ -61,6 +61,24 @@ func TestCreateConsumer(t *testing.T) {
 	require.Equal(t, providertypes.CONSUMER_PHASE_REGISTERED, phase)
 }
 
+func TestCreateConsumer_PopulatesReverseLookup(t *testing.T) {
+	k, ctx, ctrl, _ := testkeeper.GetProviderKeeperAndCtx(t, testkeeper.NewInMemKeeperParams(t))
+	defer ctrl.Finish()
+	ms := providerkeeper.NewMsgServerImpl(&k)
+
+	resp, err := ms.CreateConsumer(ctx, &providertypes.MsgCreateConsumer{
+		Submitter: "submitter", ChainId: "chainId",
+		Metadata:                 providertypes.ConsumerMetadata{Name: "n", Description: "d"},
+		InitializationParameters: &providertypes.ConsumerInitializationParameters{},
+	})
+	require.NoError(t, err)
+
+	poolAddr := k.GetConsumerFeePoolAddress(resp.ConsumerId)
+	consumerId, err := k.FeePoolAddressToConsumerId.Get(ctx, poolAddr)
+	require.NoError(t, err)
+	require.Equal(t, resp.ConsumerId, consumerId)
+}
+
 func TestCreateConsumerDuplicateChainId(t *testing.T) {
 	providerKeeper, ctx, ctrl, _ := testkeeper.GetProviderKeeperAndCtx(t, testkeeper.NewInMemKeeperParams(t))
 	defer ctrl.Finish()

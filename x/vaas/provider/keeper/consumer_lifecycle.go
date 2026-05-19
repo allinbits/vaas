@@ -409,6 +409,10 @@ func (k Keeper) DeleteConsumerChain(ctx sdk.Context, consumerId uint64) (err err
 	k.DeleteConsumerRemovalTime(ctx, consumerId)
 	k.DeleteConsumerDebt(ctx, consumerId)
 
+	if err := k.FeePoolAddressToConsumerId.Remove(ctx, k.GetConsumerFeePoolAddress(consumerId)); err != nil {
+		return err
+	}
+
 	// TODO (PERMISSIONLESS) add newly-added state to be deleted
 
 	// Note that we do not delete ConsumerIdToChainIdKey and ConsumerIdToPhase, as well

@@ -257,6 +257,13 @@ func (k msgServer) CreateConsumer(goCtx context.Context, msg *types.MsgCreateCon
 	)
 
 	resp.ConsumerId = consumerId
+
+	if err := k.FeePoolAddressToConsumerId.Set(ctx,
+		k.GetConsumerFeePoolAddress(consumerId), consumerId,
+	); err != nil {
+		return &resp, err
+	}
+
 	return &resp, nil
 }
 
