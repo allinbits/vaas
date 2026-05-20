@@ -50,7 +50,7 @@ var (
 
 // NewMsgAssignConsumerKey creates a new MsgAssignConsumerKey instance.
 // Delegator address and validator address are the same.
-func NewMsgAssignConsumerKey(consumerId string, providerValidatorAddress sdk.ValAddress,
+func NewMsgAssignConsumerKey(consumerId uint64, providerValidatorAddress sdk.ValAddress,
 	consumerConsensusPubKey, signer string,
 ) (*MsgAssignConsumerKey, error) {
 	return &MsgAssignConsumerKey{
@@ -63,10 +63,6 @@ func NewMsgAssignConsumerKey(consumerId string, providerValidatorAddress sdk.Val
 
 // ValidateBasic implements the sdk.HasValidateBasic interface.
 func (msg MsgAssignConsumerKey) ValidateBasic() error {
-	if err := vaastypes.ValidateConsumerId(msg.ConsumerId); err != nil {
-		return errorsmod.Wrapf(ErrInvalidMsgAssignConsumerKey, "ConsumerId: %s", err.Error())
-	}
-
 	if err := validateProviderAddress(msg.ProviderAddr, msg.Signer); err != nil {
 		return errorsmod.Wrapf(ErrInvalidMsgAssignConsumerKey, "ProviderAddr: %s", err.Error())
 	}
@@ -82,7 +78,7 @@ func (msg MsgAssignConsumerKey) ValidateBasic() error {
 }
 
 func NewMsgSubmitConsumerMisbehaviour(
-	consumerId string,
+	consumerId uint64,
 	submitter sdk.AccAddress,
 	misbehaviour *ibctmtypes.Misbehaviour,
 ) (*MsgSubmitConsumerMisbehaviour, error) {
@@ -95,10 +91,6 @@ func NewMsgSubmitConsumerMisbehaviour(
 
 // ValidateBasic implements the sdk.HasValidateBasic interface.
 func (msg MsgSubmitConsumerMisbehaviour) ValidateBasic() error {
-	if err := vaastypes.ValidateConsumerId(msg.ConsumerId); err != nil {
-		return errorsmod.Wrapf(ErrInvalidMsgSubmitConsumerMisbehaviour, "ConsumerId: %s", err.Error())
-	}
-
 	if err := msg.Misbehaviour.ValidateBasic(); err != nil {
 		return errorsmod.Wrapf(ErrInvalidMsgSubmitConsumerMisbehaviour, "Misbehaviour: %s", err.Error())
 	}
@@ -106,7 +98,7 @@ func (msg MsgSubmitConsumerMisbehaviour) ValidateBasic() error {
 }
 
 func NewMsgSubmitConsumerDoubleVoting(
-	consumerId string,
+	consumerId uint64,
 	submitter sdk.AccAddress,
 	ev *tmtypes.DuplicateVoteEvidence,
 	header *ibctmtypes.Header,
@@ -131,10 +123,6 @@ func (msg MsgSubmitConsumerDoubleVoting) ValidateBasic() error {
 
 	if err := ValidateHeaderForConsumerDoubleVoting(msg.InfractionBlockHeader); err != nil {
 		return errorsmod.Wrapf(ErrInvalidMsgSubmitConsumerDoubleVoting, "ValidateTendermintHeader: %s", err.Error())
-	}
-
-	if err := vaastypes.ValidateConsumerId(msg.ConsumerId); err != nil {
-		return errorsmod.Wrapf(ErrInvalidMsgSubmitConsumerDoubleVoting, "ConsumerId: %s", err.Error())
 	}
 
 	return nil
@@ -205,7 +193,7 @@ func (msg MsgCreateConsumer) ValidateBasic() error {
 }
 
 // NewMsgUpdateConsumer creates a new MsgUpdateConsumer instance
-func NewMsgUpdateConsumer(owner, consumerId, ownerAddress string, metadata *ConsumerMetadata,
+func NewMsgUpdateConsumer(owner string, consumerId uint64, ownerAddress string, metadata *ConsumerMetadata,
 	initializationParameters *ConsumerInitializationParameters,
 	newChainId string, infractionParameters *InfractionParameters,
 ) (*MsgUpdateConsumer, error) {
@@ -222,10 +210,6 @@ func NewMsgUpdateConsumer(owner, consumerId, ownerAddress string, metadata *Cons
 
 // ValidateBasic implements the sdk.HasValidateBasic interface.
 func (msg MsgUpdateConsumer) ValidateBasic() error {
-	if err := vaastypes.ValidateConsumerId(msg.ConsumerId); err != nil {
-		return errorsmod.Wrapf(ErrInvalidMsgUpdateConsumer, "ConsumerId: %s", err.Error())
-	}
-
 	// Note that NewOwnerAddress is validated when handling the message in UpdateConsumer
 
 	if msg.Metadata != nil {
@@ -250,7 +234,7 @@ func (msg MsgUpdateConsumer) ValidateBasic() error {
 }
 
 // NewMsgRemoveConsumer creates a new MsgRemoveConsumer instance
-func NewMsgRemoveConsumer(owner, consumerId string) (*MsgRemoveConsumer, error) {
+func NewMsgRemoveConsumer(owner string, consumerId uint64) (*MsgRemoveConsumer, error) {
 	return &MsgRemoveConsumer{
 		Owner:      owner,
 		ConsumerId: consumerId,
@@ -259,9 +243,6 @@ func NewMsgRemoveConsumer(owner, consumerId string) (*MsgRemoveConsumer, error) 
 
 // ValidateBasic implements the sdk.HasValidateBasic interface.
 func (msg MsgRemoveConsumer) ValidateBasic() error {
-	if err := vaastypes.ValidateConsumerId(msg.ConsumerId); err != nil {
-		return err
-	}
 	return nil
 }
 

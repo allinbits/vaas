@@ -395,7 +395,7 @@ func TestMsgUpdateConsumerValidateBasic(t *testing.T) {
 	}
 
 	for _, tc := range testCases {
-		msg, _ := types.NewMsgUpdateConsumer("", "0", "cosmos1p3ucd3ptpw902fluyjzhq3ffgq4ntddac9sa3s", nil, nil, tc.newChainId, nil)
+		msg, _ := types.NewMsgUpdateConsumer("", 0, "cosmos1p3ucd3ptpw902fluyjzhq3ffgq4ntddac9sa3s", nil, nil, tc.newChainId, nil)
 		err := msg.ValidateBasic()
 		if tc.expPass {
 			require.NoError(t, err, "valid case: %s should not return error. got %w", tc.name, err)
@@ -423,47 +423,37 @@ func TestMsgAssignConsumerKeyValidateBasic(t *testing.T) {
 		providerAddr string
 		signer       string
 		consumerKey  string
-		consumerId   string
+		consumerId   uint64
 		expErr       bool
 	}{
 		{
-			name:       "invalid: consumerId empty",
-			consumerId: "",
-			expErr:     true,
-		},
-		{
-			name:       "invalid: consumerId is not a number",
-			consumerId: "consumerId",
-			expErr:     true,
-		},
-		{
 			name:       "invalid: provider address is empty",
-			consumerId: "1",
+			consumerId: 1,
 			expErr:     true,
 		},
 		{
 			name:         "invalid: provider address is invalid",
-			consumerId:   "1",
+			consumerId:   1,
 			providerAddr: "some address",
 			expErr:       true,
 		},
 		{
 			name:         "invalid: provider address != submitter address",
-			consumerId:   "1",
+			consumerId:   1,
 			providerAddr: valOpAddr1.String(),
 			signer:       acc2,
 			expErr:       true,
 		},
 		{
 			name:         "invalid: consumer pubkey empty",
-			consumerId:   "1",
+			consumerId:   1,
 			providerAddr: valOpAddr1.String(),
 			signer:       acc1,
 			expErr:       true,
 		},
 		{
 			name:         "valid",
-			consumerId:   "1",
+			consumerId:   1,
 			providerAddr: valOpAddr1.String(),
 			signer:       acc1,
 			consumerKey:  "{\"@type\": \"/cosmos.crypto.ed25519.PubKey\", \"key\": \"e3BehnEIlGUAnJYn9V8gBXuMh4tXO8xxlxyXD1APGyk=\"}",

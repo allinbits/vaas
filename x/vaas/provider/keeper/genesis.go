@@ -4,7 +4,6 @@ import (
 	"errors"
 	"fmt"
 	"reflect"
-	"strconv"
 
 	"github.com/allinbits/vaas/x/vaas/provider/types"
 	vaastypes "github.com/allinbits/vaas/x/vaas/types"
@@ -41,19 +40,11 @@ func (k Keeper) InitGenesis(ctx sdk.Context, genState *types.GenesisState) []abc
 		cs := &genState.ConsumerStates[i]
 		consumerId := cs.ConsumerId
 
-		// Track the highest imported consumer id; the keeper's ConsumerId
-		// sequence is advanced past this below so future MsgCreateConsumer
-		// calls don't collide. GenesisState.Validate already enforces that
-		// ConsumerId parses as uint64; we still need the numeric value here,
-		// and a parse failure (only reachable if InitGenesis was invoked
-		// outside the standard SDK flow that runs ValidateGenesis first) is
-		// a real inconsistency to panic on rather than silently treat as 0.
-		n, err := strconv.ParseUint(consumerId, 10, 64)
-		if err != nil {
-			panic(fmt.Errorf("init: consumer id %q is not a valid numeric id: %w", consumerId, err))
-		}
-		if n > maxConsumerId {
-			maxConsumerId = n
+		// Track the highest imported consumer id so we can advance the keeper's
+		// ConsumerId sequence past it below; future MsgCreateConsumer calls
+		// then won't collide with the imported records.
+		if consumerId > maxConsumerId {
+			maxConsumerId = consumerId
 		}
 
 		k.SetConsumerChainId(ctx, consumerId, cs.ChainId)
@@ -64,12 +55,12 @@ func (k Keeper) InitGenesis(ctx sdk.Context, genState *types.GenesisState) []abc
 		}
 		if cs.Metadata != nil {
 			if err := k.SetConsumerMetadata(ctx, consumerId, *cs.Metadata); err != nil {
-				panic(fmt.Errorf("init: set metadata for %s: %w", consumerId, err))
+				panic(fmt.Errorf("init: set metadata for %d: %w", consumerId, err))
 			}
 		}
 		if cs.InitParams != nil {
 			if err := k.SetConsumerInitializationParameters(ctx, consumerId, *cs.InitParams); err != nil {
-				panic(fmt.Errorf("init: set init params for %s: %w", consumerId, err))
+				panic(fmt.Errorf("init: set init params for %d: %w", consumerId, err))
 			}
 		}
 		if cs.ClientId != "" {
@@ -81,12 +72,12 @@ func (k Keeper) InitGenesis(ctx sdk.Context, genState *types.GenesisState) []abc
 		// gogoproto.equal_all on its proto file.
 		if !reflect.DeepEqual(cs.ConsumerGenesis, vaastypes.ConsumerGenesisState{}) {
 			if err := k.SetConsumerGenesis(ctx, consumerId, cs.ConsumerGenesis); err != nil {
-				panic(fmt.Errorf("init: set consumer genesis for %s: %w", consumerId, err))
+				panic(fmt.Errorf("init: set consumer genesis for %d: %w", consumerId, err))
 			}
 		}
 		if cs.RemovalTime != nil {
 			if err := k.SetConsumerRemovalTime(ctx, consumerId, *cs.RemovalTime); err != nil {
-				panic(fmt.Errorf("init: set removal time for %s: %w", consumerId, err))
+				panic(fmt.Errorf("init: set removal time for %d: %w", consumerId, err))
 			}
 		}
 		if len(cs.PendingValsetChanges) > 0 {
@@ -104,7 +95,7 @@ func (k Keeper) InitGenesis(ctx sdk.Context, genState *types.GenesisState) []abc
 		case types.CONSUMER_PHASE_INITIALIZED:
 			if cs.InitParams != nil {
 				if err := k.AppendConsumerToBeLaunched(ctx, consumerId, cs.InitParams.SpawnTime); err != nil {
-					panic(fmt.Errorf("init: enqueue spawn for %s: %w", consumerId, err))
+					panic(fmt.Errorf("init: enqueue spawn for %d: %w", consumerId, err))
 				}
 			}
 		case types.CONSUMER_PHASE_LAUNCHED:
@@ -117,7 +108,7 @@ func (k Keeper) InitGenesis(ctx sdk.Context, genState *types.GenesisState) []abc
 			}
 			if cs.RemovalTime != nil {
 				if err := k.AppendConsumerToBeRemoved(ctx, consumerId, *cs.RemovalTime); err != nil {
-					panic(fmt.Errorf("init: enqueue removal for %s: %w", consumerId, err))
+					panic(fmt.Errorf("init: enqueue removal for %d: %w", consumerId, err))
 				}
 			}
 		}
@@ -214,7 +205,7 @@ func (k Keeper) ExportGenesis(ctx sdk.Context) *types.GenesisState {
 
 		chainId, err := k.GetConsumerChainId(ctx, consumerId)
 		if err != nil {
-			panic(fmt.Errorf("export: failed to read chain id for consumer %s: %w", consumerId, err))
+			panic(fmt.Errorf("export: failed to read chain id for consumer %d: %w", consumerId, err))
 		}
 
 		cs := types.ConsumerState{
@@ -227,19 +218,19 @@ func (k Keeper) ExportGenesis(ctx sdk.Context) *types.GenesisState {
 		if owner, err := k.GetConsumerOwnerAddress(ctx, consumerId); err == nil {
 			cs.OwnerAddress = owner
 		} else if !errors.Is(err, collections.ErrNotFound) {
-			panic(fmt.Errorf("export: failed to read owner for consumer %s: %w", consumerId, err))
+			panic(fmt.Errorf("export: failed to read owner for consumer %d: %w", consumerId, err))
 		}
 
 		if md, err := k.GetConsumerMetadata(ctx, consumerId); err == nil {
 			cs.Metadata = &md
 		} else if !errors.Is(err, collections.ErrNotFound) {
-			panic(fmt.Errorf("export: failed to read metadata for consumer %s: %w", consumerId, err))
+			panic(fmt.Errorf("export: failed to read metadata for consumer %d: %w", consumerId, err))
 		}
 
 		if ip, err := k.GetConsumerInitializationParameters(ctx, consumerId); err == nil {
 			cs.InitParams = &ip
 		} else if !errors.Is(err, collections.ErrNotFound) {
-			panic(fmt.Errorf("export: failed to read init params for consumer %s: %w", consumerId, err))
+			panic(fmt.Errorf("export: failed to read init params for consumer %d: %w", consumerId, err))
 		}
 
 		if clientId, ok := k.GetConsumerClientId(ctx, consumerId); ok {
@@ -253,7 +244,7 @@ func (k Keeper) ExportGenesis(ctx sdk.Context) *types.GenesisState {
 			rtCopy := rt // copy to avoid aliasing the loop-local variable
 			cs.RemovalTime = &rtCopy
 		} else if !errors.Is(err, collections.ErrNotFound) {
-			panic(fmt.Errorf("export: failed to read removal time for consumer %s: %w", consumerId, err))
+			panic(fmt.Errorf("export: failed to read removal time for consumer %d: %w", consumerId, err))
 		}
 
 		consumerStates = append(consumerStates, cs)

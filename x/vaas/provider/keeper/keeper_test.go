@@ -18,7 +18,7 @@ import (
 )
 
 const (
-	CONSUMER_ID = "0"
+	CONSUMER_ID uint64 = 0
 )
 
 // TestValsetUpdateBlockHeight tests the getter, setter, and deletion methods for valset updates mapped to block height
@@ -162,12 +162,12 @@ func TestInitHeight(t *testing.T) {
 	defer ctrl.Finish()
 
 	tc := []struct {
-		consumerID  string
-		expected uint64
+		consumerID uint64
+		expected   uint64
 	}{
-		{expected: 0, consumerID: "chain"},
-		{expected: 10, consumerID: "chain1"},
-		{expected: 12, consumerID: "chain2"},
+		{expected: 0, consumerID: 0},
+		{expected: 10, consumerID: 1},
+		{expected: 12, consumerID: 2},
 	}
 
 	providerKeeper.SetInitChainHeight(ctx, tc[1].consumerID, tc[1].expected)
@@ -184,7 +184,7 @@ func TestConsumerClientId(t *testing.T) {
 	providerKeeper, ctx, ctrl, _ := testkeeper.GetProviderKeeperAndCtx(t, testkeeper.NewInMemKeeperParams(t))
 	defer ctrl.Finish()
 
-	consumerId := "123"
+	consumerId := uint64(123)
 	clientIds := []string{"clientId1", "clientId2"}
 
 	_, found := providerKeeper.GetConsumerClientId(ctx, consumerId)
@@ -198,9 +198,9 @@ func TestConsumerClientId(t *testing.T) {
 	res, found := providerKeeper.GetConsumerClientId(ctx, consumerId)
 	require.True(t, found)
 	require.Equal(t, clientIds[0], res)
-	res, found = providerKeeper.GetClientIdToConsumerId(ctx, clientIds[0])
+	gotCid, found := providerKeeper.GetClientIdToConsumerId(ctx, clientIds[0])
 	require.True(t, found)
-	require.Equal(t, consumerId, res)
+	require.Equal(t, consumerId, gotCid)
 	_, found = providerKeeper.GetClientIdToConsumerId(ctx, clientIds[1])
 	require.False(t, found)
 
@@ -209,9 +209,9 @@ func TestConsumerClientId(t *testing.T) {
 	res, found = providerKeeper.GetConsumerClientId(ctx, consumerId)
 	require.True(t, found)
 	require.Equal(t, clientIds[1], res)
-	res, found = providerKeeper.GetClientIdToConsumerId(ctx, clientIds[1])
+	gotCid, found = providerKeeper.GetClientIdToConsumerId(ctx, clientIds[1])
 	require.True(t, found)
-	require.Equal(t, consumerId, res)
+	require.Equal(t, consumerId, gotCid)
 	_, found = providerKeeper.GetClientIdToConsumerId(ctx, clientIds[0])
 	require.False(t, found)
 

@@ -19,8 +19,8 @@ import (
 // GetConsumerFeePoolAddress returns the deterministic provider-side fee pool
 // account for a consumer. This is a plain account address used for fee funding,
 // not a registered module account in the app's module-account permissions.
-func (k Keeper) GetConsumerFeePoolAddress(consumerId string) sdk.AccAddress {
-	return authtypes.NewModuleAddress(fmt.Sprintf("%s-consumer-fee-pool-%s", types.ModuleName, consumerId))
+func (k Keeper) GetConsumerFeePoolAddress(consumerId uint64) sdk.AccAddress {
+	return authtypes.NewModuleAddress(fmt.Sprintf("%s-consumer-fee-pool-%d", types.ModuleName, consumerId))
 }
 
 // CollectFeesFromConsumers collects fees from all active consumer chains.

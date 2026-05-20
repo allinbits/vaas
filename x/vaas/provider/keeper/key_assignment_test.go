@@ -53,7 +53,7 @@ func TestGetAllValidatorConsumerPubKey(t *testing.T) {
 	seed := time.Now().UnixNano()
 	rng := rand.New(rand.NewSource(seed))
 
-	consumerIDs := []string{"consumer-1", "consumer-2", "consumer-3"}
+	consumerIDs := []uint64{1, 2, 3}
 	numAssignments := 10
 	testAssignments := []types.ValidatorConsumerPubKey{}
 	for i := range numAssignments {
@@ -68,7 +68,7 @@ func TestGetAllValidatorConsumerPubKey(t *testing.T) {
 		)
 	}
 	// select a consumerId with more than two assignments
-	var consumerID string
+	var consumerID uint64
 	for i := range consumerIDs {
 		consumerID = consumerIDs[i]
 		count := 0
@@ -133,7 +133,7 @@ func TestGetAllValidatorsByConsumerAddr(t *testing.T) {
 	seed := time.Now().UnixNano()
 	rng := rand.New(rand.NewSource(seed))
 
-	consumerIDs := []string{"consumer-1", "consumer-2", "consumer-3"}
+	consumerIDs := []uint64{1, 2, 3}
 	numAssignments := 10
 	testAssignments := []types.ValidatorByConsumerAddr{}
 	for i := range numAssignments {
@@ -148,7 +148,7 @@ func TestGetAllValidatorsByConsumerAddr(t *testing.T) {
 		)
 	}
 	// select a consumerId with more than two assignments
-	var consumerID string
+	var consumerID uint64
 	for i := range consumerIDs {
 		consumerID = consumerIDs[i]
 		count := 0
@@ -242,7 +242,7 @@ func TestGetAllConsumerAddrsToPrune(t *testing.T) {
 	seed := time.Now().UnixNano()
 	rng := rand.New(rand.NewSource(seed))
 
-	consumerIDs := []string{"consumer-1", "consumer-2", "consumer-3"}
+	consumerIDs := []uint64{1, 2, 3}
 	numAssignments := 10
 	testAssignments := []types.ConsumerAddrsToPrune{}
 	for i := range numAssignments {
@@ -260,7 +260,7 @@ func TestGetAllConsumerAddrsToPrune(t *testing.T) {
 		)
 	}
 	// select a consumerId with more than two assignments
-	var consumerID string
+	var consumerID uint64
 	for i := range consumerIDs {
 		consumerID = consumerIDs[i]
 		count := 0
@@ -297,7 +297,7 @@ func TestGetAllConsumerAddrsToPrune(t *testing.T) {
 
 // checkCorrectPruningProperty checks that the pruning property is correct for a given
 // consumer chain. See AppendConsumerAddrsToPrune for a formulation of the property.
-func checkCorrectPruningProperty(ctx sdk.Context, k providerkeeper.Keeper, consumerID string) bool {
+func checkCorrectPruningProperty(ctx sdk.Context, k providerkeeper.Keeper, consumerID uint64) bool {
 	/*
 		For each consumer address cAddr in ValidatorByConsumerAddr,
 		  - either there exists a provider address pAddr in ValidatorConsumerPubKey,
@@ -339,7 +339,7 @@ func checkCorrectPruningProperty(ctx sdk.Context, k providerkeeper.Keeper, consu
 }
 
 func TestAssignConsensusKeyForConsumerChain(t *testing.T) {
-	consumerId := "0"
+	consumerId := uint64(0)
 	providerIdentities := []*cryptotestutil.CryptoIdentity{
 		cryptotestutil.NewCryptoIdentityFromIntSeed(0),
 		cryptotestutil.NewCryptoIdentityFromIntSeed(1),

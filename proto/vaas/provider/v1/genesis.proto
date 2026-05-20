@@ -40,7 +40,7 @@ message GenesisState {
 // Note this type is only used internally to the provider VAAS module.
 message ConsumerState {
   // ConsumerID is the internal numeric consumer id.
-  string consumer_id = 1;
+  uint64 consumer_id = 1;
   // ChainID is the external chain identifier of the consumer chain (e.g.
   // "atomone-1"), as supplied by the consumer owner at registration.
   string chain_id = 2;

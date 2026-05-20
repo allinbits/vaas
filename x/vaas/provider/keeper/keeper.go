@@ -52,29 +52,29 @@ type Keeper struct {
 	Params                        collections.Item[types.Params]
 	ValidatorSetUpdateId          collections.Sequence
 	ConsumerId                    collections.Sequence
-	ConsumerClients               *collections.IndexedMap[string, string, ConsumerClientIndexes]
-	ConsumerGenesis               collections.Map[string, vaastypes.ConsumerGenesisState]
+	ConsumerClients               *collections.IndexedMap[uint64, string, ConsumerClientIndexes]
+	ConsumerGenesis               collections.Map[uint64, vaastypes.ConsumerGenesisState]
 	ValsetUpdateBlockHeight       collections.Map[uint64, uint64]
-	InitChainHeight               collections.Map[string, uint64]
-	PendingVSCPackets             collections.Map[string, types.ValidatorSetChangePackets]
-	ConsumerChainId               collections.Map[string, string]
-	ConsumerOwnerAddress          collections.Map[string, string]
-	ConsumerMetadata              collections.Map[string, types.ConsumerMetadata]
-	ConsumerInitParams            collections.Map[string, types.ConsumerInitializationParameters]
-	ConsumerPhase                 collections.Map[string, uint32]
-	ConsumerDebt                  collections.Map[string, bool]
-	EquivocationEvidenceMinHeight collections.Map[string, uint64]
-	ConsumerRemovalTime           collections.Map[string, []byte]
+	InitChainHeight               collections.Map[uint64, uint64]
+	PendingVSCPackets             collections.Map[uint64, types.ValidatorSetChangePackets]
+	ConsumerChainId               collections.Map[uint64, string]
+	ConsumerOwnerAddress          collections.Map[uint64, string]
+	ConsumerMetadata              collections.Map[uint64, types.ConsumerMetadata]
+	ConsumerInitParams            collections.Map[uint64, types.ConsumerInitializationParameters]
+	ConsumerPhase                 collections.Map[uint64, uint32]
+	ConsumerDebt                  collections.Map[uint64, bool]
+	EquivocationEvidenceMinHeight collections.Map[uint64, uint64]
+	ConsumerRemovalTime           collections.Map[uint64, []byte]
 	SpawnTimeToConsumerIds        collections.Map[[]byte, types.ConsumerIds]
 	RemovalTimeToConsumerIds      collections.Map[[]byte, types.ConsumerIds]
 
 	// Key assignment collections
-	ValidatorConsumerPubKey collections.Map[collections.Pair[string, []byte], []byte]
-	ValidatorByConsumerAddr collections.Map[collections.Pair[string, []byte], []byte]
-	ConsumerAddrsToPrune    collections.Map[collections.Pair[string, []byte], types.AddressList]
+	ValidatorConsumerPubKey collections.Map[collections.Pair[uint64, []byte], []byte]
+	ValidatorByConsumerAddr collections.Map[collections.Pair[uint64, []byte], []byte]
+	ConsumerAddrsToPrune    collections.Map[collections.Pair[uint64, []byte], types.AddressList]
 
 	// Validator set collections
-	ConsumerValidators        collections.Map[collections.Pair[string, []byte], types.ConsensusValidator]
+	ConsumerValidators        collections.Map[collections.Pair[uint64, []byte], types.ConsensusValidator]
 	LastProviderConsensusVals collections.Map[[]byte, types.ConsensusValidator]
 }
 
@@ -116,7 +116,7 @@ func NewKeeper(
 			sb,
 			types.ConsumerIdToClientIdPrefix,
 			"consumer_clients",
-			collections.StringKey,
+			collections.Uint64Key,
 			collections.StringValue,
 			ConsumerClientIndexes{
 				ByClientId: indexes.NewUnique(
@@ -124,35 +124,35 @@ func NewKeeper(
 					types.ClientIdToConsumerIdPrefix,
 					"consumer_clients_by_client_id",
 					collections.StringKey,
-					collections.StringKey,
-					func(_ string, clientId string) (string, error) {
+					collections.Uint64Key,
+					func(_ uint64, clientId string) (string, error) {
 						return clientId, nil
 					},
 				),
 			},
 		),
-		ConsumerGenesis:               collections.NewMap(sb, types.ConsumerGenesisPrefix, "consumer_genesis", collections.StringKey, codec.CollValue[vaastypes.ConsumerGenesisState](cdc)),
+		ConsumerGenesis:               collections.NewMap(sb, types.ConsumerGenesisPrefix, "consumer_genesis", collections.Uint64Key, codec.CollValue[vaastypes.ConsumerGenesisState](cdc)),
 		ValsetUpdateBlockHeight:       collections.NewMap(sb, types.ValsetUpdateBlockHeightPrefix, "valset_update_block_height", collections.Uint64Key, collections.Uint64Value),
-		InitChainHeight:               collections.NewMap(sb, types.InitChainHeightPrefix, "init_chain_height", collections.StringKey, collections.Uint64Value),
-		PendingVSCPackets:             collections.NewMap(sb, types.PendingVSCsPrefix, "pending_vsc_packets", collections.StringKey, codec.CollValue[types.ValidatorSetChangePackets](cdc)),
-		ConsumerChainId:               collections.NewMap(sb, types.ConsumerIdToChainIdPrefix, "consumer_chain_id", collections.StringKey, collections.StringValue),
-		ConsumerOwnerAddress:          collections.NewMap(sb, types.ConsumerIdToOwnerAddressPrefix, "consumer_owner_address", collections.StringKey, collections.StringValue),
-		ConsumerMetadata:              collections.NewMap(sb, types.ConsumerIdToMetadataPrefix, "consumer_metadata", collections.StringKey, codec.CollValue[types.ConsumerMetadata](cdc)),
-		ConsumerInitParams:            collections.NewMap(sb, types.ConsumerIdToInitializationParamsPrefix, "consumer_init_params", collections.StringKey, codec.CollValue[types.ConsumerInitializationParameters](cdc)),
-		ConsumerPhase:                 collections.NewMap(sb, types.ConsumerIdToPhasePrefix, "consumer_phase", collections.StringKey, collections.Uint32Value),
-		ConsumerDebt:                  collections.NewMap(sb, types.ConsumerIdToDebtPrefix, "consumer_debt", collections.StringKey, collections.BoolValue),
-		EquivocationEvidenceMinHeight: collections.NewMap(sb, types.EquivocationEvidenceMinHeightPrefix, "equivocation_evidence_min_height", collections.StringKey, collections.Uint64Value),
-		ConsumerRemovalTime:           collections.NewMap(sb, types.ConsumerIdToRemovalTimePrefix, "consumer_removal_time", collections.StringKey, collections.BytesValue),
+		InitChainHeight:               collections.NewMap(sb, types.InitChainHeightPrefix, "init_chain_height", collections.Uint64Key, collections.Uint64Value),
+		PendingVSCPackets:             collections.NewMap(sb, types.PendingVSCsPrefix, "pending_vsc_packets", collections.Uint64Key, codec.CollValue[types.ValidatorSetChangePackets](cdc)),
+		ConsumerChainId:               collections.NewMap(sb, types.ConsumerIdToChainIdPrefix, "consumer_chain_id", collections.Uint64Key, collections.StringValue),
+		ConsumerOwnerAddress:          collections.NewMap(sb, types.ConsumerIdToOwnerAddressPrefix, "consumer_owner_address", collections.Uint64Key, collections.StringValue),
+		ConsumerMetadata:              collections.NewMap(sb, types.ConsumerIdToMetadataPrefix, "consumer_metadata", collections.Uint64Key, codec.CollValue[types.ConsumerMetadata](cdc)),
+		ConsumerInitParams:            collections.NewMap(sb, types.ConsumerIdToInitializationParamsPrefix, "consumer_init_params", collections.Uint64Key, codec.CollValue[types.ConsumerInitializationParameters](cdc)),
+		ConsumerPhase:                 collections.NewMap(sb, types.ConsumerIdToPhasePrefix, "consumer_phase", collections.Uint64Key, collections.Uint32Value),
+		ConsumerDebt:                  collections.NewMap(sb, types.ConsumerIdToDebtPrefix, "consumer_debt", collections.Uint64Key, collections.BoolValue),
+		EquivocationEvidenceMinHeight: collections.NewMap(sb, types.EquivocationEvidenceMinHeightPrefix, "equivocation_evidence_min_height", collections.Uint64Key, collections.Uint64Value),
+		ConsumerRemovalTime:           collections.NewMap(sb, types.ConsumerIdToRemovalTimePrefix, "consumer_removal_time", collections.Uint64Key, collections.BytesValue),
 		SpawnTimeToConsumerIds:        collections.NewMap(sb, types.SpawnTimeToConsumerIdsPrefix, "spawn_time_to_consumer_ids", collections.BytesKey, codec.CollValue[types.ConsumerIds](cdc)),
 		RemovalTimeToConsumerIds:      collections.NewMap(sb, types.RemovalTimeToConsumerIdsPrefix, "removal_time_to_consumer_ids", collections.BytesKey, codec.CollValue[types.ConsumerIds](cdc)),
 
 		// Key assignment collections
-		ValidatorConsumerPubKey: collections.NewMap(sb, types.ConsumerValidatorsPrefix, "validator_consumer_pub_key", collections.PairKeyCodec(collections.StringKey, collections.BytesKey), collections.BytesValue),
-		ValidatorByConsumerAddr: collections.NewMap(sb, types.ValidatorsByConsumerAddrPrefix, "validator_by_consumer_addr", collections.PairKeyCodec(collections.StringKey, collections.BytesKey), collections.BytesValue),
-		ConsumerAddrsToPrune:    collections.NewMap(sb, types.ConsumerAddrsToPrunePrefix, "consumer_addrs_to_prune", collections.PairKeyCodec(collections.StringKey, collections.BytesKey), codec.CollValue[types.AddressList](cdc)),
+		ValidatorConsumerPubKey: collections.NewMap(sb, types.ConsumerValidatorsPrefix, "validator_consumer_pub_key", collections.PairKeyCodec(collections.Uint64Key, collections.BytesKey), collections.BytesValue),
+		ValidatorByConsumerAddr: collections.NewMap(sb, types.ValidatorsByConsumerAddrPrefix, "validator_by_consumer_addr", collections.PairKeyCodec(collections.Uint64Key, collections.BytesKey), collections.BytesValue),
+		ConsumerAddrsToPrune:    collections.NewMap(sb, types.ConsumerAddrsToPrunePrefix, "consumer_addrs_to_prune", collections.PairKeyCodec(collections.Uint64Key, collections.BytesKey), codec.CollValue[types.AddressList](cdc)),
 
 		// Validator set collections
-		ConsumerValidators:        collections.NewMap(sb, types.ConsumerValidatorPrefix, "consumer_validators", collections.PairKeyCodec(collections.StringKey, collections.BytesKey), codec.CollValue[types.ConsensusValidator](cdc)),
+		ConsumerValidators:        collections.NewMap(sb, types.ConsumerValidatorPrefix, "consumer_validators", collections.PairKeyCodec(collections.Uint64Key, collections.BytesKey), codec.CollValue[types.ConsensusValidator](cdc)),
 		LastProviderConsensusVals: collections.NewMap(sb, types.LastProviderConsensusVals, "last_provider_consensus_vals", collections.BytesKey, codec.CollValue[types.ConsensusValidator](cdc)),
 	}
 
@@ -195,11 +195,11 @@ func (k Keeper) Logger(ctx context.Context) log.Logger {
 	return sdkCtx.Logger().With("module", "x/"+ibchost.ModuleName+"-"+types.ModuleName)
 }
 
-func (k Keeper) SetConsumerGenesis(ctx context.Context, consumerId string, gen vaastypes.ConsumerGenesisState) error {
+func (k Keeper) SetConsumerGenesis(ctx context.Context, consumerId uint64, gen vaastypes.ConsumerGenesisState) error {
 	return k.ConsumerGenesis.Set(ctx, consumerId, gen)
 }
 
-func (k Keeper) GetConsumerGenesis(ctx context.Context, consumerId string) (vaastypes.ConsumerGenesisState, bool) {
+func (k Keeper) GetConsumerGenesis(ctx context.Context, consumerId uint64) (vaastypes.ConsumerGenesisState, bool) {
 	gen, err := k.ConsumerGenesis.Get(ctx, consumerId)
 	if err != nil {
 		return vaastypes.ConsumerGenesisState{}, false
@@ -207,7 +207,7 @@ func (k Keeper) GetConsumerGenesis(ctx context.Context, consumerId string) (vaas
 	return gen, true
 }
 
-func (k Keeper) DeleteConsumerGenesis(ctx context.Context, consumerId string) {
+func (k Keeper) DeleteConsumerGenesis(ctx context.Context, consumerId uint64) {
 	if err := k.ConsumerGenesis.Remove(ctx, consumerId); err != nil {
 		panic(fmt.Errorf("failed to delete consumer genesis: %w", err))
 	}
@@ -278,14 +278,14 @@ func (k Keeper) DeleteValsetUpdateBlockHeight(ctx context.Context, valsetUpdateI
 }
 
 // SetInitChainHeight sets the provider block height when the given consumer chain was initiated
-func (k Keeper) SetInitChainHeight(ctx context.Context, consumerId string, height uint64) {
+func (k Keeper) SetInitChainHeight(ctx context.Context, consumerId uint64, height uint64) {
 	if err := k.InitChainHeight.Set(ctx, consumerId, height); err != nil {
 		panic(fmt.Errorf("failed to set init chain height: %w", err))
 	}
 }
 
 // GetInitChainHeight returns the provider block height when the given consumer chain was initiated
-func (k Keeper) GetInitChainHeight(ctx context.Context, consumerId string) (uint64, bool) {
+func (k Keeper) GetInitChainHeight(ctx context.Context, consumerId uint64) (uint64, bool) {
 	height, err := k.InitChainHeight.Get(ctx, consumerId)
 	if err != nil {
 		return 0, false
@@ -294,14 +294,14 @@ func (k Keeper) GetInitChainHeight(ctx context.Context, consumerId string) (uint
 }
 
 // DeleteInitChainHeight deletes the block height value for which the given consumer chain's channel was established
-func (k Keeper) DeleteInitChainHeight(ctx context.Context, consumerId string) {
+func (k Keeper) DeleteInitChainHeight(ctx context.Context, consumerId uint64) {
 	if err := k.InitChainHeight.Remove(ctx, consumerId); err != nil {
 		panic(fmt.Errorf("failed to delete init chain height: %w", err))
 	}
 }
 
 // GetPendingVSCPackets returns the list of pending ValidatorSetChange packets stored under consumer id
-func (k Keeper) GetPendingVSCPackets(ctx context.Context, consumerId string) []vaastypes.ValidatorSetChangePacketData {
+func (k Keeper) GetPendingVSCPackets(ctx context.Context, consumerId uint64) []vaastypes.ValidatorSetChangePacketData {
 	packets, err := k.PendingVSCPackets.Get(ctx, consumerId)
 	if err != nil {
 		return []vaastypes.ValidatorSetChangePacketData{}
@@ -311,7 +311,7 @@ func (k Keeper) GetPendingVSCPackets(ctx context.Context, consumerId string) []v
 
 // AppendPendingVSCPackets adds the given ValidatorSetChange packet to the list
 // of pending ValidatorSetChange packets stored under consumer id
-func (k Keeper) AppendPendingVSCPackets(ctx context.Context, consumerId string, newPackets ...vaastypes.ValidatorSetChangePacketData) {
+func (k Keeper) AppendPendingVSCPackets(ctx context.Context, consumerId uint64, newPackets ...vaastypes.ValidatorSetChangePacketData) {
 	pds := append(k.GetPendingVSCPackets(ctx, consumerId), newPackets...)
 
 	packets := types.ValidatorSetChangePackets{List: pds}
@@ -321,7 +321,7 @@ func (k Keeper) AppendPendingVSCPackets(ctx context.Context, consumerId string, 
 }
 
 // DeletePendingVSCPackets deletes the list of pending ValidatorSetChange packets for chain ID
-func (k Keeper) DeletePendingVSCPackets(ctx context.Context, consumerId string) {
+func (k Keeper) DeletePendingVSCPackets(ctx context.Context, consumerId uint64) {
 	if err := k.PendingVSCPackets.Remove(ctx, consumerId); err != nil {
 		panic(fmt.Errorf("failed to delete pending VSC packets: %w", err))
 	}
@@ -329,14 +329,14 @@ func (k Keeper) DeletePendingVSCPackets(ctx context.Context, consumerId string) 
 
 // SetConsumerClientId sets the client id for the given consumer id.
 // The reverse index is automatically maintained by the indexed map.
-func (k Keeper) SetConsumerClientId(ctx context.Context, consumerId, clientId string) {
+func (k Keeper) SetConsumerClientId(ctx context.Context, consumerId uint64, clientId string) {
 	if err := k.ConsumerClients.Set(ctx, consumerId, clientId); err != nil {
 		panic(fmt.Errorf("failed to set consumer id to client id: %w", err))
 	}
 }
 
 // GetConsumerClientId returns the client id for the given consumer id.
-func (k Keeper) GetConsumerClientId(ctx context.Context, consumerId string) (string, bool) {
+func (k Keeper) GetConsumerClientId(ctx context.Context, consumerId uint64) (string, bool) {
 	clientId, err := k.ConsumerClients.Get(ctx, consumerId)
 	if err != nil {
 		return "", false
@@ -345,17 +345,17 @@ func (k Keeper) GetConsumerClientId(ctx context.Context, consumerId string) (str
 }
 
 // GetClientIdToConsumerId returns the consumer id associated with this client id
-func (k Keeper) GetClientIdToConsumerId(ctx context.Context, clientId string) (string, bool) {
+func (k Keeper) GetClientIdToConsumerId(ctx context.Context, clientId string) (uint64, bool) {
 	consumerId, err := k.ConsumerClients.Indexes.ByClientId.MatchExact(ctx, clientId)
 	if err != nil {
-		return "", false
+		return 0, false
 	}
 	return consumerId, true
 }
 
 // DeleteConsumerClientId removes from the store the client id for the given consumer id.
 // The reverse index is automatically cleaned up by the indexed map.
-func (k Keeper) DeleteConsumerClientId(ctx context.Context, consumerId string) {
+func (k Keeper) DeleteConsumerClientId(ctx context.Context, consumerId uint64) {
 	if err := k.ConsumerClients.Remove(ctx, consumerId); err != nil {
 		panic(fmt.Errorf("failed to remove consumer id to client id mapping: %w", err))
 	}
@@ -366,24 +366,23 @@ func (k Keeper) BondDenom(ctx sdk.Context) (string, error) {
 }
 
 // GetAllConsumerIds returns all the existing consumer ids
-func (k Keeper) GetAllConsumerIds(ctx context.Context) []string {
+func (k Keeper) GetAllConsumerIds(ctx context.Context) []uint64 {
 	latestConsumerId, found := k.GetConsumerId(ctx)
 	if !found {
-		return []string{}
+		return []uint64{}
 	}
 
-	consumerIds := []string{}
-	for i := range latestConsumerId {
-		consumerId := fmt.Sprintf("%d", i)
-		consumerIds = append(consumerIds, consumerId)
+	consumerIds := make([]uint64, 0, latestConsumerId)
+	for i := uint64(0); i < latestConsumerId; i++ {
+		consumerIds = append(consumerIds, i)
 	}
 
 	return consumerIds
 }
 
 // GetAllActiveConsumerIds returns all the consumer ids of chains that are registered, initialized, or launched
-func (k Keeper) GetAllActiveConsumerIds(ctx context.Context) []string {
-	consumerIds := []string{}
+func (k Keeper) GetAllActiveConsumerIds(ctx context.Context) []uint64 {
+	consumerIds := []uint64{}
 	for _, consumerId := range k.GetAllConsumerIds(ctx) {
 		if !k.IsConsumerActive(ctx, consumerId) {
 			continue
@@ -394,8 +393,8 @@ func (k Keeper) GetAllActiveConsumerIds(ctx context.Context) []string {
 }
 
 // GetAllLaunchedConsumerIds returns all consumer ids in the launched phase.
-func (k Keeper) GetAllLaunchedConsumerIds(ctx context.Context) []string {
-	consumerIds := []string{}
+func (k Keeper) GetAllLaunchedConsumerIds(ctx context.Context) []uint64 {
+	consumerIds := []uint64{}
 	for _, consumerId := range k.GetAllConsumerIds(ctx) {
 		if k.GetConsumerPhase(ctx, consumerId) != types.CONSUMER_PHASE_LAUNCHED {
 			continue
@@ -441,14 +440,14 @@ func (k Keeper) CreateProviderConsensusValidator(ctx sdk.Context, val stakingtyp
 }
 
 // SetEquivocationEvidenceMinHeight sets the minimum height for a valid consumer equivocation evidence
-func (k Keeper) SetEquivocationEvidenceMinHeight(ctx context.Context, consumerId string, height uint64) {
+func (k Keeper) SetEquivocationEvidenceMinHeight(ctx context.Context, consumerId uint64, height uint64) {
 	if err := k.EquivocationEvidenceMinHeight.Set(ctx, consumerId, height); err != nil {
 		panic(fmt.Errorf("failed to set equivocation evidence min height: %w", err))
 	}
 }
 
 // GetEquivocationEvidenceMinHeight returns the minimum height for a valid consumer equivocation evidence
-func (k Keeper) GetEquivocationEvidenceMinHeight(ctx context.Context, consumerId string) uint64 {
+func (k Keeper) GetEquivocationEvidenceMinHeight(ctx context.Context, consumerId uint64) uint64 {
 	height, err := k.EquivocationEvidenceMinHeight.Get(ctx, consumerId)
 	if err != nil {
 		return 0
@@ -457,41 +456,41 @@ func (k Keeper) GetEquivocationEvidenceMinHeight(ctx context.Context, consumerId
 }
 
 // DeleteEquivocationEvidenceMinHeight deletes the minimum height for a valid consumer equivocation evidence
-func (k Keeper) DeleteEquivocationEvidenceMinHeight(ctx context.Context, consumerId string) {
+func (k Keeper) DeleteEquivocationEvidenceMinHeight(ctx context.Context, consumerId uint64) {
 	if err := k.EquivocationEvidenceMinHeight.Remove(ctx, consumerId); err != nil {
 		panic(fmt.Errorf("failed to delete equivocation evidence min height: %w", err))
 	}
 }
 
 // SetConsumerRemovalTime sets the removal time associated with this consumer id
-func (k Keeper) SetConsumerRemovalTime(ctx context.Context, consumerId string, removalTime time.Time) error {
+func (k Keeper) SetConsumerRemovalTime(ctx context.Context, consumerId uint64, removalTime time.Time) error {
 	buf, err := removalTime.MarshalBinary()
 	if err != nil {
-		return fmt.Errorf("failed to marshal removal time (%+v) for consumer id (%s): %w", removalTime, consumerId, err)
+		return fmt.Errorf("failed to marshal removal time (%+v) for consumer id (%d): %w", removalTime, consumerId, err)
 	}
 	if err := k.ConsumerRemovalTime.Set(ctx, consumerId, buf); err != nil {
-		return fmt.Errorf("failed to set removal time for consumer id (%s): %w", consumerId, err)
+		return fmt.Errorf("failed to set removal time for consumer id (%d): %w", consumerId, err)
 	}
 	return nil
 }
 
 // GetConsumerRemovalTime returns the removal time associated with the to-be-removed chain with consumer id
-func (k Keeper) GetConsumerRemovalTime(ctx context.Context, consumerId string) (time.Time, error) {
+func (k Keeper) GetConsumerRemovalTime(ctx context.Context, consumerId uint64) (time.Time, error) {
 	buf, err := k.ConsumerRemovalTime.Get(ctx, consumerId)
 	if err != nil {
-		return time.Time{}, fmt.Errorf("failed to retrieve removal time for consumer id (%s): %w", consumerId, err)
+		return time.Time{}, fmt.Errorf("failed to retrieve removal time for consumer id (%d): %w", consumerId, err)
 	}
 	var t time.Time
 	if err := t.UnmarshalBinary(buf); err != nil {
-		return time.Time{}, fmt.Errorf("failed to unmarshal removal time for consumer id (%s): %w", consumerId, err)
+		return time.Time{}, fmt.Errorf("failed to unmarshal removal time for consumer id (%d): %w", consumerId, err)
 	}
 	return t, nil
 }
 
 // DeleteConsumerRemovalTime deletes the removal time associated with this consumer id
-func (k Keeper) DeleteConsumerRemovalTime(ctx context.Context, consumerId string) {
+func (k Keeper) DeleteConsumerRemovalTime(ctx context.Context, consumerId uint64) {
 	if err := k.ConsumerRemovalTime.Remove(ctx, consumerId); err != nil {
-		panic(fmt.Errorf("failed to delete removal time for consumer id (%s): %w", consumerId, err))
+		panic(fmt.Errorf("failed to delete removal time for consumer id (%d): %w", consumerId, err))
 	}
 }
 
@@ -521,7 +520,7 @@ func (k Keeper) GetConsumersToBeLaunched(ctx context.Context, spawnTime time.Tim
 }
 
 // AppendConsumerToBeLaunched appends the provider consumer id for the given spawn time
-func (k Keeper) AppendConsumerToBeLaunched(ctx context.Context, consumerId string, spawnTime time.Time) error {
+func (k Keeper) AppendConsumerToBeLaunched(ctx context.Context, consumerId uint64, spawnTime time.Time) error {
 	consumers, err := k.GetConsumersToBeLaunched(ctx, spawnTime)
 	if err != nil {
 		return err
@@ -536,7 +535,7 @@ func (k Keeper) AppendConsumerToBeLaunched(ctx context.Context, consumerId strin
 }
 
 // RemoveConsumerToBeLaunched removes consumer id from if stored for this specific spawn time
-func (k Keeper) RemoveConsumerToBeLaunched(ctx context.Context, consumerId string, spawnTime time.Time) error {
+func (k Keeper) RemoveConsumerToBeLaunched(ctx context.Context, consumerId uint64, spawnTime time.Time) error {
 	consumers, err := k.GetConsumersToBeLaunched(ctx, spawnTime)
 	if err != nil {
 		return err
@@ -556,7 +555,7 @@ func (k Keeper) RemoveConsumerToBeLaunched(ctx context.Context, consumerId strin
 	}
 
 	if index == -1 {
-		return fmt.Errorf("failed to find consumer id (%s)", consumerId)
+		return fmt.Errorf("failed to find consumer id (%d)", consumerId)
 	}
 
 	key := timeToBytes(spawnTime)
@@ -590,7 +589,7 @@ func (k Keeper) GetConsumersToBeRemoved(ctx context.Context, removalTime time.Ti
 }
 
 // AppendConsumerToBeRemoved appends the provider consumer id for the given removal time
-func (k Keeper) AppendConsumerToBeRemoved(ctx context.Context, consumerId string, removalTime time.Time) error {
+func (k Keeper) AppendConsumerToBeRemoved(ctx context.Context, consumerId uint64, removalTime time.Time) error {
 	consumers, err := k.GetConsumersToBeRemoved(ctx, removalTime)
 	if err != nil {
 		return err
@@ -605,7 +604,7 @@ func (k Keeper) AppendConsumerToBeRemoved(ctx context.Context, consumerId string
 }
 
 // RemoveConsumerToBeRemoved removes consumer id from the given removal time
-func (k Keeper) RemoveConsumerToBeRemoved(ctx context.Context, consumerId string, removalTime time.Time) error {
+func (k Keeper) RemoveConsumerToBeRemoved(ctx context.Context, consumerId uint64, removalTime time.Time) error {
 	consumers, err := k.GetConsumersToBeRemoved(ctx, removalTime)
 	if err != nil {
 		return err
@@ -625,7 +624,7 @@ func (k Keeper) RemoveConsumerToBeRemoved(ctx context.Context, consumerId string
 	}
 
 	if index == -1 {
-		return fmt.Errorf("failed to find consumer id (%s)", consumerId)
+		return fmt.Errorf("failed to find consumer id (%d)", consumerId)
 	}
 
 	key := timeToBytes(removalTime)
@@ -653,7 +652,7 @@ func (k Keeper) DeleteAllConsumersToBeRemoved(ctx context.Context, removalTime t
 // GetValidatorConsumerPubKey returns a validator's public key assigned for a consumer chain
 func (k Keeper) GetValidatorConsumerPubKey(
 	ctx context.Context,
-	consumerId string,
+	consumerId uint64,
 	providerAddr types.ProviderConsAddress,
 ) (consumerKey tmprotocrypto.PublicKey, found bool) {
 	bz, err := k.ValidatorConsumerPubKey.Get(ctx, collections.Join(consumerId, providerAddr.ToSdkConsAddr().Bytes()))
@@ -669,7 +668,7 @@ func (k Keeper) GetValidatorConsumerPubKey(
 // SetValidatorConsumerPubKey sets a validator's public key assigned for a consumer chain
 func (k Keeper) SetValidatorConsumerPubKey(
 	ctx context.Context,
-	consumerId string,
+	consumerId uint64,
 	providerAddr types.ProviderConsAddress,
 	consumerKey tmprotocrypto.PublicKey,
 ) {
@@ -683,21 +682,21 @@ func (k Keeper) SetValidatorConsumerPubKey(
 }
 
 // DeleteValidatorConsumerPubKey deletes a validator's public key assigned for a consumer chain
-func (k Keeper) DeleteValidatorConsumerPubKey(ctx context.Context, consumerId string, providerAddr types.ProviderConsAddress) {
+func (k Keeper) DeleteValidatorConsumerPubKey(ctx context.Context, consumerId uint64, providerAddr types.ProviderConsAddress) {
 	if err := k.ValidatorConsumerPubKey.Remove(ctx, collections.Join(consumerId, providerAddr.ToSdkConsAddr().Bytes())); err != nil {
 		panic(fmt.Errorf("failed to delete validator consumer pub key: %w", err))
 	}
 }
 
 // GetAllValidatorConsumerPubKeys gets all the validators public keys assigned for a consumer chain
-func (k Keeper) GetAllValidatorConsumerPubKeys(ctx context.Context, consumerId *string) (validatorConsumerPubKeys []types.ValidatorConsumerPubKey) {
-	var iter collections.Iterator[collections.Pair[string, []byte], []byte]
+func (k Keeper) GetAllValidatorConsumerPubKeys(ctx context.Context, consumerId *uint64) (validatorConsumerPubKeys []types.ValidatorConsumerPubKey) {
+	var iter collections.Iterator[collections.Pair[uint64, []byte], []byte]
 	var err error
 
 	if consumerId == nil {
 		iter, err = k.ValidatorConsumerPubKey.Iterate(ctx, nil)
 	} else {
-		iter, err = k.ValidatorConsumerPubKey.Iterate(ctx, collections.NewPrefixedPairRange[string, []byte](*consumerId))
+		iter, err = k.ValidatorConsumerPubKey.Iterate(ctx, collections.NewPrefixedPairRange[uint64, []byte](*consumerId))
 	}
 	if err != nil {
 		return validatorConsumerPubKeys
@@ -727,7 +726,7 @@ func (k Keeper) GetAllValidatorConsumerPubKeys(ctx context.Context, consumerId *
 // given the validator's consensus address on a consumer
 func (k Keeper) GetValidatorByConsumerAddr(
 	ctx context.Context,
-	consumerId string,
+	consumerId uint64,
 	consumerAddr types.ConsumerConsAddress,
 ) (providerAddr types.ProviderConsAddress, found bool) {
 	bz, err := k.ValidatorByConsumerAddr.Get(ctx, collections.Join(consumerId, consumerAddr.ToSdkConsAddr().Bytes()))
@@ -742,7 +741,7 @@ func (k Keeper) GetValidatorByConsumerAddr(
 // to the validator's consensus address on the provider
 func (k Keeper) SetValidatorByConsumerAddr(
 	ctx context.Context,
-	consumerId string,
+	consumerId uint64,
 	consumerAddr types.ConsumerConsAddress,
 	providerAddr types.ProviderConsAddress,
 ) {
@@ -753,7 +752,7 @@ func (k Keeper) SetValidatorByConsumerAddr(
 
 // DeleteValidatorByConsumerAddr deletes the mapping from a validator's consensus address on a consumer
 // to the validator's consensus address on the provider
-func (k Keeper) DeleteValidatorByConsumerAddr(ctx context.Context, consumerId string, consumerAddr types.ConsumerConsAddress) {
+func (k Keeper) DeleteValidatorByConsumerAddr(ctx context.Context, consumerId uint64, consumerAddr types.ConsumerConsAddress) {
 	if err := k.ValidatorByConsumerAddr.Remove(ctx, collections.Join(consumerId, consumerAddr.ToSdkConsAddr().Bytes())); err != nil {
 		panic(fmt.Errorf("failed to delete validator by consumer addr: %w", err))
 	}
@@ -761,14 +760,14 @@ func (k Keeper) DeleteValidatorByConsumerAddr(ctx context.Context, consumerId st
 
 // GetAllValidatorsByConsumerAddr gets all the mappings from consensus addresses on consumer chains
 // to consensus addresses on the provider chain
-func (k Keeper) GetAllValidatorsByConsumerAddr(ctx context.Context, consumerId *string) (validatorConsumerAddrs []types.ValidatorByConsumerAddr) {
-	var iter collections.Iterator[collections.Pair[string, []byte], []byte]
+func (k Keeper) GetAllValidatorsByConsumerAddr(ctx context.Context, consumerId *uint64) (validatorConsumerAddrs []types.ValidatorByConsumerAddr) {
+	var iter collections.Iterator[collections.Pair[uint64, []byte], []byte]
 	var err error
 
 	if consumerId == nil {
 		iter, err = k.ValidatorByConsumerAddr.Iterate(ctx, nil)
 	} else {
-		iter, err = k.ValidatorByConsumerAddr.Iterate(ctx, collections.NewPrefixedPairRange[string, []byte](*consumerId))
+		iter, err = k.ValidatorByConsumerAddr.Iterate(ctx, collections.NewPrefixedPairRange[uint64, []byte](*consumerId))
 	}
 	if err != nil {
 		return validatorConsumerAddrs
@@ -797,7 +796,7 @@ func (k Keeper) GetAllValidatorsByConsumerAddr(ctx context.Context, consumerId *
 // that can be pruned once the block time is at least pruneTs.
 func (k Keeper) AppendConsumerAddrsToPrune(
 	ctx context.Context,
-	consumerId string,
+	consumerId uint64,
 	pruneTs time.Time,
 	consumerAddr types.ConsumerConsAddress,
 ) {
@@ -815,7 +814,7 @@ func (k Keeper) AppendConsumerAddrsToPrune(
 // GetConsumerAddrsToPrune returns the list of consumer addresses to prune stored under timestamp ts.
 func (k Keeper) GetConsumerAddrsToPrune(
 	ctx context.Context,
-	consumerId string,
+	consumerId uint64,
 	ts time.Time,
 ) (consumerAddrsToPrune types.AddressList) {
 	key := collections.Join(consumerId, timeToBytes(ts))
@@ -827,7 +826,7 @@ func (k Keeper) GetConsumerAddrsToPrune(
 }
 
 // DeleteConsumerAddrsToPrune deletes the list of consumer addresses mapped to a timestamp
-func (k Keeper) DeleteConsumerAddrsToPrune(ctx context.Context, consumerId string, pruneTs time.Time) {
+func (k Keeper) DeleteConsumerAddrsToPrune(ctx context.Context, consumerId uint64, pruneTs time.Time) {
 	key := collections.Join(consumerId, timeToBytes(pruneTs))
 	if err := k.ConsumerAddrsToPrune.Remove(ctx, key); err != nil {
 		panic(fmt.Errorf("failed to delete consumer addrs to prune: %w", err))
@@ -835,8 +834,8 @@ func (k Keeper) DeleteConsumerAddrsToPrune(ctx context.Context, consumerId strin
 }
 
 // GetAllConsumerAddrsToPrune gets all consumer addresses that can be eventually pruned for a given consumerId.
-func (k Keeper) GetAllConsumerAddrsToPrune(ctx context.Context, consumerId string) (consumerAddrsToPrune []types.ConsumerAddrsToPrune) {
-	iter, err := k.ConsumerAddrsToPrune.Iterate(ctx, collections.NewPrefixedPairRange[string, []byte](consumerId))
+func (k Keeper) GetAllConsumerAddrsToPrune(ctx context.Context, consumerId uint64) (consumerAddrsToPrune []types.ConsumerAddrsToPrune) {
+	iter, err := k.ConsumerAddrsToPrune.Iterate(ctx, collections.NewPrefixedPairRange[uint64, []byte](consumerId))
 	if err != nil {
 		return consumerAddrsToPrune
 	}
@@ -865,16 +864,16 @@ func (k Keeper) GetAllConsumerAddrsToPrune(ctx context.Context, consumerId strin
 // The returned addresses are removed from the store.
 func (k Keeper) ConsumeConsumerAddrsToPrune(
 	ctx context.Context,
-	consumerId string,
+	consumerId uint64,
 	ts time.Time,
 ) (consumerAddrsToPrune types.AddressList) {
-	iter, err := k.ConsumerAddrsToPrune.Iterate(ctx, collections.NewPrefixedPairRange[string, []byte](consumerId))
+	iter, err := k.ConsumerAddrsToPrune.Iterate(ctx, collections.NewPrefixedPairRange[uint64, []byte](consumerId))
 	if err != nil {
 		return consumerAddrsToPrune
 	}
 	defer iter.Close()
 
-	var keysToDel []collections.Pair[string, []byte]
+	var keysToDel []collections.Pair[uint64, []byte]
 	for ; iter.Valid(); iter.Next() {
 		kv, err := iter.KeyValue()
 		if err != nil {
@@ -907,14 +906,14 @@ func (k Keeper) ConsumeConsumerAddrsToPrune(
 // SetConsumerValidator sets provided consumer `validator` on the consumer chain with `consumerId`
 func (k Keeper) SetConsumerValidator(
 	ctx context.Context,
-	consumerId string,
+	consumerId uint64,
 	validator types.ConsensusValidator,
 ) error {
 	return k.ConsumerValidators.Set(ctx, collections.Join(consumerId, validator.ProviderConsAddr), validator)
 }
 
 // GetConsumerValidator returns the consumer validator with `providerAddr` if it exists for chain with `consumerId`
-func (k Keeper) GetConsumerValidator(ctx context.Context, consumerId string, providerAddr types.ProviderConsAddress) (types.ConsensusValidator, bool) {
+func (k Keeper) GetConsumerValidator(ctx context.Context, consumerId uint64, providerAddr types.ProviderConsAddress) (types.ConsensusValidator, bool) {
 	validator, err := k.ConsumerValidators.Get(ctx, collections.Join(consumerId, providerAddr.ToSdkConsAddr().Bytes()))
 	if err != nil {
 		return types.ConsensusValidator{}, false
@@ -925,7 +924,7 @@ func (k Keeper) GetConsumerValidator(ctx context.Context, consumerId string, pro
 // DeleteConsumerValidator removes consumer validator with `providerAddr` address
 func (k Keeper) DeleteConsumerValidator(
 	ctx context.Context,
-	consumerId string,
+	consumerId uint64,
 	providerConsAddr types.ProviderConsAddress,
 ) {
 	if err := k.ConsumerValidators.Remove(ctx, collections.Join(consumerId, providerConsAddr.ToSdkConsAddr().Bytes())); err != nil {
@@ -934,7 +933,7 @@ func (k Keeper) DeleteConsumerValidator(
 }
 
 // IsConsumerValidator returns `true` if the consumer validator with `providerAddr` exists for chain with `consumerId`
-func (k Keeper) IsConsumerValidator(ctx context.Context, consumerId string, providerAddr types.ProviderConsAddress) bool {
+func (k Keeper) IsConsumerValidator(ctx context.Context, consumerId uint64, providerAddr types.ProviderConsAddress) bool {
 	has, err := k.ConsumerValidators.Has(ctx, collections.Join(consumerId, providerAddr.ToSdkConsAddr().Bytes()))
 	if err != nil {
 		return false
@@ -945,10 +944,10 @@ func (k Keeper) IsConsumerValidator(ctx context.Context, consumerId string, prov
 // GetConsumerValSet returns all the consumer validators for chain with `consumerId`
 func (k Keeper) GetConsumerValSet(
 	ctx context.Context,
-	consumerId string,
+	consumerId uint64,
 ) ([]types.ConsensusValidator, error) {
 	var validators []types.ConsensusValidator
-	iter, err := k.ConsumerValidators.Iterate(ctx, collections.NewPrefixedPairRange[string, []byte](consumerId))
+	iter, err := k.ConsumerValidators.Iterate(ctx, collections.NewPrefixedPairRange[uint64, []byte](consumerId))
 	if err != nil {
 		return validators, err
 	}
@@ -966,7 +965,7 @@ func (k Keeper) GetConsumerValSet(
 }
 
 // SetConsumerValSet resets the current consumer validators with the `nextValidators`
-func (k Keeper) SetConsumerValSet(ctx context.Context, consumerId string, nextValidators []types.ConsensusValidator) error {
+func (k Keeper) SetConsumerValSet(ctx context.Context, consumerId uint64, nextValidators []types.ConsensusValidator) error {
 	// First delete existing validators
 	k.DeleteConsumerValSet(ctx, consumerId)
 
@@ -980,14 +979,14 @@ func (k Keeper) SetConsumerValSet(ctx context.Context, consumerId string, nextVa
 }
 
 // DeleteConsumerValSet deletes all the stored consumer validators for chain with `consumerId`
-func (k Keeper) DeleteConsumerValSet(ctx context.Context, consumerId string) {
-	iter, err := k.ConsumerValidators.Iterate(ctx, collections.NewPrefixedPairRange[string, []byte](consumerId))
+func (k Keeper) DeleteConsumerValSet(ctx context.Context, consumerId uint64) {
+	iter, err := k.ConsumerValidators.Iterate(ctx, collections.NewPrefixedPairRange[uint64, []byte](consumerId))
 	if err != nil {
 		return
 	}
 	defer iter.Close()
 
-	var keysToDel []collections.Pair[string, []byte]
+	var keysToDel []collections.Pair[uint64, []byte]
 	for ; iter.Valid(); iter.Next() {
 		key, err := iter.Key()
 		if err != nil {

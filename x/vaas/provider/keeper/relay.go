@@ -135,7 +135,7 @@ func (k Keeper) SendVSCPackets(ctx sdk.Context) error {
 		}
 
 		if err := k.SendVSCPacketsToChain(ctx, consumerId, clientID); err != nil {
-			return fmt.Errorf("sending VSCPacket to consumer, consumerId(%s): %w", consumerId, err)
+			return fmt.Errorf("sending VSCPacket to consumer, consumerId(%d): %w", consumerId, err)
 		}
 	}
 	return nil
@@ -145,7 +145,7 @@ func (k Keeper) SendVSCPackets(ctx sdk.Context) error {
 // and returns the one with the highest latest height that has a counterparty registered.
 // This allows the provider to use a client being actively updated by a relayer.
 // The current client is only replaced if it is expired, frozen, or has no counterparty.
-func (k Keeper) discoverActiveConsumerClient(ctx sdk.Context, consumerId, currentClientID string) string {
+func (k Keeper) discoverActiveConsumerClient(ctx sdk.Context, consumerId uint64, currentClientID string) string {
 	if currentClientID != "" {
 		currentStatus := k.clientKeeper.GetClientStatus(ctx, currentClientID)
 		if currentStatus == ibcexported.Active {
@@ -196,7 +196,7 @@ func (k Keeper) discoverActiveConsumerClient(ctx sdk.Context, consumerId, curren
 	return currentClientID
 }
 
-func (k Keeper) SendVSCPacketsToChain(ctx sdk.Context, consumerId, clientId string) error {
+func (k Keeper) SendVSCPacketsToChain(ctx sdk.Context, consumerId uint64, clientId string) error {
 	if k.channelKeeperV2 == nil {
 		k.Logger(ctx).Debug("IBC v2 channel keeper not configured, skipping send",
 			"consumerId", consumerId,
@@ -276,13 +276,13 @@ func (k Keeper) QueueVSCPackets(ctx sdk.Context) error {
 
 		currentValSet, err := k.GetConsumerValSet(ctx, consumerId)
 		if err != nil {
-			return fmt.Errorf("getting consumer current validator set, consumerId(%s): %w", consumerId, err)
+			return fmt.Errorf("getting consumer current validator set, consumerId(%d): %w", consumerId, err)
 		}
 
 		// compute consumer next validator set (all validators validate all consumers)
 		valUpdates, err := k.ComputeConsumerNextValSet(ctx, bondedValidators, consumerId, currentValSet)
 		if err != nil {
-			return fmt.Errorf("computing consumer next validator set, consumerId(%s): %w", consumerId, err)
+			return fmt.Errorf("computing consumer next validator set, consumerId(%d): %w", consumerId, err)
 		}
 
 		// Always enqueue a VSC packet per launched consumer each epoch, even

@@ -3,7 +3,6 @@ package types
 import (
 	"errors"
 	"fmt"
-	"strconv"
 
 	vaastypes "github.com/allinbits/vaas/x/vaas/types"
 
@@ -52,16 +51,16 @@ func (gs GenesisState) Validate() error {
 		}
 	}
 
-	seenConsumerIds := map[string]bool{}
+	seenConsumerIds := map[uint64]bool{}
 	for _, cs := range gs.ConsumerStates {
 		if seenConsumerIds[cs.ConsumerId] {
 			return errorsmod.Wrap(vaastypes.ErrInvalidGenesis,
-				fmt.Sprintf("duplicate consumer id %q in genesis", cs.ConsumerId))
+				fmt.Sprintf("duplicate consumer id %d in genesis", cs.ConsumerId))
 		}
 		seenConsumerIds[cs.ConsumerId] = true
 		if err := cs.Validate(); err != nil {
 			return errorsmod.Wrap(vaastypes.ErrInvalidGenesis,
-				fmt.Sprintf("%s: for consumer id %q (chain id %q)", err, cs.ConsumerId, cs.ChainId))
+				fmt.Sprintf("%s: for consumer id %d (chain id %q)", err, cs.ConsumerId, cs.ChainId))
 		}
 	}
 
@@ -83,17 +82,6 @@ func (gs GenesisState) Validate() error {
 // Each phase has different required and forbidden fields, mirroring the
 // invariants the keeper maintains (see x/vaas/provider/keeper/consumer_lifecycle.go).
 func (cs ConsumerState) Validate() error {
-	if cs.ConsumerId == "" {
-		return errors.New("consumer id cannot be empty")
-	}
-	// The id must parse as the numeric string allocated by
-	// FetchAndIncrementConsumerId. This couples the validator to the
-	// current id-generation scheme; if that scheme changes, this check
-	// (and the matching ConsumerId sequence advance in InitGenesis) must
-	// change together.
-	if _, err := strconv.ParseUint(cs.ConsumerId, 10, 64); err != nil {
-		return fmt.Errorf("consumer id %q must be a numeric string: %w", cs.ConsumerId, err)
-	}
 	if cs.ChainId == "" {
 		return errors.New("chain id cannot be empty")
 	}

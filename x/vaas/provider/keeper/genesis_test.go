@@ -1,6 +1,7 @@
 package keeper_test
 
 import (
+	"fmt"
 	"sort"
 	"testing"
 	"time"
@@ -26,13 +27,13 @@ func TestExportGenesis_ConsumerWithoutGenesis(t *testing.T) {
 	pk.SetParams(ctx, providertypes.DefaultParams())
 
 	consumerId := pk.FetchAndIncrementConsumerId(ctx)
-	pk.SetConsumerChainId(ctx, consumerId, "chain-"+consumerId)
+	pk.SetConsumerChainId(ctx, consumerId, fmt.Sprintf("chain-%d", consumerId))
 	pk.SetConsumerPhase(ctx, consumerId, providertypes.CONSUMER_PHASE_REGISTERED)
 
 	genState := pk.ExportGenesis(ctx)
 	require.NotNil(t, genState)
 	require.Len(t, genState.ConsumerStates, 1)
-	require.Equal(t, "chain-"+consumerId, genState.ConsumerStates[0].ChainId)
+	require.Equal(t, fmt.Sprintf("chain-%d", consumerId), genState.ConsumerStates[0].ChainId)
 	require.Equal(t, providertypes.CONSUMER_PHASE_REGISTERED, genState.ConsumerStates[0].Phase)
 	require.Equal(t, "", genState.ConsumerStates[0].ClientId)
 }
@@ -44,13 +45,13 @@ func TestExportGenesis_InitializedConsumerWithoutGenesis(t *testing.T) {
 	pk.SetParams(ctx, providertypes.DefaultParams())
 
 	consumerId := pk.FetchAndIncrementConsumerId(ctx)
-	pk.SetConsumerChainId(ctx, consumerId, "chain-"+consumerId)
+	pk.SetConsumerChainId(ctx, consumerId, fmt.Sprintf("chain-%d", consumerId))
 	pk.SetConsumerPhase(ctx, consumerId, providertypes.CONSUMER_PHASE_INITIALIZED)
 
 	genState := pk.ExportGenesis(ctx)
 	require.NotNil(t, genState)
 	require.Len(t, genState.ConsumerStates, 1)
-	require.Equal(t, "chain-"+consumerId, genState.ConsumerStates[0].ChainId)
+	require.Equal(t, fmt.Sprintf("chain-%d", consumerId), genState.ConsumerStates[0].ChainId)
 	require.Equal(t, providertypes.CONSUMER_PHASE_INITIALIZED, genState.ConsumerStates[0].Phase)
 }
 
@@ -83,39 +84,39 @@ func TestExportGenesisIncludesNewFields(t *testing.T) {
 		pk.SetConsumerChainId(ctx, id, chainIDs[i])
 	}
 
-	// id "0" REGISTERED.
-	pk.SetConsumerPhase(ctx, "0", providertypes.CONSUMER_PHASE_REGISTERED)
-	pk.SetConsumerOwnerAddress(ctx, "0", owner)
-	require.NoError(t, pk.SetConsumerMetadata(ctx, "0", metadata))
+	// id 0 REGISTERED.
+	pk.SetConsumerPhase(ctx, 0, providertypes.CONSUMER_PHASE_REGISTERED)
+	pk.SetConsumerOwnerAddress(ctx, 0, owner)
+	require.NoError(t, pk.SetConsumerMetadata(ctx, 0, metadata))
 
-	// id "1" INITIALIZED.
-	pk.SetConsumerPhase(ctx, "1", providertypes.CONSUMER_PHASE_INITIALIZED)
-	pk.SetConsumerOwnerAddress(ctx, "1", owner)
-	require.NoError(t, pk.SetConsumerMetadata(ctx, "1", metadata))
-	require.NoError(t, pk.SetConsumerInitializationParameters(ctx, "1", initParams))
+	// id 1 INITIALIZED.
+	pk.SetConsumerPhase(ctx, 1, providertypes.CONSUMER_PHASE_INITIALIZED)
+	pk.SetConsumerOwnerAddress(ctx, 1, owner)
+	require.NoError(t, pk.SetConsumerMetadata(ctx, 1, metadata))
+	require.NoError(t, pk.SetConsumerInitializationParameters(ctx, 1, initParams))
 
-	// id "2" LAUNCHED.
-	pk.SetConsumerPhase(ctx, "2", providertypes.CONSUMER_PHASE_LAUNCHED)
-	pk.SetConsumerOwnerAddress(ctx, "2", owner)
-	require.NoError(t, pk.SetConsumerMetadata(ctx, "2", metadata))
-	require.NoError(t, pk.SetConsumerInitializationParameters(ctx, "2", initParams))
-	pk.SetConsumerClientId(ctx, "2", "07-tendermint-0")
-	require.NoError(t, pk.SetConsumerGenesis(ctx, "2", cg))
+	// id 2 LAUNCHED.
+	pk.SetConsumerPhase(ctx, 2, providertypes.CONSUMER_PHASE_LAUNCHED)
+	pk.SetConsumerOwnerAddress(ctx, 2, owner)
+	require.NoError(t, pk.SetConsumerMetadata(ctx, 2, metadata))
+	require.NoError(t, pk.SetConsumerInitializationParameters(ctx, 2, initParams))
+	pk.SetConsumerClientId(ctx, 2, "07-tendermint-0")
+	require.NoError(t, pk.SetConsumerGenesis(ctx, 2, cg))
 
-	// id "3" STOPPED.
-	pk.SetConsumerPhase(ctx, "3", providertypes.CONSUMER_PHASE_STOPPED)
-	pk.SetConsumerOwnerAddress(ctx, "3", owner)
-	require.NoError(t, pk.SetConsumerMetadata(ctx, "3", metadata))
-	require.NoError(t, pk.SetConsumerInitializationParameters(ctx, "3", initParams))
-	pk.SetConsumerClientId(ctx, "3", "07-tendermint-1")
-	require.NoError(t, pk.SetConsumerGenesis(ctx, "3", cg))
-	require.NoError(t, pk.SetConsumerRemovalTime(ctx, "3", removalTime))
+	// id 3 STOPPED.
+	pk.SetConsumerPhase(ctx, 3, providertypes.CONSUMER_PHASE_STOPPED)
+	pk.SetConsumerOwnerAddress(ctx, 3, owner)
+	require.NoError(t, pk.SetConsumerMetadata(ctx, 3, metadata))
+	require.NoError(t, pk.SetConsumerInitializationParameters(ctx, 3, initParams))
+	pk.SetConsumerClientId(ctx, 3, "07-tendermint-1")
+	require.NoError(t, pk.SetConsumerGenesis(ctx, 3, cg))
+	require.NoError(t, pk.SetConsumerRemovalTime(ctx, 3, removalTime))
 
-	// id "4" DELETED.
-	pk.SetConsumerPhase(ctx, "4", providertypes.CONSUMER_PHASE_DELETED)
-	pk.SetConsumerOwnerAddress(ctx, "4", owner)
-	require.NoError(t, pk.SetConsumerMetadata(ctx, "4", metadata))
-	require.NoError(t, pk.SetConsumerInitializationParameters(ctx, "4", initParams))
+	// id 4 DELETED.
+	pk.SetConsumerPhase(ctx, 4, providertypes.CONSUMER_PHASE_DELETED)
+	pk.SetConsumerOwnerAddress(ctx, 4, owner)
+	require.NoError(t, pk.SetConsumerMetadata(ctx, 4, metadata))
+	require.NoError(t, pk.SetConsumerInitializationParameters(ctx, 4, initParams))
 
 	pk.SetParams(ctx, providertypes.DefaultParams())
 	pk.SetValidatorSetUpdateId(ctx, 1)
@@ -175,17 +176,17 @@ func TestInitGenesisRestoresPerConsumerStateAndDerivedQueues(t *testing.T) {
 		ValsetUpdateId: 1,
 		Params:         providertypes.DefaultParams(),
 		ConsumerStates: []providertypes.ConsumerState{
-			{ConsumerId: "0", ChainId: "consumer-alpha", Phase: providertypes.CONSUMER_PHASE_REGISTERED,
+			{ConsumerId: 0, ChainId: "consumer-alpha", Phase: providertypes.CONSUMER_PHASE_REGISTERED,
 				OwnerAddress: owner, Metadata: &md},
-			{ConsumerId: "1", ChainId: "consumer-beta", Phase: providertypes.CONSUMER_PHASE_INITIALIZED,
+			{ConsumerId: 1, ChainId: "consumer-beta", Phase: providertypes.CONSUMER_PHASE_INITIALIZED,
 				OwnerAddress: owner, Metadata: &md, InitParams: &ip},
-			{ConsumerId: "2", ChainId: "consumer-gamma", Phase: providertypes.CONSUMER_PHASE_LAUNCHED,
+			{ConsumerId: 2, ChainId: "consumer-gamma", Phase: providertypes.CONSUMER_PHASE_LAUNCHED,
 				OwnerAddress: owner, Metadata: &md, InitParams: &ip,
 				ClientId: "07-tendermint-0", ConsumerGenesis: cg},
-			{ConsumerId: "3", ChainId: "consumer-delta", Phase: providertypes.CONSUMER_PHASE_STOPPED,
+			{ConsumerId: 3, ChainId: "consumer-delta", Phase: providertypes.CONSUMER_PHASE_STOPPED,
 				OwnerAddress: owner, Metadata: &md, InitParams: &ip,
 				ClientId: "07-tendermint-1", ConsumerGenesis: cg, RemovalTime: &removeAt},
-			{ConsumerId: "4", ChainId: "consumer-epsilon", Phase: providertypes.CONSUMER_PHASE_DELETED,
+			{ConsumerId: 4, ChainId: "consumer-epsilon", Phase: providertypes.CONSUMER_PHASE_DELETED,
 				OwnerAddress: owner, Metadata: &md, InitParams: &ip},
 		},
 	}
@@ -197,7 +198,7 @@ func TestInitGenesisRestoresPerConsumerStateAndDerivedQueues(t *testing.T) {
 	// Sanity check: the sequence counter must have advanced so that
 	// GetAllConsumerIds returns all 5 imported consumers.
 	allIds := pk.GetAllConsumerIds(ctx)
-	require.Equal(t, []string{"0", "1", "2", "3", "4"}, allIds,
+	require.Equal(t, []uint64{0, 1, 2, 3, 4}, allIds,
 		"GetAllConsumerIds must return all imported consumer ids in order")
 
 	// ConsumerStates are imported in order; InitGenesis allocates numeric ids
@@ -207,55 +208,58 @@ func TestInitGenesisRestoresPerConsumerStateAndDerivedQueues(t *testing.T) {
 	//   "2" → consumer-gamma  (LAUNCHED)
 	//   "3" → consumer-delta  (STOPPED)
 	//   "4" → consumer-epsilon (DELETED)
-	idChain := []struct{ consumerId, chainId string }{
-		{"0", "consumer-alpha"},
-		{"1", "consumer-beta"},
-		{"2", "consumer-gamma"},
-		{"3", "consumer-delta"},
-		{"4", "consumer-epsilon"},
+	idChain := []struct {
+		consumerId uint64
+		chainId    string
+	}{
+		{0, "consumer-alpha"},
+		{1, "consumer-beta"},
+		{2, "consumer-gamma"},
+		{3, "consumer-delta"},
+		{4, "consumer-epsilon"},
 	}
 
 	// Per-consumer fields: chain id, owner, metadata must be present on all five.
 	for _, entry := range idChain {
 		gotChain, err := pk.GetConsumerChainId(ctx, entry.consumerId)
-		require.NoError(t, err, "chain id missing for consumer %s", entry.consumerId)
+		require.NoError(t, err, "chain id missing for consumer %d", entry.consumerId)
 		require.Equal(t, entry.chainId, gotChain)
 
 		gotOwner, err := pk.GetConsumerOwnerAddress(ctx, entry.consumerId)
-		require.NoError(t, err, "owner missing for consumer %s", entry.consumerId)
+		require.NoError(t, err, "owner missing for consumer %d", entry.consumerId)
 		require.Equal(t, owner, gotOwner)
 
 		gotMd, err := pk.GetConsumerMetadata(ctx, entry.consumerId)
-		require.NoError(t, err, "metadata missing for consumer %s", entry.consumerId)
+		require.NoError(t, err, "metadata missing for consumer %d", entry.consumerId)
 		require.Equal(t, md, gotMd)
 	}
 
 	// init_params are set on INITIALIZED, LAUNCHED, STOPPED, DELETED (ids 1–4).
-	for _, consumerId := range []string{"1", "2", "3", "4"} {
+	for _, consumerId := range []uint64{1, 2, 3, 4} {
 		gotIp, err := pk.GetConsumerInitializationParameters(ctx, consumerId)
-		require.NoError(t, err, "init_params missing for consumer %s", consumerId)
+		require.NoError(t, err, "init_params missing for consumer %d", consumerId)
 		require.Equal(t, ip, gotIp)
 	}
 
-	// Spawn queue: only INITIALIZED (id "1") is enqueued at init_params.spawn_time.
+	// Spawn queue: only INITIALIZED (id 1) is enqueued at init_params.spawn_time.
 	spawnIds, err := pk.GetConsumersToBeLaunched(ctx, spawnAt)
 	require.NoError(t, err)
-	require.Equal(t, []string{"1"}, spawnIds.Ids)
+	require.Equal(t, []uint64{1}, spawnIds.Ids)
 
-	// Removal queue: only STOPPED (id "3") is enqueued at removal_time.
+	// Removal queue: only STOPPED (id 3) is enqueued at removal_time.
 	removeIds, err := pk.GetConsumersToBeRemoved(ctx, removeAt)
 	require.NoError(t, err)
-	require.Equal(t, []string{"3"}, removeIds.Ids)
+	require.Equal(t, []uint64{3}, removeIds.Ids)
 
-	// EquivocationEvidenceMinHeight: set for LAUNCHED ("2") and STOPPED ("3") only.
-	require.Equal(t, initialHeight.RevisionHeight, pk.GetEquivocationEvidenceMinHeight(ctx, "2"))
-	require.Equal(t, initialHeight.RevisionHeight, pk.GetEquivocationEvidenceMinHeight(ctx, "3"))
-	require.Zero(t, pk.GetEquivocationEvidenceMinHeight(ctx, "0"))
-	require.Zero(t, pk.GetEquivocationEvidenceMinHeight(ctx, "1"))
-	require.Zero(t, pk.GetEquivocationEvidenceMinHeight(ctx, "4"))
+	// EquivocationEvidenceMinHeight: set for LAUNCHED (2) and STOPPED (3) only.
+	require.Equal(t, initialHeight.RevisionHeight, pk.GetEquivocationEvidenceMinHeight(ctx, 2))
+	require.Equal(t, initialHeight.RevisionHeight, pk.GetEquivocationEvidenceMinHeight(ctx, 3))
+	require.Zero(t, pk.GetEquivocationEvidenceMinHeight(ctx, 0))
+	require.Zero(t, pk.GetEquivocationEvidenceMinHeight(ctx, 1))
+	require.Zero(t, pk.GetEquivocationEvidenceMinHeight(ctx, 4))
 
-	// RemovalTime: per-consumer collection set for STOPPED (id "3").
-	rt, err := pk.GetConsumerRemovalTime(ctx, "3")
+	// RemovalTime: per-consumer collection set for STOPPED (id 3).
+	rt, err := pk.GetConsumerRemovalTime(ctx, 3)
 	require.NoError(t, err)
 	require.Equal(t, removeAt, rt)
 }
@@ -342,8 +346,8 @@ func TestGenesisRoundTrip(t *testing.T) {
 	pruneTs := time.Unix(1_900_000_000, 0).UTC()
 	prunedAddr := providertypes.NewConsumerConsAddress([]byte("consumer-addr-to-prune-x"))
 
-	// Seed on consumer "2" (LAUNCHED — has a populated state to assign keys against).
-	const keyedConsumerID = "2"
+	// Seed on consumer 2 (LAUNCHED — has a populated state to assign keys against).
+	const keyedConsumerID uint64 = 2
 	pkA.SetValidatorConsumerPubKey(ctxA, keyedConsumerID, assignedProviderConsAddr, assignedConsumerKey)
 	pkA.SetValidatorByConsumerAddr(ctxA, keyedConsumerID, assignedConsumerConsAddr, assignedProviderConsAddr)
 	pkA.AppendConsumerAddrsToPrune(ctxA, keyedConsumerID, pruneTs, prunedAddr)

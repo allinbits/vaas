@@ -23,7 +23,7 @@ func TestIBCV2PacketQueueing(t *testing.T) {
 	providerKeeper, ctx, ctrl, _ := testkeeper.GetProviderKeeperAndCtx(t, testkeeper.NewInMemKeeperParams(t))
 	defer ctrl.Finish()
 
-	consumerId := "0"
+	consumerId := uint64(0)
 	clientId := "07-tendermint-0"
 
 	providerKeeper.SetConsumerClientId(ctx, consumerId, clientId)
@@ -61,13 +61,13 @@ func TestIBCV2MultipleConsumers(t *testing.T) {
 	defer ctrl.Finish()
 
 	consumers := []struct {
-		id       string
+		id       uint64
 		clientId string
 		chainId  string
 	}{
-		{"0", "07-tendermint-0", "consumer-1"},
-		{"1", "07-tendermint-1", "consumer-2"},
-		{"2", "07-tendermint-2", "consumer-3"},
+		{0, "07-tendermint-0", "consumer-1"},
+		{1, "07-tendermint-1", "consumer-2"},
+		{2, "07-tendermint-2", "consumer-3"},
 	}
 
 	for _, c := range consumers {
@@ -87,7 +87,7 @@ func TestIBCV2MultipleConsumers(t *testing.T) {
 
 	for _, c := range consumers {
 		pending := providerKeeper.GetPendingVSCPackets(ctx, c.id)
-		require.Len(t, pending, 1, "consumer %s should have 1 pending packet", c.id)
+		require.Len(t, pending, 1, "consumer %d should have 1 pending packet", c.id)
 	}
 }
 
@@ -96,7 +96,7 @@ func TestIBCV2ConsumerRemovalOnTimeout(t *testing.T) {
 	providerKeeper, ctx, ctrl, mocks := testkeeper.GetProviderKeeperAndCtx(t, testkeeper.NewInMemKeeperParams(t))
 	defer ctrl.Finish()
 
-	consumerId := "0"
+	consumerId := uint64(0)
 	clientId := "07-tendermint-0"
 
 	providerKeeper.SetConsumerClientId(ctx, consumerId, clientId)
@@ -124,7 +124,7 @@ func TestIBCV2ConsumerRemovalOnErrorAck(t *testing.T) {
 	providerKeeper, ctx, ctrl, mocks := testkeeper.GetProviderKeeperAndCtx(t, testkeeper.NewInMemKeeperParams(t))
 	defer ctrl.Finish()
 
-	consumerId := "0"
+	consumerId := uint64(0)
 	clientId := "07-tendermint-0"
 
 	providerKeeper.SetConsumerClientId(ctx, consumerId, clientId)
@@ -149,7 +149,7 @@ func TestIBCV2DualModeRouting(t *testing.T) {
 	providerKeeper, ctx, ctrl, _ := testkeeper.GetProviderKeeperAndCtx(t, testkeeper.NewInMemKeeperParams(t))
 	defer ctrl.Finish()
 
-	consumerId := "0"
+	consumerId := uint64(0)
 	clientId := "07-tendermint-0"
 
 	providerKeeper.SetConsumerClientId(ctx, consumerId, clientId)

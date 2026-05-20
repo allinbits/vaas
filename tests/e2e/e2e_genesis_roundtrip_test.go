@@ -154,7 +154,7 @@ func (s *IntegrationTestSuite) verifyExportedGenesis(exportedJSON []byte) {
 	s.Require().True(ok, "app_state missing provider module")
 
 	type consumerStateJSON struct {
-		ConsumerId   string                 `json:"consumer_id"`
+		ConsumerId   uint64                 `json:"consumer_id,string"`
 		ChainId      string                 `json:"chain_id"`
 		Phase        string                 `json:"phase"`
 		OwnerAddress string                 `json:"owner_address"`
@@ -176,7 +176,6 @@ func (s *IntegrationTestSuite) verifyExportedGenesis(exportedJSON []byte) {
 	}
 	s.Require().NotNil(found, "expected consumer %s not found in export", consumerChainID)
 
-	s.Require().NotEmpty(found.ConsumerId, "consumer_id must be exported for consumer %s", consumerChainID)
 	s.Require().NotEmpty(found.OwnerAddress, "owner_address must be exported for consumer %s", consumerChainID)
 	s.Require().NotNil(found.Metadata, "metadata must be exported for consumer %s", consumerChainID)
 	s.Require().NotNil(found.InitParams, "init_params must be exported for consumer %s", consumerChainID)
