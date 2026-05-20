@@ -70,8 +70,8 @@ func KeyAssignmentValidateBasic(
 	consumerAddrsToPrune []ConsumerAddrsToPrune,
 ) error {
 	for _, e := range assignedKeys {
-		if strings.TrimSpace(e.ChainId) == "" {
-			return errorsmod.Wrap(vaastypes.ErrInvalidGenesis, "consumer chain id must not be blank")
+		if strings.TrimSpace(e.ConsumerId) == "" {
+			return errorsmod.Wrap(vaastypes.ErrInvalidGenesis, "consumer id must not be blank")
 		}
 		if err := sdk.VerifyAddressFormat(e.ProviderAddr); err != nil {
 			return errorsmod.Wrap(vaastypes.ErrInvalidGenesis, fmt.Sprintf("invalid provider address: %s", e.ProviderAddr))
@@ -81,8 +81,8 @@ func KeyAssignmentValidateBasic(
 		}
 	}
 	for _, e := range byConsumerAddrs {
-		if strings.TrimSpace(e.ChainId) == "" {
-			return errorsmod.Wrap(vaastypes.ErrInvalidGenesis, "consumer chain id must not be blank")
+		if strings.TrimSpace(e.ConsumerId) == "" {
+			return errorsmod.Wrap(vaastypes.ErrInvalidGenesis, "consumer id must not be blank")
 		}
 		if err := sdk.VerifyAddressFormat(e.ProviderAddr); err != nil {
 			return errorsmod.Wrap(vaastypes.ErrInvalidGenesis, fmt.Sprintf("invalid provider address: %s", e.ProviderAddr))
@@ -92,8 +92,8 @@ func KeyAssignmentValidateBasic(
 		}
 	}
 	for _, e := range consumerAddrsToPrune {
-		if strings.TrimSpace(e.ChainId) == "" {
-			return errorsmod.Wrap(vaastypes.ErrInvalidGenesis, "consumer chain id must not be blank")
+		if strings.TrimSpace(e.ConsumerId) == "" {
+			return errorsmod.Wrap(vaastypes.ErrInvalidGenesis, "consumer id must not be blank")
 		}
 		for _, a := range e.ConsumerAddrs.Addresses {
 			if err := sdk.VerifyAddressFormat(a); err != nil {

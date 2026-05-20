@@ -57,9 +57,9 @@ func (h Hooks) AfterValidatorRemoved(goCtx context.Context, valConsAddr sdk.Cons
 				panic("cannot get address of consumer key")
 			}
 			consumerAddr := providertypes.NewConsumerConsAddress(consumerAddrTmp)
-			h.k.DeleteValidatorByConsumerAddr(ctx, validatorConsumerPubKey.ChainId, consumerAddr)
+			h.k.DeleteValidatorByConsumerAddr(ctx, validatorConsumerPubKey.ConsumerId, consumerAddr)
 			providerAddr := providertypes.NewProviderConsAddress(validatorConsumerPubKey.ProviderAddr)
-			h.k.DeleteValidatorConsumerPubKey(ctx, validatorConsumerPubKey.ChainId, providerAddr)
+			h.k.DeleteValidatorConsumerPubKey(ctx, validatorConsumerPubKey.ConsumerId, providerAddr)
 		}
 	}
 

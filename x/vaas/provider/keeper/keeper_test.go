@@ -18,8 +18,7 @@ import (
 )
 
 const (
-	CONSUMER_CHAIN_ID = "chain-id"
-	CONSUMER_ID       = "0"
+	CONSUMER_ID = "0"
 )
 
 // TestValsetUpdateBlockHeight tests the getter, setter, and deletion methods for valset updates mapped to block height
@@ -94,9 +93,9 @@ func TestPendingVSCs(t *testing.T) {
 	providerKeeper, ctx, ctrl, _ := testkeeper.GetProviderKeeperAndCtx(t, testkeeper.NewInMemKeeperParams(t))
 	defer ctrl.Finish()
 
-	chainID := CONSUMER_CHAIN_ID
+	consumerID := CONSUMER_ID
 
-	pending := providerKeeper.GetPendingVSCPackets(ctx, chainID)
+	pending := providerKeeper.GetPendingVSCPackets(ctx, consumerID)
 	require.Len(t, pending, 0)
 
 	_, pks, _ := ibctesting.GenerateKeys(t, 4)
@@ -120,9 +119,9 @@ func TestPendingVSCs(t *testing.T) {
 			ValsetUpdateId: 2,
 		},
 	}
-	providerKeeper.AppendPendingVSCPackets(ctx, chainID, packetList...)
+	providerKeeper.AppendPendingVSCPackets(ctx, consumerID, packetList...)
 
-	packets := providerKeeper.GetPendingVSCPackets(ctx, chainID)
+	packets := providerKeeper.GetPendingVSCPackets(ctx, consumerID)
 	require.Len(t, packets, 2)
 
 	newPacket := vaastypes.ValidatorSetChangePacketData{
@@ -131,14 +130,14 @@ func TestPendingVSCs(t *testing.T) {
 		},
 		ValsetUpdateId: 3,
 	}
-	providerKeeper.AppendPendingVSCPackets(ctx, chainID, newPacket)
-	vscs := providerKeeper.GetPendingVSCPackets(ctx, chainID)
+	providerKeeper.AppendPendingVSCPackets(ctx, consumerID, newPacket)
+	vscs := providerKeeper.GetPendingVSCPackets(ctx, consumerID)
 	require.Len(t, vscs, 3)
 	require.True(t, vscs[len(vscs)-1].ValsetUpdateId == 3)
 	require.True(t, vscs[len(vscs)-1].GetValidatorUpdates()[0].PubKey.String() == ppks[3].String())
 
-	providerKeeper.DeletePendingVSCPackets(ctx, chainID)
-	pending = providerKeeper.GetPendingVSCPackets(ctx, chainID)
+	providerKeeper.DeletePendingVSCPackets(ctx, consumerID)
+	pending = providerKeeper.GetPendingVSCPackets(ctx, consumerID)
 	require.Len(t, pending, 0)
 }
 
@@ -163,19 +162,19 @@ func TestInitHeight(t *testing.T) {
 	defer ctrl.Finish()
 
 	tc := []struct {
-		chainID  string
+		consumerID  string
 		expected uint64
 	}{
-		{expected: 0, chainID: "chain"},
-		{expected: 10, chainID: "chain1"},
-		{expected: 12, chainID: "chain2"},
+		{expected: 0, consumerID: "chain"},
+		{expected: 10, consumerID: "chain1"},
+		{expected: 12, consumerID: "chain2"},
 	}
 
-	providerKeeper.SetInitChainHeight(ctx, tc[1].chainID, tc[1].expected)
-	providerKeeper.SetInitChainHeight(ctx, tc[2].chainID, tc[2].expected)
+	providerKeeper.SetInitChainHeight(ctx, tc[1].consumerID, tc[1].expected)
+	providerKeeper.SetInitChainHeight(ctx, tc[2].consumerID, tc[2].expected)
 
 	for _, tc := range tc {
-		height, _ := providerKeeper.GetInitChainHeight(ctx, tc.chainID)
+		height, _ := providerKeeper.GetInitChainHeight(ctx, tc.consumerID)
 		require.Equal(t, tc.expected, height)
 	}
 }

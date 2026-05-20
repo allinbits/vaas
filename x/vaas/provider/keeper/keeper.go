@@ -714,7 +714,7 @@ func (k Keeper) GetAllValidatorConsumerPubKeys(ctx context.Context, consumerId *
 			panic(fmt.Sprintf("failed to unmarshal consumer key: %v", err))
 		}
 		validatorConsumerPubKeys = append(validatorConsumerPubKeys, types.ValidatorConsumerPubKey{
-			ChainId:      kv.Key.K1(),
+			ConsumerId:   kv.Key.K1(),
 			ProviderAddr: kv.Key.K2(),
 			ConsumerKey:  &consumerKey,
 		})
@@ -786,7 +786,7 @@ func (k Keeper) GetAllValidatorsByConsumerAddr(ctx context.Context, consumerId *
 		validatorConsumerAddrs = append(validatorConsumerAddrs, types.ValidatorByConsumerAddr{
 			ConsumerAddr: consumerAddr.ToSdkConsAddr(),
 			ProviderAddr: providerAddr.ToSdkConsAddr(),
-			ChainId:      kv.Key.K1(),
+			ConsumerId:   kv.Key.K1(),
 		})
 	}
 
@@ -854,7 +854,7 @@ func (k Keeper) GetAllConsumerAddrsToPrune(ctx context.Context, consumerId strin
 		consumerAddrsToPrune = append(consumerAddrsToPrune, types.ConsumerAddrsToPrune{
 			PruneTs:       ts,
 			ConsumerAddrs: &kv.Value,
-			ChainId:       consumerId,
+			ConsumerId:    consumerId,
 		})
 	}
 

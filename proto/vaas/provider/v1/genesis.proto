@@ -39,40 +39,42 @@ message GenesisState {
 //
 // Note this type is only used internally to the provider VAAS module.
 message ConsumerState {
-  // ChainID defines the chain ID for the consumer chain
-  string chain_id = 1;
+  // ConsumerID is the internal numeric consumer id.
+  string consumer_id = 1;
+  // ChainID is the external chain identifier of the consumer chain (e.g.
+  // "atomone-1"), as supplied by the consumer owner at registration.
+  string chain_id = 2;
   // ClientID defines the IBC client ID for the consumer chain.
-  string client_id = 2;
-  // InitalHeight defines the initial block height for the consumer chain
-  uint64 initial_height = 3;
+  string client_id = 3;
+  // InitialHeight defines the initial block height for the consumer chain
+  uint64 initial_height = 4;
   // ConsumerGenesis defines the initial consumer chain genesis states
-  vaas.v1.ConsumerGenesisState consumer_genesis = 4
+  vaas.v1.ConsumerGenesisState consumer_genesis = 5
       [ (gogoproto.nullable) = false ];
   // PendingValsetChanges defines the pending validator set changes for the
   // consumer chain
-  repeated vaas.v1.ValidatorSetChangePacketData
-      pending_valset_changes = 5 [ (gogoproto.nullable) = false ];
-  repeated string slash_downtime_ack = 6;
+  repeated vaas.v1.ValidatorSetChangePacketData pending_valset_changes = 6 [ (gogoproto.nullable) = false ];
+  repeated string slash_downtime_ack = 7;
   // the phase of the consumer chain
-  ConsumerPhase phase = 7;
+  ConsumerPhase phase = 8;
   // OwnerAddress is the bech32 address that authorises owner-only operations
   // (UpdateConsumer, RemoveConsumer, key assignment, etc.) on the consumer.
   // Always non-empty for any existing consumer record; set at REGISTERED.
-  string owner_address = 8;
+  string owner_address = 9;
   // Metadata is the owner-supplied descriptor (name/description/repo).
   // Preserved through DELETED so block explorers can show information
   // about removed chains without an archive node.
-  vaas.provider.v1.ConsumerMetadata metadata = 9;
+  vaas.provider.v1.ConsumerMetadata metadata = 10;
   // InitParams are the owner-supplied launch parameters: spawn time,
   // initial height, genesis hash, binary hash, etc. Preserved through
   // DELETED for the same explorer reason. Carries the spawn_time used
   // to re-derive the keeper's spawn-time queue, and the initial_height
   // used to re-derive equivocation_evidence_min_height, at InitGenesis.
-  vaas.provider.v1.ConsumerInitializationParameters init_params = 10;
+  vaas.provider.v1.ConsumerInitializationParameters init_params = 11;
   // RemovalTime is the wall-clock time at which a STOPPED consumer is
   // scheduled to transition to DELETED. Set only when phase == STOPPED;
   // absent otherwise. Used to re-derive the keeper's removal-time queue.
-  google.protobuf.Timestamp removal_time = 11
+  google.protobuf.Timestamp removal_time = 12
       [ (gogoproto.stdtime) = true ];
 }
 

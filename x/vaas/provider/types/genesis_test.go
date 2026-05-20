@@ -26,8 +26,9 @@ func TestValidateGenesisState(t *testing.T) {
 		VaasTimeoutPeriod: time.Hour,
 		HistoricalEntries: 10,
 	}
-	launchedCS := func(chainID, clientID string, preVAAS bool) types.ConsumerState {
+	launchedCS := func(consumerID, chainID, clientID string, preVAAS bool) types.ConsumerState {
 		return types.ConsumerState{
+			ConsumerId:      consumerID,
 			ChainId:         chainID,
 			ClientId:        clientID,
 			Phase:           types.CONSUMER_PHASE_LAUNCHED,
@@ -47,7 +48,7 @@ func TestValidateGenesisState(t *testing.T) {
 			types.NewGenesisState(
 				types.DefaultValsetUpdateID,
 				nil,
-				[]types.ConsumerState{launchedCS("chainid-1", "client-id", false)},
+				[]types.ConsumerState{launchedCS("0", "chainid-1", "client-id", false)},
 				types.DefaultParams(),
 				nil,
 				nil,
@@ -61,10 +62,10 @@ func TestValidateGenesisState(t *testing.T) {
 				types.DefaultValsetUpdateID,
 				nil,
 				[]types.ConsumerState{
-					launchedCS("chainid-1", "client-id", false),
-					launchedCS("chainid-2", "client-id", true),
-					launchedCS("chainid-3", "client-id", false),
-					launchedCS("chainid-4", "client-id", true),
+					launchedCS("0", "chainid-1", "client-id", false),
+					launchedCS("1", "chainid-2", "client-id", true),
+					launchedCS("2", "chainid-3", "client-id", false),
+					launchedCS("3", "chainid-4", "client-id", true),
 				},
 				types.DefaultParams(),
 				nil,
@@ -78,7 +79,7 @@ func TestValidateGenesisState(t *testing.T) {
 			types.NewGenesisState(
 				types.DefaultValsetUpdateID,
 				nil,
-				[]types.ConsumerState{launchedCS("chainid-1", "client-id", false)},
+				[]types.ConsumerState{launchedCS("0", "chainid-1", "client-id", false)},
 				types.NewParams(
 					types.DefaultTrustingPeriodFraction, time.Hour, 600, 180, sdk.NewInt64Coin("uphoton", 42)),
 				nil,
@@ -118,7 +119,7 @@ func TestValidateGenesisState(t *testing.T) {
 			types.NewGenesisState(
 				types.DefaultValsetUpdateID,
 				nil,
-				[]types.ConsumerState{launchedCS("chainid-1", "client-id", false)},
+				[]types.ConsumerState{launchedCS("0", "chainid-1", "client-id", false)},
 				types.NewParams(
 					"0.0", // 0 trusting period fraction here
 					vaastypes.DefaultVAASTimeoutPeriod, 600, 180, sdk.NewInt64Coin("uphoton", 42)),
@@ -133,7 +134,7 @@ func TestValidateGenesisState(t *testing.T) {
 			types.NewGenesisState(
 				types.DefaultValsetUpdateID,
 				nil,
-				[]types.ConsumerState{launchedCS("chainid-1", "client-id", false)},
+				[]types.ConsumerState{launchedCS("0", "chainid-1", "client-id", false)},
 				types.NewParams(
 					types.DefaultTrustingPeriodFraction,
 					0, // 0 ccv timeout here
@@ -162,7 +163,7 @@ func TestValidateGenesisState(t *testing.T) {
 			types.NewGenesisState(
 				types.DefaultValsetUpdateID,
 				nil,
-				[]types.ConsumerState{launchedCS("chainid", "abc", false)},
+				[]types.ConsumerState{launchedCS("0", "chainid", "abc", false)},
 				types.DefaultParams(),
 				nil,
 				nil,
@@ -176,7 +177,7 @@ func TestValidateGenesisState(t *testing.T) {
 				types.DefaultValsetUpdateID,
 				nil,
 				[]types.ConsumerState{func() types.ConsumerState {
-					cs := launchedCS("chainid", "client-id", false)
+					cs := launchedCS("0", "chainid", "client-id", false)
 					cs.PendingValsetChanges = []vaastypes.ValidatorSetChangePacketData{{}} // ValsetUpdateId=0
 					return cs
 				}()},
@@ -217,6 +218,7 @@ func TestConsumerStateValidatePerPhase(t *testing.T) {
 
 	base := func(phase types.ConsumerPhase) types.ConsumerState {
 		return types.ConsumerState{
+			ConsumerId:      "0",
 			ChainId:         "test-consumer",
 			Phase:           phase,
 			OwnerAddress:    sdk.AccAddress([]byte("vaas-test-owner-1234")).String(),
@@ -231,6 +233,14 @@ func TestConsumerStateValidatePerPhase(t *testing.T) {
 	}{
 		// REGISTERED: only chain_id + owner required.
 		{"REGISTERED valid", func(cs *types.ConsumerState) { *cs = base(types.CONSUMER_PHASE_REGISTERED) }, ""},
+		{"REGISTERED empty consumer_id", func(cs *types.ConsumerState) {
+			*cs = base(types.CONSUMER_PHASE_REGISTERED)
+			cs.ConsumerId = ""
+		}, "consumer id cannot be empty"},
+		{"REGISTERED non-numeric consumer_id", func(cs *types.ConsumerState) {
+			*cs = base(types.CONSUMER_PHASE_REGISTERED)
+			cs.ConsumerId = "neutron-1"
+		}, "must be a numeric string"},
 		{"REGISTERED empty owner", func(cs *types.ConsumerState) {
 			*cs = base(types.CONSUMER_PHASE_REGISTERED)
 			cs.OwnerAddress = ""

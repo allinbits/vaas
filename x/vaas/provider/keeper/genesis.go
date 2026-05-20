@@ -4,6 +4,7 @@ import (
 	"errors"
 	"fmt"
 	"reflect"
+	"strconv"
 
 	"github.com/allinbits/vaas/x/vaas/provider/types"
 	vaastypes "github.com/allinbits/vaas/x/vaas/types"
@@ -18,30 +19,42 @@ import (
 // InitGenesis initializes the VAAS provider state from a GenesisState.
 //
 // Per-consumer state (owner, metadata, init params, removal time, client id,
-// consumer genesis) is read directly from each ConsumerState. The keeper's
-// derived collections (spawn-time queue, removal-time queue, equivocation
-// evidence min height) are then reconstructed in a second pass from the
-// per-consumer fields. ConsumerDebt is left unset; the first BeginBlock
-// after import re-derives it from the fee pool balance.
+// consumer genesis) is read directly from each ConsumerState, keyed by the
+// canonical consumer id carried in cs.ConsumerId. The keeper's derived
+// collections (spawn-time queue, removal-time queue, equivocation evidence
+// min height) are then reconstructed in a second pass from the per-consumer
+// fields. ConsumerDebt is left unset; the first BeginBlock after import
+// re-derives it from the fee pool balance. After all consumers are imported,
+// the ConsumerId sequence counter is advanced past the highest imported id
+// so subsequent MsgCreateConsumer calls do not collide with the imported
+// records.
 func (k Keeper) InitGenesis(ctx sdk.Context, genState *types.GenesisState) []abci.ValidatorUpdate {
 	k.SetValidatorSetUpdateId(ctx, genState.ValsetUpdateId)
 	for _, v2h := range genState.ValsetUpdateIdToHeight {
 		k.SetValsetUpdateBlockHeight(ctx, v2h.ValsetUpdateId, v2h.Height)
 	}
 
-	// allocated pairs the freshly-allocated numeric consumer id with the
-	// ConsumerState it was derived from; used to drive the second pass.
-	type allocated struct {
-		id string
-		cs *types.ConsumerState
-	}
-	allocs := make([]allocated, 0, len(genState.ConsumerStates))
-
-	// First pass: allocate a canonical consumer id for each ConsumerState and
-	// write all per-consumer keeper collections under that id.
+	// First pass: write all per-consumer keeper collections under the
+	// provided consumer id from each ConsumerState.
+	maxConsumerId := uint64(0)
 	for i := range genState.ConsumerStates {
 		cs := &genState.ConsumerStates[i]
-		consumerId := k.FetchAndIncrementConsumerId(ctx)
+		consumerId := cs.ConsumerId
+
+		// Track the highest imported consumer id; the keeper's ConsumerId
+		// sequence is advanced past this below so future MsgCreateConsumer
+		// calls don't collide. GenesisState.Validate already enforces that
+		// ConsumerId parses as uint64; we still need the numeric value here,
+		// and a parse failure (only reachable if InitGenesis was invoked
+		// outside the standard SDK flow that runs ValidateGenesis first) is
+		// a real inconsistency to panic on rather than silently treat as 0.
+		n, err := strconv.ParseUint(consumerId, 10, 64)
+		if err != nil {
+			panic(fmt.Errorf("init: consumer id %q is not a valid numeric id: %w", consumerId, err))
+		}
+		if n > maxConsumerId {
+			maxConsumerId = n
+		}
 
 		k.SetConsumerChainId(ctx, consumerId, cs.ChainId)
 		k.SetConsumerPhase(ctx, consumerId, cs.Phase)
@@ -62,8 +75,10 @@ func (k Keeper) InitGenesis(ctx sdk.Context, genState *types.GenesisState) []abc
 		if cs.ClientId != "" {
 			k.SetConsumerClientId(ctx, consumerId, cs.ClientId)
 		}
-		// reflect.DeepEqual is used here because ConsumerGenesisState is a
-		// gogoproto-generated type that does not have an Equal method.
+		// reflect.DeepEqual is used here because ConsumerGenesisState
+		// transitively references types from cometbft/ibc-go that do not
+		// have a generated Equal method, so we can't enable
+		// gogoproto.equal_all on its proto file.
 		if !reflect.DeepEqual(cs.ConsumerGenesis, vaastypes.ConsumerGenesisState{}) {
 			if err := k.SetConsumerGenesis(ctx, consumerId, cs.ConsumerGenesis); err != nil {
 				panic(fmt.Errorf("init: set consumer genesis for %s: %w", consumerId, err))
@@ -77,15 +92,13 @@ func (k Keeper) InitGenesis(ctx sdk.Context, genState *types.GenesisState) []abc
 		if len(cs.PendingValsetChanges) > 0 {
 			k.AppendPendingVSCPackets(ctx, consumerId, cs.PendingValsetChanges...)
 		}
-
-		allocs = append(allocs, allocated{id: consumerId, cs: cs})
 	}
 
 	// Second pass: derive queue and equivocation-min-height state from the
-	// per-consumer fields just written, using the same allocated ids.
-	for _, a := range allocs {
-		consumerId := a.id
-		cs := a.cs
+	// per-consumer fields just written.
+	for i := range genState.ConsumerStates {
+		cs := &genState.ConsumerStates[i]
+		consumerId := cs.ConsumerId
 
 		switch cs.Phase {
 		case types.CONSUMER_PHASE_INITIALIZED:
@@ -110,20 +123,28 @@ func (k Keeper) InitGenesis(ctx sdk.Context, genState *types.GenesisState) []abc
 		}
 	}
 
+	// Advance the ConsumerId sequence past the highest imported id so
+	// MsgCreateConsumer's next FetchAndIncrementConsumerId does not collide.
+	if len(genState.ConsumerStates) > 0 {
+		if err := k.ConsumerId.Set(ctx, maxConsumerId+1); err != nil {
+			panic(fmt.Errorf("init: advance consumer id sequence to %d: %w", maxConsumerId+1, err))
+		}
+	}
+
 	// Import key assignment state
 	for _, item := range genState.ValidatorConsumerPubkeys {
 		providerAddr := types.NewProviderConsAddress(item.ProviderAddr)
-		k.SetValidatorConsumerPubKey(ctx, item.ChainId, providerAddr, *item.ConsumerKey)
+		k.SetValidatorConsumerPubKey(ctx, item.ConsumerId, providerAddr, *item.ConsumerKey)
 	}
 	for _, item := range genState.ValidatorsByConsumerAddr {
 		consumerAddr := types.NewConsumerConsAddress(item.ConsumerAddr)
 		providerAddr := types.NewProviderConsAddress(item.ProviderAddr)
-		k.SetValidatorByConsumerAddr(ctx, item.ChainId, consumerAddr, providerAddr)
+		k.SetValidatorByConsumerAddr(ctx, item.ConsumerId, consumerAddr, providerAddr)
 	}
 	for _, item := range genState.ConsumerAddrsToPrune {
 		for _, addr := range item.ConsumerAddrs.Addresses {
 			consumerAddr := types.NewConsumerConsAddress(addr)
-			k.AppendConsumerAddrsToPrune(ctx, item.ChainId, item.PruneTs, consumerAddr)
+			k.AppendConsumerAddrsToPrune(ctx, item.ConsumerId, item.PruneTs, consumerAddr)
 		}
 	}
 
@@ -197,6 +218,7 @@ func (k Keeper) ExportGenesis(ctx sdk.Context) *types.GenesisState {
 		}
 
 		cs := types.ConsumerState{
+			ConsumerId:           consumerId,
 			ChainId:              chainId,
 			Phase:                phase,
 			PendingValsetChanges: k.GetPendingVSCPackets(ctx, consumerId),

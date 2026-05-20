@@ -13,6 +13,7 @@ import (
 	sdk "github.com/cosmos/cosmos-sdk/types"
 	stakingtypes "github.com/cosmos/cosmos-sdk/x/staking/types"
 
+	cryptotestutil "github.com/allinbits/vaas/testutil/crypto"
 	testkeeper "github.com/allinbits/vaas/testutil/keeper"
 	providertypes "github.com/allinbits/vaas/x/vaas/provider/types"
 	vaastypes "github.com/allinbits/vaas/x/vaas/types"
@@ -174,17 +175,17 @@ func TestInitGenesisRestoresPerConsumerStateAndDerivedQueues(t *testing.T) {
 		ValsetUpdateId: 1,
 		Params:         providertypes.DefaultParams(),
 		ConsumerStates: []providertypes.ConsumerState{
-			{ChainId: "consumer-alpha", Phase: providertypes.CONSUMER_PHASE_REGISTERED,
+			{ConsumerId: "0", ChainId: "consumer-alpha", Phase: providertypes.CONSUMER_PHASE_REGISTERED,
 				OwnerAddress: owner, Metadata: &md},
-			{ChainId: "consumer-beta", Phase: providertypes.CONSUMER_PHASE_INITIALIZED,
+			{ConsumerId: "1", ChainId: "consumer-beta", Phase: providertypes.CONSUMER_PHASE_INITIALIZED,
 				OwnerAddress: owner, Metadata: &md, InitParams: &ip},
-			{ChainId: "consumer-gamma", Phase: providertypes.CONSUMER_PHASE_LAUNCHED,
+			{ConsumerId: "2", ChainId: "consumer-gamma", Phase: providertypes.CONSUMER_PHASE_LAUNCHED,
 				OwnerAddress: owner, Metadata: &md, InitParams: &ip,
 				ClientId: "07-tendermint-0", ConsumerGenesis: cg},
-			{ChainId: "consumer-delta", Phase: providertypes.CONSUMER_PHASE_STOPPED,
+			{ConsumerId: "3", ChainId: "consumer-delta", Phase: providertypes.CONSUMER_PHASE_STOPPED,
 				OwnerAddress: owner, Metadata: &md, InitParams: &ip,
 				ClientId: "07-tendermint-1", ConsumerGenesis: cg, RemovalTime: &removeAt},
-			{ChainId: "consumer-epsilon", Phase: providertypes.CONSUMER_PHASE_DELETED,
+			{ConsumerId: "4", ChainId: "consumer-epsilon", Phase: providertypes.CONSUMER_PHASE_DELETED,
 				OwnerAddress: owner, Metadata: &md, InitParams: &ip},
 		},
 	}
@@ -330,11 +331,37 @@ func TestGenesisRoundTrip(t *testing.T) {
 			pkA.SetEquivocationEvidenceMinHeight(ctxA, id, ip.InitialHeight.RevisionHeight)
 		}
 	}
+	// Seed one entry per consumer-id-keyed key-assignment / prune collection
+	// so the round-trip actually covers them. Without these entries those
+	// three import loops iterate over empty slices and a future regression
+	// that mis-keys them (e.g. anything that breaks consumer-id continuity
+	// between Export and Init) would pass the round-trip silently.
+	assignedConsumerKey := cryptotestutil.NewCryptoIdentityFromIntSeed(42).TMProtoCryptoPublicKey()
+	assignedProviderConsAddr := providertypes.NewProviderConsAddress([]byte("provider-addr-key-asn"))
+	assignedConsumerConsAddr := providertypes.NewConsumerConsAddress([]byte("consumer-addr-key-asn"))
+	pruneTs := time.Unix(1_900_000_000, 0).UTC()
+	prunedAddr := providertypes.NewConsumerConsAddress([]byte("consumer-addr-to-prune-x"))
+
+	// Seed on consumer "2" (LAUNCHED — has a populated state to assign keys against).
+	const keyedConsumerID = "2"
+	pkA.SetValidatorConsumerPubKey(ctxA, keyedConsumerID, assignedProviderConsAddr, assignedConsumerKey)
+	pkA.SetValidatorByConsumerAddr(ctxA, keyedConsumerID, assignedConsumerConsAddr, assignedProviderConsAddr)
+	pkA.AppendConsumerAddrsToPrune(ctxA, keyedConsumerID, pruneTs, prunedAddr)
+
 	pkA.SetParams(ctxA, providertypes.DefaultParams())
 	pkA.SetValidatorSetUpdateId(ctxA, 1)
 
 	expA := pkA.ExportGenesis(ctxA)
 	require.NoError(t, expA.Validate(), "first export must validate")
+
+	// Sanity: the export must carry the key-assignment / prune entries
+	// keyed by the actual consumer id (matching the original alloc).
+	require.Len(t, expA.ValidatorConsumerPubkeys, 1)
+	require.Equal(t, keyedConsumerID, expA.ValidatorConsumerPubkeys[0].ConsumerId)
+	require.Len(t, expA.ValidatorsByConsumerAddr, 1)
+	require.Equal(t, keyedConsumerID, expA.ValidatorsByConsumerAddr[0].ConsumerId)
+	require.Len(t, expA.ConsumerAddrsToPrune, 1)
+	require.Equal(t, keyedConsumerID, expA.ConsumerAddrsToPrune[0].ConsumerId)
 
 	// Fresh keeper B.
 	pkB, ctxB, ctrlB, stakingB := testkeeper.GetProviderKeeperAndCtx(t, testkeeper.NewInMemKeeperParams(t))
@@ -345,15 +372,29 @@ func TestGenesisRoundTrip(t *testing.T) {
 	stakingB.MockStakingKeeper.EXPECT().GetBondedValidatorsByPower(gomock.Any()).Return(nil, nil).AnyTimes()
 
 	_ = pkB.InitGenesis(ctxB, expA)
+
+	// After import, the consumer-id-keyed key-assignment state must reconnect
+	// to the same consumer id; this is the bug guard for the proto rename
+	// (chain_id → consumer_id on ValidatorConsumerPubKey / ValidatorByConsumerAddr
+	// / ConsumerAddrsToPrune).
+	gotKey, foundKey := pkB.GetValidatorConsumerPubKey(ctxB, keyedConsumerID, assignedProviderConsAddr)
+	require.True(t, foundKey, "ValidatorConsumerPubKey lost across round-trip")
+	require.Equal(t, assignedConsumerKey, gotKey)
+	gotProvider, foundProvider := pkB.GetValidatorByConsumerAddr(ctxB, keyedConsumerID, assignedConsumerConsAddr)
+	require.True(t, foundProvider, "ValidatorByConsumerAddr lost across round-trip")
+	require.Equal(t, assignedProviderConsAddr, gotProvider)
+	require.Len(t, pkB.GetAllConsumerAddrsToPrune(ctxB, keyedConsumerID), 1,
+		"ConsumerAddrsToPrune lost across round-trip")
+
 	expB := pkB.ExportGenesis(ctxB)
 
 	// Order-independent comparison on ConsumerStates (the only slice whose
 	// order is not part of the contract).
 	sort.Slice(expA.ConsumerStates, func(i, j int) bool {
-		return expA.ConsumerStates[i].ChainId < expA.ConsumerStates[j].ChainId
+		return expA.ConsumerStates[i].ConsumerId < expA.ConsumerStates[j].ConsumerId
 	})
 	sort.Slice(expB.ConsumerStates, func(i, j int) bool {
-		return expB.ConsumerStates[i].ChainId < expB.ConsumerStates[j].ChainId
+		return expB.ConsumerStates[i].ConsumerId < expB.ConsumerStates[j].ConsumerId
 	})
 
 	require.Equal(t, expA, expB, "round-trip must be a fixed point")
