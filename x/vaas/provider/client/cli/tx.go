@@ -61,7 +61,11 @@ func NewAssignConsumerKeyCmd() *cobra.Command {
 
 			providerValAddr := clientCtx.GetFromAddress()
 
-			msg, err := types.NewMsgAssignConsumerKey(args[0], sdk.ValAddress(providerValAddr), args[1], submitter)
+			cid, err := parseConsumerIdArg(args[0])
+			if err != nil {
+				return err
+			}
+			msg, err := types.NewMsgAssignConsumerKey(cid, sdk.ValAddress(providerValAddr), args[1], submitter)
 			if err != nil {
 				return err
 			}
@@ -118,7 +122,11 @@ Example:
 				return fmt.Errorf("misbehaviour unmarshalling failed: %s", err)
 			}
 
-			msg, err := types.NewMsgSubmitConsumerMisbehaviour(args[0], submitter, &misbehaviour)
+			cid, err := parseConsumerIdArg(args[0])
+			if err != nil {
+				return err
+			}
+			msg, err := types.NewMsgSubmitConsumerMisbehaviour(cid, submitter, &misbehaviour)
 			if err != nil {
 				return err
 			}
@@ -187,7 +195,11 @@ Example:
 				return fmt.Errorf("infraction IBC header unmarshalling failed: %s", err)
 			}
 
-			msg, err := types.NewMsgSubmitConsumerDoubleVoting(args[0], submitter, &ev, &header)
+			cid, err := parseConsumerIdArg(args[0])
+			if err != nil {
+				return err
+			}
+			msg, err := types.NewMsgSubmitConsumerDoubleVoting(cid, submitter, &ev, &header)
 			if err != nil {
 				return err
 			}
@@ -378,10 +390,6 @@ If one of the fields is missing, it will be set to its zero value.
 				return fmt.Errorf("consumer data unmarshalling failed: %w", err)
 			}
 
-			if strings.TrimSpace(consUpdate.ConsumerId) == "" {
-				return fmt.Errorf("consumer_id can't be empty")
-			}
-
 			msg, err := types.NewMsgUpdateConsumer(owner, consUpdate.ConsumerId, consUpdate.NewOwnerAddress, consUpdate.Metadata,
 				consUpdate.InitializationParameters, consUpdate.NewChainId, consUpdate.InfractionParameters)
 			if err != nil {
@@ -425,7 +433,10 @@ Example:
 			txf = txf.WithTxConfig(clientCtx.TxConfig).WithAccountRetriever(clientCtx.AccountRetriever)
 
 			owner := clientCtx.GetFromAddress().String()
-			consumerId := args[0]
+			consumerId, err := parseConsumerIdArg(args[0])
+			if err != nil {
+				return err
+			}
 
 			msg, err := types.NewMsgRemoveConsumer(owner, consumerId)
 			if err != nil {

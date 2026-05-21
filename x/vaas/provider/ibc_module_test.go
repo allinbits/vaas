@@ -38,7 +38,7 @@ func TestIBCModuleOnAcknowledgementPacketHandlesErrorSentinel(t *testing.T) {
 	providerKeeper, ctx, ctrl, mocks := testkeeper.GetProviderKeeperAndCtx(t, testkeeper.NewInMemKeeperParams(t))
 	defer ctrl.Finish()
 
-	consumerID := "0"
+	consumerID := uint64(0)
 	clientID := "07-tendermint-0"
 
 	providerKeeper.SetConsumerClientId(ctx, consumerID, clientID)
@@ -66,7 +66,7 @@ func TestIBCModuleOnTimeoutPacketFormatsSequence(t *testing.T) {
 	providerKeeper, ctx, ctrl, mocks := testkeeper.GetProviderKeeperAndCtx(t, testkeeper.NewInMemKeeperParams(t))
 	defer ctrl.Finish()
 
-	consumerID := "0"
+	consumerID := uint64(0)
 	clientID := "07-tendermint-0"
 
 	providerKeeper.SetConsumerClientId(ctx, consumerID, clientID)

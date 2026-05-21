@@ -25,22 +25,22 @@ import (
 )
 
 func TestValidatorConsumerPubKeyCRUD(t *testing.T) {
-	chainID := CONSUMER_CHAIN_ID
+	consumerID := CONSUMER_ID
 	providerAddr := types.NewProviderConsAddress([]byte("providerAddr"))
 	consumerKey := cryptotestutil.NewCryptoIdentityFromIntSeed(1).TMProtoCryptoPublicKey()
 
 	keeper, ctx, ctrl, _ := testkeeper.GetProviderKeeperAndCtx(t, testkeeper.NewInMemKeeperParams(t))
 	defer ctrl.Finish()
 
-	keeper.SetValidatorConsumerPubKey(ctx, chainID, providerAddr, consumerKey)
+	keeper.SetValidatorConsumerPubKey(ctx, consumerID, providerAddr, consumerKey)
 
-	consumerPubKey, found := keeper.GetValidatorConsumerPubKey(ctx, chainID, providerAddr)
+	consumerPubKey, found := keeper.GetValidatorConsumerPubKey(ctx, consumerID, providerAddr)
 	require.True(t, found, "consumer pubkey not found")
 	require.NotEmpty(t, consumerPubKey, "consumer pubkey is empty")
 	require.Equal(t, consumerPubKey, consumerKey)
 
-	keeper.DeleteValidatorConsumerPubKey(ctx, chainID, providerAddr)
-	consumerPubKey, found = keeper.GetValidatorConsumerPubKey(ctx, chainID, providerAddr)
+	keeper.DeleteValidatorConsumerPubKey(ctx, consumerID, providerAddr)
+	consumerPubKey, found = keeper.GetValidatorConsumerPubKey(ctx, consumerID, providerAddr)
 	require.False(t, found, "consumer pubkey was found")
 	require.Empty(t, consumerPubKey, "consumer pubkey was returned")
 	require.NotEqual(t, consumerPubKey, consumerKey)
@@ -53,7 +53,7 @@ func TestGetAllValidatorConsumerPubKey(t *testing.T) {
 	seed := time.Now().UnixNano()
 	rng := rand.New(rand.NewSource(seed))
 
-	chainIDs := []string{"consumer-1", "consumer-2", "consumer-3"}
+	consumerIDs := []uint64{1, 2, 3}
 	numAssignments := 10
 	testAssignments := []types.ValidatorConsumerPubKey{}
 	for i := range numAssignments {
@@ -61,19 +61,19 @@ func TestGetAllValidatorConsumerPubKey(t *testing.T) {
 		providerAddr := cryptotestutil.NewCryptoIdentityFromIntSeed(numAssignments + i).ProviderConsAddress()
 		testAssignments = append(testAssignments,
 			types.ValidatorConsumerPubKey{
-				ChainId:      chainIDs[rng.Intn(len(chainIDs))],
+				ConsumerId:   consumerIDs[rng.Intn(len(consumerIDs))],
 				ProviderAddr: providerAddr.ToSdkConsAddr(),
 				ConsumerKey:  &consumerKey,
 			},
 		)
 	}
 	// select a consumerId with more than two assignments
-	var chainID string
-	for i := range chainIDs {
-		chainID = chainIDs[i]
+	var consumerID uint64
+	for i := range consumerIDs {
+		consumerID = consumerIDs[i]
 		count := 0
 		for _, assignment := range testAssignments {
-			if assignment.ChainId == chainID {
+			if assignment.ConsumerId == consumerID {
 				count++
 			}
 		}
@@ -83,7 +83,7 @@ func TestGetAllValidatorConsumerPubKey(t *testing.T) {
 	}
 	expectedGetAllOneConsumerOrder := []types.ValidatorConsumerPubKey{}
 	for _, assignment := range testAssignments {
-		if assignment.ChainId == chainID {
+		if assignment.ConsumerId == consumerID {
 			expectedGetAllOneConsumerOrder = append(expectedGetAllOneConsumerOrder, assignment)
 		}
 	}
@@ -94,10 +94,10 @@ func TestGetAllValidatorConsumerPubKey(t *testing.T) {
 
 	for _, assignment := range testAssignments {
 		providerAddr := types.NewProviderConsAddress(assignment.ProviderAddr)
-		pk.SetValidatorConsumerPubKey(ctx, assignment.ChainId, providerAddr, *assignment.ConsumerKey)
+		pk.SetValidatorConsumerPubKey(ctx, assignment.ConsumerId, providerAddr, *assignment.ConsumerKey)
 	}
 
-	result := pk.GetAllValidatorConsumerPubKeys(ctx, &chainID)
+	result := pk.GetAllValidatorConsumerPubKeys(ctx, &consumerID)
 	require.Equal(t, expectedGetAllOneConsumerOrder, result)
 
 	result = pk.GetAllValidatorConsumerPubKeys(ctx, nil)
@@ -105,22 +105,22 @@ func TestGetAllValidatorConsumerPubKey(t *testing.T) {
 }
 
 func TestValidatorByConsumerAddrCRUD(t *testing.T) {
-	chainID := CONSUMER_CHAIN_ID
+	consumerID := CONSUMER_ID
 	providerAddr := types.NewProviderConsAddress([]byte("providerAddr"))
 	consumerAddr := types.NewConsumerConsAddress([]byte("consumerAddr"))
 
 	keeper, ctx, ctrl, _ := testkeeper.GetProviderKeeperAndCtx(t, testkeeper.NewInMemKeeperParams(t))
 	defer ctrl.Finish()
 
-	keeper.SetValidatorByConsumerAddr(ctx, chainID, consumerAddr, providerAddr)
+	keeper.SetValidatorByConsumerAddr(ctx, consumerID, consumerAddr, providerAddr)
 
-	providerAddrResult, found := keeper.GetValidatorByConsumerAddr(ctx, chainID, consumerAddr)
+	providerAddrResult, found := keeper.GetValidatorByConsumerAddr(ctx, consumerID, consumerAddr)
 	require.True(t, found, "provider address not found")
 	require.NotEmpty(t, providerAddrResult, "provider address is empty")
 	require.Equal(t, providerAddr, providerAddrResult)
 
-	keeper.DeleteValidatorByConsumerAddr(ctx, chainID, consumerAddr)
-	providerAddrResult, found = keeper.GetValidatorByConsumerAddr(ctx, chainID, consumerAddr)
+	keeper.DeleteValidatorByConsumerAddr(ctx, consumerID, consumerAddr)
+	providerAddrResult, found = keeper.GetValidatorByConsumerAddr(ctx, consumerID, consumerAddr)
 	require.False(t, found, "provider address was found")
 	require.Empty(t, providerAddrResult, "provider address not empty")
 	require.NotEqual(t, providerAddr, providerAddrResult)
@@ -133,7 +133,7 @@ func TestGetAllValidatorsByConsumerAddr(t *testing.T) {
 	seed := time.Now().UnixNano()
 	rng := rand.New(rand.NewSource(seed))
 
-	chainIDs := []string{"consumer-1", "consumer-2", "consumer-3"}
+	consumerIDs := []uint64{1, 2, 3}
 	numAssignments := 10
 	testAssignments := []types.ValidatorByConsumerAddr{}
 	for i := range numAssignments {
@@ -141,19 +141,19 @@ func TestGetAllValidatorsByConsumerAddr(t *testing.T) {
 		providerAddr := cryptotestutil.NewCryptoIdentityFromIntSeed(numAssignments + i).ProviderConsAddress()
 		testAssignments = append(testAssignments,
 			types.ValidatorByConsumerAddr{
-				ChainId:      chainIDs[rng.Intn(len(chainIDs))],
+				ConsumerId:   consumerIDs[rng.Intn(len(consumerIDs))],
 				ConsumerAddr: consumerAddr.ToSdkConsAddr(),
 				ProviderAddr: providerAddr.ToSdkConsAddr(),
 			},
 		)
 	}
 	// select a consumerId with more than two assignments
-	var chainID string
-	for i := range chainIDs {
-		chainID = chainIDs[i]
+	var consumerID uint64
+	for i := range consumerIDs {
+		consumerID = consumerIDs[i]
 		count := 0
 		for _, assignment := range testAssignments {
-			if assignment.ChainId == chainID {
+			if assignment.ConsumerId == consumerID {
 				count++
 			}
 		}
@@ -163,7 +163,7 @@ func TestGetAllValidatorsByConsumerAddr(t *testing.T) {
 	}
 	expectedGetAllOneConsumerOrder := []types.ValidatorByConsumerAddr{}
 	for _, assignment := range testAssignments {
-		if assignment.ChainId == chainID {
+		if assignment.ConsumerId == consumerID {
 			expectedGetAllOneConsumerOrder = append(expectedGetAllOneConsumerOrder, assignment)
 		}
 	}
@@ -175,10 +175,10 @@ func TestGetAllValidatorsByConsumerAddr(t *testing.T) {
 	for _, assignment := range testAssignments {
 		consumerAddr := types.NewConsumerConsAddress(assignment.ConsumerAddr)
 		providerAddr := types.NewProviderConsAddress(assignment.ProviderAddr)
-		pk.SetValidatorByConsumerAddr(ctx, assignment.ChainId, consumerAddr, providerAddr)
+		pk.SetValidatorByConsumerAddr(ctx, assignment.ConsumerId, consumerAddr, providerAddr)
 	}
 
-	result := pk.GetAllValidatorsByConsumerAddr(ctx, &chainID)
+	result := pk.GetAllValidatorsByConsumerAddr(ctx, &consumerID)
 	require.Equal(t, expectedGetAllOneConsumerOrder, result)
 
 	result = pk.GetAllValidatorsByConsumerAddr(ctx, nil)
@@ -186,7 +186,7 @@ func TestGetAllValidatorsByConsumerAddr(t *testing.T) {
 }
 
 func TestConsumerAddrsToPruneCRUD(t *testing.T) {
-	chainID := CONSUMER_CHAIN_ID
+	consumerID := CONSUMER_ID
 	consumerAddr1 := types.NewConsumerConsAddress([]byte("consumerAddr1"))
 	consumerAddr2 := types.NewConsumerConsAddress([]byte("consumerAddr2"))
 
@@ -196,40 +196,40 @@ func TestConsumerAddrsToPruneCRUD(t *testing.T) {
 	ts1 := ctx.BlockTime()
 	ts2 := ts1.Add(time.Hour)
 
-	addrsToPrune := keeper.GetConsumerAddrsToPrune(ctx, chainID, ts1).Addresses
+	addrsToPrune := keeper.GetConsumerAddrsToPrune(ctx, consumerID, ts1).Addresses
 	require.Empty(t, addrsToPrune)
 
-	keeper.AppendConsumerAddrsToPrune(ctx, chainID, ts1, consumerAddr1)
+	keeper.AppendConsumerAddrsToPrune(ctx, consumerID, ts1, consumerAddr1)
 
-	addrsToPrune = keeper.GetConsumerAddrsToPrune(ctx, chainID, ts1).Addresses
+	addrsToPrune = keeper.GetConsumerAddrsToPrune(ctx, consumerID, ts1).Addresses
 	require.NotEmpty(t, addrsToPrune, "addresses to prune is empty")
 	require.Len(t, addrsToPrune, 1, "addresses to prune is not len 1")
 	require.Equal(t, addrsToPrune[0], consumerAddr1.ToSdkConsAddr().Bytes())
 
-	keeper.AppendConsumerAddrsToPrune(ctx, chainID, ts2, consumerAddr2)
+	keeper.AppendConsumerAddrsToPrune(ctx, consumerID, ts2, consumerAddr2)
 
-	addrsToPrune = keeper.GetConsumerAddrsToPrune(ctx, chainID, ts2).Addresses
+	addrsToPrune = keeper.GetConsumerAddrsToPrune(ctx, consumerID, ts2).Addresses
 	require.NotEmpty(t, addrsToPrune, "addresses to prune is empty")
 	require.Len(t, addrsToPrune, 1, "addresses to prune is not len 1")
 	require.Equal(t, addrsToPrune[0], consumerAddr2.ToSdkConsAddr().Bytes())
 
-	keeper.DeleteConsumerAddrsToPrune(ctx, chainID, ts1)
-	addrsToPrune = keeper.GetConsumerAddrsToPrune(ctx, chainID, ts1).Addresses
+	keeper.DeleteConsumerAddrsToPrune(ctx, consumerID, ts1)
+	addrsToPrune = keeper.GetConsumerAddrsToPrune(ctx, consumerID, ts1).Addresses
 	require.Empty(t, addrsToPrune, "addresses to prune was returned")
-	addrsToPrune = keeper.GetConsumerAddrsToPrune(ctx, chainID, ts2).Addresses
+	addrsToPrune = keeper.GetConsumerAddrsToPrune(ctx, consumerID, ts2).Addresses
 	require.NotEmpty(t, addrsToPrune, "addresses to prune is empty")
 	require.Len(t, addrsToPrune, 1, "addresses to prune is not len 1")
 	require.Equal(t, addrsToPrune[0], consumerAddr2.ToSdkConsAddr().Bytes())
 
-	keeper.AppendConsumerAddrsToPrune(ctx, chainID, ts1, consumerAddr1)
+	keeper.AppendConsumerAddrsToPrune(ctx, consumerID, ts1, consumerAddr1)
 
-	addrsToPrune = keeper.ConsumeConsumerAddrsToPrune(ctx, chainID, ts1).Addresses
+	addrsToPrune = keeper.ConsumeConsumerAddrsToPrune(ctx, consumerID, ts1).Addresses
 	require.NotEmpty(t, addrsToPrune, "addresses to prune was returned")
 	require.Len(t, addrsToPrune, 1, "addresses to prune is not len 1")
 	require.Equal(t, addrsToPrune[0], consumerAddr1.ToSdkConsAddr().Bytes())
-	addrsToPrune = keeper.GetConsumerAddrsToPrune(ctx, chainID, ts1).Addresses
+	addrsToPrune = keeper.GetConsumerAddrsToPrune(ctx, consumerID, ts1).Addresses
 	require.Empty(t, addrsToPrune, "addresses to prune was returned")
-	addrsToPrune = keeper.GetConsumerAddrsToPrune(ctx, chainID, ts2).Addresses
+	addrsToPrune = keeper.GetConsumerAddrsToPrune(ctx, consumerID, ts2).Addresses
 	require.NotEmpty(t, addrsToPrune, "addresses to prune is empty")
 	require.Len(t, addrsToPrune, 1, "addresses to prune is not len 1")
 	require.Equal(t, addrsToPrune[0], consumerAddr2.ToSdkConsAddr().Bytes())
@@ -242,7 +242,7 @@ func TestGetAllConsumerAddrsToPrune(t *testing.T) {
 	seed := time.Now().UnixNano()
 	rng := rand.New(rand.NewSource(seed))
 
-	chainIDs := []string{"consumer-1", "consumer-2", "consumer-3"}
+	consumerIDs := []uint64{1, 2, 3}
 	numAssignments := 10
 	testAssignments := []types.ConsumerAddrsToPrune{}
 	for i := range numAssignments {
@@ -253,19 +253,19 @@ func TestGetAllConsumerAddrsToPrune(t *testing.T) {
 		}
 		testAssignments = append(testAssignments,
 			types.ConsumerAddrsToPrune{
-				ChainId:       chainIDs[rng.Intn(len(chainIDs))],
+				ConsumerId:    consumerIDs[rng.Intn(len(consumerIDs))],
 				PruneTs:       time.Now().UTC(),
 				ConsumerAddrs: &consumerAddresses,
 			},
 		)
 	}
 	// select a consumerId with more than two assignments
-	var chainID string
-	for i := range chainIDs {
-		chainID = chainIDs[i]
+	var consumerID uint64
+	for i := range consumerIDs {
+		consumerID = consumerIDs[i]
 		count := 0
 		for _, assignment := range testAssignments {
-			if assignment.ChainId == chainID {
+			if assignment.ConsumerId == consumerID {
 				count++
 			}
 		}
@@ -275,7 +275,7 @@ func TestGetAllConsumerAddrsToPrune(t *testing.T) {
 	}
 	expectedGetAllOrder := []types.ConsumerAddrsToPrune{}
 	for _, assignment := range testAssignments {
-		if assignment.ChainId == chainID {
+		if assignment.ConsumerId == consumerID {
 			expectedGetAllOrder = append(expectedGetAllOrder, assignment)
 		}
 	}
@@ -287,17 +287,17 @@ func TestGetAllConsumerAddrsToPrune(t *testing.T) {
 	for _, assignment := range testAssignments {
 		for _, addr := range assignment.ConsumerAddrs.Addresses {
 			consumerAddr := types.NewConsumerConsAddress(addr)
-			pk.AppendConsumerAddrsToPrune(ctx, assignment.ChainId, assignment.PruneTs, consumerAddr)
+			pk.AppendConsumerAddrsToPrune(ctx, assignment.ConsumerId, assignment.PruneTs, consumerAddr)
 		}
 	}
 
-	result := pk.GetAllConsumerAddrsToPrune(ctx, chainID)
+	result := pk.GetAllConsumerAddrsToPrune(ctx, consumerID)
 	require.Equal(t, expectedGetAllOrder, result)
 }
 
 // checkCorrectPruningProperty checks that the pruning property is correct for a given
 // consumer chain. See AppendConsumerAddrsToPrune for a formulation of the property.
-func checkCorrectPruningProperty(ctx sdk.Context, k providerkeeper.Keeper, chainID string) bool {
+func checkCorrectPruningProperty(ctx sdk.Context, k providerkeeper.Keeper, consumerID uint64) bool {
 	/*
 		For each consumer address cAddr in ValidatorByConsumerAddr,
 		  - either there exists a provider address pAddr in ValidatorConsumerPubKey,
@@ -305,7 +305,7 @@ func checkCorrectPruningProperty(ctx sdk.Context, k providerkeeper.Keeper, chain
 		  - or there exists a timestamp in ConsumerAddrsToPrune s.t. cAddr in ConsumerAddrsToPrune(timestamp)
 	*/
 	willBePruned := map[string]bool{}
-	for _, consAddrToPrune := range k.GetAllConsumerAddrsToPrune(ctx, chainID) {
+	for _, consAddrToPrune := range k.GetAllConsumerAddrsToPrune(ctx, consumerID) {
 		for _, cAddr := range consAddrToPrune.ConsumerAddrs.Addresses {
 			willBePruned[string(cAddr)] = true
 		}
@@ -320,7 +320,7 @@ func checkCorrectPruningProperty(ctx sdk.Context, k providerkeeper.Keeper, chain
 
 		// Try to find a validator who has this consumer address currently assigned
 		isCurrentlyAssigned := false
-		for _, valconsPubKey := range k.GetAllValidatorConsumerPubKeys(ctx, &valByConsAddr.ChainId) {
+		for _, valconsPubKey := range k.GetAllValidatorConsumerPubKeys(ctx, &valByConsAddr.ConsumerId) {
 			consumerAddr, _ := vaastypes.TMCryptoPublicKeyToConsAddr(*valconsPubKey.ConsumerKey)
 			if consumerAddr.Equals(sdk.ConsAddress(valByConsAddr.ConsumerAddr)) {
 				isCurrentlyAssigned = true
@@ -339,7 +339,7 @@ func checkCorrectPruningProperty(ctx sdk.Context, k providerkeeper.Keeper, chain
 }
 
 func TestAssignConsensusKeyForConsumerChain(t *testing.T) {
-	consumerId := "0"
+	consumerId := uint64(0)
 	providerIdentities := []*cryptotestutil.CryptoIdentity{
 		cryptotestutil.NewCryptoIdentityFromIntSeed(0),
 		cryptotestutil.NewCryptoIdentityFromIntSeed(1),

@@ -22,5 +22,4 @@ var (
 	ErrInvalidDoubleVotingEvidence = errorsmod.Register(ModuleName, 14, "invalid consumer double voting evidence")
 	ErrStoreKeyNotFound            = errorsmod.Register(ModuleName, 15, "store key not found")
 	ErrStoreUnmarshal              = errorsmod.Register(ModuleName, 16, "cannot unmarshal value from store")
-	ErrInvalidConsumerId           = errorsmod.Register(ModuleName, 17, "invalid consumer id")
 )

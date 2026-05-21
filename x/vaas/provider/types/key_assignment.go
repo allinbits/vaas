@@ -2,7 +2,6 @@ package types
 
 import (
 	"fmt"
-	"strings"
 
 	vaastypes "github.com/allinbits/vaas/x/vaas/types"
 
@@ -70,9 +69,6 @@ func KeyAssignmentValidateBasic(
 	consumerAddrsToPrune []ConsumerAddrsToPrune,
 ) error {
 	for _, e := range assignedKeys {
-		if strings.TrimSpace(e.ChainId) == "" {
-			return errorsmod.Wrap(vaastypes.ErrInvalidGenesis, "consumer chain id must not be blank")
-		}
 		if err := sdk.VerifyAddressFormat(e.ProviderAddr); err != nil {
 			return errorsmod.Wrap(vaastypes.ErrInvalidGenesis, fmt.Sprintf("invalid provider address: %s", e.ProviderAddr))
 		}
@@ -81,9 +77,6 @@ func KeyAssignmentValidateBasic(
 		}
 	}
 	for _, e := range byConsumerAddrs {
-		if strings.TrimSpace(e.ChainId) == "" {
-			return errorsmod.Wrap(vaastypes.ErrInvalidGenesis, "consumer chain id must not be blank")
-		}
 		if err := sdk.VerifyAddressFormat(e.ProviderAddr); err != nil {
 			return errorsmod.Wrap(vaastypes.ErrInvalidGenesis, fmt.Sprintf("invalid provider address: %s", e.ProviderAddr))
 		}
@@ -92,9 +85,6 @@ func KeyAssignmentValidateBasic(
 		}
 	}
 	for _, e := range consumerAddrsToPrune {
-		if strings.TrimSpace(e.ChainId) == "" {
-			return errorsmod.Wrap(vaastypes.ErrInvalidGenesis, "consumer chain id must not be blank")
-		}
 		for _, a := range e.ConsumerAddrs.Addresses {
 			if err := sdk.VerifyAddressFormat(a); err != nil {
 				return errorsmod.Wrap(vaastypes.ErrInvalidGenesis, fmt.Sprintf("invalid consumer address: %s", a))

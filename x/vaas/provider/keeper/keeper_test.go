@@ -18,8 +18,7 @@ import (
 )
 
 const (
-	CONSUMER_CHAIN_ID = "chain-id"
-	CONSUMER_ID       = "0"
+	CONSUMER_ID uint64 = 0
 )
 
 // TestValsetUpdateBlockHeight tests the getter, setter, and deletion methods for valset updates mapped to block height
@@ -94,9 +93,9 @@ func TestPendingVSCs(t *testing.T) {
 	providerKeeper, ctx, ctrl, _ := testkeeper.GetProviderKeeperAndCtx(t, testkeeper.NewInMemKeeperParams(t))
 	defer ctrl.Finish()
 
-	chainID := CONSUMER_CHAIN_ID
+	consumerID := CONSUMER_ID
 
-	pending := providerKeeper.GetPendingVSCPackets(ctx, chainID)
+	pending := providerKeeper.GetPendingVSCPackets(ctx, consumerID)
 	require.Len(t, pending, 0)
 
 	_, pks, _ := ibctesting.GenerateKeys(t, 4)
@@ -120,9 +119,9 @@ func TestPendingVSCs(t *testing.T) {
 			ValsetUpdateId: 2,
 		},
 	}
-	providerKeeper.AppendPendingVSCPackets(ctx, chainID, packetList...)
+	providerKeeper.AppendPendingVSCPackets(ctx, consumerID, packetList...)
 
-	packets := providerKeeper.GetPendingVSCPackets(ctx, chainID)
+	packets := providerKeeper.GetPendingVSCPackets(ctx, consumerID)
 	require.Len(t, packets, 2)
 
 	newPacket := vaastypes.ValidatorSetChangePacketData{
@@ -131,14 +130,14 @@ func TestPendingVSCs(t *testing.T) {
 		},
 		ValsetUpdateId: 3,
 	}
-	providerKeeper.AppendPendingVSCPackets(ctx, chainID, newPacket)
-	vscs := providerKeeper.GetPendingVSCPackets(ctx, chainID)
+	providerKeeper.AppendPendingVSCPackets(ctx, consumerID, newPacket)
+	vscs := providerKeeper.GetPendingVSCPackets(ctx, consumerID)
 	require.Len(t, vscs, 3)
 	require.True(t, vscs[len(vscs)-1].ValsetUpdateId == 3)
 	require.True(t, vscs[len(vscs)-1].GetValidatorUpdates()[0].PubKey.String() == ppks[3].String())
 
-	providerKeeper.DeletePendingVSCPackets(ctx, chainID)
-	pending = providerKeeper.GetPendingVSCPackets(ctx, chainID)
+	providerKeeper.DeletePendingVSCPackets(ctx, consumerID)
+	pending = providerKeeper.GetPendingVSCPackets(ctx, consumerID)
 	require.Len(t, pending, 0)
 }
 
@@ -163,19 +162,19 @@ func TestInitHeight(t *testing.T) {
 	defer ctrl.Finish()
 
 	tc := []struct {
-		chainID  string
-		expected uint64
+		consumerID uint64
+		expected   uint64
 	}{
-		{expected: 0, chainID: "chain"},
-		{expected: 10, chainID: "chain1"},
-		{expected: 12, chainID: "chain2"},
+		{expected: 0, consumerID: 0},
+		{expected: 10, consumerID: 1},
+		{expected: 12, consumerID: 2},
 	}
 
-	providerKeeper.SetInitChainHeight(ctx, tc[1].chainID, tc[1].expected)
-	providerKeeper.SetInitChainHeight(ctx, tc[2].chainID, tc[2].expected)
+	providerKeeper.SetInitChainHeight(ctx, tc[1].consumerID, tc[1].expected)
+	providerKeeper.SetInitChainHeight(ctx, tc[2].consumerID, tc[2].expected)
 
 	for _, tc := range tc {
-		height, _ := providerKeeper.GetInitChainHeight(ctx, tc.chainID)
+		height, _ := providerKeeper.GetInitChainHeight(ctx, tc.consumerID)
 		require.Equal(t, tc.expected, height)
 	}
 }
@@ -185,7 +184,7 @@ func TestConsumerClientId(t *testing.T) {
 	providerKeeper, ctx, ctrl, _ := testkeeper.GetProviderKeeperAndCtx(t, testkeeper.NewInMemKeeperParams(t))
 	defer ctrl.Finish()
 
-	consumerId := "123"
+	consumerId := uint64(123)
 	clientIds := []string{"clientId1", "clientId2"}
 
 	_, found := providerKeeper.GetConsumerClientId(ctx, consumerId)
@@ -199,9 +198,9 @@ func TestConsumerClientId(t *testing.T) {
 	res, found := providerKeeper.GetConsumerClientId(ctx, consumerId)
 	require.True(t, found)
 	require.Equal(t, clientIds[0], res)
-	res, found = providerKeeper.GetClientIdToConsumerId(ctx, clientIds[0])
+	gotCid, found := providerKeeper.GetClientIdToConsumerId(ctx, clientIds[0])
 	require.True(t, found)
-	require.Equal(t, consumerId, res)
+	require.Equal(t, consumerId, gotCid)
 	_, found = providerKeeper.GetClientIdToConsumerId(ctx, clientIds[1])
 	require.False(t, found)
 
@@ -210,9 +209,9 @@ func TestConsumerClientId(t *testing.T) {
 	res, found = providerKeeper.GetConsumerClientId(ctx, consumerId)
 	require.True(t, found)
 	require.Equal(t, clientIds[1], res)
-	res, found = providerKeeper.GetClientIdToConsumerId(ctx, clientIds[1])
+	gotCid, found = providerKeeper.GetClientIdToConsumerId(ctx, clientIds[1])
 	require.True(t, found)
-	require.Equal(t, consumerId, res)
+	require.Equal(t, consumerId, gotCid)
 	_, found = providerKeeper.GetClientIdToConsumerId(ctx, clientIds[0])
 	require.False(t, found)
 

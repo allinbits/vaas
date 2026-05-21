@@ -20,13 +20,13 @@ func TestConsumerId(t *testing.T) {
 	require.False(t, found)
 
 	consumerId := providerKeeper.FetchAndIncrementConsumerId(ctx)
-	require.Equal(t, "0", consumerId)
+	require.Equal(t, uint64(0), consumerId)
 	consumerIdNum, found := providerKeeper.GetConsumerId(ctx)
 	require.Equal(t, uint64(1), consumerIdNum)
 	require.True(t, found)
 
 	consumerId = providerKeeper.FetchAndIncrementConsumerId(ctx)
-	require.Equal(t, "1", consumerId)
+	require.Equal(t, uint64(1), consumerId)
 	consumerIdNum, found = providerKeeper.GetConsumerId(ctx)
 	require.Equal(t, uint64(2), consumerIdNum)
 	require.True(t, found)
@@ -37,28 +37,28 @@ func TestConsumerChainId(t *testing.T) {
 	providerKeeper, ctx, ctrl, _ := testkeeper.GetProviderKeeperAndCtx(t, testkeeper.NewInMemKeeperParams(t))
 	defer ctrl.Finish()
 
-	_, err := providerKeeper.GetConsumerChainId(ctx, "chainId")
+	_, err := providerKeeper.GetConsumerChainId(ctx, 1)
 	require.Error(t, err, "failed to retrieve chain id")
 
-	providerKeeper.SetConsumerChainId(ctx, "chainId", "chainId")
-	chainId, err := providerKeeper.GetConsumerChainId(ctx, "chainId")
+	providerKeeper.SetConsumerChainId(ctx, 1, "chainId")
+	chainId, err := providerKeeper.GetConsumerChainId(ctx, 1)
 	require.NoError(t, err)
 	require.Equal(t, "chainId", chainId)
 
 	// write under a different key
-	providerKeeper.SetConsumerChainId(ctx, "consumerId2", "chainId")
-	chainId, err = providerKeeper.GetConsumerChainId(ctx, "consumerId2")
+	providerKeeper.SetConsumerChainId(ctx, 2, "chainId")
+	chainId, err = providerKeeper.GetConsumerChainId(ctx, 2)
 	require.NoError(t, err)
 	require.Equal(t, "chainId", chainId)
 
 	// assert that overwriting the current key works
-	providerKeeper.SetConsumerChainId(ctx, "chainId", "chainId2")
-	chainId, err = providerKeeper.GetConsumerChainId(ctx, "chainId")
+	providerKeeper.SetConsumerChainId(ctx, 1, "chainId2")
+	chainId, err = providerKeeper.GetConsumerChainId(ctx, 1)
 	require.NoError(t, err)
 	require.Equal(t, "chainId2", chainId)
 
-	providerKeeper.DeleteConsumerChainId(ctx, "chainId")
-	_, err = providerKeeper.GetConsumerChainId(ctx, "chainId")
+	providerKeeper.DeleteConsumerChainId(ctx, 1)
+	_, err = providerKeeper.GetConsumerChainId(ctx, 1)
 	require.Error(t, err, "failed to retrieve chain id")
 }
 
@@ -67,7 +67,7 @@ func TestConsumerOwnerAddress(t *testing.T) {
 	providerKeeper, ctx, ctrl, _ := testkeeper.GetProviderKeeperAndCtx(t, testkeeper.NewInMemKeeperParams(t))
 	defer ctrl.Finish()
 
-	_, err := providerKeeper.GetConsumerOwnerAddress(ctx, "ownerAddress")
+	_, err := providerKeeper.GetConsumerOwnerAddress(ctx, 99)
 	require.Error(t, err, "failed to retrieve owner address")
 
 	providerKeeper.SetConsumerOwnerAddress(ctx, CONSUMER_ID, "owner address")
@@ -76,8 +76,8 @@ func TestConsumerOwnerAddress(t *testing.T) {
 	require.Equal(t, "owner address", ownerAddress)
 
 	// write under a different key
-	providerKeeper.SetConsumerOwnerAddress(ctx, "consumerId2", "owner address")
-	ownerAddress, err = providerKeeper.GetConsumerOwnerAddress(ctx, "consumerId2")
+	providerKeeper.SetConsumerOwnerAddress(ctx, 2, "owner address")
+	ownerAddress, err = providerKeeper.GetConsumerOwnerAddress(ctx, 2)
 	require.NoError(t, err)
 	require.Equal(t, "owner address", ownerAddress)
 

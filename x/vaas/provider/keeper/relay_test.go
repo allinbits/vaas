@@ -19,7 +19,7 @@ func TestOnAcknowledgementPacketV2(t *testing.T) {
 	providerKeeper, ctx, ctrl, mocks := testkeeper.GetProviderKeeperAndCtx(t, testkeeper.NewInMemKeeperParams(t))
 	defer ctrl.Finish()
 
-	consumerId := "0"
+	consumerId := uint64(0)
 	clientId := "07-tendermint-0"
 
 	// Setup consumer with client mapping
@@ -66,7 +66,7 @@ func TestOnTimeoutPacketV2(t *testing.T) {
 	providerKeeper, ctx, ctrl, mocks := testkeeper.GetProviderKeeperAndCtx(t, testkeeper.NewInMemKeeperParams(t))
 	defer ctrl.Finish()
 
-	consumerId := "0"
+	consumerId := uint64(0)
 	clientId := "07-tendermint-0"
 
 	// Setup consumer with client mapping
@@ -108,7 +108,7 @@ func TestClientIdToConsumerIdMapping(t *testing.T) {
 	providerKeeper, ctx, ctrl, _ := testkeeper.GetProviderKeeperAndCtx(t, testkeeper.NewInMemKeeperParams(t))
 	defer ctrl.Finish()
 
-	consumerId := "consumer-1"
+	consumerId := uint64(1)
 	clientId := "07-tendermint-0"
 
 	// Initially no mapping
@@ -143,7 +143,7 @@ func TestSendVSCPacketsToChainNoHandler(t *testing.T) {
 	providerKeeper, ctx, ctrl, _ := testkeeper.GetProviderKeeperAndCtx(t, testkeeper.NewInMemKeeperParams(t))
 	defer ctrl.Finish()
 
-	consumerId := "0"
+	consumerId := uint64(0)
 	clientId := "07-tendermint-0"
 
 	// Setup consumer with pending packets

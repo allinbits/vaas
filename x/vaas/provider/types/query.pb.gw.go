@@ -49,7 +49,7 @@ func request_Query_QueryConsumerGenesis_0(ctx context.Context, marshaler runtime
 		return nil, metadata, status.Errorf(codes.InvalidArgument, "missing parameter %s", "consumer_id")
 	}
 
-	protoReq.ConsumerId, err = runtime.String(val)
+	protoReq.ConsumerId, err = runtime.Uint64(val)
 
 	if err != nil {
 		return nil, metadata, status.Errorf(codes.InvalidArgument, "type mismatch, parameter: %s, error: %v", "consumer_id", err)
@@ -76,7 +76,7 @@ func local_request_Query_QueryConsumerGenesis_0(ctx context.Context, marshaler r
 		return nil, metadata, status.Errorf(codes.InvalidArgument, "missing parameter %s", "consumer_id")
 	}
 
-	protoReq.ConsumerId, err = runtime.String(val)
+	protoReq.ConsumerId, err = runtime.Uint64(val)
 
 	if err != nil {
 		return nil, metadata, status.Errorf(codes.InvalidArgument, "type mismatch, parameter: %s, error: %v", "consumer_id", err)
@@ -181,7 +181,7 @@ func request_Query_QueryValidatorConsumerAddr_0(ctx context.Context, marshaler r
 		return nil, metadata, status.Errorf(codes.InvalidArgument, "missing parameter %s", "consumer_id")
 	}
 
-	protoReq.ConsumerId, err = runtime.String(val)
+	protoReq.ConsumerId, err = runtime.Uint64(val)
 
 	if err != nil {
 		return nil, metadata, status.Errorf(codes.InvalidArgument, "type mismatch, parameter: %s, error: %v", "consumer_id", err)
@@ -219,7 +219,7 @@ func local_request_Query_QueryValidatorConsumerAddr_0(ctx context.Context, marsh
 		return nil, metadata, status.Errorf(codes.InvalidArgument, "missing parameter %s", "consumer_id")
 	}
 
-	protoReq.ConsumerId, err = runtime.String(val)
+	protoReq.ConsumerId, err = runtime.Uint64(val)
 
 	if err != nil {
 		return nil, metadata, status.Errorf(codes.InvalidArgument, "type mismatch, parameter: %s, error: %v", "consumer_id", err)
@@ -257,7 +257,7 @@ func request_Query_QueryValidatorProviderAddr_0(ctx context.Context, marshaler r
 		return nil, metadata, status.Errorf(codes.InvalidArgument, "missing parameter %s", "consumer_id")
 	}
 
-	protoReq.ConsumerId, err = runtime.String(val)
+	protoReq.ConsumerId, err = runtime.Uint64(val)
 
 	if err != nil {
 		return nil, metadata, status.Errorf(codes.InvalidArgument, "type mismatch, parameter: %s, error: %v", "consumer_id", err)
@@ -295,7 +295,7 @@ func local_request_Query_QueryValidatorProviderAddr_0(ctx context.Context, marsh
 		return nil, metadata, status.Errorf(codes.InvalidArgument, "missing parameter %s", "consumer_id")
 	}
 
-	protoReq.ConsumerId, err = runtime.String(val)
+	protoReq.ConsumerId, err = runtime.Uint64(val)
 
 	if err != nil {
 		return nil, metadata, status.Errorf(codes.InvalidArgument, "type mismatch, parameter: %s, error: %v", "consumer_id", err)
@@ -333,7 +333,7 @@ func request_Query_QueryAllPairsValConsAddrByConsumer_0(ctx context.Context, mar
 		return nil, metadata, status.Errorf(codes.InvalidArgument, "missing parameter %s", "consumer_id")
 	}
 
-	protoReq.ConsumerId, err = runtime.String(val)
+	protoReq.ConsumerId, err = runtime.Uint64(val)
 
 	if err != nil {
 		return nil, metadata, status.Errorf(codes.InvalidArgument, "type mismatch, parameter: %s, error: %v", "consumer_id", err)
@@ -360,7 +360,7 @@ func local_request_Query_QueryAllPairsValConsAddrByConsumer_0(ctx context.Contex
 		return nil, metadata, status.Errorf(codes.InvalidArgument, "missing parameter %s", "consumer_id")
 	}
 
-	protoReq.ConsumerId, err = runtime.String(val)
+	protoReq.ConsumerId, err = runtime.Uint64(val)
 
 	if err != nil {
 		return nil, metadata, status.Errorf(codes.InvalidArgument, "type mismatch, parameter: %s, error: %v", "consumer_id", err)
@@ -405,7 +405,7 @@ func request_Query_QueryConsumerValidators_0(ctx context.Context, marshaler runt
 		return nil, metadata, status.Errorf(codes.InvalidArgument, "missing parameter %s", "consumer_id")
 	}
 
-	protoReq.ConsumerId, err = runtime.String(val)
+	protoReq.ConsumerId, err = runtime.Uint64(val)
 
 	if err != nil {
 		return nil, metadata, status.Errorf(codes.InvalidArgument, "type mismatch, parameter: %s, error: %v", "consumer_id", err)
@@ -432,7 +432,7 @@ func local_request_Query_QueryConsumerValidators_0(ctx context.Context, marshale
 		return nil, metadata, status.Errorf(codes.InvalidArgument, "missing parameter %s", "consumer_id")
 	}
 
-	protoReq.ConsumerId, err = runtime.String(val)
+	protoReq.ConsumerId, err = runtime.Uint64(val)
 
 	if err != nil {
 		return nil, metadata, status.Errorf(codes.InvalidArgument, "type mismatch, parameter: %s, error: %v", "consumer_id", err)
@@ -531,7 +531,7 @@ func request_Query_QueryConsumerChain_0(ctx context.Context, marshaler runtime.M
 		return nil, metadata, status.Errorf(codes.InvalidArgument, "missing parameter %s", "consumer_id")
 	}
 
-	protoReq.ConsumerId, err = runtime.String(val)
+	protoReq.ConsumerId, err = runtime.Uint64(val)
 
 	if err != nil {
 		return nil, metadata, status.Errorf(codes.InvalidArgument, "type mismatch, parameter: %s, error: %v", "consumer_id", err)
@@ -558,7 +558,7 @@ func local_request_Query_QueryConsumerChain_0(ctx context.Context, marshaler run
 		return nil, metadata, status.Errorf(codes.InvalidArgument, "missing parameter %s", "consumer_id")
 	}
 
-	protoReq.ConsumerId, err = runtime.String(val)
+	protoReq.ConsumerId, err = runtime.Uint64(val)
 
 	if err != nil {
 		return nil, metadata, status.Errorf(codes.InvalidArgument, "type mismatch, parameter: %s, error: %v", "consumer_id", err)
@@ -585,7 +585,7 @@ func request_Query_QueryConsumerGenesisTime_0(ctx context.Context, marshaler run
 		return nil, metadata, status.Errorf(codes.InvalidArgument, "missing parameter %s", "consumer_id")
 	}
 
-	protoReq.ConsumerId, err = runtime.String(val)
+	protoReq.ConsumerId, err = runtime.Uint64(val)
 
 	if err != nil {
 		return nil, metadata, status.Errorf(codes.InvalidArgument, "type mismatch, parameter: %s, error: %v", "consumer_id", err)
@@ -612,7 +612,7 @@ func local_request_Query_QueryConsumerGenesisTime_0(ctx context.Context, marshal
 		return nil, metadata, status.Errorf(codes.InvalidArgument, "missing parameter %s", "consumer_id")
 	}
 
-	protoReq.ConsumerId, err = runtime.String(val)
+	protoReq.ConsumerId, err = runtime.Uint64(val)
 
 	if err != nil {
 		return nil, metadata, status.Errorf(codes.InvalidArgument, "type mismatch, parameter: %s, error: %v", "consumer_id", err)

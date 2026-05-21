@@ -28,15 +28,11 @@ func (k Keeper) QueryConsumerGenesis(c context.Context, req *types.QueryConsumer
 	}
 
 	consumerId := req.ConsumerId
-	if err := vaastypes.ValidateConsumerId(consumerId); err != nil {
-		return nil, status.Error(codes.InvalidArgument, err.Error())
-	}
-
 	gen, ok := k.GetConsumerGenesis(ctx, consumerId)
 	if !ok {
 		return nil, status.Error(
 			codes.NotFound,
-			errorsmod.Wrap(types.ErrUnknownConsumerId, consumerId).Error(),
+			errorsmod.Wrapf(types.ErrUnknownConsumerId, "%d", consumerId).Error(),
 		)
 	}
 
@@ -54,14 +50,14 @@ func (k Keeper) QueryConsumerChains(goCtx context.Context, req *types.QueryConsu
 		ctx,
 		k.ConsumerPhase,
 		req.Pagination,
-		func(consumerId string, phaseValue uint32) (bool, error) {
+		func(consumerId uint64, phaseValue uint32) (bool, error) {
 			// Filter by phase if specified
 			if req.Phase != types.CONSUMER_PHASE_UNSPECIFIED {
 				return types.ConsumerPhase(phaseValue) == req.Phase, nil
 			}
 			return true, nil
 		},
-		func(consumerId string, phaseValue uint32) (*types.Chain, error) {
+		func(consumerId uint64, phaseValue uint32) (*types.Chain, error) {
 			c, err := k.GetConsumerChain(ctx, consumerId)
 			if err != nil {
 				return nil, err
@@ -77,17 +73,17 @@ func (k Keeper) QueryConsumerChains(goCtx context.Context, req *types.QueryConsu
 }
 
 // GetConsumerChain returns a Chain data structure with all the necessary fields
-func (k Keeper) GetConsumerChain(ctx sdk.Context, consumerId string) (types.Chain, error) {
+func (k Keeper) GetConsumerChain(ctx sdk.Context, consumerId uint64) (types.Chain, error) {
 	chainID, err := k.GetConsumerChainId(ctx, consumerId)
 	if err != nil {
-		return types.Chain{}, fmt.Errorf("cannot find chainID for consumer (%s)", consumerId)
+		return types.Chain{}, fmt.Errorf("cannot find chainID for consumer (%d)", consumerId)
 	}
 
 	clientID, _ := k.GetConsumerClientId(ctx, consumerId)
 
 	metadata, err := k.GetConsumerMetadata(ctx, consumerId)
 	if err != nil {
-		return types.Chain{}, fmt.Errorf("cannot find metadata (%s): %s", consumerId, err.Error())
+		return types.Chain{}, fmt.Errorf("cannot find metadata (%d): %s", consumerId, err.Error())
 	}
 
 	infractionParameters, err := types.DefaultConsumerInfractionParameters(ctx, k.slashingKeeper)
@@ -114,10 +110,6 @@ func (k Keeper) QueryValidatorConsumerAddr(goCtx context.Context, req *types.Que
 	ctx := sdk.UnwrapSDKContext(goCtx)
 
 	consumerId := req.ConsumerId
-	if err := vaastypes.ValidateConsumerId(consumerId); err != nil {
-		return nil, status.Error(codes.InvalidArgument, err.Error())
-	}
-
 	providerAddrTmp, err := sdk.ConsAddressFromBech32(req.ProviderAddress)
 	if err != nil {
 		return nil, err
@@ -171,10 +163,6 @@ func (k Keeper) QueryAllPairsValConsAddrByConsumer(
 	}
 
 	consumerId := req.ConsumerId
-	if err := vaastypes.ValidateConsumerId(consumerId); err != nil {
-		return nil, status.Error(codes.InvalidArgument, err.Error())
-	}
-
 	pairValConAddrs := []*types.PairValConAddrProviderAndConsumer{}
 
 	ctx := sdk.UnwrapSDKContext(goCtx)
@@ -213,15 +201,11 @@ func (k Keeper) QueryConsumerValidators(goCtx context.Context, req *types.QueryC
 	}
 
 	consumerId := req.ConsumerId
-	if err := vaastypes.ValidateConsumerId(consumerId); err != nil {
-		return nil, status.Error(codes.InvalidArgument, err.Error())
-	}
-
 	ctx := sdk.UnwrapSDKContext(goCtx)
 
 	phase := k.GetConsumerPhase(ctx, consumerId)
 	if phase == types.CONSUMER_PHASE_UNSPECIFIED {
-		return nil, status.Errorf(codes.InvalidArgument, "cannot find a phase for consumer: %s", consumerId)
+		return nil, status.Errorf(codes.InvalidArgument, "cannot find a phase for consumer: %d", consumerId)
 	}
 
 	var consumerValSet []types.ConsensusValidator
@@ -294,29 +278,26 @@ func (k Keeper) QueryConsumerChain(goCtx context.Context, req *types.QueryConsum
 	}
 
 	consumerId := req.ConsumerId
-	if err := vaastypes.ValidateConsumerId(consumerId); err != nil {
-		return nil, status.Error(codes.InvalidArgument, err.Error())
-	}
 	ctx := sdk.UnwrapSDKContext(goCtx)
 
 	chainId, err := k.GetConsumerChainId(ctx, consumerId)
 	if err != nil {
-		return nil, status.Errorf(codes.InvalidArgument, "cannot retrieve chain id for consumer id: %s", consumerId)
+		return nil, status.Errorf(codes.InvalidArgument, "cannot retrieve chain id for consumer id: %d", consumerId)
 	}
 
 	ownerAddress, err := k.GetConsumerOwnerAddress(ctx, consumerId)
 	if err != nil {
-		return nil, status.Errorf(codes.InvalidArgument, "cannot retrieve owner address for consumer id: %s", consumerId)
+		return nil, status.Errorf(codes.InvalidArgument, "cannot retrieve owner address for consumer id: %d", consumerId)
 	}
 
 	phase := k.GetConsumerPhase(ctx, consumerId)
 	if phase == types.CONSUMER_PHASE_UNSPECIFIED {
-		return nil, status.Errorf(codes.InvalidArgument, "cannot retrieve phase for consumer id: %s", consumerId)
+		return nil, status.Errorf(codes.InvalidArgument, "cannot retrieve phase for consumer id: %d", consumerId)
 	}
 
 	metadata, err := k.GetConsumerMetadata(ctx, consumerId)
 	if err != nil {
-		return nil, status.Errorf(codes.InvalidArgument, "cannot retrieve metadata for consumer id: %s", consumerId)
+		return nil, status.Errorf(codes.InvalidArgument, "cannot retrieve metadata for consumer id: %d", consumerId)
 	}
 
 	initParams, _ := k.GetConsumerInitializationParameters(ctx, consumerId)
@@ -346,16 +327,13 @@ func (k Keeper) QueryConsumerGenesisTime(goCtx context.Context, req *types.Query
 	}
 
 	consumerId := req.ConsumerId
-	if err := vaastypes.ValidateConsumerId(consumerId); err != nil {
-		return nil, status.Error(codes.InvalidArgument, err.Error())
-	}
 	ctx := sdk.UnwrapSDKContext(goCtx)
 
 	params, err := k.GetConsumerInitializationParameters(ctx, consumerId)
 	if err != nil {
 		return nil, status.Errorf(
 			codes.InvalidArgument,
-			"cannot get consumer genesis time for consumer Id: %s: %s",
+			"cannot get consumer genesis time for consumer Id: %d: %s",
 			consumerId, types.ErrUnknownConsumerId,
 		)
 	}
@@ -364,7 +342,7 @@ func (k Keeper) QueryConsumerGenesisTime(goCtx context.Context, req *types.Query
 	if !ok {
 		return nil, status.Errorf(
 			codes.InvalidArgument,
-			"cannot get consumer genesis time for consumer Id: %s: consumer hasn't been launched or has been stopped and deleted",
+			"cannot get consumer genesis time for consumer Id: %d: consumer hasn't been launched or has been stopped and deleted",
 			consumerId,
 		)
 	}
@@ -377,7 +355,7 @@ func (k Keeper) QueryConsumerGenesisTime(goCtx context.Context, req *types.Query
 	if !ok {
 		return nil, status.Errorf(
 			codes.InvalidArgument,
-			"cannot get consumer genesis time for consumer Id: %s: cannot find consensus state for initial height: %s",
+			"cannot get consumer genesis time for consumer Id: %d: cannot find consensus state for initial height: %s",
 			consumerId,
 			params.InitialHeight,
 		)

@@ -24,7 +24,7 @@ import (
 
 // PrepareConsumerForLaunch prepares to move the launch of a consumer chain from the previous spawn time to spawn time.
 // Previous spawn time can correspond to its zero value if the validator was not previously set for launch.
-func (k Keeper) PrepareConsumerForLaunch(ctx sdk.Context, consumerId string, previousSpawnTime, spawnTime time.Time) error {
+func (k Keeper) PrepareConsumerForLaunch(ctx sdk.Context, consumerId uint64, previousSpawnTime, spawnTime time.Time) error {
 	if !previousSpawnTime.IsZero() {
 		// if this is not the first initialization and hence `previousSpawnTime` does not contain the zero value of `Time`
 		// remove the consumer id from the previous spawn time
@@ -38,7 +38,7 @@ func (k Keeper) PrepareConsumerForLaunch(ctx sdk.Context, consumerId string, pre
 
 // InitializeConsumer tries to move a consumer with `consumerId` to the initialized phase.
 // If successful, it returns the spawn time and true.
-func (k Keeper) InitializeConsumer(ctx sdk.Context, consumerId string) (time.Time, bool) {
+func (k Keeper) InitializeConsumer(ctx sdk.Context, consumerId uint64) (time.Time, bool) {
 	// a chain needs to be in the registered or initialized phase
 	phase := k.GetConsumerPhase(ctx, consumerId)
 	if phase != types.CONSUMER_PHASE_REGISTERED && phase != types.CONSUMER_PHASE_INITIALIZED {
@@ -95,12 +95,12 @@ func (k Keeper) BeginBlockLaunchConsumers(ctx sdk.Context) error {
 			initializationRecord, err := k.GetConsumerInitializationParameters(ctx, consumerId)
 			if err != nil {
 				return errorsmod.Wrapf(vaastypes.ErrInvalidConsumerState,
-					"getting initialization parameters, consumerId(%s): %s", consumerId, err.Error())
+					"getting initialization parameters, consumerId(%d): %s", consumerId, err.Error())
 			}
 			initializationRecord.SpawnTime = time.Time{}
 			err = k.SetConsumerInitializationParameters(ctx, consumerId, initializationRecord)
 			if err != nil {
-				return fmt.Errorf("setting consumer initialization parameters, consumerId(%s): %w", consumerId, err)
+				return fmt.Errorf("setting consumer initialization parameters, consumerId(%d): %w", consumerId, err)
 			}
 			// also set the phase to registered
 			k.SetConsumerPhase(ctx, consumerId, types.CONSUMER_PHASE_REGISTERED)
@@ -120,11 +120,11 @@ func (k Keeper) ConsumeIdsFromTimeQueue(
 	timeQueue collections.Map[[]byte, types.ConsumerIds],
 	getIds func(context.Context, time.Time) (types.ConsumerIds, error),
 	deleteAllIds func(context.Context, time.Time),
-	appendId func(context.Context, string, time.Time) error,
+	appendId func(context.Context, uint64, time.Time) error,
 	limit int,
-) ([]string, error) {
-	result := []string{}
-	nextTime := []string{}
+) ([]uint64, error) {
+	result := []uint64{}
+	nextTime := []uint64{}
 	timestampsToDelete := []time.Time{}
 
 	iter, err := timeQueue.Iterate(ctx, nil)
@@ -181,7 +181,7 @@ func (k Keeper) ConsumeIdsFromTimeQueue(
 				err := appendId(ctx, consumerId, ts)
 				if err != nil {
 					return result,
-						fmt.Errorf("failed to append consumer id, consumerId(%s), ts(%s): %w",
+						fmt.Errorf("failed to append consumer id, consumerId(%d), ts(%s): %w",
 							consumerId, ts.String(), err)
 				}
 			}
@@ -192,17 +192,17 @@ func (k Keeper) ConsumeIdsFromTimeQueue(
 }
 
 // HasActiveConsumerValidator checks whether at least one active validator is opted in to chain with `consumerId`
-func (k Keeper) HasActiveConsumerValidator(ctx sdk.Context, consumerId string, activeValidators []stakingtypes.Validator) (bool, error) {
+func (k Keeper) HasActiveConsumerValidator(ctx sdk.Context, consumerId uint64, activeValidators []stakingtypes.Validator) (bool, error) {
 	currentValidatorSet, err := k.GetConsumerValSet(ctx, consumerId)
 	if err != nil {
-		return false, fmt.Errorf("getting consumer validator set of chain with consumerId (%s): %w", consumerId, err)
+		return false, fmt.Errorf("getting consumer validator set of chain with consumerId (%d): %w", consumerId, err)
 	}
 
 	isActiveValidator := make(map[string]bool)
 	for _, val := range activeValidators {
 		consAddr, err := val.GetConsAddr()
 		if err != nil {
-			return false, fmt.Errorf("getting consensus address of validator (%+v), consumerId (%s): %w", val, consumerId, err)
+			return false, fmt.Errorf("getting consensus address of validator (%+v), consumerId (%d): %w", val, consumerId, err)
 		}
 		providerConsAddr := types.NewProviderConsAddress(consAddr)
 		isActiveValidator[providerConsAddr.String()] = true
@@ -223,31 +223,31 @@ func (k Keeper) HasActiveConsumerValidator(ctx sdk.Context, consumerId string, a
 func (k Keeper) LaunchConsumer(
 	ctx sdk.Context,
 	bondedValidators []stakingtypes.Validator,
-	consumerId string,
+	consumerId uint64,
 ) error {
 	initializationRecord, err := k.GetConsumerInitializationParameters(ctx, consumerId)
 	if err != nil {
-		return fmt.Errorf("getting initialization parameters, consumerId(%s): %w", consumerId, err)
+		return fmt.Errorf("getting initialization parameters, consumerId(%d): %w", consumerId, err)
 	}
 
 	// compute consumer initial validator set (all validators validate all consumers)
 	initialValUpdates, err := k.ComputeConsumerNextValSet(ctx, bondedValidators, consumerId, []types.ConsensusValidator{})
 	if err != nil {
-		return fmt.Errorf("computing consumer next validator set, consumerId(%s): %w", consumerId, err)
+		return fmt.Errorf("computing consumer next validator set, consumerId(%d): %w", consumerId, err)
 	}
 
 	if len(initialValUpdates) == 0 {
-		return fmt.Errorf("cannot launch consumer with no consumer validator, consumerId(%s)", consumerId)
+		return fmt.Errorf("cannot launch consumer with no consumer validator, consumerId(%d)", consumerId)
 	}
 
 	// create consumer genesis
 	genesisState, err := k.MakeConsumerGenesis(ctx, consumerId, initialValUpdates)
 	if err != nil {
-		return fmt.Errorf("creating consumer genesis state, consumerId(%s): %w", consumerId, err)
+		return fmt.Errorf("creating consumer genesis state, consumerId(%d): %w", consumerId, err)
 	}
 	err = k.SetConsumerGenesis(ctx, consumerId, genesisState)
 	if err != nil {
-		return fmt.Errorf("setting consumer genesis state, consumerId(%s): %w", consumerId, err)
+		return fmt.Errorf("setting consumer genesis state, consumerId(%d): %w", consumerId, err)
 	}
 
 	k.SetEquivocationEvidenceMinHeight(ctx, consumerId, initializationRecord.InitialHeight.RevisionHeight)
@@ -266,13 +266,13 @@ func (k Keeper) LaunchConsumer(
 // as well as the validator hash of the initial validator set of the consumer chain
 func (k Keeper) MakeConsumerGenesis(
 	ctx sdk.Context,
-	consumerId string,
+	consumerId uint64,
 	initialValidatorUpdates []abci.ValidatorUpdate,
 ) (gen vaastypes.ConsumerGenesisState, err error) {
 	initializationRecord, err := k.GetConsumerInitializationParameters(ctx, consumerId)
 	if err != nil {
 		return gen, errorsmod.Wrapf(vaastypes.ErrInvalidConsumerState,
-			"getting initialization parameters, consumerId(%s): %s", consumerId, err.Error())
+			"getting initialization parameters, consumerId(%d): %s", consumerId, err.Error())
 	}
 	// Create consumer genesis params
 	consumerGenesisParams := vaastypes.NewParams(
@@ -336,7 +336,7 @@ func (k Keeper) getSelfConsensusState(ctx sdk.Context, height clienttypes.Height
 
 // StopAndPrepareForConsumerRemoval sets the phase of the chain to stopped and prepares to get the state of the
 // chain removed after unbonding period elapses
-func (k Keeper) StopAndPrepareForConsumerRemoval(ctx sdk.Context, consumerId string) error {
+func (k Keeper) StopAndPrepareForConsumerRemoval(ctx sdk.Context, consumerId uint64) error {
 	// The phase of the chain is immediately set to stopped, albeit its state is removed later (see below).
 	// Setting the phase here helps in not considering this chain when we look at launched chains (e.g., in `QueueVSCPackets)
 	k.SetConsumerPhase(ctx, consumerId, types.CONSUMER_PHASE_STOPPED)
@@ -388,10 +388,10 @@ func (k Keeper) BeginBlockRemoveConsumers(ctx sdk.Context) error {
 }
 
 // DeleteConsumerChain cleans up the state of the given consumer chain.
-func (k Keeper) DeleteConsumerChain(ctx sdk.Context, consumerId string) (err error) {
+func (k Keeper) DeleteConsumerChain(ctx sdk.Context, consumerId uint64) (err error) {
 	phase := k.GetConsumerPhase(ctx, consumerId)
 	if phase != types.CONSUMER_PHASE_STOPPED {
-		return fmt.Errorf("cannot delete non-stopped chain: %s", consumerId)
+		return fmt.Errorf("cannot delete non-stopped chain: %d", consumerId)
 	}
 
 	// clean up states

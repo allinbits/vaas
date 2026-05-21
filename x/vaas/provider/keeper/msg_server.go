@@ -2,6 +2,7 @@ package keeper
 
 import (
 	"context"
+	"strconv"
 	"strings"
 	"time"
 
@@ -89,7 +90,7 @@ func (k msgServer) AssignConsumerKey(goCtx context.Context, msg *types.MsgAssign
 		sdk.NewEvent(
 			types.EventTypeAssignConsumerKey,
 			sdk.NewAttribute(sdk.AttributeKeyModule, types.ModuleName),
-			sdk.NewAttribute(types.AttributeConsumerId, msg.ConsumerId),
+			sdk.NewAttribute(types.AttributeConsumerId, strconv.FormatUint(msg.ConsumerId, 10)),
 			sdk.NewAttribute(types.AttributeConsumerChainId, chainId),
 			sdk.NewAttribute(types.AttributeProviderValidatorAddress, msg.ProviderAddr),
 			sdk.NewAttribute(types.AttributeConsumerConsensusPubKey, msg.ConsumerKey),
@@ -110,7 +111,7 @@ func (k msgServer) SubmitConsumerMisbehaviour(goCtx context.Context, msg *types.
 		sdk.NewEvent(
 			vaastypes.EventTypeSubmitConsumerMisbehaviour,
 			sdk.NewAttribute(sdk.AttributeKeyModule, types.ModuleName),
-			sdk.NewAttribute(types.AttributeConsumerId, msg.ConsumerId),
+			sdk.NewAttribute(types.AttributeConsumerId, strconv.FormatUint(msg.ConsumerId, 10)),
 			sdk.NewAttribute(types.AttributeConsumerChainId, msg.Misbehaviour.Header1.Header.ChainID),
 			sdk.NewAttribute(vaastypes.AttributeConsumerMisbehaviour, msg.Misbehaviour.String()),
 			sdk.NewAttribute(vaastypes.AttributeMisbehaviourClientId, msg.Misbehaviour.ClientId),
@@ -164,7 +165,7 @@ func (k msgServer) SubmitConsumerDoubleVoting(goCtx context.Context, msg *types.
 		sdk.NewEvent(
 			vaastypes.EventTypeSubmitConsumerDoubleVoting,
 			sdk.NewAttribute(sdk.AttributeKeyModule, types.ModuleName),
-			sdk.NewAttribute(types.AttributeConsumerId, msg.ConsumerId),
+			sdk.NewAttribute(types.AttributeConsumerId, strconv.FormatUint(msg.ConsumerId, 10)),
 			sdk.NewAttribute(types.AttributeConsumerChainId, msg.InfractionBlockHeader.Header.ChainID),
 			sdk.NewAttribute(vaastypes.AttributeConsumerDoubleVoting, msg.DuplicateVoteEvidence.String()),
 			sdk.NewAttribute(types.AttributeSubmitterAddress, msg.Submitter),
@@ -204,7 +205,7 @@ func (k msgServer) CreateConsumer(goCtx context.Context, msg *types.MsgCreateCon
 	// add event attributes
 	eventAttributes = append(eventAttributes, []sdk.Attribute{
 		sdk.NewAttribute(sdk.AttributeKeyModule, types.ModuleName),
-		sdk.NewAttribute(types.AttributeConsumerId, consumerId),
+		sdk.NewAttribute(types.AttributeConsumerId, strconv.FormatUint(consumerId, 10)),
 		sdk.NewAttribute(types.AttributeConsumerChainId, msg.ChainId),
 		sdk.NewAttribute(types.AttributeConsumerName, msg.Metadata.Name),
 		sdk.NewAttribute(types.AttributeSubmitterAddress, msg.Submitter),
@@ -228,7 +229,7 @@ func (k msgServer) CreateConsumer(goCtx context.Context, msg *types.MsgCreateCon
 	if spawnTime, initialized := k.Keeper.InitializeConsumer(ctx, consumerId); initialized {
 		if err := k.Keeper.PrepareConsumerForLaunch(ctx, consumerId, time.Time{}, spawnTime); err != nil {
 			return &resp, errorsmod.Wrapf(vaastypes.ErrInvalidConsumerState,
-				"prepare consumer for launch, consumerId(%s), spawnTime(%s): %s", consumerId, spawnTime, err.Error())
+				"prepare consumer for launch, consumerId(%d), spawnTime(%s): %s", consumerId, spawnTime, err.Error())
 		}
 
 		// add SpawnTime event attribute
@@ -271,7 +272,7 @@ func (k msgServer) UpdateConsumer(goCtx context.Context, msg *types.MsgUpdateCon
 
 	if !k.Keeper.IsConsumerActive(ctx, consumerId) {
 		return &resp, errorsmod.Wrapf(types.ErrInvalidPhase,
-			"cannot update consumer chain that is not in the registered, initialized, or launched phase: %s", consumerId)
+			"cannot update consumer chain that is not in the registered, initialized, or launched phase: %d", consumerId)
 	}
 
 	ownerAddress, err := k.Keeper.GetConsumerOwnerAddress(ctx, consumerId)
@@ -315,7 +316,7 @@ func (k msgServer) UpdateConsumer(goCtx context.Context, msg *types.MsgUpdateCon
 	// add event attributes
 	eventAttributes = append(eventAttributes, []sdk.Attribute{
 		sdk.NewAttribute(sdk.AttributeKeyModule, types.ModuleName),
-		sdk.NewAttribute(types.AttributeConsumerId, consumerId),
+		sdk.NewAttribute(types.AttributeConsumerId, strconv.FormatUint(consumerId, 10)),
 		sdk.NewAttribute(types.AttributeConsumerChainId, chainId),
 		sdk.NewAttribute(types.AttributeSubmitterAddress, msg.Owner),
 	}...)
@@ -344,7 +345,7 @@ func (k msgServer) UpdateConsumer(goCtx context.Context, msg *types.MsgUpdateCon
 	previousInitializationParameters, err := k.Keeper.GetConsumerInitializationParameters(ctx, consumerId)
 	if err != nil {
 		return &resp, errorsmod.Wrapf(vaastypes.ErrInvalidConsumerState,
-			"cannot get consumer initialized parameters, consumerId(%s): %s", consumerId, err.Error())
+			"cannot get consumer initialized parameters, consumerId(%d): %s", consumerId, err.Error())
 	}
 	previousSpawnTime := previousInitializationParameters.SpawnTime
 
@@ -389,7 +390,7 @@ func (k msgServer) UpdateConsumer(goCtx context.Context, msg *types.MsgUpdateCon
 	if spawnTime, initialized := k.Keeper.InitializeConsumer(ctx, consumerId); initialized {
 		if err := k.Keeper.PrepareConsumerForLaunch(ctx, consumerId, previousSpawnTime, spawnTime); err != nil {
 			return &resp, errorsmod.Wrapf(vaastypes.ErrInvalidConsumerState,
-				"prepare consumer for launch, consumerId(%s), previousSpawnTime(%s), spawnTime(%s): %s",
+				"prepare consumer for launch, consumerId(%d), previousSpawnTime(%s), spawnTime(%s): %s",
 				consumerId, previousSpawnTime, spawnTime, err.Error())
 		}
 	}
@@ -442,7 +443,7 @@ func (k msgServer) RemoveConsumer(goCtx context.Context, msg *types.MsgRemoveCon
 	phase := k.Keeper.GetConsumerPhase(ctx, consumerId)
 	if phase != types.CONSUMER_PHASE_LAUNCHED {
 		return &resp, errorsmod.Wrapf(types.ErrInvalidPhase,
-			"chain with consumer id: %s has to be in its launched phase", consumerId)
+			"chain with consumer id: %d has to be in its launched phase", consumerId)
 	}
 
 	err = k.Keeper.StopAndPrepareForConsumerRemoval(ctx, consumerId)
@@ -457,7 +458,7 @@ func (k msgServer) RemoveConsumer(goCtx context.Context, msg *types.MsgRemoveCon
 		sdk.NewEvent(
 			types.EventTypeRemoveConsumer,
 			sdk.NewAttribute(sdk.AttributeKeyModule, types.ModuleName),
-			sdk.NewAttribute(types.AttributeConsumerId, consumerId),
+			sdk.NewAttribute(types.AttributeConsumerId, strconv.FormatUint(consumerId, 10)),
 			sdk.NewAttribute(types.AttributeConsumerChainId, chainId),
 			sdk.NewAttribute(types.AttributeSubmitterAddress, msg.Owner),
 		),

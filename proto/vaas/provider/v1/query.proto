@@ -109,7 +109,7 @@ service Query {
 }
 
 message QueryConsumerGenesisRequest {
-  string consumer_id = 1;
+  uint64 consumer_id = 1;
 }
 
 message QueryConsumerGenesisResponse {
@@ -137,7 +137,7 @@ message Chain {
   string phase = 3;
   // The metadata of the consumer chain
   ConsumerMetadata metadata = 4  [(gogoproto.nullable) = false ];
-  string consumer_id = 5;
+  uint64 consumer_id = 5;
   // Infraction parameters for slashing and jailing
   InfractionParameters infraction_parameters = 6;
   // The deterministic provider-side account that must be funded
@@ -151,7 +151,7 @@ message QueryValidatorConsumerAddrRequest {
   // The consensus address of the validator on the provider chain
   string provider_address = 1 [ (gogoproto.moretags) = "yaml:\"address\"" ];
   // The id of the consumer chain
-  string consumer_id = 2;
+  uint64 consumer_id = 2;
 }
 
 message QueryValidatorConsumerAddrResponse {
@@ -165,7 +165,7 @@ message QueryValidatorProviderAddrRequest {
   // The consensus address of the validator on the consumer chain
   string consumer_address = 1 [ (gogoproto.moretags) = "yaml:\"address\"" ];
   // The id of the consumer chain
-  string consumer_id = 2;
+  uint64 consumer_id = 2;
 }
 
 message QueryValidatorProviderAddrResponse {
@@ -175,7 +175,7 @@ message QueryValidatorProviderAddrResponse {
 
 message QueryAllPairsValConsAddrByConsumerRequest {
   // The id of the consumer chain
-  string consumer_id = 1;
+  uint64 consumer_id = 1;
 }
 
 message QueryAllPairsValConsAddrByConsumerResponse {
@@ -197,7 +197,7 @@ message QueryParamsResponse {
 }
 
 message QueryConsumerValidatorsRequest {
-  string consumer_id = 1;
+  uint64 consumer_id = 1;
 }
 
 message QueryConsumerValidatorsValidator {
@@ -246,15 +246,15 @@ message QueryConsumerIdFromClientIdRequest {
 
 message QueryConsumerIdFromClientIdResponse {
   // the consumer id of the chain associated with this client id
-  string consumer_id = 1;
+  uint64 consumer_id = 1;
 }
 
 message QueryConsumerChainRequest {
-  string consumer_id = 1;
+  uint64 consumer_id = 1;
 }
 
 message QueryConsumerChainResponse {
-  string consumer_id = 1;
+  uint64 consumer_id = 1;
   string chain_id = 2;
   string owner_address = 3;
   string phase = 4;
@@ -270,7 +270,7 @@ message QueryConsumerChainResponse {
 }
 
 message QueryConsumerGenesisTimeRequest {
-  string consumer_id = 1;
+  uint64 consumer_id = 1;
 }
 
 message QueryConsumerGenesisTimeResponse {

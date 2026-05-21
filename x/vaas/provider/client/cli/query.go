@@ -14,6 +14,15 @@ import (
 	"github.com/cosmos/cosmos-sdk/version"
 )
 
+// parseConsumerIdArg parses a CLI positional argument as a uint64 consumer id.
+func parseConsumerIdArg(arg string) (uint64, error) {
+	cid, err := strconv.ParseUint(arg, 10, 64)
+	if err != nil {
+		return 0, fmt.Errorf("invalid consumer id %q: %w", arg, err)
+	}
+	return cid, nil
+}
+
 // NewQueryCmd returns a root CLI command handler for all x/vaas/provider query commands.
 func NewQueryCmd() *cobra.Command {
 	cmd := &cobra.Command{
@@ -51,7 +60,11 @@ func CmdConsumerGenesis() *cobra.Command {
 			}
 			queryClient := types.NewQueryClient(clientCtx)
 
-			req := types.QueryConsumerGenesisRequest{ConsumerId: args[0]}
+			cid, err := parseConsumerIdArg(args[0])
+			if err != nil {
+				return err
+			}
+			req := types.QueryConsumerGenesisRequest{ConsumerId: cid}
 			res, err := queryClient.QueryConsumerGenesis(cmd.Context(), &req)
 			if err != nil {
 				return err
@@ -139,7 +152,10 @@ $ %s query provider validator-consumer-key 3 %s1gghjut3ccd8ay0zduzj64hwre2fxs9ld
 			}
 			queryClient := types.NewQueryClient(clientCtx)
 
-			consumerId := args[0]
+			consumerId, err := parseConsumerIdArg(args[0])
+			if err != nil {
+				return err
+			}
 
 			addr, err := sdk.ConsAddressFromBech32(args[1])
 			if err != nil {
@@ -186,7 +202,10 @@ $ %s query provider validator-provider-key 333 %s1gghjut3ccd8ay0zduzj64hwre2fxs9
 			}
 			queryClient := types.NewQueryClient(clientCtx)
 
-			consumerID := args[0]
+			consumerID, err := parseConsumerIdArg(args[0])
+			if err != nil {
+				return err
+			}
 
 			addr, err := sdk.ConsAddressFromBech32(args[1])
 			if err != nil {
@@ -223,7 +242,11 @@ func CmdAllPairsValConsAddrByConsumer() *cobra.Command {
 			}
 			queryClient := types.NewQueryClient(clientCtx)
 
-			req := types.QueryAllPairsValConsAddrByConsumerRequest{ConsumerId: args[0]}
+			cid, err := parseConsumerIdArg(args[0])
+			if err != nil {
+				return err
+			}
+			req := types.QueryAllPairsValConsAddrByConsumerRequest{ConsumerId: cid}
 			res, err := queryClient.QueryAllPairsValConsAddrByConsumer(cmd.Context(), &req)
 			if err != nil {
 				return err
@@ -292,8 +315,12 @@ $ %s consumer-validators 3
 			}
 			queryClient := types.NewQueryClient(clientCtx)
 
+			cid, err := parseConsumerIdArg(args[0])
+			if err != nil {
+				return err
+			}
 			res, err := queryClient.QueryConsumerValidators(cmd.Context(),
-				&types.QueryConsumerValidatorsRequest{ConsumerId: args[0]})
+				&types.QueryConsumerValidatorsRequest{ConsumerId: cid})
 			if err != nil {
 				return err
 			}
@@ -373,7 +400,11 @@ func CmdConsumerChain() *cobra.Command {
 			}
 			queryClient := types.NewQueryClient(clientCtx)
 
-			req := &types.QueryConsumerChainRequest{ConsumerId: args[0]}
+			cid, err := parseConsumerIdArg(args[0])
+			if err != nil {
+				return err
+			}
+			req := &types.QueryConsumerChainRequest{ConsumerId: cid}
 			res, err := queryClient.QueryConsumerChain(cmd.Context(), req)
 			if err != nil {
 				return err
@@ -400,7 +431,11 @@ func CmdConsumerGenesisTime() *cobra.Command {
 			}
 			queryClient := types.NewQueryClient(clientCtx)
 
-			req := &types.QueryConsumerGenesisTimeRequest{ConsumerId: args[0]}
+			cid, err := parseConsumerIdArg(args[0])
+			if err != nil {
+				return err
+			}
+			req := &types.QueryConsumerGenesisTimeRequest{ConsumerId: cid}
 			res, err := queryClient.QueryConsumerGenesisTime(cmd.Context(), req)
 			if err != nil {
 				return err

@@ -34,15 +34,15 @@ func TestValidatorConsensusKeyInUse(t *testing.T) {
 			name: "in use by another validator",
 			setup: func(ctx sdk.Context, k providerkeeper.Keeper) {
 				k.FetchAndIncrementConsumerId(ctx)
-				k.SetConsumerPhase(ctx, "0", types.CONSUMER_PHASE_INITIALIZED)
+				k.SetConsumerPhase(ctx, 0, types.CONSUMER_PHASE_INITIALIZED)
 
 				// We are trying to add a new validator, but its address has already been used
 				// by another validator
-				k.SetValidatorByConsumerAddr(ctx, "0",
+				k.SetValidatorByConsumerAddr(ctx, 0,
 					newValidator.ConsumerConsAddress(),
 					anotherValidator0.ProviderConsAddress(),
 				)
-				k.SetConsumerClientId(ctx, "0", "clientId")
+				k.SetConsumerClientId(ctx, 0, "clientId")
 			},
 			expect: true,
 		},
@@ -51,22 +51,22 @@ func TestValidatorConsensusKeyInUse(t *testing.T) {
 			setup: func(ctx sdk.Context, k providerkeeper.Keeper) {
 				k.FetchAndIncrementConsumerId(ctx)
 				k.FetchAndIncrementConsumerId(ctx)
-				k.SetConsumerPhase(ctx, "0", types.CONSUMER_PHASE_INITIALIZED)
-				k.SetConsumerPhase(ctx, "1", types.CONSUMER_PHASE_INITIALIZED)
+				k.SetConsumerPhase(ctx, 0, types.CONSUMER_PHASE_INITIALIZED)
+				k.SetConsumerPhase(ctx, 1, types.CONSUMER_PHASE_INITIALIZED)
 
 				// We are trying to add a new validator, but its address has already been used
 				// by another validator, of which there are several, across potentially several chains
-				k.SetValidatorByConsumerAddr(ctx, "0",
+				k.SetValidatorByConsumerAddr(ctx, 0,
 					newValidator.ConsumerConsAddress(),
 					anotherValidator0.ProviderConsAddress(),
 				)
-				k.SetConsumerClientId(ctx, "0", "clientId0")
+				k.SetConsumerClientId(ctx, 0, "clientId0")
 
-				k.SetValidatorByConsumerAddr(ctx, "1",
+				k.SetValidatorByConsumerAddr(ctx, 1,
 					anotherValidator1.ConsumerConsAddress(),
 					anotherValidator1.ProviderConsAddress(),
 				)
-				k.SetConsumerClientId(ctx, "1", "clientId1")
+				k.SetConsumerClientId(ctx, 1, "clientId1")
 			},
 			expect: true,
 		},
