@@ -80,9 +80,9 @@ type Keeper struct {
 	LastProviderConsensusVals collections.Map[[]byte, types.ConsensusValidator]
 
 	// Fee pool collections
-	ConsumerFeePoolShares      collections.Map[collections.Triple[string, sdk.AccAddress, string], math.Int]
-	ConsumerFeePoolTotalShares collections.Map[collections.Pair[string, string], math.Int]
-	FeePoolAddressToConsumerId collections.Map[sdk.AccAddress, string]
+	ConsumerFeePoolShares      collections.Map[collections.Triple[uint64, sdk.AccAddress, string], math.Int]
+	ConsumerFeePoolTotalShares collections.Map[collections.Pair[uint64, string], math.Int]
+	FeePoolAddressToConsumerId collections.Map[sdk.AccAddress, uint64]
 }
 
 // NewKeeper creates a new provider Keeper instance
@@ -169,20 +169,20 @@ func NewKeeper(
 	k.ConsumerFeePoolShares = collections.NewMap(
 		sb, types.ConsumerFeePoolSharesKeyPrefix,
 		types.ConsumerFeePoolSharesKeyName,
-		collections.TripleKeyCodec(collections.StringKey, sdk.AccAddressKey, collections.StringKey),
+		collections.TripleKeyCodec(collections.Uint64Key, sdk.AccAddressKey, collections.StringKey),
 		sdk.IntValue,
 	)
 	k.ConsumerFeePoolTotalShares = collections.NewMap(
 		sb, types.ConsumerFeePoolTotalSharesKeyPrefix,
 		types.ConsumerFeePoolTotalSharesKeyName,
-		collections.PairKeyCodec(collections.StringKey, collections.StringKey),
+		collections.PairKeyCodec(collections.Uint64Key, collections.StringKey),
 		sdk.IntValue,
 	)
 	k.FeePoolAddressToConsumerId = collections.NewMap(
 		sb, types.FeePoolAddressToConsumerIdKeyPrefix,
 		types.FeePoolAddressToConsumerIdKeyName,
 		sdk.AccAddressKey,
-		collections.StringValue,
+		collections.Uint64Value,
 	)
 
 	schema, err := sb.Build()

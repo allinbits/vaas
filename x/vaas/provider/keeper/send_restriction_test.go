@@ -16,7 +16,7 @@ func TestFeePoolSendRestriction(t *testing.T) {
 	k, ctx, ctrl, _ := testkeeper.GetProviderKeeperAndCtx(t, testkeeper.NewInMemKeeperParams(t))
 	defer ctrl.Finish()
 
-	consumerId := "0"
+	consumerId := uint64(0)
 	poolAddr := k.GetConsumerFeePoolAddress(consumerId)
 	providerAddr := authtypes.NewModuleAddress(providertypes.ModuleName)
 	user := sdk.AccAddress([]byte("user____________"))

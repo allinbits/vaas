@@ -47,7 +47,7 @@ func TestQueryConsumerFeePoolClaim(t *testing.T) {
 	k, ctx, ctrl, mocks := testkeeper.GetProviderKeeperAndCtx(t, testkeeper.NewInMemKeeperParams(t))
 	defer ctrl.Finish()
 
-	consumerId := "0"
+	consumerId := uint64(0)
 	alice := sdk.AccAddress([]byte("alice___________"))
 	poolAddr := k.GetConsumerFeePoolAddress(consumerId)
 	require.NoError(t, k.ConsumerFeePoolShares.Set(ctx,
@@ -68,7 +68,7 @@ func TestQueryConsumerFeePoolClaim_GovAlias(t *testing.T) {
 	k, ctx, ctrl, mocks := testkeeper.GetProviderKeeperAndCtx(t, testkeeper.NewInMemKeeperParams(t))
 	defer ctrl.Finish()
 
-	consumerId := "0"
+	consumerId := uint64(0)
 	distrAddr := authtypes.NewModuleAddress(disttypes.ModuleName)
 	poolAddr := k.GetConsumerFeePoolAddress(consumerId)
 	require.NoError(t, k.ConsumerFeePoolShares.Set(ctx,
@@ -89,7 +89,7 @@ func TestQueryConsumerFeePoolClaims(t *testing.T) {
 	k, ctx, ctrl, mocks := testkeeper.GetProviderKeeperAndCtx(t, testkeeper.NewInMemKeeperParams(t))
 	defer ctrl.Finish()
 
-	consumerId := "0"
+	consumerId := uint64(0)
 	alice := sdk.AccAddress([]byte("alice___________"))
 	bob := sdk.AccAddress([]byte("bob_____________"))
 	poolAddr := k.GetConsumerFeePoolAddress(consumerId)

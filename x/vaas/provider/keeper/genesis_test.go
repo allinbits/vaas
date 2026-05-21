@@ -416,11 +416,11 @@ func TestExportGenesis_IncludesShares(t *testing.T) {
 	alice := sdk.AccAddress([]byte("alice___________"))
 	bob := sdk.AccAddress([]byte("bob_____________"))
 	require.NoError(t, k.ConsumerFeePoolShares.Set(ctx,
-		collections.Join3("0", alice, "uphoton"), math.NewInt(60)))
+		collections.Join3(uint64(0), alice, "uphoton"), math.NewInt(60)))
 	require.NoError(t, k.ConsumerFeePoolShares.Set(ctx,
-		collections.Join3("0", bob, "uphoton"), math.NewInt(40)))
+		collections.Join3(uint64(0), bob, "uphoton"), math.NewInt(40)))
 	require.NoError(t, k.ConsumerFeePoolTotalShares.Set(ctx,
-		collections.Join("0", "uphoton"), math.NewInt(100)))
+		collections.Join(uint64(0), "uphoton"), math.NewInt(100)))
 
 	gs := k.ExportGenesis(ctx)
 	require.Len(t, gs.ConsumerFeePoolShares, 2)
@@ -445,36 +445,38 @@ func TestInitGenesis_RebuildsDerivedCollections(t *testing.T) {
 		Params: providertypes.DefaultParams(),
 		ConsumerStates: []providertypes.ConsumerState{
 			{
-				ChainId:         "0",
+				ConsumerId:      0,
+				ChainId:         "chain-a",
 				Phase:           providertypes.CONSUMER_PHASE_LAUNCHED,
 				ConsumerGenesis: *vaastypes.DefaultConsumerGenesisState(),
 			},
 			{
-				ChainId:         "1",
+				ConsumerId:      1,
+				ChainId:         "chain-b",
 				Phase:           providertypes.CONSUMER_PHASE_DELETED,
 				ConsumerGenesis: *vaastypes.DefaultConsumerGenesisState(),
 			},
 		},
 		ConsumerFeePoolShares: []providertypes.ConsumerFeePoolShare{
-			{ConsumerId: "0", Depositor: alice.String(), Denom: "uphoton", Shares: math.NewInt(60)},
-			{ConsumerId: "0", Depositor: bob.String(), Denom: "uphoton", Shares: math.NewInt(40)},
+			{ConsumerId: 0, Depositor: alice.String(), Denom: "uphoton", Shares: math.NewInt(60)},
+			{ConsumerId: 0, Depositor: bob.String(), Denom: "uphoton", Shares: math.NewInt(40)},
 		},
 	}
 
 	k.InitGenesis(ctx, gs)
 
-	s, err := k.ConsumerFeePoolShares.Get(ctx, collections.Join3("0", alice, "uphoton"))
+	s, err := k.ConsumerFeePoolShares.Get(ctx, collections.Join3(uint64(0), alice, "uphoton"))
 	require.NoError(t, err)
 	require.Equal(t, math.NewInt(60), s)
 
-	total, err := k.ConsumerFeePoolTotalShares.Get(ctx, collections.Join("0", "uphoton"))
+	total, err := k.ConsumerFeePoolTotalShares.Get(ctx, collections.Join(uint64(0), "uphoton"))
 	require.NoError(t, err)
 	require.Equal(t, math.NewInt(100), total)
 
-	cid, err := k.FeePoolAddressToConsumerId.Get(ctx, k.GetConsumerFeePoolAddress("0"))
+	cid, err := k.FeePoolAddressToConsumerId.Get(ctx, k.GetConsumerFeePoolAddress(0))
 	require.NoError(t, err)
-	require.Equal(t, "0", cid)
+	require.Equal(t, uint64(0), cid)
 
-	_, err = k.FeePoolAddressToConsumerId.Get(ctx, k.GetConsumerFeePoolAddress("1"))
+	_, err = k.FeePoolAddressToConsumerId.Get(ctx, k.GetConsumerFeePoolAddress(1))
 	require.ErrorIs(t, err, collections.ErrNotFound)
 }

@@ -470,13 +470,17 @@ func NewFundConsumerFeePoolCmd() *cobra.Command {
 			if err != nil {
 				return err
 			}
+			consumerId, err := parseConsumerIdArg(args[0])
+			if err != nil {
+				return err
+			}
 			amount, err := sdk.ParseCoinNormalized(args[1])
 			if err != nil {
 				return err
 			}
 			msg := &types.MsgFundConsumerFeePool{
 				Signer:     clientCtx.GetFromAddress().String(),
-				ConsumerId: args[0],
+				ConsumerId: consumerId,
 				Amount:     amount,
 			}
 			return tx.GenerateOrBroadcastTxCLI(clientCtx, cmd.Flags(), msg)
@@ -496,13 +500,17 @@ func NewWithdrawConsumerFeePoolCmd() *cobra.Command {
 			if err != nil {
 				return err
 			}
+			consumerId, err := parseConsumerIdArg(args[0])
+			if err != nil {
+				return err
+			}
 			coins, err := sdk.ParseCoinsNormalized(args[1])
 			if err != nil {
 				return err
 			}
 			msg := &types.MsgWithdrawConsumerFeePool{
 				Signer:     clientCtx.GetFromAddress().String(),
-				ConsumerId: args[0],
+				ConsumerId: consumerId,
 				Amount:     coins,
 			}
 			return tx.GenerateOrBroadcastTxCLI(clientCtx, cmd.Flags(), msg)
@@ -522,6 +530,10 @@ func NewSweepConsumerFeePoolCmd() *cobra.Command {
 			if err != nil {
 				return err
 			}
+			consumerId, err := parseConsumerIdArg(args[0])
+			if err != nil {
+				return err
+			}
 			denomsCSV, _ := cmd.Flags().GetString("denoms")
 			var denoms []string
 			if strings.TrimSpace(denomsCSV) != "" {
@@ -529,7 +541,7 @@ func NewSweepConsumerFeePoolCmd() *cobra.Command {
 			}
 			msg := &types.MsgSweepConsumerFeePool{
 				Signer:     clientCtx.GetFromAddress().String(),
-				ConsumerId: args[0],
+				ConsumerId: consumerId,
 				Denoms:     denoms,
 			}
 			return tx.GenerateOrBroadcastTxCLI(clientCtx, cmd.Flags(), msg)

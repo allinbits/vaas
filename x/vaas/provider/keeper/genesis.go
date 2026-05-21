@@ -154,7 +154,7 @@ func (k Keeper) InitGenesis(ctx sdk.Context, genState *types.GenesisState) []abc
 	}
 
 	// Rebuild totals by summing per (consumer_id, denom)
-	totals := map[string]map[string]math.Int{}
+	totals := map[uint64]map[string]math.Int{}
 	for _, s := range genState.ConsumerFeePoolShares {
 		if _, ok := totals[s.ConsumerId]; !ok {
 			totals[s.ConsumerId] = map[string]math.Int{}
@@ -354,7 +354,7 @@ func (k Keeper) ExportGenesis(ctx sdk.Context) *types.GenesisState {
 	// Sanity check: rebuild totals from shares and warn on divergence
 	recomputed := map[string]math.Int{}
 	for _, s := range gs.ConsumerFeePoolShares {
-		key := s.ConsumerId + "|" + s.Denom
+		key := fmt.Sprintf("%d|%s", s.ConsumerId, s.Denom)
 		if cur, ok := recomputed[key]; ok {
 			recomputed[key] = cur.Add(s.Shares)
 		} else {
@@ -374,7 +374,7 @@ func (k Keeper) ExportGenesis(ctx sdk.Context) *types.GenesisState {
 		if err != nil {
 			panic(err)
 		}
-		composite := key.K1() + "|" + key.K2()
+		composite := fmt.Sprintf("%d|%s", key.K1(), key.K2())
 		expected, ok := recomputed[composite]
 		if !ok || !expected.Equal(val) {
 			k.Logger(ctx).Error(

@@ -342,7 +342,7 @@ func (k Keeper) ConsumerFeePoolClaim(
 	}
 
 	coins := sdk.NewCoins()
-	prefix := collections.NewPrefixedPairRange[string, string](req.ConsumerId)
+	prefix := collections.NewPrefixedPairRange[uint64, string](req.ConsumerId)
 	iter, err := k.ConsumerFeePoolTotalShares.Iterate(ctx, prefix)
 	if err != nil {
 		return nil, status.Errorf(codes.Internal, "iterate totals: %s", err)
@@ -376,7 +376,7 @@ func (k Keeper) ConsumerFeePoolClaims(
 	}
 	perDepositor := map[string]*acc{}
 
-	prefix := collections.NewPrefixedTripleRange[string, sdk.AccAddress, string](req.ConsumerId)
+	prefix := collections.NewPrefixedTripleRange[uint64, sdk.AccAddress, string](req.ConsumerId)
 	iter, err := k.ConsumerFeePoolShares.Iterate(ctx, prefix)
 	if err != nil {
 		return nil, status.Errorf(codes.Internal, "%s", err)

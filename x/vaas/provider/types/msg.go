@@ -431,9 +431,6 @@ func (msg MsgFundConsumerFeePool) ValidateBasic() error {
 	if _, err := sdk.AccAddressFromBech32(msg.Signer); err != nil {
 		return errorsmod.Wrapf(sdkerrors.ErrInvalidAddress, "invalid signer: %s", err)
 	}
-	if strings.TrimSpace(msg.ConsumerId) == "" {
-		return errorsmod.Wrap(ErrNoConsumerId, "consumer_id must not be empty")
-	}
 	if err := msg.Amount.Validate(); err != nil {
 		return errorsmod.Wrapf(ErrInvalidFundDenom, "invalid amount: %s", err)
 	}
@@ -447,9 +444,6 @@ func (msg MsgFundConsumerFeePool) ValidateBasic() error {
 func (msg MsgWithdrawConsumerFeePool) ValidateBasic() error {
 	if _, err := sdk.AccAddressFromBech32(msg.Signer); err != nil {
 		return errorsmod.Wrapf(sdkerrors.ErrInvalidAddress, "invalid signer: %s", err)
-	}
-	if strings.TrimSpace(msg.ConsumerId) == "" {
-		return errorsmod.Wrap(ErrNoConsumerId, "consumer_id must not be empty")
 	}
 	if len(msg.Amount) == 0 {
 		return errorsmod.Wrap(ErrInvalidFundDenom, "amount must not be empty")
@@ -467,9 +461,6 @@ func (msg MsgWithdrawConsumerFeePool) ValidateBasic() error {
 func (msg MsgSweepConsumerFeePool) ValidateBasic() error {
 	if _, err := sdk.AccAddressFromBech32(msg.Signer); err != nil {
 		return errorsmod.Wrapf(sdkerrors.ErrInvalidAddress, "invalid signer: %s", err)
-	}
-	if strings.TrimSpace(msg.ConsumerId) == "" {
-		return errorsmod.Wrap(ErrNoConsumerId, "consumer_id must not be empty")
 	}
 	for _, d := range msg.Denoms {
 		if err := sdk.ValidateDenom(d); err != nil {

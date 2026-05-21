@@ -462,9 +462,13 @@ func CmdConsumerFeePoolClaim() *cobra.Command {
 			if err != nil {
 				return err
 			}
+			consumerId, err := parseConsumerIdArg(args[0])
+			if err != nil {
+				return err
+			}
 			qc := types.NewQueryClient(clientCtx)
 			res, err := qc.ConsumerFeePoolClaim(cmd.Context(), &types.QueryConsumerFeePoolClaimRequest{
-				ConsumerId: args[0],
+				ConsumerId: consumerId,
 				Depositor:  args[1],
 			})
 			if err != nil {
@@ -487,13 +491,17 @@ func CmdConsumerFeePoolClaims() *cobra.Command {
 			if err != nil {
 				return err
 			}
+			consumerId, err := parseConsumerIdArg(args[0])
+			if err != nil {
+				return err
+			}
 			pageReq, err := client.ReadPageRequest(cmd.Flags())
 			if err != nil {
 				return err
 			}
 			qc := types.NewQueryClient(clientCtx)
 			res, err := qc.ConsumerFeePoolClaims(cmd.Context(), &types.QueryConsumerFeePoolClaimsRequest{
-				ConsumerId: args[0],
+				ConsumerId: consumerId,
 				Pagination: pageReq,
 			})
 			if err != nil {

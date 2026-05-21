@@ -486,11 +486,11 @@ func (k msgServer) FundConsumerFeePool(
 	phase := k.GetConsumerPhase(ctx, msg.ConsumerId)
 	if phase == types.CONSUMER_PHASE_UNSPECIFIED {
 		return nil, errorsmod.Wrapf(types.ErrUnknownConsumerId,
-			"consumer %s does not exist", msg.ConsumerId)
+			"consumer %d does not exist", msg.ConsumerId)
 	}
 	if phase == types.CONSUMER_PHASE_DELETED {
 		return nil, errorsmod.Wrapf(types.ErrInvalidPhase,
-			"consumer %s is deleted", msg.ConsumerId)
+			"consumer %d is deleted", msg.ConsumerId)
 	}
 
 	// Denom check (stateful — reads params)
@@ -538,7 +538,7 @@ func (k msgServer) FundConsumerFeePool(
 
 	ctx.EventManager().EmitEvent(sdk.NewEvent(
 		types.EventTypeConsumerFeePoolFund,
-		sdk.NewAttribute(types.AttributeConsumerId, msg.ConsumerId),
+		sdk.NewAttribute(types.AttributeConsumerId, strconv.FormatUint(msg.ConsumerId, 10)),
 		sdk.NewAttribute(types.AttributeDepositor, depositor.String()),
 		sdk.NewAttribute(types.AttributeAmount, msg.Amount.String()),
 	))
@@ -610,7 +610,7 @@ func (k msgServer) WithdrawConsumerFeePool(
 
 	ctx.EventManager().EmitEvent(sdk.NewEvent(
 		types.EventTypeConsumerFeePoolWithdraw,
-		sdk.NewAttribute(types.AttributeConsumerId, msg.ConsumerId),
+		sdk.NewAttribute(types.AttributeConsumerId, strconv.FormatUint(msg.ConsumerId, 10)),
 		sdk.NewAttribute(types.AttributeDepositor, depositor.String()),
 		sdk.NewAttribute(types.AttributeRecipient, depositor.String()),
 		sdk.NewAttribute(types.AttributeAmount, delivered.String()),
@@ -626,7 +626,7 @@ func (k msgServer) SweepConsumerFeePool(
 	ownerAddr, err := k.GetConsumerOwnerAddress(ctx, msg.ConsumerId)
 	if err != nil {
 		return nil, errorsmod.Wrapf(types.ErrNoOwnerAddress,
-			"consumer %s has no owner: %s", msg.ConsumerId, err)
+			"consumer %d has no owner: %s", msg.ConsumerId, err)
 	}
 	if msg.Signer != ownerAddr {
 		return nil, errorsmod.Wrapf(types.ErrUnauthorized,

@@ -93,7 +93,7 @@ message ValsetUpdateIdToHeight {
 // fee pool, scoped to one denom. The triple (consumer_id, depositor, denom)
 // is unique.
 message ConsumerFeePoolShare {
-  string consumer_id = 1;
+  uint64 consumer_id = 1;
   string depositor = 2 [(cosmos_proto.scalar) = "cosmos.AddressString"];
   string denom = 3;
   string shares = 4 [

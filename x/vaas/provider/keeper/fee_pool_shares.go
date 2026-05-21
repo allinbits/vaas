@@ -18,7 +18,7 @@ import (
 // given consumer's fee pool. Returns math.ZeroInt() if the depositor has no
 // shares or total_shares is zero.
 func (k Keeper) ComputeClaim(
-	ctx sdk.Context, consumerId string, depositor sdk.AccAddress, denom string,
+	ctx sdk.Context, consumerId uint64, depositor sdk.AccAddress, denom string,
 ) math.Int {
 	poolAddr := k.GetConsumerFeePoolAddress(consumerId)
 	balance := k.bankKeeper.GetBalance(ctx, poolAddr, denom)
@@ -45,7 +45,7 @@ func (k Keeper) ComputeClaim(
 //
 // Caller is responsible for the bank-side movement of funds into the pool.
 func (k Keeper) MintShares(
-	ctx sdk.Context, consumerId string, depositor sdk.AccAddress, amount sdk.Coin,
+	ctx sdk.Context, consumerId uint64, depositor sdk.AccAddress, amount sdk.Coin,
 ) error {
 	poolAddr := k.GetConsumerFeePoolAddress(consumerId)
 	balance := k.bankKeeper.GetBalance(ctx, poolAddr, amount.Denom)
@@ -97,13 +97,13 @@ func (k Keeper) MintShares(
 // downward so the depositor never over-withdraws. Caller is responsible for
 // dispatching the bank send.
 func (k Keeper) WithdrawShares(
-	ctx sdk.Context, consumerId string, depositor sdk.AccAddress, amount sdk.Coin,
+	ctx sdk.Context, consumerId uint64, depositor sdk.AccAddress, amount sdk.Coin,
 ) (sdk.Coin, error) {
 	depKey := collections.Join3(consumerId, depositor, amount.Denom)
 	shares, err := k.ConsumerFeePoolShares.Get(ctx, depKey)
 	if err != nil {
 		return sdk.Coin{}, errorsmod.Wrapf(types.ErrUnauthorized,
-			"depositor %s has no shares in (%s, %s)", depositor, consumerId, amount.Denom)
+			"depositor %s has no shares in (%d, %s)", depositor, consumerId, amount.Denom)
 	}
 	totalKey := collections.Join(consumerId, amount.Denom)
 	total, err := k.ConsumerFeePoolTotalShares.Get(ctx, totalKey)
@@ -173,7 +173,7 @@ func (k Keeper) WithdrawShares(
 // Handles the orphan-balance defensive case: if total_shares == 0 but
 // balance > 0, forwards the balance to the community pool.
 func (k Keeper) SweepConsumerFeePoolDenom(
-	ctx sdk.Context, consumerId, denom string,
+	ctx sdk.Context, consumerId uint64, denom string,
 ) error {
 	poolAddr := k.GetConsumerFeePoolAddress(consumerId)
 	balance := k.bankKeeper.GetBalance(ctx, poolAddr, denom)
@@ -221,7 +221,7 @@ func (k Keeper) SweepConsumerFeePoolDenom(
 		shares math.Int
 	}
 	var holders []holder
-	prefix := collections.NewPrefixedTripleRange[string, sdk.AccAddress, string](consumerId)
+	prefix := collections.NewPrefixedTripleRange[uint64, sdk.AccAddress, string](consumerId)
 	iter, err := k.ConsumerFeePoolShares.Iterate(ctx, prefix)
 	if err != nil {
 		return err
@@ -283,7 +283,7 @@ func (k Keeper) SweepConsumerFeePoolDenom(
 // SweepConsumerFeePool sweeps each denom in `denoms`, or every denom that
 // has either non-zero shares or non-zero pool balance if `denoms` is nil/empty.
 func (k Keeper) SweepConsumerFeePool(
-	ctx sdk.Context, consumerId string, denoms []string,
+	ctx sdk.Context, consumerId uint64, denoms []string,
 ) error {
 	if len(denoms) > 0 {
 		for _, d := range denoms {
@@ -296,7 +296,7 @@ func (k Keeper) SweepConsumerFeePool(
 
 	// Union of denoms-with-shares and denoms-with-balance.
 	set := map[string]struct{}{}
-	prefix := collections.NewPrefixedPairRange[string, string](consumerId)
+	prefix := collections.NewPrefixedPairRange[uint64, string](consumerId)
 	iter, err := k.ConsumerFeePoolTotalShares.Iterate(ctx, prefix)
 	if err != nil {
 		return err
@@ -332,15 +332,15 @@ func (k Keeper) SweepConsumerFeePool(
 
 // clearAllShares deletes every share record for the given (consumer, denom).
 // Used by lazy invalidation and by sweep finalization.
-func (k Keeper) clearAllShares(ctx sdk.Context, consumerId, denom string) error {
-	prefix := collections.NewPrefixedTripleRange[string, sdk.AccAddress, string](consumerId)
+func (k Keeper) clearAllShares(ctx sdk.Context, consumerId uint64, denom string) error {
+	prefix := collections.NewPrefixedTripleRange[uint64, sdk.AccAddress, string](consumerId)
 	iter, err := k.ConsumerFeePoolShares.Iterate(ctx, prefix)
 	if err != nil {
 		return err
 	}
 	defer iter.Close()
 
-	var toDelete []collections.Triple[string, sdk.AccAddress, string]
+	var toDelete []collections.Triple[uint64, sdk.AccAddress, string]
 	for ; iter.Valid(); iter.Next() {
 		key, err := iter.Key()
 		if err != nil {

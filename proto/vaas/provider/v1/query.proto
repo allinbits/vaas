@@ -287,7 +287,7 @@ message QueryConsumerGenesisTimeResponse {
 }
 
 message QueryConsumerFeePoolClaimRequest {
-  string consumer_id = 1;
+  uint64 consumer_id = 1;
   // bech32 address; if equal to the gov module authority, aliases to the
   // distribution module account address
   string depositor = 2 [(cosmos_proto.scalar) = "cosmos.AddressString"];
@@ -310,7 +310,7 @@ message DepositorClaim {
 }
 
 message QueryConsumerFeePoolClaimsRequest {
-  string consumer_id = 1;
+  uint64 consumer_id = 1;
   cosmos.base.query.v1beta1.PageRequest pagination = 2;
 }
 

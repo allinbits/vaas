@@ -20,7 +20,7 @@ func TestComputeClaim(t *testing.T) {
 	k, ctx, ctrl, mocks := testkeeper.GetProviderKeeperAndCtx(t, testkeeper.NewInMemKeeperParams(t))
 	defer ctrl.Finish()
 
-	consumerId := "0"
+	consumerId := uint64(0)
 	denom := "uphoton"
 	alice := sdk.AccAddress([]byte("alice___________"))
 
@@ -42,7 +42,7 @@ func TestMintShares_Initial(t *testing.T) {
 	k, ctx, ctrl, mocks := testkeeper.GetProviderKeeperAndCtx(t, testkeeper.NewInMemKeeperParams(t))
 	defer ctrl.Finish()
 
-	consumerId := "0"
+	consumerId := uint64(0)
 	denom := "uphoton"
 	alice := sdk.AccAddress([]byte("alice___________"))
 	poolAddr := k.GetConsumerFeePoolAddress(consumerId)
@@ -64,7 +64,7 @@ func TestMintShares_Subsequent(t *testing.T) {
 	k, ctx, ctrl, mocks := testkeeper.GetProviderKeeperAndCtx(t, testkeeper.NewInMemKeeperParams(t))
 	defer ctrl.Finish()
 
-	consumerId := "0"
+	consumerId := uint64(0)
 	denom := "uphoton"
 	alice := sdk.AccAddress([]byte("alice___________"))
 	bob := sdk.AccAddress([]byte("bob_____________"))
@@ -95,7 +95,7 @@ func TestMintShares_LazyInvalidation(t *testing.T) {
 	k, ctx, ctrl, mocks := testkeeper.GetProviderKeeperAndCtx(t, testkeeper.NewInMemKeeperParams(t))
 	defer ctrl.Finish()
 
-	consumerId := "0"
+	consumerId := uint64(0)
 	denom := "uphoton"
 	alice := sdk.AccAddress([]byte("alice___________"))
 	bob := sdk.AccAddress([]byte("bob_____________"))
@@ -127,7 +127,7 @@ func TestMintShares_SubShareDeposit(t *testing.T) {
 	k, ctx, ctrl, mocks := testkeeper.GetProviderKeeperAndCtx(t, testkeeper.NewInMemKeeperParams(t))
 	defer ctrl.Finish()
 
-	consumerId := "0"
+	consumerId := uint64(0)
 	denom := "uphoton"
 	alice := sdk.AccAddress([]byte("alice___________"))
 	bob := sdk.AccAddress([]byte("bob_____________"))
@@ -161,7 +161,7 @@ func TestWithdrawShares_Full(t *testing.T) {
 	k, ctx, ctrl, mocks := testkeeper.GetProviderKeeperAndCtx(t, testkeeper.NewInMemKeeperParams(t))
 	defer ctrl.Finish()
 
-	consumerId := "0"
+	consumerId := uint64(0)
 	denom := "uphoton"
 	alice := sdk.AccAddress([]byte("alice___________"))
 	poolAddr := k.GetConsumerFeePoolAddress(consumerId)
@@ -189,7 +189,7 @@ func TestWithdrawShares_Partial(t *testing.T) {
 	k, ctx, ctrl, mocks := testkeeper.GetProviderKeeperAndCtx(t, testkeeper.NewInMemKeeperParams(t))
 	defer ctrl.Finish()
 
-	consumerId := "0"
+	consumerId := uint64(0)
 	denom := "uphoton"
 	alice := sdk.AccAddress([]byte("alice___________"))
 	bob := sdk.AccAddress([]byte("bob_____________"))
@@ -220,7 +220,7 @@ func TestWithdrawShares_Empty(t *testing.T) {
 	k, ctx, ctrl, mocks := testkeeper.GetProviderKeeperAndCtx(t, testkeeper.NewInMemKeeperParams(t))
 	defer ctrl.Finish()
 
-	consumerId := "0"
+	consumerId := uint64(0)
 	denom := "uphoton"
 	alice := sdk.AccAddress([]byte("alice___________"))
 	poolAddr := k.GetConsumerFeePoolAddress(consumerId)
@@ -239,7 +239,7 @@ func TestWithdrawShares_SubShareGuard(t *testing.T) {
 	k, ctx, ctrl, mocks := testkeeper.GetProviderKeeperAndCtx(t, testkeeper.NewInMemKeeperParams(t))
 	defer ctrl.Finish()
 
-	consumerId := "0"
+	consumerId := uint64(0)
 	denom := "uphoton"
 	alice := sdk.AccAddress([]byte("alice___________"))
 	poolAddr := k.GetConsumerFeePoolAddress(consumerId)
@@ -272,7 +272,7 @@ func TestSweepConsumerFeePoolDenom(t *testing.T) {
 	k, ctx, ctrl, mocks := testkeeper.GetProviderKeeperAndCtx(t, testkeeper.NewInMemKeeperParams(t))
 	defer ctrl.Finish()
 
-	consumerId := "0"
+	consumerId := uint64(0)
 	denom := "uphoton"
 	alice := sdk.AccAddress([]byte("alice___________"))
 	bob := sdk.AccAddress([]byte("bob_____________"))
@@ -311,7 +311,7 @@ func TestSweepConsumerFeePoolDenom_WithDust(t *testing.T) {
 	k, ctx, ctrl, mocks := testkeeper.GetProviderKeeperAndCtx(t, testkeeper.NewInMemKeeperParams(t))
 	defer ctrl.Finish()
 
-	consumerId := "0"
+	consumerId := uint64(0)
 	denom := "uphoton"
 	alice := sdk.AccAddress([]byte("alice___________"))
 	bob := sdk.AccAddress([]byte("bob_____________"))
@@ -345,7 +345,7 @@ func TestSweepConsumerFeePoolDenom_DistrModuleRecipientUsesCommunityPool(t *test
 	k, ctx, ctrl, mocks := testkeeper.GetProviderKeeperAndCtx(t, testkeeper.NewInMemKeeperParams(t))
 	defer ctrl.Finish()
 
-	consumerId := "0"
+	consumerId := uint64(0)
 	denom := "uphoton"
 	distrAddr := authtypes.NewModuleAddress(disttypes.ModuleName)
 	poolAddr := k.GetConsumerFeePoolAddress(consumerId)
@@ -371,7 +371,7 @@ func TestSweepConsumerFeePoolDenom_AllFloorToZero(t *testing.T) {
 	k, ctx, ctrl, mocks := testkeeper.GetProviderKeeperAndCtx(t, testkeeper.NewInMemKeeperParams(t))
 	defer ctrl.Finish()
 
-	consumerId := "0"
+	consumerId := uint64(0)
 	denom := "uphoton"
 	alice := sdk.AccAddress([]byte("alice___________"))
 	bob := sdk.AccAddress([]byte("bob_____________"))
@@ -412,7 +412,7 @@ func TestSweepConsumerFeePool_AllDenoms(t *testing.T) {
 	k, ctx, ctrl, mocks := testkeeper.GetProviderKeeperAndCtx(t, testkeeper.NewInMemKeeperParams(t))
 	defer ctrl.Finish()
 
-	consumerId := "0"
+	consumerId := uint64(0)
 	alice := sdk.AccAddress([]byte("alice___________"))
 	poolAddr := k.GetConsumerFeePoolAddress(consumerId)
 

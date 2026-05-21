@@ -310,7 +310,7 @@ func TestFundConsumerFeePool_RejectsUnknownConsumer(t *testing.T) {
 	alice := sdk.AccAddress([]byte("alice___________"))
 
 	_, err := ms.FundConsumerFeePool(ctx, &providertypes.MsgFundConsumerFeePool{
-		Signer: alice.String(), ConsumerId: "999",
+		Signer: alice.String(), ConsumerId: 999,
 		Amount: sdk.NewInt64Coin("uphoton", 1),
 	})
 	require.ErrorIs(t, err, providertypes.ErrUnknownConsumerId)
