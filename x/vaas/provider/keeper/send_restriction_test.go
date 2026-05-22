@@ -43,11 +43,10 @@ func TestFeePoolSendRestriction(t *testing.T) {
 	require.Equal(t, poolAddr, to)
 }
 
-// TestFeePoolSendRestriction_BlocksAllNonProviderSenders ensures that the
-// restriction blocks sends from arbitrary module accounts (gov, distribution,
-// IBC transfer, etc.), not only from end-user EOAs. Only the provider module
-// is whitelisted.
-func TestFeePoolSendRestriction_BlocksAllNonProviderSenders(t *testing.T) {
+// TestFeePoolSendRestriction_BlocksUnsanctionedSenders ensures that the
+// restriction blocks sends from module accounts and EOAs other than the two
+// sanctioned ones (provider, distribution).
+func TestFeePoolSendRestriction_BlocksUnsanctionedSenders(t *testing.T) {
 	k, ctx, ctrl, _ := testkeeper.GetProviderKeeperAndCtx(t, testkeeper.NewInMemKeeperParams(t))
 	defer ctrl.Finish()
 
@@ -57,9 +56,7 @@ func TestFeePoolSendRestriction_BlocksAllNonProviderSenders(t *testing.T) {
 	restrict := k.FeePoolSendRestriction()
 	amt := sdk.NewCoins(sdk.NewInt64Coin("uphoton", 1))
 
-	// Cosmos-SDK module accounts and an arbitrary EOA must all be rejected.
 	senders := []sdk.AccAddress{
-		authtypes.NewModuleAddress(disttypes.ModuleName),
 		authtypes.NewModuleAddress("gov"),
 		authtypes.NewModuleAddress("transfer"),
 		sdk.AccAddress([]byte("attacker________")),
@@ -72,8 +69,8 @@ func TestFeePoolSendRestriction_BlocksAllNonProviderSenders(t *testing.T) {
 }
 
 // TestFeePoolSendRestriction_CrossConsumerIsolation: a send to one consumer's
-// fee pool from another consumer's fee pool is still blocked (only the
-// provider module bypasses the restriction).
+// fee pool from another consumer's fee pool is blocked — fee pool addresses
+// are not on the sanctioned-sender list.
 func TestFeePoolSendRestriction_CrossConsumerIsolation(t *testing.T) {
 	k, ctx, ctrl, _ := testkeeper.GetProviderKeeperAndCtx(t, testkeeper.NewInMemKeeperParams(t))
 	defer ctrl.Finish()
@@ -128,13 +125,10 @@ func TestFeePoolSendRestriction_OutboundFromPoolUnaffected(t *testing.T) {
 	require.Equal(t, recipient, to)
 }
 
-// TestFeePoolSendRestriction_GovDistributionFundingBlocked: gov funding from
-// the distribution module account goes through `DistributeFromFeePool` →
-// provider module → fee pool. The first hop's destination is the provider
-// module account (not a pool), so the restriction passes that hop. A direct
-// send from the distribution module to a pool, however, is NOT sanctioned
-// and must be blocked.
-func TestFeePoolSendRestriction_GovDistributionFundingBlocked(t *testing.T) {
+// TestFeePoolSendRestriction_DistributionSenderAllowed: sends from the
+// distribution module account to a fee pool are allowed (gov-fund path uses
+// DistributeFromFeePool to deposit directly).
+func TestFeePoolSendRestriction_DistributionSenderAllowed(t *testing.T) {
 	k, ctx, ctrl, _ := testkeeper.GetProviderKeeperAndCtx(t, testkeeper.NewInMemKeeperParams(t))
 	defer ctrl.Finish()
 
@@ -144,15 +138,9 @@ func TestFeePoolSendRestriction_GovDistributionFundingBlocked(t *testing.T) {
 
 	restrict := k.FeePoolSendRestriction()
 	distrAddr := authtypes.NewModuleAddress(disttypes.ModuleName)
-	providerAddr := authtypes.NewModuleAddress(providertypes.ModuleName)
 	amt := sdk.NewCoins(sdk.NewInt64Coin("uphoton", 1))
 
-	// distribution → provider module: passes (destination not a pool).
-	to, err := restrict(ctx, distrAddr, providerAddr, amt)
+	to, err := restrict(ctx, distrAddr, poolAddr, amt)
 	require.NoError(t, err)
-	require.Equal(t, providerAddr, to)
-
-	// distribution → pool directly: blocked.
-	_, err = restrict(ctx, distrAddr, poolAddr, amt)
-	require.ErrorIs(t, err, providertypes.ErrUnsolicitedFeePoolDeposit)
+	require.Equal(t, poolAddr, to)
 }

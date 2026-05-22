@@ -282,16 +282,13 @@ func TestFundConsumerFeePool_GovAuthority(t *testing.T) {
 
 	govAddr := k.GetAuthority()
 	distrAddr := authtypes.NewModuleAddress(disttypes.ModuleName)
-	providerAddr := authtypes.NewModuleAddress(providertypes.ModuleName)
 	poolAddr := k.GetConsumerFeePoolAddress(consumerId)
 	amount := sdk.NewInt64Coin("uphoton", 1000)
 
 	mocks.MockBankKeeper.EXPECT().GetBalance(ctx, poolAddr, "uphoton").
 		Return(sdk.NewInt64Coin("uphoton", 0))
 	mocks.MockDistributionKeeper.EXPECT().DistributeFromFeePool(
-		ctx, sdk.NewCoins(amount), providerAddr).Return(nil)
-	mocks.MockBankKeeper.EXPECT().SendCoinsFromModuleToAccount(
-		ctx, providertypes.ModuleName, poolAddr, sdk.NewCoins(amount)).Return(nil)
+		ctx, sdk.NewCoins(amount), poolAddr).Return(nil)
 
 	_, err := ms.FundConsumerFeePool(ctx, &providertypes.MsgFundConsumerFeePool{
 		Signer: govAddr, ConsumerId: consumerId, Amount: amount,

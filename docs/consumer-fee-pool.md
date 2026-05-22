@@ -92,7 +92,9 @@ silently lost.
 
 - `vaas query consumer-fee-pool-claim <consumer-id> <depositor>` — one
   depositor's claim across all denoms. Pass the gov authority address to
-  query the community pool's holdings.
+  query the community pool's holdings (the query aliases the gov authority
+  to the distribution module account, which is the depositor of record for
+  community-pool funding).
 - `vaas query consumer-fee-pool-claims <consumer-id>` — paginated list of
   all depositors with non-zero claims.
 

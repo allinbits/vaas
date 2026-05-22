@@ -504,15 +504,11 @@ func (k msgServer) FundConsumerFeePool(
 	}
 
 	poolAddr := k.GetConsumerFeePoolAddress(msg.ConsumerId)
-	providerAddr := authtypes.NewModuleAddress(types.ModuleName)
 	coins := sdk.NewCoins(msg.Amount)
 
-	// Determine depositor identity and source-of-funds path.
 	var depositor sdk.AccAddress
-	if msg.Signer == k.GetAuthority() {
-		if err := k.distributionKeeper.DistributeFromFeePool(ctx, coins, providerAddr); err != nil {
-			return nil, err
-		}
+	isGov := msg.Signer == k.GetAuthority()
+	if isGov {
 		depositor = authtypes.NewModuleAddress(disttypes.ModuleName)
 	} else {
 		signerAddr, err := sdk.AccAddressFromBech32(msg.Signer)
@@ -527,16 +523,23 @@ func (k msgServer) FundConsumerFeePool(
 		depositor = signerAddr
 	}
 
-	// Mint shares using PRE-deposit balance.
+	// MintShares reads the pool balance, so it must run before the
+	// bank-into-pool move below; otherwise share math sees the post-deposit
+	// balance.
 	if err := k.MintShares(ctx, msg.ConsumerId, depositor, msg.Amount); err != nil {
 		return nil, err
 	}
 
-	// Second hop: provider module → fee pool address (SendRestriction allows this).
-	if err := k.bankKeeper.SendCoinsFromModuleToAccount(
-		ctx, types.ModuleName, poolAddr, coins,
-	); err != nil {
-		return nil, err
+	if isGov {
+		if err := k.distributionKeeper.DistributeFromFeePool(ctx, coins, poolAddr); err != nil {
+			return nil, err
+		}
+	} else {
+		if err := k.bankKeeper.SendCoinsFromModuleToAccount(
+			ctx, types.ModuleName, poolAddr, coins,
+		); err != nil {
+			return nil, err
+		}
 	}
 
 	ctx.EventManager().EmitEvent(sdk.NewEvent(
