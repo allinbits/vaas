@@ -4,6 +4,8 @@ import (
 	"encoding/json"
 	"strings"
 	"time"
+
+	sdk "github.com/cosmos/cosmos-sdk/types"
 )
 
 // queryConsumerFeePoolAddress returns the provider-side fee pool account for a
@@ -55,9 +57,15 @@ func (s *IntegrationTestSuite) consumerBankSendDryRun() (string, error) {
 	return stderr.String(), err
 }
 
-// providerFundAddress sends tokens from val to addr on the provider chain.
+// providerFundAddress sends `amount` from val to `addr` on the provider chain
+// and blocks until the recipient's balance for the funded denom has grown,
+// so callers can immediately issue txs from `addr`.
 func (s *IntegrationTestSuite) providerFundAddress(addr, amount string) {
-	_, _, err := s.dockerExec(s.providerValRes[0].Container.ID, []string{
+	coin, err := sdk.ParseCoinNormalized(amount)
+	s.Require().NoError(err, "invalid amount %q", amount)
+	before := s.providerQueryBalance(addr, coin.Denom)
+
+	_, _, err = s.dockerExec(s.providerValRes[0].Container.ID, []string{
 		providerBinary, "tx", "bank", "send", "val", addr, amount,
 		"--from", "val",
 		"--home", providerHomePath,
@@ -67,6 +75,27 @@ func (s *IntegrationTestSuite) providerFundAddress(addr, amount string) {
 		"-y",
 	})
 	s.Require().NoError(err, "failed to fund provider address %s", addr)
+
+	s.Require().Eventuallyf(func() bool {
+		return s.providerQueryBalance(addr, coin.Denom) > before
+	}, 30*time.Second, 2*time.Second,
+		"balance of %s in %s did not grow after fund (before=%d)", addr, coin.Denom, before)
+}
+
+// providerFundConsumerFeePool deposits `amount` into the named consumer's
+// fee pool via MsgFundConsumerFeePool, signed by val.
+func (s *IntegrationTestSuite) providerFundConsumerFeePool(consumerID, amount string) {
+	_, _, err := s.dockerExec(s.providerValRes[0].Container.ID, []string{
+		providerBinary, "tx", "provider", "fund-consumer-fee-pool",
+		consumerID, amount,
+		"--from", "val",
+		"--home", providerHomePath,
+		"--keyring-backend", "test",
+		"--chain-id", providerChainID,
+		"--fees", "10000" + bondDenom,
+		"-y",
+	})
+	s.Require().NoError(err, "failed to fund consumer %s fee pool", consumerID)
 	time.Sleep(3 * time.Second)
 }
 
@@ -93,7 +122,7 @@ func (s *IntegrationTestSuite) testConsumerDebtFlow() {
 			"consumer did not enter debt; last dry-run did not surface debt error")
 
 		s.T().Log("funding consumer fee pool on provider...")
-		s.providerFundAddress(feePoolAddr, "10000000"+bondDenom)
+		s.providerFundConsumerFeePool("0", "10000000"+bondDenom)
 
 		s.T().Log("waiting for consumer to exit debt (bank send should succeed)...")
 		s.Require().Eventuallyf(func() bool {
