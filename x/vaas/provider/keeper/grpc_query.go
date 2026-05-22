@@ -340,6 +340,9 @@ func (k Keeper) ConsumerFeePoolClaim(
 	if !exists {
 		return nil, status.Errorf(codes.NotFound, "consumer %d does not exist", req.ConsumerId)
 	}
+	if k.GetConsumerPhase(ctx, req.ConsumerId) == types.CONSUMER_PHASE_DELETED {
+		return nil, status.Errorf(codes.NotFound, "consumer %d is deleted", req.ConsumerId)
+	}
 
 	depositorBech := req.Depositor
 	if depositorBech == k.GetAuthority() {
@@ -403,6 +406,9 @@ func (k Keeper) ConsumerFeePoolClaims(
 	}
 	if !exists {
 		return nil, status.Errorf(codes.NotFound, "consumer %d does not exist", req.ConsumerId)
+	}
+	if k.GetConsumerPhase(ctx, req.ConsumerId) == types.CONSUMER_PHASE_DELETED {
+		return nil, status.Errorf(codes.NotFound, "consumer %d is deleted", req.ConsumerId)
 	}
 
 	type acc struct {
@@ -524,7 +530,9 @@ func (k Keeper) ConsumerFeePoolClaims(
 		resp.Pagination.Total = total
 	}
 	if end < total {
-		// Encode the next page cursor as the depositor at the boundary.
+		// NextKey is the bech32 depositor at the boundary, encoded as bytes
+		// for the PageResponse contract. Resume decodes it back via
+		// string(req.Pagination.Key) and binary-searches the same sort order.
 		resp.Pagination.NextKey = []byte(keys[end])
 	}
 	return resp, nil

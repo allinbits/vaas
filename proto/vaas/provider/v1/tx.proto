@@ -190,8 +190,12 @@ message MsgFundConsumerFeePool {
 message MsgFundConsumerFeePoolResponse {}
 
 // MsgWithdrawConsumerFeePool withdraws tokens from the signer's share in a
-// consumer fee pool across one or more denoms. The transaction is atomic:
-// if any denom in `amount` fails its share check, the whole tx aborts.
+// consumer fee pool across one or more denoms. Each amount is interpreted as
+// "up to this much": if the signer's claim for a denom is less than the
+// requested amount the handler delivers the full claim and burns all of the
+// signer's shares for that denom. The transaction is atomic: if the signer
+// has no shares at all for any denom in `amount` (or the pool has zero
+// balance for that denom), the whole tx aborts.
 // If the signer is the gov module authority, the withdrawal targets the
 // distribution module account's shares and tokens are routed back to the
 // community pool.

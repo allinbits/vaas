@@ -34,4 +34,5 @@ var (
 	ErrFeePoolSweepFailed                      = errorsmod.Register(ModuleName, 26, "consumer fee pool sweep failed")
 	ErrDepositTooSmall                         = errorsmod.Register(ModuleName, 27, "deposit too small to mint any shares")
 	ErrSubShareWithdraw                        = errorsmod.Register(ModuleName, 28, "withdraw amount too small to burn any shares")
+	ErrNoSharesForDepositor                    = errorsmod.Register(ModuleName, 29, "depositor has no shares in the consumer fee pool for the requested denom")
 )

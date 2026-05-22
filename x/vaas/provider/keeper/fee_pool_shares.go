@@ -2,6 +2,7 @@ package keeper
 
 import (
 	"sort"
+	"strconv"
 
 	"github.com/allinbits/vaas/x/vaas/provider/types"
 
@@ -13,6 +14,41 @@ import (
 	authtypes "github.com/cosmos/cosmos-sdk/x/auth/types"
 	disttypes "github.com/cosmos/cosmos-sdk/x/distribution/types"
 )
+
+// forwardOrphanToCommunityPool moves a fee-pool balance to the community pool
+// when no share records exist for the denom. The orphan case is unreachable
+// from valid operations; firing this path indicates state corruption and is
+// logged at Error level.
+func (k Keeper) forwardOrphanToCommunityPool(
+	ctx sdk.Context, consumerId uint64, poolAddr sdk.AccAddress, balance sdk.Coin, site string,
+) error {
+	k.Logger(ctx).Error("fee-pool orphan balance forwarded to community pool",
+		"site", site,
+		"consumer_id", consumerId,
+		"denom", balance.Denom,
+		"amount", balance.Amount.String())
+	orphan := sdk.NewCoins(balance)
+	if err := k.bankKeeper.SendCoinsFromAccountToModule(
+		ctx, poolAddr, types.ModuleName, orphan,
+	); err != nil {
+		return err
+	}
+	providerAddr := authtypes.NewModuleAddress(types.ModuleName)
+	return k.distributionKeeper.FundCommunityPool(ctx, orphan, providerAddr)
+}
+
+// emitSweepEvent emits one ConsumerFeePoolSweep event per swept denom.
+func (k Keeper) emitSweepEvent(
+	ctx sdk.Context, consumerId uint64, denom string, distributed, dust math.Int,
+) {
+	ctx.EventManager().EmitEvent(sdk.NewEvent(
+		types.EventTypeConsumerFeePoolSweep,
+		sdk.NewAttribute(types.AttributeConsumerId, strconv.FormatUint(consumerId, 10)),
+		sdk.NewAttribute(types.AttributeDenom, denom),
+		sdk.NewAttribute(types.AttributeTotalDistributed, distributed.String()),
+		sdk.NewAttribute(types.AttributeDust, dust.String()),
+	))
+}
 
 // ComputeClaim returns the depositor's claimable tokens for one denom on the
 // given consumer's fee pool. Returns math.ZeroInt() if the depositor has no
@@ -74,14 +110,7 @@ func (k Keeper) MintShares(
 	// the orphan balance to the community pool before crediting the new
 	// depositor, so the deposit doesn't capture the orphan funds.
 	if total.IsZero() && balance.Amount.IsPositive() {
-		providerAddr := authtypes.NewModuleAddress(types.ModuleName)
-		orphan := sdk.NewCoins(balance)
-		if err := k.bankKeeper.SendCoinsFromAccountToModule(
-			ctx, poolAddr, types.ModuleName, orphan,
-		); err != nil {
-			return err
-		}
-		if err := k.distributionKeeper.FundCommunityPool(ctx, orphan, providerAddr); err != nil {
+		if err := k.forwardOrphanToCommunityPool(ctx, consumerId, poolAddr, balance, "mint"); err != nil {
 			return err
 		}
 	}
@@ -123,7 +152,7 @@ func (k Keeper) WithdrawShares(
 	depKey := collections.Join3(consumerId, amount.Denom, depositor)
 	shares, err := k.ConsumerFeePoolShares.Get(ctx, depKey)
 	if err != nil {
-		return sdk.Coin{}, errorsmod.Wrapf(types.ErrUnauthorized,
+		return sdk.Coin{}, errorsmod.Wrapf(types.ErrNoSharesForDepositor,
 			"depositor %s has no shares in (%d, %s)", depositor, consumerId, amount.Denom)
 	}
 	totalKey := collections.Join(consumerId, amount.Denom)
@@ -216,17 +245,20 @@ func (k Keeper) SweepConsumerFeePoolDenom(
 
 	// Orphan balance: no shares but balance > 0. Forward to community pool.
 	if total.IsZero() {
-		if err := k.bankKeeper.SendCoinsFromAccountToModule(
-			ctx, poolAddr, providerModule, sdk.NewCoins(balance),
-		); err != nil {
+		if err := k.forwardOrphanToCommunityPool(ctx, consumerId, poolAddr, balance, "sweep"); err != nil {
 			return err
 		}
-		return k.distributionKeeper.FundCommunityPool(ctx, sdk.NewCoins(balance), providerAddr)
+		k.emitSweepEvent(ctx, consumerId, denom, math.ZeroInt(), balance.Amount)
+		return nil
 	}
 
 	// Orphan shares: shares > 0 but balance == 0. Burn all shares, no transfer.
 	if balance.Amount.IsZero() {
-		return k.clearAllShares(ctx, consumerId, denom)
+		if err := k.clearAllShares(ctx, consumerId, denom); err != nil {
+			return err
+		}
+		k.emitSweepEvent(ctx, consumerId, denom, math.ZeroInt(), math.ZeroInt())
+		return nil
 	}
 
 	// Normal pro-rata distribution.
@@ -296,7 +328,11 @@ func (k Keeper) SweepConsumerFeePoolDenom(
 	}
 
 	// Burn all share records for this (consumer, denom).
-	return k.clearAllShares(ctx, consumerId, denom)
+	if err := k.clearAllShares(ctx, consumerId, denom); err != nil {
+		return err
+	}
+	k.emitSweepEvent(ctx, consumerId, denom, distributed, dust)
+	return nil
 }
 
 // SweepConsumerFeePool sweeps each denom in `denoms`, or every denom that
@@ -350,14 +386,25 @@ func (k Keeper) SweepConsumerFeePool(
 }
 
 // clearAllShares deletes every share record for the given (consumer, denom).
-// Used by lazy invalidation and by sweep finalization.
+// Used by lazy invalidation and by sweep finalization. No-op if nothing is
+// stored — collections.Remove on a missing key would otherwise error.
 func (k Keeper) clearAllShares(ctx sdk.Context, consumerId uint64, denom string) error {
+	totalKey := collections.Join(consumerId, denom)
+	totalExists, err := k.ConsumerFeePoolTotalShares.Has(ctx, totalKey)
+	if err != nil {
+		return err
+	}
+
 	prefix := collections.NewSuperPrefixedTripleRange[uint64, string, sdk.AccAddress](consumerId, denom)
 	iter, err := k.ConsumerFeePoolShares.Iterate(ctx, prefix)
 	if err != nil {
 		return err
 	}
 	defer iter.Close()
+
+	if !iter.Valid() && !totalExists {
+		return nil
+	}
 
 	var toDelete []collections.Triple[uint64, string, sdk.AccAddress]
 	for ; iter.Valid(); iter.Next() {
@@ -367,10 +414,14 @@ func (k Keeper) clearAllShares(ctx sdk.Context, consumerId uint64, denom string)
 		}
 		toDelete = append(toDelete, key)
 	}
+
 	for _, key := range toDelete {
 		if err := k.ConsumerFeePoolShares.Remove(ctx, key); err != nil {
 			return err
 		}
 	}
-	return k.ConsumerFeePoolTotalShares.Remove(ctx, collections.Join(consumerId, denom))
+	if totalExists {
+		return k.ConsumerFeePoolTotalShares.Remove(ctx, totalKey)
+	}
+	return nil
 }

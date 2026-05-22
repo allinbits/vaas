@@ -655,6 +655,11 @@ func TestMsgSweepConsumerFeePool_ValidateBasic(t *testing.T) {
 			ConsumerId: 0,
 			Denoms:     []string{"INVALID DENOM WITH SPACES"},
 		}, true},
+		{"duplicate denom", types.MsgSweepConsumerFeePool{
+			Signer:     validSigner,
+			ConsumerId: 0,
+			Denoms:     []string{"uphoton", "uphoton"},
+		}, true},
 	}
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {

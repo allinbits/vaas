@@ -552,11 +552,9 @@ func (k msgServer) FundConsumerFeePool(
 }
 
 // WithdrawConsumerFeePool burns the depositor's shares across one or more
-// denoms and returns the corresponding tokens. The handler is atomic: all
-// share burns and bank movements are staged in a cache-context that is only
-// committed on full success, so a mid-flight failure rolls back the entire
-// request even when the handler is invoked outside of the SDK tx machinery
-// (nested calls or direct invocations in tests).
+// denoms and returns the corresponding tokens. The handler is all-or-nothing
+// at the tx boundary: a mid-flight failure on any denom returns an error and
+// the SDK rolls back the entire tx.
 //
 // When the signer is the gov authority, the depositor identity is the
 // distribution module account and the tokens are routed back to the community
@@ -578,10 +576,9 @@ func (k msgServer) WithdrawConsumerFeePool(
 		depositor = addr
 	}
 
-	cachedCtx, write := ctx.CacheContext()
 	delivered := sdk.NewCoins()
 	for _, amt := range msg.Amount {
-		tokens, err := k.WithdrawShares(cachedCtx, msg.ConsumerId, depositor, amt)
+		tokens, err := k.WithdrawShares(ctx, msg.ConsumerId, depositor, amt)
 		if err != nil {
 			return nil, err
 		}
@@ -592,34 +589,40 @@ func (k msgServer) WithdrawConsumerFeePool(
 		poolAddr := k.GetConsumerFeePoolAddress(msg.ConsumerId)
 		providerAddr := authtypes.NewModuleAddress(types.ModuleName)
 		if err := k.bankKeeper.SendCoinsFromAccountToModule(
-			cachedCtx, poolAddr, types.ModuleName, delivered,
+			ctx, poolAddr, types.ModuleName, delivered,
 		); err != nil {
 			return nil, err
 		}
 		if isGov {
-			if err := k.distributionKeeper.FundCommunityPool(cachedCtx, delivered, providerAddr); err != nil {
+			if err := k.distributionKeeper.FundCommunityPool(ctx, delivered, providerAddr); err != nil {
 				return nil, err
 			}
 		} else {
 			if err := k.bankKeeper.SendCoinsFromModuleToAccount(
-				cachedCtx, types.ModuleName, depositor, delivered,
+				ctx, types.ModuleName, depositor, delivered,
 			); err != nil {
 				return nil, err
 			}
 		}
 	}
-	write()
 
-	recipient := depositor.String()
+	// On the gov path depositor and recipient are both the distribution
+	// module account: tokens land there via FundCommunityPool, which then
+	// credits the community-pool DecCoins ledger entry on top of the same
+	// bank balance. The withdraw_path attribute lets indexers distinguish
+	// "regular withdraw to depositor" from "gov clawback to community pool"
+	// without inferring it from the signer.
+	withdrawPath := types.WithdrawPathDirect
 	if isGov {
-		recipient = "community_pool"
+		withdrawPath = types.WithdrawPathCommunityPool
 	}
 	ctx.EventManager().EmitEvent(sdk.NewEvent(
 		types.EventTypeConsumerFeePoolWithdraw,
 		sdk.NewAttribute(types.AttributeConsumerId, strconv.FormatUint(msg.ConsumerId, 10)),
 		sdk.NewAttribute(types.AttributeDepositor, depositor.String()),
-		sdk.NewAttribute(types.AttributeRecipient, recipient),
+		sdk.NewAttribute(types.AttributeRecipient, depositor.String()),
 		sdk.NewAttribute(types.AttributeAmount, delivered.String()),
+		sdk.NewAttribute(types.AttributeWithdrawPath, withdrawPath),
 	))
 	return &types.MsgWithdrawConsumerFeePoolResponse{Amount: delivered}, nil
 }
@@ -628,6 +631,19 @@ func (k msgServer) SweepConsumerFeePool(
 	goCtx context.Context, msg *types.MsgSweepConsumerFeePool,
 ) (*types.MsgSweepConsumerFeePoolResponse, error) {
 	ctx := sdk.UnwrapSDKContext(goCtx)
+
+	exists, err := k.ConsumerPhase.Has(ctx, msg.ConsumerId)
+	if err != nil {
+		return nil, err
+	}
+	if !exists {
+		return nil, errorsmod.Wrapf(types.ErrUnknownConsumerId,
+			"consumer %d does not exist", msg.ConsumerId)
+	}
+	if k.GetConsumerPhase(ctx, msg.ConsumerId) == types.CONSUMER_PHASE_DELETED {
+		return nil, errorsmod.Wrapf(types.ErrInvalidPhase,
+			"consumer %d is deleted; pool already auto-swept on delete", msg.ConsumerId)
+	}
 
 	ownerAddr, err := k.GetConsumerOwnerAddress(ctx, msg.ConsumerId)
 	if err != nil {
@@ -639,8 +655,7 @@ func (k msgServer) SweepConsumerFeePool(
 			"only consumer owner %s may sweep, got %s", ownerAddr, msg.Signer)
 	}
 
-	// The msgServer's SweepConsumerFeePool shadows the embedded Keeper's
-	// SweepConsumerFeePool. Call the keeper's via the embedded field.
+	// k.SweepConsumerFeePool here would recurse; call the embedded Keeper's.
 	if err := k.Keeper.SweepConsumerFeePool(ctx, msg.ConsumerId, msg.Denoms); err != nil {
 		return nil, errorsmod.Wrap(types.ErrFeePoolSweepFailed, err.Error())
 	}

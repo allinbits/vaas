@@ -32,4 +32,9 @@ const (
 	AttributeDenom                    = "denom"
 	AttributeTotalDistributed         = "total_distributed"
 	AttributeDust                     = "dust"
+	AttributeWithdrawPath             = "withdraw_path"
+
+	// AttributeWithdrawPath values
+	WithdrawPathDirect        = "direct"
+	WithdrawPathCommunityPool = "community_pool"
 )
