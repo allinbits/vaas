@@ -264,7 +264,7 @@ func TestFundConsumerFeePool_RegularSigner(t *testing.T) {
 	require.NoError(t, err)
 
 	shares, _ := k.ConsumerFeePoolShares.Get(ctx,
-		collections.Join3(consumerId, alice, "uphoton"))
+		collections.Join3(consumerId, "uphoton", alice))
 	require.Equal(t, math.NewInt(100), shares)
 }
 
@@ -299,7 +299,7 @@ func TestFundConsumerFeePool_GovAuthority(t *testing.T) {
 	require.NoError(t, err)
 
 	shares, _ := k.ConsumerFeePoolShares.Get(ctx,
-		collections.Join3(consumerId, distrAddr, "uphoton"))
+		collections.Join3(consumerId, "uphoton", distrAddr))
 	require.Equal(t, math.NewInt(1000), shares)
 }
 
@@ -314,6 +314,47 @@ func TestFundConsumerFeePool_RejectsUnknownConsumer(t *testing.T) {
 		Amount: sdk.NewInt64Coin("uphoton", 1),
 	})
 	require.ErrorIs(t, err, providertypes.ErrUnknownConsumerId)
+}
+
+// TestFundConsumerFeePool_AllowedInActivePhases verifies fund is accepted in
+// every phase except DELETED (REGISTERED, INITIALIZED, LAUNCHED, STOPPED).
+func TestFundConsumerFeePool_AllowedInActivePhases(t *testing.T) {
+	allowedPhases := []providertypes.ConsumerPhase{
+		providertypes.CONSUMER_PHASE_REGISTERED,
+		providertypes.CONSUMER_PHASE_INITIALIZED,
+		providertypes.CONSUMER_PHASE_LAUNCHED,
+		providertypes.CONSUMER_PHASE_STOPPED,
+	}
+	for _, phase := range allowedPhases {
+		t.Run(phase.String(), func(t *testing.T) {
+			k, ctx, ctrl, mocks := testkeeper.GetProviderKeeperAndCtx(t, testkeeper.NewInMemKeeperParams(t))
+			defer ctrl.Finish()
+			ms := providerkeeper.NewMsgServerImpl(&k)
+
+			consumerId := k.FetchAndIncrementConsumerId(ctx)
+			k.SetConsumerPhase(ctx, consumerId, phase)
+			k.SetParams(ctx, providertypes.DefaultParams())
+			params := k.GetParams(ctx)
+			params.FeesPerBlock = sdk.NewInt64Coin("uphoton", 10)
+			k.SetParams(ctx, params)
+
+			alice := sdk.AccAddress([]byte("alice___________"))
+			poolAddr := k.GetConsumerFeePoolAddress(consumerId)
+			amount := sdk.NewInt64Coin("uphoton", 100)
+
+			mocks.MockBankKeeper.EXPECT().GetBalance(ctx, poolAddr, "uphoton").
+				Return(sdk.NewInt64Coin("uphoton", 0))
+			mocks.MockBankKeeper.EXPECT().SendCoinsFromAccountToModule(
+				ctx, alice, providertypes.ModuleName, sdk.NewCoins(amount)).Return(nil)
+			mocks.MockBankKeeper.EXPECT().SendCoinsFromModuleToAccount(
+				ctx, providertypes.ModuleName, poolAddr, sdk.NewCoins(amount)).Return(nil)
+
+			_, err := ms.FundConsumerFeePool(ctx, &providertypes.MsgFundConsumerFeePool{
+				Signer: alice.String(), ConsumerId: consumerId, Amount: amount,
+			})
+			require.NoError(t, err)
+		})
+	}
 }
 
 func TestFundConsumerFeePool_RejectsDeleted(t *testing.T) {
@@ -344,17 +385,18 @@ func TestWithdrawConsumerFeePool_Regular(t *testing.T) {
 
 	// alice sole depositor: 100 shares, balance 80
 	require.NoError(t, k.ConsumerFeePoolShares.Set(ctx,
-		collections.Join3(consumerId, alice, "uphoton"), math.NewInt(100)))
+		collections.Join3(consumerId, "uphoton", alice), math.NewInt(100)))
 	require.NoError(t, k.ConsumerFeePoolTotalShares.Set(ctx,
 		collections.Join(consumerId, "uphoton"), math.NewInt(100)))
 
 	mocks.MockBankKeeper.EXPECT().GetBalance(gomock.Any(), poolAddr, "uphoton").
 		Return(sdk.NewInt64Coin("uphoton", 80))
-	// alice asks for 30, partial path: shares_to_burn = 30*100/80 = 37, tokens = 37*80/100 = 29
+	// alice asks for 30, partial path: shares_to_burn = 30*100/80 = 37, tokens = 37*80/100 = 29.
+	// Bank ops execute on a cache-context wrapped around the outer ctx, so match with gomock.Any().
 	mocks.MockBankKeeper.EXPECT().SendCoinsFromAccountToModule(
-		ctx, poolAddr, providertypes.ModuleName, sdk.NewCoins(sdk.NewInt64Coin("uphoton", 29))).Return(nil)
+		gomock.Any(), poolAddr, providertypes.ModuleName, sdk.NewCoins(sdk.NewInt64Coin("uphoton", 29))).Return(nil)
 	mocks.MockBankKeeper.EXPECT().SendCoinsFromModuleToAccount(
-		ctx, providertypes.ModuleName, alice, sdk.NewCoins(sdk.NewInt64Coin("uphoton", 29))).Return(nil)
+		gomock.Any(), providertypes.ModuleName, alice, sdk.NewCoins(sdk.NewInt64Coin("uphoton", 29))).Return(nil)
 
 	resp, err := ms.WithdrawConsumerFeePool(ctx, &providertypes.MsgWithdrawConsumerFeePool{
 		Signer: alice.String(), ConsumerId: consumerId,
@@ -376,17 +418,17 @@ func TestWithdrawConsumerFeePool_GovClawback(t *testing.T) {
 	poolAddr := k.GetConsumerFeePoolAddress(consumerId)
 
 	require.NoError(t, k.ConsumerFeePoolShares.Set(ctx,
-		collections.Join3(consumerId, distrAddr, "uphoton"), math.NewInt(100)))
+		collections.Join3(consumerId, "uphoton", distrAddr), math.NewInt(100)))
 	require.NoError(t, k.ConsumerFeePoolTotalShares.Set(ctx,
 		collections.Join(consumerId, "uphoton"), math.NewInt(100)))
 
 	mocks.MockBankKeeper.EXPECT().GetBalance(gomock.Any(), poolAddr, "uphoton").
 		Return(sdk.NewInt64Coin("uphoton", 100))
 	mocks.MockBankKeeper.EXPECT().SendCoinsFromAccountToModule(
-		ctx, poolAddr, providertypes.ModuleName, sdk.NewCoins(sdk.NewInt64Coin("uphoton", 100))).Return(nil)
-	// Gov clawback: tokens forwarded to community pool, not raw bank send
+		gomock.Any(), poolAddr, providertypes.ModuleName, sdk.NewCoins(sdk.NewInt64Coin("uphoton", 100))).Return(nil)
+	// Gov clawback: tokens forwarded to community pool via cache-context, not raw bank send.
 	mocks.MockDistributionKeeper.EXPECT().FundCommunityPool(
-		ctx, sdk.NewCoins(sdk.NewInt64Coin("uphoton", 100)), providerAddr).Return(nil)
+		gomock.Any(), sdk.NewCoins(sdk.NewInt64Coin("uphoton", 100)), providerAddr).Return(nil)
 
 	_, err := ms.WithdrawConsumerFeePool(ctx, &providertypes.MsgWithdrawConsumerFeePool{
 		Signer: k.GetAuthority(), ConsumerId: consumerId,
@@ -410,7 +452,7 @@ func TestWithdrawConsumerFeePool_AtomicMultiDenomAbort(t *testing.T) {
 	// shares; the second must fail and the cache-context rollback must
 	// restore alice's uatone shares to their pre-call value.
 	require.NoError(t, k.ConsumerFeePoolShares.Set(ctx,
-		collections.Join3(consumerId, alice, "uatone"), math.NewInt(50)))
+		collections.Join3(consumerId, "uatone", alice), math.NewInt(50)))
 	require.NoError(t, k.ConsumerFeePoolTotalShares.Set(ctx,
 		collections.Join(consumerId, "uatone"), math.NewInt(50)))
 
@@ -430,7 +472,7 @@ func TestWithdrawConsumerFeePool_AtomicMultiDenomAbort(t *testing.T) {
 	require.Error(t, err)
 
 	// alice's uatone shares should remain 50 (rollback proved)
-	s, _ := k.ConsumerFeePoolShares.Get(ctx, collections.Join3(consumerId, alice, "uatone"))
+	s, _ := k.ConsumerFeePoolShares.Get(ctx, collections.Join3(consumerId, "uatone", alice))
 	require.Equal(t, math.NewInt(50), s)
 }
 
@@ -465,7 +507,7 @@ func TestSweepConsumerFeePool_OwnerTriggers(t *testing.T) {
 	alice := sdk.AccAddress([]byte("alice___________"))
 	poolAddr := k.GetConsumerFeePoolAddress(consumerId)
 	require.NoError(t, k.ConsumerFeePoolShares.Set(ctx,
-		collections.Join3(consumerId, alice, "uphoton"), math.NewInt(100)))
+		collections.Join3(consumerId, "uphoton", alice), math.NewInt(100)))
 	require.NoError(t, k.ConsumerFeePoolTotalShares.Set(ctx,
 		collections.Join(consumerId, "uphoton"), math.NewInt(100)))
 

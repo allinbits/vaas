@@ -32,4 +32,6 @@ var (
 	ErrUnsolicitedFeePoolDeposit               = errorsmod.Register(ModuleName, 24, "direct sends to consumer fee pool addresses are not permitted; use MsgFundConsumerFeePool")
 	ErrInvalidFundDenom                        = errorsmod.Register(ModuleName, 25, "deposit denom does not match the current fees_per_block denom")
 	ErrFeePoolSweepFailed                      = errorsmod.Register(ModuleName, 26, "consumer fee pool sweep failed")
+	ErrDepositTooSmall                         = errorsmod.Register(ModuleName, 27, "deposit too small to mint any shares")
+	ErrSubShareWithdraw                        = errorsmod.Register(ModuleName, 28, "withdraw amount too small to burn any shares")
 )

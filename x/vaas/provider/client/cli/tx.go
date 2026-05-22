@@ -483,10 +483,14 @@ func NewFundConsumerFeePoolCmd() *cobra.Command {
 				ConsumerId: consumerId,
 				Amount:     amount,
 			}
+			if err := msg.ValidateBasic(); err != nil {
+				return err
+			}
 			return tx.GenerateOrBroadcastTxCLI(clientCtx, cmd.Flags(), msg)
 		},
 	}
 	flags.AddTxFlagsToCmd(cmd)
+	_ = cmd.MarkFlagRequired(flags.FlagFrom)
 	return cmd
 }
 
@@ -513,10 +517,14 @@ func NewWithdrawConsumerFeePoolCmd() *cobra.Command {
 				ConsumerId: consumerId,
 				Amount:     coins,
 			}
+			if err := msg.ValidateBasic(); err != nil {
+				return err
+			}
 			return tx.GenerateOrBroadcastTxCLI(clientCtx, cmd.Flags(), msg)
 		},
 	}
 	flags.AddTxFlagsToCmd(cmd)
+	_ = cmd.MarkFlagRequired(flags.FlagFrom)
 	return cmd
 }
 
@@ -534,20 +542,21 @@ func NewSweepConsumerFeePoolCmd() *cobra.Command {
 			if err != nil {
 				return err
 			}
-			denomsCSV, _ := cmd.Flags().GetString("denoms")
-			var denoms []string
-			if strings.TrimSpace(denomsCSV) != "" {
-				denoms = strings.Split(denomsCSV, ",")
-			}
+			denoms, _ := cmd.Flags().GetStringSlice("denoms")
 			msg := &types.MsgSweepConsumerFeePool{
 				Signer:     clientCtx.GetFromAddress().String(),
 				ConsumerId: consumerId,
 				Denoms:     denoms,
 			}
+			if err := msg.ValidateBasic(); err != nil {
+				return err
+			}
 			return tx.GenerateOrBroadcastTxCLI(clientCtx, cmd.Flags(), msg)
 		},
 	}
-	cmd.Flags().String("denoms", "", "comma-separated denoms to sweep (default: all denoms with shares or balance)")
+	cmd.Flags().StringSlice("denoms", nil,
+		"denoms to sweep; repeat flag or pass comma-separated (default: all denoms with shares or balance)")
 	flags.AddTxFlagsToCmd(cmd)
+	_ = cmd.MarkFlagRequired(flags.FlagFrom)
 	return cmd
 }

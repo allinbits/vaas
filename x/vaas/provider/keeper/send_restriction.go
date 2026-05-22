@@ -21,7 +21,12 @@ func (k Keeper) FeePoolSendRestriction() func(
 	return func(
 		ctx context.Context, fromAddr, toAddr sdk.AccAddress, amount sdk.Coins,
 	) (sdk.AccAddress, error) {
-		if _, err := k.FeePoolAddressToConsumerId.Get(ctx, toAddr); err != nil {
+		isFeePool, err := k.FeePoolAddressToConsumerId.Has(ctx, toAddr)
+		if err != nil {
+			return nil, errorsmod.Wrapf(err,
+				"fee-pool send restriction lookup for %s", toAddr.String())
+		}
+		if !isFeePool {
 			return toAddr, nil
 		}
 		if fromAddr.Equals(providerAddr) {

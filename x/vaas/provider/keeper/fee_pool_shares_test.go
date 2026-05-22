@@ -31,7 +31,7 @@ func TestComputeClaim(t *testing.T) {
 
 	// Seed: alice has 100 shares of 100 total, balance 50
 	require.NoError(t, k.ConsumerFeePoolShares.Set(ctx,
-		collections.Join3(consumerId, alice, denom), math.NewInt(100)))
+		collections.Join3(consumerId, denom, alice), math.NewInt(100)))
 	require.NoError(t, k.ConsumerFeePoolTotalShares.Set(ctx,
 		collections.Join(consumerId, denom), math.NewInt(100)))
 	mocks.MockBankKeeper.EXPECT().GetBalance(ctx, poolAddr, denom).Return(sdk.NewInt64Coin(denom, 50))
@@ -51,7 +51,7 @@ func TestMintShares_Initial(t *testing.T) {
 	mocks.MockBankKeeper.EXPECT().GetBalance(ctx, poolAddr, denom).Return(sdk.NewInt64Coin(denom, 0))
 	require.NoError(t, k.MintShares(ctx, consumerId, alice, sdk.NewInt64Coin(denom, 100)))
 
-	shares, err := k.ConsumerFeePoolShares.Get(ctx, collections.Join3(consumerId, alice, denom))
+	shares, err := k.ConsumerFeePoolShares.Get(ctx, collections.Join3(consumerId, denom, alice))
 	require.NoError(t, err)
 	require.Equal(t, math.NewInt(100), shares)
 
@@ -72,7 +72,7 @@ func TestMintShares_Subsequent(t *testing.T) {
 
 	// Seed: alice has 100 shares against balance 50 (consumed via fees)
 	require.NoError(t, k.ConsumerFeePoolShares.Set(ctx,
-		collections.Join3(consumerId, alice, denom), math.NewInt(100)))
+		collections.Join3(consumerId, denom, alice), math.NewInt(100)))
 	require.NoError(t, k.ConsumerFeePoolTotalShares.Set(ctx,
 		collections.Join(consumerId, denom), math.NewInt(100)))
 
@@ -82,7 +82,7 @@ func TestMintShares_Subsequent(t *testing.T) {
 	require.NoError(t, k.MintShares(ctx, consumerId, bob, sdk.NewInt64Coin(denom, 100)))
 
 	// Bob: shares = 100 * 100 / 50 = 200
-	shares, err := k.ConsumerFeePoolShares.Get(ctx, collections.Join3(consumerId, bob, denom))
+	shares, err := k.ConsumerFeePoolShares.Get(ctx, collections.Join3(consumerId, denom, bob))
 	require.NoError(t, err)
 	require.Equal(t, math.NewInt(200), shares)
 
@@ -103,7 +103,7 @@ func TestMintShares_LazyInvalidation(t *testing.T) {
 
 	// Seed: alice has 100 shares, balance is 0 (pool fully consumed by fees)
 	require.NoError(t, k.ConsumerFeePoolShares.Set(ctx,
-		collections.Join3(consumerId, alice, denom), math.NewInt(100)))
+		collections.Join3(consumerId, denom, alice), math.NewInt(100)))
 	require.NoError(t, k.ConsumerFeePoolTotalShares.Set(ctx,
 		collections.Join(consumerId, denom), math.NewInt(100)))
 
@@ -111,10 +111,10 @@ func TestMintShares_LazyInvalidation(t *testing.T) {
 	require.NoError(t, k.MintShares(ctx, consumerId, bob, sdk.NewInt64Coin(denom, 50)))
 
 	// Alice's shares should be wiped (lazy invalidation), Bob's recorded as initial
-	_, err := k.ConsumerFeePoolShares.Get(ctx, collections.Join3(consumerId, alice, denom))
+	_, err := k.ConsumerFeePoolShares.Get(ctx, collections.Join3(consumerId, denom, alice))
 	require.ErrorIs(t, err, collections.ErrNotFound)
 
-	bobShares, err := k.ConsumerFeePoolShares.Get(ctx, collections.Join3(consumerId, bob, denom))
+	bobShares, err := k.ConsumerFeePoolShares.Get(ctx, collections.Join3(consumerId, denom, bob))
 	require.NoError(t, err)
 	require.Equal(t, math.NewInt(50), bobShares)
 
@@ -136,19 +136,19 @@ func TestMintShares_SubShareDeposit(t *testing.T) {
 	// Seed: alice has 1_000_000 shares of 1_000_000 total, balance is huge (1_000_000_000).
 	// Bob's tiny 1-unit deposit would mint floor(1 * 1_000_000 / 1_000_000_000) = 0 shares.
 	require.NoError(t, k.ConsumerFeePoolShares.Set(ctx,
-		collections.Join3(consumerId, alice, denom), math.NewInt(1_000_000)))
+		collections.Join3(consumerId, denom, alice), math.NewInt(1_000_000)))
 	require.NoError(t, k.ConsumerFeePoolTotalShares.Set(ctx,
 		collections.Join(consumerId, denom), math.NewInt(1_000_000)))
 
 	mocks.MockBankKeeper.EXPECT().GetBalance(ctx, poolAddr, denom).Return(sdk.NewInt64Coin(denom, 1_000_000_000))
 	err := k.MintShares(ctx, consumerId, bob, sdk.NewInt64Coin(denom, 1))
-	require.ErrorIs(t, err, providertypes.ErrInvalidFundDenom)
+	require.ErrorIs(t, err, providertypes.ErrDepositTooSmall)
 
 	// No state mutation: bob has no entry, total unchanged, alice unchanged.
-	_, err = k.ConsumerFeePoolShares.Get(ctx, collections.Join3(consumerId, bob, denom))
+	_, err = k.ConsumerFeePoolShares.Get(ctx, collections.Join3(consumerId, denom, bob))
 	require.ErrorIs(t, err, collections.ErrNotFound)
 
-	aliceShares, err := k.ConsumerFeePoolShares.Get(ctx, collections.Join3(consumerId, alice, denom))
+	aliceShares, err := k.ConsumerFeePoolShares.Get(ctx, collections.Join3(consumerId, denom, alice))
 	require.NoError(t, err)
 	require.Equal(t, math.NewInt(1_000_000), aliceShares)
 
@@ -168,7 +168,7 @@ func TestWithdrawShares_Full(t *testing.T) {
 
 	// Alice sole depositor with 100 shares against balance 100
 	require.NoError(t, k.ConsumerFeePoolShares.Set(ctx,
-		collections.Join3(consumerId, alice, denom), math.NewInt(100)))
+		collections.Join3(consumerId, denom, alice), math.NewInt(100)))
 	require.NoError(t, k.ConsumerFeePoolTotalShares.Set(ctx,
 		collections.Join(consumerId, denom), math.NewInt(100)))
 	mocks.MockBankKeeper.EXPECT().GetBalance(ctx, poolAddr, denom).Return(sdk.NewInt64Coin(denom, 100))
@@ -178,7 +178,7 @@ func TestWithdrawShares_Full(t *testing.T) {
 	require.NoError(t, err)
 	require.Equal(t, math.NewInt(100), tokens.Amount)
 
-	_, err = k.ConsumerFeePoolShares.Get(ctx, collections.Join3(consumerId, alice, denom))
+	_, err = k.ConsumerFeePoolShares.Get(ctx, collections.Join3(consumerId, denom, alice))
 	require.ErrorIs(t, err, collections.ErrNotFound)
 
 	_, err = k.ConsumerFeePoolTotalShares.Get(ctx, collections.Join(consumerId, denom))
@@ -197,9 +197,9 @@ func TestWithdrawShares_Partial(t *testing.T) {
 
 	// Two depositors, balance 200, total 200
 	require.NoError(t, k.ConsumerFeePoolShares.Set(ctx,
-		collections.Join3(consumerId, alice, denom), math.NewInt(100)))
+		collections.Join3(consumerId, denom, alice), math.NewInt(100)))
 	require.NoError(t, k.ConsumerFeePoolShares.Set(ctx,
-		collections.Join3(consumerId, bob, denom), math.NewInt(100)))
+		collections.Join3(consumerId, denom, bob), math.NewInt(100)))
 	require.NoError(t, k.ConsumerFeePoolTotalShares.Set(ctx,
 		collections.Join(consumerId, denom), math.NewInt(200)))
 	mocks.MockBankKeeper.EXPECT().GetBalance(ctx, poolAddr, denom).Return(sdk.NewInt64Coin(denom, 200))
@@ -210,7 +210,7 @@ func TestWithdrawShares_Partial(t *testing.T) {
 	require.Equal(t, math.NewInt(50), tokens.Amount)
 
 	// Alice burned 50 shares; total = 150; alice = 50
-	aliceShares, _ := k.ConsumerFeePoolShares.Get(ctx, collections.Join3(consumerId, alice, denom))
+	aliceShares, _ := k.ConsumerFeePoolShares.Get(ctx, collections.Join3(consumerId, denom, alice))
 	require.Equal(t, math.NewInt(50), aliceShares)
 	total, _ := k.ConsumerFeePoolTotalShares.Get(ctx, collections.Join(consumerId, denom))
 	require.Equal(t, math.NewInt(150), total)
@@ -226,7 +226,7 @@ func TestWithdrawShares_Empty(t *testing.T) {
 	poolAddr := k.GetConsumerFeePoolAddress(consumerId)
 
 	require.NoError(t, k.ConsumerFeePoolShares.Set(ctx,
-		collections.Join3(consumerId, alice, denom), math.NewInt(100)))
+		collections.Join3(consumerId, denom, alice), math.NewInt(100)))
 	require.NoError(t, k.ConsumerFeePoolTotalShares.Set(ctx,
 		collections.Join(consumerId, denom), math.NewInt(100)))
 	mocks.MockBankKeeper.EXPECT().GetBalance(ctx, poolAddr, denom).Return(sdk.NewInt64Coin(denom, 0))
@@ -249,17 +249,17 @@ func TestWithdrawShares_SubShareGuard(t *testing.T) {
 	// the partial branch and computes sharesToBurn = floor(1 * 100 / 1_000_000) = 0,
 	// which must trigger the sub-share guard.
 	require.NoError(t, k.ConsumerFeePoolShares.Set(ctx,
-		collections.Join3(consumerId, alice, denom), math.NewInt(100)))
+		collections.Join3(consumerId, denom, alice), math.NewInt(100)))
 	require.NoError(t, k.ConsumerFeePoolTotalShares.Set(ctx,
 		collections.Join(consumerId, denom), math.NewInt(100)))
 	mocks.MockBankKeeper.EXPECT().GetBalance(ctx, poolAddr, denom).Return(sdk.NewInt64Coin(denom, 1_000_000))
 
 	tokens, err := k.WithdrawShares(ctx, consumerId, alice, sdk.NewInt64Coin(denom, 1))
-	require.ErrorIs(t, err, providertypes.ErrPoolEmpty)
+	require.ErrorIs(t, err, providertypes.ErrSubShareWithdraw)
 	require.Equal(t, sdk.Coin{}, tokens)
 
 	// No state mutation: alice still has 100 shares, total still 100.
-	aliceShares, err := k.ConsumerFeePoolShares.Get(ctx, collections.Join3(consumerId, alice, denom))
+	aliceShares, err := k.ConsumerFeePoolShares.Get(ctx, collections.Join3(consumerId, denom, alice))
 	require.NoError(t, err)
 	require.Equal(t, math.NewInt(100), aliceShares)
 
@@ -280,9 +280,9 @@ func TestSweepConsumerFeePoolDenom(t *testing.T) {
 
 	// alice 30, bob 70, total 100, balance 100 — no dust
 	require.NoError(t, k.ConsumerFeePoolShares.Set(ctx,
-		collections.Join3(consumerId, alice, denom), math.NewInt(30)))
+		collections.Join3(consumerId, denom, alice), math.NewInt(30)))
 	require.NoError(t, k.ConsumerFeePoolShares.Set(ctx,
-		collections.Join3(consumerId, bob, denom), math.NewInt(70)))
+		collections.Join3(consumerId, denom, bob), math.NewInt(70)))
 	require.NoError(t, k.ConsumerFeePoolTotalShares.Set(ctx,
 		collections.Join(consumerId, denom), math.NewInt(100)))
 
@@ -299,9 +299,9 @@ func TestSweepConsumerFeePoolDenom(t *testing.T) {
 	require.NoError(t, k.SweepConsumerFeePoolDenom(ctx, consumerId, denom))
 
 	// All share records and total cleared
-	_, err := k.ConsumerFeePoolShares.Get(ctx, collections.Join3(consumerId, alice, denom))
+	_, err := k.ConsumerFeePoolShares.Get(ctx, collections.Join3(consumerId, denom, alice))
 	require.ErrorIs(t, err, collections.ErrNotFound)
-	_, err = k.ConsumerFeePoolShares.Get(ctx, collections.Join3(consumerId, bob, denom))
+	_, err = k.ConsumerFeePoolShares.Get(ctx, collections.Join3(consumerId, denom, bob))
 	require.ErrorIs(t, err, collections.ErrNotFound)
 	_, err = k.ConsumerFeePoolTotalShares.Get(ctx, collections.Join(consumerId, denom))
 	require.ErrorIs(t, err, collections.ErrNotFound)
@@ -320,9 +320,9 @@ func TestSweepConsumerFeePoolDenom_WithDust(t *testing.T) {
 	// alice 1, bob 2, total 3, balance 10
 	// alice claim: floor(1*10/3) = 3; bob claim: floor(2*10/3) = 6; dust = 1
 	require.NoError(t, k.ConsumerFeePoolShares.Set(ctx,
-		collections.Join3(consumerId, alice, denom), math.NewInt(1)))
+		collections.Join3(consumerId, denom, alice), math.NewInt(1)))
 	require.NoError(t, k.ConsumerFeePoolShares.Set(ctx,
-		collections.Join3(consumerId, bob, denom), math.NewInt(2)))
+		collections.Join3(consumerId, denom, bob), math.NewInt(2)))
 	require.NoError(t, k.ConsumerFeePoolTotalShares.Set(ctx,
 		collections.Join(consumerId, denom), math.NewInt(3)))
 
@@ -351,7 +351,7 @@ func TestSweepConsumerFeePoolDenom_DistrModuleRecipientUsesCommunityPool(t *test
 	poolAddr := k.GetConsumerFeePoolAddress(consumerId)
 
 	require.NoError(t, k.ConsumerFeePoolShares.Set(ctx,
-		collections.Join3(consumerId, distrAddr, denom), math.NewInt(100)))
+		collections.Join3(consumerId, denom, distrAddr), math.NewInt(100)))
 	require.NoError(t, k.ConsumerFeePoolTotalShares.Set(ctx,
 		collections.Join(consumerId, denom), math.NewInt(100)))
 
@@ -382,9 +382,9 @@ func TestSweepConsumerFeePoolDenom_AllFloorToZero(t *testing.T) {
 	// bob slice:   floor(1*1/2) = 0 → skipped
 	// distributed = 0; dust = 1 → entire balance routed to community pool.
 	require.NoError(t, k.ConsumerFeePoolShares.Set(ctx,
-		collections.Join3(consumerId, alice, denom), math.NewInt(1)))
+		collections.Join3(consumerId, denom, alice), math.NewInt(1)))
 	require.NoError(t, k.ConsumerFeePoolShares.Set(ctx,
-		collections.Join3(consumerId, bob, denom), math.NewInt(1)))
+		collections.Join3(consumerId, denom, bob), math.NewInt(1)))
 	require.NoError(t, k.ConsumerFeePoolTotalShares.Set(ctx,
 		collections.Join(consumerId, denom), math.NewInt(2)))
 
@@ -400,9 +400,9 @@ func TestSweepConsumerFeePoolDenom_AllFloorToZero(t *testing.T) {
 	require.NoError(t, k.SweepConsumerFeePoolDenom(ctx, consumerId, denom))
 
 	// All share records and total cleared.
-	_, err := k.ConsumerFeePoolShares.Get(ctx, collections.Join3(consumerId, alice, denom))
+	_, err := k.ConsumerFeePoolShares.Get(ctx, collections.Join3(consumerId, denom, alice))
 	require.ErrorIs(t, err, collections.ErrNotFound)
-	_, err = k.ConsumerFeePoolShares.Get(ctx, collections.Join3(consumerId, bob, denom))
+	_, err = k.ConsumerFeePoolShares.Get(ctx, collections.Join3(consumerId, denom, bob))
 	require.ErrorIs(t, err, collections.ErrNotFound)
 	_, err = k.ConsumerFeePoolTotalShares.Get(ctx, collections.Join(consumerId, denom))
 	require.ErrorIs(t, err, collections.ErrNotFound)
@@ -418,11 +418,11 @@ func TestSweepConsumerFeePool_AllDenoms(t *testing.T) {
 
 	// alice has shares in two denoms
 	require.NoError(t, k.ConsumerFeePoolShares.Set(ctx,
-		collections.Join3(consumerId, alice, "uphoton"), math.NewInt(10)))
+		collections.Join3(consumerId, "uphoton", alice), math.NewInt(10)))
 	require.NoError(t, k.ConsumerFeePoolTotalShares.Set(ctx,
 		collections.Join(consumerId, "uphoton"), math.NewInt(10)))
 	require.NoError(t, k.ConsumerFeePoolShares.Set(ctx,
-		collections.Join3(consumerId, alice, "uatone"), math.NewInt(5)))
+		collections.Join3(consumerId, "uatone", alice), math.NewInt(5)))
 	require.NoError(t, k.ConsumerFeePoolTotalShares.Set(ctx,
 		collections.Join(consumerId, "uatone"), math.NewInt(5)))
 

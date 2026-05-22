@@ -26,7 +26,7 @@ func (k Keeper) ComputeClaim(
 		return math.ZeroInt()
 	}
 	shares, err := k.ConsumerFeePoolShares.Get(ctx,
-		collections.Join3(consumerId, depositor, denom))
+		collections.Join3(consumerId, denom, depositor))
 	if err != nil {
 		return math.ZeroInt()
 	}
@@ -42,6 +42,10 @@ func (k Keeper) ComputeClaim(
 // specified consumer's fee pool. Handles the lazy-invalidation case:
 // if balance == 0 but total_shares > 0, all existing shares for this
 // (consumer, denom) are deleted first (they represent worthless claims).
+// If state corruption ever leaves balance > 0 with total_shares == 0
+// (invariant violation, unreachable from valid ops), the orphan balance is
+// forwarded to the community pool before the new deposit is credited, so the
+// new depositor cannot capture it.
 //
 // Caller is responsible for the bank-side movement of funds into the pool.
 func (k Keeper) MintShares(
@@ -65,6 +69,23 @@ func (k Keeper) MintShares(
 		total = math.ZeroInt()
 	}
 
+	// Defensive: balance > 0 with no shares is unreachable from valid ops.
+	// If it ever occurs (state corruption, external manipulation), forward
+	// the orphan balance to the community pool before crediting the new
+	// depositor, so the deposit doesn't capture the orphan funds.
+	if total.IsZero() && balance.Amount.IsPositive() {
+		providerAddr := authtypes.NewModuleAddress(types.ModuleName)
+		orphan := sdk.NewCoins(balance)
+		if err := k.bankKeeper.SendCoinsFromAccountToModule(
+			ctx, poolAddr, types.ModuleName, orphan,
+		); err != nil {
+			return err
+		}
+		if err := k.distributionKeeper.FundCommunityPool(ctx, orphan, providerAddr); err != nil {
+			return err
+		}
+	}
+
 	var shares math.Int
 	if total.IsZero() {
 		shares = amount.Amount
@@ -76,11 +97,11 @@ func (k Keeper) MintShares(
 	if !shares.IsPositive() {
 		// sub-share deposit (extreme dilution) — should be very rare but
 		// refuse rather than silently dropping
-		return errorsmod.Wrap(types.ErrInvalidFundDenom,
+		return errorsmod.Wrap(types.ErrDepositTooSmall,
 			"deposit too small to mint any shares")
 	}
 
-	depKey := collections.Join3(consumerId, depositor, amount.Denom)
+	depKey := collections.Join3(consumerId, amount.Denom, depositor)
 	existing, err := k.ConsumerFeePoolShares.Get(ctx, depKey)
 	if err != nil {
 		existing = math.ZeroInt()
@@ -99,7 +120,7 @@ func (k Keeper) MintShares(
 func (k Keeper) WithdrawShares(
 	ctx sdk.Context, consumerId uint64, depositor sdk.AccAddress, amount sdk.Coin,
 ) (sdk.Coin, error) {
-	depKey := collections.Join3(consumerId, depositor, amount.Denom)
+	depKey := collections.Join3(consumerId, amount.Denom, depositor)
 	shares, err := k.ConsumerFeePoolShares.Get(ctx, depKey)
 	if err != nil {
 		return sdk.Coin{}, errorsmod.Wrapf(types.ErrUnauthorized,
@@ -130,8 +151,9 @@ func (k Keeper) WithdrawShares(
 		// Partial branch: shares_to_burn = floor(amount * total / balance)
 		sharesToBurn = amount.Amount.Mul(total).Quo(balance.Amount)
 		if sharesToBurn.IsZero() {
-			return sdk.Coin{}, errorsmod.Wrap(types.ErrPoolEmpty,
-				"requested amount too small to burn any shares")
+			return sdk.Coin{}, errorsmod.Wrapf(types.ErrSubShareWithdraw,
+				"requested %s but pool is too diluted to burn any shares",
+				amount.String())
 		}
 		tokensToSend = sharesToBurn.Mul(balance.Amount).Quo(total)
 	}
@@ -221,7 +243,7 @@ func (k Keeper) SweepConsumerFeePoolDenom(
 		shares math.Int
 	}
 	var holders []holder
-	prefix := collections.NewPrefixedTripleRange[uint64, sdk.AccAddress, string](consumerId)
+	prefix := collections.NewSuperPrefixedTripleRange[uint64, string, sdk.AccAddress](consumerId, denom)
 	iter, err := k.ConsumerFeePoolShares.Iterate(ctx, prefix)
 	if err != nil {
 		return err
@@ -232,15 +254,12 @@ func (k Keeper) SweepConsumerFeePoolDenom(
 			iter.Close()
 			return err
 		}
-		if key.K3() != denom {
-			continue
-		}
 		v, err := iter.Value()
 		if err != nil {
 			iter.Close()
 			return err
 		}
-		holders = append(holders, holder{addr: key.K2(), shares: v})
+		holders = append(holders, holder{addr: key.K3(), shares: v})
 	}
 	iter.Close()
 
@@ -333,21 +352,18 @@ func (k Keeper) SweepConsumerFeePool(
 // clearAllShares deletes every share record for the given (consumer, denom).
 // Used by lazy invalidation and by sweep finalization.
 func (k Keeper) clearAllShares(ctx sdk.Context, consumerId uint64, denom string) error {
-	prefix := collections.NewPrefixedTripleRange[uint64, sdk.AccAddress, string](consumerId)
+	prefix := collections.NewSuperPrefixedTripleRange[uint64, string, sdk.AccAddress](consumerId, denom)
 	iter, err := k.ConsumerFeePoolShares.Iterate(ctx, prefix)
 	if err != nil {
 		return err
 	}
 	defer iter.Close()
 
-	var toDelete []collections.Triple[uint64, sdk.AccAddress, string]
+	var toDelete []collections.Triple[uint64, string, sdk.AccAddress]
 	for ; iter.Valid(); iter.Next() {
 		key, err := iter.Key()
 		if err != nil {
 			return err
-		}
-		if key.K3() != denom {
-			continue
 		}
 		toDelete = append(toDelete, key)
 	}

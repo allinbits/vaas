@@ -14,6 +14,7 @@ import (
 
 	"cosmossdk.io/collections"
 	errorsmod "cosmossdk.io/errors"
+	"cosmossdk.io/math"
 
 	sdk "github.com/cosmos/cosmos-sdk/types"
 	"github.com/cosmos/cosmos-sdk/types/query"
@@ -332,6 +333,14 @@ func (k Keeper) ConsumerFeePoolClaim(
 	}
 	ctx := sdk.UnwrapSDKContext(goCtx)
 
+	exists, err := k.ConsumerPhase.Has(ctx, req.ConsumerId)
+	if err != nil {
+		return nil, status.Errorf(codes.Internal, "phase lookup: %s", err)
+	}
+	if !exists {
+		return nil, status.Errorf(codes.NotFound, "consumer %d does not exist", req.ConsumerId)
+	}
+
 	depositorBech := req.Depositor
 	if depositorBech == k.GetAuthority() {
 		depositorBech = authtypes.NewModuleAddress(disttypes.ModuleName).String()
@@ -341,6 +350,7 @@ func (k Keeper) ConsumerFeePoolClaim(
 		return nil, status.Errorf(codes.InvalidArgument, "invalid depositor: %s", err)
 	}
 
+	poolAddr := k.GetConsumerFeePoolAddress(req.ConsumerId)
 	coins := sdk.NewCoins()
 	prefix := collections.NewPrefixedPairRange[uint64, string](req.ConsumerId)
 	iter, err := k.ConsumerFeePoolTotalShares.Iterate(ctx, prefix)
@@ -353,8 +363,25 @@ func (k Keeper) ConsumerFeePoolClaim(
 		if err != nil {
 			return nil, status.Errorf(codes.Internal, "key: %s", err)
 		}
+		total, err := iter.Value()
+		if err != nil {
+			return nil, status.Errorf(codes.Internal, "value: %s", err)
+		}
 		denom := key.K2()
-		claim := k.ComputeClaim(ctx, req.ConsumerId, depositor, denom)
+		if total.IsZero() {
+			continue
+		}
+		shares, err := k.ConsumerFeePoolShares.Get(ctx,
+			collections.Join3(req.ConsumerId, denom, depositor))
+		if err != nil {
+			// No shares for this (consumer, depositor, denom) — skip.
+			continue
+		}
+		balance := k.bankKeeper.GetBalance(ctx, poolAddr, denom)
+		if balance.Amount.IsZero() {
+			continue
+		}
+		claim := shares.Mul(balance.Amount).Quo(total)
 		if claim.IsPositive() {
 			coins = coins.Add(sdk.NewCoin(denom, claim))
 		}
@@ -370,22 +397,67 @@ func (k Keeper) ConsumerFeePoolClaims(
 	}
 	ctx := sdk.UnwrapSDKContext(goCtx)
 
+	exists, err := k.ConsumerPhase.Has(ctx, req.ConsumerId)
+	if err != nil {
+		return nil, status.Errorf(codes.Internal, "phase lookup: %s", err)
+	}
+	if !exists {
+		return nil, status.Errorf(codes.NotFound, "consumer %d does not exist", req.ConsumerId)
+	}
+
 	type acc struct {
 		addr  sdk.AccAddress
 		coins sdk.Coins
 	}
 	perDepositor := map[string]*acc{}
 
-	prefix := collections.NewPrefixedTripleRange[uint64, sdk.AccAddress, string](req.ConsumerId)
+	// Cache per-denom (balance, total) so we don't pay one bank read +
+	// one collection read per (depositor, denom) tuple.
+	poolAddr := k.GetConsumerFeePoolAddress(req.ConsumerId)
+	balances := map[string]math.Int{}
+	totals := map[string]math.Int{}
+
+	prefix := collections.NewPrefixedTripleRange[uint64, string, sdk.AccAddress](req.ConsumerId)
 	iter, err := k.ConsumerFeePoolShares.Iterate(ctx, prefix)
 	if err != nil {
 		return nil, status.Errorf(codes.Internal, "%s", err)
 	}
 	for ; iter.Valid(); iter.Next() {
-		key, _ := iter.Key()
-		addr := key.K2()
-		denom := key.K3()
-		claim := k.ComputeClaim(ctx, req.ConsumerId, addr, denom)
+		key, err := iter.Key()
+		if err != nil {
+			iter.Close()
+			return nil, status.Errorf(codes.Internal, "%s", err)
+		}
+		shares, err := iter.Value()
+		if err != nil {
+			iter.Close()
+			return nil, status.Errorf(codes.Internal, "%s", err)
+		}
+		denom := key.K2()
+		addr := key.K3()
+
+		balance, ok := balances[denom]
+		if !ok {
+			balance = k.bankKeeper.GetBalance(ctx, poolAddr, denom).Amount
+			balances[denom] = balance
+		}
+		if balance.IsZero() {
+			continue
+		}
+		total, ok := totals[denom]
+		if !ok {
+			t, err := k.ConsumerFeePoolTotalShares.Get(ctx,
+				collections.Join(req.ConsumerId, denom))
+			if err != nil {
+				continue
+			}
+			total = t
+			totals[denom] = total
+		}
+		if total.IsZero() {
+			continue
+		}
+		claim := shares.Mul(balance).Quo(total)
 		if claim.IsZero() {
 			continue
 		}
@@ -406,20 +478,33 @@ func (k Keeper) ConsumerFeePoolClaims(
 	}
 	sort.Strings(keys)
 
-	offset, limit := uint64(0), uint64(100)
+	total := uint64(len(keys))
+
+	// Decode pagination request. Key takes precedence over Offset: cosmos
+	// paging clients walk a result set with NextKey, so a non-nil Key means
+	// "resume from this depositor".
+	var offset, limit uint64 = 0, query.DefaultLimit
+	countTotal := true
 	if req.Pagination != nil {
-		offset = req.Pagination.Offset
 		if req.Pagination.Limit > 0 {
 			limit = req.Pagination.Limit
 		}
+		countTotal = req.Pagination.CountTotal
+		if len(req.Pagination.Key) > 0 {
+			// Find the first depositor >= Key.
+			cursor := string(req.Pagination.Key)
+			idx := sort.SearchStrings(keys, cursor)
+			offset = uint64(idx)
+		} else {
+			offset = req.Pagination.Offset
+		}
 	}
-
+	if offset > total {
+		offset = total
+	}
 	end := offset + limit
-	if end > uint64(len(keys)) {
-		end = uint64(len(keys))
-	}
-	if offset > uint64(len(keys)) {
-		offset = uint64(len(keys))
+	if end > total {
+		end = total
 	}
 
 	claims := make([]types.DepositorClaim, 0, end-offset)
@@ -430,12 +515,19 @@ func (k Keeper) ConsumerFeePoolClaims(
 			Claim:     entry.coins,
 		})
 	}
-	return &types.QueryConsumerFeePoolClaimsResponse{
-		Claims: claims,
-		Pagination: &query.PageResponse{
-			Total: uint64(len(keys)),
-		},
-	}, nil
+
+	resp := &types.QueryConsumerFeePoolClaimsResponse{
+		Claims:     claims,
+		Pagination: &query.PageResponse{},
+	}
+	if countTotal {
+		resp.Pagination.Total = total
+	}
+	if end < total {
+		// Encode the next page cursor as the depositor at the boundary.
+		resp.Pagination.NextKey = []byte(keys[end])
+	}
+	return resp, nil
 }
 
 func (k Keeper) QueryConsumerGenesisTime(goCtx context.Context, req *types.QueryConsumerGenesisTimeRequest) (*types.QueryConsumerGenesisTimeResponse, error) {

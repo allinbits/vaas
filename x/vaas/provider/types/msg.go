@@ -462,10 +462,15 @@ func (msg MsgSweepConsumerFeePool) ValidateBasic() error {
 	if _, err := sdk.AccAddressFromBech32(msg.Signer); err != nil {
 		return errorsmod.Wrapf(sdkerrors.ErrInvalidAddress, "invalid signer: %s", err)
 	}
+	seen := make(map[string]struct{}, len(msg.Denoms))
 	for _, d := range msg.Denoms {
 		if err := sdk.ValidateDenom(d); err != nil {
 			return errorsmod.Wrapf(ErrInvalidFundDenom, "invalid denom %q: %s", d, err)
 		}
+		if _, dup := seen[d]; dup {
+			return errorsmod.Wrapf(ErrInvalidFundDenom, "duplicate denom %q", d)
+		}
+		seen[d] = struct{}{}
 	}
 	return nil
 }

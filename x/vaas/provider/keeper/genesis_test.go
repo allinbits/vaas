@@ -416,9 +416,9 @@ func TestExportGenesis_IncludesShares(t *testing.T) {
 	alice := sdk.AccAddress([]byte("alice___________"))
 	bob := sdk.AccAddress([]byte("bob_____________"))
 	require.NoError(t, k.ConsumerFeePoolShares.Set(ctx,
-		collections.Join3(uint64(0), alice, "uphoton"), math.NewInt(60)))
+		collections.Join3(uint64(0), "uphoton", alice), math.NewInt(60)))
 	require.NoError(t, k.ConsumerFeePoolShares.Set(ctx,
-		collections.Join3(uint64(0), bob, "uphoton"), math.NewInt(40)))
+		collections.Join3(uint64(0), "uphoton", bob), math.NewInt(40)))
 	require.NoError(t, k.ConsumerFeePoolTotalShares.Set(ctx,
 		collections.Join(uint64(0), "uphoton"), math.NewInt(100)))
 
@@ -465,7 +465,7 @@ func TestInitGenesis_RebuildsDerivedCollections(t *testing.T) {
 
 	k.InitGenesis(ctx, gs)
 
-	s, err := k.ConsumerFeePoolShares.Get(ctx, collections.Join3(uint64(0), alice, "uphoton"))
+	s, err := k.ConsumerFeePoolShares.Get(ctx, collections.Join3(uint64(0), "uphoton", alice))
 	require.NoError(t, err)
 	require.Equal(t, math.NewInt(60), s)
 

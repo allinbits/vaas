@@ -30,6 +30,11 @@ provider, IBC-transfer funds into the ICA's account, and have the controller
 side send a `MsgFundConsumerFeePool` from the ICA. The ICA becomes the
 depositor of record.
 
+A direct IBC transfer addressed to a fee pool fails losslessly: the bank
+send-restriction rejects the receive on the provider, the packet acks with an
+error, and the source-chain transfer module refunds the sender via standard
+IBC semantics. The funds are not lost, just not deposited.
+
 ### Funding from the community pool
 
 A governance proposal containing `MsgFundConsumerFeePool` with the gov
@@ -90,3 +95,24 @@ silently lost.
   query the community pool's holdings.
 - `vaas query consumer-fee-pool-claims <consumer-id>` — paginated list of
   all depositors with non-zero claims.
+
+## CLI examples
+
+    # fund a pool with 1000uphoton from your key
+    vaas tx fund-consumer-fee-pool 5 1000uphoton --from operator
+
+    # withdraw a mix of denoms from your share in pool 5
+    vaas tx withdraw-consumer-fee-pool 5 250uphoton,30uatone --from operator
+
+    # owner sweeps all denoms with shares or balance
+    vaas tx sweep-consumer-fee-pool 5 --from owner
+
+    # owner sweeps only the listed denoms (comma-separated or repeated flag)
+    vaas tx sweep-consumer-fee-pool 5 --denoms=uphoton,uatone --from owner
+    vaas tx sweep-consumer-fee-pool 5 --denoms=uphoton --denoms=uatone --from owner
+
+    # query a single depositor's claim
+    vaas query consumer-fee-pool-claim 5 cosmos1...
+
+    # paginated list of all depositors with non-zero claims
+    vaas query consumer-fee-pool-claims 5 --page 1 --limit 100

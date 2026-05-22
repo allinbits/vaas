@@ -79,8 +79,13 @@ type Keeper struct {
 	ConsumerValidators        collections.Map[collections.Pair[uint64, []byte], types.ConsensusValidator]
 	LastProviderConsensusVals collections.Map[[]byte, types.ConsensusValidator]
 
-	// Fee pool collections
-	ConsumerFeePoolShares      collections.Map[collections.Triple[uint64, sdk.AccAddress, string], math.Int]
+	// Fee pool collections.
+	//
+	// ConsumerFeePoolShares is keyed (consumer_id, denom, depositor): denom
+	// is the second component so that per-denom operations (sweep, claim,
+	// invalidation) can prefix-iterate a single (consumer_id, denom) range
+	// without scanning across the full depositor set for the consumer.
+	ConsumerFeePoolShares      collections.Map[collections.Triple[uint64, string, sdk.AccAddress], math.Int]
 	ConsumerFeePoolTotalShares collections.Map[collections.Pair[uint64, string], math.Int]
 	FeePoolAddressToConsumerId collections.Map[sdk.AccAddress, uint64]
 }
@@ -169,7 +174,7 @@ func NewKeeper(
 	k.ConsumerFeePoolShares = collections.NewMap(
 		sb, types.ConsumerFeePoolSharesKeyPrefix,
 		types.ConsumerFeePoolSharesKeyName,
-		collections.TripleKeyCodec(collections.Uint64Key, sdk.AccAddressKey, collections.StringKey),
+		collections.TripleKeyCodec(collections.Uint64Key, collections.StringKey, sdk.AccAddressKey),
 		sdk.IntValue,
 	)
 	k.ConsumerFeePoolTotalShares = collections.NewMap(

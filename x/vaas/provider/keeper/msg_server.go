@@ -483,12 +483,15 @@ func (k msgServer) FundConsumerFeePool(
 	ctx := sdk.UnwrapSDKContext(goCtx)
 
 	// Phase + existence check
-	phase := k.GetConsumerPhase(ctx, msg.ConsumerId)
-	if phase == types.CONSUMER_PHASE_UNSPECIFIED {
+	exists, err := k.ConsumerPhase.Has(ctx, msg.ConsumerId)
+	if err != nil {
+		return nil, err
+	}
+	if !exists {
 		return nil, errorsmod.Wrapf(types.ErrUnknownConsumerId,
 			"consumer %d does not exist", msg.ConsumerId)
 	}
-	if phase == types.CONSUMER_PHASE_DELETED {
+	if k.GetConsumerPhase(ctx, msg.ConsumerId) == types.CONSUMER_PHASE_DELETED {
 		return nil, errorsmod.Wrapf(types.ErrInvalidPhase,
 			"consumer %d is deleted", msg.ConsumerId)
 	}
@@ -546,16 +549,20 @@ func (k msgServer) FundConsumerFeePool(
 }
 
 // WithdrawConsumerFeePool burns the depositor's shares across one or more
-// denoms and returns the corresponding tokens. The handler is atomic: any
-// per-denom failure rolls back share burns from prior denoms in the same
-// request. When the signer is the gov authority, the tokens are routed back
-// to the community pool rather than to the signer.
+// denoms and returns the corresponding tokens. The handler is atomic: all
+// share burns and bank movements are staged in a cache-context that is only
+// committed on full success, so a mid-flight failure rolls back the entire
+// request even when the handler is invoked outside of the SDK tx machinery
+// (nested calls or direct invocations in tests).
+//
+// When the signer is the gov authority, the depositor identity is the
+// distribution module account and the tokens are routed back to the community
+// pool rather than to the signer.
 func (k msgServer) WithdrawConsumerFeePool(
 	goCtx context.Context, msg *types.MsgWithdrawConsumerFeePool,
 ) (*types.MsgWithdrawConsumerFeePoolResponse, error) {
 	ctx := sdk.UnwrapSDKContext(goCtx)
 
-	// Resolve depositor identity
 	isGov := msg.Signer == k.GetAuthority()
 	var depositor sdk.AccAddress
 	if isGov {
@@ -568,10 +575,6 @@ func (k msgServer) WithdrawConsumerFeePool(
 		depositor = addr
 	}
 
-	// Process per-denom, accumulate. The share-burn loop runs inside a
-	// cache-context so a mid-loop failure rolls back any prior burns, even
-	// when the handler is invoked outside of the SDK tx machinery (e.g.
-	// nested calls or direct invocations in tests).
 	cachedCtx, write := ctx.CacheContext()
 	delivered := sdk.NewCoins()
 	for _, amt := range msg.Amount {
@@ -579,40 +582,40 @@ func (k msgServer) WithdrawConsumerFeePool(
 		if err != nil {
 			return nil, err
 		}
-		if !tokens.Amount.IsZero() {
-			delivered = delivered.Add(tokens)
+		delivered = delivered.Add(tokens)
+	}
+
+	if !delivered.IsZero() {
+		poolAddr := k.GetConsumerFeePoolAddress(msg.ConsumerId)
+		providerAddr := authtypes.NewModuleAddress(types.ModuleName)
+		if err := k.bankKeeper.SendCoinsFromAccountToModule(
+			cachedCtx, poolAddr, types.ModuleName, delivered,
+		); err != nil {
+			return nil, err
+		}
+		if isGov {
+			if err := k.distributionKeeper.FundCommunityPool(cachedCtx, delivered, providerAddr); err != nil {
+				return nil, err
+			}
+		} else {
+			if err := k.bankKeeper.SendCoinsFromModuleToAccount(
+				cachedCtx, types.ModuleName, depositor, delivered,
+			); err != nil {
+				return nil, err
+			}
 		}
 	}
 	write()
 
-	if delivered.IsZero() {
-		return &types.MsgWithdrawConsumerFeePoolResponse{Amount: delivered}, nil
-	}
-
-	poolAddr := k.GetConsumerFeePoolAddress(msg.ConsumerId)
-	providerAddr := authtypes.NewModuleAddress(types.ModuleName)
-	if err := k.bankKeeper.SendCoinsFromAccountToModule(
-		ctx, poolAddr, types.ModuleName, delivered,
-	); err != nil {
-		return nil, err
-	}
+	recipient := depositor.String()
 	if isGov {
-		if err := k.distributionKeeper.FundCommunityPool(ctx, delivered, providerAddr); err != nil {
-			return nil, err
-		}
-	} else {
-		if err := k.bankKeeper.SendCoinsFromModuleToAccount(
-			ctx, types.ModuleName, depositor, delivered,
-		); err != nil {
-			return nil, err
-		}
+		recipient = "community_pool"
 	}
-
 	ctx.EventManager().EmitEvent(sdk.NewEvent(
 		types.EventTypeConsumerFeePoolWithdraw,
 		sdk.NewAttribute(types.AttributeConsumerId, strconv.FormatUint(msg.ConsumerId, 10)),
 		sdk.NewAttribute(types.AttributeDepositor, depositor.String()),
-		sdk.NewAttribute(types.AttributeRecipient, depositor.String()),
+		sdk.NewAttribute(types.AttributeRecipient, recipient),
 		sdk.NewAttribute(types.AttributeAmount, delivered.String()),
 	))
 	return &types.MsgWithdrawConsumerFeePoolResponse{Amount: delivered}, nil

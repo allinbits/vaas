@@ -19,6 +19,7 @@ func NewGenesisState(
 	validatorConsumerPubkeys []ValidatorConsumerPubKey,
 	validatorsByConsumerAddr []ValidatorByConsumerAddr,
 	consumerAddrsToPrune []ConsumerAddrsToPrune,
+	consumerFeePoolShares []ConsumerFeePoolShare,
 ) *GenesisState {
 	return &GenesisState{
 		ValsetUpdateId:           vscID,
@@ -28,6 +29,7 @@ func NewGenesisState(
 		ValidatorConsumerPubkeys: validatorConsumerPubkeys,
 		ValidatorsByConsumerAddr: validatorsByConsumerAddr,
 		ConsumerAddrsToPrune:     consumerAddrsToPrune,
+		ConsumerFeePoolShares:    consumerFeePoolShares,
 	}
 }
 
@@ -75,6 +77,53 @@ func (gs GenesisState) Validate() error {
 		return err
 	}
 
+	if err := validateConsumerFeePoolShares(gs.ConsumerFeePoolShares, seenConsumerIds); err != nil {
+		return errorsmod.Wrap(vaastypes.ErrInvalidGenesis, err.Error())
+	}
+
+	return nil
+}
+
+// validateConsumerFeePoolShares rejects malformed share records before
+// InitGenesis would otherwise panic on them: bad bech32, empty denom,
+// non-positive shares, duplicate (consumer, depositor, denom) triples,
+// and orphan consumer ids not present in ConsumerStates.
+func validateConsumerFeePoolShares(
+	shares []ConsumerFeePoolShare, knownConsumerIds map[uint64]bool,
+) error {
+	type triple struct {
+		consumerId uint64
+		depositor  string
+		denom      string
+	}
+	seen := map[triple]bool{}
+	for _, s := range shares {
+		if _, err := sdk.AccAddressFromBech32(s.Depositor); err != nil {
+			return fmt.Errorf("invalid depositor %q for consumer %d: %w",
+				s.Depositor, s.ConsumerId, err)
+		}
+		if err := sdk.ValidateDenom(s.Denom); err != nil {
+			return fmt.Errorf("invalid denom %q for consumer %d depositor %s: %w",
+				s.Denom, s.ConsumerId, s.Depositor, err)
+		}
+		if s.Shares.IsNil() {
+			return fmt.Errorf("nil shares for consumer %d depositor %s denom %s",
+				s.ConsumerId, s.Depositor, s.Denom)
+		}
+		if !s.Shares.IsPositive() {
+			return fmt.Errorf("non-positive shares for consumer %d depositor %s denom %s: %s",
+				s.ConsumerId, s.Depositor, s.Denom, s.Shares)
+		}
+		if !knownConsumerIds[s.ConsumerId] {
+			return fmt.Errorf("share record references unknown consumer %d", s.ConsumerId)
+		}
+		k := triple{s.ConsumerId, s.Depositor, s.Denom}
+		if seen[k] {
+			return fmt.Errorf("duplicate share record (consumer=%d, depositor=%s, denom=%s)",
+				s.ConsumerId, s.Depositor, s.Denom)
+		}
+		seen[k] = true
+	}
 	return nil
 }
 
