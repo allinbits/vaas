@@ -3,11 +3,13 @@ package keeper_test
 import (
 	"fmt"
 	"testing"
+	"time"
 
 	"cosmossdk.io/collections"
 	"cosmossdk.io/math"
 
 	"github.com/stretchr/testify/require"
+	"go.uber.org/mock/gomock"
 
 	sdk "github.com/cosmos/cosmos-sdk/types"
 	authtypes "github.com/cosmos/cosmos-sdk/x/auth/types"
@@ -145,6 +147,61 @@ func TestDeleteConsumerChain_AutoSweepMultiDenomDust(t *testing.T) {
 	_, err = k.ConsumerFeePoolShares.Get(ctx, collections.Join3(consumerId, "uphoton", alice))
 	require.ErrorIs(t, err, collections.ErrNotFound)
 	_, err = k.ConsumerFeePoolShares.Get(ctx, collections.Join3(consumerId, "uatone", bob))
+	require.ErrorIs(t, err, collections.ErrNotFound)
+}
+
+// TestBeginBlockRemoveConsumers_PerConsumerRollback verifies that a
+// failing delete on one consumer (sweep returns an error) does not bleed
+// state mutations into siblings whose deletes succeed in the same block.
+// The first consumer's sweep fails; the second's succeeds. After the call,
+// the first stays in STOPPED with its state intact and the second is gone.
+func TestBeginBlockRemoveConsumers_PerConsumerRollback(t *testing.T) {
+	k, ctx, ctrl, mocks := testkeeper.GetProviderKeeperAndCtx(t, testkeeper.NewInMemKeeperParams(t))
+	defer ctrl.Finish()
+
+	removalTime := time.Unix(1000, 0)
+	ctx = ctx.WithBlockTime(removalTime.Add(time.Hour))
+
+	// failing consumer: no client id, balance present but bank-pull errors out.
+	failId := k.FetchAndIncrementConsumerId(ctx)
+	k.SetConsumerPhase(ctx, failId, providertypes.CONSUMER_PHASE_STOPPED)
+	require.NoError(t, k.SetConsumerRemovalTime(ctx, failId, removalTime))
+	require.NoError(t, k.AppendConsumerToBeRemoved(ctx, failId, removalTime))
+	failPoolAddr := k.GetConsumerFeePoolAddress(failId)
+	require.NoError(t, k.FeePoolAddressToConsumerId.Set(ctx, failPoolAddr, failId))
+
+	// succeeding consumer: pool empty, cleanup succeeds.
+	okId := k.FetchAndIncrementConsumerId(ctx)
+	k.SetConsumerClientId(ctx, okId, "07-tendermint-0")
+	k.SetConsumerPhase(ctx, okId, providertypes.CONSUMER_PHASE_STOPPED)
+	require.NoError(t, k.SetConsumerRemovalTime(ctx, okId, removalTime))
+	require.NoError(t, k.AppendConsumerToBeRemoved(ctx, okId, removalTime))
+	okPoolAddr := k.GetConsumerFeePoolAddress(okId)
+	require.NoError(t, k.FeePoolAddressToConsumerId.Set(ctx, okPoolAddr, okId))
+
+	// BeginBlockRemoveConsumers wraps each per-consumer delete in a
+	// cache-context, so match the ctx argument with gomock.Any().
+	mocks.MockBankKeeper.EXPECT().GetAllBalances(gomock.Any(), failPoolAddr).
+		Return(sdk.NewCoins(sdk.NewInt64Coin("uphoton", 50)))
+	mocks.MockBankKeeper.EXPECT().GetBalance(gomock.Any(), failPoolAddr, "uphoton").
+		Return(sdk.NewInt64Coin("uphoton", 50))
+	mocks.MockBankKeeper.EXPECT().SendCoinsFromAccountToModule(
+		gomock.Any(), failPoolAddr, providertypes.ModuleName,
+		sdk.NewCoins(sdk.NewInt64Coin("uphoton", 50))).
+		Return(fmt.Errorf("forced bank error"))
+
+	mocks.MockBankKeeper.EXPECT().GetAllBalances(gomock.Any(), okPoolAddr).Return(sdk.NewCoins())
+
+	require.NoError(t, k.BeginBlockRemoveConsumers(ctx))
+
+	// Failing consumer: state preserved (cache-context rolled back).
+	require.Equal(t, providertypes.CONSUMER_PHASE_STOPPED, k.GetConsumerPhase(ctx, failId))
+	_, err := k.FeePoolAddressToConsumerId.Get(ctx, failPoolAddr)
+	require.NoError(t, err, "failing consumer's reverse-lookup entry should remain")
+
+	// Succeeding consumer: deleted.
+	require.Equal(t, providertypes.CONSUMER_PHASE_DELETED, k.GetConsumerPhase(ctx, okId))
+	_, err = k.FeePoolAddressToConsumerId.Get(ctx, okPoolAddr)
 	require.ErrorIs(t, err, collections.ErrNotFound)
 }
 
