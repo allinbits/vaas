@@ -1,6 +1,7 @@
 package keeper
 
 import (
+	"fmt"
 	"sort"
 	"strconv"
 
@@ -14,28 +15,6 @@ import (
 	authtypes "github.com/cosmos/cosmos-sdk/x/auth/types"
 	disttypes "github.com/cosmos/cosmos-sdk/x/distribution/types"
 )
-
-// forwardOrphanToCommunityPool moves a fee-pool balance to the community pool
-// when no share records exist for the denom. The orphan case is unreachable
-// from valid operations; firing this path indicates state corruption and is
-// logged at Error level.
-func (k Keeper) forwardOrphanToCommunityPool(
-	ctx sdk.Context, consumerId uint64, poolAddr sdk.AccAddress, balance sdk.Coin, site string,
-) error {
-	k.Logger(ctx).Error("fee-pool orphan balance forwarded to community pool",
-		"site", site,
-		"consumer_id", consumerId,
-		"denom", balance.Denom,
-		"amount", balance.Amount.String())
-	orphan := sdk.NewCoins(balance)
-	if err := k.bankKeeper.SendCoinsFromAccountToModule(
-		ctx, poolAddr, types.ModuleName, orphan,
-	); err != nil {
-		return err
-	}
-	providerAddr := authtypes.NewModuleAddress(types.ModuleName)
-	return k.distributionKeeper.FundCommunityPool(ctx, orphan, providerAddr)
-}
 
 // emitSweepEvent emits one ConsumerFeePoolSweep event per swept denom.
 func (k Keeper) emitSweepEvent(
@@ -78,10 +57,6 @@ func (k Keeper) ComputeClaim(
 // specified consumer's fee pool. Handles the lazy-invalidation case:
 // if balance == 0 but total_shares > 0, all existing shares for this
 // (consumer, denom) are deleted first (they represent worthless claims).
-// If state corruption ever leaves balance > 0 with total_shares == 0
-// (invariant violation, unreachable from valid ops), the orphan balance is
-// forwarded to the community pool before the new deposit is credited, so the
-// new depositor cannot capture it.
 //
 // Caller is responsible for the bank-side movement of funds into the pool.
 func (k Keeper) MintShares(
@@ -105,14 +80,15 @@ func (k Keeper) MintShares(
 		total = math.ZeroInt()
 	}
 
-	// Defensive: balance > 0 with no shares is unreachable from valid ops.
-	// If it ever occurs (state corruption, external manipulation), forward
-	// the orphan balance to the community pool before crediting the new
-	// depositor, so the deposit doesn't capture the orphan funds.
+	// balance > 0 with no shares should be unreachable: every code path that
+	// adds balance also mints shares, and the send-restriction blocks any
+	// other deposit. InitGenesis catches the same condition on import. If we
+	// see it here mid-life, the state machine is corrupted.
 	if total.IsZero() && balance.Amount.IsPositive() {
-		if err := k.forwardOrphanToCommunityPool(ctx, consumerId, poolAddr, balance, "mint"); err != nil {
-			return err
-		}
+		panic(fmt.Sprintf(
+			"fee-pool invariant violated: consumer %d denom %s has balance %s but no shares",
+			consumerId, amount.Denom, balance.Amount.String(),
+		))
 	}
 
 	var shares math.Int
@@ -220,9 +196,6 @@ func (k Keeper) WithdrawShares(
 // Distribution to the distribution module account uses FundCommunityPool
 // rather than a raw bank send, so the community pool's FeePool DecCoins are
 // credited correctly.
-//
-// Handles the orphan-balance defensive case: if total_shares == 0 but
-// balance > 0, forwards the balance to the community pool.
 func (k Keeper) SweepConsumerFeePoolDenom(
 	ctx sdk.Context, consumerId uint64, denom string,
 ) error {
@@ -234,22 +207,17 @@ func (k Keeper) SweepConsumerFeePoolDenom(
 		total = math.ZeroInt()
 	}
 
-	// Trivial cases
 	if balance.Amount.IsZero() && total.IsZero() {
 		return nil
 	}
 
-	providerModule := types.ModuleName
-	providerAddr := authtypes.NewModuleAddress(providerModule)
-	distrAddr := authtypes.NewModuleAddress(disttypes.ModuleName)
-
-	// Orphan balance: no shares but balance > 0. Forward to community pool.
+	// Orphan balance: should be unreachable (see MintShares; InitGenesis
+	// catches the import case). Panic in case it happens.
 	if total.IsZero() {
-		if err := k.forwardOrphanToCommunityPool(ctx, consumerId, poolAddr, balance, "sweep"); err != nil {
-			return err
-		}
-		k.emitSweepEvent(ctx, consumerId, denom, math.ZeroInt(), balance.Amount)
-		return nil
+		panic(fmt.Sprintf(
+			"fee-pool invariant violated: consumer %d denom %s has balance %s but no shares",
+			consumerId, denom, balance.Amount.String(),
+		))
 	}
 
 	// Orphan shares: shares > 0 but balance == 0. Burn all shares, no transfer.
@@ -261,7 +229,10 @@ func (k Keeper) SweepConsumerFeePoolDenom(
 		return nil
 	}
 
-	// Normal pro-rata distribution.
+	providerModule := types.ModuleName
+	providerAddr := authtypes.NewModuleAddress(providerModule)
+	distrAddr := authtypes.NewModuleAddress(disttypes.ModuleName)
+
 	// Move full balance into provider module account in one hop.
 	if err := k.bankKeeper.SendCoinsFromAccountToModule(
 		ctx, poolAddr, providerModule, sdk.NewCoins(balance),
@@ -269,12 +240,10 @@ func (k Keeper) SweepConsumerFeePoolDenom(
 		return err
 	}
 
-	// Collect share-holders in deterministic order (by address bytes).
-	type holder struct {
-		addr   sdk.AccAddress
-		shares math.Int
-	}
-	var holders []holder
+	// One pass: iterate share records, distribute each slice, then clear
+	// records in a final clearAllShares (which buffers keys before deleting
+	// so the in-flight iterator is not invalidated).
+	distributed := math.ZeroInt()
 	prefix := collections.NewSuperPrefixedTripleRange[uint64, string, sdk.AccAddress](consumerId, denom)
 	iter, err := k.ConsumerFeePoolShares.Iterate(ctx, prefix)
 	if err != nil {
@@ -286,38 +255,35 @@ func (k Keeper) SweepConsumerFeePoolDenom(
 			iter.Close()
 			return err
 		}
-		v, err := iter.Value()
+		shares, err := iter.Value()
 		if err != nil {
 			iter.Close()
 			return err
 		}
-		holders = append(holders, holder{addr: key.K3(), shares: v})
-	}
-	iter.Close()
-
-	// Distribute pro-rata.
-	distributed := math.ZeroInt()
-	for _, h := range holders {
-		slice := h.shares.Mul(balance.Amount).Quo(total)
+		slice := shares.Mul(balance.Amount).Quo(total)
 		if slice.IsZero() {
 			continue
 		}
 		coins := sdk.NewCoins(sdk.NewCoin(denom, slice))
-		if h.addr.Equals(distrAddr) {
+		addr := key.K3()
+		if addr.Equals(distrAddr) {
 			if err := k.distributionKeeper.FundCommunityPool(ctx, coins, providerAddr); err != nil {
+				iter.Close()
 				return err
 			}
 		} else {
 			if err := k.bankKeeper.SendCoinsFromModuleToAccount(
-				ctx, providerModule, h.addr, coins,
+				ctx, providerModule, addr, coins,
 			); err != nil {
+				iter.Close()
 				return err
 			}
 		}
 		distributed = distributed.Add(slice)
 	}
+	iter.Close()
 
-	// Truncation residue → community pool.
+	// Truncation residue -> community pool.
 	dust := balance.Amount.Sub(distributed)
 	if dust.IsPositive() {
 		if err := k.distributionKeeper.FundCommunityPool(
@@ -327,7 +293,6 @@ func (k Keeper) SweepConsumerFeePoolDenom(
 		}
 	}
 
-	// Burn all share records for this (consumer, denom).
 	if err := k.clearAllShares(ctx, consumerId, denom); err != nil {
 		return err
 	}
@@ -385,43 +350,20 @@ func (k Keeper) SweepConsumerFeePool(
 	return nil
 }
 
-// clearAllShares deletes every share record for the given (consumer, denom).
-// Used by lazy invalidation and by sweep finalization. No-op if nothing is
-// stored — collections.Remove on a missing key would otherwise error.
+// clearAllShares deletes every share record for the given (consumer, denom)
+// and the matching total_shares entry. Used by lazy invalidation and by
+// sweep finalization.
 func (k Keeper) clearAllShares(ctx sdk.Context, consumerId uint64, denom string) error {
+	if err := k.ConsumerFeePoolShares.Clear(ctx,
+		collections.NewSuperPrefixedTripleRange[uint64, string, sdk.AccAddress](consumerId, denom),
+	); err != nil {
+		return err
+	}
 	totalKey := collections.Join(consumerId, denom)
-	totalExists, err := k.ConsumerFeePoolTotalShares.Has(ctx, totalKey)
-	if err != nil {
+	if has, err := k.ConsumerFeePoolTotalShares.Has(ctx, totalKey); err != nil {
 		return err
-	}
-
-	prefix := collections.NewSuperPrefixedTripleRange[uint64, string, sdk.AccAddress](consumerId, denom)
-	iter, err := k.ConsumerFeePoolShares.Iterate(ctx, prefix)
-	if err != nil {
-		return err
-	}
-	defer iter.Close()
-
-	if !iter.Valid() && !totalExists {
+	} else if !has {
 		return nil
 	}
-
-	var toDelete []collections.Triple[uint64, string, sdk.AccAddress]
-	for ; iter.Valid(); iter.Next() {
-		key, err := iter.Key()
-		if err != nil {
-			return err
-		}
-		toDelete = append(toDelete, key)
-	}
-
-	for _, key := range toDelete {
-		if err := k.ConsumerFeePoolShares.Remove(ctx, key); err != nil {
-			return err
-		}
-	}
-	if totalExists {
-		return k.ConsumerFeePoolTotalShares.Remove(ctx, totalKey)
-	}
-	return nil
+	return k.ConsumerFeePoolTotalShares.Remove(ctx, totalKey)
 }

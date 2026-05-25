@@ -90,31 +90,31 @@ silently lost.
 
 ## Queries
 
-- `vaas query consumer-fee-pool-claim <consumer-id> <depositor>` — one
-  depositor's claim across all denoms. Pass the gov authority address to
-  query the community pool's holdings (the query aliases the gov authority
+- `appd query provider consumer-fee-pool-claim <consumer-id> <depositor>`
+  -- one depositor's claim across all denoms. Pass the gov authority address
+  to query the community pool's holdings (the query aliases the gov authority
   to the distribution module account, which is the depositor of record for
   community-pool funding).
-- `vaas query consumer-fee-pool-claims <consumer-id>` — paginated list of
-  all depositors with non-zero claims.
+- `appd query provider consumer-fee-pool-claims <consumer-id>` --
+  paginated list of all depositors with non-zero claims.
 
 ## CLI examples
 
     # fund a pool with 1000uphoton from your key
-    vaas tx fund-consumer-fee-pool 5 1000uphoton --from operator
+    appd tx provider fund-consumer-fee-pool 5 1000uphoton --from operator
 
     # withdraw a mix of denoms from your share in pool 5
-    vaas tx withdraw-consumer-fee-pool 5 250uphoton,30uatone --from operator
+    appd tx provider withdraw-consumer-fee-pool 5 250uphoton,30uatone --from operator
 
     # owner sweeps all denoms with shares or balance
-    vaas tx sweep-consumer-fee-pool 5 --from owner
+    appd tx provider sweep-consumer-fee-pool 5 --from owner
 
     # owner sweeps only the listed denoms (comma-separated or repeated flag)
-    vaas tx sweep-consumer-fee-pool 5 --denoms=uphoton,uatone --from owner
-    vaas tx sweep-consumer-fee-pool 5 --denoms=uphoton --denoms=uatone --from owner
+    appd tx provider sweep-consumer-fee-pool 5 --denoms=uphoton,uatone --from owner
+    appd tx provider sweep-consumer-fee-pool 5 --denoms=uphoton --denoms=uatone --from owner
 
     # query a single depositor's claim
-    vaas query consumer-fee-pool-claim 5 cosmos1...
+    appd query provider consumer-fee-pool-claim 5 cosmos1...
 
     # paginated list of all depositors with non-zero claims
-    vaas query consumer-fee-pool-claims 5 --page 1 --limit 100
+    appd query provider consumer-fee-pool-claims 5 --page 1 --limit 100

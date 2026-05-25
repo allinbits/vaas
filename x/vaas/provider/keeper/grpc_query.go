@@ -344,13 +344,12 @@ func (k Keeper) ConsumerFeePoolClaim(
 		return nil, status.Errorf(codes.NotFound, "consumer %d is deleted", req.ConsumerId)
 	}
 
-	depositorBech := req.Depositor
-	if depositorBech == k.GetAuthority() {
-		depositorBech = authtypes.NewModuleAddress(disttypes.ModuleName).String()
-	}
-	depositor, err := sdk.AccAddressFromBech32(depositorBech)
+	depositor, err := sdk.AccAddressFromBech32(req.Depositor)
 	if err != nil {
 		return nil, status.Errorf(codes.InvalidArgument, "invalid depositor: %s", err)
+	}
+	if k.isGovAuthority(depositor) {
+		depositor = authtypes.NewModuleAddress(disttypes.ModuleName)
 	}
 
 	poolAddr := k.GetConsumerFeePoolAddress(req.ConsumerId)

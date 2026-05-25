@@ -482,7 +482,6 @@ func (k msgServer) FundConsumerFeePool(
 ) (*types.MsgFundConsumerFeePoolResponse, error) {
 	ctx := sdk.UnwrapSDKContext(goCtx)
 
-	// Phase + existence check
 	exists, err := k.ConsumerPhase.Has(ctx, msg.ConsumerId)
 	if err != nil {
 		return nil, err
@@ -496,7 +495,6 @@ func (k msgServer) FundConsumerFeePool(
 			"consumer %d is deleted", msg.ConsumerId)
 	}
 
-	// Denom check (stateful — reads params)
 	params := k.GetParams(ctx)
 	if msg.Amount.Denom != params.FeesPerBlock.Denom {
 		return nil, errorsmod.Wrapf(types.ErrInvalidFundDenom,
@@ -506,15 +504,16 @@ func (k msgServer) FundConsumerFeePool(
 	poolAddr := k.GetConsumerFeePoolAddress(msg.ConsumerId)
 	coins := sdk.NewCoins(msg.Amount)
 
+	signerAddr, err := sdk.AccAddressFromBech32(msg.Signer)
+	if err != nil {
+		return nil, err
+	}
+	isGov := k.isGovAuthority(signerAddr)
+
 	var depositor sdk.AccAddress
-	isGov := msg.Signer == k.GetAuthority()
 	if isGov {
 		depositor = authtypes.NewModuleAddress(disttypes.ModuleName)
 	} else {
-		signerAddr, err := sdk.AccAddressFromBech32(msg.Signer)
-		if err != nil {
-			return nil, err
-		}
 		if err := k.bankKeeper.SendCoinsFromAccountToModule(
 			ctx, signerAddr, types.ModuleName, coins,
 		); err != nil {
@@ -523,9 +522,8 @@ func (k msgServer) FundConsumerFeePool(
 		depositor = signerAddr
 	}
 
-	// MintShares reads the pool balance, so it must run before the
-	// bank-into-pool move below; otherwise share math sees the post-deposit
-	// balance.
+	// MintShares must run before the funds land in the pool, because the
+	// share math reads the pool balance as "balance before this deposit".
 	if err := k.MintShares(ctx, msg.ConsumerId, depositor, msg.Amount); err != nil {
 		return nil, err
 	}
@@ -564,16 +562,17 @@ func (k msgServer) WithdrawConsumerFeePool(
 ) (*types.MsgWithdrawConsumerFeePoolResponse, error) {
 	ctx := sdk.UnwrapSDKContext(goCtx)
 
-	isGov := msg.Signer == k.GetAuthority()
+	signerAddr, err := sdk.AccAddressFromBech32(msg.Signer)
+	if err != nil {
+		return nil, err
+	}
+	isGov := k.isGovAuthority(signerAddr)
+
 	var depositor sdk.AccAddress
 	if isGov {
 		depositor = authtypes.NewModuleAddress(disttypes.ModuleName)
 	} else {
-		addr, err := sdk.AccAddressFromBech32(msg.Signer)
-		if err != nil {
-			return nil, err
-		}
-		depositor = addr
+		depositor = signerAddr
 	}
 
 	delivered := sdk.NewCoins()
@@ -606,12 +605,10 @@ func (k msgServer) WithdrawConsumerFeePool(
 		}
 	}
 
-	// On the gov path depositor and recipient are both the distribution
-	// module account: tokens land there via FundCommunityPool, which then
-	// credits the community-pool DecCoins ledger entry on top of the same
-	// bank balance. The withdraw_path attribute lets indexers distinguish
-	// "regular withdraw to depositor" from "gov clawback to community pool"
-	// without inferring it from the signer.
+	// On the gov path, depositor and recipient are both the distribution
+	// module account, so the recipient attribute alone can't tell apart a
+	// regular withdraw from a gov clawback to the community pool. The
+	// withdraw_path attribute disambiguates for indexers.
 	withdrawPath := types.WithdrawPathDirect
 	if isGov {
 		withdrawPath = types.WithdrawPathCommunityPool
@@ -645,14 +642,23 @@ func (k msgServer) SweepConsumerFeePool(
 			"consumer %d is deleted; pool already auto-swept on delete", msg.ConsumerId)
 	}
 
-	ownerAddr, err := k.GetConsumerOwnerAddress(ctx, msg.ConsumerId)
+	ownerAddrString, err := k.GetConsumerOwnerAddress(ctx, msg.ConsumerId)
 	if err != nil {
 		return nil, errorsmod.Wrapf(types.ErrNoOwnerAddress,
 			"consumer %d has no owner: %s", msg.ConsumerId, err)
 	}
-	if msg.Signer != ownerAddr {
+	signerAddr, err := sdk.AccAddressFromBech32(msg.Signer)
+	if err != nil {
+		return nil, err
+	}
+	ownerAddr, err := sdk.AccAddressFromBech32(ownerAddrString)
+	if err != nil {
+		return nil, errorsmod.Wrapf(types.ErrNoOwnerAddress,
+			"stored owner address %s is invalid: %s", ownerAddrString, err)
+	}
+	if !signerAddr.Equals(ownerAddr) {
 		return nil, errorsmod.Wrapf(types.ErrUnauthorized,
-			"only consumer owner %s may sweep, got %s", ownerAddr, msg.Signer)
+			"only consumer owner %s may sweep, got %s", ownerAddrString, msg.Signer)
 	}
 
 	// k.SweepConsumerFeePool here would recurse; call the embedded Keeper's.

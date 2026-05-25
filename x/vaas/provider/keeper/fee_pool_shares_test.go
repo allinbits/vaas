@@ -294,7 +294,7 @@ func TestSweepConsumerFeePoolDenom(t *testing.T) {
 		ctx, providerModuleName, alice, sdk.NewCoins(sdk.NewInt64Coin(denom, 30))).Return(nil)
 	mocks.MockBankKeeper.EXPECT().SendCoinsFromModuleToAccount(
 		ctx, providerModuleName, bob, sdk.NewCoins(sdk.NewInt64Coin(denom, 70))).Return(nil)
-	// No dust → no FundCommunityPool call
+	// No dust -> no FundCommunityPool call
 
 	require.NoError(t, k.SweepConsumerFeePoolDenom(ctx, consumerId, denom))
 
@@ -378,9 +378,9 @@ func TestSweepConsumerFeePoolDenom_AllFloorToZero(t *testing.T) {
 	poolAddr := k.GetConsumerFeePoolAddress(consumerId)
 
 	// alice 1 share, bob 1 share, total 2, balance 1.
-	// alice slice: floor(1*1/2) = 0 → skipped
-	// bob slice:   floor(1*1/2) = 0 → skipped
-	// distributed = 0; dust = 1 → entire balance routed to community pool.
+	// alice slice: floor(1*1/2) = 0 -> skipped
+	// bob slice:   floor(1*1/2) = 0 -> skipped
+	// distributed = 0; dust = 1 -> entire balance routed to community pool.
 	require.NoError(t, k.ConsumerFeePoolShares.Set(ctx,
 		collections.Join3(consumerId, denom, alice), math.NewInt(1)))
 	require.NoError(t, k.ConsumerFeePoolShares.Set(ctx,

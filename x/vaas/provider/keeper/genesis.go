@@ -173,6 +173,13 @@ func (k Keeper) InitGenesis(ctx sdk.Context, genState *types.GenesisState) []abc
 	}
 
 	// Rebuild reverse-lookup from non-DELETED consumers (read phase collection)
+	// and, in the same pass, check that no fee pool address holds a balance
+	// without a matching share record. Bank's InitGenesis runs before ours
+	// (see app.go OrderInitGenesis), so any pool balance present here was put
+	// there by the genesis file itself. Such a balance with no shares would
+	// be unreachable from runtime ops (only MintShares moves funds into a
+	// pool, and it always credits shares), so we treat it as a malformed
+	// genesis and halt rather than silently accept funds nobody can claim.
 	phaseIter, err := k.ConsumerPhase.Iterate(ctx, nil)
 	if err != nil {
 		panic(err)
@@ -190,10 +197,18 @@ func (k Keeper) InitGenesis(ctx sdk.Context, genState *types.GenesisState) []abc
 		if types.ConsumerPhase(phaseRaw) == types.CONSUMER_PHASE_DELETED {
 			continue
 		}
-		if err := k.FeePoolAddressToConsumerId.Set(ctx,
-			k.GetConsumerFeePoolAddress(consumerId), consumerId,
-		); err != nil {
+		poolAddr := k.GetConsumerFeePoolAddress(consumerId)
+		if err := k.FeePoolAddressToConsumerId.Set(ctx, poolAddr, consumerId); err != nil {
 			panic(err)
+		}
+		denomsWithShares := totals[consumerId]
+		for _, coin := range k.bankKeeper.GetAllBalances(ctx, poolAddr) {
+			if _, ok := denomsWithShares[coin.Denom]; !ok {
+				panic(fmt.Errorf(
+					"fee-pool genesis invariant violated: consumer %d pool %s holds %s but has no shares for that denom",
+					consumerId, poolAddr.String(), coin.String(),
+				))
+			}
 		}
 	}
 

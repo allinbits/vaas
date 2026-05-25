@@ -158,6 +158,12 @@ func TestInitGenesisRestoresPerConsumerStateAndDerivedQueues(t *testing.T) {
 	// so we only expect GetBondedValidatorsByPower once.
 	mocks.MockStakingKeeper.EXPECT().GetBondedValidatorsByPower(gomock.Any()).Return([]stakingtypes.Validator{}, nil).Times(1)
 
+	// InitGenesis walks each non-DELETED consumer's pool address to check for
+	// orphan balances. No genesis fixture in this test puts any coins at those
+	// addresses, so the bank reports empty balances.
+	mocks.MockBankKeeper.EXPECT().GetAllBalances(gomock.Any(), gomock.Any()).
+		Return(sdk.NewCoins()).AnyTimes()
+
 	owner := sdk.AccAddress([]byte("vaas-test-owner-1234")).String()
 	md := providertypes.ConsumerMetadata{Name: "n", Description: "d", Metadata: "m"}
 	spawnAt := time.Unix(1_700_000_000, 0).UTC()
@@ -377,6 +383,9 @@ func TestGenesisRoundTrip(t *testing.T) {
 	// InitGenesisValUpdates reads from staking; mock it on both keepers.
 	stakingA.MockStakingKeeper.EXPECT().GetBondedValidatorsByPower(gomock.Any()).Return(nil, nil).AnyTimes()
 	stakingB.MockStakingKeeper.EXPECT().GetBondedValidatorsByPower(gomock.Any()).Return(nil, nil).AnyTimes()
+	// InitGenesis walks fee-pool addresses for an orphan-balance check.
+	stakingB.MockBankKeeper.EXPECT().GetAllBalances(gomock.Any(), gomock.Any()).
+		Return(sdk.NewCoins()).AnyTimes()
 
 	_ = pkB.InitGenesis(ctxB, expA)
 
@@ -438,6 +447,9 @@ func TestInitGenesis_RebuildsDerivedCollections(t *testing.T) {
 
 	// InitGenesisValUpdates queries the staking keeper for the validator set.
 	mocks.MockStakingKeeper.EXPECT().GetBondedValidatorsByPower(gomock.Any()).Return(nil, nil).Times(1)
+	// InitGenesis walks fee-pool addresses for an orphan-balance check.
+	mocks.MockBankKeeper.EXPECT().GetAllBalances(gomock.Any(), gomock.Any()).
+		Return(sdk.NewCoins()).AnyTimes()
 
 	alice := sdk.AccAddress([]byte("alice___________"))
 	bob := sdk.AccAddress([]byte("bob_____________"))

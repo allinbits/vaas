@@ -83,7 +83,7 @@ func TestDeleteConsumerChain_AutoSweepMultiDenomDust(t *testing.T) {
 	providerAddr := authtypes.NewModuleAddress(providertypes.ModuleName)
 	require.NoError(t, k.FeePoolAddressToConsumerId.Set(ctx, poolAddr, consumerId))
 
-	// uphoton: 3 shares total (alice=1, bob=2) against balance 10 → alice
+	// uphoton: 3 shares total (alice=1, bob=2) against balance 10 -> alice
 	// gets floor(1*10/3)=3, bob gets floor(2*10/3)=6, dust 1.
 	require.NoError(t, k.ConsumerFeePoolShares.Set(ctx,
 		collections.Join3(consumerId, "uphoton", alice), math.NewInt(1)))
@@ -92,7 +92,7 @@ func TestDeleteConsumerChain_AutoSweepMultiDenomDust(t *testing.T) {
 	require.NoError(t, k.ConsumerFeePoolTotalShares.Set(ctx,
 		collections.Join(consumerId, "uphoton"), math.NewInt(3)))
 
-	// uatone: 7 shares total (alice=4, bob=3) against balance 20 → alice
+	// uatone: 7 shares total (alice=4, bob=3) against balance 20 -> alice
 	// gets floor(4*20/7)=11, bob gets floor(3*20/7)=8, dust 1.
 	require.NoError(t, k.ConsumerFeePoolShares.Set(ctx,
 		collections.Join3(consumerId, "uatone", alice), math.NewInt(4)))
@@ -162,13 +162,18 @@ func TestBeginBlockRemoveConsumers_PerConsumerRollback(t *testing.T) {
 	removalTime := time.Unix(1000, 0)
 	ctx = ctx.WithBlockTime(removalTime.Add(time.Hour))
 
-	// failing consumer: no client id, balance present but bank-pull errors out.
+	// failing consumer: balance + shares present, bank-pull errors out.
 	failId := k.FetchAndIncrementConsumerId(ctx)
 	k.SetConsumerPhase(ctx, failId, providertypes.CONSUMER_PHASE_STOPPED)
 	require.NoError(t, k.SetConsumerRemovalTime(ctx, failId, removalTime))
 	require.NoError(t, k.AppendConsumerToBeRemoved(ctx, failId, removalTime))
 	failPoolAddr := k.GetConsumerFeePoolAddress(failId)
 	require.NoError(t, k.FeePoolAddressToConsumerId.Set(ctx, failPoolAddr, failId))
+	failDepositor := sdk.AccAddress([]byte("fail-depositor__"))
+	require.NoError(t, k.ConsumerFeePoolShares.Set(ctx,
+		collections.Join3(failId, "uphoton", failDepositor), math.NewInt(50)))
+	require.NoError(t, k.ConsumerFeePoolTotalShares.Set(ctx,
+		collections.Join(failId, "uphoton"), math.NewInt(50)))
 
 	// succeeding consumer: pool empty, cleanup succeeds.
 	okId := k.FetchAndIncrementConsumerId(ctx)
@@ -213,6 +218,11 @@ func TestDeleteConsumerChain_AutoSweepFailureAborts(t *testing.T) {
 	// No SetConsumerClientId — sweep fails before the cleanup block runs
 	k.SetConsumerPhase(ctx, consumerId, providertypes.CONSUMER_PHASE_STOPPED)
 	poolAddr := k.GetConsumerFeePoolAddress(consumerId)
+	depositor := sdk.AccAddress([]byte("alice___________"))
+	require.NoError(t, k.ConsumerFeePoolShares.Set(ctx,
+		collections.Join3(consumerId, "uphoton", depositor), math.NewInt(50)))
+	require.NoError(t, k.ConsumerFeePoolTotalShares.Set(ctx,
+		collections.Join(consumerId, "uphoton"), math.NewInt(50)))
 
 	mocks.MockBankKeeper.EXPECT().GetAllBalances(ctx, poolAddr).
 		Return(sdk.NewCoins(sdk.NewInt64Coin("uphoton", 50)))
