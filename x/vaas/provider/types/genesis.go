@@ -7,6 +7,7 @@ import (
 	vaastypes "github.com/allinbits/vaas/x/vaas/types"
 
 	errorsmod "cosmossdk.io/errors"
+	"cosmossdk.io/math"
 
 	sdk "github.com/cosmos/cosmos-sdk/types"
 )
@@ -19,15 +20,17 @@ func NewGenesisState(
 	validatorConsumerPubkeys []ValidatorConsumerPubKey,
 	validatorsByConsumerAddr []ValidatorByConsumerAddr,
 	consumerAddrsToPrune []ConsumerAddrsToPrune,
+	consumerFeesPerBlockOverrides []ConsumerFeesPerBlockOverride,
 ) *GenesisState {
 	return &GenesisState{
-		ValsetUpdateId:           vscID,
-		ValsetUpdateIdToHeight:   vscIdToHeights,
-		ConsumerStates:           consumerStates,
-		Params:                   params,
-		ValidatorConsumerPubkeys: validatorConsumerPubkeys,
-		ValidatorsByConsumerAddr: validatorsByConsumerAddr,
-		ConsumerAddrsToPrune:     consumerAddrsToPrune,
+		ValsetUpdateId:                vscID,
+		ValsetUpdateIdToHeight:        vscIdToHeights,
+		ConsumerStates:                consumerStates,
+		Params:                        params,
+		ValidatorConsumerPubkeys:      validatorConsumerPubkeys,
+		ValidatorsByConsumerAddr:      validatorsByConsumerAddr,
+		ConsumerAddrsToPrune:          consumerAddrsToPrune,
+		ConsumerFeesPerBlockOverrides: consumerFeesPerBlockOverrides,
 	}
 }
 
@@ -73,6 +76,24 @@ func (gs GenesisState) Validate() error {
 		gs.ConsumerAddrsToPrune,
 	); err != nil {
 		return err
+	}
+
+	// Build a set of known consumer ids from consumer_states.
+	known := make(map[uint64]struct{}, len(gs.ConsumerStates))
+	for _, cs := range gs.ConsumerStates {
+		known[cs.ConsumerId] = struct{}{}
+	}
+	for _, ov := range gs.ConsumerFeesPerBlockOverrides {
+		amt, ok := math.NewIntFromString(ov.Amount)
+		if !ok {
+			return fmt.Errorf("consumer_fees_per_block_overrides[consumer_id=%d]: amount %q is not a valid integer", ov.ConsumerId, ov.Amount)
+		}
+		if amt.IsNegative() {
+			return fmt.Errorf("consumer_fees_per_block_overrides[consumer_id=%d]: amount %q must be non-negative", ov.ConsumerId, ov.Amount)
+		}
+		if _, ok := known[ov.ConsumerId]; !ok {
+			return fmt.Errorf("consumer_fees_per_block_overrides: orphan override for unknown consumer %d", ov.ConsumerId)
+		}
 	}
 
 	return nil

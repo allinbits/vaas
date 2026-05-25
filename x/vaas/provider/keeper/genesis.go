@@ -11,6 +11,7 @@ import (
 	abci "github.com/cometbft/cometbft/abci/types"
 
 	"cosmossdk.io/collections"
+	"cosmossdk.io/math"
 
 	sdk "github.com/cosmos/cosmos-sdk/types"
 )
@@ -119,6 +120,15 @@ func (k Keeper) InitGenesis(ctx sdk.Context, genState *types.GenesisState) []abc
 	if len(genState.ConsumerStates) > 0 {
 		if err := k.ConsumerId.Set(ctx, maxConsumerId+1); err != nil {
 			panic(fmt.Errorf("init: advance consumer id sequence to %d: %w", maxConsumerId+1, err))
+		}
+	}
+
+	// Import per-consumer fees_per_block overrides.
+	// GenesisState.Validate guarantees parseable, non-negative amounts.
+	for _, ov := range genState.ConsumerFeesPerBlockOverrides {
+		amt, _ := math.NewIntFromString(ov.Amount)
+		if err := k.ConsumerFeesPerBlockOverride.Set(ctx, ov.ConsumerId, amt); err != nil {
+			panic(fmt.Errorf("init: set fees-per-block override for %d: %w", ov.ConsumerId, err))
 		}
 	}
 
@@ -256,6 +266,17 @@ func (k Keeper) ExportGenesis(ctx sdk.Context) *types.GenesisState {
 			k.GetAllConsumerAddrsToPrune(ctx, consumerId)...)
 	}
 
+	overrides := []types.ConsumerFeesPerBlockOverride{}
+	if err := k.ConsumerFeesPerBlockOverride.Walk(ctx, nil, func(consumerId uint64, amt math.Int) (bool, error) {
+		overrides = append(overrides, types.ConsumerFeesPerBlockOverride{
+			ConsumerId: consumerId,
+			Amount:     amt.String(),
+		})
+		return false, nil
+	}); err != nil {
+		panic(fmt.Errorf("export: walk fees-per-block overrides: %w", err))
+	}
+
 	// TODO (PERMISSIONLESS)
 	return types.NewGenesisState(
 		k.GetValidatorSetUpdateId(ctx),
@@ -265,5 +286,6 @@ func (k Keeper) ExportGenesis(ctx sdk.Context) *types.GenesisState {
 		k.GetAllValidatorConsumerPubKeys(ctx, nil),
 		k.GetAllValidatorsByConsumerAddr(ctx, nil),
 		consumerAddrsToPrune,
+		overrides,
 	)
 }
