@@ -5,6 +5,8 @@ import (
 
 	"github.com/stretchr/testify/require"
 
+	"cosmossdk.io/math"
+
 	"github.com/cosmos/cosmos-sdk/codec/address"
 
 	testkeeper "github.com/allinbits/vaas/testutil/keeper"
@@ -208,4 +210,110 @@ func TestUpdateConsumerDuplicateChainId(t *testing.T) {
 	actualChainId, err := providerKeeper.GetConsumerChainId(ctx, consumerId2)
 	require.NoError(t, err)
 	require.Equal(t, chainId2, actualChainId)
+}
+
+func TestSetConsumerFeesPerBlock(t *testing.T) {
+	// Each case starts with a fresh keeper. By default a target consumer in
+	// REGISTERED phase is created; setting skipConsumer=true skips that and
+	// uses a bogus id (used for the not-found case). A non-nil seedOverride
+	// is set on the target consumer before the handler is invoked. An empty
+	// overrideAuth resolves to k.GetAuthority() (the canonical gov authority).
+	// A nil wantAmount means the override entry should be absent after the
+	// call; a non-nil wantAmount asserts the stored value.
+	cases := []struct {
+		name         string
+		overrideAuth string
+		skipConsumer bool
+		seedOverride math.Int
+		amount       string
+		wantErr      error
+		wantErrMsg   string
+		wantAmount   math.Int
+	}{
+		{
+			name:         "non-gov authority rejected",
+			overrideAuth: "atone1notthegovauth000000000000000000000000",
+			amount:       "2500",
+			wantErrMsg:   "invalid authority",
+		},
+		{
+			name:         "nonexistent consumer rejected",
+			skipConsumer: true,
+			amount:       "2500",
+			wantErr:      providertypes.ErrUnknownConsumerId,
+		},
+		{
+			name:       "positive amount stored",
+			amount:     "2500",
+			wantAmount: math.NewInt(2500),
+		},
+		{
+			name:       "zero amount stored",
+			amount:     "0",
+			wantAmount: math.ZeroInt(),
+		},
+		{
+			name:         "empty amount clears existing override",
+			seedOverride: math.NewInt(2500),
+			amount:       "",
+		},
+		{
+			name:   "empty amount when nothing to clear is a no-op",
+			amount: "",
+		},
+	}
+
+	for _, tc := range cases {
+		tc := tc
+		t.Run(tc.name, func(t *testing.T) {
+			params := testkeeper.NewInMemKeeperParams(t)
+			k, ctx, ctrl, _ := testkeeper.GetProviderKeeperAndCtx(t, params)
+			defer ctrl.Finish()
+
+			var consumerId uint64
+			if tc.skipConsumer {
+				consumerId = 999
+			} else {
+				consumerId = k.FetchAndIncrementConsumerId(ctx)
+				k.SetConsumerPhase(ctx, consumerId, providertypes.CONSUMER_PHASE_REGISTERED)
+			}
+
+			if !tc.seedOverride.IsNil() {
+				require.NoError(t, k.ConsumerFeesPerBlockOverride.Set(ctx, consumerId, tc.seedOverride))
+			}
+
+			authority := tc.overrideAuth
+			if authority == "" {
+				authority = k.GetAuthority()
+			}
+
+			msgSrv := providerkeeper.NewMsgServerImpl(&k)
+			_, err := msgSrv.SetConsumerFeesPerBlock(ctx, &providertypes.MsgSetConsumerFeesPerBlock{
+				Authority:  authority,
+				ConsumerId: consumerId,
+				Amount:     tc.amount,
+			})
+
+			if tc.wantErr != nil {
+				require.ErrorIs(t, err, tc.wantErr)
+				return
+			}
+			if tc.wantErrMsg != "" {
+				require.Error(t, err)
+				require.Contains(t, err.Error(), tc.wantErrMsg)
+				return
+			}
+			require.NoError(t, err)
+
+			if tc.wantAmount.IsNil() {
+				has, err := k.ConsumerFeesPerBlockOverride.Has(ctx, consumerId)
+				require.NoError(t, err)
+				require.False(t, has)
+			} else {
+				stored, err := k.ConsumerFeesPerBlockOverride.Get(ctx, consumerId)
+				require.NoError(t, err)
+				require.Equal(t, tc.wantAmount, stored)
+			}
+		})
+	}
 }

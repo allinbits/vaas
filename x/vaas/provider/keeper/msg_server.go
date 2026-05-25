@@ -2,6 +2,7 @@ package keeper
 
 import (
 	"context"
+	"errors"
 	"strconv"
 	"strings"
 	"time"
@@ -11,7 +12,9 @@ import (
 
 	tmtypes "github.com/cometbft/cometbft/types"
 
+	"cosmossdk.io/collections"
 	errorsmod "cosmossdk.io/errors"
+	"cosmossdk.io/math"
 
 	cryptocodec "github.com/cosmos/cosmos-sdk/crypto/codec"
 	sdk "github.com/cosmos/cosmos-sdk/types"
@@ -465,4 +468,50 @@ func (k msgServer) RemoveConsumer(goCtx context.Context, msg *types.MsgRemoveCon
 	)
 
 	return &resp, err
+}
+
+// SetConsumerFeesPerBlock sets or clears the per-consumer override for the
+// per-block fee amount. Only the gov authority may call this.
+func (k msgServer) SetConsumerFeesPerBlock(
+	goCtx context.Context,
+	msg *types.MsgSetConsumerFeesPerBlock,
+) (*types.MsgSetConsumerFeesPerBlockResponse, error) {
+	if k.GetAuthority() != msg.Authority {
+		return nil, errorsmod.Wrapf(
+			govtypes.ErrInvalidSigner,
+			"invalid authority; expected %s, got %s", k.GetAuthority(), msg.Authority,
+		)
+	}
+
+	ctx := sdk.UnwrapSDKContext(goCtx)
+
+	has, err := k.ConsumerPhase.Has(ctx, msg.ConsumerId)
+	if err != nil {
+		return nil, err
+	}
+	if !has {
+		return nil, errorsmod.Wrapf(types.ErrUnknownConsumerId, "consumer %d", msg.ConsumerId)
+	}
+
+	if msg.Amount == "" {
+		if err := k.ConsumerFeesPerBlockOverride.Remove(ctx, msg.ConsumerId); err != nil {
+			if !errors.Is(err, collections.ErrNotFound) {
+				return nil, err
+			}
+		}
+	} else {
+		amt, _ := math.NewIntFromString(msg.Amount)
+		if err := k.ConsumerFeesPerBlockOverride.Set(ctx, msg.ConsumerId, amt); err != nil {
+			return nil, err
+		}
+	}
+
+	ctx.EventManager().EmitEvent(sdk.NewEvent(
+		types.EventTypeSetConsumerFeesPerBlock,
+		sdk.NewAttribute(sdk.AttributeKeyModule, types.ModuleName),
+		sdk.NewAttribute(types.AttributeConsumerId, strconv.FormatUint(msg.ConsumerId, 10)),
+		sdk.NewAttribute(types.AttributeKeyAmount, msg.Amount),
+	))
+
+	return &types.MsgSetConsumerFeesPerBlockResponse{}, nil
 }
