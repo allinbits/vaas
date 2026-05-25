@@ -2,6 +2,7 @@ package keeper
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"time"
 
@@ -408,6 +409,12 @@ func (k Keeper) DeleteConsumerChain(ctx sdk.Context, consumerId uint64) (err err
 
 	k.DeleteConsumerRemovalTime(ctx, consumerId)
 	k.DeleteConsumerDebt(ctx, consumerId)
+
+	if err := k.ConsumerFeesPerBlockOverride.Remove(ctx, consumerId); err != nil {
+		if !errors.Is(err, collections.ErrNotFound) {
+			return err
+		}
+	}
 
 	// TODO (PERMISSIONLESS) add newly-added state to be deleted
 
