@@ -80,6 +80,8 @@ const (
 	InfractionScheduledTimeToConsumerIdsKeyName = "InfractionScheduledTimeToConsumerIdsKeyName"
 
 	ConsumerIdToDebtKeyName = "ConsumerIdToDebtKeyName"
+
+	ConsumerIdToFeesPerBlockOverrideKeyName = "ConsumerIdToFeesPerBlockOverrideKey"
 )
 
 // Collection key prefixes for use with cosmossdk.io/collections
@@ -110,5 +112,6 @@ var (
 	ConsumerIdToQueuedInfractionPrefix     = collections.NewPrefix(23)
 	InfractionScheduledTimePrefix          = collections.NewPrefix(24)
 	ConsumerIdToDebtPrefix                 = collections.NewPrefix(25)
+	ConsumerIdToFeesPerBlockOverridePrefix = collections.NewPrefix(29)
 	ParametersPrefix                       = collections.NewPrefix(0xFF)
 )
