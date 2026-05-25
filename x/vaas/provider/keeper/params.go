@@ -2,6 +2,7 @@ package keeper
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"time"
 
@@ -10,6 +11,8 @@ import (
 	clienttypes "github.com/cosmos/ibc-go/v10/modules/core/02-client/types"
 	commitmenttypes "github.com/cosmos/ibc-go/v10/modules/core/23-commitment/types"
 	ibctmtypes "github.com/cosmos/ibc-go/v10/modules/light-clients/07-tendermint"
+
+	"cosmossdk.io/collections"
 
 	sdk "github.com/cosmos/cosmos-sdk/types"
 )
@@ -60,6 +63,23 @@ func (k Keeper) GetMaxProviderConsensusValidators(ctx context.Context) int64 {
 func (k Keeper) GetFeesPerBlock(ctx context.Context) sdk.Coin {
 	params := k.GetParams(ctx)
 	return params.FeesPerBlock
+}
+
+// GetEffectiveFeesPerBlock returns the per-block fee charged to a specific
+// consumer: the override amount if one is set, else Params.FeesPerBlock.
+// The returned Coin always carries Params.FeesPerBlock.Denom. The bool
+// reports whether an override was applied (true) or the default was used
+// (false).
+func (k Keeper) GetEffectiveFeesPerBlock(ctx context.Context, consumerId uint64) (sdk.Coin, bool) {
+	defaultCoin := k.GetFeesPerBlock(ctx)
+	overrideAmt, err := k.ConsumerFeesPerBlockOverride.Get(ctx, consumerId)
+	if err != nil {
+		if errors.Is(err, collections.ErrNotFound) {
+			return defaultCoin, false
+		}
+		panic(fmt.Errorf("error getting fees-per-block override for consumer %d: %w", consumerId, err))
+	}
+	return sdk.NewCoin(defaultCoin.Denom, overrideAmt), true
 }
 
 // GetParams returns the paramset for the provider module
