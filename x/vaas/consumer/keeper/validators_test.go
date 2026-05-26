@@ -206,7 +206,7 @@ func GenerateValidators(tb testing.TB) []*tmtypes.Validator {
 	tb.Helper()
 	numValidators := 4
 	validators := []*tmtypes.Validator{}
-	for i := 0; i < numValidators; i++ {
+	for i := range numValidators {
 		cId := crypto.NewCryptoIdentityFromIntSeed(234 + i)
 		pubKey := cId.TMCryptoPubKey()
 

@@ -13,6 +13,7 @@ service Query {
     option (google.api.http).get = "/vaas/consumer/params";
   }
 
+  // QueryProviderInfo returns information about the provider chain connection.
   rpc QueryProviderInfo(QueryProviderInfoRequest) returns (QueryProviderInfoResponse) {
     option (google.api.http).get = "/vaas/consumer/provider-info";
   }
@@ -33,9 +34,9 @@ message QueryProviderInfoResponse {
   ChainInfo provider = 2 [ (gogoproto.nullable) = false ];
 }
 
+// ChainInfo contains IBC connection information for a chain.
 message ChainInfo {
   string chainID = 1;
+  // clientID is the IBC client identifier.
   string clientID = 2;
-  string connectionID = 3;
-  string channelID = 4;
 }

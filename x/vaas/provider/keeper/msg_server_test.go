@@ -55,14 +55,14 @@ func TestCreateConsumer(t *testing.T) {
 			InitializationParameters: &providertypes.ConsumerInitializationParameters{},
 		})
 	require.NoError(t, err)
-	require.Equal(t, "0", response.ConsumerId)
-	actualMetadata, err := providerKeeper.GetConsumerMetadata(ctx, "0")
+	require.Equal(t, uint64(0), response.ConsumerId)
+	actualMetadata, err := providerKeeper.GetConsumerMetadata(ctx, 0)
 	require.NoError(t, err)
 	require.Equal(t, consumerMetadata, actualMetadata)
-	ownerAddress, err := providerKeeper.GetConsumerOwnerAddress(ctx, "0")
+	ownerAddress, err := providerKeeper.GetConsumerOwnerAddress(ctx, 0)
 	require.NoError(t, err)
 	require.Equal(t, "submitter", ownerAddress)
-	phase := providerKeeper.GetConsumerPhase(ctx, "0")
+	phase := providerKeeper.GetConsumerPhase(ctx, 0)
 	require.Equal(t, providertypes.CONSUMER_PHASE_REGISTERED, phase)
 
 	// Create another consumer with a different chain id
@@ -77,14 +77,14 @@ func TestCreateConsumer(t *testing.T) {
 		})
 	require.NoError(t, err)
 	// assert that the consumer id is different from the previously registered chain
-	require.Equal(t, "1", response.ConsumerId)
-	actualMetadata, err = providerKeeper.GetConsumerMetadata(ctx, "1")
+	require.Equal(t, uint64(1), response.ConsumerId)
+	actualMetadata, err = providerKeeper.GetConsumerMetadata(ctx, 1)
 	require.NoError(t, err)
 	require.Equal(t, consumerMetadata, actualMetadata)
-	ownerAddress, err = providerKeeper.GetConsumerOwnerAddress(ctx, "1")
+	ownerAddress, err = providerKeeper.GetConsumerOwnerAddress(ctx, 1)
 	require.NoError(t, err)
 	require.Equal(t, "submitter2", ownerAddress)
-	phase = providerKeeper.GetConsumerPhase(ctx, "1")
+	phase = providerKeeper.GetConsumerPhase(ctx, 1)
 	require.Equal(t, providertypes.CONSUMER_PHASE_REGISTERED, phase)
 }
 
@@ -106,7 +106,7 @@ func TestCreateConsumerDuplicateChainId(t *testing.T) {
 			InitializationParameters: &providertypes.ConsumerInitializationParameters{},
 		})
 	require.NoError(t, err)
-	require.Equal(t, "0", response.ConsumerId)
+	require.Equal(t, uint64(0), response.ConsumerId)
 
 	// Attempt to register another consumer with the same chainId
 	_, err = msgServer.CreateConsumer(ctx,
@@ -127,7 +127,7 @@ func TestUpdateConsumer(t *testing.T) {
 	// try to update a non-existing consumer
 	_, err := msgServer.UpdateConsumer(ctx,
 		&providertypes.MsgUpdateConsumer{
-			Owner: "owner", ConsumerId: "0", NewOwnerAddress: "cosmos1dkas8mu4kyhl5jrh4nzvm65qz588hy9qcz08la",
+			Owner: "owner", ConsumerId: 0, NewOwnerAddress: "cosmos1dkas8mu4kyhl5jrh4nzvm65qz588hy9qcz08la",
 		})
 	require.Error(t, err, "cannot update consumer chain")
 
@@ -257,7 +257,7 @@ func TestSubmitConsumerMisbehaviourRejectsNilSignedHeader(t *testing.T) {
 	msgServer := providerkeeper.NewMsgServerImpl(&providerKeeper)
 
 	msg := &providertypes.MsgSubmitConsumerMisbehaviour{
-		ConsumerId: "0",
+		ConsumerId: 0,
 		Submitter:  validSubmitter(),
 		Misbehaviour: &ibctmtypes.Misbehaviour{
 			Header1: &ibctmtypes.Header{},
@@ -278,7 +278,7 @@ func TestSubmitConsumerDoubleVotingRejectsNilHeaderSignedHeader(t *testing.T) {
 
 	msgServer := providerkeeper.NewMsgServerImpl(&providerKeeper)
 
-	consumerID := "0"
+	consumerID := uint64(0)
 	chainID := "consumer-chain-id"
 	providerKeeper.SetConsumerChainId(ctx, consumerID, chainID)
 
@@ -305,7 +305,7 @@ func TestSubmitConsumerDoubleVotingRejectsMismatchedChainID(t *testing.T) {
 
 	msgServer := providerkeeper.NewMsgServerImpl(&providerKeeper)
 
-	consumerID := "0"
+	consumerID := uint64(0)
 	storedChainID := "consumer-chain-id"
 	differentChainID := "different-chain-id"
 	providerKeeper.SetConsumerChainId(ctx, consumerID, storedChainID)
@@ -335,7 +335,7 @@ func TestSubmitConsumerDoubleVotingRejectsMismatchedHeights(t *testing.T) {
 
 	msgServer := providerkeeper.NewMsgServerImpl(&providerKeeper)
 
-	consumerID := "0"
+	consumerID := uint64(0)
 	chainID := "consumer-chain-id"
 	providerKeeper.SetConsumerChainId(ctx, consumerID, chainID)
 

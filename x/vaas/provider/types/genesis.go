@@ -6,9 +6,9 @@ import (
 
 	vaastypes "github.com/allinbits/vaas/x/vaas/types"
 
-	host "github.com/cosmos/ibc-go/v10/modules/core/24-host"
-
 	errorsmod "cosmossdk.io/errors"
+
+	sdk "github.com/cosmos/cosmos-sdk/types"
 )
 
 func NewGenesisState(
@@ -51,9 +51,16 @@ func (gs GenesisState) Validate() error {
 		}
 	}
 
+	seenConsumerIds := map[uint64]bool{}
 	for _, cs := range gs.ConsumerStates {
+		if seenConsumerIds[cs.ConsumerId] {
+			return errorsmod.Wrap(vaastypes.ErrInvalidGenesis,
+				fmt.Sprintf("duplicate consumer id %d in genesis", cs.ConsumerId))
+		}
+		seenConsumerIds[cs.ConsumerId] = true
 		if err := cs.Validate(); err != nil {
-			return errorsmod.Wrap(vaastypes.ErrInvalidGenesis, fmt.Sprintf("%s: for consumer chain id: %s", err, cs.ChainId))
+			return errorsmod.Wrap(vaastypes.ErrInvalidGenesis,
+				fmt.Sprintf("%s: for consumer id %d (chain id %q)", err, cs.ConsumerId, cs.ChainId))
 		}
 	}
 
@@ -71,24 +78,99 @@ func (gs GenesisState) Validate() error {
 	return nil
 }
 
-// Validate performs a consumer state validation returning an error upon any failure.
-// It ensures that the chain id, client id and consumer genesis states are valid and non-empty.
+// Validate performs a phase-aware consumer state validation.
+// Each phase has different required and forbidden fields, mirroring the
+// invariants the keeper maintains (see x/vaas/provider/keeper/consumer_lifecycle.go).
 func (cs ConsumerState) Validate() error {
-	if err := host.ChannelIdentifierValidator(cs.ChannelId); err != nil {
-		return err
+	if cs.ChainId == "" {
+		return errors.New("chain id cannot be empty")
 	}
-	if err := host.ClientIdentifierValidator(cs.ClientId); err != nil {
-		return err
+	if cs.OwnerAddress == "" {
+		return errors.New("owner address cannot be empty")
 	}
-	// validate a new chain genesis
-	if err := cs.ConsumerGenesis.Validate(); err != nil {
-		return err
+	if _, err := sdk.AccAddressFromBech32(cs.OwnerAddress); err != nil {
+		return fmt.Errorf("invalid owner address %q: %w", cs.OwnerAddress, err)
 	}
-
 	for _, pVSC := range cs.PendingValsetChanges {
 		if pVSC.ValsetUpdateId == 0 {
 			return errors.New("valset update ID cannot be equal to zero")
 		}
+	}
+
+	switch cs.Phase {
+	case CONSUMER_PHASE_REGISTERED:
+		// Pre-launch: no IBC client, no consumer genesis, no init params, no removal time.
+		if cs.ClientId != "" {
+			return fmt.Errorf("client id must be empty for phase %s", cs.Phase)
+		}
+		if cs.InitParams != nil {
+			return fmt.Errorf("init params must be empty for phase %s", cs.Phase)
+		}
+		if cs.RemovalTime != nil {
+			return fmt.Errorf("removal time must be empty for phase %s", cs.Phase)
+		}
+
+	case CONSUMER_PHASE_INITIALIZED:
+		// Pre-launch but configured: init_params required; still no IBC client.
+		if cs.InitParams == nil {
+			return fmt.Errorf("init params required for phase %s", cs.Phase)
+		}
+		if cs.ClientId != "" {
+			return fmt.Errorf("client id must be empty for phase %s", cs.Phase)
+		}
+		if cs.RemovalTime != nil {
+			return fmt.Errorf("removal time must be empty for phase %s", cs.Phase)
+		}
+
+	case CONSUMER_PHASE_LAUNCHED:
+		// Live: init_params + IBC client + consumer genesis all required.
+		if cs.InitParams == nil {
+			return fmt.Errorf("init params required for phase %s", cs.Phase)
+		}
+		if cs.ClientId == "" {
+			return fmt.Errorf("client id required for phase %s", cs.Phase)
+		}
+		if err := cs.ConsumerGenesis.Validate(); err != nil {
+			return err
+		}
+		if cs.RemovalTime != nil {
+			return fmt.Errorf("removal time must be empty for phase %s", cs.Phase)
+		}
+
+	case CONSUMER_PHASE_STOPPED:
+		// Scheduled for removal: LAUNCHED requirements plus a removal time.
+		if cs.InitParams == nil {
+			return fmt.Errorf("init params required for phase %s", cs.Phase)
+		}
+		if cs.ClientId == "" {
+			return fmt.Errorf("client id required for phase %s", cs.Phase)
+		}
+		if err := cs.ConsumerGenesis.Validate(); err != nil {
+			return err
+		}
+		if cs.RemovalTime == nil {
+			return fmt.Errorf("removal time required for phase %s", cs.Phase)
+		}
+
+	case CONSUMER_PHASE_DELETED:
+		// Tombstoned: keeper retains owner+metadata+init_params for explorer UX
+		// (see consumer_lifecycle.go DeleteConsumerChain comment).
+		// Everything else is cleared.
+		if cs.InitParams == nil {
+			return fmt.Errorf("init params required for phase %s", cs.Phase)
+		}
+		if cs.Metadata == nil {
+			return fmt.Errorf("metadata required for phase %s", cs.Phase)
+		}
+		if cs.ClientId != "" {
+			return fmt.Errorf("client id must be empty for phase %s", cs.Phase)
+		}
+		if cs.RemovalTime != nil {
+			return fmt.Errorf("removal time must be empty for phase %s", cs.Phase)
+		}
+
+	default:
+		return fmt.Errorf("invalid phase: %s", cs.Phase)
 	}
 
 	return nil

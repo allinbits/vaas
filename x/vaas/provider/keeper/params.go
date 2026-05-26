@@ -7,13 +7,27 @@ import (
 
 	"github.com/allinbits/vaas/x/vaas/provider/types"
 
+	clienttypes "github.com/cosmos/ibc-go/v10/modules/core/02-client/types"
+	commitmenttypes "github.com/cosmos/ibc-go/v10/modules/core/23-commitment/types"
 	ibctmtypes "github.com/cosmos/ibc-go/v10/modules/light-clients/07-tendermint"
+
+	sdk "github.com/cosmos/cosmos-sdk/types"
 )
 
-// GetTemplateClient returns the template consumer client
+// GetTemplateClient returns a template Tendermint client state with default values.
+// The returned client state is a starting point that gets customized per-consumer
+// (chain ID, heights, trusting/unbonding periods) before client creation.
 func (k Keeper) GetTemplateClient(ctx context.Context) *ibctmtypes.ClientState {
-	params := k.GetParams(ctx)
-	return params.TemplateClient
+	return ibctmtypes.NewClientState(
+		"",
+		ibctmtypes.DefaultTrustLevel,
+		0,
+		0,
+		types.DefaultMaxClockDrift,
+		clienttypes.Height{},
+		commitmenttypes.GetSDKSpecs(),
+		[]string{"upgrade", "upgradedIBCState"},
+	)
 }
 
 // GetTrustingPeriodFraction returns a TrustingPeriodFraction
@@ -40,6 +54,12 @@ func (k Keeper) GetBlocksPerEpoch(ctx context.Context) int64 {
 func (k Keeper) GetMaxProviderConsensusValidators(ctx context.Context) int64 {
 	params := k.GetParams(ctx)
 	return params.MaxProviderConsensusValidators
+}
+
+// GetFeesPerBlock returns the fees that each consumer chain must pay per block
+func (k Keeper) GetFeesPerBlock(ctx context.Context) sdk.Coin {
+	params := k.GetParams(ctx)
+	return params.FeesPerBlock
 }
 
 // GetParams returns the paramset for the provider module

@@ -50,7 +50,7 @@ func NewCryptoIdentityFromIntSeed(i int) *CryptoIdentity {
 // GenMultipleCryptoIds generates and returns multiple CryptoIdentities from a starting int seed.
 func GenMultipleCryptoIds(num, fromIntSeed int) []*CryptoIdentity {
 	ids := make([]*CryptoIdentity, num)
-	for i := 0; i < num; i++ {
+	for i := range num {
 		ids[i] = NewCryptoIdentityFromIntSeed(fromIntSeed + i)
 	}
 	return ids

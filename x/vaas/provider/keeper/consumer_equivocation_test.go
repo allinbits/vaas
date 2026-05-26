@@ -27,7 +27,7 @@ func TestVerifyDoubleVotingEvidence(t *testing.T) {
 	keeper, ctx, ctrl, _ := testkeeper.GetProviderKeeperAndCtx(t, testkeeper.NewInMemKeeperParams(t))
 	defer ctrl.Finish()
 
-	chainID := CONSUMER_CHAIN_ID
+	const chainID = "chain-0"
 
 	signer1 := tmtypes.NewMockPV()
 	signer2 := tmtypes.NewMockPV()
@@ -789,20 +789,20 @@ func TestSlashValidatorDoesNotSlashIfValidatorIsUnbonded(t *testing.T) {
 }
 
 func TestEquivocationEvidenceMinHeightCRUD(t *testing.T) {
-	chainID := CONSUMER_CHAIN_ID
+	consumerID := CONSUMER_ID
 	expMinHeight := uint64(12)
 	keeper, ctx, ctrl, _ := testkeeper.GetProviderKeeperAndCtx(t, testkeeper.NewInMemKeeperParams(t))
 	defer ctrl.Finish()
 
-	height := keeper.GetEquivocationEvidenceMinHeight(ctx, chainID)
+	height := keeper.GetEquivocationEvidenceMinHeight(ctx, consumerID)
 	require.Zero(t, height, "equivocation evidence min height should be 0")
 
-	keeper.SetEquivocationEvidenceMinHeight(ctx, chainID, expMinHeight)
-	height = keeper.GetEquivocationEvidenceMinHeight(ctx, chainID)
+	keeper.SetEquivocationEvidenceMinHeight(ctx, consumerID, expMinHeight)
+	height = keeper.GetEquivocationEvidenceMinHeight(ctx, consumerID)
 	require.Equal(t, height, expMinHeight)
 
-	keeper.DeleteEquivocationEvidenceMinHeight(ctx, chainID)
-	height = keeper.GetEquivocationEvidenceMinHeight(ctx, chainID)
+	keeper.DeleteEquivocationEvidenceMinHeight(ctx, consumerID)
+	height = keeper.GetEquivocationEvidenceMinHeight(ctx, consumerID)
 	require.Zero(t, height, "equivocation evidence min height should be 0")
 }
 

@@ -30,15 +30,15 @@ import (
 // and a public key and, if successful, executes the slashing, jailing, and tombstoning of the malicious validator.
 func (k Keeper) HandleConsumerDoubleVoting(
 	ctx sdk.Context,
-	consumerId string,
+	consumerId uint64,
 	evidence *tmtypes.DuplicateVoteEvidence,
 	pubkey cryptotypes.PubKey,
 ) error {
 	// check that the evidence is for an ICS consumer chain
-	if _, found := k.GetConsumerClientId(ctx, consumerId); !found {
+	if k.GetConsumerPhase(ctx, consumerId) != types.CONSUMER_PHASE_LAUNCHED {
 		return errorsmod.Wrapf(
 			vaastypes.ErrInvalidDoubleVotingEvidence,
-			"cannot find consumer chain %s",
+			"consumer chain %d is not launched",
 			consumerId,
 		)
 	}
@@ -48,7 +48,7 @@ func (k Keeper) HandleConsumerDoubleVoting(
 	if uint64(evidence.VoteA.Height) < minHeight {
 		return errorsmod.Wrapf(
 			vaastypes.ErrInvalidDoubleVotingEvidence,
-			"evidence for consumer chain %s is too old - evidence height (%d), min (%d)",
+			"evidence for consumer chain %d is too old - evidence height (%d), min (%d)",
 			consumerId,
 			evidence.VoteA.Height,
 			minHeight,
@@ -181,7 +181,7 @@ func (k Keeper) VerifyDoubleVotingEvidence(
 
 // HandleConsumerMisbehaviour checks if the given IBC misbehaviour corresponds to an equivocation light client attack.
 // VAAS only validates and logs misbehaviour submissions (no slashing/jailing/tombstoning).
-func (k Keeper) HandleConsumerMisbehaviour(ctx sdk.Context, consumerId string, misbehaviour ibctmtypes.Misbehaviour) error {
+func (k Keeper) HandleConsumerMisbehaviour(ctx sdk.Context, consumerId uint64, misbehaviour ibctmtypes.Misbehaviour) error {
 	logger := k.Logger(ctx)
 
 	// Check that the misbehaviour is valid and that the client consensus states at trusted heights are within trusting period
@@ -299,14 +299,14 @@ func headerToLightBlock(h ibctmtypes.Header) (*tmtypes.LightBlock, error) {
 
 // CheckMisbehaviour checks that headers in the given misbehaviour forms
 // a valid light client attack from an ICS consumer chain and that the light client isn't expired
-func (k Keeper) CheckMisbehaviour(ctx sdk.Context, consumerId string, misbehaviour ibctmtypes.Misbehaviour) error {
+func (k Keeper) CheckMisbehaviour(ctx sdk.Context, consumerId uint64, misbehaviour ibctmtypes.Misbehaviour) error {
 	chainId := misbehaviour.Header1.Header.ChainID
 
 	consumerChainId, err := k.GetConsumerChainId(ctx, consumerId)
 	if err != nil {
 		return err
 	} else if consumerChainId != chainId {
-		return fmt.Errorf("incorrect misbehaviour for a different chain id (%s) than that of the consumer chain %s (consumerId: %s)",
+		return fmt.Errorf("incorrect misbehaviour for a different chain id (%s) than that of the consumer chain %s (consumerId: %d)",
 			chainId,
 			consumerChainId,
 			consumerId)
@@ -315,9 +315,9 @@ func (k Keeper) CheckMisbehaviour(ctx sdk.Context, consumerId string, misbehavio
 	// check that the misbehaviour is for an ICS consumer chain
 	clientId, found := k.GetConsumerClientId(ctx, consumerId)
 	if !found {
-		return fmt.Errorf("incorrect misbehaviour with conflicting headers from a non-existent consumer chain (consumerId: %s)", consumerId)
+		return fmt.Errorf("incorrect misbehaviour with conflicting headers from a non-existent consumer chain (consumerId: %d)", consumerId)
 	} else if misbehaviour.ClientId != clientId {
-		return fmt.Errorf("incorrect misbehaviour: expected client ID for consumer chain with id %s is %s got %s",
+		return fmt.Errorf("incorrect misbehaviour: expected client ID for consumer chain with id %d is %s got %s",
 			consumerId,
 			clientId,
 			misbehaviour.ClientId,
@@ -339,7 +339,7 @@ func (k Keeper) CheckMisbehaviour(ctx sdk.Context, consumerId string, misbehavio
 	if evidenceHeight < minHeight {
 		return errorsmod.Wrapf(
 			vaastypes.ErrInvalidDoubleVotingEvidence,
-			"evidence for consumer chain %s is too old - evidence height (%d), min (%d)",
+			"evidence for consumer chain %d is too old - evidence height (%d), min (%d)",
 			consumerId,
 			evidenceHeight,
 			minHeight,

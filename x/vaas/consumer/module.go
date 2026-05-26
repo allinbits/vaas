@@ -145,21 +145,9 @@ func (AppModule) ConsensusVersion() uint64 {
 	return 1
 }
 
-// BeginBlock implements the AppModule interface
-// Set the VSC ID for the subsequent block to the same value as the current block
-// Panic if the provider's channel was established and then closed
 func (am AppModule) BeginBlock(goCtx context.Context) error {
 	ctx := sdk.UnwrapSDKContext(goCtx)
 
-	channelID, found := am.keeper.GetProviderChannel(ctx)
-	if found && am.keeper.IsChannelClosed(ctx, channelID) {
-		// The VAAS channel was established, but it was then closed;
-		// the consumer chain is not secured anymore, but we allow it to run as a POA chain and log an error.
-		channelClosedMsg := fmt.Sprintf("VAAS channel %q was closed - shutdown consumer chain since it is not secured anymore", channelID)
-		am.keeper.Logger(ctx).Error(channelClosedMsg)
-	}
-
-	// map next block height to the vscID of the current block height
 	blockHeight := uint64(ctx.BlockHeight())
 	vID := am.keeper.GetHeightValsetUpdateID(ctx, blockHeight)
 	am.keeper.SetHeightValsetUpdateID(ctx, blockHeight+1, vID)

@@ -67,7 +67,7 @@ func (k Keeper) ParseConsumerKey(consumerKey string) (tmprotocrypto.PublicKey, e
 // voted on in a ConsumerAddition governance proposal
 func (k Keeper) AssignConsumerKey(
 	ctx sdk.Context,
-	consumerId string,
+	consumerId uint64,
 	validator stakingtypes.Validator,
 	consumerKey tmprotocrypto.PublicKey,
 ) error {
@@ -75,7 +75,7 @@ func (k Keeper) AssignConsumerKey(
 		// check that the consumer chain is either registered, initialized, or launched
 		return errorsmod.Wrapf(
 			types.ErrInvalidPhase,
-			"cannot assign a key to a consumer chain that is not in the registered, initialized, or launched phase: %s", consumerId)
+			"cannot assign a key to a consumer chain that is not in the registered, initialized, or launched phase: %d", consumerId)
 	}
 
 	consAddrTmp, err := vaastypes.TMCryptoPublicKeyToConsAddr(consumerKey)
@@ -165,7 +165,7 @@ func (k Keeper) AssignConsumerKey(
 // consAddr set as the consensus address on a consumer chain
 func (k Keeper) GetProviderAddrFromConsumerAddr(
 	ctx sdk.Context,
-	consumerId string,
+	consumerId uint64,
 	consumerAddr types.ConsumerConsAddress,
 ) types.ProviderConsAddress {
 	// check if this address is known only to the consumer chain
@@ -179,7 +179,7 @@ func (k Keeper) GetProviderAddrFromConsumerAddr(
 
 // PruneKeyAssignments prunes the consumer addresses no longer needed
 // as they cannot be referenced in slash requests (by a correct consumer)
-func (k Keeper) PruneKeyAssignments(ctx sdk.Context, consumerId string) {
+func (k Keeper) PruneKeyAssignments(ctx sdk.Context, consumerId uint64) {
 	now := ctx.BlockTime()
 
 	consumerAddrs := k.ConsumeConsumerAddrsToPrune(ctx, consumerId, now)
@@ -194,7 +194,7 @@ func (k Keeper) PruneKeyAssignments(ctx sdk.Context, consumerId string) {
 }
 
 // DeleteKeyAssignments deletes all the state needed for key assignments on a consumer chain
-func (k Keeper) DeleteKeyAssignments(ctx sdk.Context, consumerId string) {
+func (k Keeper) DeleteKeyAssignments(ctx sdk.Context, consumerId uint64) {
 	// delete ValidatorConsumerPubKey
 	for _, validatorConsumerAddr := range k.GetAllValidatorConsumerPubKeys(ctx, &consumerId) {
 		providerAddr := types.NewProviderConsAddress(validatorConsumerAddr.ProviderAddr)

@@ -5,15 +5,9 @@ import (
 	"reflect"
 	"sort"
 	"strings"
-	"time"
 
 	abci "github.com/cometbft/cometbft/abci/types"
 	tmprotocrypto "github.com/cometbft/cometbft/proto/tendermint/crypto"
-
-	clienttypes "github.com/cosmos/ibc-go/v10/modules/core/02-client/types"
-	channeltypes "github.com/cosmos/ibc-go/v10/modules/core/04-channel/types"
-
-	errorsmod "cosmossdk.io/errors"
 
 	cryptocodec "github.com/cosmos/cosmos-sdk/crypto/codec"
 	sdk "github.com/cosmos/cosmos-sdk/types"
@@ -24,11 +18,11 @@ import (
 func AccumulateChanges(currentChanges, newChanges []abci.ValidatorUpdate) []abci.ValidatorUpdate {
 	m := make(map[string]abci.ValidatorUpdate)
 
-	for i := 0; i < len(currentChanges); i++ {
+	for i := range currentChanges {
 		m[currentChanges[i].PubKey.String()] = currentChanges[i]
 	}
 
-	for i := 0; i < len(newChanges); i++ {
+	for i := range newChanges {
 		m[newChanges[i].PubKey.String()] = newChanges[i]
 	}
 
@@ -60,37 +54,6 @@ func TMCryptoPublicKeyToConsAddr(k tmprotocrypto.PublicKey) (sdk.ConsAddress, er
 	return sdk.GetConsAddress(sdkK), nil
 }
 
-// SendIBCPacket sends an IBC packet with packetData
-// over the source channelID and portID
-func SendIBCPacket(
-	ctx sdk.Context,
-	channelKeeper ChannelKeeper,
-	sourceChannelID string,
-	sourcePortID string,
-	packetData []byte,
-	timeoutPeriod time.Duration,
-) error {
-	_, ok := channelKeeper.GetChannel(ctx, sourcePortID, sourceChannelID)
-	if !ok {
-		return errorsmod.Wrapf(channeltypes.ErrChannelNotFound, "channel not found for channel ID: %s", sourceChannelID)
-	}
-
-	_, err := channelKeeper.SendPacket(ctx,
-		sourcePortID,
-		sourceChannelID,
-		clienttypes.Height{}, //  timeout height disabled
-		uint64(ctx.BlockTime().Add(timeoutPeriod).UnixNano()), // timeout timestamp
-		packetData,
-	)
-	return err
-}
-
-func NewErrorAcknowledgementWithLog(ctx sdk.Context, err error) channeltypes.Acknowledgement {
-	ctx.Logger().Error("IBC ErrorAcknowledgement constructed", "error", err)
-	return channeltypes.NewErrorAcknowledgement(err)
-}
-
-// AppendMany appends a variable number of byte slices together
 func AppendMany(byteses ...[]byte) (out []byte) {
 	for _, bytes := range byteses {
 		out = append(out, bytes...)
@@ -98,7 +61,7 @@ func AppendMany(byteses ...[]byte) (out []byte) {
 	return out
 }
 
-func PanicIfZeroOrNil(x interface{}, nameForPanicMsg string) {
+func PanicIfZeroOrNil(x any, nameForPanicMsg string) {
 	if x == nil || reflect.ValueOf(x).IsZero() {
 		panic("zero or nil value for " + nameForPanicMsg)
 	}

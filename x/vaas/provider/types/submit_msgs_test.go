@@ -108,7 +108,7 @@ func TestMsgSubmitConsumerMisbehaviourValidateBasic_NilMisbehaviourDoesNotPanic(
 	msg := types.MsgSubmitConsumerMisbehaviour{
 		Submitter:    submitter,
 		Misbehaviour: nil,
-		ConsumerId:   "1",
+		ConsumerId:   1,
 	}
 
 	require.NotPanics(t, func() {
@@ -126,7 +126,7 @@ func TestMsgSubmitConsumerDoubleVotingValidateBasic_RejectsInvalidSubmitter(t *t
 		Submitter:             "not-a-bech32-address",
 		DuplicateVoteEvidence: ev,
 		InfractionBlockHeader: header,
-		ConsumerId:            "1",
+		ConsumerId:            1,
 	}
 
 	err := msg.ValidateBasic()
@@ -144,7 +144,7 @@ func TestMsgSubmitConsumerDoubleVotingValidateBasic_RejectsHeightMismatch(t *tes
 		Submitter:             submitter,
 		DuplicateVoteEvidence: ev,
 		InfractionBlockHeader: headerWrongHeight,
-		ConsumerId:            "1",
+		ConsumerId:            1,
 	}
 
 	err := msg.ValidateBasic()
@@ -161,7 +161,7 @@ func TestMsgSubmitConsumerDoubleVotingValidateBasic_AcceptsValidMsg(t *testing.T
 		Submitter:             submitter,
 		DuplicateVoteEvidence: ev,
 		InfractionBlockHeader: header,
-		ConsumerId:            "1",
+		ConsumerId:            1,
 	}
 
 	require.NoError(t, msg.ValidateBasic())
@@ -193,7 +193,7 @@ func TestMsgSubmitConsumerDoubleVotingValidateBasic_RejectsChainIDMismatch(t *te
 		Submitter:             submitter,
 		DuplicateVoteEvidence: dve.ToProto(),
 		InfractionBlockHeader: headerWrongChainID,
-		ConsumerId:            "1",
+		ConsumerId:            1,
 	}
 
 	err = msg.ValidateBasic()

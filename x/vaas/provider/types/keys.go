@@ -25,14 +25,10 @@ const (
 
 	ParametersKeyName = "ParametersKey"
 
-	PortKeyName = "PortKey"
-
 	ValidatorSetUpdateIdKeyName = "ValidatorSetUpdateIdKey"
 
-	ConsumerIdToChannelIdKeyName = "ConsumerIdToChannelIdKey"
-
-	ChannelIdToConsumerIdKeyName = "ChannelToConsumerIdKey"
-
+	// ConsumerIdToClientIdKeyName stores the mapping from consumer ID to client ID.
+	// This is the primary lookup mechanism for IBC v2 client-based communication.
 	ConsumerIdToClientIdKeyName = "ConsumerIdToClientIdKey"
 
 	ValsetUpdateBlockHeightKeyName = "ValsetUpdateBlockHeightKey"
@@ -65,8 +61,6 @@ const (
 
 	ConsumerIdToInitializationParametersKeyName = "ConsumerIdToInitializationParametersKey"
 
-	ConsumerIdToPowerShapingParameters = "ConsumerIdToPowerShapingParametersKey"
-
 	ConsumerIdToPhaseKeyName = "ConsumerIdToPhaseKey"
 
 	ConsumerIdToRemovalTimeKeyName = "ConsumerIdToRemovalTimeKey"
@@ -75,39 +69,37 @@ const (
 
 	RemovalTimeToConsumerIdsKeyName = "RemovalTimeToConsumerIdsKeyName"
 
+	// ClientIdToConsumerIdKeyName stores the reverse mapping from client ID to consumer ID.
+	// This is the reverse lookup mechanism for IBC v2 client-based communication.
 	ClientIdToConsumerIdKeyName = "ClientIdToConsumerIdKey"
 
-	PrioritylistKeyName = "PrioritylistKey"
+	ConsumerIdToDebtKeyName = "ConsumerIdToDebtKeyName"
 )
 
 // Collection key prefixes for use with cosmossdk.io/collections
 var (
-	PortPrefix                             = collections.NewPrefix(0)
-	ValidatorSetUpdateIdPrefix             = collections.NewPrefix(1)
-	ConsumerIdToChannelIdPrefix            = collections.NewPrefix(2)
-	ChannelIdToConsumerIdPrefix            = collections.NewPrefix(3)
-	ConsumerIdToClientIdPrefix             = collections.NewPrefix(4)
-	ValsetUpdateBlockHeightPrefix          = collections.NewPrefix(5)
-	ConsumerGenesisPrefix                  = collections.NewPrefix(6)
-	InitChainHeightPrefix                  = collections.NewPrefix(7)
-	PendingVSCsPrefix                      = collections.NewPrefix(8)
-	ConsumerValidatorsPrefix               = collections.NewPrefix(9)
-	ValidatorsByConsumerAddrPrefix         = collections.NewPrefix(10)
-	EquivocationEvidenceMinHeightPrefix    = collections.NewPrefix(11)
-	ConsumerValidatorPrefix                = collections.NewPrefix(12)
-	ConsumerAddrsToPrunePrefix             = collections.NewPrefix(13)
-	LastProviderConsensusVals              = collections.NewPrefix(14)
-	ConsumerIdPrefix                       = collections.NewPrefix(15)
-	ConsumerIdToChainIdPrefix              = collections.NewPrefix(16)
-	ConsumerIdToOwnerAddressPrefix         = collections.NewPrefix(17)
-	ConsumerIdToMetadataPrefix             = collections.NewPrefix(18)
-	ConsumerIdToInitializationParamsPrefix = collections.NewPrefix(19)
-	ConsumerIdToPowerShapingParamsPrefix   = collections.NewPrefix(20)
-	ConsumerIdToPhasePrefix                = collections.NewPrefix(21)
-	ConsumerIdToRemovalTimePrefix          = collections.NewPrefix(22)
-	SpawnTimeToConsumerIdsPrefix           = collections.NewPrefix(23)
-	RemovalTimeToConsumerIdsPrefix         = collections.NewPrefix(24)
-	ClientIdToConsumerIdPrefix             = collections.NewPrefix(25)
-	PriorityListPrefix                     = collections.NewPrefix(26)
+	ValidatorSetUpdateIdPrefix             = collections.NewPrefix(0)
+	ConsumerIdToClientIdPrefix             = collections.NewPrefix(1)
+	ValsetUpdateBlockHeightPrefix          = collections.NewPrefix(2)
+	ConsumerGenesisPrefix                  = collections.NewPrefix(3)
+	InitChainHeightPrefix                  = collections.NewPrefix(4)
+	PendingVSCsPrefix                      = collections.NewPrefix(5)
+	ConsumerValidatorsPrefix               = collections.NewPrefix(6)
+	ValidatorsByConsumerAddrPrefix         = collections.NewPrefix(7)
+	EquivocationEvidenceMinHeightPrefix    = collections.NewPrefix(8)
+	ConsumerValidatorPrefix                = collections.NewPrefix(9)
+	ConsumerAddrsToPrunePrefix             = collections.NewPrefix(10)
+	LastProviderConsensusVals              = collections.NewPrefix(11)
+	ConsumerIdPrefix                       = collections.NewPrefix(12)
+	ConsumerIdToChainIdPrefix              = collections.NewPrefix(13)
+	ConsumerIdToOwnerAddressPrefix         = collections.NewPrefix(14)
+	ConsumerIdToMetadataPrefix             = collections.NewPrefix(15)
+	ConsumerIdToInitializationParamsPrefix = collections.NewPrefix(16)
+	ConsumerIdToPhasePrefix                = collections.NewPrefix(17)
+	ConsumerIdToRemovalTimePrefix          = collections.NewPrefix(18)
+	SpawnTimeToConsumerIdsPrefix           = collections.NewPrefix(19)
+	RemovalTimeToConsumerIdsPrefix         = collections.NewPrefix(20)
+	ClientIdToConsumerIdPrefix             = collections.NewPrefix(21)
+	ConsumerIdToDebtPrefix                 = collections.NewPrefix(22)
 	ParametersPrefix                       = collections.NewPrefix(0xFF)
 )

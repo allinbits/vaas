@@ -1,66 +1,145 @@
 package keeper
 
 import (
+	"errors"
 	"fmt"
+	"reflect"
 
 	"github.com/allinbits/vaas/x/vaas/provider/types"
 	vaastypes "github.com/allinbits/vaas/x/vaas/types"
 
 	abci "github.com/cometbft/cometbft/abci/types"
 
+	"cosmossdk.io/collections"
+
 	sdk "github.com/cosmos/cosmos-sdk/types"
 )
 
-// InitGenesis initializes the CCV provider state and binds to PortID.
+// InitGenesis initializes the VAAS provider state from a GenesisState.
+//
+// Per-consumer state (owner, metadata, init params, removal time, client id,
+// consumer genesis) is read directly from each ConsumerState, keyed by the
+// canonical consumer id carried in cs.ConsumerId. The keeper's derived
+// collections (spawn-time queue, removal-time queue, equivocation evidence
+// min height) are then reconstructed in a second pass from the per-consumer
+// fields. ConsumerDebt is left unset; the first BeginBlock after import
+// re-derives it from the fee pool balance. After all consumers are imported,
+// the ConsumerId sequence counter is advanced past the highest imported id
+// so subsequent MsgCreateConsumer calls do not collide with the imported
+// records.
 func (k Keeper) InitGenesis(ctx sdk.Context, genState *types.GenesisState) []abci.ValidatorUpdate {
-	k.SetPort(ctx, vaastypes.ProviderPortID)
-
 	k.SetValidatorSetUpdateId(ctx, genState.ValsetUpdateId)
 	for _, v2h := range genState.ValsetUpdateIdToHeight {
 		k.SetValsetUpdateBlockHeight(ctx, v2h.ValsetUpdateId, v2h.Height)
 	}
 
-	// Set initial state for each consumer chain
-	for _, cs := range genState.ConsumerStates {
-		chainID := cs.ChainId
-		k.SetConsumerClientId(ctx, chainID, cs.ClientId)
-		k.SetConsumerPhase(ctx, chainID, cs.Phase)
-		if err := k.SetConsumerGenesis(ctx, chainID, cs.ConsumerGenesis); err != nil {
-			// An error here would indicate something is very wrong,
-			// the ConsumerGenesis validated in ConsumerState.Validate().
-			panic(fmt.Errorf("consumer chain genesis could not be persisted: %w", err))
+	// First pass: write all per-consumer keeper collections under the
+	// provided consumer id from each ConsumerState.
+	maxConsumerId := uint64(0)
+	for i := range genState.ConsumerStates {
+		cs := &genState.ConsumerStates[i]
+		consumerId := cs.ConsumerId
+
+		// Track the highest imported consumer id so we can advance the keeper's
+		// ConsumerId sequence past it below; future MsgCreateConsumer calls
+		// then won't collide with the imported records.
+		if consumerId > maxConsumerId {
+			maxConsumerId = consumerId
 		}
-		// check if the CCV channel was established
-		if cs.ChannelId != "" {
-			k.SetChannelToConsumerId(ctx, cs.ChannelId, chainID)
-			k.SetConsumerIdToChannelId(ctx, chainID, cs.ChannelId)
-			k.SetInitChainHeight(ctx, chainID, cs.InitialHeight)
-		} else {
-			k.AppendPendingVSCPackets(ctx, chainID, cs.PendingValsetChanges...)
+
+		k.SetConsumerChainId(ctx, consumerId, cs.ChainId)
+		k.SetConsumerPhase(ctx, consumerId, cs.Phase)
+
+		if cs.OwnerAddress != "" {
+			k.SetConsumerOwnerAddress(ctx, consumerId, cs.OwnerAddress)
+		}
+		if cs.Metadata != nil {
+			if err := k.SetConsumerMetadata(ctx, consumerId, *cs.Metadata); err != nil {
+				panic(fmt.Errorf("init: set metadata for %d: %w", consumerId, err))
+			}
+		}
+		if cs.InitParams != nil {
+			if err := k.SetConsumerInitializationParameters(ctx, consumerId, *cs.InitParams); err != nil {
+				panic(fmt.Errorf("init: set init params for %d: %w", consumerId, err))
+			}
+		}
+		if cs.ClientId != "" {
+			k.SetConsumerClientId(ctx, consumerId, cs.ClientId)
+		}
+		// reflect.DeepEqual is used here because ConsumerGenesisState
+		// transitively references types from cometbft/ibc-go that do not
+		// have a generated Equal method, so we can't enable
+		// gogoproto.equal_all on its proto file.
+		if !reflect.DeepEqual(cs.ConsumerGenesis, vaastypes.ConsumerGenesisState{}) {
+			if err := k.SetConsumerGenesis(ctx, consumerId, cs.ConsumerGenesis); err != nil {
+				panic(fmt.Errorf("init: set consumer genesis for %d: %w", consumerId, err))
+			}
+		}
+		if cs.RemovalTime != nil {
+			if err := k.SetConsumerRemovalTime(ctx, consumerId, *cs.RemovalTime); err != nil {
+				panic(fmt.Errorf("init: set removal time for %d: %w", consumerId, err))
+			}
+		}
+		if len(cs.PendingValsetChanges) > 0 {
+			k.AppendPendingVSCPackets(ctx, consumerId, cs.PendingValsetChanges...)
+		}
+	}
+
+	// Second pass: derive queue and equivocation-min-height state from the
+	// per-consumer fields just written.
+	for i := range genState.ConsumerStates {
+		cs := &genState.ConsumerStates[i]
+		consumerId := cs.ConsumerId
+
+		switch cs.Phase {
+		case types.CONSUMER_PHASE_INITIALIZED:
+			if cs.InitParams != nil {
+				if err := k.AppendConsumerToBeLaunched(ctx, consumerId, cs.InitParams.SpawnTime); err != nil {
+					panic(fmt.Errorf("init: enqueue spawn for %d: %w", consumerId, err))
+				}
+			}
+		case types.CONSUMER_PHASE_LAUNCHED:
+			if cs.InitParams != nil {
+				k.SetEquivocationEvidenceMinHeight(ctx, consumerId, cs.InitParams.InitialHeight.RevisionHeight)
+			}
+		case types.CONSUMER_PHASE_STOPPED:
+			if cs.InitParams != nil {
+				k.SetEquivocationEvidenceMinHeight(ctx, consumerId, cs.InitParams.InitialHeight.RevisionHeight)
+			}
+			if cs.RemovalTime != nil {
+				if err := k.AppendConsumerToBeRemoved(ctx, consumerId, *cs.RemovalTime); err != nil {
+					panic(fmt.Errorf("init: enqueue removal for %d: %w", consumerId, err))
+				}
+			}
+		}
+	}
+
+	// Advance the ConsumerId sequence past the highest imported id so
+	// MsgCreateConsumer's next FetchAndIncrementConsumerId does not collide.
+	if len(genState.ConsumerStates) > 0 {
+		if err := k.ConsumerId.Set(ctx, maxConsumerId+1); err != nil {
+			panic(fmt.Errorf("init: advance consumer id sequence to %d: %w", maxConsumerId+1, err))
 		}
 	}
 
 	// Import key assignment state
 	for _, item := range genState.ValidatorConsumerPubkeys {
 		providerAddr := types.NewProviderConsAddress(item.ProviderAddr)
-		k.SetValidatorConsumerPubKey(ctx, item.ChainId, providerAddr, *item.ConsumerKey)
+		k.SetValidatorConsumerPubKey(ctx, item.ConsumerId, providerAddr, *item.ConsumerKey)
 	}
-
 	for _, item := range genState.ValidatorsByConsumerAddr {
 		consumerAddr := types.NewConsumerConsAddress(item.ConsumerAddr)
 		providerAddr := types.NewProviderConsAddress(item.ProviderAddr)
-		k.SetValidatorByConsumerAddr(ctx, item.ChainId, consumerAddr, providerAddr)
+		k.SetValidatorByConsumerAddr(ctx, item.ConsumerId, consumerAddr, providerAddr)
 	}
-
 	for _, item := range genState.ConsumerAddrsToPrune {
 		for _, addr := range item.ConsumerAddrs.Addresses {
 			consumerAddr := types.NewConsumerConsAddress(addr)
-			k.AppendConsumerAddrsToPrune(ctx, item.ChainId, item.PruneTs, consumerAddr)
+			k.AppendConsumerAddrsToPrune(ctx, item.ConsumerId, item.PruneTs, consumerAddr)
 		}
 	}
 
 	k.SetParams(ctx, genState.Params)
-
 	return k.InitGenesisValUpdates(ctx)
 }
 
@@ -106,58 +185,83 @@ func (k Keeper) InitGenesisValUpdates(ctx sdk.Context) []abci.ValidatorUpdate {
 	return valUpdates
 }
 
-// ExportGenesis returns the CCV provider module's exported genesis
+// ExportGenesis returns the VAAS provider module's exported genesis
+//
+// Per-consumer state is exported for every consumer id (across all phases
+// including DELETED) so that state-export software upgrades preserve the
+// audit trail that the keeper itself maintains (see DeleteConsumerChain in
+// consumer_lifecycle.go for the policy of keeping owner/metadata/init_params
+// past deletion).
+//
+// Spawn-time queue, removal-time queue, equivocation-evidence-min-height,
+// and per-consumer debt are NOT exported because they are derivable from
+// the per-consumer fields above and / or other module state at InitGenesis.
 func (k Keeper) ExportGenesis(ctx sdk.Context) *types.GenesisState {
-	launchedConsumerIds := k.GetAllConsumersWithIBCClients(ctx)
+	allConsumerIds := k.GetAllConsumerIds(ctx)
 
-	// export states for each consumer chains
-	var consumerStates []types.ConsumerState
-	for _, consumerId := range launchedConsumerIds {
-		// no need for the second return value of GetConsumerClientId
-		// as GetAllConsumersWithIBCClients already iterated through
-		// the entire prefix range
-		clientId, _ := k.GetConsumerClientId(ctx, consumerId)
-		gen, found := k.GetConsumerGenesis(ctx, consumerId)
-		if !found {
-			panic(fmt.Errorf("cannot find genesis for consumer chain %s with client %s", consumerId, clientId))
+	consumerStates := make([]types.ConsumerState, 0, len(allConsumerIds))
+	for _, consumerId := range allConsumerIds {
+		phase := k.GetConsumerPhase(ctx, consumerId)
+
+		chainId, err := k.GetConsumerChainId(ctx, consumerId)
+		if err != nil {
+			panic(fmt.Errorf("export: failed to read chain id for consumer %d: %w", consumerId, err))
 		}
 
-		// initial consumer chain states
 		cs := types.ConsumerState{
-			ChainId:         consumerId,
-			ClientId:        clientId,
-			ConsumerGenesis: gen,
-			Phase:           k.GetConsumerPhase(ctx, consumerId),
+			ConsumerId:           consumerId,
+			ChainId:              chainId,
+			Phase:                phase,
+			PendingValsetChanges: k.GetPendingVSCPackets(ctx, consumerId),
 		}
 
-		// try to find channel id for the current consumer chain
-		channelId, found := k.GetConsumerIdToChannelId(ctx, consumerId)
-		if found {
-			cs.ChannelId = channelId
-			cs.InitialHeight, found = k.GetInitChainHeight(ctx, consumerId)
-			if !found {
-				panic(fmt.Errorf("cannot find init height for consumer chain %s", consumerId))
-			}
+		if owner, err := k.GetConsumerOwnerAddress(ctx, consumerId); err == nil {
+			cs.OwnerAddress = owner
+		} else if !errors.Is(err, collections.ErrNotFound) {
+			panic(fmt.Errorf("export: failed to read owner for consumer %d: %w", consumerId, err))
 		}
 
-		cs.PendingValsetChanges = k.GetPendingVSCPackets(ctx, consumerId)
+		if md, err := k.GetConsumerMetadata(ctx, consumerId); err == nil {
+			cs.Metadata = &md
+		} else if !errors.Is(err, collections.ErrNotFound) {
+			panic(fmt.Errorf("export: failed to read metadata for consumer %d: %w", consumerId, err))
+		}
+
+		if ip, err := k.GetConsumerInitializationParameters(ctx, consumerId); err == nil {
+			cs.InitParams = &ip
+		} else if !errors.Is(err, collections.ErrNotFound) {
+			panic(fmt.Errorf("export: failed to read init params for consumer %d: %w", consumerId, err))
+		}
+
+		if clientId, ok := k.GetConsumerClientId(ctx, consumerId); ok {
+			cs.ClientId = clientId
+		}
+		if gen, ok := k.GetConsumerGenesis(ctx, consumerId); ok {
+			cs.ConsumerGenesis = gen
+		}
+
+		if rt, err := k.GetConsumerRemovalTime(ctx, consumerId); err == nil {
+			rtCopy := rt // copy to avoid aliasing the loop-local variable
+			cs.RemovalTime = &rtCopy
+		} else if !errors.Is(err, collections.ErrNotFound) {
+			panic(fmt.Errorf("export: failed to read removal time for consumer %d: %w", consumerId, err))
+		}
+
 		consumerStates = append(consumerStates, cs)
 	}
 
-	// ConsumerAddrsToPrune are added only for registered consumer chains
 	consumerAddrsToPrune := []types.ConsumerAddrsToPrune{}
-	for _, chainID := range launchedConsumerIds {
-		consumerAddrsToPrune = append(consumerAddrsToPrune, k.GetAllConsumerAddrsToPrune(ctx, chainID)...)
+	for _, consumerId := range allConsumerIds {
+		consumerAddrsToPrune = append(consumerAddrsToPrune,
+			k.GetAllConsumerAddrsToPrune(ctx, consumerId)...)
 	}
-
-	params := k.GetParams(ctx)
 
 	// TODO (PERMISSIONLESS)
 	return types.NewGenesisState(
 		k.GetValidatorSetUpdateId(ctx),
 		k.GetAllValsetUpdateBlockHeights(ctx),
 		consumerStates,
-		params,
+		k.GetParams(ctx),
 		k.GetAllValidatorConsumerPubKeys(ctx, nil),
 		k.GetAllValidatorsByConsumerAddr(ctx, nil),
 		consumerAddrsToPrune,

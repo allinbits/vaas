@@ -55,7 +55,7 @@ func DiffValidators(
 }
 
 // CreateConsumerValidator creates a consumer validator for `consumerId` from the given staking `validator`
-func (k Keeper) CreateConsumerValidator(ctx sdk.Context, consumerId string, validator stakingtypes.Validator) (types.ConsensusValidator, error) {
+func (k Keeper) CreateConsumerValidator(ctx sdk.Context, consumerId uint64, validator stakingtypes.Validator) (types.ConsensusValidator, error) {
 	valAddr, err := sdk.ValAddressFromBech32(validator.GetOperator())
 	if err != nil {
 		return types.ConsensusValidator{}, err
@@ -98,7 +98,7 @@ func (k Keeper) CreateConsumerValidator(ctx sdk.Context, consumerId string, vali
 // the filtered set.
 func (k Keeper) FilterValidators(
 	ctx sdk.Context,
-	consumerId string,
+	consumerId uint64,
 	bondedValidators []stakingtypes.Validator,
 	predicate func(providerAddr types.ProviderConsAddress) (bool, error),
 ) ([]types.ConsensusValidator, error) {
@@ -129,7 +129,7 @@ func (k Keeper) FilterValidators(
 // PSS (Partial Set Security) has been removed - all validators validate all consumers.
 func (k Keeper) ComputeNextValidators(
 	ctx sdk.Context,
-	consumerId string,
+	consumerId uint64,
 	bondedValidators []stakingtypes.Validator,
 ) ([]types.ConsensusValidator, error) {
 	// sort the bonded validators by number of staked tokens in descending order
@@ -180,20 +180,20 @@ func (k Keeper) GetLastProviderConsensusActiveValidators(ctx sdk.Context) ([]sta
 func (k Keeper) ComputeConsumerNextValSet(
 	ctx sdk.Context,
 	bondedValidators []stakingtypes.Validator,
-	consumerId string,
+	consumerId uint64,
 	currentConsumerValSet []types.ConsensusValidator,
 ) ([]abci.ValidatorUpdate, error) {
 	// All validators validate all consumers (no opt-in/out, no power shaping)
 	nextValidators, err := k.ComputeNextValidators(ctx, consumerId, bondedValidators)
 	if err != nil {
 		return []abci.ValidatorUpdate{},
-			fmt.Errorf("computing next validators, consumerId(%s): %w", consumerId, err)
+			fmt.Errorf("computing next validators, consumerId(%d): %w", consumerId, err)
 	}
 
 	err = k.SetConsumerValSet(ctx, consumerId, nextValidators)
 	if err != nil {
 		return []abci.ValidatorUpdate{},
-			fmt.Errorf("setting consumer validator set, consumerId(%s): %w", consumerId, err)
+			fmt.Errorf("setting consumer validator set, consumerId(%d): %w", consumerId, err)
 	}
 
 	// get the initial updates with the latest set consumer public keys

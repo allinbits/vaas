@@ -155,6 +155,23 @@ func (am AppModule) BeginBlock(ctx context.Context) error {
 		return err
 	}
 
+	am.keeper.CollectFeesFromConsumers(sdkCtx)
+
+	// Distribute all currently available provider-held fees in a cached context
+	// so a distribution failure does not undo the already-committed collection
+	// and debt state from the call above.
+	distributionCtx, writeDistribution := sdkCtx.CacheContext()
+	if err := am.keeper.DistributeFeesToValidators(distributionCtx); err != nil {
+		sdkCtx.Logger().Error(
+			"failed to distribute collected fees to validators",
+			"err", err,
+			"height", sdkCtx.BlockHeight(),
+		)
+		// Do not write cached changes; effectively roll back distribution only.
+		return nil
+	}
+
+	writeDistribution()
 	return nil
 }
 
@@ -162,7 +179,8 @@ func (am AppModule) BeginBlock(ctx context.Context) error {
 func (am AppModule) EndBlock(ctx context.Context) ([]abci.ValidatorUpdate, error) {
 	sdkCtx := sdk.UnwrapSDKContext(ctx)
 
-	// EndBlock logic needed for the Validator Set Update sub-protocol
+	am.keeper.EndBlockTrackValsetUpdates(sdkCtx)
+
 	return am.keeper.EndBlockVSU(sdkCtx)
 }
 

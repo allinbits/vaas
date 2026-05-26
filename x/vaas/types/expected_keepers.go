@@ -4,9 +4,10 @@ import (
 	context "context"
 	"time"
 
+	transfertypes "github.com/cosmos/ibc-go/v10/modules/apps/transfer/types"
 	clienttypes "github.com/cosmos/ibc-go/v10/modules/core/02-client/types"
-	conntypes "github.com/cosmos/ibc-go/v10/modules/core/03-connection/types"
-	channeltypes "github.com/cosmos/ibc-go/v10/modules/core/04-channel/types"
+	clientv2types "github.com/cosmos/ibc-go/v10/modules/core/02-client/v2/types"
+	channeltypesv2 "github.com/cosmos/ibc-go/v10/modules/core/04-channel/v2/types"
 	ibcexported "github.com/cosmos/ibc-go/v10/modules/core/exported"
 
 	addresscodec "cosmossdk.io/core/address"
@@ -35,6 +36,7 @@ type StakingKeeper interface {
 	GetUnbondingDelegationsFromValidator(ctx context.Context, valAddr sdk.ValAddress) ([]stakingtypes.UnbondingDelegation, error)
 	GetRedelegationsFromSrcValidator(ctx context.Context, valAddr sdk.ValAddress) ([]stakingtypes.Redelegation, error)
 	GetBondedValidatorsByPower(ctx context.Context) ([]stakingtypes.Validator, error)
+	ValidatorAddressCodec() addresscodec.Codec
 	IterateDelegations(
 		ctx context.Context, delegator sdk.AccAddress,
 		fn func(index int64, delegation stakingtypes.DelegationI) (stop bool),
@@ -57,34 +59,21 @@ type SlashingKeeper interface {
 	IsTombstoned(context.Context, sdk.ConsAddress) bool
 }
 
-// ChannelKeeper defines the expected IBC channel keeper
-type ChannelKeeper interface {
-	GetChannel(ctx sdk.Context, srcPort, srcChan string) (channel channeltypes.Channel, found bool)
-	SendPacket(
-		ctx sdk.Context,
-		sourcePort string,
-		sourceChannel string,
-		timeoutHeight clienttypes.Height,
-		timeoutTimestamp uint64,
-		data []byte,
-	) (sequence uint64, err error)
-	ChanCloseInit(ctx sdk.Context, portID, channelID string) error
-	GetChannelConnection(ctx sdk.Context, portID, channelID string) (string, conntypes.ConnectionEnd, error)
-}
-
-// ConnectionKeeper defines the expected IBC connection keeper
-type ConnectionKeeper interface {
-	GetConnection(ctx sdk.Context, connectionID string) (conntypes.ConnectionEnd, bool)
-}
-
-// ClientKeeper defines the expected IBC client keeper
+// ClientKeeper defines the expected IBC client keeper for v1 operations.
 type ClientKeeper interface {
 	CreateClient(ctx sdk.Context, clientType string, clientState, consensusState []byte) (string, error)
 	GetClientState(ctx sdk.Context, clientID string) (ibcexported.ClientState, bool)
-	GetLatestClientConsensusState(ctx sdk.Context, clientID string) (ibcexported.ConsensusState, bool)
 	GetClientConsensusState(ctx sdk.Context, clientID string, height ibcexported.Height) (ibcexported.ConsensusState,
 		bool)
+	GetClientStatus(ctx sdk.Context, clientID string) ibcexported.Status
 	GetStoreProvider() clienttypes.StoreProvider
+	IterateClientStates(ctx sdk.Context, storePrefix []byte, cb func(clientID string, cs ibcexported.ClientState) bool)
+}
+
+// ClientV2Keeper defines the expected IBC client v2 keeper for counterparty management.
+type ClientV2Keeper interface {
+	SetClientCounterparty(ctx sdk.Context, clientID string, counterparty clientv2types.CounterpartyInfo)
+	GetClientCounterparty(ctx sdk.Context, clientID string) (clientv2types.CounterpartyInfo, bool)
 }
 
 // ConsumerHooks event hooks for newly bonded cross-chain validators
@@ -95,7 +84,9 @@ type ConsumerHooks interface {
 // BankKeeper defines the expected interface needed to retrieve account balances.
 type BankKeeper interface {
 	GetBalance(ctx context.Context, addr sdk.AccAddress, denom string) sdk.Coin
+	SendCoinsFromAccountToModule(ctx context.Context, senderAddr sdk.AccAddress, recipientModule string, amt sdk.Coins) error
 	SendCoinsFromModuleToModule(ctx context.Context, senderModule, recipientModule string, amt sdk.Coins) error
+	SendCoinsFromModuleToAccount(ctx context.Context, senderModule string, recipientAddr sdk.AccAddress, amt sdk.Coins) error
 }
 
 // AccountKeeper defines the expected account keeper used for simulations
@@ -104,11 +95,13 @@ type AccountKeeper interface {
 	AddressCodec() addresscodec.Codec
 }
 
-// IBCCoreKeeper defines the expected interface needed for opening a
-// channel
-type IBCCoreKeeper interface {
-	ChannelOpenInit(
-		goCtx context.Context,
-		msg *channeltypes.MsgChannelOpenInit,
-	) (*channeltypes.MsgChannelOpenInitResponse, error)
+// ChannelV2Keeper defines the expected IBC v2 channel keeper for sending packets.
+type ChannelV2Keeper interface {
+	SendPacket(ctx context.Context, msg *channeltypesv2.MsgSendPacket) (*channeltypesv2.MsgSendPacketResponse, error)
+}
+
+// IBCTransferKeeper defines the expected interface needed for distribution transfer
+// of tokens from the consumer to the provider chain
+type IBCTransferKeeper interface {
+	Transfer(context.Context, *transfertypes.MsgTransfer) (*transfertypes.MsgTransferResponse, error)
 }

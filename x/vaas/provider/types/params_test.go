@@ -4,12 +4,10 @@ import (
 	"testing"
 	"time"
 
-	clienttypes "github.com/cosmos/ibc-go/v10/modules/core/02-client/types"
-	commitmenttypes "github.com/cosmos/ibc-go/v10/modules/core/23-commitment/types"
-	ibctmtypes "github.com/cosmos/ibc-go/v10/modules/light-clients/07-tendermint"
+	"github.com/allinbits/vaas/x/vaas/provider/types"
 	"github.com/stretchr/testify/require"
 
-	"github.com/allinbits/vaas/x/vaas/provider/types"
+	sdk "github.com/cosmos/cosmos-sdk/types"
 )
 
 func TestValidateParams(t *testing.T) {
@@ -19,23 +17,12 @@ func TestValidateParams(t *testing.T) {
 		expPass bool
 	}{
 		{"default params", types.DefaultParams(), true},
-		{"custom valid params", types.NewParams(
-			ibctmtypes.NewClientState("", ibctmtypes.DefaultTrustLevel, 0, 0,
-				time.Second*40, clienttypes.Height{}, commitmenttypes.GetSDKSpecs(), []string{"ibc", "upgradedIBCState"}),
-			"0.33", time.Hour, 1000, 180), true},
-		{"custom invalid params", types.NewParams(
-			ibctmtypes.NewClientState("", ibctmtypes.DefaultTrustLevel, 0, 0,
-				0, clienttypes.Height{}, nil, []string{"ibc", "upgradedIBCState"}),
-			"0.33", time.Hour, 1000, 180), false},
-		{"blank client", types.NewParams(&ibctmtypes.ClientState{},
-			"0.33", time.Hour, 1000, 180), false},
-		{"nil client", types.NewParams(nil, "0.33", time.Hour, 1000, 180), false},
-		{"0 trusting period fraction", types.NewParams(ibctmtypes.NewClientState("", ibctmtypes.DefaultTrustLevel, 0, 0,
-			time.Second*40, clienttypes.Height{}, commitmenttypes.GetSDKSpecs(), []string{"ibc", "upgradedIBCState"}),
-			"0.00", time.Hour, 1000, 180), false},
-		{"0 ccv timeout period", types.NewParams(ibctmtypes.NewClientState("", ibctmtypes.DefaultTrustLevel, 0, 0,
-			time.Second*40, clienttypes.Height{}, commitmenttypes.GetSDKSpecs(), []string{"ibc", "upgradedIBCState"}),
-			"0.33", 0, 1000, 180), false},
+		{"custom valid params", types.NewParams("0.33", time.Hour, 1000, 180, sdk.NewInt64Coin("uphoton", 42)), true},
+		{"zero fees per block", types.NewParams("0.33", time.Hour, 1000, 180, sdk.NewInt64Coin("uphoton", 0)), false},
+		{"0 trusting period fraction", types.NewParams(
+			"0.00", time.Hour, 1000, 180, sdk.NewInt64Coin("uphoton", 1)), false},
+		{"0 ccv timeout period", types.NewParams(
+			"0.33", 0, 1000, 180, sdk.NewInt64Coin("uphoton", 1)), false},
 	}
 
 	for _, tc := range testCases {

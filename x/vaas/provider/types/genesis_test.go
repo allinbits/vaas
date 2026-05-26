@@ -4,20 +4,40 @@ import (
 	"testing"
 	"time"
 
+	"github.com/allinbits/vaas/testutil/crypto"
+	"github.com/allinbits/vaas/x/vaas/provider/types"
+	vaastypes "github.com/allinbits/vaas/x/vaas/types"
+	tmtypes "github.com/cometbft/cometbft/types"
+	sdk "github.com/cosmos/cosmos-sdk/types"
 	clienttypes "github.com/cosmos/ibc-go/v10/modules/core/02-client/types"
 	commitmenttypes "github.com/cosmos/ibc-go/v10/modules/core/23-commitment/types"
 	ibctmtypes "github.com/cosmos/ibc-go/v10/modules/light-clients/07-tendermint"
 	"github.com/stretchr/testify/require"
-
-	tmtypes "github.com/cometbft/cometbft/types"
-
-	"github.com/allinbits/vaas/testutil/crypto"
-	"github.com/allinbits/vaas/x/vaas/provider/types"
-	vaastypes "github.com/allinbits/vaas/x/vaas/types"
 )
 
-// Tests validation of consumer states and params within a provider genesis state
 func TestValidateGenesisState(t *testing.T) {
+	// minimal init params required for LAUNCHED/STOPPED/DELETED consumer states
+	testInitParams := &types.ConsumerInitializationParameters{
+		InitialHeight:     clienttypes.Height{RevisionNumber: 1, RevisionHeight: 1},
+		GenesisHash:       []byte("g"),
+		BinaryHash:        []byte("b"),
+		SpawnTime:         time.Unix(100, 0).UTC(),
+		UnbondingPeriod:   time.Hour,
+		VaasTimeoutPeriod: time.Hour,
+		HistoricalEntries: 10,
+	}
+	launchedCS := func(consumerID uint64, chainID, clientID string, preVAAS bool) types.ConsumerState {
+		return types.ConsumerState{
+			ConsumerId:      consumerID,
+			ChainId:         chainID,
+			ClientId:        clientID,
+			Phase:           types.CONSUMER_PHASE_LAUNCHED,
+			OwnerAddress:    sdk.AccAddress([]byte("vaas-test-owner-1234")).String(),
+			InitParams:      testInitParams,
+			ConsumerGenesis: getInitialConsumerGenesis(t, chainID, preVAAS),
+		}
+	}
+
 	testCases := []struct {
 		name     string
 		genState *types.GenesisState
@@ -28,7 +48,7 @@ func TestValidateGenesisState(t *testing.T) {
 			types.NewGenesisState(
 				types.DefaultValsetUpdateID,
 				nil,
-				[]types.ConsumerState{{ChainId: "chainid-1", ChannelId: "channelid", ClientId: "client-id", ConsumerGenesis: getInitialConsumerGenesis(t, "chainid-1", false)}},
+				[]types.ConsumerState{launchedCS(0, "chainid-1", "client-id", false)},
 				types.DefaultParams(),
 				nil,
 				nil,
@@ -42,10 +62,10 @@ func TestValidateGenesisState(t *testing.T) {
 				types.DefaultValsetUpdateID,
 				nil,
 				[]types.ConsumerState{
-					{ChainId: "chainid-1", ChannelId: "channelid1", ClientId: "client-id", ConsumerGenesis: getInitialConsumerGenesis(t, "chainid-1", false)},
-					{ChainId: "chainid-2", ChannelId: "channelid2", ClientId: "client-id", ConsumerGenesis: getInitialConsumerGenesis(t, "chainid-2", true)},
-					{ChainId: "chainid-3", ChannelId: "channelid3", ClientId: "client-id", ConsumerGenesis: getInitialConsumerGenesis(t, "chainid-3", false)},
-					{ChainId: "chainid-4", ChannelId: "channelid4", ClientId: "client-id", ConsumerGenesis: getInitialConsumerGenesis(t, "chainid-4", true)},
+					launchedCS(0, "chainid-1", "client-id", false),
+					launchedCS(1, "chainid-2", "client-id", true),
+					launchedCS(2, "chainid-3", "client-id", false),
+					launchedCS(3, "chainid-4", "client-id", true),
 				},
 				types.DefaultParams(),
 				nil,
@@ -59,9 +79,9 @@ func TestValidateGenesisState(t *testing.T) {
 			types.NewGenesisState(
 				types.DefaultValsetUpdateID,
 				nil,
-				[]types.ConsumerState{{ChainId: "chainid-1", ChannelId: "channelid", ClientId: "client-id", ConsumerGenesis: getInitialConsumerGenesis(t, "chainid-1", false)}},
-				types.NewParams(types.DefaultTemplateClient(),
-					types.DefaultTrustingPeriodFraction, time.Hour, 600, 180),
+				[]types.ConsumerState{launchedCS(0, "chainid-1", "client-id", false)},
+				types.NewParams(
+					types.DefaultTrustingPeriodFraction, time.Hour, 600, 180, sdk.NewInt64Coin("uphoton", 42)),
 				nil,
 				nil,
 				nil,
@@ -99,10 +119,10 @@ func TestValidateGenesisState(t *testing.T) {
 			types.NewGenesisState(
 				types.DefaultValsetUpdateID,
 				nil,
-				[]types.ConsumerState{{ChainId: "chainid-1", ChannelId: "channelid", ClientId: "client-id"}},
-				types.NewParams(types.DefaultTemplateClient(),
+				[]types.ConsumerState{launchedCS(0, "chainid-1", "client-id", false)},
+				types.NewParams(
 					"0.0", // 0 trusting period fraction here
-					vaastypes.DefaultVAASTimeoutPeriod, 600, 180),
+					vaastypes.DefaultVAASTimeoutPeriod, 600, 180, sdk.NewInt64Coin("uphoton", 42)),
 				nil,
 				nil,
 				nil,
@@ -114,11 +134,11 @@ func TestValidateGenesisState(t *testing.T) {
 			types.NewGenesisState(
 				types.DefaultValsetUpdateID,
 				nil,
-				[]types.ConsumerState{{ChainId: "chainid-1", ChannelId: "channelid", ClientId: "client-id"}},
-				types.NewParams(types.DefaultTemplateClient(),
+				[]types.ConsumerState{launchedCS(0, "chainid-1", "client-id", false)},
+				types.NewParams(
 					types.DefaultTrustingPeriodFraction,
 					0, // 0 ccv timeout here
-					600, 180),
+					600, 180, sdk.NewInt64Coin("uphoton", 42)),
 				nil,
 				nil,
 				nil,
@@ -126,11 +146,11 @@ func TestValidateGenesisState(t *testing.T) {
 			false,
 		},
 		{
-			"invalid consumer state channel id",
+			"empty consumer state chain id",
 			types.NewGenesisState(
 				types.DefaultValsetUpdateID,
 				nil,
-				[]types.ConsumerState{{ChainId: "chainid", ChannelId: "invalidChannel{}", ClientId: "client-id"}},
+				[]types.ConsumerState{{ChainId: "", ClientId: "client-id"}},
 				types.DefaultParams(),
 				nil,
 				nil,
@@ -139,41 +159,28 @@ func TestValidateGenesisState(t *testing.T) {
 			false,
 		},
 		{
-			"empty consumer state client id",
+			"valid consumer state with client id",
 			types.NewGenesisState(
 				types.DefaultValsetUpdateID,
 				nil,
-				[]types.ConsumerState{{ChainId: "chainid", ChannelId: "channel-0", ClientId: ""}},
+				[]types.ConsumerState{launchedCS(0, "chainid", "abc", false)},
 				types.DefaultParams(),
 				nil,
 				nil,
 				nil,
 			),
-			false,
-		},
-		{
-			"invalid consumer state client id 2",
-			types.NewGenesisState(
-				types.DefaultValsetUpdateID,
-				nil,
-				[]types.ConsumerState{{ChainId: "chainid", ChannelId: "channel-0", ClientId: "abc", ConsumerGenesis: getInitialConsumerGenesis(t, "chainid", false)}},
-				types.DefaultParams(),
-				nil,
-				nil,
-				nil,
-			),
-			false,
+			true,
 		},
 		{
 			"invalid consumer state pending VSC packets",
 			types.NewGenesisState(
 				types.DefaultValsetUpdateID,
 				nil,
-				[]types.ConsumerState{{
-					ChainId: "chainid", ChannelId: "channel-0", ClientId: "client-id",
-					ConsumerGenesis:      getInitialConsumerGenesis(t, "chainid", false),
-					PendingValsetChanges: []vaastypes.ValidatorSetChangePacketData{{}},
-				}},
+				[]types.ConsumerState{func() types.ConsumerState {
+					cs := launchedCS(0, "chainid", "client-id", false)
+					cs.PendingValsetChanges = []vaastypes.ValidatorSetChangePacketData{{}} // ValsetUpdateId=0
+					return cs
+				}()},
 				types.DefaultParams(),
 				nil,
 				nil,
@@ -196,13 +203,126 @@ func TestValidateGenesisState(t *testing.T) {
 	}
 }
 
+func TestConsumerStateValidatePerPhase(t *testing.T) {
+	validMetadata := types.ConsumerMetadata{Name: "n", Description: "d", Metadata: "m"}
+	validInit := &types.ConsumerInitializationParameters{
+		InitialHeight:     clienttypes.Height{RevisionNumber: 1, RevisionHeight: 1},
+		GenesisHash:       []byte("g"),
+		BinaryHash:        []byte("b"),
+		SpawnTime:         time.Unix(100, 0).UTC(),
+		UnbondingPeriod:   time.Hour,
+		VaasTimeoutPeriod: time.Hour,
+		HistoricalEntries: 10,
+	}
+	rt := time.Unix(200, 0).UTC()
+
+	base := func(phase types.ConsumerPhase) types.ConsumerState {
+		return types.ConsumerState{
+			ConsumerId:      0,
+			ChainId:         "test-consumer",
+			Phase:           phase,
+			OwnerAddress:    sdk.AccAddress([]byte("vaas-test-owner-1234")).String(),
+			ConsumerGenesis: *vaastypes.DefaultConsumerGenesisState(),
+		}
+	}
+
+	cases := []struct {
+		name    string
+		mutate  func(*types.ConsumerState)
+		wantErr string // "" means valid
+	}{
+		// REGISTERED: only chain_id + owner required.
+		{"REGISTERED valid", func(cs *types.ConsumerState) { *cs = base(types.CONSUMER_PHASE_REGISTERED) }, ""},
+		{"REGISTERED empty owner", func(cs *types.ConsumerState) {
+			*cs = base(types.CONSUMER_PHASE_REGISTERED)
+			cs.OwnerAddress = ""
+		}, "owner address"},
+		{"REGISTERED invalid owner bech32", func(cs *types.ConsumerState) {
+			*cs = base(types.CONSUMER_PHASE_REGISTERED)
+			cs.OwnerAddress = "cosmos1notavalidchecksum"
+		}, "invalid owner address"},
+		{"REGISTERED with stray client_id", func(cs *types.ConsumerState) {
+			*cs = base(types.CONSUMER_PHASE_REGISTERED)
+			cs.ClientId = "07-tendermint-0"
+		}, "client id must be empty"},
+
+		// INITIALIZED: requires init_params; client_id absent.
+		{"INITIALIZED valid", func(cs *types.ConsumerState) {
+			*cs = base(types.CONSUMER_PHASE_INITIALIZED)
+			cs.InitParams = validInit
+		}, ""},
+		{"INITIALIZED missing init_params", func(cs *types.ConsumerState) {
+			*cs = base(types.CONSUMER_PHASE_INITIALIZED)
+		}, "init params required"},
+
+		// LAUNCHED: requires init_params + client_id + non-default consumer_genesis.
+		{"LAUNCHED valid", func(cs *types.ConsumerState) {
+			*cs = base(types.CONSUMER_PHASE_LAUNCHED)
+			cs.InitParams = validInit
+			cs.ClientId = "07-tendermint-0"
+			cs.ConsumerGenesis = nonDefaultConsumerGenesis()
+		}, ""},
+		{"LAUNCHED missing client_id", func(cs *types.ConsumerState) {
+			*cs = base(types.CONSUMER_PHASE_LAUNCHED)
+			cs.InitParams = validInit
+			cs.ConsumerGenesis = nonDefaultConsumerGenesis()
+		}, "client id"},
+
+		// STOPPED: LAUNCHED requirements + removal_time.
+		{"STOPPED valid", func(cs *types.ConsumerState) {
+			*cs = base(types.CONSUMER_PHASE_STOPPED)
+			cs.InitParams = validInit
+			cs.ClientId = "07-tendermint-0"
+			cs.ConsumerGenesis = nonDefaultConsumerGenesis()
+			cs.RemovalTime = &rt
+		}, ""},
+		{"STOPPED missing removal_time", func(cs *types.ConsumerState) {
+			*cs = base(types.CONSUMER_PHASE_STOPPED)
+			cs.InitParams = validInit
+			cs.ClientId = "07-tendermint-0"
+			cs.ConsumerGenesis = nonDefaultConsumerGenesis()
+		}, "removal time"},
+
+		// DELETED: chain_id + owner + init_params + metadata preserved; everything else cleared.
+		{"DELETED valid", func(cs *types.ConsumerState) {
+			*cs = base(types.CONSUMER_PHASE_DELETED)
+			cs.InitParams = validInit
+			cs.Metadata = &validMetadata
+			cs.ConsumerGenesis = vaastypes.ConsumerGenesisState{} // cleared
+		}, ""},
+		{"DELETED missing metadata", func(cs *types.ConsumerState) {
+			*cs = base(types.CONSUMER_PHASE_DELETED)
+			cs.InitParams = validInit
+			cs.ConsumerGenesis = vaastypes.ConsumerGenesisState{}
+		}, "metadata required"},
+	}
+
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			cs := types.ConsumerState{}
+			tc.mutate(&cs)
+			err := cs.Validate()
+			if tc.wantErr == "" {
+				require.NoError(t, err)
+			} else {
+				require.Error(t, err)
+				require.Contains(t, err.Error(), tc.wantErr)
+			}
+		})
+	}
+}
+
+func nonDefaultConsumerGenesis() vaastypes.ConsumerGenesisState {
+	gs := vaastypes.DefaultConsumerGenesisState()
+	gs.NewChain = true
+	return *gs
+}
+
 func getInitialConsumerGenesis(t *testing.T, chainID string, preVAAS bool) vaastypes.ConsumerGenesisState {
 	t.Helper()
-	// generate validator public key
 	cId := crypto.NewCryptoIdentityFromIntSeed(239668)
 	pubKey := cId.TMCryptoPubKey()
 
-	// create validator set with single validator
 	validator := tmtypes.NewValidator(pubKey, 1)
 	valSet := tmtypes.NewValidatorSet([]*tmtypes.Validator{validator})
 	valHash := valSet.Hash()
@@ -210,10 +330,9 @@ func getInitialConsumerGenesis(t *testing.T, chainID string, preVAAS bool) vaast
 
 	var clientState *ibctmtypes.ClientState = nil
 	var consensusState *ibctmtypes.ConsensusState = nil
-	connectionId := ""
 
 	if preVAAS {
-		connectionId = "connection-1"
+		// no client state needed for pre-VAAS
 	} else {
 		clientState = ibctmtypes.NewClientState(
 			chainID,
@@ -230,5 +349,5 @@ func getInitialConsumerGenesis(t *testing.T, chainID string, preVAAS bool) vaast
 	params := vaastypes.DefaultParams()
 	params.Enabled = true
 
-	return *vaastypes.NewInitialConsumerGenesisState(clientState, consensusState, valUpdates, preVAAS, connectionId, params)
+	return *vaastypes.NewInitialConsumerGenesisState(clientState, consensusState, valUpdates, preVAAS, params)
 }

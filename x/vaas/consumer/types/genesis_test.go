@@ -28,14 +28,10 @@ var (
 	upgradePath = []string{"upgrade", "upgradedIBCState"}
 )
 
-// TestValidateInitialGenesisState tests a NewInitialGenesisState instantiation,
-// and its Validate() method over different genesis scenarios
 func TestValidateInitialGenesisState(t *testing.T) {
-	// generate validator public key
 	cId := crypto.NewCryptoIdentityFromIntSeed(238934)
 	pubKey := cId.TMCryptoPubKey()
 
-	// create validator set with single validator
 	validator := tmtypes.NewValidator(pubKey, 1)
 	valSet := tmtypes.NewValidatorSet([]*tmtypes.Validator{validator})
 	valHash := valSet.Hash()
@@ -80,36 +76,16 @@ func TestValidateInitialGenesisState(t *testing.T) {
 			true,
 		},
 		{
-			"invalid new consumer genesis state: client id not empty",
+			"invalid new consumer genesis state: provider client id not empty",
 			&types.GenesisState{
-				Params:            params,
-				ProviderClientId:  "ccvclient",
-				ProviderChannelId: "",
-				NewChain:          true,
+				Params:   params,
+				NewChain: true,
 				Provider: vaastypes.ProviderInfo{
 					ClientState:    cs,
 					ConsensusState: consensusState,
 					InitialValSet:  valUpdates,
 				},
-				HeightToValsetUpdateId: nil,
-				PreVAAS:                 false,
-			},
-			true,
-		},
-		{
-			"invalid new consumer genesis state: channel id not empty",
-			&types.GenesisState{
-				Params:            params,
-				ProviderClientId:  "",
-				ProviderChannelId: "ccvchannel",
-				NewChain:          true,
-				Provider: vaastypes.ProviderInfo{
-					ClientState:    cs,
-					ConsensusState: consensusState,
-					InitialValSet:  valUpdates,
-				},
-				HeightToValsetUpdateId: nil,
-				PreVAAS:                 false,
+				ProviderClientId: "ccvclient",
 			},
 			true,
 		},
@@ -147,83 +123,11 @@ func TestValidateInitialGenesisState(t *testing.T) {
 			types.NewInitialGenesisState(cs, consensusState, valUpdates,
 				vaastypes.NewParams(
 					true,
-					0, // CCV timeout period cannot be 0
+					0,
 					vaastypes.DefaultHistoricalEntries,
 					vaastypes.DefaultConsumerUnbondingPeriod,
 				)),
 			true,
-		},
-		{
-			"invalid new consumer genesis state: connection id is invalid",
-			&types.GenesisState{
-				Params:            params,
-				ProviderClientId:  "",
-				ProviderChannelId: "",
-				NewChain:          true,
-				Provider: vaastypes.ProviderInfo{
-					ClientState:    nil,
-					ConsensusState: nil,
-					InitialValSet:  valUpdates,
-				},
-				HeightToValsetUpdateId: nil,
-				PreVAAS:                 false,
-				ConnectionId:           "invalid_connection/",
-			},
-			true,
-		},
-		{
-			"invalid new consumer genesis state: client state provided with connection id",
-			&types.GenesisState{
-				Params:            params,
-				ProviderClientId:  "",
-				ProviderChannelId: "",
-				NewChain:          true,
-				Provider: vaastypes.ProviderInfo{
-					ClientState:    cs,
-					ConsensusState: nil,
-					InitialValSet:  valUpdates,
-				},
-				HeightToValsetUpdateId: nil,
-				PreVAAS:                 false,
-				ConnectionId:           "connection-1",
-			},
-			true,
-		},
-		{
-			"invalid new consumer genesis state: consensus state provided with connection id",
-			&types.GenesisState{
-				Params:            params,
-				ProviderClientId:  "",
-				ProviderChannelId: "",
-				NewChain:          true,
-				Provider: vaastypes.ProviderInfo{
-					ClientState:    nil,
-					ConsensusState: consensusState,
-					InitialValSet:  valUpdates,
-				},
-				HeightToValsetUpdateId: nil,
-				PreVAAS:                 false,
-				ConnectionId:           "connection-1",
-			},
-			true,
-		},
-		{
-			"valid new consumer genesis state: connection id",
-			&types.GenesisState{
-				Params:            params,
-				ProviderClientId:  "",
-				ProviderChannelId: "",
-				NewChain:          true,
-				Provider: vaastypes.ProviderInfo{
-					ClientState:    nil,
-					ConsensusState: nil,
-					InitialValSet:  valUpdates,
-				},
-				HeightToValsetUpdateId: nil,
-				PreVAAS:                 false,
-				ConnectionId:           "connection-1",
-			},
-			false,
 		},
 	}
 
@@ -237,20 +141,15 @@ func TestValidateInitialGenesisState(t *testing.T) {
 	}
 }
 
-// TestValidateRestartConsumerGenesisState tests a NewRestartGenesisState instantiation,
-// and its Validate() method over different genesis scenarios
 func TestValidateRestartConsumerGenesisState(t *testing.T) {
-	// generate validator private/public key
 	cId := crypto.NewCryptoIdentityFromIntSeed(234234)
 	pubKey := cId.TMCryptoPubKey()
 
-	// create validator set with single validator
 	validator := tmtypes.NewValidator(pubKey, 1)
 	valSet := tmtypes.NewValidatorSet([]*tmtypes.Validator{validator})
 	valHash := valSet.Hash()
 	valUpdates := tmtypes.TM2PB.ValidatorUpdates(valSet)
 
-	// create default height to validator set update id mapping
 	heightToValsetUpdateID := []types.HeightToValsetUpdateID{
 		{Height: 0, ValsetUpdateId: 0},
 	}
@@ -268,59 +167,53 @@ func TestValidateRestartConsumerGenesisState(t *testing.T) {
 	}{
 		{
 			"valid restart consumer genesis state: handshake in progress",
-			types.NewRestartGenesisState("ccvclient", "", valUpdates, heightToValsetUpdateID, params),
+			types.NewRestartGenesisState("ccvclient", valUpdates, heightToValsetUpdateID, params),
 			false,
 		},
 		{
 			"invalid restart consumer genesis state: provider id is empty",
-			types.NewRestartGenesisState("", "ccvchannel", valUpdates, heightToValsetUpdateID, params),
+			types.NewRestartGenesisState("", valUpdates, heightToValsetUpdateID, params),
 			true,
 		},
 		{
 			"invalid restart consumer genesis: client state defined",
 			&types.GenesisState{
-				Params:            params,
-				ProviderClientId:  "ccvclient",
-				ProviderChannelId: "ccvchannel",
-				NewChain:          false,
+				Params:   params,
+				NewChain: false,
 				Provider: vaastypes.ProviderInfo{
 					ClientState:    cs,
 					ConsensusState: nil,
 					InitialValSet:  valUpdates,
 				},
-				HeightToValsetUpdateId: nil,
-				PreVAAS:                 false,
+				ProviderClientId: "ccvclient",
 			},
 			true,
 		},
 		{
 			"invalid restart consumer genesis: consensus state defined",
 			&types.GenesisState{
-				Params:            params,
-				ProviderClientId:  "ccvclient",
-				ProviderChannelId: "ccvchannel",
-				NewChain:          false,
+				Params:   params,
+				NewChain: false,
 				Provider: vaastypes.ProviderInfo{
 					ClientState:    nil,
 					ConsensusState: consensusState,
 					InitialValSet:  valUpdates,
 				},
-				HeightToValsetUpdateId: nil,
-				PreVAAS:                 false,
+				ProviderClientId: "ccvclient",
 			},
 			true,
 		},
 		{
 			"invalid restart consumer genesis state: nil initial validator set",
-			types.NewRestartGenesisState("ccvclient", "ccvchannel", nil, nil, params),
+			types.NewRestartGenesisState("ccvclient", nil, nil, params),
 			true,
 		},
 		{
 			"invalid restart consumer genesis state: invalid params",
-			types.NewRestartGenesisState("ccvclient", "ccvchannel", valUpdates, nil,
+			types.NewRestartGenesisState("ccvclient", valUpdates, nil,
 				vaastypes.NewParams(
 					true,
-					0, // CCV timeout period cannot be 0
+					0,
 					vaastypes.DefaultHistoricalEntries,
 					vaastypes.DefaultConsumerUnbondingPeriod,
 				)),

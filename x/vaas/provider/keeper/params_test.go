@@ -4,13 +4,11 @@ import (
 	"testing"
 	"time"
 
-	clienttypes "github.com/cosmos/ibc-go/v10/modules/core/02-client/types"
-	commitmenttypes "github.com/cosmos/ibc-go/v10/modules/core/23-commitment/types"
-	ibctmtypes "github.com/cosmos/ibc-go/v10/modules/light-clients/07-tendermint"
-	"github.com/stretchr/testify/require"
-
 	testkeeper "github.com/allinbits/vaas/testutil/keeper"
 	providertypes "github.com/allinbits/vaas/x/vaas/provider/types"
+	"github.com/stretchr/testify/require"
+
+	sdk "github.com/cosmos/cosmos-sdk/types"
 )
 
 // TestParams tests the getting/setting of provider ccv module params.
@@ -26,20 +24,11 @@ func TestParams(t *testing.T) {
 	require.Equal(t, defaultParams, params)
 
 	newParams := providertypes.NewParams(
-		ibctmtypes.NewClientState(
-			"",
-			ibctmtypes.DefaultTrustLevel,
-			0,
-			0,
-			time.Second*40,
-			clienttypes.Height{},
-			commitmenttypes.GetSDKSpecs(),
-			[]string{"ibc", "upgradedIBCState"},
-		),
 		"0.25",
 		7*24*time.Hour,
 		600,
 		10,
+		sdk.NewInt64Coin("uphoton", 50),
 	)
 	providerKeeper.SetParams(ctx, newParams)
 	params = providerKeeper.GetParams(ctx)

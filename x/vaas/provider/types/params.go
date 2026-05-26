@@ -6,9 +6,7 @@ import (
 
 	vaastypes "github.com/allinbits/vaas/x/vaas/types"
 
-	clienttypes "github.com/cosmos/ibc-go/v10/modules/core/02-client/types"
-	commitmenttypes "github.com/cosmos/ibc-go/v10/modules/core/23-commitment/types"
-	ibctmtypes "github.com/cosmos/ibc-go/v10/modules/light-clients/07-tendermint"
+	sdk "github.com/cosmos/cosmos-sdk/types"
 )
 
 const (
@@ -28,60 +26,43 @@ const (
 	// DefaultMaxProviderConsensusValidators is the default maximum number of validators that will
 	// be passed on from the staking module to the consensus engine on the provider.
 	DefaultMaxProviderConsensusValidators = 180
+
+	// DefaultFeesPerBlockDenom is the base denom charged to each consumer chain per block.
+	DefaultFeesPerBlockDenom = "uphoton"
+
+	// DefaultFeesPerBlockAmount is the default amount (in DefaultFeesPerBlockDenom) charged per block.
+	DefaultFeesPerBlockAmount = int64(1000)
 )
 
 // NewParams creates new provider parameters with provided arguments
 func NewParams(
-	cs *ibctmtypes.ClientState,
 	trustingPeriodFraction string,
 	vaasTimeoutPeriod time.Duration,
 	blocksPerEpoch int64,
 	maxProviderConsensusValidators int64,
+	feesPerBlock sdk.Coin,
 ) Params {
 	return Params{
-		TemplateClient:                 cs,
 		TrustingPeriodFraction:         trustingPeriodFraction,
 		VaasTimeoutPeriod:              vaasTimeoutPeriod,
 		BlocksPerEpoch:                 blocksPerEpoch,
 		MaxProviderConsensusValidators: maxProviderConsensusValidators,
+		FeesPerBlock:                   feesPerBlock,
 	}
 }
 
-// DefaultTemplateClient is the default template client
-func DefaultTemplateClient() *ibctmtypes.ClientState {
-	return ibctmtypes.NewClientState(
-		"", // chainID
-		ibctmtypes.DefaultTrustLevel,
-		0, // trusting period
-		0, // unbonding period
-		DefaultMaxClockDrift,
-		clienttypes.Height{}, // latest(initial) height
-		commitmenttypes.GetSDKSpecs(),
-		[]string{"upgrade", "upgradedIBCState"},
-	)
-}
-
-// DefaultParams is the default params for the provider module
 func DefaultParams() Params {
-	// create default client state with chainID, trusting period, unbonding period, and initial height zeroed out.
-	// these fields will be populated during proposal handler.
 	return NewParams(
-		DefaultTemplateClient(),
 		DefaultTrustingPeriodFraction,
 		vaastypes.DefaultVAASTimeoutPeriod,
 		DefaultBlocksPerEpoch,
 		DefaultMaxProviderConsensusValidators,
+		sdk.NewInt64Coin(DefaultFeesPerBlockDenom, DefaultFeesPerBlockAmount),
 	)
 }
 
 // Validate all VAAS-provider module parameters
 func (p Params) Validate() error {
-	if p.TemplateClient == nil {
-		return fmt.Errorf("template client is nil")
-	}
-	if err := ValidateTemplateClient(*p.TemplateClient); err != nil {
-		return err
-	}
 	if err := vaastypes.ValidateStringFractionNonZero(p.TrustingPeriodFraction); err != nil {
 		return fmt.Errorf("trusting period fraction is invalid: %s", err)
 	}
@@ -94,32 +75,19 @@ func (p Params) Validate() error {
 	if err := vaastypes.ValidatePositiveInt64(p.MaxProviderConsensusValidators); err != nil {
 		return fmt.Errorf("max provider consensus validators is invalid: %s", err)
 	}
+	if err := validateFeesPerBlock(p.FeesPerBlock); err != nil {
+		return err
+	}
+
 	return nil
 }
 
-func ValidateTemplateClient(i interface{}) error {
-	cs, ok := i.(ibctmtypes.ClientState)
-	if !ok {
-		return fmt.Errorf("invalid parameter type: %T, expected: %T", i, ibctmtypes.ClientState{})
+func validateFeesPerBlock(coin sdk.Coin) error {
+	if !coin.IsValid() {
+		return fmt.Errorf("fees per block coin is invalid: %s", coin)
 	}
-
-	// copy clientstate to prevent changing original pointer
-	copiedClient := cs
-
-	// populate zeroed fields with valid fields
-	copiedClient.ChainId = "chainid"
-
-	trustPeriod, err := vaastypes.CalculateTrustPeriod(vaastypes.DefaultConsumerUnbondingPeriod, DefaultTrustingPeriodFraction)
-	if err != nil {
-		return fmt.Errorf("invalid TrustPeriodFraction: %T", err)
-	}
-	copiedClient.TrustingPeriod = trustPeriod
-
-	copiedClient.UnbondingPeriod = vaastypes.DefaultConsumerUnbondingPeriod
-	copiedClient.LatestHeight = clienttypes.NewHeight(0, 1)
-
-	if err := copiedClient.Validate(); err != nil {
-		return err
+	if coin.IsZero() {
+		return fmt.Errorf("fees per block must be positive")
 	}
 	return nil
 }
