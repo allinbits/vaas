@@ -28,6 +28,7 @@ const (
 	AttributeMisbehaviourClientId     = "misbehaviour_client_id"
 	AttributeMisbehaviourHeight1      = "misbehaviour_height_1"
 	AttributeMisbehaviourHeight2      = "misbehaviour_height_2"
+	AttributeByzantineValidators      = "byzantine_validators"
 	AttributeConsumerDoubleVoting     = "consumer_double_voting"
 	AttributeChainID                  = "chain_id"
 	AttributeValidatorAddress         = "validator_address"

@@ -8,8 +8,6 @@ import (
 	clienttypes "github.com/cosmos/ibc-go/v10/modules/core/02-client/types"
 	"github.com/stretchr/testify/require"
 
-	"cosmossdk.io/math"
-
 	sdk "github.com/cosmos/cosmos-sdk/types"
 
 	cryptoutil "github.com/allinbits/vaas/testutil/crypto"
@@ -284,93 +282,40 @@ func TestValidateByteSlice(t *testing.T) {
 
 func TestMsgCreateConsumerValidateBasic(t *testing.T) {
 	testCases := []struct {
-		name                 string
-		chainId              string
-		infractionParameters *types.InfractionParameters
-		expPass              bool
+		name    string
+		chainId string
+		expPass bool
 	}{
 		{
 			"empty chain id",
 			"",
-			nil,
 			false,
 		},
 		{
 			"empty chain id after trimming",
 			"   	",
-			nil,
 			false,
 		},
 		{
 			"neutron chain id that cannot be reused",
 			"neutron-1",
-			nil,
 			false,
 		},
 		{
 			"stride chain id that cannot be reused",
 			"stride-1",
-			nil,
 			false,
 		},
 		{
 			"valid chain id",
 			"somechain-1",
-			&types.InfractionParameters{
-				DoubleSign: &types.SlashJailParameters{
-					JailDuration:  time.Duration(1<<63 - 1),        // max duration
-					SlashFraction: math.LegacyNewDecWithPrec(5, 2), // 0.05
-					Tombstone:     true,
-				},
-				Downtime: &types.SlashJailParameters{
-					JailDuration:  600 * time.Second,
-					SlashFraction: math.LegacyNewDec(0),
-					Tombstone:     false,
-				},
-			}, // valid infraction params
 			true,
-		},
-		{
-			"invalid infraction downtime jailing parameters",
-			"somechain-1",
-			&types.InfractionParameters{Downtime: &types.SlashJailParameters{
-				JailDuration:  -1,
-				SlashFraction: math.LegacyNewDec(0),
-			}},
-			false,
-		},
-		{
-			"invalid infraction downtime slashing parameters",
-			"somechain-1",
-			&types.InfractionParameters{Downtime: &types.SlashJailParameters{
-				JailDuration:  600 * time.Second,
-				SlashFraction: math.LegacyNewDec(2),
-			}},
-			false,
-		},
-		{
-			"invalid infraction double sign jailing parameters",
-			"somechain-1",
-			&types.InfractionParameters{Downtime: &types.SlashJailParameters{
-				JailDuration:  -1,
-				SlashFraction: math.LegacyNewDec(0),
-			}},
-			false,
-		},
-		{
-			"invalid infraction double sign slashing parameters",
-			"somechain-1",
-			&types.InfractionParameters{Downtime: &types.SlashJailParameters{
-				JailDuration:  600 * time.Second,
-				SlashFraction: math.LegacyNewDec(2),
-			}},
-			false,
 		},
 	}
 
 	for _, tc := range testCases {
 		validConsumerMetadata := types.ConsumerMetadata{Name: "name", Description: "description", Metadata: "metadata"}
-		msg, err := types.NewMsgCreateConsumer("submitter", tc.chainId, validConsumerMetadata, nil, tc.infractionParameters)
+		msg, err := types.NewMsgCreateConsumer("submitter", tc.chainId, validConsumerMetadata, nil)
 		require.NoError(t, err)
 		err = msg.ValidateBasic()
 		if tc.expPass {
@@ -395,7 +340,7 @@ func TestMsgUpdateConsumerValidateBasic(t *testing.T) {
 	}
 
 	for _, tc := range testCases {
-		msg, _ := types.NewMsgUpdateConsumer("", 0, "cosmos1p3ucd3ptpw902fluyjzhq3ffgq4ntddac9sa3s", nil, nil, tc.newChainId, nil)
+		msg, _ := types.NewMsgUpdateConsumer("", 0, "cosmos1p3ucd3ptpw902fluyjzhq3ffgq4ntddac9sa3s", nil, nil, tc.newChainId)
 		err := msg.ValidateBasic()
 		if tc.expPass {
 			require.NoError(t, err, "valid case: %s should not return error. got %w", tc.name, err)

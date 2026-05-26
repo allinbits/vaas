@@ -138,11 +138,9 @@ message Chain {
   // The metadata of the consumer chain
   ConsumerMetadata metadata = 4  [(gogoproto.nullable) = false ];
   uint64 consumer_id = 5;
-  // Infraction parameters for slashing and jailing
-  InfractionParameters infraction_parameters = 6;
   // The deterministic provider-side account that must be funded
   // to cover per-block fees for this consumer chain.
-  string fee_pool_address = 7;
+  string fee_pool_address = 6;
 }
 
 message QueryValidatorConsumerAddrRequest {
@@ -260,13 +258,12 @@ message QueryConsumerChainResponse {
   string phase = 4;
   ConsumerMetadata metadata = 5 [ (gogoproto.nullable) = false ];
   ConsumerInitializationParameters init_params = 6;
-  InfractionParameters infraction_parameters = 7;
 
   // corresponds to the id of the client that is created during launch
-  string client_id = 8;
+  string client_id = 7;
   // The deterministic provider-side account that must be funded
   // to cover per-block fees for this consumer chain.
-  string fee_pool_address = 9;
+  string fee_pool_address = 8;
 }
 
 message QueryConsumerGenesisTimeRequest {

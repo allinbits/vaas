@@ -86,19 +86,13 @@ func (k Keeper) GetConsumerChain(ctx sdk.Context, consumerId uint64) (types.Chai
 		return types.Chain{}, fmt.Errorf("cannot find metadata (%d): %s", consumerId, err.Error())
 	}
 
-	infractionParameters, err := types.DefaultConsumerInfractionParameters(ctx, k.slashingKeeper)
-	if err != nil {
-		return types.Chain{}, fmt.Errorf("cannot get default infraction parameters: %s", err.Error())
-	}
-
 	return types.Chain{
-		ChainId:              chainID,
-		ClientId:             clientID,
-		Phase:                k.GetConsumerPhase(ctx, consumerId).String(),
-		Metadata:             metadata,
-		ConsumerId:           consumerId,
-		InfractionParameters: &infractionParameters,
-		FeePoolAddress:       k.GetConsumerFeePoolAddress(consumerId).String(),
+		ChainId:        chainID,
+		ClientId:       clientID,
+		Phase:          k.GetConsumerPhase(ctx, consumerId).String(),
+		Metadata:       metadata,
+		ConsumerId:     consumerId,
+		FeePoolAddress: k.GetConsumerFeePoolAddress(consumerId).String(),
 	}, nil
 }
 
@@ -301,23 +295,18 @@ func (k Keeper) QueryConsumerChain(goCtx context.Context, req *types.QueryConsum
 	}
 
 	initParams, _ := k.GetConsumerInitializationParameters(ctx, consumerId)
-	infractionParams, err := types.DefaultConsumerInfractionParameters(ctx, k.slashingKeeper)
-	if err != nil {
-		return nil, status.Errorf(codes.Internal, "cannot retrieve default infraction parameters: %s", err)
-	}
 
 	clientId, _ := k.GetConsumerClientId(ctx, consumerId)
 
 	return &types.QueryConsumerChainResponse{
-		ChainId:              chainId,
-		ConsumerId:           consumerId,
-		OwnerAddress:         ownerAddress,
-		Phase:                phase.String(),
-		Metadata:             metadata,
-		InitParams:           &initParams,
-		InfractionParameters: &infractionParams,
-		ClientId:             clientId,
-		FeePoolAddress:       k.GetConsumerFeePoolAddress(consumerId).String(),
+		ChainId:        chainId,
+		ConsumerId:     consumerId,
+		OwnerAddress:   ownerAddress,
+		Phase:          phase.String(),
+		Metadata:       metadata,
+		InitParams:     &initParams,
+		ClientId:       clientId,
+		FeePoolAddress: k.GetConsumerFeePoolAddress(consumerId).String(),
 	}, nil
 }
 

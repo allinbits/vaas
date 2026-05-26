@@ -23,16 +23,16 @@ and [`app/consumer/app.go`](app/consumer/app.go) for reference.
 
 ### Kept from ICS
 
-| Feature                            | Description                                                                         |
-| ---------------------------------- | ----------------------------------------------------------------------------------- |
-| Consumer Lifecycle                 | Full lifecycle management (REGISTERED → INITIALIZED → LAUNCHED → STOPPED → DELETED) |
-| Key Assignment                     | Validators can use different consensus keys per consumer chain                      |
-| Per-Consumer Infraction Parameters | Customizable slash/jail parameters per consumer                                     |
-| VSC Packets                        | Validator set updates sent at epoch boundaries                                      |
-| Double Voting Evidence             | Handle double voting evidence from consumers                                        |
-| Light Client Misbehavior           | Detection and logging of misbehavior                                                |
-| Consumer Metadata                  | Name, description, metadata for chain discovery                                     |
-| Client/Connection Reuse            | Reuse existing IBC client when creating consumer                                    |
+| Feature                  | Description                                                                         |
+| ------------------------ | ----------------------------------------------------------------------------------- |
+| Consumer Lifecycle       | Full lifecycle management (REGISTERED → INITIALIZED → LAUNCHED → STOPPED → DELETED) |
+| Key Assignment           | Validators can use different consensus keys per consumer chain                      |
+| Slashing Parameters      | Uses provider defaults; per-consumer customization removed                          |
+| VSC Packets              | Validator set updates sent at epoch boundaries                                      |
+| Double Voting Evidence   | Handle double voting evidence from consumers                                        |
+| Light Client Misbehavior | Detection and logging of misbehavior                                                |
+| Consumer Metadata        | Name, description, metadata for chain discovery                                     |
+| Client/Connection Reuse  | Reuse existing IBC client when creating consumer                                    |
 
 ### Removed from ICS
 
