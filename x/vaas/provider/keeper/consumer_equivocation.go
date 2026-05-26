@@ -195,14 +195,20 @@ func (k Keeper) VerifyDoubleVotingEvidence(
 //
 // Do not "fix" this back to slash/jail/tombstone without revisiting that
 // design choice.
-func (k Keeper) HandleConsumerMisbehaviour(ctx sdk.Context, consumerId uint64, misbehaviour ibctmtypes.Misbehaviour) error {
+//
+// Returns the byzantine validators identified from the conflicting headers
+// (provider-side consensus addresses). The slice may be empty: for amnesia
+// attacks the byzantine set is unidentifiable by construction (see
+// GetByzantineValidators). Callers should still surface that result to the
+// submitter rather than treating it as a silent no-op.
+func (k Keeper) HandleConsumerMisbehaviour(ctx sdk.Context, consumerId uint64, misbehaviour ibctmtypes.Misbehaviour) ([]types.ProviderConsAddress, error) {
 	logger := k.Logger(ctx)
 
 	// Check that the misbehaviour is valid and that the client consensus states at trusted heights are within trusting period
 	if err := k.CheckMisbehaviour(ctx, consumerId, misbehaviour); err != nil {
 		logger.Info("misbehaviour rejected", "error", err.Error())
 
-		return err
+		return nil, err
 	}
 
 	// Since the misbehaviour packet was received within the trusting period
@@ -212,7 +218,7 @@ func (k Keeper) HandleConsumerMisbehaviour(ctx sdk.Context, consumerId uint64, m
 	// Get Byzantine validators from the conflicting headers
 	byzantineValidators, err := k.GetByzantineValidators(ctx, misbehaviour)
 	if err != nil {
-		return err
+		return nil, err
 	}
 
 	provAddrs := make([]types.ProviderConsAddress, 0, len(byzantineValidators))
@@ -225,14 +231,26 @@ func (k Keeper) HandleConsumerMisbehaviour(ctx sdk.Context, consumerId uint64, m
 		provAddrs = append(provAddrs, providerAddr)
 	}
 
-	logger.Info(
-		"confirmed equivocation light client attack (no slashing applied)",
-		"consumerId", consumerId,
-		"chainId", misbehaviour.Header1.Header.ChainID,
-		"byzantine_validators", provAddrs,
-	)
+	if len(provAddrs) == 0 {
+		// Either the conflict is an amnesia attack (different commit rounds,
+		// no state-transition conflict — byzantine set is unknowable) or the
+		// two header signatures had no overlapping signer (very unusual given
+		// CheckMisbehaviour just verified both headers).
+		logger.Info(
+			"confirmed light client attack with unidentifiable byzantine validators (no slashing applied)",
+			"consumerId", consumerId,
+			"chainId", misbehaviour.Header1.Header.ChainID,
+		)
+	} else {
+		logger.Info(
+			"confirmed equivocation light client attack (no slashing applied)",
+			"consumerId", consumerId,
+			"chainId", misbehaviour.Header1.Header.ChainID,
+			"byzantine_validators", provAddrs,
+		)
+	}
 
-	return nil
+	return provAddrs, nil
 }
 
 // GetByzantineValidators returns the validators that signed both headers.

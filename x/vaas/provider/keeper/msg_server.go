@@ -111,8 +111,14 @@ func (k msgServer) SubmitConsumerMisbehaviour(goCtx context.Context, msg *types.
 		return nil, err
 	}
 
-	if err := k.Keeper.HandleConsumerMisbehaviour(ctx, msg.ConsumerId, *msg.Misbehaviour); err != nil {
+	byzantineValidators, err := k.Keeper.HandleConsumerMisbehaviour(ctx, msg.ConsumerId, *msg.Misbehaviour)
+	if err != nil {
 		return nil, err
+	}
+
+	byzantineAddrs := make([]string, len(byzantineValidators))
+	for i, addr := range byzantineValidators {
+		byzantineAddrs[i] = addr.String()
 	}
 
 	chainID := msg.Misbehaviour.Header1.SignedHeader.Header.ChainID
@@ -126,6 +132,7 @@ func (k msgServer) SubmitConsumerMisbehaviour(goCtx context.Context, msg *types.
 			sdk.NewAttribute(vaastypes.AttributeMisbehaviourClientId, msg.Misbehaviour.ClientId),
 			sdk.NewAttribute(vaastypes.AttributeMisbehaviourHeight1, msg.Misbehaviour.Header1.GetHeight().String()),
 			sdk.NewAttribute(vaastypes.AttributeMisbehaviourHeight2, msg.Misbehaviour.Header2.GetHeight().String()),
+			sdk.NewAttribute(vaastypes.AttributeByzantineValidators, strings.Join(byzantineAddrs, ",")),
 			sdk.NewAttribute(types.AttributeSubmitterAddress, msg.Submitter),
 		),
 	)
