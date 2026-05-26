@@ -14,7 +14,7 @@ in-debt and its ante gate blocks user transactions until funding is restored.
 
 Funding the pool MUST go through `MsgFundConsumerFeePool`. Direct bank sends
 to the fee pool address are rejected by a `bank.SendRestriction` registered
-on the provider chain — funds sent that way will either bounce (IBC) or fail
+on the provider chain -- funds sent that way will either bounce (IBC) or fail
 the transaction (direct `MsgSend`). This restriction exists so the
 share-accounting (see below) never gets out of sync with the actual pool
 balance.
@@ -42,21 +42,39 @@ module authority as `signer` will pull funds from the cosmos-sdk
 distribution community pool and credit the distribution module account as
 the depositor.
 
+### Minimum deposit
+
+`MsgFundConsumerFeePool` enforces a minimum deposit equal to
+`fees_per_block.Amount * min_deposit_blocks`, where `min_deposit_blocks`
+is a provider-module parameter. Deposits below the floor are rejected
+with `ErrDepositBelowMinimum`. Setting `min_deposit_blocks = 0` disables
+the check. The floor applies to every depositor including the gov
+authority -- gov funds are subject to the same minimum as any other
+funder. The default is 14400 blocks (~1 day at a 6-second block time).
+
 ## Withdrawing
 
-Each depositor controls their own shares and can withdraw at any time via
-`MsgWithdrawConsumerFeePool`. The message accepts multi-denom `Coins` and
-is atomic — if any denom in the request fails its share check, the whole
-transaction reverts.
+`MsgWithdrawConsumerFeePool` is locked while the consumer is in
+`CONSUMER_PHASE_LAUNCHED`, with one exception: the gov authority may
+always withdraw, which under the existing alias-to-distribution
+semantics pulls only the community pool's own shares back to the
+community pool. This prevents non-gov depositors from rug-pulling an
+active consumer mid-flight while preserving a path for the community
+pool to withdraw subsidy support at any time.
+
+Outside of LAUNCHED -- in REGISTERED, INITIALIZED, or STOPPED -- any
+depositor controls their own shares and can withdraw at any time. The
+message accepts multi-denom `Coins` and is atomic: if any denom in the
+request fails its share check, the whole transaction reverts.
 
 ### Share math (TL;DR)
 
 - Shares are minted when you deposit. Initial deposit mints
   `shares = amount`; subsequent deposits mint
-  `amount × total_shares / pool_balance` (balance BEFORE this deposit).
+  `amount * total_shares / pool_balance` (balance BEFORE this deposit).
 - Your claim at any time is
-  `your_shares × pool_balance / total_shares`.
-- A withdraw of `amount ≥ claim` burns all your shares and delivers your
+  `your_shares * pool_balance / total_shares`.
+- A withdraw of `amount >= claim` burns all your shares and delivers your
   exact claim. Partial withdraws (`amount < claim`) burn proportional
   shares and may deliver marginally less than requested due to integer
   truncation.
@@ -68,15 +86,15 @@ count, so consumption is borne pro-rata by current share-holders.
 ## Sweeping
 
 The consumer owner can trigger a full settlement via
-`MsgSweepConsumerFeePool`, distributing the pool pro-rata to all
-share-holders. The message takes an optional list of denoms; if empty, all
-denoms with shares or balance are swept. Any truncation residue per denom
-is forwarded to the community pool.
+`MsgSweepConsumerFeePool` to distribute the pool pro-rata to all
+share-holders. Sweep is locked while the consumer is LAUNCHED; the
+owner must wait for the consumer to transition to STOPPED (or rely on
+the auto-sweep that runs on DELETED). The message takes an optional
+list of denoms; if empty, all denoms with shares or balance are swept.
+Any truncation residue per denom is forwarded to the community pool.
 
 The same sweep runs automatically when a consumer is deleted (auto-sweep
-on `DeleteConsumerChain`). If the auto-sweep fails for any reason, the
-delete aborts and the consumer stays in `STOPPED` — funds are never
-silently lost.
+on `DeleteConsumerChain`).
 
 ## Trust model
 
@@ -84,9 +102,14 @@ silently lost.
   funds. Gov interacts as a single depositor (via the community pool path)
   using the same messages as everyone else.
 - The consumer owner can trigger settlement but cannot redirect funds to
-  arbitrary recipients — pro-rata distribution to known depositors is the
+  arbitrary recipients -- pro-rata distribution to known depositors is the
   only outcome.
-- Each depositor controls their own shares independently.
+- Each depositor controls their own shares but cannot withdraw while
+  the consumer is LAUNCHED. The gov authority is exempt and can always
+  reclaim community-pool funding -- but only its own shares, never
+  other depositors'.
+- A minimum deposit floor (`fees_per_block * min_deposit_blocks`)
+  prevents share-table dusting and applies uniformly to every funder.
 
 ## Queries
 
