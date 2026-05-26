@@ -151,6 +151,28 @@ func TestMsgSubmitConsumerDoubleVotingValidateBasic_RejectsHeightMismatch(t *tes
 	require.Error(t, err)
 }
 
+func TestMsgSubmitConsumerDoubleVotingValidateBasic_RejectsVoteHeightMismatch(t *testing.T) {
+	setupBech32Cfg()
+
+	submitter := sdk.AccAddress(make([]byte, 20)).String()
+	ev, header := makeValidDoubleVoteEvidenceAndHeader(t, "consumer-1", 10)
+
+	// Mutate VoteB.Height so it diverges from VoteA.Height while the infraction
+	// header still matches VoteA — exercises the explicit cross-vote height check.
+	ev.VoteB.Height = ev.VoteA.Height + 1
+
+	msg := types.MsgSubmitConsumerDoubleVoting{
+		Submitter:             submitter,
+		DuplicateVoteEvidence: ev,
+		InfractionBlockHeader: header,
+		ConsumerId:            1,
+	}
+
+	err := msg.ValidateBasic()
+	require.Error(t, err)
+	require.Contains(t, err.Error(), "height/round/type mismatch")
+}
+
 func TestMsgSubmitConsumerDoubleVotingValidateBasic_AcceptsValidMsg(t *testing.T) {
 	setupBech32Cfg()
 

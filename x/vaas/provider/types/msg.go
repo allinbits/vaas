@@ -136,6 +136,20 @@ func (msg MsgSubmitConsumerDoubleVoting) ValidateBasic() error {
 		return errorsmod.Wrapf(ErrInvalidMsgSubmitConsumerDoubleVoting, "ValidateTendermintHeader: %s", err.Error())
 	}
 
+	// CometBFT's DuplicateVoteEvidence.ValidateBasic does not enforce that the
+	// two votes share height/round/type, so check it here before any signature
+	// verification runs against mismatched payloads.
+	if dve.VoteA.Height != dve.VoteB.Height ||
+		dve.VoteA.Round != dve.VoteB.Round ||
+		dve.VoteA.Type != dve.VoteB.Type {
+		return errorsmod.Wrapf(
+			ErrInvalidMsgSubmitConsumerDoubleVoting,
+			"duplicate vote evidence height/round/type mismatch: %d/%d/%v vs %d/%d/%v",
+			dve.VoteA.Height, dve.VoteA.Round, dve.VoteA.Type,
+			dve.VoteB.Height, dve.VoteB.Round, dve.VoteB.Type,
+		)
+	}
+
 	header := msg.InfractionBlockHeader.SignedHeader.Header
 	if header.Height != dve.VoteA.Height {
 		return errorsmod.Wrapf(
