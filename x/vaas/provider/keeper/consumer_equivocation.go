@@ -180,7 +180,21 @@ func (k Keeper) VerifyDoubleVotingEvidence(
 //
 
 // HandleConsumerMisbehaviour checks if the given IBC misbehaviour corresponds to an equivocation light client attack.
-// VAAS only validates and logs misbehaviour submissions (no slashing/jailing/tombstoning).
+//
+// VAAS deliberately treats light-client misbehaviour as detection-only: the
+// evidence is verified and the byzantine set is logged, but no slashing,
+// jailing, or tombstoning happens here. The README and DESIGN_RATIONALE
+// document this as the intended posture ("Light Client Misbehavior:
+// detection and logging"). Validator punishment for equivocation goes through
+// MsgSubmitConsumerDoubleVoting / HandleConsumerDoubleVoting, which slashes
+// against a cryptographically self-contained DuplicateVoteEvidence. Light-
+// client misbehaviour evidence is more involved to verify end-to-end against
+// a buggy or adversarial consumer chain, and double-vote evidence already
+// covers the same validator-equivocation case; punishing twice along two
+// different paths is unnecessary.
+//
+// Do not "fix" this back to slash/jail/tombstone without revisiting that
+// design choice.
 func (k Keeper) HandleConsumerMisbehaviour(ctx sdk.Context, consumerId uint64, misbehaviour ibctmtypes.Misbehaviour) error {
 	logger := k.Logger(ctx)
 
