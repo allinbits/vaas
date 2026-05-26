@@ -91,38 +91,6 @@ func (s *IntegrationTestSuite) providerFundConsumerFeePoolFrom(consumerID, from,
 	time.Sleep(3 * time.Second)
 }
 
-// providerWithdrawFeePool calls `tx provider withdraw-consumer-fee-pool`.
-func (s *IntegrationTestSuite) providerWithdrawFeePool(consumerID, from, coins string) {
-	_, _, err := s.dockerExec(s.providerValRes[0].Container.ID, []string{
-		providerBinary, "tx", "provider", "withdraw-consumer-fee-pool",
-		consumerID, coins,
-		"--from", from,
-		"--home", providerHomePath,
-		"--keyring-backend", "test",
-		"--chain-id", providerChainID,
-		"--fees", "10000" + bondDenom,
-		"-y",
-	})
-	s.Require().NoError(err)
-	time.Sleep(3 * time.Second)
-}
-
-// providerSweepFeePool calls `tx provider sweep-consumer-fee-pool`.
-func (s *IntegrationTestSuite) providerSweepFeePool(consumerID, from string) {
-	_, _, err := s.dockerExec(s.providerValRes[0].Container.ID, []string{
-		providerBinary, "tx", "provider", "sweep-consumer-fee-pool",
-		consumerID,
-		"--from", from,
-		"--home", providerHomePath,
-		"--keyring-backend", "test",
-		"--chain-id", providerChainID,
-		"--fees", "10000" + bondDenom,
-		"-y",
-	})
-	s.Require().NoError(err)
-	time.Sleep(3 * time.Second)
-}
-
 // providerFundCommunityPool funds the community pool from val on the provider
 // and blocks until the community-pool balance for the funded denom has grown,
 // so callers can immediately issue follow-up txs without racing the previous
@@ -149,55 +117,65 @@ func (s *IntegrationTestSuite) providerFundCommunityPool(amount string) {
 		"community pool %s did not grow after fund (before=%d)", coin.Denom, before)
 }
 
-// testFeePoolFundWithdrawSweep exercises deposit + per-depositor withdraw +
-// owner-triggered sweep with two distinct funders. val owns consumer 0
-// (registered during suite setup); user is a second funder.
-//
-// Assertions are deliberately tolerant: the consumer is in LAUNCHED phase,
-// so CollectFeesFromConsumers is actively draining the pool every block.
-// Exact equality would race the fee EndBlocker. The test verifies the
-// wiring (CLI dispatches to handlers, share math runs, sweep distributes),
-// not exact share-math results — those are covered by unit tests.
-func (s *IntegrationTestSuite) testFeePoolFundWithdrawSweep() {
-	s.Run("fee pool fund/withdraw/sweep", func() {
+// testFeePoolFundAndLockEnforcement verifies that funding works above the
+// min-deposit floor during LAUNCHED, and that withdraw + sweep are rejected
+// by the LAUNCHED lock. Owner-triggered sweep semantics during STOPPED/post-
+// delete auto-sweep are covered by unit tests; e2e cannot easily transition
+// the consumer out of LAUNCHED without a remove-consumer helper, which is
+// out of scope here.
+func (s *IntegrationTestSuite) testFeePoolFundAndLockEnforcement() {
+	s.Run("fee pool fund and lock enforcement", func() {
 		const consumerID = "0"
 		denom := bondDenom
 		valAddr := s.providerKeyAddress("val")
 		userAddr := s.providerKeyAddress("user")
 
-		// Make sure user has enough balance to fund + pay fees.
-		s.providerFundAddress(userAddr, "20000000"+denom)
+		// Make sure user has enough balance to fund above the floor.
+		// Floor = fees_per_block (1000) * MinDepositBlocks (14400) = 14_400_000.
+		s.providerFundAddress(userAddr, "50000000"+denom)
 
-		// Two funders.
-		s.providerFundConsumerFeePool(consumerID, "5000"+denom)             // --from val
-		s.providerFundConsumerFeePoolFrom(consumerID, "user", "3000"+denom) // --from user
+		// Two funders, both above the floor.
+		s.providerFundConsumerFeePool(consumerID, "20000000"+denom)             // --from val
+		s.providerFundConsumerFeePoolFrom(consumerID, "user", "20000000"+denom) // --from user
 
 		valClaim := s.providerQueryFeePoolClaim(consumerID, valAddr, denom)
 		userClaim := s.providerQueryFeePoolClaim(consumerID, userAddr, denom)
 		s.Require().Greater(valClaim, int64(0), "val should have a non-zero claim")
 		s.Require().Greater(userClaim, int64(0), "user should have a non-zero claim")
 
-		// Partial withdraw by val. Claim should shrink (or stay zero if fees
-		// consumed everything in the interim, which is unlikely but possible).
-		s.providerWithdrawFeePool(consumerID, "val", "1000"+denom)
-		valClaimAfter := s.providerQueryFeePoolClaim(consumerID, valAddr, denom)
-		s.Require().LessOrEqual(valClaimAfter, valClaim, "claim should not grow after a partial withdraw")
+		// Non-gov withdraw during LAUNCHED is rejected by the LAUNCHED lock.
+		// Use --dry-run so the full simulation pipeline runs (including the
+		// handler that rejects this tx) without burning fees on a doomed tx.
+		_, stderr, err := s.dockerExec(s.providerValRes[0].Container.ID, []string{
+			providerBinary, "tx", "provider", "withdraw-consumer-fee-pool",
+			consumerID, "1000" + denom,
+			"--from", "val",
+			"--home", providerHomePath,
+			"--keyring-backend", "test",
+			"--chain-id", providerChainID,
+			"--fees", "10000" + bondDenom,
+			"--dry-run",
+			"-y",
+		})
+		combined := stderr.String()
+		s.Require().True(err != nil || strings.Contains(combined, "locked while consumer"),
+			"non-gov withdraw during LAUNCHED should be rejected by the lock: stderr=%q, err=%v", combined, err)
 
-		// Owner sweep. Both should receive a share; their share records are
-		// gone afterward.
-		userBalBefore := s.providerQueryBalance(userAddr, denom)
-		s.providerSweepFeePool(consumerID, "val")
-
-		s.Require().Eventuallyf(func() bool {
-			return s.providerQueryBalance(userAddr, denom) > userBalBefore
-		}, 30*time.Second, 2*time.Second,
-			"user should have received their proportional share from the sweep (before=%d)", userBalBefore)
-
-		// Post-sweep, user's claim is zero (shares were burned).
-		s.Require().Eventuallyf(func() bool {
-			return s.providerQueryFeePoolClaim(consumerID, userAddr, denom) == 0
-		}, 30*time.Second, 2*time.Second,
-			"user claim should be zero after sweep burned shares")
+		// Owner sweep during LAUNCHED is also rejected (no gov bypass on sweep).
+		_, stderr, err = s.dockerExec(s.providerValRes[0].Container.ID, []string{
+			providerBinary, "tx", "provider", "sweep-consumer-fee-pool",
+			consumerID,
+			"--from", "val",
+			"--home", providerHomePath,
+			"--keyring-backend", "test",
+			"--chain-id", providerChainID,
+			"--fees", "10000" + bondDenom,
+			"--dry-run",
+			"-y",
+		})
+		combined = stderr.String()
+		s.Require().True(err != nil || strings.Contains(combined, "locked while consumer"),
+			"owner sweep during LAUNCHED should be rejected by the lock: stderr=%q, err=%v", combined, err)
 	})
 }
 
@@ -241,7 +219,7 @@ func (s *IntegrationTestSuite) testFeePoolGovSubsidyClawback() {
 		distrAddr := s.queryModuleAccountAddress("distribution")
 
 		// Seed the community pool so gov has something to spend.
-		s.providerFundCommunityPool("10000000" + denom)
+		s.providerFundCommunityPool("40000000" + denom)
 		cpBefore := s.queryCommunityPoolBalance(denom)
 		s.Require().Greater(cpBefore, int64(0), "community pool seeded")
 
@@ -250,7 +228,7 @@ func (s *IntegrationTestSuite) testFeePoolGovSubsidyClawback() {
     "@type": "/vaas.provider.v1.MsgFundConsumerFeePool",
     "signer": %q,
     "consumer_id": %q,
-    "amount": {"denom": %q, "amount": "5000"}
+    "amount": {"denom": %q, "amount": "20000000"}
   }],
   "metadata": "ipfs://test",
   "deposit": "10000000%s",
@@ -271,7 +249,7 @@ func (s *IntegrationTestSuite) testFeePoolGovSubsidyClawback() {
     "@type": "/vaas.provider.v1.MsgWithdrawConsumerFeePool",
     "signer": %q,
     "consumer_id": %q,
-    "amount": [{"denom": %q, "amount": "5000"}]
+    "amount": [{"denom": %q, "amount": "20000000"}]
   }],
   "metadata": "ipfs://test",
   "deposit": "10000000%s",

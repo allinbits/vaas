@@ -9,7 +9,7 @@ func (s *IntegrationTestSuite) TestVAAS() {
 	s.testValidatorSetSync()
 	s.testConsumerDebtFlow()
 	s.testFeePoolSendRestriction()
-	s.testFeePoolFundWithdrawSweep()
+	s.testFeePoolFundAndLockEnforcement()
 	s.testFeePoolGovSubsidyClawback()
 	// Run last: stops the provider container and replaces it with a fresh
 	// one started from the exported genesis.
