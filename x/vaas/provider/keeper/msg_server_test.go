@@ -11,9 +11,14 @@ import (
 	cometversion "github.com/cometbft/cometbft/version"
 	ibctmtypes "github.com/cosmos/ibc-go/v10/modules/light-clients/07-tendermint"
 	"github.com/stretchr/testify/require"
+	"go.uber.org/mock/gomock"
+
+	"cosmossdk.io/math"
 
 	"github.com/cosmos/cosmos-sdk/codec/address"
+	cryptocodec "github.com/cosmos/cosmos-sdk/crypto/codec"
 	sdk "github.com/cosmos/cosmos-sdk/types"
+	stakingtypes "github.com/cosmos/cosmos-sdk/x/staking/types"
 	clienttypes "github.com/cosmos/ibc-go/v10/modules/core/02-client/types"
 
 	cryptoutil "github.com/allinbits/vaas/testutil/crypto"
@@ -357,6 +362,112 @@ func TestSubmitConsumerDoubleVotingRejectsMismatchedHeights(t *testing.T) {
 		require.Contains(t, err.Error(), "infraction block header height")
 		require.Contains(t, err.Error(), "does not match duplicate vote evidence height")
 	})
+}
+
+func TestSubmitConsumerDoubleVotingHappyPath(t *testing.T) {
+	providerKeeper, ctx, ctrl, mocks := testkeeper.GetProviderKeeperAndCtx(t, testkeeper.NewInMemKeeperParams(t))
+	defer ctrl.Finish()
+
+	msgServer := providerkeeper.NewMsgServerImpl(&providerKeeper)
+
+	consumerID := uint64(0)
+	chainID := "consumer-chain-id"
+	providerKeeper.SetConsumerChainId(ctx, consumerID, chainID)
+	providerKeeper.SetConsumerPhase(ctx, consumerID, providertypes.CONSUMER_PHASE_LAUNCHED)
+
+	height := int64(12)
+
+	// Build the evidence and the matching infraction header using the same signer.
+	signer := tmtypes.NewMockPV()
+	tmValidator := tmtypes.NewValidator(signer.PrivKey.PubKey(), 1)
+	valSet := tmtypes.NewValidatorSet([]*tmtypes.Validator{tmValidator})
+
+	blockID1 := cryptoutil.MakeBlockID([]byte("blockhash1"), 1000, []byte("partshash1"))
+	blockID2 := cryptoutil.MakeBlockID([]byte("blockhash2"), 1000, []byte("partshash2"))
+	now := time.Now().UTC()
+	voteA := cryptoutil.MakeAndSignVote(blockID1, height, now, valSet, signer, chainID)
+	voteB := cryptoutil.MakeAndSignVote(blockID2, height, now, valSet, signer, chainID)
+	evidence := &tmproto.DuplicateVoteEvidence{
+		VoteA:            voteA.ToProto(),
+		VoteB:            voteB.ToProto(),
+		TotalVotingPower: tmValidator.VotingPower,
+		ValidatorPower:   tmValidator.VotingPower,
+		Timestamp:        now,
+	}
+
+	header := makeHeader(t, chainID, height, valSet)
+
+	// Staking validator matching the signer's consensus key, so consAddr matches
+	// the evidence's ValidatorAddress (identity key assignment).
+	pubKey, err := cryptocodec.FromCmtPubKeyInterface(signer.PrivKey.PubKey())
+	require.NoError(t, err)
+	stakingValidator, err := stakingtypes.NewValidator(
+		sdk.ValAddress(pubKey.Address()).String(),
+		pubKey,
+		stakingtypes.NewDescription("", "", "", "", ""),
+	)
+	require.NoError(t, err)
+	stakingValidator.Status = stakingtypes.Bonded
+
+	consAddr, err := stakingValidator.GetConsAddr()
+	require.NoError(t, err)
+	valOperBytes, err := providerKeeper.ValidatorAddressCodec().StringToBytes(stakingValidator.GetOperator())
+	require.NoError(t, err)
+
+	// DefaultConsumerInfractionParameters reads both fractions even though only
+	// DoubleSign is used for this evidence type.
+	mocks.MockSlashingKeeper.EXPECT().DowntimeJailDuration(ctx).Return(10*time.Minute, nil).Times(1)
+	mocks.MockSlashingKeeper.EXPECT().SlashFractionDoubleSign(ctx).Return(math.LegacyNewDecWithPrec(5, 2), nil).Times(1)
+
+	// SlashValidator path.
+	mocks.MockStakingKeeper.EXPECT().GetValidatorByConsAddr(ctx, consAddr).Return(stakingValidator, nil).Times(1)
+	mocks.MockSlashingKeeper.EXPECT().IsTombstoned(ctx, consAddr).Return(false).Times(1)
+	mocks.MockStakingKeeper.EXPECT().GetUnbondingDelegationsFromValidator(ctx, valOperBytes).Return([]stakingtypes.UnbondingDelegation{}, nil).Times(1)
+	mocks.MockStakingKeeper.EXPECT().GetRedelegationsFromSrcValidator(ctx, valOperBytes).Return([]stakingtypes.Redelegation{}, nil).Times(1)
+	mocks.MockStakingKeeper.EXPECT().GetLastValidatorPower(ctx, valOperBytes).Return(int64(1000), nil).Times(1)
+	mocks.MockStakingKeeper.EXPECT().PowerReduction(ctx).Return(math.NewInt(1)).Times(1)
+	mocks.MockStakingKeeper.EXPECT().
+		SlashWithInfractionReason(ctx, consAddr, int64(0), int64(1000), math.LegacyNewDecWithPrec(5, 2), stakingtypes.Infraction_INFRACTION_DOUBLE_SIGN).
+		Return(math.NewInt(1000), nil).Times(1)
+
+	// JailAndTombstoneValidator path (second consAddr lookup + tombstone).
+	mocks.MockStakingKeeper.EXPECT().GetValidatorByConsAddr(ctx, consAddr).Return(stakingValidator, nil).Times(1)
+	mocks.MockSlashingKeeper.EXPECT().IsTombstoned(ctx, consAddr).Return(false).Times(1)
+	mocks.MockStakingKeeper.EXPECT().Jail(ctx, consAddr).Return(nil).Times(1)
+	mocks.MockSlashingKeeper.EXPECT().JailUntil(ctx, consAddr, gomock.Any()).Return(nil).Times(1)
+	mocks.MockSlashingKeeper.EXPECT().Tombstone(ctx, consAddr).Return(nil).Times(1)
+
+	msg := &providertypes.MsgSubmitConsumerDoubleVoting{
+		ConsumerId:            consumerID,
+		Submitter:             validSubmitter(),
+		DuplicateVoteEvidence: evidence,
+		InfractionBlockHeader: header,
+	}
+
+	resp, err := msgServer.SubmitConsumerDoubleVoting(ctx, msg)
+	require.NoError(t, err)
+	require.NotNil(t, resp)
+
+	// Sanity-check the chain event surfaced the expected consumer/chain attrs.
+	var found bool
+	for _, ev := range ctx.EventManager().Events() {
+		if ev.Type != "submit_consumer_double_voting" {
+			continue
+		}
+		found = true
+		var sawConsumerId, sawChainId bool
+		for _, attr := range ev.Attributes {
+			if attr.Key == "consumer_id" && attr.Value == "0" {
+				sawConsumerId = true
+			}
+			if attr.Key == "consumer_chain_id" && attr.Value == chainID {
+				sawChainId = true
+			}
+		}
+		require.True(t, sawConsumerId, "consumer_id attribute missing on event")
+		require.True(t, sawChainId, "consumer_chain_id attribute missing on event")
+	}
+	require.True(t, found, "submit_consumer_double_voting event not emitted")
 }
 
 func makeHeader(t *testing.T, chainID string, height int64, valSet *tmtypes.ValidatorSet) *ibctmtypes.Header {
