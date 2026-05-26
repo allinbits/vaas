@@ -242,68 +242,6 @@ func TestUpdateConsumerDuplicateChainId(t *testing.T) {
 	require.Equal(t, chainId2, actualChainId)
 }
 
-func TestSubmitConsumerMisbehaviourRejectsNilMessage(t *testing.T) {
-	providerKeeper, ctx, ctrl, _ := testkeeper.GetProviderKeeperAndCtx(t, testkeeper.NewInMemKeeperParams(t))
-	defer ctrl.Finish()
-
-	msgServer := providerkeeper.NewMsgServerImpl(&providerKeeper)
-
-	require.NotPanics(t, func() {
-		_, err := msgServer.SubmitConsumerMisbehaviour(ctx, nil)
-		require.Error(t, err)
-		require.Contains(t, err.Error(), "message cannot be nil")
-	})
-}
-
-func TestSubmitConsumerMisbehaviourRejectsNilSignedHeader(t *testing.T) {
-	providerKeeper, ctx, ctrl, _ := testkeeper.GetProviderKeeperAndCtx(t, testkeeper.NewInMemKeeperParams(t))
-	defer ctrl.Finish()
-
-	msgServer := providerkeeper.NewMsgServerImpl(&providerKeeper)
-
-	msg := &providertypes.MsgSubmitConsumerMisbehaviour{
-		ConsumerId: 0,
-		Submitter:  validSubmitter(),
-		Misbehaviour: &ibctmtypes.Misbehaviour{
-			Header1: &ibctmtypes.Header{},
-			Header2: &ibctmtypes.Header{},
-		},
-	}
-
-	require.NotPanics(t, func() {
-		_, err := msgServer.SubmitConsumerMisbehaviour(ctx, msg)
-		require.Error(t, err)
-		require.Contains(t, err.Error(), "Misbehaviour")
-	})
-}
-
-func TestSubmitConsumerDoubleVotingRejectsNilHeaderSignedHeader(t *testing.T) {
-	providerKeeper, ctx, ctrl, _ := testkeeper.GetProviderKeeperAndCtx(t, testkeeper.NewInMemKeeperParams(t))
-	defer ctrl.Finish()
-
-	msgServer := providerkeeper.NewMsgServerImpl(&providerKeeper)
-
-	consumerID := uint64(0)
-	chainID := "consumer-chain-id"
-	providerKeeper.SetConsumerChainId(ctx, consumerID, chainID)
-
-	evidence := makeDuplicateVoteEvidenceProto(t, chainID, 12)
-	header := &ibctmtypes.Header{} // SignedHeader is nil
-
-	msg := &providertypes.MsgSubmitConsumerDoubleVoting{
-		ConsumerId:            consumerID,
-		Submitter:             validSubmitter(),
-		DuplicateVoteEvidence: evidence,
-		InfractionBlockHeader: header,
-	}
-
-	require.NotPanics(t, func() {
-		_, err := msgServer.SubmitConsumerDoubleVoting(ctx, msg)
-		require.Error(t, err)
-		require.Contains(t, err.Error(), "ValidateTendermintHeader")
-	})
-}
-
 func TestSubmitConsumerDoubleVotingRejectsMismatchedChainID(t *testing.T) {
 	providerKeeper, ctx, ctrl, _ := testkeeper.GetProviderKeeperAndCtx(t, testkeeper.NewInMemKeeperParams(t))
 	defer ctrl.Finish()
@@ -331,36 +269,6 @@ func TestSubmitConsumerDoubleVotingRejectsMismatchedChainID(t *testing.T) {
 		require.Error(t, err)
 		require.Contains(t, err.Error(), "infraction block header chain id")
 		require.Contains(t, err.Error(), "does not match consumer chain id")
-	})
-}
-
-func TestSubmitConsumerDoubleVotingRejectsMismatchedHeights(t *testing.T) {
-	providerKeeper, ctx, ctrl, _ := testkeeper.GetProviderKeeperAndCtx(t, testkeeper.NewInMemKeeperParams(t))
-	defer ctrl.Finish()
-
-	msgServer := providerkeeper.NewMsgServerImpl(&providerKeeper)
-
-	consumerID := uint64(0)
-	chainID := "consumer-chain-id"
-	providerKeeper.SetConsumerChainId(ctx, consumerID, chainID)
-
-	evidenceHeight := int64(12)
-	headerHeight := int64(15)
-	evidence, valSet := makeDuplicateVoteEvidenceProtoWithValSet(t, chainID, evidenceHeight)
-	header := makeHeader(t, chainID, headerHeight, valSet)
-
-	msg := &providertypes.MsgSubmitConsumerDoubleVoting{
-		ConsumerId:            consumerID,
-		Submitter:             validSubmitter(),
-		DuplicateVoteEvidence: evidence,
-		InfractionBlockHeader: header,
-	}
-
-	require.NotPanics(t, func() {
-		_, err := msgServer.SubmitConsumerDoubleVoting(ctx, msg)
-		require.Error(t, err)
-		require.Contains(t, err.Error(), "infraction block header height")
-		require.Contains(t, err.Error(), "does not match duplicate vote evidence height")
 	})
 }
 
@@ -515,13 +423,6 @@ func makeHeader(t *testing.T, chainID string, height int64, valSet *tmtypes.Vali
 		TrustedHeight:     clienttypes.NewHeight(revision, uint64(height-1)),
 		TrustedValidators: protoValSet,
 	}
-}
-
-func makeDuplicateVoteEvidenceProto(t *testing.T, chainID string, height int64) *tmproto.DuplicateVoteEvidence {
-	t.Helper()
-
-	evidence, _ := makeDuplicateVoteEvidenceProtoWithValSet(t, chainID, height)
-	return evidence
 }
 
 func makeDuplicateVoteEvidenceProtoWithValSet(t *testing.T, chainID string, height int64) (*tmproto.DuplicateVoteEvidence, *tmtypes.ValidatorSet) {

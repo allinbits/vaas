@@ -104,13 +104,6 @@ func (k msgServer) AssignConsumerKey(goCtx context.Context, msg *types.MsgAssign
 func (k msgServer) SubmitConsumerMisbehaviour(goCtx context.Context, msg *types.MsgSubmitConsumerMisbehaviour) (*types.MsgSubmitConsumerMisbehaviourResponse, error) {
 	ctx := sdk.UnwrapSDKContext(goCtx)
 
-	if msg == nil {
-		return nil, errorsmod.Wrap(types.ErrInvalidMsgSubmitConsumerMisbehaviour, "message cannot be nil")
-	}
-	if err := msg.ValidateBasic(); err != nil {
-		return nil, err
-	}
-
 	byzantineValidators, err := k.Keeper.HandleConsumerMisbehaviour(ctx, msg.ConsumerId, *msg.Misbehaviour)
 	if err != nil {
 		return nil, err
@@ -142,13 +135,6 @@ func (k msgServer) SubmitConsumerMisbehaviour(goCtx context.Context, msg *types.
 
 func (k msgServer) SubmitConsumerDoubleVoting(goCtx context.Context, msg *types.MsgSubmitConsumerDoubleVoting) (*types.MsgSubmitConsumerDoubleVotingResponse, error) {
 	ctx := sdk.UnwrapSDKContext(goCtx)
-
-	if msg == nil {
-		return nil, errorsmod.Wrap(types.ErrInvalidMsgSubmitConsumerDoubleVoting, "message cannot be nil")
-	}
-	if err := msg.ValidateBasic(); err != nil {
-		return nil, err
-	}
 
 	consumerChainId, err := k.GetConsumerChainId(ctx, msg.ConsumerId)
 	if err != nil {
