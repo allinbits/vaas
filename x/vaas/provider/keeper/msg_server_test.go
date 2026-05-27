@@ -248,7 +248,7 @@ func TestFundConsumerFeePool_RegularSigner(t *testing.T) {
 
 	alice := sdk.AccAddress([]byte("alice___________"))
 	poolAddr := k.GetConsumerFeePoolAddress(consumerId)
-	amount := sdk.NewInt64Coin("uphoton", 100)
+	amount := sdk.NewInt64Coin("uphoton", 200_000)
 
 	mocks.MockBankKeeper.EXPECT().GetBalance(ctx, poolAddr, "uphoton").
 		Return(sdk.NewInt64Coin("uphoton", 0))
@@ -264,7 +264,7 @@ func TestFundConsumerFeePool_RegularSigner(t *testing.T) {
 
 	shares, _ := k.ConsumerFeePoolShares.Get(ctx,
 		collections.Join3(consumerId, "uphoton", alice))
-	require.Equal(t, math.NewInt(100), shares)
+	require.Equal(t, math.NewInt(200_000), shares)
 }
 
 func TestFundConsumerFeePool_GovAuthority(t *testing.T) {
@@ -282,7 +282,7 @@ func TestFundConsumerFeePool_GovAuthority(t *testing.T) {
 	govAddr := k.GetAuthority()
 	distrAddr := authtypes.NewModuleAddress(disttypes.ModuleName)
 	poolAddr := k.GetConsumerFeePoolAddress(consumerId)
-	amount := sdk.NewInt64Coin("uphoton", 1000)
+	amount := sdk.NewInt64Coin("uphoton", 200_000)
 
 	mocks.MockBankKeeper.EXPECT().GetBalance(ctx, poolAddr, "uphoton").
 		Return(sdk.NewInt64Coin("uphoton", 0))
@@ -296,7 +296,7 @@ func TestFundConsumerFeePool_GovAuthority(t *testing.T) {
 
 	shares, _ := k.ConsumerFeePoolShares.Get(ctx,
 		collections.Join3(consumerId, "uphoton", distrAddr))
-	require.Equal(t, math.NewInt(1000), shares)
+	require.Equal(t, math.NewInt(200_000), shares)
 }
 
 func TestFundConsumerFeePool_RejectsUnknownConsumer(t *testing.T) {
@@ -336,7 +336,7 @@ func TestFundConsumerFeePool_AllowedInActivePhases(t *testing.T) {
 
 			alice := sdk.AccAddress([]byte("alice___________"))
 			poolAddr := k.GetConsumerFeePoolAddress(consumerId)
-			amount := sdk.NewInt64Coin("uphoton", 100)
+			amount := sdk.NewInt64Coin("uphoton", 200_000)
 
 			mocks.MockBankKeeper.EXPECT().GetBalance(ctx, poolAddr, "uphoton").
 				Return(sdk.NewInt64Coin("uphoton", 0))
@@ -500,4 +500,74 @@ func TestFundConsumerFeePool_RejectsWrongDenom(t *testing.T) {
 		Amount: sdk.NewInt64Coin("uatone", 1),
 	})
 	require.ErrorIs(t, err, providertypes.ErrInvalidFundDenom)
+}
+
+func TestFundConsumerFeePool_RejectsBelowMinDeposit(t *testing.T) {
+	k, ctx, ctrl, _ := testkeeper.GetProviderKeeperAndCtx(t, testkeeper.NewInMemKeeperParams(t))
+	defer ctrl.Finish()
+
+	// Default params: fees_per_block = 1000uphoton, min_deposit_blocks = 14400
+	// -> floor = 14_400_000uphoton.
+	k.SetParams(ctx, providertypes.DefaultParams())
+
+	consumerId := k.FetchAndIncrementConsumerId(ctx)
+	k.SetConsumerPhase(ctx, consumerId, providertypes.CONSUMER_PHASE_REGISTERED)
+
+	ms := providerkeeper.NewMsgServerImpl(&k)
+	signer := sdk.AccAddress([]byte("funder__________")).String()
+	_, err := ms.FundConsumerFeePool(ctx, &providertypes.MsgFundConsumerFeePool{
+		Signer:     signer,
+		ConsumerId: consumerId,
+		Amount:     sdk.NewInt64Coin(providertypes.DefaultFeesPerBlockDenom, 1000),
+	})
+	require.ErrorIs(t, err, providertypes.ErrDepositBelowMinimum)
+}
+
+func TestFundConsumerFeePool_RejectsBelowMinDeposit_GovSigner(t *testing.T) {
+	k, ctx, ctrl, _ := testkeeper.GetProviderKeeperAndCtx(t, testkeeper.NewInMemKeeperParams(t))
+	defer ctrl.Finish()
+	k.SetParams(ctx, providertypes.DefaultParams())
+
+	consumerId := k.FetchAndIncrementConsumerId(ctx)
+	k.SetConsumerPhase(ctx, consumerId, providertypes.CONSUMER_PHASE_REGISTERED)
+
+	ms := providerkeeper.NewMsgServerImpl(&k)
+	_, err := ms.FundConsumerFeePool(ctx, &providertypes.MsgFundConsumerFeePool{
+		Signer:     k.GetAuthority(),
+		ConsumerId: consumerId,
+		Amount:     sdk.NewInt64Coin(providertypes.DefaultFeesPerBlockDenom, 1000),
+	})
+	require.ErrorIs(t, err, providertypes.ErrDepositBelowMinimum,
+		"gov authority must respect the same floor as any other depositor")
+}
+
+func TestFundConsumerFeePool_FloorDisabledWhenParamZero(t *testing.T) {
+	k, ctx, ctrl, mocks := testkeeper.GetProviderKeeperAndCtx(t, testkeeper.NewInMemKeeperParams(t))
+	defer ctrl.Finish()
+
+	params := providertypes.DefaultParams()
+	params.MinDepositBlocks = 0
+	k.SetParams(ctx, params)
+
+	consumerId := k.FetchAndIncrementConsumerId(ctx)
+	k.SetConsumerPhase(ctx, consumerId, providertypes.CONSUMER_PHASE_REGISTERED)
+	poolAddr := k.GetConsumerFeePoolAddress(consumerId)
+
+	signer := sdk.AccAddress([]byte("funder__________"))
+	amount := sdk.NewInt64Coin(providertypes.DefaultFeesPerBlockDenom, 1)
+	coins := sdk.NewCoins(amount)
+	mocks.MockBankKeeper.EXPECT().SendCoinsFromAccountToModule(
+		ctx, signer, providertypes.ModuleName, coins).Return(nil)
+	mocks.MockBankKeeper.EXPECT().GetBalance(ctx, poolAddr, amount.Denom).
+		Return(sdk.NewInt64Coin(amount.Denom, 0))
+	mocks.MockBankKeeper.EXPECT().SendCoinsFromModuleToAccount(
+		ctx, providertypes.ModuleName, poolAddr, coins).Return(nil)
+
+	ms := providerkeeper.NewMsgServerImpl(&k)
+	_, err := ms.FundConsumerFeePool(ctx, &providertypes.MsgFundConsumerFeePool{
+		Signer:     signer.String(),
+		ConsumerId: consumerId,
+		Amount:     amount,
+	})
+	require.NoError(t, err, "min_deposit_blocks=0 must disable the floor")
 }

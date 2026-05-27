@@ -12,6 +12,7 @@ import (
 	tmtypes "github.com/cometbft/cometbft/types"
 
 	errorsmod "cosmossdk.io/errors"
+	"cosmossdk.io/math"
 
 	cryptocodec "github.com/cosmos/cosmos-sdk/crypto/codec"
 	sdk "github.com/cosmos/cosmos-sdk/types"
@@ -499,6 +500,17 @@ func (k msgServer) FundConsumerFeePool(
 	if msg.Amount.Denom != params.FeesPerBlock.Denom {
 		return nil, errorsmod.Wrapf(types.ErrInvalidFundDenom,
 			"expected denom %s, got %s", params.FeesPerBlock.Denom, msg.Amount.Denom)
+	}
+
+	if params.MinDepositBlocks > 0 {
+		floor := params.FeesPerBlock.Amount.Mul(math.NewIntFromUint64(params.MinDepositBlocks))
+		if msg.Amount.Amount.LT(floor) {
+			return nil, errorsmod.Wrapf(types.ErrDepositBelowMinimum,
+				"deposit %s below floor %s%s (fees_per_block %s x min_deposit_blocks %d)",
+				msg.Amount, floor.String(), params.FeesPerBlock.Denom,
+				params.FeesPerBlock.Amount.String(), params.MinDepositBlocks,
+			)
+		}
 	}
 
 	poolAddr := k.GetConsumerFeePoolAddress(msg.ConsumerId)
