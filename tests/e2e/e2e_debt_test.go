@@ -85,7 +85,7 @@ func (s *IntegrationTestSuite) providerFundAddress(addr, amount string) {
 // providerFundConsumerFeePool deposits `amount` into the named consumer's
 // fee pool via MsgFundConsumerFeePool, signed by val.
 func (s *IntegrationTestSuite) providerFundConsumerFeePool(consumerID, amount string) {
-	_, _, err := s.dockerExec(s.providerValRes[0].Container.ID, []string{
+	stdout, stderr, err := s.dockerExec(s.providerValRes[0].Container.ID, []string{
 		providerBinary, "tx", "provider", "fund-consumer-fee-pool",
 		consumerID, amount,
 		"--from", "val",
@@ -94,9 +94,54 @@ func (s *IntegrationTestSuite) providerFundConsumerFeePool(consumerID, amount st
 		"--chain-id", providerChainID,
 		"--fees", "10000" + bondDenom,
 		"-y",
+		"-o", "json",
 	})
-	s.Require().NoError(err, "failed to fund consumer %s fee pool", consumerID)
-	time.Sleep(3 * time.Second)
+	s.Require().NoErrorf(err, "failed to broadcast fund for consumer %s: stdout=%s stderr=%s",
+		consumerID, stdout.String(), stderr.String())
+	s.requireTxCommitted(stdout.Bytes())
+}
+
+// requireTxCommitted parses a `-o json` broadcast response, asserts it was
+// accepted into the mempool (CheckTx code 0), then polls `query tx <hash>`
+// until the tx is committed and asserts the committed (DeliverTx) code is 0.
+// This surfaces handler-level rejections (e.g. the min-deposit floor) right at
+// the call site with the on-chain raw_log, instead of as a distant downstream
+// timeout.
+func (s *IntegrationTestSuite) requireTxCommitted(broadcastOut []byte) {
+	var bres struct {
+		TxHash string `json:"txhash"`
+		Code   int    `json:"code"`
+		RawLog string `json:"raw_log"`
+	}
+	s.Require().NoErrorf(json.Unmarshal(broadcastOut, &bres),
+		"decode broadcast response: %s", string(broadcastOut))
+	s.Require().Equalf(0, bres.Code, "tx rejected at CheckTx: %s", bres.RawLog)
+	s.Require().NotEmptyf(bres.TxHash, "broadcast returned empty txhash: %s", string(broadcastOut))
+
+	var code int
+	var rawLog, lastOut string
+	s.Require().Eventuallyf(func() bool {
+		out, _, qerr := s.dockerExec(s.providerValRes[0].Container.ID, []string{
+			providerBinary, "query", "tx", bres.TxHash,
+			"--home", providerHomePath,
+			"--output", "json",
+		})
+		if qerr != nil || out.Len() == 0 {
+			return false
+		}
+		lastOut = out.String()
+		var qres struct {
+			Code   int    `json:"code"`
+			RawLog string `json:"raw_log"`
+		}
+		if json.Unmarshal(out.Bytes(), &qres) != nil {
+			return false
+		}
+		code, rawLog = qres.Code, qres.RawLog
+		return true
+	}, 30*time.Second, 2*time.Second,
+		"tx %s was not committed in time; last query output: %s", bres.TxHash, lastOut)
+	s.Require().Equalf(0, code, "tx %s failed on-chain: %s", bres.TxHash, rawLog)
 }
 
 // testConsumerDebtFlow exercises the end-to-end fee-debt lifecycle:
@@ -122,7 +167,9 @@ func (s *IntegrationTestSuite) testConsumerDebtFlow() {
 			"consumer did not enter debt; last dry-run did not surface debt error")
 
 		s.T().Log("funding consumer fee pool on provider...")
-		s.providerFundConsumerFeePool("0", "10000000"+bondDenom)
+		// Must clear the min-deposit floor: fees_per_block (1000) *
+		// MinDepositBlocks (14400) = 14_400_000. Fund above it with margin.
+		s.providerFundConsumerFeePool("0", "20000000"+bondDenom)
 
 		s.T().Log("waiting for consumer to exit debt (bank send should succeed)...")
 		s.Require().Eventuallyf(func() bool {

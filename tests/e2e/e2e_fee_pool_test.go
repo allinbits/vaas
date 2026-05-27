@@ -77,7 +77,7 @@ func (s *IntegrationTestSuite) providerKeyAddress(key string) string {
 // providerFundConsumerFeePoolFrom is the multi-signer variant of
 // providerFundConsumerFeePool (which is hardcoded to --from val).
 func (s *IntegrationTestSuite) providerFundConsumerFeePoolFrom(consumerID, from, amount string) {
-	_, _, err := s.dockerExec(s.providerValRes[0].Container.ID, []string{
+	stdout, stderr, err := s.dockerExec(s.providerValRes[0].Container.ID, []string{
 		providerBinary, "tx", "provider", "fund-consumer-fee-pool",
 		consumerID, amount,
 		"--from", from,
@@ -86,9 +86,11 @@ func (s *IntegrationTestSuite) providerFundConsumerFeePoolFrom(consumerID, from,
 		"--chain-id", providerChainID,
 		"--fees", "10000" + bondDenom,
 		"-y",
+		"-o", "json",
 	})
-	s.Require().NoError(err)
-	time.Sleep(3 * time.Second)
+	s.Require().NoErrorf(err, "failed to broadcast fund for consumer %s from %s: stdout=%s stderr=%s",
+		consumerID, from, stdout.String(), stderr.String())
+	s.requireTxCommitted(stdout.Bytes())
 }
 
 // providerFundCommunityPool funds the community pool from val on the provider
@@ -146,10 +148,12 @@ func (s *IntegrationTestSuite) testFeePoolFundAndLockEnforcement() {
 		// Non-gov withdraw during LAUNCHED is rejected by the LAUNCHED lock.
 		// Use --dry-run so the full simulation pipeline runs (including the
 		// handler that rejects this tx) without burning fees on a doomed tx.
+		// --from must be a bech32 address, not a key name: simulation mode does
+		// not access the keyring, so a name cannot be resolved.
 		_, stderr, err := s.dockerExec(s.providerValRes[0].Container.ID, []string{
 			providerBinary, "tx", "provider", "withdraw-consumer-fee-pool",
 			consumerID, "1000" + denom,
-			"--from", "val",
+			"--from", valAddr,
 			"--home", providerHomePath,
 			"--keyring-backend", "test",
 			"--chain-id", providerChainID,
@@ -158,14 +162,17 @@ func (s *IntegrationTestSuite) testFeePoolFundAndLockEnforcement() {
 			"-y",
 		})
 		combined := stderr.String()
-		s.Require().True(err != nil || strings.Contains(combined, "locked while consumer"),
+		// Assert on the specific rejection rather than "any error", so an
+		// unrelated failure (bad address, denom, args) fails the test loudly
+		// instead of masquerading as a successful rejection.
+		s.Require().Contains(combined, "locked while consumer",
 			"non-gov withdraw during LAUNCHED should be rejected by the lock: stderr=%q, err=%v", combined, err)
 
 		// Owner sweep during LAUNCHED is also rejected (no gov bypass on sweep).
 		_, stderr, err = s.dockerExec(s.providerValRes[0].Container.ID, []string{
 			providerBinary, "tx", "provider", "sweep-consumer-fee-pool",
 			consumerID,
-			"--from", "val",
+			"--from", valAddr,
 			"--home", providerHomePath,
 			"--keyring-backend", "test",
 			"--chain-id", providerChainID,
@@ -174,7 +181,7 @@ func (s *IntegrationTestSuite) testFeePoolFundAndLockEnforcement() {
 			"-y",
 		})
 		combined = stderr.String()
-		s.Require().True(err != nil || strings.Contains(combined, "locked while consumer"),
+		s.Require().Contains(combined, "locked while consumer",
 			"owner sweep during LAUNCHED should be rejected by the lock: stderr=%q, err=%v", combined, err)
 	})
 }
@@ -188,9 +195,11 @@ func (s *IntegrationTestSuite) testFeePoolSendRestriction() {
 		feePoolAddr := s.queryConsumerFeePoolAddress("0")
 		valAddr := s.providerKeyAddress("val")
 
+		// --from must be a bech32 address, not a key name: --dry-run runs in
+		// simulation mode, which does not access the keyring.
 		_, stderr, err := s.dockerExec(s.providerValRes[0].Container.ID, []string{
 			providerBinary, "tx", "bank", "send", valAddr, feePoolAddr, "1" + bondDenom,
-			"--from", "val",
+			"--from", valAddr,
 			"--home", providerHomePath,
 			"--keyring-backend", "test",
 			"--chain-id", providerChainID,
@@ -199,10 +208,9 @@ func (s *IntegrationTestSuite) testFeePoolSendRestriction() {
 			"-y",
 		})
 		combined := stderr.String()
-		// The restriction's error message contains "consumer fee pool".
-		// Match on a distinctive substring rather than the exact error code
-		// so the test tolerates future error-message tweaks.
-		s.Require().True(err != nil || strings.Contains(combined, "consumer fee pool"),
+		// Assert on the restriction's distinctive substring rather than "any
+		// error", so an unrelated failure can't masquerade as a rejection.
+		s.Require().Contains(combined, "consumer fee pool",
 			"direct bank send to fee pool should be rejected: stderr=%q, err=%v", combined, err)
 	})
 }
