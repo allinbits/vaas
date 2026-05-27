@@ -554,15 +554,6 @@ func TestMsgSetConsumerFeesPerBlock_ValidateBasic(t *testing.T) {
 			wantError: false,
 		},
 		{
-			name: "zero amount is valid",
-			msg: types.MsgSetConsumerFeesPerBlock{
-				Authority:  validAuthority,
-				ConsumerId: 1,
-				Amount:     "0",
-			},
-			wantError: false,
-		},
-		{
 			name: "positive amount is valid",
 			msg: types.MsgSetConsumerFeesPerBlock{
 				Authority:  validAuthority,
@@ -570,6 +561,15 @@ func TestMsgSetConsumerFeesPerBlock_ValidateBasic(t *testing.T) {
 				Amount:     "2500",
 			},
 			wantError: false,
+		},
+		{
+			name: "zero amount rejected",
+			msg: types.MsgSetConsumerFeesPerBlock{
+				Authority:  validAuthority,
+				ConsumerId: 1,
+				Amount:     "0",
+			},
+			wantError: true,
 		},
 		{
 			name: "negative amount rejected",

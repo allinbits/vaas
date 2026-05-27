@@ -293,7 +293,7 @@ func (msg MsgRemoveConsumer) ValidateBasic() error {
 
 // ValidateBasic enforces:
 //   - authority parses as bech32
-//   - amount is empty (clear semantics) OR parses as a non-negative math.Int
+//   - amount is empty (clear semantics) OR parses as a positive math.Int
 func (msg MsgSetConsumerFeesPerBlock) ValidateBasic() error {
 	if _, err := sdk.AccAddressFromBech32(msg.Authority); err != nil {
 		return errorsmod.Wrapf(sdkerrors.ErrInvalidAddress, "invalid authority address: %s", err)
@@ -305,8 +305,8 @@ func (msg MsgSetConsumerFeesPerBlock) ValidateBasic() error {
 	if !ok {
 		return errorsmod.Wrapf(sdkerrors.ErrInvalidRequest, "amount %q is not a valid integer", msg.Amount)
 	}
-	if amt.IsNegative() {
-		return errorsmod.Wrapf(sdkerrors.ErrInvalidRequest, "amount %q must be non-negative", msg.Amount)
+	if !amt.IsPositive() {
+		return errorsmod.Wrapf(sdkerrors.ErrInvalidRequest, "amount %q must be positive", msg.Amount)
 	}
 	return nil
 }
