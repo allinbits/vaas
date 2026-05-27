@@ -234,440 +234,427 @@ func TestUpdateConsumerDuplicateChainId(t *testing.T) {
 	require.Equal(t, chainId2, actualChainId)
 }
 
-func TestFundConsumerFeePool_RegularSigner(t *testing.T) {
-	k, ctx, ctrl, mocks := testkeeper.GetProviderKeeperAndCtx(t, testkeeper.NewInMemKeeperParams(t))
-	defer ctrl.Finish()
-	ms := providerkeeper.NewMsgServerImpl(&k)
-
-	consumerId := k.FetchAndIncrementConsumerId(ctx)
-	k.SetConsumerPhase(ctx, consumerId, providertypes.CONSUMER_PHASE_REGISTERED)
-	k.SetParams(ctx, providertypes.DefaultParams())
-	params := k.GetParams(ctx)
-	params.FeesPerBlock = sdk.NewInt64Coin("uphoton", 10)
-	k.SetParams(ctx, params)
-
+func TestFundConsumerFeePool(t *testing.T) {
 	alice := sdk.AccAddress([]byte("alice___________"))
-	poolAddr := k.GetConsumerFeePoolAddress(consumerId)
-	amount := sdk.NewInt64Coin("uphoton", 200_000)
-
-	mocks.MockBankKeeper.EXPECT().GetBalance(ctx, poolAddr, "uphoton").
-		Return(sdk.NewInt64Coin("uphoton", 0))
-	mocks.MockBankKeeper.EXPECT().SendCoinsFromAccountToModule(
-		ctx, alice, providertypes.ModuleName, sdk.NewCoins(amount)).Return(nil)
-	mocks.MockBankKeeper.EXPECT().SendCoinsFromModuleToAccount(
-		ctx, providertypes.ModuleName, poolAddr, sdk.NewCoins(amount)).Return(nil)
-
-	_, err := ms.FundConsumerFeePool(ctx, &providertypes.MsgFundConsumerFeePool{
-		Signer: alice.String(), ConsumerId: consumerId, Amount: amount,
-	})
-	require.NoError(t, err)
-
-	shares, _ := k.ConsumerFeePoolShares.Get(ctx,
-		collections.Join3(consumerId, "uphoton", alice))
-	require.Equal(t, math.NewInt(200_000), shares)
-}
-
-func TestFundConsumerFeePool_GovAuthority(t *testing.T) {
-	k, ctx, ctrl, mocks := testkeeper.GetProviderKeeperAndCtx(t, testkeeper.NewInMemKeeperParams(t))
-	defer ctrl.Finish()
-	ms := providerkeeper.NewMsgServerImpl(&k)
-
-	consumerId := k.FetchAndIncrementConsumerId(ctx)
-	k.SetConsumerPhase(ctx, consumerId, providertypes.CONSUMER_PHASE_REGISTERED)
-	k.SetParams(ctx, providertypes.DefaultParams())
-	params := k.GetParams(ctx)
-	params.FeesPerBlock = sdk.NewInt64Coin("uphoton", 10)
-	k.SetParams(ctx, params)
-
-	govAddr := k.GetAuthority()
 	distrAddr := authtypes.NewModuleAddress(disttypes.ModuleName)
-	poolAddr := k.GetConsumerFeePoolAddress(consumerId)
-	amount := sdk.NewInt64Coin("uphoton", 200_000)
 
-	mocks.MockBankKeeper.EXPECT().GetBalance(ctx, poolAddr, "uphoton").
-		Return(sdk.NewInt64Coin("uphoton", 0))
-	mocks.MockDistributionKeeper.EXPECT().DistributeFromFeePool(
-		ctx, sdk.NewCoins(amount), poolAddr).Return(nil)
-
-	_, err := ms.FundConsumerFeePool(ctx, &providertypes.MsgFundConsumerFeePool{
-		Signer: govAddr, ConsumerId: consumerId, Amount: amount,
-	})
-	require.NoError(t, err)
-
-	shares, _ := k.ConsumerFeePoolShares.Get(ctx,
-		collections.Join3(consumerId, "uphoton", distrAddr))
-	require.Equal(t, math.NewInt(200_000), shares)
-}
-
-func TestFundConsumerFeePool_RejectsUnknownConsumer(t *testing.T) {
-	k, ctx, ctrl, _ := testkeeper.GetProviderKeeperAndCtx(t, testkeeper.NewInMemKeeperParams(t))
-	defer ctrl.Finish()
-	ms := providerkeeper.NewMsgServerImpl(&k)
-	alice := sdk.AccAddress([]byte("alice___________"))
-
-	_, err := ms.FundConsumerFeePool(ctx, &providertypes.MsgFundConsumerFeePool{
-		Signer: alice.String(), ConsumerId: 999,
-		Amount: sdk.NewInt64Coin("uphoton", 1),
-	})
-	require.ErrorIs(t, err, providertypes.ErrUnknownConsumerId)
-}
-
-// TestFundConsumerFeePool_AllowedInActivePhases verifies fund is accepted in
-// every phase except DELETED (REGISTERED, INITIALIZED, LAUNCHED, STOPPED).
-func TestFundConsumerFeePool_AllowedInActivePhases(t *testing.T) {
-	allowedPhases := []providertypes.ConsumerPhase{
-		providertypes.CONSUMER_PHASE_REGISTERED,
-		providertypes.CONSUMER_PHASE_INITIALIZED,
-		providertypes.CONSUMER_PHASE_LAUNCHED,
-		providertypes.CONSUMER_PHASE_STOPPED,
+	// regularSuccessMocks sets up the 3 bank calls for a normal (non-gov) fund.
+	regularSuccessMocks := func(mocks testkeeper.MockedKeepers, ctx sdk.Context, poolAddr sdk.AccAddress, coins sdk.Coins) {
+		mocks.MockBankKeeper.EXPECT().GetBalance(ctx, poolAddr, coins[0].Denom).
+			Return(sdk.NewInt64Coin(coins[0].Denom, 0))
+		mocks.MockBankKeeper.EXPECT().SendCoinsFromAccountToModule(
+			ctx, alice, providertypes.ModuleName, coins).Return(nil)
+		mocks.MockBankKeeper.EXPECT().SendCoinsFromModuleToAccount(
+			ctx, providertypes.ModuleName, poolAddr, coins).Return(nil)
 	}
-	for _, phase := range allowedPhases {
-		t.Run(phase.String(), func(t *testing.T) {
+
+	testCases := []struct {
+		name             string
+		phase            providertypes.ConsumerPhase
+		register         bool // whether to register a consumer
+		consumerId       uint64
+		govSigner        bool
+		feesAmount       int64 // amount for FeesPerBlock param (default 10)
+		minDepositBlocks uint64
+		amount           sdk.Coin
+		setupMocks       func(mocks testkeeper.MockedKeepers, ctx sdk.Context, poolAddr sdk.AccAddress)
+		wantErr          error
+		postCheck        func(t *testing.T, k providerkeeper.Keeper, ctx sdk.Context, consumerId uint64)
+	}{
+		{
+			name:     "regular signer in REGISTERED mints shares",
+			phase:    providertypes.CONSUMER_PHASE_REGISTERED,
+			register: true,
+			amount:   sdk.NewInt64Coin("uphoton", 200_000),
+			setupMocks: func(mocks testkeeper.MockedKeepers, ctx sdk.Context, poolAddr sdk.AccAddress) {
+				coins := sdk.NewCoins(sdk.NewInt64Coin("uphoton", 200_000))
+				regularSuccessMocks(mocks, ctx, poolAddr, coins)
+			},
+			postCheck: func(t *testing.T, k providerkeeper.Keeper, ctx sdk.Context, consumerId uint64) {
+				shares, _ := k.ConsumerFeePoolShares.Get(ctx, collections.Join3(consumerId, "uphoton", alice))
+				require.Equal(t, math.NewInt(200_000), shares)
+			},
+		},
+		{
+			name:     "allowed in INITIALIZED",
+			phase:    providertypes.CONSUMER_PHASE_INITIALIZED,
+			register: true,
+			amount:   sdk.NewInt64Coin("uphoton", 200_000),
+			setupMocks: func(mocks testkeeper.MockedKeepers, ctx sdk.Context, poolAddr sdk.AccAddress) {
+				coins := sdk.NewCoins(sdk.NewInt64Coin("uphoton", 200_000))
+				regularSuccessMocks(mocks, ctx, poolAddr, coins)
+			},
+		},
+		{
+			name:     "allowed in LAUNCHED",
+			phase:    providertypes.CONSUMER_PHASE_LAUNCHED,
+			register: true,
+			amount:   sdk.NewInt64Coin("uphoton", 200_000),
+			setupMocks: func(mocks testkeeper.MockedKeepers, ctx sdk.Context, poolAddr sdk.AccAddress) {
+				coins := sdk.NewCoins(sdk.NewInt64Coin("uphoton", 200_000))
+				regularSuccessMocks(mocks, ctx, poolAddr, coins)
+			},
+		},
+		{
+			name:     "allowed in STOPPED",
+			phase:    providertypes.CONSUMER_PHASE_STOPPED,
+			register: true,
+			amount:   sdk.NewInt64Coin("uphoton", 200_000),
+			setupMocks: func(mocks testkeeper.MockedKeepers, ctx sdk.Context, poolAddr sdk.AccAddress) {
+				coins := sdk.NewCoins(sdk.NewInt64Coin("uphoton", 200_000))
+				regularSuccessMocks(mocks, ctx, poolAddr, coins)
+			},
+		},
+		{
+			name:      "gov authority mints distribution-module shares",
+			phase:     providertypes.CONSUMER_PHASE_REGISTERED,
+			register:  true,
+			govSigner: true,
+			amount:    sdk.NewInt64Coin("uphoton", 200_000),
+			setupMocks: func(mocks testkeeper.MockedKeepers, ctx sdk.Context, poolAddr sdk.AccAddress) {
+				coins := sdk.NewCoins(sdk.NewInt64Coin("uphoton", 200_000))
+				mocks.MockBankKeeper.EXPECT().GetBalance(ctx, poolAddr, "uphoton").
+					Return(sdk.NewInt64Coin("uphoton", 0))
+				mocks.MockDistributionKeeper.EXPECT().DistributeFromFeePool(
+					ctx, coins, poolAddr).Return(nil)
+			},
+			postCheck: func(t *testing.T, k providerkeeper.Keeper, ctx sdk.Context, consumerId uint64) {
+				shares, _ := k.ConsumerFeePoolShares.Get(ctx, collections.Join3(consumerId, "uphoton", distrAddr))
+				require.Equal(t, math.NewInt(200_000), shares)
+			},
+		},
+		{
+			name:       "rejects unknown consumer",
+			register:   false,
+			consumerId: 999,
+			amount:     sdk.NewInt64Coin("uphoton", 1),
+			wantErr:    providertypes.ErrUnknownConsumerId,
+		},
+		{
+			name:     "rejects deleted",
+			phase:    providertypes.CONSUMER_PHASE_DELETED,
+			register: true,
+			amount:   sdk.NewInt64Coin("uphoton", 1),
+			wantErr:  providertypes.ErrInvalidPhase,
+		},
+		{
+			name:     "rejects wrong denom",
+			phase:    providertypes.CONSUMER_PHASE_REGISTERED,
+			register: true,
+			amount:   sdk.NewInt64Coin("uatone", 1),
+			wantErr:  providertypes.ErrInvalidFundDenom,
+		},
+		{
+			name:             "below floor rejected",
+			phase:            providertypes.CONSUMER_PHASE_REGISTERED,
+			register:         true,
+			feesAmount:       1000,
+			minDepositBlocks: providertypes.DefaultMinDepositBlocks,
+			amount:           sdk.NewInt64Coin("uphoton", 1000),
+			wantErr:          providertypes.ErrDepositBelowMinimum,
+		},
+		{
+			name:             "below floor rejected for gov too",
+			phase:            providertypes.CONSUMER_PHASE_REGISTERED,
+			register:         true,
+			govSigner:        true,
+			feesAmount:       1000,
+			minDepositBlocks: providertypes.DefaultMinDepositBlocks,
+			amount:           sdk.NewInt64Coin("uphoton", 1000),
+			wantErr:          providertypes.ErrDepositBelowMinimum,
+		},
+		{
+			name:             "floor disabled when param is zero",
+			phase:            providertypes.CONSUMER_PHASE_REGISTERED,
+			register:         true,
+			minDepositBlocks: 0,
+			amount:           sdk.NewInt64Coin("uphoton", 1),
+			setupMocks: func(mocks testkeeper.MockedKeepers, ctx sdk.Context, poolAddr sdk.AccAddress) {
+				coins := sdk.NewCoins(sdk.NewInt64Coin("uphoton", 1))
+				regularSuccessMocks(mocks, ctx, poolAddr, coins)
+			},
+		},
+	}
+
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
 			k, ctx, ctrl, mocks := testkeeper.GetProviderKeeperAndCtx(t, testkeeper.NewInMemKeeperParams(t))
 			defer ctrl.Finish()
-			ms := providerkeeper.NewMsgServerImpl(&k)
 
-			consumerId := k.FetchAndIncrementConsumerId(ctx)
-			k.SetConsumerPhase(ctx, consumerId, phase)
 			k.SetParams(ctx, providertypes.DefaultParams())
 			params := k.GetParams(ctx)
-			params.FeesPerBlock = sdk.NewInt64Coin("uphoton", 10)
+			feesAmount := tc.feesAmount
+			if feesAmount == 0 {
+				feesAmount = 10
+			}
+			params.FeesPerBlock = sdk.NewInt64Coin("uphoton", feesAmount)
+			params.MinDepositBlocks = tc.minDepositBlocks
 			k.SetParams(ctx, params)
 
-			alice := sdk.AccAddress([]byte("alice___________"))
-			poolAddr := k.GetConsumerFeePoolAddress(consumerId)
-			amount := sdk.NewInt64Coin("uphoton", 200_000)
+			consumerId := tc.consumerId
+			var poolAddr sdk.AccAddress
+			if tc.register {
+				consumerId = k.FetchAndIncrementConsumerId(ctx)
+				k.SetConsumerPhase(ctx, consumerId, tc.phase)
+				poolAddr = k.GetConsumerFeePoolAddress(consumerId)
+			}
 
-			mocks.MockBankKeeper.EXPECT().GetBalance(ctx, poolAddr, "uphoton").
-				Return(sdk.NewInt64Coin("uphoton", 0))
-			mocks.MockBankKeeper.EXPECT().SendCoinsFromAccountToModule(
-				ctx, alice, providertypes.ModuleName, sdk.NewCoins(amount)).Return(nil)
-			mocks.MockBankKeeper.EXPECT().SendCoinsFromModuleToAccount(
-				ctx, providertypes.ModuleName, poolAddr, sdk.NewCoins(amount)).Return(nil)
+			if tc.setupMocks != nil {
+				tc.setupMocks(mocks, ctx, poolAddr)
+			}
 
+			ms := providerkeeper.NewMsgServerImpl(&k)
+			signer := alice.String()
+			if tc.govSigner {
+				signer = k.GetAuthority()
+			}
 			_, err := ms.FundConsumerFeePool(ctx, &providertypes.MsgFundConsumerFeePool{
-				Signer: alice.String(), ConsumerId: consumerId, Amount: amount,
+				Signer:     signer,
+				ConsumerId: consumerId,
+				Amount:     tc.amount,
 			})
-			require.NoError(t, err)
+			if tc.wantErr != nil {
+				require.ErrorIs(t, err, tc.wantErr)
+			} else {
+				require.NoError(t, err)
+			}
+
+			if tc.postCheck != nil {
+				tc.postCheck(t, k, ctx, consumerId)
+			}
 		})
 	}
 }
 
-func TestFundConsumerFeePool_RejectsDeleted(t *testing.T) {
-	k, ctx, ctrl, _ := testkeeper.GetProviderKeeperAndCtx(t, testkeeper.NewInMemKeeperParams(t))
-	defer ctrl.Finish()
-	ms := providerkeeper.NewMsgServerImpl(&k)
-
-	consumerId := k.FetchAndIncrementConsumerId(ctx)
-	k.SetConsumerPhase(ctx, consumerId, providertypes.CONSUMER_PHASE_DELETED)
+func TestWithdrawConsumerFeePool(t *testing.T) {
 	alice := sdk.AccAddress([]byte("alice___________"))
-
-	_, err := ms.FundConsumerFeePool(ctx, &providertypes.MsgFundConsumerFeePool{
-		Signer: alice.String(), ConsumerId: consumerId,
-		Amount: sdk.NewInt64Coin("uphoton", 1),
-	})
-	require.ErrorIs(t, err, providertypes.ErrInvalidPhase)
-}
-
-func TestWithdrawConsumerFeePool_Regular(t *testing.T) {
-	k, ctx, ctrl, mocks := testkeeper.GetProviderKeeperAndCtx(t, testkeeper.NewInMemKeeperParams(t))
-	defer ctrl.Finish()
-	ms := providerkeeper.NewMsgServerImpl(&k)
-
-	consumerId := k.FetchAndIncrementConsumerId(ctx)
-	k.SetConsumerPhase(ctx, consumerId, providertypes.CONSUMER_PHASE_STOPPED)
-	alice := sdk.AccAddress([]byte("alice___________"))
-	poolAddr := k.GetConsumerFeePoolAddress(consumerId)
-
-	// alice sole depositor: 100 shares, balance 80
-	require.NoError(t, k.ConsumerFeePoolShares.Set(ctx,
-		collections.Join3(consumerId, "uphoton", alice), math.NewInt(100)))
-	require.NoError(t, k.ConsumerFeePoolTotalShares.Set(ctx,
-		collections.Join(consumerId, "uphoton"), math.NewInt(100)))
-
-	mocks.MockBankKeeper.EXPECT().GetBalance(ctx, poolAddr, "uphoton").
-		Return(sdk.NewInt64Coin("uphoton", 80))
-	// alice asks for 30, partial path: shares_to_burn = 30*100/80 = 37, tokens = 37*80/100 = 29.
-	mocks.MockBankKeeper.EXPECT().SendCoinsFromAccountToModule(
-		ctx, poolAddr, providertypes.ModuleName, sdk.NewCoins(sdk.NewInt64Coin("uphoton", 29))).Return(nil)
-	mocks.MockBankKeeper.EXPECT().SendCoinsFromModuleToAccount(
-		ctx, providertypes.ModuleName, alice, sdk.NewCoins(sdk.NewInt64Coin("uphoton", 29))).Return(nil)
-
-	resp, err := ms.WithdrawConsumerFeePool(ctx, &providertypes.MsgWithdrawConsumerFeePool{
-		Signer: alice.String(), ConsumerId: consumerId,
-		Amount: sdk.NewCoins(sdk.NewInt64Coin("uphoton", 30)),
-	})
-	require.NoError(t, err)
-	require.Equal(t, "29uphoton", resp.Amount.String())
-}
-
-func TestWithdrawConsumerFeePool_GovClawback(t *testing.T) {
-	k, ctx, ctrl, mocks := testkeeper.GetProviderKeeperAndCtx(t, testkeeper.NewInMemKeeperParams(t))
-	defer ctrl.Finish()
-	ms := providerkeeper.NewMsgServerImpl(&k)
-
-	consumerId := k.FetchAndIncrementConsumerId(ctx)
-	k.SetConsumerPhase(ctx, consumerId, providertypes.CONSUMER_PHASE_LAUNCHED)
+	depositor := sdk.AccAddress([]byte("depositor_______"))
 	distrAddr := authtypes.NewModuleAddress(disttypes.ModuleName)
 	providerAddr := authtypes.NewModuleAddress(providertypes.ModuleName)
-	poolAddr := k.GetConsumerFeePoolAddress(consumerId)
 
-	require.NoError(t, k.ConsumerFeePoolShares.Set(ctx,
-		collections.Join3(consumerId, "uphoton", distrAddr), math.NewInt(100)))
-	require.NoError(t, k.ConsumerFeePoolTotalShares.Set(ctx,
-		collections.Join(consumerId, "uphoton"), math.NewInt(100)))
+	testCases := []struct {
+		name       string
+		register   bool
+		consumerId uint64
+		phase      providertypes.ConsumerPhase
+		signer     sdk.AccAddress // nil = depositor; govSigner overrides to k.GetAuthority()
+		govSigner  bool
+		setup      func(k providerkeeper.Keeper, ctx sdk.Context, mocks testkeeper.MockedKeepers, consumerId uint64, poolAddr sdk.AccAddress)
+		amount     sdk.Coins
+		wantErr    error
+		postCheck  func(t *testing.T, resp *providertypes.MsgWithdrawConsumerFeePoolResponse)
+	}{
+		{
+			name:       "unknown consumer",
+			register:   false,
+			consumerId: 999,
+			amount:     sdk.NewCoins(sdk.NewInt64Coin("uphoton", 50)),
+			wantErr:    providertypes.ErrUnknownConsumerId,
+		},
+		{
+			name:     "deleted consumer",
+			register: true,
+			phase:    providertypes.CONSUMER_PHASE_DELETED,
+			amount:   sdk.NewCoins(sdk.NewInt64Coin("uphoton", 50)),
+			wantErr:  providertypes.ErrInvalidPhase,
+		},
+		{
+			name:     "locked during launched (non-gov)",
+			register: true,
+			phase:    providertypes.CONSUMER_PHASE_LAUNCHED,
+			amount:   sdk.NewCoins(sdk.NewInt64Coin("uphoton", 50)),
+			wantErr:  providertypes.ErrFeePoolLocked,
+		},
+		{
+			// alice sole depositor: 100 shares, balance 80.
+			// alice asks for 30, partial path: shares_to_burn = 30*100/80 = 37, tokens = 37*80/100 = 29.
+			name:     "regular partial withdraw during stopped",
+			register: true,
+			phase:    providertypes.CONSUMER_PHASE_STOPPED,
+			signer:   alice,
+			amount:   sdk.NewCoins(sdk.NewInt64Coin("uphoton", 30)),
+			setup: func(k providerkeeper.Keeper, ctx sdk.Context, mocks testkeeper.MockedKeepers, consumerId uint64, poolAddr sdk.AccAddress) {
+				require.NoError(t, k.ConsumerFeePoolShares.Set(ctx,
+					collections.Join3(consumerId, "uphoton", alice), math.NewInt(100)))
+				require.NoError(t, k.ConsumerFeePoolTotalShares.Set(ctx,
+					collections.Join(consumerId, "uphoton"), math.NewInt(100)))
+				mocks.MockBankKeeper.EXPECT().GetBalance(ctx, poolAddr, "uphoton").
+					Return(sdk.NewInt64Coin("uphoton", 80))
+				mocks.MockBankKeeper.EXPECT().SendCoinsFromAccountToModule(
+					ctx, poolAddr, providertypes.ModuleName, sdk.NewCoins(sdk.NewInt64Coin("uphoton", 29))).Return(nil)
+				mocks.MockBankKeeper.EXPECT().SendCoinsFromModuleToAccount(
+					ctx, providertypes.ModuleName, alice, sdk.NewCoins(sdk.NewInt64Coin("uphoton", 29))).Return(nil)
+			},
+			postCheck: func(t *testing.T, resp *providertypes.MsgWithdrawConsumerFeePoolResponse) {
+				require.Equal(t, "29uphoton", resp.Amount.String())
+			},
+		},
+		{
+			name:      "gov clawback during launched",
+			register:  true,
+			phase:     providertypes.CONSUMER_PHASE_LAUNCHED,
+			govSigner: true,
+			amount:    sdk.NewCoins(sdk.NewInt64Coin("uphoton", 1_000_000)),
+			setup: func(k providerkeeper.Keeper, ctx sdk.Context, mocks testkeeper.MockedKeepers, consumerId uint64, poolAddr sdk.AccAddress) {
+				require.NoError(t, k.ConsumerFeePoolShares.Set(ctx,
+					collections.Join3(consumerId, "uphoton", distrAddr), math.NewInt(100)))
+				require.NoError(t, k.ConsumerFeePoolTotalShares.Set(ctx,
+					collections.Join(consumerId, "uphoton"), math.NewInt(100)))
+				mocks.MockBankKeeper.EXPECT().GetBalance(ctx, poolAddr, "uphoton").
+					Return(sdk.NewInt64Coin("uphoton", 100))
+				mocks.MockBankKeeper.EXPECT().SendCoinsFromAccountToModule(
+					ctx, poolAddr, providertypes.ModuleName, sdk.NewCoins(sdk.NewInt64Coin("uphoton", 100))).Return(nil)
+				mocks.MockDistributionKeeper.EXPECT().FundCommunityPool(
+					ctx, sdk.NewCoins(sdk.NewInt64Coin("uphoton", 100)), providerAddr).Return(nil)
+			},
+		},
+	}
 
-	mocks.MockBankKeeper.EXPECT().GetBalance(ctx, poolAddr, "uphoton").
-		Return(sdk.NewInt64Coin("uphoton", 100))
-	mocks.MockBankKeeper.EXPECT().SendCoinsFromAccountToModule(
-		ctx, poolAddr, providertypes.ModuleName, sdk.NewCoins(sdk.NewInt64Coin("uphoton", 100))).Return(nil)
-	// Gov clawback: tokens forwarded to community pool via FundCommunityPool.
-	mocks.MockDistributionKeeper.EXPECT().FundCommunityPool(
-		ctx, sdk.NewCoins(sdk.NewInt64Coin("uphoton", 100)), providerAddr).Return(nil)
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			k, ctx, ctrl, mocks := testkeeper.GetProviderKeeperAndCtx(t, testkeeper.NewInMemKeeperParams(t))
+			defer ctrl.Finish()
 
-	_, err := ms.WithdrawConsumerFeePool(ctx, &providertypes.MsgWithdrawConsumerFeePool{
-		Signer: k.GetAuthority(), ConsumerId: consumerId,
-		Amount: sdk.NewCoins(sdk.NewInt64Coin("uphoton", 1_000_000)),
-	})
-	require.NoError(t, err)
+			consumerId := tc.consumerId
+			var poolAddr sdk.AccAddress
+			if tc.register {
+				consumerId = k.FetchAndIncrementConsumerId(ctx)
+				k.SetConsumerPhase(ctx, consumerId, tc.phase)
+				poolAddr = k.GetConsumerFeePoolAddress(consumerId)
+			}
+
+			if tc.setup != nil {
+				tc.setup(k, ctx, mocks, consumerId, poolAddr)
+			}
+
+			var signer string
+			switch {
+			case tc.govSigner:
+				signer = k.GetAuthority()
+			case tc.signer != nil:
+				signer = tc.signer.String()
+			default:
+				signer = depositor.String()
+			}
+
+			ms := providerkeeper.NewMsgServerImpl(&k)
+			resp, err := ms.WithdrawConsumerFeePool(ctx, &providertypes.MsgWithdrawConsumerFeePool{
+				Signer:     signer,
+				ConsumerId: consumerId,
+				Amount:     tc.amount,
+			})
+			if tc.wantErr != nil {
+				require.ErrorIs(t, err, tc.wantErr)
+			} else {
+				require.NoError(t, err)
+			}
+
+			if tc.postCheck != nil {
+				tc.postCheck(t, resp)
+			}
+		})
+	}
 }
 
-func TestSweepConsumerFeePool_OwnerOnly(t *testing.T) {
-	k, ctx, ctrl, _ := testkeeper.GetProviderKeeperAndCtx(t, testkeeper.NewInMemKeeperParams(t))
-	defer ctrl.Finish()
-	ms := providerkeeper.NewMsgServerImpl(&k)
-
-	consumerId := k.FetchAndIncrementConsumerId(ctx)
-	k.SetConsumerPhase(ctx, consumerId, providertypes.CONSUMER_PHASE_STOPPED)
-	// Use a valid bech32 owner address
+func TestSweepConsumerFeePool(t *testing.T) {
 	owner := sdk.AccAddress([]byte("owner___________"))
-	k.SetConsumerOwnerAddress(ctx, consumerId, owner.String())
-
-	notOwner := sdk.AccAddress([]byte("not-owner_______"))
-	_, err := ms.SweepConsumerFeePool(ctx, &providertypes.MsgSweepConsumerFeePool{
-		Signer: notOwner.String(), ConsumerId: consumerId, Denoms: nil,
-	})
-	require.ErrorIs(t, err, providertypes.ErrUnauthorized)
-}
-
-func TestSweepConsumerFeePool_OwnerTriggers(t *testing.T) {
-	k, ctx, ctrl, mocks := testkeeper.GetProviderKeeperAndCtx(t, testkeeper.NewInMemKeeperParams(t))
-	defer ctrl.Finish()
-	ms := providerkeeper.NewMsgServerImpl(&k)
-
-	consumerId := k.FetchAndIncrementConsumerId(ctx)
-	k.SetConsumerPhase(ctx, consumerId, providertypes.CONSUMER_PHASE_STOPPED)
-	owner := sdk.AccAddress([]byte("owner___________"))
-	k.SetConsumerOwnerAddress(ctx, consumerId, owner.String())
-
-	alice := sdk.AccAddress([]byte("alice___________"))
-	poolAddr := k.GetConsumerFeePoolAddress(consumerId)
-	require.NoError(t, k.ConsumerFeePoolShares.Set(ctx,
-		collections.Join3(consumerId, "uphoton", alice), math.NewInt(100)))
-	require.NoError(t, k.ConsumerFeePoolTotalShares.Set(ctx,
-		collections.Join(consumerId, "uphoton"), math.NewInt(100)))
-
-	mocks.MockBankKeeper.EXPECT().GetAllBalances(ctx, poolAddr).
-		Return(sdk.NewCoins(sdk.NewInt64Coin("uphoton", 100)))
-	mocks.MockBankKeeper.EXPECT().GetBalance(ctx, poolAddr, "uphoton").
-		Return(sdk.NewInt64Coin("uphoton", 100))
-	mocks.MockBankKeeper.EXPECT().SendCoinsFromAccountToModule(
-		ctx, poolAddr, providertypes.ModuleName, sdk.NewCoins(sdk.NewInt64Coin("uphoton", 100))).Return(nil)
-	mocks.MockBankKeeper.EXPECT().SendCoinsFromModuleToAccount(
-		ctx, providertypes.ModuleName, alice, sdk.NewCoins(sdk.NewInt64Coin("uphoton", 100))).Return(nil)
-
-	_, err := ms.SweepConsumerFeePool(ctx, &providertypes.MsgSweepConsumerFeePool{
-		Signer: owner.String(), ConsumerId: consumerId, Denoms: nil,
-	})
-	require.NoError(t, err)
-}
-
-func TestFundConsumerFeePool_RejectsWrongDenom(t *testing.T) {
-	k, ctx, ctrl, _ := testkeeper.GetProviderKeeperAndCtx(t, testkeeper.NewInMemKeeperParams(t))
-	defer ctrl.Finish()
-	ms := providerkeeper.NewMsgServerImpl(&k)
-
-	consumerId := k.FetchAndIncrementConsumerId(ctx)
-	k.SetConsumerPhase(ctx, consumerId, providertypes.CONSUMER_PHASE_REGISTERED)
-	k.SetParams(ctx, providertypes.DefaultParams())
-	params := k.GetParams(ctx)
-	params.FeesPerBlock = sdk.NewInt64Coin("uphoton", 10)
-	k.SetParams(ctx, params)
 	alice := sdk.AccAddress([]byte("alice___________"))
 
-	_, err := ms.FundConsumerFeePool(ctx, &providertypes.MsgFundConsumerFeePool{
-		Signer: alice.String(), ConsumerId: consumerId,
-		Amount: sdk.NewInt64Coin("uatone", 1),
-	})
-	require.ErrorIs(t, err, providertypes.ErrInvalidFundDenom)
-}
+	testCases := []struct {
+		name       string
+		register   bool
+		consumerId uint64
+		phase      providertypes.ConsumerPhase
+		setOwner   bool
+		signer     sdk.AccAddress
+		setup      func(k providerkeeper.Keeper, ctx sdk.Context, mocks testkeeper.MockedKeepers, consumerId uint64, poolAddr sdk.AccAddress)
+		wantErr    error
+	}{
+		{
+			name:       "unknown consumer",
+			register:   false,
+			consumerId: 999,
+			signer:     owner,
+			wantErr:    providertypes.ErrUnknownConsumerId,
+		},
+		{
+			name:     "deleted consumer",
+			register: true,
+			phase:    providertypes.CONSUMER_PHASE_DELETED,
+			setOwner: true,
+			signer:   owner,
+			wantErr:  providertypes.ErrInvalidPhase,
+		},
+		{
+			name:     "locked during launched",
+			register: true,
+			phase:    providertypes.CONSUMER_PHASE_LAUNCHED,
+			setOwner: true,
+			signer:   owner,
+			wantErr:  providertypes.ErrFeePoolLocked,
+		},
+		{
+			name:     "non-owner rejected",
+			register: true,
+			phase:    providertypes.CONSUMER_PHASE_STOPPED,
+			setOwner: true,
+			signer:   sdk.AccAddress([]byte("not-owner_______")),
+			wantErr:  providertypes.ErrUnauthorized,
+		},
+		{
+			name:     "owner triggers sweep",
+			register: true,
+			phase:    providertypes.CONSUMER_PHASE_STOPPED,
+			setOwner: true,
+			signer:   owner,
+			setup: func(k providerkeeper.Keeper, ctx sdk.Context, mocks testkeeper.MockedKeepers, consumerId uint64, poolAddr sdk.AccAddress) {
+				require.NoError(t, k.ConsumerFeePoolShares.Set(ctx,
+					collections.Join3(consumerId, "uphoton", alice), math.NewInt(100)))
+				require.NoError(t, k.ConsumerFeePoolTotalShares.Set(ctx,
+					collections.Join(consumerId, "uphoton"), math.NewInt(100)))
+				mocks.MockBankKeeper.EXPECT().GetAllBalances(ctx, poolAddr).
+					Return(sdk.NewCoins(sdk.NewInt64Coin("uphoton", 100)))
+				mocks.MockBankKeeper.EXPECT().GetBalance(ctx, poolAddr, "uphoton").
+					Return(sdk.NewInt64Coin("uphoton", 100))
+				mocks.MockBankKeeper.EXPECT().SendCoinsFromAccountToModule(
+					ctx, poolAddr, providertypes.ModuleName, sdk.NewCoins(sdk.NewInt64Coin("uphoton", 100))).Return(nil)
+				mocks.MockBankKeeper.EXPECT().SendCoinsFromModuleToAccount(
+					ctx, providertypes.ModuleName, alice, sdk.NewCoins(sdk.NewInt64Coin("uphoton", 100))).Return(nil)
+			},
+		},
+	}
 
-func TestFundConsumerFeePool_RejectsBelowMinDeposit(t *testing.T) {
-	k, ctx, ctrl, _ := testkeeper.GetProviderKeeperAndCtx(t, testkeeper.NewInMemKeeperParams(t))
-	defer ctrl.Finish()
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			k, ctx, ctrl, mocks := testkeeper.GetProviderKeeperAndCtx(t, testkeeper.NewInMemKeeperParams(t))
+			defer ctrl.Finish()
 
-	// Default params: fees_per_block = 1000uphoton, min_deposit_blocks = 14400
-	// -> floor = 14_400_000uphoton.
-	k.SetParams(ctx, providertypes.DefaultParams())
+			consumerId := tc.consumerId
+			var poolAddr sdk.AccAddress
+			if tc.register {
+				consumerId = k.FetchAndIncrementConsumerId(ctx)
+				k.SetConsumerPhase(ctx, consumerId, tc.phase)
+				poolAddr = k.GetConsumerFeePoolAddress(consumerId)
+			}
+			if tc.setOwner {
+				k.SetConsumerOwnerAddress(ctx, consumerId, owner.String())
+			}
 
-	consumerId := k.FetchAndIncrementConsumerId(ctx)
-	k.SetConsumerPhase(ctx, consumerId, providertypes.CONSUMER_PHASE_REGISTERED)
+			if tc.setup != nil {
+				tc.setup(k, ctx, mocks, consumerId, poolAddr)
+			}
 
-	ms := providerkeeper.NewMsgServerImpl(&k)
-	signer := sdk.AccAddress([]byte("funder__________")).String()
-	_, err := ms.FundConsumerFeePool(ctx, &providertypes.MsgFundConsumerFeePool{
-		Signer:     signer,
-		ConsumerId: consumerId,
-		Amount:     sdk.NewInt64Coin(providertypes.DefaultFeesPerBlockDenom, 1000),
-	})
-	require.ErrorIs(t, err, providertypes.ErrDepositBelowMinimum)
-}
-
-func TestFundConsumerFeePool_RejectsBelowMinDeposit_GovSigner(t *testing.T) {
-	k, ctx, ctrl, _ := testkeeper.GetProviderKeeperAndCtx(t, testkeeper.NewInMemKeeperParams(t))
-	defer ctrl.Finish()
-	k.SetParams(ctx, providertypes.DefaultParams())
-
-	consumerId := k.FetchAndIncrementConsumerId(ctx)
-	k.SetConsumerPhase(ctx, consumerId, providertypes.CONSUMER_PHASE_REGISTERED)
-
-	ms := providerkeeper.NewMsgServerImpl(&k)
-	_, err := ms.FundConsumerFeePool(ctx, &providertypes.MsgFundConsumerFeePool{
-		Signer:     k.GetAuthority(),
-		ConsumerId: consumerId,
-		Amount:     sdk.NewInt64Coin(providertypes.DefaultFeesPerBlockDenom, 1000),
-	})
-	require.ErrorIs(t, err, providertypes.ErrDepositBelowMinimum,
-		"gov authority must respect the same floor as any other depositor")
-}
-
-func TestFundConsumerFeePool_FloorDisabledWhenParamZero(t *testing.T) {
-	k, ctx, ctrl, mocks := testkeeper.GetProviderKeeperAndCtx(t, testkeeper.NewInMemKeeperParams(t))
-	defer ctrl.Finish()
-
-	params := providertypes.DefaultParams()
-	params.MinDepositBlocks = 0
-	k.SetParams(ctx, params)
-
-	consumerId := k.FetchAndIncrementConsumerId(ctx)
-	k.SetConsumerPhase(ctx, consumerId, providertypes.CONSUMER_PHASE_REGISTERED)
-	poolAddr := k.GetConsumerFeePoolAddress(consumerId)
-
-	signer := sdk.AccAddress([]byte("funder__________"))
-	amount := sdk.NewInt64Coin(providertypes.DefaultFeesPerBlockDenom, 1)
-	coins := sdk.NewCoins(amount)
-	mocks.MockBankKeeper.EXPECT().SendCoinsFromAccountToModule(
-		ctx, signer, providertypes.ModuleName, coins).Return(nil)
-	mocks.MockBankKeeper.EXPECT().GetBalance(ctx, poolAddr, amount.Denom).
-		Return(sdk.NewInt64Coin(amount.Denom, 0))
-	mocks.MockBankKeeper.EXPECT().SendCoinsFromModuleToAccount(
-		ctx, providertypes.ModuleName, poolAddr, coins).Return(nil)
-
-	ms := providerkeeper.NewMsgServerImpl(&k)
-	_, err := ms.FundConsumerFeePool(ctx, &providertypes.MsgFundConsumerFeePool{
-		Signer:     signer.String(),
-		ConsumerId: consumerId,
-		Amount:     amount,
-	})
-	require.NoError(t, err, "min_deposit_blocks=0 must disable the floor")
-}
-
-func TestWithdrawConsumerFeePool_BlockedDuringLaunched(t *testing.T) {
-	k, ctx, ctrl, _ := testkeeper.GetProviderKeeperAndCtx(t, testkeeper.NewInMemKeeperParams(t))
-	defer ctrl.Finish()
-
-	consumerId := k.FetchAndIncrementConsumerId(ctx)
-	k.SetConsumerPhase(ctx, consumerId, providertypes.CONSUMER_PHASE_LAUNCHED)
-
-	signer := sdk.AccAddress([]byte("depositor_______")).String()
-	ms := providerkeeper.NewMsgServerImpl(&k)
-	_, err := ms.WithdrawConsumerFeePool(ctx, &providertypes.MsgWithdrawConsumerFeePool{
-		Signer:     signer,
-		ConsumerId: consumerId,
-		Amount:     sdk.NewCoins(sdk.NewInt64Coin("uphoton", 100)),
-	})
-	require.ErrorIs(t, err, providertypes.ErrFeePoolLocked)
-}
-
-func TestWithdrawConsumerFeePool_AllowedDuringLaunched_GovBypass(t *testing.T) {
-	k, ctx, ctrl, mocks := testkeeper.GetProviderKeeperAndCtx(t, testkeeper.NewInMemKeeperParams(t))
-	defer ctrl.Finish()
-
-	consumerId := k.FetchAndIncrementConsumerId(ctx)
-	k.SetConsumerPhase(ctx, consumerId, providertypes.CONSUMER_PHASE_LAUNCHED)
-	poolAddr := k.GetConsumerFeePoolAddress(consumerId)
-	distrAddr := authtypes.NewModuleAddress(disttypes.ModuleName)
-
-	// Seed gov-as-depositor shares so the withdraw can actually transfer something.
-	require.NoError(t, k.ConsumerFeePoolShares.Set(ctx,
-		collections.Join3(consumerId, "uphoton", distrAddr), math.NewInt(100)))
-	require.NoError(t, k.ConsumerFeePoolTotalShares.Set(ctx,
-		collections.Join(consumerId, "uphoton"), math.NewInt(100)))
-
-	mocks.MockBankKeeper.EXPECT().GetBalance(ctx, poolAddr, "uphoton").
-		Return(sdk.NewInt64Coin("uphoton", 100))
-	mocks.MockBankKeeper.EXPECT().SendCoinsFromAccountToModule(
-		ctx, poolAddr, providertypes.ModuleName, sdk.NewCoins(sdk.NewInt64Coin("uphoton", 100))).
-		Return(nil)
-	mocks.MockDistributionKeeper.EXPECT().FundCommunityPool(
-		ctx, sdk.NewCoins(sdk.NewInt64Coin("uphoton", 100)),
-		authtypes.NewModuleAddress(providertypes.ModuleName),
-	).Return(nil)
-
-	ms := providerkeeper.NewMsgServerImpl(&k)
-	_, err := ms.WithdrawConsumerFeePool(ctx, &providertypes.MsgWithdrawConsumerFeePool{
-		Signer:     k.GetAuthority(),
-		ConsumerId: consumerId,
-		Amount:     sdk.NewCoins(sdk.NewInt64Coin("uphoton", 100)),
-	})
-	require.NoError(t, err, "gov authority must be able to withdraw its own shares during LAUNCHED")
-}
-
-func TestWithdrawConsumerFeePool_AllowedDuringStopped(t *testing.T) {
-	k, ctx, ctrl, mocks := testkeeper.GetProviderKeeperAndCtx(t, testkeeper.NewInMemKeeperParams(t))
-	defer ctrl.Finish()
-
-	consumerId := k.FetchAndIncrementConsumerId(ctx)
-	k.SetConsumerPhase(ctx, consumerId, providertypes.CONSUMER_PHASE_STOPPED)
-
-	depositor := sdk.AccAddress([]byte("depositor_______"))
-	poolAddr := k.GetConsumerFeePoolAddress(consumerId)
-	require.NoError(t, k.ConsumerFeePoolShares.Set(ctx,
-		collections.Join3(consumerId, "uphoton", depositor), math.NewInt(50)))
-	require.NoError(t, k.ConsumerFeePoolTotalShares.Set(ctx,
-		collections.Join(consumerId, "uphoton"), math.NewInt(50)))
-
-	mocks.MockBankKeeper.EXPECT().GetBalance(ctx, poolAddr, "uphoton").
-		Return(sdk.NewInt64Coin("uphoton", 50))
-	mocks.MockBankKeeper.EXPECT().SendCoinsFromAccountToModule(
-		ctx, poolAddr, providertypes.ModuleName, sdk.NewCoins(sdk.NewInt64Coin("uphoton", 50))).
-		Return(nil)
-	mocks.MockBankKeeper.EXPECT().SendCoinsFromModuleToAccount(
-		ctx, providertypes.ModuleName, depositor, sdk.NewCoins(sdk.NewInt64Coin("uphoton", 50))).
-		Return(nil)
-
-	ms := providerkeeper.NewMsgServerImpl(&k)
-	_, err := ms.WithdrawConsumerFeePool(ctx, &providertypes.MsgWithdrawConsumerFeePool{
-		Signer:     depositor.String(),
-		ConsumerId: consumerId,
-		Amount:     sdk.NewCoins(sdk.NewInt64Coin("uphoton", 50)),
-	})
-	require.NoError(t, err, "non-gov depositor must be able to withdraw during STOPPED")
-}
-
-func TestSweepConsumerFeePool_BlockedDuringLaunched(t *testing.T) {
-	k, ctx, ctrl, _ := testkeeper.GetProviderKeeperAndCtx(t, testkeeper.NewInMemKeeperParams(t))
-	defer ctrl.Finish()
-
-	consumerId := k.FetchAndIncrementConsumerId(ctx)
-	k.SetConsumerPhase(ctx, consumerId, providertypes.CONSUMER_PHASE_LAUNCHED)
-	owner := sdk.AccAddress([]byte("consumer-owner__")).String()
-	k.SetConsumerOwnerAddress(ctx, consumerId, owner)
-
-	ms := providerkeeper.NewMsgServerImpl(&k)
-	_, err := ms.SweepConsumerFeePool(ctx, &providertypes.MsgSweepConsumerFeePool{
-		Signer:     owner,
-		ConsumerId: consumerId,
-	})
-	require.ErrorIs(t, err, providertypes.ErrFeePoolLocked)
+			ms := providerkeeper.NewMsgServerImpl(&k)
+			_, err := ms.SweepConsumerFeePool(ctx, &providertypes.MsgSweepConsumerFeePool{
+				Signer:     tc.signer.String(),
+				ConsumerId: consumerId,
+				Denoms:     nil,
+			})
+			if tc.wantErr != nil {
+				require.ErrorIs(t, err, tc.wantErr)
+			} else {
+				require.NoError(t, err)
+			}
+		})
+	}
 }

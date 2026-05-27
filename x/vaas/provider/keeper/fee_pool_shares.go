@@ -196,9 +196,20 @@ func (k Keeper) WithdrawShares(
 // Distribution to the distribution module account uses FundCommunityPool
 // rather than a raw bank send, so the community pool's FeePool DecCoins are
 // credited correctly.
+//
+// This function does not return an error: under valid state it cannot fail.
+// The pool balance is moved into the provider module in one hop and then
+// distributed back out, so the module always holds exactly enough; depositors
+// are tx signers (never blocked module accounts) so the per-depositor sends
+// cannot be rejected; and the distribution-module depositor is paid via
+// FundCommunityPool, not a (blocked) module send. Any remaining error path is
+// a collections store/codec failure or a bank/distribution rejection that can
+// only arise from state corruption or app misconfiguration -- in those cases
+// we panic rather than return, so deletion can never be silently aborted and
+// leave a consumer stranded in STOPPED.
 func (k Keeper) SweepConsumerFeePoolDenom(
 	ctx sdk.Context, consumerId uint64, denom string,
-) error {
+) {
 	poolAddr := k.GetConsumerFeePoolAddress(consumerId)
 	balance := k.bankKeeper.GetBalance(ctx, poolAddr, denom)
 	totalKey := collections.Join(consumerId, denom)
@@ -208,11 +219,12 @@ func (k Keeper) SweepConsumerFeePoolDenom(
 	}
 
 	if balance.Amount.IsZero() && total.IsZero() {
-		return nil
+		return
 	}
 
-	// Orphan balance: should be unreachable (see MintShares; InitGenesis
-	// catches the import case). Panic in case it happens.
+	// Orphan balance: balance > 0 with no shares. Unreachable from valid ops
+	// (see MintShares; InitGenesis catches the import case), so this is a
+	// state-corruption signal.
 	if total.IsZero() {
 		panic(fmt.Sprintf(
 			"fee-pool invariant violated: consumer %d denom %s has balance %s but no shares",
@@ -223,10 +235,11 @@ func (k Keeper) SweepConsumerFeePoolDenom(
 	// Orphan shares: shares > 0 but balance == 0. Burn all shares, no transfer.
 	if balance.Amount.IsZero() {
 		if err := k.clearAllShares(ctx, consumerId, denom); err != nil {
-			return err
+			panic(fmt.Sprintf("fee-pool sweep: clear shares for consumer %d denom %s: %s",
+				consumerId, denom, err))
 		}
 		k.emitSweepEvent(ctx, consumerId, denom, math.ZeroInt(), math.ZeroInt())
-		return nil
+		return
 	}
 
 	providerModule := types.ModuleName
@@ -237,7 +250,8 @@ func (k Keeper) SweepConsumerFeePoolDenom(
 	if err := k.bankKeeper.SendCoinsFromAccountToModule(
 		ctx, poolAddr, providerModule, sdk.NewCoins(balance),
 	); err != nil {
-		return err
+		panic(fmt.Sprintf("fee-pool sweep: drain pool %s for consumer %d: %s",
+			poolAddr, consumerId, err))
 	}
 
 	// One pass: iterate share records, distribute each slice, then clear
@@ -247,18 +261,19 @@ func (k Keeper) SweepConsumerFeePoolDenom(
 	prefix := collections.NewSuperPrefixedTripleRange[uint64, string, sdk.AccAddress](consumerId, denom)
 	iter, err := k.ConsumerFeePoolShares.Iterate(ctx, prefix)
 	if err != nil {
-		return err
+		panic(fmt.Sprintf("fee-pool sweep: iterate shares for consumer %d denom %s: %s",
+			consumerId, denom, err))
 	}
 	for ; iter.Valid(); iter.Next() {
 		key, err := iter.Key()
 		if err != nil {
 			iter.Close()
-			return err
+			panic(fmt.Sprintf("fee-pool sweep: read share key: %s", err))
 		}
 		shares, err := iter.Value()
 		if err != nil {
 			iter.Close()
-			return err
+			panic(fmt.Sprintf("fee-pool sweep: read share value: %s", err))
 		}
 		slice := shares.Mul(balance.Amount).Quo(total)
 		if slice.IsZero() {
@@ -269,14 +284,16 @@ func (k Keeper) SweepConsumerFeePoolDenom(
 		if addr.Equals(distrAddr) {
 			if err := k.distributionKeeper.FundCommunityPool(ctx, coins, providerAddr); err != nil {
 				iter.Close()
-				return err
+				panic(fmt.Sprintf("fee-pool sweep: fund community pool for consumer %d denom %s: %s",
+					consumerId, denom, err))
 			}
 		} else {
 			if err := k.bankKeeper.SendCoinsFromModuleToAccount(
 				ctx, providerModule, addr, coins,
 			); err != nil {
 				iter.Close()
-				return err
+				panic(fmt.Sprintf("fee-pool sweep: pay depositor %s for consumer %d denom %s: %s",
+					addr, consumerId, denom, err))
 			}
 		}
 		distributed = distributed.Add(slice)
@@ -289,29 +306,30 @@ func (k Keeper) SweepConsumerFeePoolDenom(
 		if err := k.distributionKeeper.FundCommunityPool(
 			ctx, sdk.NewCoins(sdk.NewCoin(denom, dust)), providerAddr,
 		); err != nil {
-			return err
+			panic(fmt.Sprintf("fee-pool sweep: fund community pool dust for consumer %d denom %s: %s",
+				consumerId, denom, err))
 		}
 	}
 
 	if err := k.clearAllShares(ctx, consumerId, denom); err != nil {
-		return err
+		panic(fmt.Sprintf("fee-pool sweep: clear shares for consumer %d denom %s: %s",
+			consumerId, denom, err))
 	}
 	k.emitSweepEvent(ctx, consumerId, denom, distributed, dust)
-	return nil
 }
 
 // SweepConsumerFeePool sweeps each denom in `denoms`, or every denom that
 // has either non-zero shares or non-zero pool balance if `denoms` is nil/empty.
+// Like SweepConsumerFeePoolDenom it does not return an error: it either
+// succeeds or panics on state corruption (see that function's doc).
 func (k Keeper) SweepConsumerFeePool(
 	ctx sdk.Context, consumerId uint64, denoms []string,
-) error {
+) {
 	if len(denoms) > 0 {
 		for _, d := range denoms {
-			if err := k.SweepConsumerFeePoolDenom(ctx, consumerId, d); err != nil {
-				return err
-			}
+			k.SweepConsumerFeePoolDenom(ctx, consumerId, d)
 		}
-		return nil
+		return
 	}
 
 	// Union of denoms-with-shares and denoms-with-balance.
@@ -319,13 +337,13 @@ func (k Keeper) SweepConsumerFeePool(
 	prefix := collections.NewPrefixedPairRange[uint64, string](consumerId)
 	iter, err := k.ConsumerFeePoolTotalShares.Iterate(ctx, prefix)
 	if err != nil {
-		return err
+		panic(fmt.Sprintf("fee-pool sweep: iterate totals for consumer %d: %s", consumerId, err))
 	}
 	for ; iter.Valid(); iter.Next() {
 		key, err := iter.Key()
 		if err != nil {
 			iter.Close()
-			return err
+			panic(fmt.Sprintf("fee-pool sweep: read total key for consumer %d: %s", consumerId, err))
 		}
 		set[key.K2()] = struct{}{}
 	}
@@ -343,11 +361,8 @@ func (k Keeper) SweepConsumerFeePool(
 	}
 	sort.Strings(keys)
 	for _, d := range keys {
-		if err := k.SweepConsumerFeePoolDenom(ctx, consumerId, d); err != nil {
-			return err
-		}
+		k.SweepConsumerFeePoolDenom(ctx, consumerId, d)
 	}
-	return nil
 }
 
 // clearAllShares deletes every share record for the given (consumer, denom)

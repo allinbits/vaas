@@ -348,7 +348,7 @@ func (k Keeper) ConsumerFeePoolClaim(
 	if err != nil {
 		return nil, status.Errorf(codes.InvalidArgument, "invalid depositor: %s", err)
 	}
-	if k.isGovAuthority(depositor) {
+	if k.IsAuthority(req.Depositor) {
 		depositor = authtypes.NewModuleAddress(disttypes.ModuleName)
 	}
 

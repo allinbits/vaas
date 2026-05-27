@@ -520,7 +520,7 @@ func (k msgServer) FundConsumerFeePool(
 	if err != nil {
 		return nil, err
 	}
-	isGov := k.isGovAuthority(signerAddr)
+	isGov := k.IsAuthority(msg.Signer)
 
 	var depositor sdk.AccAddress
 	if isGov {
@@ -574,11 +574,24 @@ func (k msgServer) WithdrawConsumerFeePool(
 ) (*types.MsgWithdrawConsumerFeePoolResponse, error) {
 	ctx := sdk.UnwrapSDKContext(goCtx)
 
+	exists, err := k.ConsumerPhase.Has(ctx, msg.ConsumerId)
+	if err != nil {
+		return nil, err
+	}
+	if !exists {
+		return nil, errorsmod.Wrapf(types.ErrUnknownConsumerId,
+			"consumer %d does not exist", msg.ConsumerId)
+	}
+	if k.GetConsumerPhase(ctx, msg.ConsumerId) == types.CONSUMER_PHASE_DELETED {
+		return nil, errorsmod.Wrapf(types.ErrInvalidPhase,
+			"consumer %d is deleted", msg.ConsumerId)
+	}
+
 	signerAddr, err := sdk.AccAddressFromBech32(msg.Signer)
 	if err != nil {
 		return nil, err
 	}
-	isGov := k.isGovAuthority(signerAddr)
+	isGov := k.IsAuthority(msg.Signer)
 
 	if !isGov && k.GetConsumerPhase(ctx, msg.ConsumerId) == types.CONSUMER_PHASE_LAUNCHED {
 		return nil, errorsmod.Wrapf(types.ErrFeePoolLocked,
@@ -685,8 +698,7 @@ func (k msgServer) SweepConsumerFeePool(
 	}
 
 	// k.SweepConsumerFeePool here would recurse; call the embedded Keeper's.
-	if err := k.Keeper.SweepConsumerFeePool(ctx, msg.ConsumerId, msg.Denoms); err != nil {
-		return nil, errorsmod.Wrap(types.ErrFeePoolSweepFailed, err.Error())
-	}
+	// The sweep cannot fail under valid state; it panics on corruption.
+	k.Keeper.SweepConsumerFeePool(ctx, msg.ConsumerId, msg.Denoms)
 	return &types.MsgSweepConsumerFeePoolResponse{}, nil
 }

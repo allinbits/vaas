@@ -13,6 +13,7 @@ import (
 	"github.com/stretchr/testify/require"
 
 	testkeeper "github.com/allinbits/vaas/testutil/keeper"
+	providerkeeper "github.com/allinbits/vaas/x/vaas/provider/keeper"
 	providertypes "github.com/allinbits/vaas/x/vaas/provider/types"
 )
 
@@ -38,374 +39,409 @@ func TestComputeClaim(t *testing.T) {
 	require.Equal(t, math.NewInt(50), k.ComputeClaim(ctx, consumerId, alice, denom))
 }
 
-func TestMintShares_Initial(t *testing.T) {
-	k, ctx, ctrl, mocks := testkeeper.GetProviderKeeperAndCtx(t, testkeeper.NewInMemKeeperParams(t))
-	defer ctrl.Finish()
-
-	consumerId := uint64(0)
-	denom := "uphoton"
-	alice := sdk.AccAddress([]byte("alice___________"))
-	poolAddr := k.GetConsumerFeePoolAddress(consumerId)
-
-	// Initial deposit: total_shares == 0; mint = amount
-	mocks.MockBankKeeper.EXPECT().GetBalance(ctx, poolAddr, denom).Return(sdk.NewInt64Coin(denom, 0))
-	require.NoError(t, k.MintShares(ctx, consumerId, alice, sdk.NewInt64Coin(denom, 100)))
-
-	shares, err := k.ConsumerFeePoolShares.Get(ctx, collections.Join3(consumerId, denom, alice))
-	require.NoError(t, err)
-	require.Equal(t, math.NewInt(100), shares)
-
-	total, err := k.ConsumerFeePoolTotalShares.Get(ctx, collections.Join(consumerId, denom))
-	require.NoError(t, err)
-	require.Equal(t, math.NewInt(100), total)
-}
-
-func TestMintShares_Subsequent(t *testing.T) {
-	k, ctx, ctrl, mocks := testkeeper.GetProviderKeeperAndCtx(t, testkeeper.NewInMemKeeperParams(t))
-	defer ctrl.Finish()
-
+func TestMintShares(t *testing.T) {
 	consumerId := uint64(0)
 	denom := "uphoton"
 	alice := sdk.AccAddress([]byte("alice___________"))
 	bob := sdk.AccAddress([]byte("bob_____________"))
-	poolAddr := k.GetConsumerFeePoolAddress(consumerId)
 
-	// Seed: alice has 100 shares against balance 50 (consumed via fees)
-	require.NoError(t, k.ConsumerFeePoolShares.Set(ctx,
-		collections.Join3(consumerId, denom, alice), math.NewInt(100)))
-	require.NoError(t, k.ConsumerFeePoolTotalShares.Set(ctx,
-		collections.Join(consumerId, denom), math.NewInt(100)))
+	testCases := []struct {
+		name      string
+		setup     func(k providerkeeper.Keeper, ctx sdk.Context, mocks testkeeper.MockedKeepers, poolAddr sdk.AccAddress)
+		deposit   sdk.Coin
+		depositor sdk.AccAddress
+		wantErr   error
+		postCheck func(t *testing.T, k providerkeeper.Keeper, ctx sdk.Context)
+	}{
+		{
+			name:      "initial deposit mints amount as shares",
+			depositor: alice,
+			deposit:   sdk.NewInt64Coin(denom, 100),
+			setup: func(k providerkeeper.Keeper, ctx sdk.Context, mocks testkeeper.MockedKeepers, poolAddr sdk.AccAddress) {
+				// Initial deposit: total_shares == 0; mint = amount
+				mocks.MockBankKeeper.EXPECT().GetBalance(ctx, poolAddr, denom).Return(sdk.NewInt64Coin(denom, 0))
+			},
+			postCheck: func(t *testing.T, k providerkeeper.Keeper, ctx sdk.Context) {
+				shares, err := k.ConsumerFeePoolShares.Get(ctx, collections.Join3(consumerId, denom, alice))
+				require.NoError(t, err)
+				require.Equal(t, math.NewInt(100), shares)
 
-	// Bob deposits 100 when balance is 50 (PRE-deposit) and 150 (POST-deposit)
-	// The mint formula uses balance BEFORE the new deposit lands.
-	mocks.MockBankKeeper.EXPECT().GetBalance(ctx, poolAddr, denom).Return(sdk.NewInt64Coin(denom, 50))
-	require.NoError(t, k.MintShares(ctx, consumerId, bob, sdk.NewInt64Coin(denom, 100)))
+				total, err := k.ConsumerFeePoolTotalShares.Get(ctx, collections.Join(consumerId, denom))
+				require.NoError(t, err)
+				require.Equal(t, math.NewInt(100), total)
+			},
+		},
+		{
+			name:      "subsequent deposit proportional to existing shares",
+			depositor: bob,
+			deposit:   sdk.NewInt64Coin(denom, 100),
+			setup: func(k providerkeeper.Keeper, ctx sdk.Context, mocks testkeeper.MockedKeepers, poolAddr sdk.AccAddress) {
+				// Seed: alice has 100 shares against balance 50 (consumed via fees)
+				require.NoError(t, k.ConsumerFeePoolShares.Set(ctx,
+					collections.Join3(consumerId, denom, alice), math.NewInt(100)))
+				require.NoError(t, k.ConsumerFeePoolTotalShares.Set(ctx,
+					collections.Join(consumerId, denom), math.NewInt(100)))
+				// Bob deposits 100 when balance is 50 (PRE-deposit) and 150 (POST-deposit)
+				// The mint formula uses balance BEFORE the new deposit lands.
+				mocks.MockBankKeeper.EXPECT().GetBalance(ctx, poolAddr, denom).Return(sdk.NewInt64Coin(denom, 50))
+			},
+			postCheck: func(t *testing.T, k providerkeeper.Keeper, ctx sdk.Context) {
+				// Bob: shares = 100 * 100 / 50 = 200
+				shares, err := k.ConsumerFeePoolShares.Get(ctx, collections.Join3(consumerId, denom, bob))
+				require.NoError(t, err)
+				require.Equal(t, math.NewInt(200), shares)
 
-	// Bob: shares = 100 * 100 / 50 = 200
-	shares, err := k.ConsumerFeePoolShares.Get(ctx, collections.Join3(consumerId, denom, bob))
-	require.NoError(t, err)
-	require.Equal(t, math.NewInt(200), shares)
+				total, err := k.ConsumerFeePoolTotalShares.Get(ctx, collections.Join(consumerId, denom))
+				require.NoError(t, err)
+				require.Equal(t, math.NewInt(300), total)
+			},
+		},
+		{
+			name:      "zero balance triggers lazy invalidation of existing shares",
+			depositor: bob,
+			deposit:   sdk.NewInt64Coin(denom, 50),
+			setup: func(k providerkeeper.Keeper, ctx sdk.Context, mocks testkeeper.MockedKeepers, poolAddr sdk.AccAddress) {
+				// Seed: alice has 100 shares, balance is 0 (pool fully consumed by fees)
+				require.NoError(t, k.ConsumerFeePoolShares.Set(ctx,
+					collections.Join3(consumerId, denom, alice), math.NewInt(100)))
+				require.NoError(t, k.ConsumerFeePoolTotalShares.Set(ctx,
+					collections.Join(consumerId, denom), math.NewInt(100)))
+				mocks.MockBankKeeper.EXPECT().GetBalance(ctx, poolAddr, denom).Return(sdk.NewInt64Coin(denom, 0))
+			},
+			postCheck: func(t *testing.T, k providerkeeper.Keeper, ctx sdk.Context) {
+				// Alice's shares should be wiped (lazy invalidation), Bob's recorded as initial
+				_, err := k.ConsumerFeePoolShares.Get(ctx, collections.Join3(consumerId, denom, alice))
+				require.ErrorIs(t, err, collections.ErrNotFound)
 
-	total, err := k.ConsumerFeePoolTotalShares.Get(ctx, collections.Join(consumerId, denom))
-	require.NoError(t, err)
-	require.Equal(t, math.NewInt(300), total)
+				bobShares, err := k.ConsumerFeePoolShares.Get(ctx, collections.Join3(consumerId, denom, bob))
+				require.NoError(t, err)
+				require.Equal(t, math.NewInt(50), bobShares)
+
+				total, err := k.ConsumerFeePoolTotalShares.Get(ctx, collections.Join(consumerId, denom))
+				require.NoError(t, err)
+				require.Equal(t, math.NewInt(50), total)
+			},
+		},
+		{
+			name:      "sub-share deposit rejected",
+			depositor: bob,
+			deposit:   sdk.NewInt64Coin(denom, 1),
+			setup: func(k providerkeeper.Keeper, ctx sdk.Context, mocks testkeeper.MockedKeepers, poolAddr sdk.AccAddress) {
+				// Seed: alice has 1_000_000 shares of 1_000_000 total, balance is huge (1_000_000_000).
+				// Bob's tiny 1-unit deposit would mint floor(1 * 1_000_000 / 1_000_000_000) = 0 shares.
+				require.NoError(t, k.ConsumerFeePoolShares.Set(ctx,
+					collections.Join3(consumerId, denom, alice), math.NewInt(1_000_000)))
+				require.NoError(t, k.ConsumerFeePoolTotalShares.Set(ctx,
+					collections.Join(consumerId, denom), math.NewInt(1_000_000)))
+				mocks.MockBankKeeper.EXPECT().GetBalance(ctx, poolAddr, denom).Return(sdk.NewInt64Coin(denom, 1_000_000_000))
+			},
+			wantErr: providertypes.ErrDepositTooSmall,
+			postCheck: func(t *testing.T, k providerkeeper.Keeper, ctx sdk.Context) {
+				// No state mutation: bob has no entry, total unchanged, alice unchanged.
+				_, err := k.ConsumerFeePoolShares.Get(ctx, collections.Join3(consumerId, denom, bob))
+				require.ErrorIs(t, err, collections.ErrNotFound)
+
+				aliceShares, err := k.ConsumerFeePoolShares.Get(ctx, collections.Join3(consumerId, denom, alice))
+				require.NoError(t, err)
+				require.Equal(t, math.NewInt(1_000_000), aliceShares)
+
+				total, err := k.ConsumerFeePoolTotalShares.Get(ctx, collections.Join(consumerId, denom))
+				require.NoError(t, err)
+				require.Equal(t, math.NewInt(1_000_000), total)
+			},
+		},
+	}
+
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			k, ctx, ctrl, mocks := testkeeper.GetProviderKeeperAndCtx(t, testkeeper.NewInMemKeeperParams(t))
+			defer ctrl.Finish()
+
+			poolAddr := k.GetConsumerFeePoolAddress(consumerId)
+			if tc.setup != nil {
+				tc.setup(k, ctx, mocks, poolAddr)
+			}
+
+			err := k.MintShares(ctx, consumerId, tc.depositor, tc.deposit)
+			if tc.wantErr != nil {
+				require.ErrorIs(t, err, tc.wantErr)
+			} else {
+				require.NoError(t, err)
+			}
+
+			if tc.postCheck != nil {
+				tc.postCheck(t, k, ctx)
+			}
+		})
+	}
 }
 
-func TestMintShares_LazyInvalidation(t *testing.T) {
-	k, ctx, ctrl, mocks := testkeeper.GetProviderKeeperAndCtx(t, testkeeper.NewInMemKeeperParams(t))
-	defer ctrl.Finish()
-
+func TestWithdrawShares(t *testing.T) {
 	consumerId := uint64(0)
 	denom := "uphoton"
 	alice := sdk.AccAddress([]byte("alice___________"))
 	bob := sdk.AccAddress([]byte("bob_____________"))
-	poolAddr := k.GetConsumerFeePoolAddress(consumerId)
 
-	// Seed: alice has 100 shares, balance is 0 (pool fully consumed by fees)
-	require.NoError(t, k.ConsumerFeePoolShares.Set(ctx,
-		collections.Join3(consumerId, denom, alice), math.NewInt(100)))
-	require.NoError(t, k.ConsumerFeePoolTotalShares.Set(ctx,
-		collections.Join(consumerId, denom), math.NewInt(100)))
+	testCases := []struct {
+		name      string
+		setup     func(k providerkeeper.Keeper, ctx sdk.Context, mocks testkeeper.MockedKeepers, poolAddr sdk.AccAddress)
+		withdraw  sdk.Coin
+		depositor sdk.AccAddress
+		wantErr   error
+		postCheck func(t *testing.T, k providerkeeper.Keeper, ctx sdk.Context, tokens sdk.Coin)
+	}{
+		{
+			name:      "full withdraw burns all shares when over claim",
+			depositor: alice,
+			withdraw:  sdk.NewInt64Coin(denom, 200),
+			setup: func(k providerkeeper.Keeper, ctx sdk.Context, mocks testkeeper.MockedKeepers, poolAddr sdk.AccAddress) {
+				// Alice sole depositor with 100 shares against balance 100
+				require.NoError(t, k.ConsumerFeePoolShares.Set(ctx,
+					collections.Join3(consumerId, denom, alice), math.NewInt(100)))
+				require.NoError(t, k.ConsumerFeePoolTotalShares.Set(ctx,
+					collections.Join(consumerId, denom), math.NewInt(100)))
+				mocks.MockBankKeeper.EXPECT().GetBalance(ctx, poolAddr, denom).Return(sdk.NewInt64Coin(denom, 100))
+			},
+			// Request 200 (over claim) — should burn all shares, return claim=100
+			postCheck: func(t *testing.T, k providerkeeper.Keeper, ctx sdk.Context, tokens sdk.Coin) {
+				require.Equal(t, math.NewInt(100), tokens.Amount)
 
-	mocks.MockBankKeeper.EXPECT().GetBalance(ctx, poolAddr, denom).Return(sdk.NewInt64Coin(denom, 0))
-	require.NoError(t, k.MintShares(ctx, consumerId, bob, sdk.NewInt64Coin(denom, 50)))
+				_, err := k.ConsumerFeePoolShares.Get(ctx, collections.Join3(consumerId, denom, alice))
+				require.ErrorIs(t, err, collections.ErrNotFound)
 
-	// Alice's shares should be wiped (lazy invalidation), Bob's recorded as initial
-	_, err := k.ConsumerFeePoolShares.Get(ctx, collections.Join3(consumerId, denom, alice))
-	require.ErrorIs(t, err, collections.ErrNotFound)
+				_, err = k.ConsumerFeePoolTotalShares.Get(ctx, collections.Join(consumerId, denom))
+				require.ErrorIs(t, err, collections.ErrNotFound)
+			},
+		},
+		{
+			name:      "partial withdraw updates shares",
+			depositor: alice,
+			withdraw:  sdk.NewInt64Coin(denom, 50),
+			setup: func(k providerkeeper.Keeper, ctx sdk.Context, mocks testkeeper.MockedKeepers, poolAddr sdk.AccAddress) {
+				// Two depositors, balance 200, total 200
+				require.NoError(t, k.ConsumerFeePoolShares.Set(ctx,
+					collections.Join3(consumerId, denom, alice), math.NewInt(100)))
+				require.NoError(t, k.ConsumerFeePoolShares.Set(ctx,
+					collections.Join3(consumerId, denom, bob), math.NewInt(100)))
+				require.NoError(t, k.ConsumerFeePoolTotalShares.Set(ctx,
+					collections.Join(consumerId, denom), math.NewInt(200)))
+				mocks.MockBankKeeper.EXPECT().GetBalance(ctx, poolAddr, denom).Return(sdk.NewInt64Coin(denom, 200))
+			},
+			// Alice withdraws 50 (partial, well below claim 100)
+			postCheck: func(t *testing.T, k providerkeeper.Keeper, ctx sdk.Context, tokens sdk.Coin) {
+				require.Equal(t, math.NewInt(50), tokens.Amount)
 
-	bobShares, err := k.ConsumerFeePoolShares.Get(ctx, collections.Join3(consumerId, denom, bob))
-	require.NoError(t, err)
-	require.Equal(t, math.NewInt(50), bobShares)
+				// Alice burned 50 shares; total = 150; alice = 50
+				aliceShares, _ := k.ConsumerFeePoolShares.Get(ctx, collections.Join3(consumerId, denom, alice))
+				require.Equal(t, math.NewInt(50), aliceShares)
+				total, _ := k.ConsumerFeePoolTotalShares.Get(ctx, collections.Join(consumerId, denom))
+				require.Equal(t, math.NewInt(150), total)
+			},
+		},
+		{
+			name:      "zero pool balance returns ErrPoolEmpty",
+			depositor: alice,
+			withdraw:  sdk.NewInt64Coin(denom, 50),
+			setup: func(k providerkeeper.Keeper, ctx sdk.Context, mocks testkeeper.MockedKeepers, poolAddr sdk.AccAddress) {
+				require.NoError(t, k.ConsumerFeePoolShares.Set(ctx,
+					collections.Join3(consumerId, denom, alice), math.NewInt(100)))
+				require.NoError(t, k.ConsumerFeePoolTotalShares.Set(ctx,
+					collections.Join(consumerId, denom), math.NewInt(100)))
+				mocks.MockBankKeeper.EXPECT().GetBalance(ctx, poolAddr, denom).Return(sdk.NewInt64Coin(denom, 0))
+			},
+			wantErr: providertypes.ErrPoolEmpty,
+		},
+		{
+			name:      "sub-share withdraw returns ErrSubShareWithdraw without state mutation",
+			depositor: alice,
+			withdraw:  sdk.NewInt64Coin(denom, 1),
+			setup: func(k providerkeeper.Keeper, ctx sdk.Context, mocks testkeeper.MockedKeepers, poolAddr sdk.AccAddress) {
+				// Seed: alice has 100 shares of 100 total against a huge balance (1_000_000).
+				// Claim = 100 * 1_000_000 / 100 = 1_000_000. A tiny 1-unit withdrawal hits
+				// the partial branch and computes sharesToBurn = floor(1 * 100 / 1_000_000) = 0,
+				// which must trigger the sub-share guard.
+				require.NoError(t, k.ConsumerFeePoolShares.Set(ctx,
+					collections.Join3(consumerId, denom, alice), math.NewInt(100)))
+				require.NoError(t, k.ConsumerFeePoolTotalShares.Set(ctx,
+					collections.Join(consumerId, denom), math.NewInt(100)))
+				mocks.MockBankKeeper.EXPECT().GetBalance(ctx, poolAddr, denom).Return(sdk.NewInt64Coin(denom, 1_000_000))
+			},
+			wantErr: providertypes.ErrSubShareWithdraw,
+			postCheck: func(t *testing.T, k providerkeeper.Keeper, ctx sdk.Context, tokens sdk.Coin) {
+				require.Equal(t, sdk.Coin{}, tokens)
 
-	total, err := k.ConsumerFeePoolTotalShares.Get(ctx, collections.Join(consumerId, denom))
-	require.NoError(t, err)
-	require.Equal(t, math.NewInt(50), total)
-}
+				// No state mutation: alice still has 100 shares, total still 100.
+				aliceShares, err := k.ConsumerFeePoolShares.Get(ctx, collections.Join3(consumerId, denom, alice))
+				require.NoError(t, err)
+				require.Equal(t, math.NewInt(100), aliceShares)
 
-func TestMintShares_SubShareDeposit(t *testing.T) {
-	k, ctx, ctrl, mocks := testkeeper.GetProviderKeeperAndCtx(t, testkeeper.NewInMemKeeperParams(t))
-	defer ctrl.Finish()
+				total, err := k.ConsumerFeePoolTotalShares.Get(ctx, collections.Join(consumerId, denom))
+				require.NoError(t, err)
+				require.Equal(t, math.NewInt(100), total)
+			},
+		},
+	}
 
-	consumerId := uint64(0)
-	denom := "uphoton"
-	alice := sdk.AccAddress([]byte("alice___________"))
-	bob := sdk.AccAddress([]byte("bob_____________"))
-	poolAddr := k.GetConsumerFeePoolAddress(consumerId)
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			k, ctx, ctrl, mocks := testkeeper.GetProviderKeeperAndCtx(t, testkeeper.NewInMemKeeperParams(t))
+			defer ctrl.Finish()
 
-	// Seed: alice has 1_000_000 shares of 1_000_000 total, balance is huge (1_000_000_000).
-	// Bob's tiny 1-unit deposit would mint floor(1 * 1_000_000 / 1_000_000_000) = 0 shares.
-	require.NoError(t, k.ConsumerFeePoolShares.Set(ctx,
-		collections.Join3(consumerId, denom, alice), math.NewInt(1_000_000)))
-	require.NoError(t, k.ConsumerFeePoolTotalShares.Set(ctx,
-		collections.Join(consumerId, denom), math.NewInt(1_000_000)))
+			poolAddr := k.GetConsumerFeePoolAddress(consumerId)
+			if tc.setup != nil {
+				tc.setup(k, ctx, mocks, poolAddr)
+			}
 
-	mocks.MockBankKeeper.EXPECT().GetBalance(ctx, poolAddr, denom).Return(sdk.NewInt64Coin(denom, 1_000_000_000))
-	err := k.MintShares(ctx, consumerId, bob, sdk.NewInt64Coin(denom, 1))
-	require.ErrorIs(t, err, providertypes.ErrDepositTooSmall)
+			tokens, err := k.WithdrawShares(ctx, consumerId, tc.depositor, tc.withdraw)
+			if tc.wantErr != nil {
+				require.ErrorIs(t, err, tc.wantErr)
+			} else {
+				require.NoError(t, err)
+			}
 
-	// No state mutation: bob has no entry, total unchanged, alice unchanged.
-	_, err = k.ConsumerFeePoolShares.Get(ctx, collections.Join3(consumerId, denom, bob))
-	require.ErrorIs(t, err, collections.ErrNotFound)
-
-	aliceShares, err := k.ConsumerFeePoolShares.Get(ctx, collections.Join3(consumerId, denom, alice))
-	require.NoError(t, err)
-	require.Equal(t, math.NewInt(1_000_000), aliceShares)
-
-	total, err := k.ConsumerFeePoolTotalShares.Get(ctx, collections.Join(consumerId, denom))
-	require.NoError(t, err)
-	require.Equal(t, math.NewInt(1_000_000), total)
-}
-
-func TestWithdrawShares_Full(t *testing.T) {
-	k, ctx, ctrl, mocks := testkeeper.GetProviderKeeperAndCtx(t, testkeeper.NewInMemKeeperParams(t))
-	defer ctrl.Finish()
-
-	consumerId := uint64(0)
-	denom := "uphoton"
-	alice := sdk.AccAddress([]byte("alice___________"))
-	poolAddr := k.GetConsumerFeePoolAddress(consumerId)
-
-	// Alice sole depositor with 100 shares against balance 100
-	require.NoError(t, k.ConsumerFeePoolShares.Set(ctx,
-		collections.Join3(consumerId, denom, alice), math.NewInt(100)))
-	require.NoError(t, k.ConsumerFeePoolTotalShares.Set(ctx,
-		collections.Join(consumerId, denom), math.NewInt(100)))
-	mocks.MockBankKeeper.EXPECT().GetBalance(ctx, poolAddr, denom).Return(sdk.NewInt64Coin(denom, 100))
-
-	// Request 200 (over claim) — should burn all shares, return claim=100
-	tokens, err := k.WithdrawShares(ctx, consumerId, alice, sdk.NewInt64Coin(denom, 200))
-	require.NoError(t, err)
-	require.Equal(t, math.NewInt(100), tokens.Amount)
-
-	_, err = k.ConsumerFeePoolShares.Get(ctx, collections.Join3(consumerId, denom, alice))
-	require.ErrorIs(t, err, collections.ErrNotFound)
-
-	_, err = k.ConsumerFeePoolTotalShares.Get(ctx, collections.Join(consumerId, denom))
-	require.ErrorIs(t, err, collections.ErrNotFound)
-}
-
-func TestWithdrawShares_Partial(t *testing.T) {
-	k, ctx, ctrl, mocks := testkeeper.GetProviderKeeperAndCtx(t, testkeeper.NewInMemKeeperParams(t))
-	defer ctrl.Finish()
-
-	consumerId := uint64(0)
-	denom := "uphoton"
-	alice := sdk.AccAddress([]byte("alice___________"))
-	bob := sdk.AccAddress([]byte("bob_____________"))
-	poolAddr := k.GetConsumerFeePoolAddress(consumerId)
-
-	// Two depositors, balance 200, total 200
-	require.NoError(t, k.ConsumerFeePoolShares.Set(ctx,
-		collections.Join3(consumerId, denom, alice), math.NewInt(100)))
-	require.NoError(t, k.ConsumerFeePoolShares.Set(ctx,
-		collections.Join3(consumerId, denom, bob), math.NewInt(100)))
-	require.NoError(t, k.ConsumerFeePoolTotalShares.Set(ctx,
-		collections.Join(consumerId, denom), math.NewInt(200)))
-	mocks.MockBankKeeper.EXPECT().GetBalance(ctx, poolAddr, denom).Return(sdk.NewInt64Coin(denom, 200))
-
-	// Alice withdraws 50 (partial, well below claim 100)
-	tokens, err := k.WithdrawShares(ctx, consumerId, alice, sdk.NewInt64Coin(denom, 50))
-	require.NoError(t, err)
-	require.Equal(t, math.NewInt(50), tokens.Amount)
-
-	// Alice burned 50 shares; total = 150; alice = 50
-	aliceShares, _ := k.ConsumerFeePoolShares.Get(ctx, collections.Join3(consumerId, denom, alice))
-	require.Equal(t, math.NewInt(50), aliceShares)
-	total, _ := k.ConsumerFeePoolTotalShares.Get(ctx, collections.Join(consumerId, denom))
-	require.Equal(t, math.NewInt(150), total)
-}
-
-func TestWithdrawShares_Empty(t *testing.T) {
-	k, ctx, ctrl, mocks := testkeeper.GetProviderKeeperAndCtx(t, testkeeper.NewInMemKeeperParams(t))
-	defer ctrl.Finish()
-
-	consumerId := uint64(0)
-	denom := "uphoton"
-	alice := sdk.AccAddress([]byte("alice___________"))
-	poolAddr := k.GetConsumerFeePoolAddress(consumerId)
-
-	require.NoError(t, k.ConsumerFeePoolShares.Set(ctx,
-		collections.Join3(consumerId, denom, alice), math.NewInt(100)))
-	require.NoError(t, k.ConsumerFeePoolTotalShares.Set(ctx,
-		collections.Join(consumerId, denom), math.NewInt(100)))
-	mocks.MockBankKeeper.EXPECT().GetBalance(ctx, poolAddr, denom).Return(sdk.NewInt64Coin(denom, 0))
-
-	_, err := k.WithdrawShares(ctx, consumerId, alice, sdk.NewInt64Coin(denom, 50))
-	require.ErrorIs(t, err, providertypes.ErrPoolEmpty)
-}
-
-func TestWithdrawShares_SubShareGuard(t *testing.T) {
-	k, ctx, ctrl, mocks := testkeeper.GetProviderKeeperAndCtx(t, testkeeper.NewInMemKeeperParams(t))
-	defer ctrl.Finish()
-
-	consumerId := uint64(0)
-	denom := "uphoton"
-	alice := sdk.AccAddress([]byte("alice___________"))
-	poolAddr := k.GetConsumerFeePoolAddress(consumerId)
-
-	// Seed: alice has 100 shares of 100 total against a huge balance (1_000_000).
-	// Claim = 100 * 1_000_000 / 100 = 1_000_000. A tiny 1-unit withdrawal hits
-	// the partial branch and computes sharesToBurn = floor(1 * 100 / 1_000_000) = 0,
-	// which must trigger the sub-share guard.
-	require.NoError(t, k.ConsumerFeePoolShares.Set(ctx,
-		collections.Join3(consumerId, denom, alice), math.NewInt(100)))
-	require.NoError(t, k.ConsumerFeePoolTotalShares.Set(ctx,
-		collections.Join(consumerId, denom), math.NewInt(100)))
-	mocks.MockBankKeeper.EXPECT().GetBalance(ctx, poolAddr, denom).Return(sdk.NewInt64Coin(denom, 1_000_000))
-
-	tokens, err := k.WithdrawShares(ctx, consumerId, alice, sdk.NewInt64Coin(denom, 1))
-	require.ErrorIs(t, err, providertypes.ErrSubShareWithdraw)
-	require.Equal(t, sdk.Coin{}, tokens)
-
-	// No state mutation: alice still has 100 shares, total still 100.
-	aliceShares, err := k.ConsumerFeePoolShares.Get(ctx, collections.Join3(consumerId, denom, alice))
-	require.NoError(t, err)
-	require.Equal(t, math.NewInt(100), aliceShares)
-
-	total, err := k.ConsumerFeePoolTotalShares.Get(ctx, collections.Join(consumerId, denom))
-	require.NoError(t, err)
-	require.Equal(t, math.NewInt(100), total)
+			if tc.postCheck != nil {
+				tc.postCheck(t, k, ctx, tokens)
+			}
+		})
+	}
 }
 
 func TestSweepConsumerFeePoolDenom(t *testing.T) {
-	k, ctx, ctrl, mocks := testkeeper.GetProviderKeeperAndCtx(t, testkeeper.NewInMemKeeperParams(t))
-	defer ctrl.Finish()
-
 	consumerId := uint64(0)
 	denom := "uphoton"
 	alice := sdk.AccAddress([]byte("alice___________"))
 	bob := sdk.AccAddress([]byte("bob_____________"))
-	poolAddr := k.GetConsumerFeePoolAddress(consumerId)
-
-	// alice 30, bob 70, total 100, balance 100 — no dust
-	require.NoError(t, k.ConsumerFeePoolShares.Set(ctx,
-		collections.Join3(consumerId, denom, alice), math.NewInt(30)))
-	require.NoError(t, k.ConsumerFeePoolShares.Set(ctx,
-		collections.Join3(consumerId, denom, bob), math.NewInt(70)))
-	require.NoError(t, k.ConsumerFeePoolTotalShares.Set(ctx,
-		collections.Join(consumerId, denom), math.NewInt(100)))
-
-	providerModuleName := providertypes.ModuleName
-	mocks.MockBankKeeper.EXPECT().GetBalance(ctx, poolAddr, denom).Return(sdk.NewInt64Coin(denom, 100))
-	mocks.MockBankKeeper.EXPECT().SendCoinsFromAccountToModule(
-		ctx, poolAddr, providerModuleName, sdk.NewCoins(sdk.NewInt64Coin(denom, 100))).Return(nil)
-	mocks.MockBankKeeper.EXPECT().SendCoinsFromModuleToAccount(
-		ctx, providerModuleName, alice, sdk.NewCoins(sdk.NewInt64Coin(denom, 30))).Return(nil)
-	mocks.MockBankKeeper.EXPECT().SendCoinsFromModuleToAccount(
-		ctx, providerModuleName, bob, sdk.NewCoins(sdk.NewInt64Coin(denom, 70))).Return(nil)
-	// No dust -> no FundCommunityPool call
-
-	require.NoError(t, k.SweepConsumerFeePoolDenom(ctx, consumerId, denom))
-
-	// All share records and total cleared
-	_, err := k.ConsumerFeePoolShares.Get(ctx, collections.Join3(consumerId, denom, alice))
-	require.ErrorIs(t, err, collections.ErrNotFound)
-	_, err = k.ConsumerFeePoolShares.Get(ctx, collections.Join3(consumerId, denom, bob))
-	require.ErrorIs(t, err, collections.ErrNotFound)
-	_, err = k.ConsumerFeePoolTotalShares.Get(ctx, collections.Join(consumerId, denom))
-	require.ErrorIs(t, err, collections.ErrNotFound)
-}
-
-func TestSweepConsumerFeePoolDenom_WithDust(t *testing.T) {
-	k, ctx, ctrl, mocks := testkeeper.GetProviderKeeperAndCtx(t, testkeeper.NewInMemKeeperParams(t))
-	defer ctrl.Finish()
-
-	consumerId := uint64(0)
-	denom := "uphoton"
-	alice := sdk.AccAddress([]byte("alice___________"))
-	bob := sdk.AccAddress([]byte("bob_____________"))
-	poolAddr := k.GetConsumerFeePoolAddress(consumerId)
-
-	// alice 1, bob 2, total 3, balance 10
-	// alice claim: floor(1*10/3) = 3; bob claim: floor(2*10/3) = 6; dust = 1
-	require.NoError(t, k.ConsumerFeePoolShares.Set(ctx,
-		collections.Join3(consumerId, denom, alice), math.NewInt(1)))
-	require.NoError(t, k.ConsumerFeePoolShares.Set(ctx,
-		collections.Join3(consumerId, denom, bob), math.NewInt(2)))
-	require.NoError(t, k.ConsumerFeePoolTotalShares.Set(ctx,
-		collections.Join(consumerId, denom), math.NewInt(3)))
-
-	providerModuleName := providertypes.ModuleName
-	mocks.MockBankKeeper.EXPECT().GetBalance(ctx, poolAddr, denom).Return(sdk.NewInt64Coin(denom, 10))
-	mocks.MockBankKeeper.EXPECT().SendCoinsFromAccountToModule(
-		ctx, poolAddr, providerModuleName, sdk.NewCoins(sdk.NewInt64Coin(denom, 10))).Return(nil)
-	mocks.MockBankKeeper.EXPECT().SendCoinsFromModuleToAccount(
-		ctx, providerModuleName, alice, sdk.NewCoins(sdk.NewInt64Coin(denom, 3))).Return(nil)
-	mocks.MockBankKeeper.EXPECT().SendCoinsFromModuleToAccount(
-		ctx, providerModuleName, bob, sdk.NewCoins(sdk.NewInt64Coin(denom, 6))).Return(nil)
-	mocks.MockDistributionKeeper.EXPECT().FundCommunityPool(
-		ctx, sdk.NewCoins(sdk.NewInt64Coin(denom, 1)),
-		authtypes.NewModuleAddress(providertypes.ModuleName)).Return(nil)
-
-	require.NoError(t, k.SweepConsumerFeePoolDenom(ctx, consumerId, denom))
-}
-
-func TestSweepConsumerFeePoolDenom_DistrModuleRecipientUsesCommunityPool(t *testing.T) {
-	k, ctx, ctrl, mocks := testkeeper.GetProviderKeeperAndCtx(t, testkeeper.NewInMemKeeperParams(t))
-	defer ctrl.Finish()
-
-	consumerId := uint64(0)
-	denom := "uphoton"
 	distrAddr := authtypes.NewModuleAddress(disttypes.ModuleName)
-	poolAddr := k.GetConsumerFeePoolAddress(consumerId)
-
-	require.NoError(t, k.ConsumerFeePoolShares.Set(ctx,
-		collections.Join3(consumerId, denom, distrAddr), math.NewInt(100)))
-	require.NoError(t, k.ConsumerFeePoolTotalShares.Set(ctx,
-		collections.Join(consumerId, denom), math.NewInt(100)))
-
 	providerModuleName := providertypes.ModuleName
-	mocks.MockBankKeeper.EXPECT().GetBalance(ctx, poolAddr, denom).Return(sdk.NewInt64Coin(denom, 100))
-	mocks.MockBankKeeper.EXPECT().SendCoinsFromAccountToModule(
-		ctx, poolAddr, providerModuleName, sdk.NewCoins(sdk.NewInt64Coin(denom, 100))).Return(nil)
-	// Distribution module account share goes via FundCommunityPool, NOT raw bank send
-	mocks.MockDistributionKeeper.EXPECT().FundCommunityPool(
-		ctx, sdk.NewCoins(sdk.NewInt64Coin(denom, 100)),
-		authtypes.NewModuleAddress(providertypes.ModuleName)).Return(nil)
+	providerModuleAddr := authtypes.NewModuleAddress(providertypes.ModuleName)
 
-	require.NoError(t, k.SweepConsumerFeePoolDenom(ctx, consumerId, denom))
-}
+	testCases := []struct {
+		name       string
+		setupMocks func(k providerkeeper.Keeper, ctx sdk.Context, mocks testkeeper.MockedKeepers, poolAddr sdk.AccAddress)
+		postCheck  func(t *testing.T, k providerkeeper.Keeper, ctx sdk.Context)
+	}{
+		{
+			name: "no dust: alice 30 bob 70 balance 100",
+			setupMocks: func(k providerkeeper.Keeper, ctx sdk.Context, mocks testkeeper.MockedKeepers, poolAddr sdk.AccAddress) {
+				// alice 30, bob 70, total 100, balance 100 — no dust
+				require.NoError(t, k.ConsumerFeePoolShares.Set(ctx,
+					collections.Join3(consumerId, denom, alice), math.NewInt(30)))
+				require.NoError(t, k.ConsumerFeePoolShares.Set(ctx,
+					collections.Join3(consumerId, denom, bob), math.NewInt(70)))
+				require.NoError(t, k.ConsumerFeePoolTotalShares.Set(ctx,
+					collections.Join(consumerId, denom), math.NewInt(100)))
 
-func TestSweepConsumerFeePoolDenom_AllFloorToZero(t *testing.T) {
-	k, ctx, ctrl, mocks := testkeeper.GetProviderKeeperAndCtx(t, testkeeper.NewInMemKeeperParams(t))
-	defer ctrl.Finish()
+				mocks.MockBankKeeper.EXPECT().GetBalance(ctx, poolAddr, denom).Return(sdk.NewInt64Coin(denom, 100))
+				mocks.MockBankKeeper.EXPECT().SendCoinsFromAccountToModule(
+					ctx, poolAddr, providerModuleName, sdk.NewCoins(sdk.NewInt64Coin(denom, 100))).Return(nil)
+				mocks.MockBankKeeper.EXPECT().SendCoinsFromModuleToAccount(
+					ctx, providerModuleName, alice, sdk.NewCoins(sdk.NewInt64Coin(denom, 30))).Return(nil)
+				mocks.MockBankKeeper.EXPECT().SendCoinsFromModuleToAccount(
+					ctx, providerModuleName, bob, sdk.NewCoins(sdk.NewInt64Coin(denom, 70))).Return(nil)
+				// No dust -> no FundCommunityPool call
+			},
+			postCheck: func(t *testing.T, k providerkeeper.Keeper, ctx sdk.Context) {
+				// All share records and total cleared
+				_, err := k.ConsumerFeePoolShares.Get(ctx, collections.Join3(consumerId, denom, alice))
+				require.ErrorIs(t, err, collections.ErrNotFound)
+				_, err = k.ConsumerFeePoolShares.Get(ctx, collections.Join3(consumerId, denom, bob))
+				require.ErrorIs(t, err, collections.ErrNotFound)
+				_, err = k.ConsumerFeePoolTotalShares.Get(ctx, collections.Join(consumerId, denom))
+				require.ErrorIs(t, err, collections.ErrNotFound)
+			},
+		},
+		{
+			name: "with dust: alice 1 bob 2 balance 10",
+			setupMocks: func(k providerkeeper.Keeper, ctx sdk.Context, mocks testkeeper.MockedKeepers, poolAddr sdk.AccAddress) {
+				// alice 1, bob 2, total 3, balance 10
+				// alice claim: floor(1*10/3) = 3; bob claim: floor(2*10/3) = 6; dust = 1
+				require.NoError(t, k.ConsumerFeePoolShares.Set(ctx,
+					collections.Join3(consumerId, denom, alice), math.NewInt(1)))
+				require.NoError(t, k.ConsumerFeePoolShares.Set(ctx,
+					collections.Join3(consumerId, denom, bob), math.NewInt(2)))
+				require.NoError(t, k.ConsumerFeePoolTotalShares.Set(ctx,
+					collections.Join(consumerId, denom), math.NewInt(3)))
 
-	consumerId := uint64(0)
-	denom := "uphoton"
-	alice := sdk.AccAddress([]byte("alice___________"))
-	bob := sdk.AccAddress([]byte("bob_____________"))
-	poolAddr := k.GetConsumerFeePoolAddress(consumerId)
+				mocks.MockBankKeeper.EXPECT().GetBalance(ctx, poolAddr, denom).Return(sdk.NewInt64Coin(denom, 10))
+				mocks.MockBankKeeper.EXPECT().SendCoinsFromAccountToModule(
+					ctx, poolAddr, providerModuleName, sdk.NewCoins(sdk.NewInt64Coin(denom, 10))).Return(nil)
+				mocks.MockBankKeeper.EXPECT().SendCoinsFromModuleToAccount(
+					ctx, providerModuleName, alice, sdk.NewCoins(sdk.NewInt64Coin(denom, 3))).Return(nil)
+				mocks.MockBankKeeper.EXPECT().SendCoinsFromModuleToAccount(
+					ctx, providerModuleName, bob, sdk.NewCoins(sdk.NewInt64Coin(denom, 6))).Return(nil)
+				mocks.MockDistributionKeeper.EXPECT().FundCommunityPool(
+					ctx, sdk.NewCoins(sdk.NewInt64Coin(denom, 1)),
+					providerModuleAddr).Return(nil)
+			},
+		},
+		{
+			name: "distribution module recipient uses community pool",
+			setupMocks: func(k providerkeeper.Keeper, ctx sdk.Context, mocks testkeeper.MockedKeepers, poolAddr sdk.AccAddress) {
+				require.NoError(t, k.ConsumerFeePoolShares.Set(ctx,
+					collections.Join3(consumerId, denom, distrAddr), math.NewInt(100)))
+				require.NoError(t, k.ConsumerFeePoolTotalShares.Set(ctx,
+					collections.Join(consumerId, denom), math.NewInt(100)))
 
-	// alice 1 share, bob 1 share, total 2, balance 1.
-	// alice slice: floor(1*1/2) = 0 -> skipped
-	// bob slice:   floor(1*1/2) = 0 -> skipped
-	// distributed = 0; dust = 1 -> entire balance routed to community pool.
-	require.NoError(t, k.ConsumerFeePoolShares.Set(ctx,
-		collections.Join3(consumerId, denom, alice), math.NewInt(1)))
-	require.NoError(t, k.ConsumerFeePoolShares.Set(ctx,
-		collections.Join3(consumerId, denom, bob), math.NewInt(1)))
-	require.NoError(t, k.ConsumerFeePoolTotalShares.Set(ctx,
-		collections.Join(consumerId, denom), math.NewInt(2)))
+				mocks.MockBankKeeper.EXPECT().GetBalance(ctx, poolAddr, denom).Return(sdk.NewInt64Coin(denom, 100))
+				mocks.MockBankKeeper.EXPECT().SendCoinsFromAccountToModule(
+					ctx, poolAddr, providerModuleName, sdk.NewCoins(sdk.NewInt64Coin(denom, 100))).Return(nil)
+				// Distribution module account share goes via FundCommunityPool, NOT raw bank send
+				mocks.MockDistributionKeeper.EXPECT().FundCommunityPool(
+					ctx, sdk.NewCoins(sdk.NewInt64Coin(denom, 100)),
+					providerModuleAddr).Return(nil)
+			},
+		},
+		{
+			name: "all shares floor to zero: dust routed to community pool and state cleared",
+			setupMocks: func(k providerkeeper.Keeper, ctx sdk.Context, mocks testkeeper.MockedKeepers, poolAddr sdk.AccAddress) {
+				// alice 1 share, bob 1 share, total 2, balance 1.
+				// alice slice: floor(1*1/2) = 0 -> skipped
+				// bob slice:   floor(1*1/2) = 0 -> skipped
+				// distributed = 0; dust = 1 -> entire balance routed to community pool.
+				require.NoError(t, k.ConsumerFeePoolShares.Set(ctx,
+					collections.Join3(consumerId, denom, alice), math.NewInt(1)))
+				require.NoError(t, k.ConsumerFeePoolShares.Set(ctx,
+					collections.Join3(consumerId, denom, bob), math.NewInt(1)))
+				require.NoError(t, k.ConsumerFeePoolTotalShares.Set(ctx,
+					collections.Join(consumerId, denom), math.NewInt(2)))
 
-	providerModuleName := providertypes.ModuleName
-	mocks.MockBankKeeper.EXPECT().GetBalance(ctx, poolAddr, denom).Return(sdk.NewInt64Coin(denom, 1))
-	mocks.MockBankKeeper.EXPECT().SendCoinsFromAccountToModule(
-		ctx, poolAddr, providerModuleName, sdk.NewCoins(sdk.NewInt64Coin(denom, 1))).Return(nil)
-	// No per-holder SendCoinsFromModuleToAccount: every slice floors to zero.
-	mocks.MockDistributionKeeper.EXPECT().FundCommunityPool(
-		ctx, sdk.NewCoins(sdk.NewInt64Coin(denom, 1)),
-		authtypes.NewModuleAddress(providertypes.ModuleName)).Return(nil)
+				mocks.MockBankKeeper.EXPECT().GetBalance(ctx, poolAddr, denom).Return(sdk.NewInt64Coin(denom, 1))
+				mocks.MockBankKeeper.EXPECT().SendCoinsFromAccountToModule(
+					ctx, poolAddr, providerModuleName, sdk.NewCoins(sdk.NewInt64Coin(denom, 1))).Return(nil)
+				// No per-holder SendCoinsFromModuleToAccount: every slice floors to zero.
+				mocks.MockDistributionKeeper.EXPECT().FundCommunityPool(
+					ctx, sdk.NewCoins(sdk.NewInt64Coin(denom, 1)),
+					providerModuleAddr).Return(nil)
+			},
+			postCheck: func(t *testing.T, k providerkeeper.Keeper, ctx sdk.Context) {
+				// All share records and total cleared.
+				_, err := k.ConsumerFeePoolShares.Get(ctx, collections.Join3(consumerId, denom, alice))
+				require.ErrorIs(t, err, collections.ErrNotFound)
+				_, err = k.ConsumerFeePoolShares.Get(ctx, collections.Join3(consumerId, denom, bob))
+				require.ErrorIs(t, err, collections.ErrNotFound)
+				_, err = k.ConsumerFeePoolTotalShares.Get(ctx, collections.Join(consumerId, denom))
+				require.ErrorIs(t, err, collections.ErrNotFound)
+			},
+		},
+	}
 
-	require.NoError(t, k.SweepConsumerFeePoolDenom(ctx, consumerId, denom))
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			k, ctx, ctrl, mocks := testkeeper.GetProviderKeeperAndCtx(t, testkeeper.NewInMemKeeperParams(t))
+			defer ctrl.Finish()
 
-	// All share records and total cleared.
-	_, err := k.ConsumerFeePoolShares.Get(ctx, collections.Join3(consumerId, denom, alice))
-	require.ErrorIs(t, err, collections.ErrNotFound)
-	_, err = k.ConsumerFeePoolShares.Get(ctx, collections.Join3(consumerId, denom, bob))
-	require.ErrorIs(t, err, collections.ErrNotFound)
-	_, err = k.ConsumerFeePoolTotalShares.Get(ctx, collections.Join(consumerId, denom))
-	require.ErrorIs(t, err, collections.ErrNotFound)
+			poolAddr := k.GetConsumerFeePoolAddress(consumerId)
+			if tc.setupMocks != nil {
+				tc.setupMocks(k, ctx, mocks, poolAddr)
+			}
+
+			k.SweepConsumerFeePoolDenom(ctx, consumerId, denom)
+
+			if tc.postCheck != nil {
+				tc.postCheck(t, k, ctx)
+			}
+		})
+	}
 }
 
 func TestSweepConsumerFeePool_AllDenoms(t *testing.T) {
@@ -441,5 +477,5 @@ func TestSweepConsumerFeePool_AllDenoms(t *testing.T) {
 			ctx, providertypes.ModuleName, alice, sdk.NewCoins(c)).Return(nil)
 	}
 
-	require.NoError(t, k.SweepConsumerFeePool(ctx, consumerId, nil))
+	k.SweepConsumerFeePool(ctx, consumerId, nil)
 }

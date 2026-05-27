@@ -150,72 +150,48 @@ func TestDeleteConsumerChain_AutoSweepMultiDenomDust(t *testing.T) {
 	require.ErrorIs(t, err, collections.ErrNotFound)
 }
 
-// TestBeginBlockRemoveConsumers_PerConsumerRollback verifies that a
-// failing delete on one consumer (sweep returns an error) does not bleed
-// state mutations into siblings whose deletes succeed in the same block.
-// The first consumer's sweep fails; the second's succeeds. After the call,
-// the first stays in STOPPED with its state intact and the second is gone.
-func TestBeginBlockRemoveConsumers_PerConsumerRollback(t *testing.T) {
+// TestBeginBlockRemoveConsumers_DeletesEligible verifies that every STOPPED
+// consumer whose removal time has elapsed is deleted in the BeginBlocker.
+func TestBeginBlockRemoveConsumers_DeletesEligible(t *testing.T) {
 	k, ctx, ctrl, mocks := testkeeper.GetProviderKeeperAndCtx(t, testkeeper.NewInMemKeeperParams(t))
 	defer ctrl.Finish()
 
 	removalTime := time.Unix(1000, 0)
 	ctx = ctx.WithBlockTime(removalTime.Add(time.Hour))
 
-	// failing consumer: balance + shares present, bank-pull errors out.
-	failId := k.FetchAndIncrementConsumerId(ctx)
-	k.SetConsumerPhase(ctx, failId, providertypes.CONSUMER_PHASE_STOPPED)
-	require.NoError(t, k.SetConsumerRemovalTime(ctx, failId, removalTime))
-	require.NoError(t, k.AppendConsumerToBeRemoved(ctx, failId, removalTime))
-	failPoolAddr := k.GetConsumerFeePoolAddress(failId)
-	require.NoError(t, k.FeePoolAddressToConsumerId.Set(ctx, failPoolAddr, failId))
-	failDepositor := sdk.AccAddress([]byte("fail-depositor__"))
-	require.NoError(t, k.ConsumerFeePoolShares.Set(ctx,
-		collections.Join3(failId, "uphoton", failDepositor), math.NewInt(50)))
-	require.NoError(t, k.ConsumerFeePoolTotalShares.Set(ctx,
-		collections.Join(failId, "uphoton"), math.NewInt(50)))
-
-	// succeeding consumer: pool empty, cleanup succeeds.
-	okId := k.FetchAndIncrementConsumerId(ctx)
-	k.SetConsumerClientId(ctx, okId, "07-tendermint-0")
-	k.SetConsumerPhase(ctx, okId, providertypes.CONSUMER_PHASE_STOPPED)
-	require.NoError(t, k.SetConsumerRemovalTime(ctx, okId, removalTime))
-	require.NoError(t, k.AppendConsumerToBeRemoved(ctx, okId, removalTime))
-	okPoolAddr := k.GetConsumerFeePoolAddress(okId)
-	require.NoError(t, k.FeePoolAddressToConsumerId.Set(ctx, okPoolAddr, okId))
-
-	// BeginBlockRemoveConsumers wraps each per-consumer delete in a
-	// cache-context, so match the ctx argument with gomock.Any().
-	mocks.MockBankKeeper.EXPECT().GetAllBalances(gomock.Any(), failPoolAddr).
-		Return(sdk.NewCoins(sdk.NewInt64Coin("uphoton", 50)))
-	mocks.MockBankKeeper.EXPECT().GetBalance(gomock.Any(), failPoolAddr, "uphoton").
-		Return(sdk.NewInt64Coin("uphoton", 50))
-	mocks.MockBankKeeper.EXPECT().SendCoinsFromAccountToModule(
-		gomock.Any(), failPoolAddr, providertypes.ModuleName,
-		sdk.NewCoins(sdk.NewInt64Coin("uphoton", 50))).
-		Return(fmt.Errorf("forced bank error"))
-
-	mocks.MockBankKeeper.EXPECT().GetAllBalances(gomock.Any(), okPoolAddr).Return(sdk.NewCoins())
+	ids := []uint64{
+		k.FetchAndIncrementConsumerId(ctx),
+		k.FetchAndIncrementConsumerId(ctx),
+	}
+	for i, id := range ids {
+		k.SetConsumerClientId(ctx, id, fmt.Sprintf("07-tendermint-%d", i))
+		k.SetConsumerPhase(ctx, id, providertypes.CONSUMER_PHASE_STOPPED)
+		require.NoError(t, k.SetConsumerRemovalTime(ctx, id, removalTime))
+		require.NoError(t, k.AppendConsumerToBeRemoved(ctx, id, removalTime))
+		poolAddr := k.GetConsumerFeePoolAddress(id)
+		require.NoError(t, k.FeePoolAddressToConsumerId.Set(ctx, poolAddr, id))
+		// Empty pool -> sweep is a no-op (only GetAllBalances is consulted).
+		mocks.MockBankKeeper.EXPECT().GetAllBalances(gomock.Any(), poolAddr).Return(sdk.NewCoins())
+	}
 
 	require.NoError(t, k.BeginBlockRemoveConsumers(ctx))
 
-	// Failing consumer: state preserved (cache-context rolled back).
-	require.Equal(t, providertypes.CONSUMER_PHASE_STOPPED, k.GetConsumerPhase(ctx, failId))
-	_, err := k.FeePoolAddressToConsumerId.Get(ctx, failPoolAddr)
-	require.NoError(t, err, "failing consumer's reverse-lookup entry should remain")
-
-	// Succeeding consumer: deleted.
-	require.Equal(t, providertypes.CONSUMER_PHASE_DELETED, k.GetConsumerPhase(ctx, okId))
-	_, err = k.FeePoolAddressToConsumerId.Get(ctx, okPoolAddr)
-	require.ErrorIs(t, err, collections.ErrNotFound)
+	for _, id := range ids {
+		require.Equal(t, providertypes.CONSUMER_PHASE_DELETED, k.GetConsumerPhase(ctx, id))
+		_, err := k.FeePoolAddressToConsumerId.Get(ctx, k.GetConsumerFeePoolAddress(id))
+		require.ErrorIs(t, err, collections.ErrNotFound)
+	}
 }
 
-func TestDeleteConsumerChain_AutoSweepFailureAborts(t *testing.T) {
+// TestDeleteConsumerChain_SweepBankFailurePanics verifies that a bank failure
+// during the auto-sweep -- only reachable under state corruption or app
+// misconfiguration -- panics rather than silently aborting the delete (which
+// would strand the consumer in STOPPED with no recovery path).
+func TestDeleteConsumerChain_SweepBankFailurePanics(t *testing.T) {
 	k, ctx, ctrl, mocks := testkeeper.GetProviderKeeperAndCtx(t, testkeeper.NewInMemKeeperParams(t))
 	defer ctrl.Finish()
 
 	consumerId := k.FetchAndIncrementConsumerId(ctx)
-	// No SetConsumerClientId — sweep fails before the cleanup block runs
 	k.SetConsumerPhase(ctx, consumerId, providertypes.CONSUMER_PHASE_STOPPED)
 	poolAddr := k.GetConsumerFeePoolAddress(consumerId)
 	depositor := sdk.AccAddress([]byte("alice___________"))
@@ -232,8 +208,7 @@ func TestDeleteConsumerChain_AutoSweepFailureAborts(t *testing.T) {
 		ctx, poolAddr, providertypes.ModuleName, sdk.NewCoins(sdk.NewInt64Coin("uphoton", 50))).
 		Return(fmt.Errorf("forced bank error"))
 
-	err := k.DeleteConsumerChain(ctx, consumerId)
-	require.Error(t, err)
-	// Phase remains STOPPED, not DELETED
-	require.Equal(t, providertypes.CONSUMER_PHASE_STOPPED, k.GetConsumerPhase(ctx, consumerId))
+	require.Panics(t, func() {
+		_ = k.DeleteConsumerChain(ctx, consumerId)
+	})
 }

@@ -3,7 +3,7 @@
 Every consumer chain on VAAS has a dedicated fee pool on the provider chain,
 held at a deterministic account address derived from the consumer ID:
 
-    fee_pool_address = NewModuleAddress("vaas-consumer-fee-pool-<consumer_id>")
+    fee_pool_address = NewModuleAddress("provider-consumer-fee-pool-<consumer_id>")
 
 This account funds the per-block service charge that the provider drains
 from the pool every block (`fees_per_block`) while the consumer is in
@@ -94,7 +94,11 @@ list of denoms; if empty, all denoms with shares or balance are swept.
 Any truncation residue per denom is forwarded to the community pool.
 
 The same sweep runs automatically when a consumer is deleted (auto-sweep
-on `DeleteConsumerChain`).
+on `DeleteConsumerChain`). The auto-sweep cannot fail under valid state --
+the pool balance is moved into the provider module and distributed back out
+in the same transaction, and depositors are never blocked accounts -- so
+deletion is never silently aborted. The only failure mode is state
+corruption, which panics rather than stranding the consumer in `STOPPED`.
 
 ## Trust model
 

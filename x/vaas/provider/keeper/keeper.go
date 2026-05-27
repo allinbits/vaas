@@ -3,6 +3,7 @@ package keeper
 import (
 	"context"
 	"fmt"
+	"strings"
 	"time"
 
 	"github.com/allinbits/vaas/x/vaas/provider/types"
@@ -209,15 +210,12 @@ func (k Keeper) GetAuthority() string {
 	return k.authority
 }
 
-// isGovAuthority reports whether addr is the gov module authority. The check
-// is byte-wise rather than string-wise so that valid-but-non-canonical bech32
-// encodings (e.g. uppercase) of the same address still match.
-func (k Keeper) isGovAuthority(addr sdk.AccAddress) bool {
-	authAddr, err := sdk.AccAddressFromBech32(k.authority)
-	if err != nil {
-		return false
-	}
-	return addr.Equals(authAddr)
+// IsAuthority reports whether addr is the module authority (the account
+// permitted to execute gov-gated messages). The comparison is case-insensitive
+// via EqualFold, so a valid-but-non-canonical bech32 (e.g. uppercase) still
+// matches.
+func (k Keeper) IsAuthority(addr string) bool {
+	return strings.EqualFold(addr, k.authority)
 }
 
 // ValidatorAddressCodec returns the app validator address codec.
