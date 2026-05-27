@@ -94,6 +94,13 @@ func NewMsgSubmitConsumerMisbehaviour(
 
 // ValidateBasic implements the sdk.HasValidateBasic interface.
 func (msg MsgSubmitConsumerMisbehaviour) ValidateBasic() error {
+	if _, err := sdk.AccAddressFromBech32(msg.Submitter); err != nil {
+		return errorsmod.Wrapf(ErrInvalidMsgSubmitConsumerMisbehaviour, "Submitter: %s", err.Error())
+	}
+
+	if msg.Misbehaviour == nil {
+		return errorsmod.Wrapf(ErrInvalidMsgSubmitConsumerMisbehaviour, "Misbehaviour cannot be nil")
+	}
 	if err := msg.Misbehaviour.ValidateBasic(); err != nil {
 		return errorsmod.Wrapf(ErrInvalidMsgSubmitConsumerMisbehaviour, "Misbehaviour: %s", err.Error())
 	}
@@ -116,16 +123,66 @@ func NewMsgSubmitConsumerDoubleVoting(
 
 // ValidateBasic implements the sdk.HasValidateBasic interface.
 func (msg MsgSubmitConsumerDoubleVoting) ValidateBasic() error {
-	if dve, err := cmttypes.DuplicateVoteEvidenceFromProto(msg.DuplicateVoteEvidence); err != nil {
+	if _, err := sdk.AccAddressFromBech32(msg.Submitter); err != nil {
+		return errorsmod.Wrapf(ErrInvalidMsgSubmitConsumerDoubleVoting, "Submitter: %s", err.Error())
+	}
+
+	dve, err := cmttypes.DuplicateVoteEvidenceFromProto(msg.DuplicateVoteEvidence)
+	if err != nil {
 		return errorsmod.Wrapf(ErrInvalidMsgSubmitConsumerDoubleVoting, "DuplicateVoteEvidence: %s", err.Error())
-	} else {
-		if err = dve.ValidateBasic(); err != nil {
-			return errorsmod.Wrapf(ErrInvalidMsgSubmitConsumerDoubleVoting, "DuplicateVoteEvidence: %s", err.Error())
-		}
+	}
+	if err := dve.ValidateBasic(); err != nil {
+		return errorsmod.Wrapf(ErrInvalidMsgSubmitConsumerDoubleVoting, "DuplicateVoteEvidence: %s", err.Error())
 	}
 
 	if err := ValidateHeaderForConsumerDoubleVoting(msg.InfractionBlockHeader); err != nil {
 		return errorsmod.Wrapf(ErrInvalidMsgSubmitConsumerDoubleVoting, "ValidateTendermintHeader: %s", err.Error())
+	}
+
+	// CometBFT's DuplicateVoteEvidence.ValidateBasic does not enforce that the
+	// two votes share height/round/type, so check it here before any signature
+	// verification runs against mismatched payloads.
+	if dve.VoteA.Height != dve.VoteB.Height ||
+		dve.VoteA.Round != dve.VoteB.Round ||
+		dve.VoteA.Type != dve.VoteB.Type {
+		return errorsmod.Wrapf(
+			ErrInvalidMsgSubmitConsumerDoubleVoting,
+			"duplicate vote evidence height/round/type mismatch: %d/%d/%v vs %d/%d/%v",
+			dve.VoteA.Height, dve.VoteA.Round, dve.VoteA.Type,
+			dve.VoteB.Height, dve.VoteB.Round, dve.VoteB.Type,
+		)
+	}
+
+	header := msg.InfractionBlockHeader.SignedHeader.Header
+	if header.Height != dve.VoteA.Height {
+		return errorsmod.Wrapf(
+			ErrInvalidMsgSubmitConsumerDoubleVoting,
+			"infraction block header height (%d) does not match duplicate vote evidence height (%d)",
+			header.Height,
+			dve.VoteA.Height,
+		)
+	}
+
+	// Validate that evidence signatures are valid for the infraction header chain ID.
+	valset, err := cmttypes.ValidatorSetFromProto(msg.InfractionBlockHeader.ValidatorSet)
+	if err != nil {
+		return errorsmod.Wrapf(ErrInvalidMsgSubmitConsumerDoubleVoting, "InfractionBlockHeader.ValidatorSet: %s", err.Error())
+	}
+	_, validator := valset.GetByAddress(dve.VoteA.ValidatorAddress)
+	if validator == nil {
+		return errorsmod.Wrapf(
+			ErrInvalidMsgSubmitConsumerDoubleVoting,
+			"misbehaving validator %X cannot be found in infraction block header validator set",
+			dve.VoteA.ValidatorAddress,
+		)
+	}
+
+	headerChainID := header.ChainID
+	if err := dve.VoteA.Verify(headerChainID, validator.PubKey); err != nil {
+		return errorsmod.Wrapf(ErrInvalidMsgSubmitConsumerDoubleVoting, "DuplicateVoteEvidence.VoteA: %s", err.Error())
+	}
+	if err := dve.VoteB.Verify(headerChainID, validator.PubKey); err != nil {
+		return errorsmod.Wrapf(ErrInvalidMsgSubmitConsumerDoubleVoting, "DuplicateVoteEvidence.VoteB: %s", err.Error())
 	}
 
 	return nil
@@ -134,14 +191,12 @@ func (msg MsgSubmitConsumerDoubleVoting) ValidateBasic() error {
 // NewMsgCreateConsumer creates a new MsgCreateConsumer instance
 func NewMsgCreateConsumer(submitter, chainId string, metadata ConsumerMetadata,
 	initializationParameters *ConsumerInitializationParameters,
-	infractionParameters *InfractionParameters,
 ) (*MsgCreateConsumer, error) {
 	return &MsgCreateConsumer{
 		Submitter:                submitter,
 		ChainId:                  chainId,
 		Metadata:                 metadata,
 		InitializationParameters: initializationParameters,
-		InfractionParameters:     infractionParameters,
 	}, nil
 }
 
@@ -186,19 +241,13 @@ func (msg MsgCreateConsumer) ValidateBasic() error {
 		}
 	}
 
-	if msg.InfractionParameters != nil {
-		if err := ValidateInfractionParameters(*msg.InfractionParameters); err != nil {
-			return errorsmod.Wrapf(ErrInvalidMsgCreateConsumer, "InfractionParameters: %s", err.Error())
-		}
-	}
-
 	return nil
 }
 
 // NewMsgUpdateConsumer creates a new MsgUpdateConsumer instance
 func NewMsgUpdateConsumer(owner string, consumerId uint64, ownerAddress string, metadata *ConsumerMetadata,
 	initializationParameters *ConsumerInitializationParameters,
-	newChainId string, infractionParameters *InfractionParameters,
+	newChainId string,
 ) (*MsgUpdateConsumer, error) {
 	return &MsgUpdateConsumer{
 		Owner:                    owner,
@@ -207,7 +256,6 @@ func NewMsgUpdateConsumer(owner string, consumerId uint64, ownerAddress string, 
 		Metadata:                 metadata,
 		InitializationParameters: initializationParameters,
 		NewChainId:               newChainId,
-		InfractionParameters:     infractionParameters,
 	}, nil
 }
 
@@ -224,12 +272,6 @@ func (msg MsgUpdateConsumer) ValidateBasic() error {
 	if msg.InitializationParameters != nil {
 		if err := ValidateInitializationParameters(*msg.InitializationParameters); err != nil {
 			return errorsmod.Wrapf(ErrInvalidMsgUpdateConsumer, "InitializationParameters: %s", err.Error())
-		}
-	}
-
-	if msg.InfractionParameters != nil {
-		if err := ValidateInfractionParameters(*msg.InfractionParameters); err != nil {
-			return errorsmod.Wrapf(ErrInvalidMsgUpdateConsumer, "InfractionParameters: %s", err.Error())
 		}
 	}
 
@@ -297,16 +339,16 @@ func ValidateHeaderForConsumerDoubleVoting(header *ibctmtypes.Header) error {
 		return errors.New("infraction block header cannot be nil")
 	}
 
-	if header.SignedHeader == nil {
-		return errors.New("signed header in infraction block header cannot be nil")
-	}
-
-	if header.SignedHeader.Header == nil {
-		return errors.New("invalid signed header in infraction block header, 'SignedHeader.Header' is nil")
+	if header.SignedHeader == nil || header.SignedHeader.Header == nil {
+		return errors.New("infraction block header signed header or header cannot be nil")
 	}
 
 	if header.ValidatorSet == nil {
-		return errors.New("invalid infraction block header, validator set is nil")
+		return errors.New("infraction block header validator set cannot be nil")
+	}
+
+	if err := header.ValidateBasic(); err != nil {
+		return err
 	}
 
 	return nil
@@ -383,29 +425,6 @@ func ValidateInitializationParameters(initializationParameters ConsumerInitializ
 
 	if err := vaastypes.ValidateDuration(initializationParameters.UnbondingPeriod); err != nil {
 		return errorsmod.Wrapf(ErrInvalidConsumerInitializationParameters, "UnbondingPeriod: %s", err.Error())
-	}
-
-	return nil
-}
-
-// ValidateInfractionParameters validates that all the provided infraction parameters are in the expected range
-func ValidateInfractionParameters(initializationParameters InfractionParameters) error {
-	if initializationParameters.DoubleSign != nil {
-		if initializationParameters.DoubleSign.JailDuration < 0 {
-			return errorsmod.Wrap(ErrInvalidConsumerInfractionParameters, "DoubleSign.JailDuration cannot be negative")
-		}
-		if err := vaastypes.ValidateFraction(initializationParameters.DoubleSign.SlashFraction); err != nil {
-			return errorsmod.Wrapf(ErrInvalidConsumerInfractionParameters, "DoubleSign.SlashFraction: %s", err.Error())
-		}
-	}
-
-	if initializationParameters.Downtime != nil {
-		if initializationParameters.Downtime.JailDuration < 0 {
-			return errorsmod.Wrap(ErrInvalidConsumerInfractionParameters, "Downtime.JailDuration cannot be negative")
-		}
-		if err := vaastypes.ValidateFraction(initializationParameters.Downtime.SlashFraction); err != nil {
-			return errorsmod.Wrapf(ErrInvalidConsumerInfractionParameters, "Downtime.SlashFraction: %s", err.Error())
-		}
 	}
 
 	return nil

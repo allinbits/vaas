@@ -73,12 +73,6 @@ const (
 	// This is the reverse lookup mechanism for IBC v2 client-based communication.
 	ClientIdToConsumerIdKeyName = "ClientIdToConsumerIdKey"
 
-	ConsumerIdToInfractionParametersKeyName = "ConsumerIdToInfractionParametersKey"
-
-	ConsumerIdToQueuedInfractionParametersKeyName = "ConsumerIdToQueuedInfractionParametersKeyName"
-
-	InfractionScheduledTimeToConsumerIdsKeyName = "InfractionScheduledTimeToConsumerIdsKeyName"
-
 	ConsumerIdToDebtKeyName = "ConsumerIdToDebtKeyName"
 
 	ConsumerIdToFeesPerBlockOverrideKeyName = "ConsumerIdToFeesPerBlockOverrideKey"
@@ -108,10 +102,7 @@ var (
 	SpawnTimeToConsumerIdsPrefix           = collections.NewPrefix(19)
 	RemovalTimeToConsumerIdsPrefix         = collections.NewPrefix(20)
 	ClientIdToConsumerIdPrefix             = collections.NewPrefix(21)
-	ConsumerIdToInfractionParamsPrefix     = collections.NewPrefix(22)
-	ConsumerIdToQueuedInfractionPrefix     = collections.NewPrefix(23)
-	InfractionScheduledTimePrefix          = collections.NewPrefix(24)
-	ConsumerIdToDebtPrefix                 = collections.NewPrefix(25)
-	ConsumerIdToFeesPerBlockOverridePrefix = collections.NewPrefix(29)
+	ConsumerIdToDebtPrefix                 = collections.NewPrefix(22)
+	ConsumerIdToFeesPerBlockOverridePrefix = collections.NewPrefix(26)
 	ParametersPrefix                       = collections.NewPrefix(0xFF)
 )

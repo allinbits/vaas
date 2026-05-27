@@ -26,6 +26,5 @@ var (
 	ErrInvalidMsgAssignConsumerKey             = errorsmod.Register(ModuleName, 18, "invalid assign consumer key message")
 	ErrInvalidMsgSubmitConsumerMisbehaviour    = errorsmod.Register(ModuleName, 19, "invalid submit consumer misbehaviour message")
 	ErrInvalidMsgSubmitConsumerDoubleVoting    = errorsmod.Register(ModuleName, 20, "invalid submit consumer double voting message")
-	ErrInvalidConsumerInfractionParameters     = errorsmod.Register(ModuleName, 21, "invalid consumer infraction parameters")
-	ErrDuplicateChainId                        = errorsmod.Register(ModuleName, 22, "consumer chain-id is already in use")
+	ErrDuplicateChainId                        = errorsmod.Register(ModuleName, 21, "consumer chain-id is already in use")
 )
