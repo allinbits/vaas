@@ -580,6 +580,12 @@ func (k msgServer) WithdrawConsumerFeePool(
 	}
 	isGov := k.isGovAuthority(signerAddr)
 
+	if !isGov && k.GetConsumerPhase(ctx, msg.ConsumerId) == types.CONSUMER_PHASE_LAUNCHED {
+		return nil, errorsmod.Wrapf(types.ErrFeePoolLocked,
+			"withdraws are locked while consumer %d is launched; only the gov authority may withdraw at this stage",
+			msg.ConsumerId)
+	}
+
 	var depositor sdk.AccAddress
 	if isGov {
 		depositor = authtypes.NewModuleAddress(disttypes.ModuleName)
@@ -649,9 +655,14 @@ func (k msgServer) SweepConsumerFeePool(
 		return nil, errorsmod.Wrapf(types.ErrUnknownConsumerId,
 			"consumer %d does not exist", msg.ConsumerId)
 	}
-	if k.GetConsumerPhase(ctx, msg.ConsumerId) == types.CONSUMER_PHASE_DELETED {
+	phase := k.GetConsumerPhase(ctx, msg.ConsumerId)
+	if phase == types.CONSUMER_PHASE_DELETED {
 		return nil, errorsmod.Wrapf(types.ErrInvalidPhase,
 			"consumer %d is deleted; pool already auto-swept on delete", msg.ConsumerId)
+	}
+	if phase == types.CONSUMER_PHASE_LAUNCHED {
+		return nil, errorsmod.Wrapf(types.ErrFeePoolLocked,
+			"sweep is locked while consumer %d is launched", msg.ConsumerId)
 	}
 
 	ownerAddrString, err := k.GetConsumerOwnerAddress(ctx, msg.ConsumerId)
