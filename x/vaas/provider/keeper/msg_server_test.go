@@ -1,6 +1,7 @@
 package keeper_test
 
 import (
+	"strconv"
 	"sync"
 	"testing"
 	"time"
@@ -12,8 +13,6 @@ import (
 	ibctmtypes "github.com/cosmos/ibc-go/v10/modules/light-clients/07-tendermint"
 	"github.com/stretchr/testify/require"
 	"go.uber.org/mock/gomock"
-
-	"cosmossdk.io/math"
 
 	"cosmossdk.io/math"
 
@@ -458,10 +457,14 @@ func TestSetConsumerFeesPerBlock(t *testing.T) {
 	// overrideAuth resolves to k.GetAuthority() (the canonical gov authority).
 	// A nil wantAmount means the override entry should be absent after the
 	// call; a non-nil wantAmount asserts the stored value.
+	// The module-wide default acts as a floor; overrides must exceed it.
+	const globalFeesPerBlock = providertypes.DefaultFeesPerBlockAmount // 1000
+
 	cases := []struct {
 		name         string
 		overrideAuth string
 		skipConsumer bool
+		deleted      bool
 		seedOverride math.Int
 		amount       string
 		wantErr      error
@@ -481,14 +484,30 @@ func TestSetConsumerFeesPerBlock(t *testing.T) {
 			wantErr:      providertypes.ErrUnknownConsumerId,
 		},
 		{
-			name:       "positive amount stored",
+			name:    "deleted consumer rejected",
+			deleted: true,
+			amount:  "2500",
+			wantErr: providertypes.ErrUnknownConsumerId,
+		},
+		{
+			name:       "amount above global stored",
 			amount:     "2500",
 			wantAmount: math.NewInt(2500),
 		},
 		{
-			name:       "zero amount stored",
+			name:       "amount equal to global rejected",
+			amount:     strconv.FormatInt(globalFeesPerBlock, 10),
+			wantErrMsg: "must be greater than",
+		},
+		{
+			name:       "amount below global rejected",
+			amount:     "500",
+			wantErrMsg: "must be greater than",
+		},
+		{
+			name:       "zero amount rejected",
 			amount:     "0",
-			wantAmount: math.ZeroInt(),
+			wantErrMsg: "must be greater than",
 		},
 		{
 			name:         "empty amount clears existing override",
@@ -507,11 +526,16 @@ func TestSetConsumerFeesPerBlock(t *testing.T) {
 			params := testkeeper.NewInMemKeeperParams(t)
 			k, ctx, ctrl, _ := testkeeper.GetProviderKeeperAndCtx(t, params)
 			defer ctrl.Finish()
+			k.SetParams(ctx, providertypes.DefaultParams())
 
 			var consumerId uint64
-			if tc.skipConsumer {
+			switch {
+			case tc.skipConsumer:
 				consumerId = 999
-			} else {
+			case tc.deleted:
+				consumerId = k.FetchAndIncrementConsumerId(ctx)
+				k.SetConsumerPhase(ctx, consumerId, providertypes.CONSUMER_PHASE_DELETED)
+			default:
 				consumerId = k.FetchAndIncrementConsumerId(ctx)
 				k.SetConsumerPhase(ctx, consumerId, providertypes.CONSUMER_PHASE_REGISTERED)
 			}
@@ -554,4 +578,57 @@ func TestSetConsumerFeesPerBlock(t *testing.T) {
 			}
 		})
 	}
+}
+
+// TestUpdateParams_ReconcilesFeesPerBlockOverrides verifies that raising the
+// global fees_per_block drops any per-consumer override that is no longer
+// strictly greater than the new default, while keeping those still above it.
+func TestUpdateParams_ReconcilesFeesPerBlockOverrides(t *testing.T) {
+	params := testkeeper.NewInMemKeeperParams(t)
+	k, ctx, ctrl, _ := testkeeper.GetProviderKeeperAndCtx(t, params)
+	defer ctrl.Finish()
+	k.SetParams(ctx, providertypes.DefaultParams()) // global default = 1000
+
+	// Three overrides, all above the current floor (1000).
+	below := k.FetchAndIncrementConsumerId(ctx) // 1500: below the new floor -> dropped
+	equal := k.FetchAndIncrementConsumerId(ctx) // 2000: equal the new floor -> dropped
+	above := k.FetchAndIncrementConsumerId(ctx) // 2500: above the new floor -> kept
+	require.NoError(t, k.ConsumerFeesPerBlockOverride.Set(ctx, below, math.NewInt(1500)))
+	require.NoError(t, k.ConsumerFeesPerBlockOverride.Set(ctx, equal, math.NewInt(2000)))
+	require.NoError(t, k.ConsumerFeesPerBlockOverride.Set(ctx, above, math.NewInt(2500)))
+
+	// Raise the global default to 2000.
+	newParams := providertypes.DefaultParams()
+	newParams.FeesPerBlock = sdk.NewInt64Coin(providertypes.DefaultFeesPerBlockDenom, 2000)
+
+	msgSrv := providerkeeper.NewMsgServerImpl(&k)
+	_, err := msgSrv.UpdateParams(ctx, &providertypes.MsgUpdateParams{
+		Authority: k.GetAuthority(),
+		Params:    newParams,
+	})
+	require.NoError(t, err)
+
+	// Overrides not strictly greater than the new floor are dropped.
+	for _, id := range []uint64{below, equal} {
+		has, err := k.ConsumerFeesPerBlockOverride.Has(ctx, id)
+		require.NoError(t, err)
+		require.False(t, has, "override for consumer %d should have been dropped", id)
+	}
+
+	// Overrides still above the new floor survive untouched.
+	amtAbove, err := k.ConsumerFeesPerBlockOverride.Get(ctx, above)
+	require.NoError(t, err)
+	require.Equal(t, math.NewInt(2500), amtAbove)
+
+	// Lowering the floor never invalidates overrides: the survivor stays.
+	lowerParams := providertypes.DefaultParams()
+	lowerParams.FeesPerBlock = sdk.NewInt64Coin(providertypes.DefaultFeesPerBlockDenom, 500)
+	_, err = msgSrv.UpdateParams(ctx, &providertypes.MsgUpdateParams{
+		Authority: k.GetAuthority(),
+		Params:    lowerParams,
+	})
+	require.NoError(t, err)
+	amtAbove, err = k.ConsumerFeesPerBlockOverride.Get(ctx, above)
+	require.NoError(t, err)
+	require.Equal(t, math.NewInt(2500), amtAbove)
 }

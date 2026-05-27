@@ -7,10 +7,13 @@ import (
 	"cosmossdk.io/math"
 	"github.com/stretchr/testify/require"
 	"go.uber.org/mock/gomock"
+	"google.golang.org/grpc/codes"
+	"google.golang.org/grpc/status"
 
 	sdk "github.com/cosmos/cosmos-sdk/types"
 
 	testkeeper "github.com/allinbits/vaas/testutil/keeper"
+	providerkeeper "github.com/allinbits/vaas/x/vaas/provider/keeper"
 	providertypes "github.com/allinbits/vaas/x/vaas/provider/types"
 )
 
@@ -87,6 +90,46 @@ func TestQueryConsumerFeesPerBlock(t *testing.T) {
 			require.NoError(t, err)
 			require.Equal(t, tc.wantIsOverride, res.IsOverride)
 			require.Equal(t, tc.wantCoin, res.FeesPerBlock)
+		})
+	}
+}
+
+func TestQueryConsumerFeesPerBlock_UnknownOrDeletedConsumer(t *testing.T) {
+	cases := []struct {
+		name  string
+		setup func(k providerkeeper.Keeper, ctx sdk.Context) uint64
+	}{
+		{
+			name: "unknown consumer",
+			setup: func(_ providerkeeper.Keeper, _ sdk.Context) uint64 {
+				return 999
+			},
+		},
+		{
+			name: "deleted consumer",
+			setup: func(k providerkeeper.Keeper, ctx sdk.Context) uint64 {
+				consumerId := k.FetchAndIncrementConsumerId(ctx)
+				k.SetConsumerPhase(ctx, consumerId, providertypes.CONSUMER_PHASE_DELETED)
+				return consumerId
+			},
+		},
+	}
+
+	for _, tc := range cases {
+		tc := tc
+		t.Run(tc.name, func(t *testing.T) {
+			params := testkeeper.NewInMemKeeperParams(t)
+			k, ctx, ctrl, _ := testkeeper.GetProviderKeeperAndCtx(t, params)
+			defer ctrl.Finish()
+			k.SetParams(ctx, providertypes.DefaultParams())
+
+			consumerId := tc.setup(k, ctx)
+
+			_, err := k.QueryConsumerFeesPerBlock(ctx, &providertypes.QueryConsumerFeesPerBlockRequest{
+				ConsumerId: consumerId,
+			})
+			require.Error(t, err)
+			require.Equal(t, codes.NotFound, status.Code(err))
 		})
 	}
 }

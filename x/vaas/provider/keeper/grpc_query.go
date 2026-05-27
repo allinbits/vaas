@@ -365,6 +365,12 @@ func (k Keeper) QueryConsumerFeesPerBlock(
 	if req == nil {
 		return nil, status.Errorf(codes.InvalidArgument, "empty request")
 	}
+	// Reject unknown and deleted consumers rather than reporting the default
+	// fee for an id that does not (or no longer) exists.
+	phase := k.GetConsumerPhase(goCtx, req.ConsumerId)
+	if phase == types.CONSUMER_PHASE_UNSPECIFIED || phase == types.CONSUMER_PHASE_DELETED {
+		return nil, status.Errorf(codes.NotFound, "consumer %d not found", req.ConsumerId)
+	}
 	coin, isOverride := k.GetEffectiveFeesPerBlock(goCtx, req.ConsumerId)
 	return &types.QueryConsumerFeesPerBlockResponse{
 		FeesPerBlock: coin,

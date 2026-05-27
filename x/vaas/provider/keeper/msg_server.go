@@ -18,6 +18,7 @@ import (
 
 	cryptocodec "github.com/cosmos/cosmos-sdk/crypto/codec"
 	sdk "github.com/cosmos/cosmos-sdk/types"
+	sdkerrors "github.com/cosmos/cosmos-sdk/types/errors"
 	govtypes "github.com/cosmos/cosmos-sdk/x/gov/types"
 	stakingtypes "github.com/cosmos/cosmos-sdk/x/staking/types"
 )
@@ -45,7 +46,20 @@ func (k msgServer) UpdateParams(goCtx context.Context, msg *types.MsgUpdateParam
 	}
 
 	ctx := sdk.UnwrapSDKContext(goCtx)
+
+	// Capture the current floor before applying the new params so we only walk
+	// the overrides when the fees_per_block floor actually rises.
+	oldFloor := k.GetFeesPerBlock(ctx).Amount
 	k.Keeper.SetParams(ctx, msg.Params)
+
+	// Per-consumer fees_per_block overrides must stay strictly above the global
+	// default. Only a higher floor can leave an existing override underwater; an
+	// unchanged or lower floor keeps every override valid, so skip the walk.
+	if msg.Params.FeesPerBlock.Amount.GT(oldFloor) {
+		if err := k.reconcileFeesPerBlockOverrides(ctx, msg.Params.FeesPerBlock.Amount); err != nil {
+			return nil, err
+		}
+	}
 
 	return &types.MsgUpdateParamsResponse{}, nil
 }
@@ -509,11 +523,11 @@ func (k msgServer) SetConsumerFeesPerBlock(
 
 	ctx := sdk.UnwrapSDKContext(goCtx)
 
-	has, err := k.ConsumerPhase.Has(ctx, msg.ConsumerId)
-	if err != nil {
-		return nil, err
-	}
-	if !has {
+	// Reject unknown consumers and consumers that have already been deleted:
+	// DeleteConsumerChain leaves the phase set to DELETED, so a Has check alone
+	// would let a gov proposal resurrect an override that deletion erased.
+	phase := k.GetConsumerPhase(ctx, msg.ConsumerId)
+	if phase == types.CONSUMER_PHASE_UNSPECIFIED || phase == types.CONSUMER_PHASE_DELETED {
 		return nil, errorsmod.Wrapf(types.ErrUnknownConsumerId, "consumer %d", msg.ConsumerId)
 	}
 
@@ -524,7 +538,21 @@ func (k msgServer) SetConsumerFeesPerBlock(
 			}
 		}
 	} else {
+		// ValidateBasic guarantees a parseable, non-negative amount.
 		amt, _ := math.NewIntFromString(msg.Amount)
+		// The module-wide fees_per_block is a floor: a per-consumer override may
+		// only raise a consumer's fee above the global default, never lower it.
+		// Use an empty amount to clear the override and revert to the default.
+		// The floor is also re-enforced when the global default changes (see
+		// reconcileFeesPerBlockOverrides), so the invariant always holds.
+		defaultAmt := k.GetFeesPerBlock(ctx).Amount
+		if !amt.GT(defaultAmt) {
+			return nil, errorsmod.Wrapf(
+				sdkerrors.ErrInvalidRequest,
+				"fees-per-block override (%s) must be greater than the global fees_per_block (%s)",
+				amt, defaultAmt,
+			)
+		}
 		if err := k.ConsumerFeesPerBlockOverride.Set(ctx, msg.ConsumerId, amt); err != nil {
 			return nil, err
 		}

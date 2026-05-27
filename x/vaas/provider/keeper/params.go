@@ -13,6 +13,7 @@ import (
 	ibctmtypes "github.com/cosmos/ibc-go/v10/modules/light-clients/07-tendermint"
 
 	"cosmossdk.io/collections"
+	"cosmossdk.io/math"
 
 	sdk "github.com/cosmos/cosmos-sdk/types"
 )
@@ -71,7 +72,14 @@ func (k Keeper) GetFeesPerBlock(ctx context.Context) sdk.Coin {
 // reports whether an override was applied (true) or the default was used
 // (false).
 func (k Keeper) GetEffectiveFeesPerBlock(ctx context.Context, consumerId uint64) (sdk.Coin, bool) {
-	defaultCoin := k.GetFeesPerBlock(ctx)
+	return k.effectiveFeesPerBlock(ctx, consumerId, k.GetFeesPerBlock(ctx))
+}
+
+// effectiveFeesPerBlock resolves the per-consumer fee given an already-read
+// default. The per-block fee collection loop reads the default once and reuses
+// it across all consumers via this method, avoiding a redundant params read
+// per consumer.
+func (k Keeper) effectiveFeesPerBlock(ctx context.Context, consumerId uint64, defaultCoin sdk.Coin) (sdk.Coin, bool) {
 	overrideAmt, err := k.ConsumerFeesPerBlockOverride.Get(ctx, consumerId)
 	if err != nil {
 		if errors.Is(err, collections.ErrNotFound) {
@@ -80,6 +88,34 @@ func (k Keeper) GetEffectiveFeesPerBlock(ctx context.Context, consumerId uint64)
 		panic(fmt.Errorf("error getting fees-per-block override for consumer %d: %w", consumerId, err))
 	}
 	return sdk.NewCoin(defaultCoin.Denom, overrideAmt), true
+}
+
+// reconcileFeesPerBlockOverrides drops every per-consumer override that is no
+// longer strictly greater than floor (the module-wide Params.FeesPerBlock
+// amount). It is called when the global fees_per_block rises so the "override
+// must exceed the default" floor holds as a true invariant, not just at set
+// time: a higher default can leave overrides underwater, and those consumers
+// should revert to paying the new (higher) default.
+//
+// UpdateParams is a rare governance action and only a handful of overrides are
+// expected, so the full walk here is expected to be manageable.
+func (k Keeper) reconcileFeesPerBlockOverrides(ctx context.Context, floor math.Int) error {
+	var toRemove []uint64
+	err := k.ConsumerFeesPerBlockOverride.Walk(ctx, nil, func(consumerId uint64, amt math.Int) (bool, error) {
+		if !amt.GT(floor) {
+			toRemove = append(toRemove, consumerId)
+		}
+		return false, nil
+	})
+	if err != nil {
+		return err
+	}
+	for _, consumerId := range toRemove {
+		if err := k.ConsumerFeesPerBlockOverride.Remove(ctx, consumerId); err != nil {
+			return err
+		}
+	}
+	return nil
 }
 
 // GetParams returns the paramset for the provider module

@@ -459,8 +459,10 @@ func TestGenesisRoundTrip_PreservesFeesPerBlockOverrides(t *testing.T) {
 	k.SetParams(ctx, providertypes.DefaultParams())
 	k.SetValidatorSetUpdateId(ctx, 1)
 
+	// Both overrides must stay strictly above the global fees_per_block floor
+	// (DefaultParams uses 1000), or exported.Validate() would reject them.
 	require.NoError(t, k.ConsumerFeesPerBlockOverride.Set(ctx, consumerA, math.NewInt(2500)))
-	require.NoError(t, k.ConsumerFeesPerBlockOverride.Set(ctx, consumerC, math.NewInt(0)))
+	require.NoError(t, k.ConsumerFeesPerBlockOverride.Set(ctx, consumerC, math.NewInt(1500)))
 
 	exported := k.ExportGenesis(ctx)
 	require.Len(t, exported.ConsumerFeesPerBlockOverrides, 2)
@@ -486,45 +488,62 @@ func TestGenesisRoundTrip_PreservesFeesPerBlockOverrides(t *testing.T) {
 
 	amtC, err := k2.ConsumerFeesPerBlockOverride.Get(ctx2, consumerC)
 	require.NoError(t, err)
-	require.Equal(t, math.ZeroInt(), amtC)
+	require.Equal(t, math.NewInt(1500), amtC)
 }
 
-func TestGenesisState_Validate_OrphanOverrideRejected(t *testing.T) {
-	gs := providertypes.DefaultGenesisState()
-	gs.ConsumerFeesPerBlockOverrides = []providertypes.ConsumerFeesPerBlockOverride{
-		{ConsumerId: 99, Amount: "100"}, // not present in consumer_states
-	}
-	err := gs.Validate()
-	require.Error(t, err)
-	require.Contains(t, err.Error(), "override")
-}
-
-func TestGenesisState_Validate_MalformedAmountRejected(t *testing.T) {
+func TestGenesisState_Validate_OverrideRejections(t *testing.T) {
 	owner := sdk.AccAddress([]byte("vaas-test-owner-1234")).String()
 	md := providertypes.ConsumerMetadata{Name: "n", Description: "d", Metadata: "m"}
-	gs := providertypes.DefaultGenesisState()
-	gs.ConsumerStates = []providertypes.ConsumerState{
-		{ConsumerId: 1, ChainId: "test-1", Phase: providertypes.CONSUMER_PHASE_REGISTERED,
-			OwnerAddress: owner, Metadata: &md},
+	knownConsumer := providertypes.ConsumerState{
+		ConsumerId: 1, ChainId: "test-1", Phase: providertypes.CONSUMER_PHASE_REGISTERED,
+		OwnerAddress: owner, Metadata: &md,
 	}
-	gs.ConsumerFeesPerBlockOverrides = []providertypes.ConsumerFeesPerBlockOverride{
-		{ConsumerId: 1, Amount: "garbage"},
-	}
-	err := gs.Validate()
-	require.Error(t, err)
-}
 
-func TestGenesisState_Validate_NegativeAmountRejected(t *testing.T) {
-	owner := sdk.AccAddress([]byte("vaas-test-owner-1234")).String()
-	md := providertypes.ConsumerMetadata{Name: "n", Description: "d", Metadata: "m"}
-	gs := providertypes.DefaultGenesisState()
-	gs.ConsumerStates = []providertypes.ConsumerState{
-		{ConsumerId: 1, ChainId: "test-1", Phase: providertypes.CONSUMER_PHASE_REGISTERED,
-			OwnerAddress: owner, Metadata: &md},
+	// DefaultGenesisState carries a global fees_per_block of 1000, which acts as
+	// the floor every override must exceed.
+	cases := []struct {
+		name       string
+		consumers  []providertypes.ConsumerState
+		override   providertypes.ConsumerFeesPerBlockOverride
+		wantErrMsg string
+	}{
+		{
+			name:       "orphan override for unknown consumer",
+			consumers:  nil, // consumer 99 is not present in consumer_states
+			override:   providertypes.ConsumerFeesPerBlockOverride{ConsumerId: 99, Amount: "2000"},
+			wantErrMsg: "orphan",
+		},
+		{
+			name:       "malformed amount",
+			consumers:  []providertypes.ConsumerState{knownConsumer},
+			override:   providertypes.ConsumerFeesPerBlockOverride{ConsumerId: 1, Amount: "garbage"},
+			wantErrMsg: "not a valid integer",
+		},
+		{
+			name:       "negative amount is below the floor",
+			consumers:  []providertypes.ConsumerState{knownConsumer},
+			override:   providertypes.ConsumerFeesPerBlockOverride{ConsumerId: 1, Amount: "-1"},
+			wantErrMsg: "must be greater than",
+		},
+		{
+			name:       "positive amount below the floor",
+			consumers:  []providertypes.ConsumerState{knownConsumer},
+			override:   providertypes.ConsumerFeesPerBlockOverride{ConsumerId: 1, Amount: "500"},
+			wantErrMsg: "must be greater than",
+		},
 	}
-	gs.ConsumerFeesPerBlockOverrides = []providertypes.ConsumerFeesPerBlockOverride{
-		{ConsumerId: 1, Amount: "-1"},
+
+	for _, tc := range cases {
+		tc := tc
+		t.Run(tc.name, func(t *testing.T) {
+			gs := providertypes.DefaultGenesisState()
+			if tc.consumers != nil {
+				gs.ConsumerStates = tc.consumers
+			}
+			gs.ConsumerFeesPerBlockOverrides = []providertypes.ConsumerFeesPerBlockOverride{tc.override}
+			err := gs.Validate()
+			require.Error(t, err)
+			require.Contains(t, err.Error(), tc.wantErrMsg)
+		})
 	}
-	err := gs.Validate()
-	require.Error(t, err)
 }

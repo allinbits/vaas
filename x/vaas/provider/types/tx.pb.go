@@ -724,8 +724,9 @@ type MsgSetConsumerFeesPerBlock struct {
 	//
 	// Empty string clears any existing override; the consumer reverts to
 	// Params.FeesPerBlock.Amount. A non-empty value must parse as a
-	// non-negative cosmossdk.io/math.Int. Zero is permitted (explicit gov
-	// subsidy).
+	// cosmossdk.io/math.Int and must be strictly greater than the module-wide
+	// Params.FeesPerBlock.Amount, which acts as a floor: an override may only
+	// raise a consumer's per-block fee above the global default, never lower it.
 	Amount string `protobuf:"bytes,3,opt,name=amount,proto3" json:"amount,omitempty"`
 }
 
