@@ -32,7 +32,7 @@ func NewInitialConsumerGenesisState(
 // unless explicitly specified in genesis.
 func DefaultConsumerGenesisState() *ConsumerGenesisState {
 	return &ConsumerGenesisState{
-		Params: DefaultParams(),
+		Params: DefaultConsumerParams(),
 	}
 }
 

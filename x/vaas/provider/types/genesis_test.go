@@ -346,7 +346,7 @@ func getInitialConsumerGenesis(t *testing.T, chainID string, preVAAS bool) vaast
 		consensusState = ibctmtypes.NewConsensusState(time.Now(), commitmenttypes.NewMerkleRoot([]byte("apphash")), valHash)
 	}
 
-	params := vaastypes.DefaultParams()
+	params := vaastypes.DefaultConsumerParams()
 	params.Enabled = true
 
 	return *vaastypes.NewInitialConsumerGenesisState(clientState, consensusState, valUpdates, preVAAS, params)

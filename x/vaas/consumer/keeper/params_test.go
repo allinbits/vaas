@@ -14,9 +14,9 @@ import (
 func TestParams(t *testing.T) {
 	consumerKeeper, ctx, ctrl, _ := testkeeper.GetConsumerKeeperAndCtx(t, testkeeper.NewInMemKeeperParams(t))
 	defer ctrl.Finish()
-	consumerKeeper.SetParams(ctx, vaastypes.DefaultParams())
+	consumerKeeper.SetParams(ctx, vaastypes.DefaultConsumerParams())
 
-	expParams := vaastypes.NewParams(
+	expParams := vaastypes.NewConsumerParams(
 		false,
 		vaastypes.DefaultVAASTimeoutPeriod,
 		vaastypes.DefaultHistoricalEntries,
@@ -26,7 +26,7 @@ func TestParams(t *testing.T) {
 	params := consumerKeeper.GetConsumerParams(ctx)
 	require.Equal(t, expParams, params)
 
-	newParams := vaastypes.NewParams(false, 7*24*time.Hour, 500, 24*21*time.Hour)
+	newParams := vaastypes.NewConsumerParams(false, 7*24*time.Hour, 500, 24*21*time.Hour)
 	consumerKeeper.SetParams(ctx, newParams)
 	params = consumerKeeper.GetConsumerParams(ctx)
 	require.Equal(t, newParams, params)

@@ -40,7 +40,7 @@ func TestValidateInitialGenesisState(t *testing.T) {
 	cs := ibctmtypes.NewClientState(chainID, ibctmtypes.DefaultTrustLevel, trustingPeriod, ubdPeriod, maxClockDrift, height, commitmenttypes.GetSDKSpecs(), upgradePath)
 	consensusState := ibctmtypes.NewConsensusState(time.Now(), commitmenttypes.NewMerkleRoot([]byte("apphash")), valHash)
 
-	params := vaastypes.DefaultParams()
+	params := vaastypes.DefaultConsumerParams()
 	params.Enabled = true
 
 	cases := []struct {
@@ -121,7 +121,7 @@ func TestValidateInitialGenesisState(t *testing.T) {
 		{
 			"invalid new consumer genesis state: invalid params - ccvTimeoutPeriod",
 			types.NewInitialGenesisState(cs, consensusState, valUpdates,
-				vaastypes.NewParams(
+				vaastypes.NewConsumerParams(
 					true,
 					0,
 					vaastypes.DefaultHistoricalEntries,
@@ -157,7 +157,7 @@ func TestValidateRestartConsumerGenesisState(t *testing.T) {
 	cs := ibctmtypes.NewClientState(chainID, ibctmtypes.DefaultTrustLevel, trustingPeriod, ubdPeriod, maxClockDrift, height, commitmenttypes.GetSDKSpecs(), upgradePath)
 	consensusState := ibctmtypes.NewConsensusState(time.Now(), commitmenttypes.NewMerkleRoot([]byte("apphash")), valHash)
 
-	params := vaastypes.DefaultParams()
+	params := vaastypes.DefaultConsumerParams()
 	params.Enabled = true
 
 	cases := []struct {
@@ -211,7 +211,7 @@ func TestValidateRestartConsumerGenesisState(t *testing.T) {
 		{
 			"invalid restart consumer genesis state: invalid params",
 			types.NewRestartGenesisState("ccvclient", valUpdates, nil,
-				vaastypes.NewParams(
+				vaastypes.NewConsumerParams(
 					true,
 					0,
 					vaastypes.DefaultHistoricalEntries,

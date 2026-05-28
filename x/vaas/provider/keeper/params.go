@@ -77,3 +77,19 @@ func (k Keeper) SetParams(ctx context.Context, params types.Params) {
 		panic(fmt.Sprintf("error setting module parameters: %v", err))
 	}
 }
+
+// GetInfractionParams returns the infraction parameters for consumer chain slashing.
+func (k Keeper) GetInfractionParams(ctx context.Context) types.InfractionParameters {
+	params, err := k.InfractionParams.Get(ctx)
+	if err != nil {
+		return types.DefaultInfractionParameters()
+	}
+	return params
+}
+
+// SetInfractionParams sets the infraction parameters for consumer chain slashing.
+func (k Keeper) SetInfractionParams(ctx context.Context, params types.InfractionParameters) {
+	if err := k.InfractionParams.Set(ctx, params); err != nil {
+		panic(fmt.Sprintf("error setting infraction parameters: %v", err))
+	}
+}

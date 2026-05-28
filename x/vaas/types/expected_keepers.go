@@ -53,9 +53,6 @@ type StakingKeeper interface {
 // SlashingKeeper defines the contract expected to perform ccv slashing
 type SlashingKeeper interface {
 	JailUntil(context.Context, sdk.ConsAddress, time.Time) error // called from provider keeper only
-	DowntimeJailDuration(context.Context) (time.Duration, error)
-	SlashFractionDoubleSign(context.Context) (math.LegacyDec, error)
-	SlashFractionDowntime(context.Context) (math.LegacyDec, error)
 	Tombstone(context.Context, sdk.ConsAddress) error
 	IsTombstoned(context.Context, sdk.ConsAddress) bool
 }

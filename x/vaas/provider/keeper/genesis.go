@@ -140,6 +140,11 @@ func (k Keeper) InitGenesis(ctx sdk.Context, genState *types.GenesisState) []abc
 	}
 
 	k.SetParams(ctx, genState.Params)
+
+	if _, err := k.InfractionParams.Get(ctx); err != nil {
+		k.SetInfractionParams(ctx, types.DefaultInfractionParameters())
+	}
+
 	return k.InitGenesisValUpdates(ctx)
 }
 

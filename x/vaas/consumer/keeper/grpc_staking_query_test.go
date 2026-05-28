@@ -26,7 +26,7 @@ func TestStakingQueryServerParams(t *testing.T) {
 	consumerKeeper, ctx, ctrl, _ := testkeeper.GetConsumerKeeperAndCtx(t, testkeeper.NewInMemKeeperParams(t))
 	defer ctrl.Finish()
 
-	consumerKeeper.SetParams(ctx, vaastypes.NewParams(
+	consumerKeeper.SetParams(ctx, vaastypes.NewConsumerParams(
 		true,
 		vaastypes.DefaultVAASTimeoutPeriod,
 		1234,

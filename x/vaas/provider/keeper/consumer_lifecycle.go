@@ -275,7 +275,7 @@ func (k Keeper) MakeConsumerGenesis(
 			"getting initialization parameters, consumerId(%d): %s", consumerId, err.Error())
 	}
 	// Create consumer genesis params
-	consumerGenesisParams := vaastypes.NewParams(
+	consumerGenesisParams := vaastypes.NewConsumerParams(
 		true,
 		initializationRecord.VaasTimeoutPeriod,
 		initializationRecord.HistoricalEntries,

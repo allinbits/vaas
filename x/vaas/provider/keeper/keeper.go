@@ -50,6 +50,7 @@ type Keeper struct {
 
 	// State collections
 	Params                        collections.Item[types.Params]
+	InfractionParams              collections.Item[types.InfractionParameters]
 	ValidatorSetUpdateId          collections.Sequence
 	ConsumerId                    collections.Sequence
 	ConsumerClients               *collections.IndexedMap[uint64, string, ConsumerClientIndexes]
@@ -112,6 +113,7 @@ func NewKeeper(
 
 		// Initialize collections
 		Params:               collections.NewItem(sb, types.ParametersPrefix, "params", codec.CollValue[types.Params](cdc)),
+		InfractionParams:     collections.NewItem(sb, types.InfractionParamsPrefix, "infraction_params", codec.CollValue[types.InfractionParameters](cdc)),
 		ValidatorSetUpdateId: collections.NewSequence(sb, types.ValidatorSetUpdateIdPrefix, "validator_set_update_id"),
 		ConsumerId:           collections.NewSequence(sb, types.ConsumerIdPrefix, "consumer_id"),
 		ConsumerClients: collections.NewIndexedMap(

@@ -871,9 +871,6 @@ func TestHandleConsumerEvidencePacket(t *testing.T) {
 		mocks.MockClientKeeper.EXPECT().
 			GetClientConsensusState(ctx, "07-tendermint-0", ibcclienttypes.NewHeight(0, 100)).
 			Return(ibcexported.ConsensusState(&ibctmtypes.ConsensusState{}), true),
-		mocks.MockSlashingKeeper.EXPECT().
-			SlashFractionDoubleSign(ctx).
-			Return(math.LegacyNewDecWithPrec(5, 1), nil),
 		mocks.MockStakingKeeper.EXPECT().
 			GetValidatorByConsAddr(ctx, providerAddr.ToSdkConsAddr()).
 			Return(validator, nil),
