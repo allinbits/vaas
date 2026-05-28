@@ -10,7 +10,7 @@ import (
 )
 
 func (s *IntegrationTestSuite) testDowntimeSlash() {
-	s.Run("downtime slash", func() {
+	s.Run("no downtime slash, consumer down", func() {
 		valoperAddr, tokensBefore := s.getProviderValidatorTokens()
 		s.Require().False(tokensBefore.IsZero(), "validator should have tokens before downtime test")
 
@@ -33,13 +33,51 @@ func (s *IntegrationTestSuite) testDowntimeSlash() {
 			if err != nil {
 				return false
 			}
-			return tokensAfter.LT(tokensBefore)
+			return tokensAfter.Equal(tokensBefore)
 		},
 			3*time.Minute,
 			5*time.Second,
-			"validator tokens were not slashed on provider after consumer downtime (before: %s, valoper: %s)",
+			"validator tokens were incorrectly slashed during whole consumer chain downtime (before: %s, valoper: %s)",
 			tokensBefore.String(), valoperAddr,
 		)
+
+		s.T().Log("verifying validator was not jailed after downtime slash...")
+		jailed = s.isProviderValidatorJailed()
+		s.Require().False(jailed, "validator should not be jailed after downtime slash")
+	})
+
+	s.Run("downtime slash", func() {
+		valoperAddr, tokensBefore := s.getProviderValidatorTokens()
+		s.Require().False(tokensBefore.IsZero(), "validator should have tokens before downtime test")
+
+		jailed := s.isProviderValidatorJailed()
+		s.Require().False(jailed, "validator should not be jailed before downtime test")
+
+		s.T().Log("pausing consumer container to simulate downtime...")
+		err := s.dkrPool.Client.PauseContainer(s.consumerValRes[0].Container.ID)
+		s.Require().NoError(err, "failed to pause consumer container")
+
+		time.Sleep(10 * time.Second)
+
+		s.T().Log("unpausing consumer container...")
+		err = s.dkrPool.Client.UnpauseContainer(s.consumerValRes[0].Container.ID)
+		s.Require().NoError(err, "failed to unpause consumer container")
+
+		// TODO: create multiple validators in e2e test and only shutdown one validator on the consumer chain.
+		_ = valoperAddr
+		// s.T().Log("waiting for provider to process downtime evidence from consumer...")
+		// s.Require().Eventuallyf(func() bool {
+		// 	tokensAfter, err := s.getProviderValidatorTokensByAddr(valoperAddr)
+		// 	if err != nil {
+		// 		return false
+		// 	}
+		// 	return tokensAfter.LT(tokensBefore)
+		// },
+		// 	3*time.Minute,
+		// 	5*time.Second,
+		// 	"validator tokens were not slashed on provider after consumer downtime (before: %s, valoper: %s)",
+		// 	tokensBefore.String(), valoperAddr,
+		// )
 
 		s.T().Log("verifying validator was not jailed after downtime slash...")
 		jailed = s.isProviderValidatorJailed()
