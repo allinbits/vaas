@@ -6,9 +6,9 @@ import (
 
 	vaastypes "github.com/allinbits/vaas/x/vaas/types"
 
-	"cosmossdk.io/math"
-
 	clienttypes "github.com/cosmos/ibc-go/v10/modules/core/02-client/types"
+
+	"cosmossdk.io/math"
 )
 
 func DefaultConsumerInitializationParameters() ConsumerInitializationParameters {
@@ -38,7 +38,7 @@ func DefaultConsumerInfractionParameters(ctx context.Context, slashingKeeper vaa
 			SlashFraction: doubleSignSlashingFraction,
 			Tombstone:     true,
 		},
-	Downtime: &SlashJailParameters{
+		Downtime: &SlashJailParameters{
 			JailDuration:  0,
 			SlashFraction: math.LegacyNewDecWithPrec(5, 4),
 			Tombstone:     false,

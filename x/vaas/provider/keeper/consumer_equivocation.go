@@ -206,10 +206,10 @@ func (k Keeper) HandleConsumerEvidencePacket(ctx sdk.Context, consumerId uint64,
 
 // HandleConsumerDowntime slashes a validator that was offline on a consumer chain.
 // The provider verifies the downtime claim by checking:
-//   1. The infraction height is not older than the minimum evidence height for this consumer.
-//   2. The provider's IBC client for the consumer has a consensus state at the infraction height,
-//      proving the consumer chain actually reached that height.
-//   3. The validator was part of the consumer's validator set at the time of the infraction.
+//  1. The infraction height is not older than the minimum evidence height for this consumer.
+//  2. The provider's IBC client for the consumer has a consensus state at the infraction height,
+//     proving the consumer chain actually reached that height.
+//  3. The validator was part of the consumer's validator set at the time of the infraction.
 //
 // CONTRACT: A downtime infraction must never jail a validator.
 func (k Keeper) HandleConsumerDowntime(ctx sdk.Context, consumerId uint64, evidencePacket vaastypes.EvidencePacketData) error {
