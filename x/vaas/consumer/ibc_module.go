@@ -35,13 +35,30 @@ func (im IBCModule) OnSendPacket(
 	payload channeltypesv2.Payload,
 	signer sdk.AccAddress,
 ) error {
-	im.keeper.Logger(ctx).Error("consumer attempted to send packet",
+	if payload.SourcePort != vaastypes.ConsumerAppID {
+		return errorsmod.Wrapf(sdkerrors.ErrInvalidRequest,
+			"invalid source port: expected %s, got %s", vaastypes.ConsumerAppID, payload.SourcePort)
+	}
+	if payload.DestinationPort != vaastypes.ProviderAppID {
+		return errorsmod.Wrapf(sdkerrors.ErrInvalidRequest,
+			"invalid destination port: expected %s, got %s", vaastypes.ProviderAppID, payload.DestinationPort)
+	}
+	if signer.String() != im.keeper.GetAuthority() {
+		return errorsmod.Wrapf(
+			sdkerrors.ErrUnauthorized,
+			"signer %s is different from authority %s",
+			signer.String(),
+			im.keeper.GetAuthority(),
+		)
+	}
+
+	im.keeper.Logger(ctx).Debug("OnSendPacket",
 		"sourceClient", sourceClient,
 		"destinationClient", destinationClient,
 		"sequence", sequence,
 	)
 
-	return errorsmod.Wrap(sdkerrors.ErrInvalidRequest, "consumer does not send packets")
+	return nil
 }
 
 func (im IBCModule) OnRecvPacket(

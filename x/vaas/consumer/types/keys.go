@@ -34,4 +34,5 @@ var (
 	ParametersPrefix            = collections.NewPrefix(11)
 	HighestValsetUpdateIDPrefix = collections.NewPrefix(12)
 	ConsumerDebtPrefix          = collections.NewPrefix(13)
+	PendingSlashPacketsPrefix   = collections.NewPrefix(14)
 )

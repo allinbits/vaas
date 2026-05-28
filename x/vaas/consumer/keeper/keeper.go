@@ -28,10 +28,11 @@ type Keeper struct {
 	// should be the x/gov module account.
 	authority string
 
-	storeService   corestoretypes.KVStoreService
-	cdc            codec.BinaryCodec
-	clientKeeper   vaastypes.ClientKeeper
-	clientV2Keeper vaastypes.ClientV2Keeper
+	storeService    corestoretypes.KVStoreService
+	cdc             codec.BinaryCodec
+	clientKeeper    vaastypes.ClientKeeper
+	clientV2Keeper  vaastypes.ClientV2Keeper
+	channelKeeperV2 vaastypes.ChannelV2Keeper
 	// standaloneStakingKeeper is the staking keeper that managed proof of stake for a previously standalone chain,
 	// before the chain went through a standalone to consumer changeover.
 	// This keeper is not used for consumers that launched with ICS, and is therefore set after the constructor.
@@ -62,6 +63,7 @@ type Keeper struct {
 	CrossChainValidators  collections.Map[[]byte, types.CrossChainValidator]
 	HistoricalInfos       collections.Map[int64, stakingtypes.HistoricalInfo]
 	HighestValsetUpdateID collections.Item[uint64]
+	PendingSlashPackets   collections.Map[[]byte, []byte]
 }
 
 // NewKeeper creates a new Consumer Keeper instance
@@ -71,6 +73,7 @@ func NewKeeper(
 	cdc codec.BinaryCodec, storeService corestoretypes.KVStoreService,
 	clientKeeper vaastypes.ClientKeeper,
 	clientV2Keeper vaastypes.ClientV2Keeper,
+	channelKeeperV2 vaastypes.ChannelV2Keeper,
 	slashingKeeper vaastypes.SlashingKeeper, bankKeeper vaastypes.BankKeeper, accountKeeper vaastypes.AccountKeeper,
 	feeCollectorName, authority string, validatorAddressCodec,
 	consensusAddressCodec addresscodec.Codec,
@@ -83,6 +86,7 @@ func NewKeeper(
 		cdc:                     cdc,
 		clientKeeper:            clientKeeper,
 		clientV2Keeper:          clientV2Keeper,
+		channelKeeperV2:         channelKeeperV2,
 		slashingKeeper:          slashingKeeper,
 		bankKeeper:              bankKeeper,
 		authKeeper:              accountKeeper,
@@ -105,6 +109,7 @@ func NewKeeper(
 		CrossChainValidators:  collections.NewMap(sb, types.CrossChainValidatorPrefix, "cross_chain_validators", collections.BytesKey, codec.CollValue[types.CrossChainValidator](cdc)),
 		HistoricalInfos:       collections.NewMap(sb, types.HistoricalInfoPrefix, "historical_infos", collections.Int64Key, codec.CollValue[stakingtypes.HistoricalInfo](cdc)),
 		HighestValsetUpdateID: collections.NewItem(sb, types.HighestValsetUpdateIDPrefix, "highest_valset_update_id", collections.Uint64Value),
+		PendingSlashPackets:   collections.NewMap(sb, types.PendingSlashPacketsPrefix, "pending_slash_packets", collections.BytesKey, collections.BytesValue),
 	}
 
 	schema, err := sb.Build()
@@ -144,6 +149,7 @@ func NewNonZeroKeeper(cdc codec.BinaryCodec, storeService corestoretypes.KVStore
 		CrossChainValidators:  collections.NewMap(sb, types.CrossChainValidatorPrefix, "cross_chain_validators", collections.BytesKey, codec.CollValue[types.CrossChainValidator](cdc)),
 		HistoricalInfos:       collections.NewMap(sb, types.HistoricalInfoPrefix, "historical_infos", collections.Int64Key, codec.CollValue[stakingtypes.HistoricalInfo](cdc)),
 		HighestValsetUpdateID: collections.NewItem(sb, types.HighestValsetUpdateIDPrefix, "highest_valset_update_id", collections.Uint64Value),
+		PendingSlashPackets:   collections.NewMap(sb, types.PendingSlashPacketsPrefix, "pending_slash_packets", collections.BytesKey, collections.BytesValue),
 	}
 
 	schema, err := sb.Build()

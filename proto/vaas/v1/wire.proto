@@ -8,6 +8,7 @@ import "cosmos/staking/v1beta1/staking.proto";
 
 import "gogoproto/gogo.proto";
 import "tendermint/abci/types.proto";
+import "cosmos_proto/cosmos.proto";
 
 //
 // Note any type defined in this file is used by both the consumer and provider
@@ -38,4 +39,16 @@ message ValidatorSetChangePacketData {
   // non-/ibc.core.* and non-/cosmos.gov.* messages until the provider
   // collects fees successfully and propagates false on the next VSC.
   bool consumer_in_debt = 3;
+}
+
+// SlashPacketData is sent from a consumer chain to the provider chain
+// to report a validator infraction (e.g., downtime) detected on the consumer.
+// The provider uses this to slash and jail the validator on the provider.
+message SlashPacketData {
+  // validator consensus address on the consumer chain
+  bytes validator_addr = 1;
+  // infraction height on the consumer chain
+  int64 infraction_height = 2;
+  // infraction type (DOWNTIME or DOUBLE_SIGN)
+  cosmos.staking.v1beta1.Infraction infraction = 3;
 }

@@ -161,9 +161,14 @@ func (am AppModule) BeginBlock(goCtx context.Context) error {
 }
 
 // EndBlock implements the AppModule interface
-// Flush PendingChanges to ABCI.
+// Flush PendingChanges to ABCI and send pending slash packets.
 func (am AppModule) EndBlock(goCtx context.Context) ([]abci.ValidatorUpdate, error) {
 	ctx := sdk.UnwrapSDKContext(goCtx)
+
+	// send any queued slash packets to the provider every block
+	if err := am.keeper.SendSlashPackets(ctx); err != nil {
+		am.keeper.Logger(ctx).Error("failed to send slash packets", "error", err)
+	}
 
 	data, ok := am.keeper.GetPendingChanges(ctx)
 	if !ok {

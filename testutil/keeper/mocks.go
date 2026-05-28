@@ -456,6 +456,21 @@ func (mr *MockSlashingKeeperMockRecorder) SlashFractionDoubleSign(arg0 any) *gom
 	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "SlashFractionDoubleSign", reflect.TypeOf((*MockSlashingKeeper)(nil).SlashFractionDoubleSign), arg0)
 }
 
+// SlashFractionDowntime mocks base method.
+func (m *MockSlashingKeeper) SlashFractionDowntime(arg0 context.Context) (math.LegacyDec, error) {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "SlashFractionDowntime", arg0)
+	ret0, _ := ret[0].(math.LegacyDec)
+	ret1, _ := ret[1].(error)
+	return ret0, ret1
+}
+
+// SlashFractionDowntime indicates an expected call of SlashFractionDowntime.
+func (mr *MockSlashingKeeperMockRecorder) SlashFractionDowntime(arg0 any) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "SlashFractionDowntime", reflect.TypeOf((*MockSlashingKeeper)(nil).SlashFractionDowntime), arg0)
+}
+
 // Tombstone mocks base method.
 func (m *MockSlashingKeeper) Tombstone(arg0 context.Context, arg1 types.ConsAddress) error {
 	m.ctrl.T.Helper()

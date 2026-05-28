@@ -80,7 +80,7 @@ func (k Keeper) HandleConsumerDoubleVoting(
 	}
 
 	alreadyTombstoned := false
-	if err = k.SlashValidator(ctx, providerAddr, infractionParams.DoubleSign); err != nil {
+	if err = k.SlashValidator(ctx, providerAddr, infractionParams.DoubleSign, stakingtypes.Infraction_INFRACTION_DOUBLE_SIGN); err != nil {
 		// Make repeated (already-processed) evidence submissions idempotent.
 		if errors.Is(err, slashingtypes.ErrValidatorTombstoned) {
 			alreadyTombstoned = true
@@ -88,6 +88,7 @@ func (k Keeper) HandleConsumerDoubleVoting(
 			return err
 		}
 	}
+
 	if !alreadyTombstoned {
 		if err = k.JailAndTombstoneValidator(ctx, providerAddr, infractionParams.DoubleSign); err != nil {
 			if errors.Is(err, slashingtypes.ErrValidatorTombstoned) {
@@ -171,6 +172,76 @@ func (k Keeper) VerifyDoubleVotingEvidence(
 	if !pubkey.VerifySignature(tmtypes.VoteSignBytes(chainId, vb), evidence.VoteB.Signature) {
 		return fmt.Errorf("verifying VoteB: %w", tmtypes.ErrVoteInvalidSignature)
 	}
+
+	return nil
+}
+
+//
+// Consumer-initiated slashing section
+//
+
+// HandleConsumerEvidencePacket handles an evidence packet received from a consumer chain.
+// It dispatches to the appropriate handler based on the infraction type.
+func (k Keeper) HandleConsumerEvidencePacket(ctx sdk.Context, consumerId uint64, evidencePacket vaastypes.EvidencePacketData) error {
+	if err := evidencePacket.Validate(); err != nil {
+		return errorsmod.Wrapf(vaastypes.ErrInvalidPacketData, "invalid evidence packet: %s", err)
+	}
+
+	if k.GetConsumerPhase(ctx, consumerId) != types.CONSUMER_PHASE_LAUNCHED {
+		return errorsmod.Wrapf(
+			vaastypes.ErrInvalidConsumerState,
+			"consumer chain %d is not launched (phase: %s)",
+			consumerId,
+			k.GetConsumerPhase(ctx, consumerId),
+		)
+	}
+
+	switch evidencePacket.Infraction {
+	case stakingtypes.Infraction_INFRACTION_DOWNTIME:
+		return k.HandleConsumerDowntime(ctx, consumerId, evidencePacket)
+	default:
+		return fmt.Errorf("unsupported infraction type in evidence packet: %s", evidencePacket.Infraction)
+	}
+}
+
+// HandleConsumerDowntime slashes and jails a validator that was offline on a consumer chain.
+// CONTRACT: A downtime infraction must be verified by the provider before slashing is applied.
+// CONTRACT: A downtime infraction must never jail a validator.
+func (k Keeper) HandleConsumerDowntime(ctx sdk.Context, consumerId uint64, evidencePacket vaastypes.EvidencePacketData) error {
+	consumerAddr := types.NewConsumerConsAddress(evidencePacket.ValidatorAddr)
+
+	providerAddr := k.GetProviderAddrFromConsumerAddr(ctx, consumerId, consumerAddr)
+
+	infractionParams, err := types.DefaultConsumerInfractionParameters(ctx, k.slashingKeeper)
+	if err != nil {
+		return err
+	}
+
+	// TODO: add slashing factor
+	// TODO: add verification of actual downtime on consumer
+
+	if err = k.SlashValidator(ctx, providerAddr, infractionParams.Downtime, stakingtypes.Infraction_INFRACTION_DOWNTIME); err != nil {
+		return err
+	}
+
+	k.Logger(ctx).Info(
+		"handled consumer downtime",
+		"consumerId", consumerId,
+		"consumerAddr", consumerAddr.String(),
+		"providerAddr", providerAddr.String(),
+		"infractionHeight", evidencePacket.InfractionHeight,
+	)
+
+	ctx.EventManager().EmitEvent(
+		sdk.NewEvent(
+			vaastypes.EventTypeExecuteConsumerChainSlash,
+			sdk.NewAttribute(sdk.AttributeKeyModule, types.ModuleName),
+			sdk.NewAttribute(types.AttributeConsumerId, fmt.Sprintf("%d", consumerId)),
+			sdk.NewAttribute(vaastypes.AttributeProviderValidatorAddress, providerAddr.String()),
+			sdk.NewAttribute(vaastypes.AttributeInfractionHeight, fmt.Sprintf("%d", evidencePacket.InfractionHeight)),
+			sdk.NewAttribute(vaastypes.AttributeInfractionType, stakingtypes.Infraction_INFRACTION_DOWNTIME.String()),
+		),
+	)
 
 	return nil
 }
@@ -513,7 +584,7 @@ func (k Keeper) ComputePowerToSlash(ctx sdk.Context, validator stakingtypes.Vali
 }
 
 // SlashValidator slashes validator with given provider Address
-func (k Keeper) SlashValidator(ctx sdk.Context, providerAddr types.ProviderConsAddress, slashingParams *types.SlashJailParameters) error {
+func (k Keeper) SlashValidator(ctx sdk.Context, providerAddr types.ProviderConsAddress, slashingParams *types.SlashJailParameters, infraction stakingtypes.Infraction) error {
 	validator, err := k.stakingKeeper.GetValidatorByConsAddr(ctx, providerAddr.ToSdkConsAddr())
 	if err != nil && errors.Is(err, stakingtypes.ErrNoValidatorFound) {
 		return errorsmod.Wrapf(slashingtypes.ErrNoValidatorForAddress, "provider consensus address: %s", providerAddr.String())
@@ -555,6 +626,6 @@ func (k Keeper) SlashValidator(ctx sdk.Context, providerAddr types.ProviderConsA
 		return err
 	}
 
-	_, err = k.stakingKeeper.SlashWithInfractionReason(ctx, consAdrr, 0, totalPower, slashingParams.SlashFraction, stakingtypes.Infraction_INFRACTION_DOUBLE_SIGN)
+	_, err = k.stakingKeeper.SlashWithInfractionReason(ctx, consAdrr, 0, totalPower, slashingParams.SlashFraction, infraction)
 	return err
 }

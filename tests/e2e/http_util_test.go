@@ -22,7 +22,7 @@ func httpGet(endpoint string) ([]byte, error) {
 func httpGetWithRetry(endpoint string, maxAttempts int) ([]byte, error) {
 	var lastErr error
 
-	for attempt := 0; attempt < maxAttempts; attempt++ {
+	for range maxAttempts {
 		resp, err := http.Get(endpoint) //nolint:gosec
 		if err != nil {
 			lastErr = err

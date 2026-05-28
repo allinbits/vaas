@@ -15,17 +15,17 @@ func patchConsumerGenesisWithProviderData(genesisFilePath string, consumerGenesi
 		return fmt.Errorf("failed to read genesis file: %w", err)
 	}
 
-	var genesis map[string]interface{}
+	var genesis map[string]any
 	if err := json.Unmarshal(bz, &genesis); err != nil {
 		return fmt.Errorf("failed to unmarshal genesis: %w", err)
 	}
 
-	appState, ok := genesis["app_state"].(map[string]interface{})
+	appState, ok := genesis["app_state"].(map[string]any)
 	if !ok {
 		return fmt.Errorf("app_state not found or not a map")
 	}
 
-	var consumerGenesis interface{}
+	var consumerGenesis any
 	if err := json.Unmarshal(consumerGenesisJSON, &consumerGenesis); err != nil {
 		return fmt.Errorf("failed to unmarshal consumer genesis: %w", err)
 	}
@@ -43,11 +43,11 @@ func patchConsumerGenesisWithProviderData(genesisFilePath string, consumerGenesi
 
 // patchGenesisJSON reads a genesis.json file, applies a mutation function,
 // and writes it back.
-func (s *IntegrationTestSuite) patchGenesisJSON(path string, mutate func(map[string]interface{})) {
+func (s *IntegrationTestSuite) patchGenesisJSON(path string, mutate func(map[string]any)) {
 	bz, err := os.ReadFile(path)
 	s.Require().NoError(err, "failed to read genesis file")
 
-	var genesis map[string]interface{}
+	var genesis map[string]any
 	s.Require().NoError(json.Unmarshal(bz, &genesis), "failed to unmarshal genesis")
 
 	mutate(genesis)

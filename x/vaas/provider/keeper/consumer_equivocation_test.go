@@ -1,6 +1,7 @@
 package keeper_test
 
 import (
+	"encoding/json"
 	"fmt"
 	"testing"
 	"time"
@@ -21,6 +22,7 @@ import (
 	cryptotestutil "github.com/allinbits/vaas/testutil/crypto"
 	testkeeper "github.com/allinbits/vaas/testutil/keeper"
 	"github.com/allinbits/vaas/x/vaas/provider/types"
+	vaastypes "github.com/allinbits/vaas/x/vaas/types"
 )
 
 func TestVerifyDoubleVotingEvidence(t *testing.T) {
@@ -755,7 +757,7 @@ func TestSlashValidator(t *testing.T) {
 	}
 
 	gomock.InOrder(expectedCalls...)
-	err = keeper.SlashValidator(ctx, providerAddr, getTestInfractionParameters().DoubleSign)
+	err = keeper.SlashValidator(ctx, providerAddr, getTestInfractionParameters().DoubleSign, stakingtypes.Infraction_INFRACTION_DOUBLE_SIGN)
 	require.NoError(t, err)
 }
 
@@ -783,7 +785,7 @@ func TestSlashValidatorDoesNotSlashIfValidatorIsUnbonded(t *testing.T) {
 	}
 
 	gomock.InOrder(expectedCalls...)
-	err := keeper.SlashValidator(ctx, providerAddr, getTestInfractionParameters().DoubleSign)
+	err := keeper.SlashValidator(ctx, providerAddr, getTestInfractionParameters().DoubleSign, stakingtypes.Infraction_INFRACTION_DOUBLE_SIGN)
 	require.Error(t, err)
 	require.ErrorIs(t, stakingtypes.ErrNoUnbondingDelegation, err)
 }
@@ -819,4 +821,116 @@ func getTestInfractionParameters() *types.InfractionParameters {
 			Tombstone:     false,
 		},
 	}
+}
+
+func TestHandleConsumerEvidencePacket(t *testing.T) {
+	keeperParams := testkeeper.NewInMemKeeperParams(t)
+	providerKeeper, ctx, ctrl, mocks := testkeeper.GetProviderKeeperAndCtx(t, keeperParams)
+	defer ctrl.Finish()
+
+	consumerId := uint64(0)
+	providerKeeper.SetConsumerPhase(ctx, consumerId, types.CONSUMER_PHASE_LAUNCHED)
+	providerKeeper.SetConsumerChainId(ctx, consumerId, "consumer-chain")
+
+	pubKey, _ := cryptocodec.FromCmtPubKeyInterface(tmtypes.NewMockPV().PrivKey.PubKey())
+	validator, err := stakingtypes.NewValidator(
+		sdk.ValAddress(pubKey.Address()).String(),
+		pubKey,
+		stakingtypes.NewDescription("", "", "", "", ""),
+	)
+	require.NoError(t, err)
+	validator.Status = stakingtypes.Bonded
+	consAddr, _ := validator.GetConsAddr()
+
+	evidencePacket := vaastypes.NewEvidencePacketData(
+		sdk.ConsAddress(consAddr),
+		100,
+		stakingtypes.Infraction_INFRACTION_DOWNTIME,
+	)
+
+	valAddr, _ := providerKeeper.ValidatorAddressCodec().StringToBytes(validator.GetOperator())
+
+	expectedCalls := []any{
+		mocks.MockSlashingKeeper.EXPECT().
+			SlashFractionDoubleSign(ctx).
+			Return(math.LegacyNewDecWithPrec(5, 1), nil),
+		mocks.MockSlashingKeeper.EXPECT().
+			SlashFractionDowntime(ctx).
+			Return(math.LegacyNewDecWithPrec(5, 2), nil),
+		mocks.MockStakingKeeper.EXPECT().
+			GetValidatorByConsAddr(ctx, gomock.Any()).
+			Return(validator, nil),
+		mocks.MockSlashingKeeper.EXPECT().
+			IsTombstoned(ctx, gomock.Any()).
+			Return(false),
+		mocks.MockStakingKeeper.EXPECT().
+			GetUnbondingDelegationsFromValidator(ctx, valAddr).
+			Return([]stakingtypes.UnbondingDelegation{}, nil),
+		mocks.MockStakingKeeper.EXPECT().
+			GetRedelegationsFromSrcValidator(ctx, valAddr).
+			Return([]stakingtypes.Redelegation{}, nil),
+		mocks.MockStakingKeeper.EXPECT().
+			GetLastValidatorPower(ctx, valAddr).
+			Return(int64(1000), nil),
+		mocks.MockStakingKeeper.EXPECT().
+			PowerReduction(ctx).
+			Return(math.NewInt(1000000)),
+		mocks.MockStakingKeeper.EXPECT().
+			SlashWithInfractionReason(ctx, gomock.Any(), int64(0), int64(1000), math.LegacyNewDecWithPrec(5, 2), stakingtypes.Infraction_INFRACTION_DOWNTIME).
+			Return(math.NewInt(0), nil),
+	}
+
+	gomock.InOrder(expectedCalls...)
+	err = providerKeeper.HandleConsumerEvidencePacket(ctx, consumerId, evidencePacket)
+	require.NoError(t, err)
+}
+
+func TestHandleConsumerEvidencePacketRejectsDoubleSign(t *testing.T) {
+	keeperParams := testkeeper.NewInMemKeeperParams(t)
+	providerKeeper, ctx, ctrl, _ := testkeeper.GetProviderKeeperAndCtx(t, keeperParams)
+	defer ctrl.Finish()
+
+	consumerId := uint64(0)
+	providerKeeper.SetConsumerPhase(ctx, consumerId, types.CONSUMER_PHASE_LAUNCHED)
+
+	evidencePacket := vaastypes.NewEvidencePacketData(
+		sdk.ConsAddress([]byte{0x01, 0x02, 0x03}),
+		100,
+		stakingtypes.Infraction_INFRACTION_DOUBLE_SIGN,
+	)
+
+	err := providerKeeper.HandleConsumerEvidencePacket(ctx, consumerId, evidencePacket)
+	require.Error(t, err)
+}
+
+func TestHandleConsumerEvidencePacketRejectsNonLaunchedConsumer(t *testing.T) {
+	keeperParams := testkeeper.NewInMemKeeperParams(t)
+	providerKeeper, ctx, ctrl, _ := testkeeper.GetProviderKeeperAndCtx(t, keeperParams)
+	defer ctrl.Finish()
+
+	consumerId := uint64(0)
+	providerKeeper.SetConsumerPhase(ctx, consumerId, types.CONSUMER_PHASE_REGISTERED)
+
+	evidencePacket := vaastypes.NewEvidencePacketData(
+		sdk.ConsAddress([]byte{0x01, 0x02, 0x03}),
+		100,
+		stakingtypes.Infraction_INFRACTION_DOWNTIME,
+	)
+
+	err := providerKeeper.HandleConsumerEvidencePacket(ctx, consumerId, evidencePacket)
+	require.Error(t, err)
+}
+
+func TestSlashPacketDataJSONRoundTrip(t *testing.T) {
+	addr := sdk.ConsAddress([]byte{0x01, 0x02, 0x03, 0x04, 0x05})
+	packet := vaastypes.NewEvidencePacketData(addr, 42, stakingtypes.Infraction_INFRACTION_DOWNTIME)
+
+	bz := packet.GetBytes()
+
+	var decoded vaastypes.EvidencePacketData
+	err := json.Unmarshal(bz, &decoded)
+	require.NoError(t, err)
+	require.Equal(t, packet.ValidatorAddr, decoded.ValidatorAddr)
+	require.Equal(t, packet.InfractionHeight, decoded.InfractionHeight)
+	require.Equal(t, packet.Infraction, decoded.Infraction)
 }
