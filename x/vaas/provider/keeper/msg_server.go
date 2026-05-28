@@ -540,16 +540,16 @@ func (k msgServer) FundConsumerFeePool(
 	poolAddr := k.GetConsumerFeePoolAddress(msg.ConsumerId)
 	coins := sdk.NewCoins(msg.Amount)
 
-	signerAddr, err := sdk.AccAddressFromBech32(msg.Signer)
-	if err != nil {
-		return nil, err
-	}
 	isGov := k.IsAuthority(msg.Signer)
 
 	var depositor sdk.AccAddress
 	if isGov {
 		depositor = authtypes.NewModuleAddress(disttypes.ModuleName)
 	} else {
+		signerAddr, err := sdk.AccAddressFromBech32(msg.Signer)
+		if err != nil {
+			return nil, err
+		}
 		if err := k.bankKeeper.SendCoinsFromAccountToModule(
 			ctx, signerAddr, types.ModuleName, coins,
 		); err != nil {
@@ -611,10 +611,6 @@ func (k msgServer) WithdrawConsumerFeePool(
 			"consumer %d is deleted", msg.ConsumerId)
 	}
 
-	signerAddr, err := sdk.AccAddressFromBech32(msg.Signer)
-	if err != nil {
-		return nil, err
-	}
 	isGov := k.IsAuthority(msg.Signer)
 
 	if !isGov && k.GetConsumerPhase(ctx, msg.ConsumerId) == types.CONSUMER_PHASE_LAUNCHED {
@@ -627,6 +623,10 @@ func (k msgServer) WithdrawConsumerFeePool(
 	if isGov {
 		depositor = authtypes.NewModuleAddress(disttypes.ModuleName)
 	} else {
+		signerAddr, err := sdk.AccAddressFromBech32(msg.Signer)
+		if err != nil {
+			return nil, err
+		}
 		depositor = signerAddr
 	}
 
@@ -707,16 +707,7 @@ func (k msgServer) SweepConsumerFeePool(
 		return nil, errorsmod.Wrapf(types.ErrNoOwnerAddress,
 			"consumer %d has no owner: %s", msg.ConsumerId, err)
 	}
-	signerAddr, err := sdk.AccAddressFromBech32(msg.Signer)
-	if err != nil {
-		return nil, err
-	}
-	ownerAddr, err := sdk.AccAddressFromBech32(ownerAddrString)
-	if err != nil {
-		return nil, errorsmod.Wrapf(types.ErrNoOwnerAddress,
-			"stored owner address %s is invalid: %s", ownerAddrString, err)
-	}
-	if !signerAddr.Equals(ownerAddr) {
+	if !strings.EqualFold(msg.Signer, ownerAddrString) {
 		return nil, errorsmod.Wrapf(types.ErrUnauthorized,
 			"only consumer owner %s may sweep, got %s", ownerAddrString, msg.Signer)
 	}
