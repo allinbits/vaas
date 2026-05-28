@@ -19,6 +19,10 @@ import (
 
 	tmtypes "github.com/cometbft/cometbft/types"
 
+	ibcclienttypes "github.com/cosmos/ibc-go/v10/modules/core/02-client/types"
+	ibcexported "github.com/cosmos/ibc-go/v10/modules/core/exported"
+	ibctmtypes "github.com/cosmos/ibc-go/v10/modules/light-clients/07-tendermint"
+
 	cryptotestutil "github.com/allinbits/vaas/testutil/crypto"
 	testkeeper "github.com/allinbits/vaas/testutil/keeper"
 	"github.com/allinbits/vaas/x/vaas/provider/types"
@@ -831,6 +835,8 @@ func TestHandleConsumerEvidencePacket(t *testing.T) {
 	consumerId := uint64(0)
 	providerKeeper.SetConsumerPhase(ctx, consumerId, types.CONSUMER_PHASE_LAUNCHED)
 	providerKeeper.SetConsumerChainId(ctx, consumerId, "consumer-chain")
+	providerKeeper.SetConsumerClientId(ctx, consumerId, "07-tendermint-0")
+	providerKeeper.SetEquivocationEvidenceMinHeight(ctx, consumerId, 1)
 
 	pubKey, _ := cryptocodec.FromCmtPubKeyInterface(tmtypes.NewMockPV().PrivKey.PubKey())
 	validator, err := stakingtypes.NewValidator(
@@ -842,6 +848,17 @@ func TestHandleConsumerEvidencePacket(t *testing.T) {
 	validator.Status = stakingtypes.Bonded
 	consAddr, _ := validator.GetConsAddr()
 
+	// Add the validator to the consumer's validator set with a join height of 1
+	providerAddr := types.NewProviderConsAddress(consAddr)
+	cmtPubKey, _ := validator.CmtConsPublicKey()
+	err = providerKeeper.SetConsumerValidator(ctx, consumerId, types.ConsensusValidator{
+		ProviderConsAddr: consAddr,
+		Power:            1000,
+		PublicKey:        &cmtPubKey,
+		JoinHeight:       1,
+	})
+	require.NoError(t, err)
+
 	evidencePacket := vaastypes.NewEvidencePacketData(
 		sdk.ConsAddress(consAddr),
 		100,
@@ -851,6 +868,9 @@ func TestHandleConsumerEvidencePacket(t *testing.T) {
 	valAddr, _ := providerKeeper.ValidatorAddressCodec().StringToBytes(validator.GetOperator())
 
 	expectedCalls := []any{
+		mocks.MockClientKeeper.EXPECT().
+			GetClientConsensusState(ctx, "07-tendermint-0", ibcclienttypes.NewHeight(0, 100)).
+			Return(ibcexported.ConsensusState(&ibctmtypes.ConsensusState{}), true),
 		mocks.MockSlashingKeeper.EXPECT().
 			SlashFractionDoubleSign(ctx).
 			Return(math.LegacyNewDecWithPrec(5, 1), nil),
@@ -858,10 +878,10 @@ func TestHandleConsumerEvidencePacket(t *testing.T) {
 			SlashFractionDowntime(ctx).
 			Return(math.LegacyNewDecWithPrec(5, 2), nil),
 		mocks.MockStakingKeeper.EXPECT().
-			GetValidatorByConsAddr(ctx, gomock.Any()).
+			GetValidatorByConsAddr(ctx, providerAddr.ToSdkConsAddr()).
 			Return(validator, nil),
 		mocks.MockSlashingKeeper.EXPECT().
-			IsTombstoned(ctx, gomock.Any()).
+			IsTombstoned(ctx, providerAddr.ToSdkConsAddr()).
 			Return(false),
 		mocks.MockStakingKeeper.EXPECT().
 			GetUnbondingDelegationsFromValidator(ctx, valAddr).
@@ -876,13 +896,163 @@ func TestHandleConsumerEvidencePacket(t *testing.T) {
 			PowerReduction(ctx).
 			Return(math.NewInt(1000000)),
 		mocks.MockStakingKeeper.EXPECT().
-			SlashWithInfractionReason(ctx, gomock.Any(), int64(0), int64(1000), math.LegacyNewDecWithPrec(5, 2), stakingtypes.Infraction_INFRACTION_DOWNTIME).
+			SlashWithInfractionReason(ctx, providerAddr.ToSdkConsAddr(), int64(0), int64(1000), math.LegacyNewDecWithPrec(5, 2), stakingtypes.Infraction_INFRACTION_DOWNTIME).
 			Return(math.NewInt(0), nil),
 	}
 
 	gomock.InOrder(expectedCalls...)
 	err = providerKeeper.HandleConsumerEvidencePacket(ctx, consumerId, evidencePacket)
 	require.NoError(t, err)
+}
+
+func TestHandleConsumerDowntimeRejectsTooOldEvidence(t *testing.T) {
+	keeperParams := testkeeper.NewInMemKeeperParams(t)
+	providerKeeper, ctx, ctrl, _ := testkeeper.GetProviderKeeperAndCtx(t, keeperParams)
+	defer ctrl.Finish()
+
+	consumerId := uint64(0)
+	providerKeeper.SetConsumerPhase(ctx, consumerId, types.CONSUMER_PHASE_LAUNCHED)
+	providerKeeper.SetConsumerChainId(ctx, consumerId, "consumer-chain")
+	providerKeeper.SetEquivocationEvidenceMinHeight(ctx, consumerId, 200)
+
+	evidencePacket := vaastypes.NewEvidencePacketData(
+		sdk.ConsAddress([]byte{0x01, 0x02, 0x03}),
+		100, // below min height of 200
+		stakingtypes.Infraction_INFRACTION_DOWNTIME,
+	)
+
+	err := providerKeeper.HandleConsumerEvidencePacket(ctx, consumerId, evidencePacket)
+	require.Error(t, err)
+	require.Contains(t, err.Error(), "too old")
+}
+
+func TestHandleConsumerDowntimeRejectsNoClient(t *testing.T) {
+	keeperParams := testkeeper.NewInMemKeeperParams(t)
+	providerKeeper, ctx, ctrl, _ := testkeeper.GetProviderKeeperAndCtx(t, keeperParams)
+	defer ctrl.Finish()
+
+	consumerId := uint64(0)
+	providerKeeper.SetConsumerPhase(ctx, consumerId, types.CONSUMER_PHASE_LAUNCHED)
+	providerKeeper.SetConsumerChainId(ctx, consumerId, "consumer-chain")
+	providerKeeper.SetEquivocationEvidenceMinHeight(ctx, consumerId, 1)
+
+	evidencePacket := vaastypes.NewEvidencePacketData(
+		sdk.ConsAddress([]byte{0x01, 0x02, 0x03}),
+		100,
+		stakingtypes.Infraction_INFRACTION_DOWNTIME,
+	)
+
+	err := providerKeeper.HandleConsumerEvidencePacket(ctx, consumerId, evidencePacket)
+	require.Error(t, err)
+	require.Contains(t, err.Error(), "no IBC client found")
+}
+
+func TestHandleConsumerDowntimeRejectsNoConsensusState(t *testing.T) {
+	keeperParams := testkeeper.NewInMemKeeperParams(t)
+	providerKeeper, ctx, ctrl, mocks := testkeeper.GetProviderKeeperAndCtx(t, keeperParams)
+	defer ctrl.Finish()
+
+	consumerId := uint64(0)
+	providerKeeper.SetConsumerPhase(ctx, consumerId, types.CONSUMER_PHASE_LAUNCHED)
+	providerKeeper.SetConsumerChainId(ctx, consumerId, "consumer-chain")
+	providerKeeper.SetConsumerClientId(ctx, consumerId, "07-tendermint-0")
+	providerKeeper.SetEquivocationEvidenceMinHeight(ctx, consumerId, 1)
+
+	evidencePacket := vaastypes.NewEvidencePacketData(
+		sdk.ConsAddress([]byte{0x01, 0x02, 0x03}),
+		100,
+		stakingtypes.Infraction_INFRACTION_DOWNTIME,
+	)
+
+	expectedCalls := []any{
+		mocks.MockClientKeeper.EXPECT().
+			GetClientConsensusState(ctx, "07-tendermint-0", ibcclienttypes.NewHeight(0, 100)).
+			Return(ibcexported.ConsensusState(nil), false),
+	}
+
+	gomock.InOrder(expectedCalls...)
+	err := providerKeeper.HandleConsumerEvidencePacket(ctx, consumerId, evidencePacket)
+	require.Error(t, err)
+	require.Contains(t, err.Error(), "no consensus state")
+}
+
+func TestHandleConsumerDowntimeRejectsValidatorNotInSet(t *testing.T) {
+	keeperParams := testkeeper.NewInMemKeeperParams(t)
+	providerKeeper, ctx, ctrl, mocks := testkeeper.GetProviderKeeperAndCtx(t, keeperParams)
+	defer ctrl.Finish()
+
+	consumerId := uint64(0)
+	providerKeeper.SetConsumerPhase(ctx, consumerId, types.CONSUMER_PHASE_LAUNCHED)
+	providerKeeper.SetConsumerChainId(ctx, consumerId, "consumer-chain")
+	providerKeeper.SetConsumerClientId(ctx, consumerId, "07-tendermint-0")
+	providerKeeper.SetEquivocationEvidenceMinHeight(ctx, consumerId, 1)
+
+	// Use a validator that is NOT in the consumer's validator set
+	evidencePacket := vaastypes.NewEvidencePacketData(
+		sdk.ConsAddress([]byte{0x01, 0x02, 0x03}),
+		100,
+		stakingtypes.Infraction_INFRACTION_DOWNTIME,
+	)
+
+	expectedCalls := []any{
+		mocks.MockClientKeeper.EXPECT().
+			GetClientConsensusState(ctx, "07-tendermint-0", ibcclienttypes.NewHeight(0, 100)).
+			Return(ibcexported.ConsensusState(&ibctmtypes.ConsensusState{}), true),
+	}
+
+	gomock.InOrder(expectedCalls...)
+	err := providerKeeper.HandleConsumerEvidencePacket(ctx, consumerId, evidencePacket)
+	require.Error(t, err)
+	require.Contains(t, err.Error(), "not in the validator set")
+}
+
+func TestHandleConsumerDowntimeRejectsInfractionBeforeJoin(t *testing.T) {
+	keeperParams := testkeeper.NewInMemKeeperParams(t)
+	providerKeeper, ctx, ctrl, mocks := testkeeper.GetProviderKeeperAndCtx(t, keeperParams)
+	defer ctrl.Finish()
+
+	consumerId := uint64(0)
+	providerKeeper.SetConsumerPhase(ctx, consumerId, types.CONSUMER_PHASE_LAUNCHED)
+	providerKeeper.SetConsumerChainId(ctx, consumerId, "consumer-chain")
+	providerKeeper.SetConsumerClientId(ctx, consumerId, "07-tendermint-0")
+	providerKeeper.SetEquivocationEvidenceMinHeight(ctx, consumerId, 1)
+
+	pubKey, _ := cryptocodec.FromCmtPubKeyInterface(tmtypes.NewMockPV().PrivKey.PubKey())
+	validator, err := stakingtypes.NewValidator(
+		sdk.ValAddress(pubKey.Address()).String(),
+		pubKey,
+		stakingtypes.NewDescription("", "", "", "", ""),
+	)
+	require.NoError(t, err)
+	consAddr, _ := validator.GetConsAddr()
+
+	cmtPubKey, _ := validator.CmtConsPublicKey()
+
+	// Add the validator with join height 200, but claim downtime at height 100
+	err = providerKeeper.SetConsumerValidator(ctx, consumerId, types.ConsensusValidator{
+		ProviderConsAddr: consAddr,
+		Power:            1000,
+		PublicKey:        &cmtPubKey,
+		JoinHeight:       200,
+	})
+	require.NoError(t, err)
+
+	evidencePacket := vaastypes.NewEvidencePacketData(
+		sdk.ConsAddress(consAddr),
+		100, // before join height of 200
+		stakingtypes.Infraction_INFRACTION_DOWNTIME,
+	)
+
+	expectedCalls := []any{
+		mocks.MockClientKeeper.EXPECT().
+			GetClientConsensusState(ctx, "07-tendermint-0", ibcclienttypes.NewHeight(0, 100)).
+			Return(ibcexported.ConsensusState(&ibctmtypes.ConsensusState{}), true),
+	}
+
+	gomock.InOrder(expectedCalls...)
+	err = providerKeeper.HandleConsumerEvidencePacket(ctx, consumerId, evidencePacket)
+	require.Error(t, err)
+	require.Contains(t, err.Error(), "before validator")
 }
 
 func TestHandleConsumerEvidencePacketRejectsDoubleSign(t *testing.T) {

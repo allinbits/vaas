@@ -204,21 +204,79 @@ func (k Keeper) HandleConsumerEvidencePacket(ctx sdk.Context, consumerId uint64,
 	}
 }
 
-// HandleConsumerDowntime slashes and jails a validator that was offline on a consumer chain.
-// CONTRACT: A downtime infraction must be verified by the provider before slashing is applied.
+// HandleConsumerDowntime slashes a validator that was offline on a consumer chain.
+// The provider verifies the downtime claim by checking:
+//   1. The infraction height is not older than the minimum evidence height for this consumer.
+//   2. The provider's IBC client for the consumer has a consensus state at the infraction height,
+//      proving the consumer chain actually reached that height.
+//   3. The validator was part of the consumer's validator set at the time of the infraction.
+//
 // CONTRACT: A downtime infraction must never jail a validator.
 func (k Keeper) HandleConsumerDowntime(ctx sdk.Context, consumerId uint64, evidencePacket vaastypes.EvidencePacketData) error {
 	consumerAddr := types.NewConsumerConsAddress(evidencePacket.ValidatorAddr)
 
 	providerAddr := k.GetProviderAddrFromConsumerAddr(ctx, consumerId, consumerAddr)
 
+	// Verify the infraction height is not too old.
+	minHeight := k.GetEquivocationEvidenceMinHeight(ctx, consumerId)
+	if uint64(evidencePacket.InfractionHeight) < minHeight {
+		return errorsmod.Wrapf(
+			vaastypes.ErrInvalidPacketData,
+			"downtime evidence for consumer chain %d is too old: infraction height (%d), min (%d)",
+			consumerId,
+			evidencePacket.InfractionHeight,
+			minHeight,
+		)
+	}
+
+	// Verify the provider's IBC client has a consensus state at the infraction height.
+	// This proves the consumer chain actually reached this height.
+	clientId, found := k.GetConsumerClientId(ctx, consumerId)
+	if !found {
+		return errorsmod.Wrapf(
+			vaastypes.ErrInvalidConsumerState,
+			"no IBC client found for consumer chain %d",
+			consumerId,
+		)
+	}
+
+	consensusHeight := ibcclienttypes.NewHeight(0, uint64(evidencePacket.InfractionHeight))
+	if _, ok := k.clientKeeper.GetClientConsensusState(ctx, clientId, consensusHeight); !ok {
+		return errorsmod.Wrapf(
+			vaastypes.ErrInvalidPacketData,
+			"no consensus state for consumer chain %d at infraction height %d: cannot verify downtime",
+			consumerId,
+			evidencePacket.InfractionHeight,
+		)
+	}
+
+	// Verify the validator was part of the consumer's validator set.
+	validator, found := k.GetConsumerValidator(ctx, consumerId, providerAddr)
+	if !found {
+		return errorsmod.Wrapf(
+			vaastypes.ErrInvalidPacketData,
+			"validator %s is not in the validator set of consumer chain %d",
+			providerAddr.String(),
+			consumerId,
+		)
+	}
+
+	// Check that the infraction occurred after the validator joined the consumer set.
+	if evidencePacket.InfractionHeight < validator.JoinHeight {
+		return errorsmod.Wrapf(
+			vaastypes.ErrInvalidPacketData,
+			"downtime infraction height %d is before validator %s joined consumer chain %d at height %d",
+			evidencePacket.InfractionHeight,
+			providerAddr.String(),
+			consumerId,
+			validator.JoinHeight,
+		)
+	}
+
 	infractionParams, err := types.DefaultConsumerInfractionParameters(ctx, k.slashingKeeper)
 	if err != nil {
 		return err
 	}
-
-	// TODO: add slashing factor
-	// TODO: add verification of actual downtime on consumer
 
 	if err = k.SlashValidator(ctx, providerAddr, infractionParams.Downtime, stakingtypes.Infraction_INFRACTION_DOWNTIME); err != nil {
 		return err
