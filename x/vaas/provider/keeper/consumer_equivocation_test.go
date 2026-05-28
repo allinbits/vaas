@@ -821,7 +821,7 @@ func getTestInfractionParameters() *types.InfractionParameters {
 		},
 		Downtime: &types.SlashJailParameters{
 			JailDuration:  600 * time.Second,
-			SlashFraction: math.LegacyNewDec(0),
+			SlashFraction: math.LegacyNewDecWithPrec(5, 4),
 			Tombstone:     false,
 		},
 	}
@@ -874,9 +874,6 @@ func TestHandleConsumerEvidencePacket(t *testing.T) {
 		mocks.MockSlashingKeeper.EXPECT().
 			SlashFractionDoubleSign(ctx).
 			Return(math.LegacyNewDecWithPrec(5, 1), nil),
-		mocks.MockSlashingKeeper.EXPECT().
-			SlashFractionDowntime(ctx).
-			Return(math.LegacyNewDecWithPrec(5, 2), nil),
 		mocks.MockStakingKeeper.EXPECT().
 			GetValidatorByConsAddr(ctx, providerAddr.ToSdkConsAddr()).
 			Return(validator, nil),
@@ -896,7 +893,7 @@ func TestHandleConsumerEvidencePacket(t *testing.T) {
 			PowerReduction(ctx).
 			Return(math.NewInt(1000000)),
 		mocks.MockStakingKeeper.EXPECT().
-			SlashWithInfractionReason(ctx, providerAddr.ToSdkConsAddr(), int64(0), int64(1000), math.LegacyNewDecWithPrec(5, 2), stakingtypes.Infraction_INFRACTION_DOWNTIME).
+			SlashWithInfractionReason(ctx, providerAddr.ToSdkConsAddr(), int64(0), int64(1000), math.LegacyNewDecWithPrec(5, 4), stakingtypes.Infraction_INFRACTION_DOWNTIME).
 			Return(math.NewInt(0), nil),
 	}
 

@@ -6,6 +6,8 @@ import (
 
 	vaastypes "github.com/allinbits/vaas/x/vaas/types"
 
+	"cosmossdk.io/math"
+
 	clienttypes "github.com/cosmos/ibc-go/v10/modules/core/02-client/types"
 )
 
@@ -30,20 +32,15 @@ func DefaultConsumerInfractionParameters(ctx context.Context, slashingKeeper vaa
 		return InfractionParameters{}, err
 	}
 
-	downtimeSlashingFraction, err := slashingKeeper.SlashFractionDowntime(ctx)
-	if err != nil {
-		return InfractionParameters{}, err
-	}
-
 	return InfractionParameters{
 		DoubleSign: &SlashJailParameters{
 			JailDuration:  time.Duration(1<<63 - 1),
 			SlashFraction: doubleSignSlashingFraction,
 			Tombstone:     true,
 		},
-		Downtime: &SlashJailParameters{
+	Downtime: &SlashJailParameters{
 			JailDuration:  0,
-			SlashFraction: downtimeSlashingFraction,
+			SlashFraction: math.LegacyNewDecWithPrec(5, 4),
 			Tombstone:     false,
 		},
 	}, nil
