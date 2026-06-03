@@ -40,13 +40,20 @@ func TestDeleteConsumerChain_FeesPerBlockOverrideCleanup(t *testing.T) {
 		tc := tc
 		t.Run(tc.name, func(t *testing.T) {
 			params := testkeeper.NewInMemKeeperParams(t)
-			k, ctx, ctrl, _ := testkeeper.GetProviderKeeperAndCtx(t, params)
+			k, ctx, ctrl, mocks := testkeeper.GetProviderKeeperAndCtx(t, params)
 			defer ctrl.Finish()
 
 			consumerId := k.FetchAndIncrementConsumerId(ctx)
 			k.SetConsumerPhase(ctx, consumerId, providertypes.CONSUMER_PHASE_STOPPED)
 			// DeleteConsumerClientId panics on a missing client mapping, so seed one.
 			k.SetConsumerClientId(ctx, consumerId, "07-tendermint-0")
+			// DeleteConsumerChain removes the fee-pool reverse-lookup entry, so
+			// seed it; otherwise the removal panics. The auto-sweep that also
+			// runs queries the pool for any denoms-with-balance; this test
+			// doesn't exercise the sweep, so mock an empty result.
+			poolAddr := k.GetConsumerFeePoolAddress(consumerId)
+			require.NoError(t, k.FeePoolAddressToConsumerId.Set(ctx, poolAddr, consumerId))
+			mocks.MockBankKeeper.EXPECT().GetAllBalances(ctx, poolAddr).Return(sdk.NewCoins())
 
 			if !tc.seedOverride.IsNil() {
 				require.NoError(t, k.ConsumerFeesPerBlockOverride.Set(ctx, consumerId, tc.seedOverride))

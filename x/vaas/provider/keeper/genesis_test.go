@@ -14,8 +14,6 @@ import (
 
 	clienttypes "github.com/cosmos/ibc-go/v10/modules/core/02-client/types"
 
-	"cosmossdk.io/math"
-
 	sdk "github.com/cosmos/cosmos-sdk/types"
 	stakingtypes "github.com/cosmos/cosmos-sdk/x/staking/types"
 
@@ -487,6 +485,8 @@ func TestGenesisRoundTrip_PreservesFeesPerBlockOverrides(t *testing.T) {
 
 	mocks.MockStakingKeeper.EXPECT().GetBondedValidatorsByPower(gomock.Any()).Return(nil, nil).AnyTimes()
 	mocks2.MockStakingKeeper.EXPECT().GetBondedValidatorsByPower(gomock.Any()).Return(nil, nil).AnyTimes()
+	mocks2.MockBankKeeper.EXPECT().GetAllBalances(gomock.Any(), gomock.Any()).
+		Return(sdk.NewCoins()).AnyTimes()
 
 	k2.InitGenesis(ctx2, exported)
 
