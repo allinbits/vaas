@@ -357,7 +357,14 @@ func (s *IntegrationTestSuite) initAndStartProvider() {
 	// Start provider val1 (second validator node) connecting to val0 as persistent peer
 	s.T().Log("starting provider val1 container...")
 
-	val0P2PAddr := fmt.Sprintf("%s@%s:26656", queryNodeID("http://localhost:26657"), val0Resource.Container.Name[1:])
+	val0NodeID := queryNodeID("http://localhost:26657")
+	s.Require().NotEmpty(val0NodeID, "failed to query val0 node ID")
+	val0P2PAddr := fmt.Sprintf("%s@%s:26656", val0NodeID, val0Resource.Container.Name[1:])
+	s.T().Logf("provider val1 persistent peer: %s", val0P2PAddr)
+
+	// Set persistent_peers in val1's config.toml so it connects to val0 on startup
+	s.setPersistentPeers(filepath.Join(providerVal1Dir, "config", "config.toml"), val0P2PAddr)
+
 	val1Resource, err := s.dkrPool.RunWithOptions(
 		&dockertest.RunOptions{
 			Name:       fmt.Sprintf("%s-val1", providerChainID),
@@ -375,7 +382,6 @@ func (s *IntegrationTestSuite) initAndStartProvider() {
 			Cmd: []string{
 				providerBinary, "start",
 				"--home", providerVal1HomePath,
-				"--p2p.persistent-peers", val0P2PAddr,
 			},
 		},
 		func(config *docker.HostConfig) {
@@ -569,7 +575,14 @@ func (s *IntegrationTestSuite) initAndStartConsumer(consumerGenesisJSON []byte) 
 	)
 
 	// Start consumer val1 connecting to val0 as persistent peer
-	consumerVal0P2PAddr := fmt.Sprintf("%s@%s:26656", queryNodeID("http://localhost:26667"), consumerVal0Resource.Container.Name[1:])
+	consumerVal0NodeID := queryNodeID("http://localhost:26667")
+	s.Require().NotEmpty(consumerVal0NodeID, "failed to query consumer val0 node ID")
+	consumerVal0P2PAddr := fmt.Sprintf("%s@%s:26656", consumerVal0NodeID, consumerVal0Resource.Container.Name[1:])
+	s.T().Logf("consumer val1 persistent peer: %s", consumerVal0P2PAddr)
+
+	// Set persistent_peers in consumer val1's config.toml
+	s.setPersistentPeers(filepath.Join(consumerVal1Dir, "config", "config.toml"), consumerVal0P2PAddr)
+
 	consumerVal1Resource, err := s.dkrPool.RunWithOptions(
 		&dockertest.RunOptions{
 			Name:       fmt.Sprintf("%s-val1", consumerChainID),
@@ -587,7 +600,6 @@ func (s *IntegrationTestSuite) initAndStartConsumer(consumerGenesisJSON []byte) 
 			Cmd: []string{
 				consumerBinary, "start",
 				"--home", consumerVal1HomePath,
-				"--p2p.persistent-peers", consumerVal0P2PAddr,
 			},
 		},
 		func(config *docker.HostConfig) {
@@ -623,6 +635,18 @@ func (s *IntegrationTestSuite) setupTSRelayer() {
 	s.tsRelayerDumpPaths()
 	s.startTSRelayerRelay()
 	s.T().Log("ts-relayer IBC v2 path configured")
+}
+
+// setPersistentPeers sets the persistent_peers field in a CometBFT config.toml.
+func (s *IntegrationTestSuite) setPersistentPeers(configPath, peers string) {
+	data, err := os.ReadFile(configPath)
+	s.Require().NoError(err, "failed to read config.toml")
+	data = []byte(strings.Replace(string(data),
+		"persistent_peers = \"\"",
+		fmt.Sprintf("persistent_peers = \"%s\"", peers),
+		1,
+	))
+	s.Require().NoError(os.WriteFile(configPath, data, 0o644), "failed to write config.toml")
 }
 
 // waitForChainHeight polls a CometBFT RPC endpoint until the chain reaches
