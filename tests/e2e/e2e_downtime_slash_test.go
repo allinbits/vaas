@@ -133,18 +133,26 @@ func (s *IntegrationTestSuite) isProviderValidatorJailed() bool {
 	return false
 }
 
-// getProviderValidatorTokens returns the first bonded validator's operator address and token amount.
+// getProviderValidatorTokens returns the minority bonded validator's operator
+// address and token amount (the one with the least tokens). This is the
+// validator expected to be slashed when taken offline individually.
 func (s *IntegrationTestSuite) getProviderValidatorTokens() (string, math.Int) {
 	vals, err := s.queryProviderValidators()
 	if err != nil {
 		return "", math.ZeroInt()
 	}
+	var minTokens math.Int
+	var minAddr string
 	for _, v := range vals {
-		if v.Status == stakingtypes.Bonded {
-			return v.OperatorAddress, v.Tokens
+		if v.Status != stakingtypes.Bonded {
+			continue
+		}
+		if minAddr == "" || v.Tokens.LT(minTokens) {
+			minTokens = v.Tokens
+			minAddr = v.OperatorAddress
 		}
 	}
-	return "", math.ZeroInt()
+	return minAddr, minTokens
 }
 
 // getProviderValidatorTokensByAddr returns the token amount for a specific validator by operator address.

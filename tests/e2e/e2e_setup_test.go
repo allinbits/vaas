@@ -3,6 +3,9 @@ package e2e
 import (
 	"bytes"
 	"context"
+	"crypto/ed25519"
+	"encoding/base64"
+	"encoding/json"
 	"fmt"
 	"os"
 	"os/exec"
@@ -42,8 +45,8 @@ type IntegrationTestSuite struct {
 	consumerValRes    []*dockertest.Resource
 	tsRelayerResource *dockertest.Resource
 
-	providerVal2DataDir string
-	consumerVal2DataDir string
+	providerVal1DataDir string
+	consumerVal1DataDir string
 }
 
 // makeCodec creates a proto codec with the standard cosmos SDK interfaces registered.
@@ -157,7 +160,7 @@ func (s *IntegrationTestSuite) cleanupStaleContainers() {
 	staleNames := []string{
 		"provider-init",
 		"consumer-init",
-		"consumer-val2-init",
+		"consumer-val1-init",
 		fmt.Sprintf("%s-val0", providerChainID),
 		fmt.Sprintf("%s-val1", providerChainID),
 		fmt.Sprintf("%s-val0", consumerChainID),
@@ -230,19 +233,19 @@ func (s *IntegrationTestSuite) initAndStartProvider() {
 	s.tmpDirs = append(s.tmpDirs, providerDir)
 	s.provider.dataDir = providerDir
 
-	// Create host directory for provider val2 data
-	providerVal2Dir, err := os.MkdirTemp("", "vaas-e2e-provider-val2-")
+	// Create host directory for provider val1 data
+	providerVal1Dir, err := os.MkdirTemp("", "vaas-e2e-provider-val1-")
 	s.Require().NoError(err)
-	s.tmpDirs = append(s.tmpDirs, providerVal2Dir)
-	s.providerVal2DataDir = providerVal2Dir
+	s.tmpDirs = append(s.tmpDirs, providerVal1Dir)
+	s.providerVal1DataDir = providerVal1Dir
 
 	// Make writable
 	s.Require().NoError(os.Chmod(providerDir, 0o777))
-	s.Require().NoError(os.Chmod(providerVal2Dir, 0o777))
+	s.Require().NoError(os.Chmod(providerVal1Dir, 0o777))
 
 	// Run init script in a temporary container with both data dirs mounted
 	scriptPath := filepath.Join(testDir(), "scripts", "provider-init.sh")
-	providerVal2HomePath := providerHomePath + "-val2"
+	providerVal1HomePath := providerHomePath + "-val1"
 	initResource, err := s.dkrPool.RunWithOptions(
 		&dockertest.RunOptions{
 			Name:       "provider-init",
@@ -258,7 +261,7 @@ func (s *IntegrationTestSuite) initAndStartProvider() {
 			},
 			Mounts: []string{
 				fmt.Sprintf("%s:%s", providerDir, providerHomePath),
-				fmt.Sprintf("%s:%s", providerVal2Dir, providerVal2HomePath),
+				fmt.Sprintf("%s:%s", providerVal1Dir, providerVal1HomePath),
 				fmt.Sprintf("%s:/scripts/provider-init.sh", scriptPath),
 			},
 			Entrypoint: []string{"sh", "/scripts/provider-init.sh"},
@@ -311,10 +314,10 @@ func (s *IntegrationTestSuite) initAndStartProvider() {
 		}
 	})
 
-	// Copy the patched genesis to val2's data dir
+	// Copy the patched genesis to val1's data dir
 	s.Require().NoError(
-		copyFile(genesisFile, filepath.Join(providerVal2Dir, "config", "genesis.json")),
-		"failed to copy patched genesis to val2 data dir",
+		copyFile(genesisFile, filepath.Join(providerVal1Dir, "config", "genesis.json")),
+		"failed to copy patched genesis to val1 data dir",
 	)
 
 	// Now start the provider val0 container
@@ -358,24 +361,26 @@ func (s *IntegrationTestSuite) initAndStartProvider() {
 	// Start provider val1 (second validator node) connecting to val0 as persistent peer
 	s.T().Log("starting provider val1 container...")
 
-	val0P2PAddr := fmt.Sprintf("%s:26656", val0Resource.Container.Name)
+	val0NodeID, err := getNodeID(filepath.Join(providerDir, "config", "node_key.json"))
+	s.Require().NoError(err, "failed to get val0 node ID")
+	val0P2PAddr := fmt.Sprintf("%s@%s:26656", val0NodeID, val0Resource.Container.Name[1:])
 	val1Resource, err := s.dkrPool.RunWithOptions(
 		&dockertest.RunOptions{
 			Name:       fmt.Sprintf("%s-val1", providerChainID),
 			Repository: e2eChainImage,
 			NetworkID:  s.dkrNet.Network.ID,
 			Mounts: []string{
-				fmt.Sprintf("%s:%s", providerVal2Dir, providerVal2HomePath),
+				fmt.Sprintf("%s:%s", providerVal1Dir, providerVal1HomePath),
 			},
 			PortBindings: map[docker.Port][]docker.PortBinding{
 				"26657/tcp": {{HostIP: "", HostPort: "26658"}},
 				"9090/tcp":  {{HostIP: "", HostPort: "9091"}},
 				"1317/tcp":  {{HostIP: "", HostPort: "1318"}},
-				"26656/tcp": {{HostIP: "", HostPort: "26658"}},
+				"26656/tcp": {{HostIP: "", HostPort: "26659"}},
 			},
 			Cmd: []string{
 				providerBinary, "start",
-				"--home", providerVal2HomePath,
+				"--home", providerVal1HomePath,
 				"--p2p.persistent-peers", val0P2PAddr,
 			},
 		},
@@ -388,8 +393,12 @@ func (s *IntegrationTestSuite) initAndStartProvider() {
 	s.providerValRes = append(s.providerValRes, val1Resource)
 	s.T().Logf("provider val1 container started: %s", val1Resource.Container.ID[:12])
 
-	// Wait briefly for val1 to connect and catch up
-	time.Sleep(5 * time.Second)
+	// Wait for provider val1 to catch up
+	waitCtx1, waitCancel1 := context.WithTimeout(context.Background(), 2*time.Minute)
+	defer waitCancel1()
+	err = s.waitForChainHeight(waitCtx1, "http://localhost:26658", 3)
+	s.Require().NoError(err, "provider val1 failed to catch up")
+	s.T().Log("provider val1 is caught up")
 }
 
 // registerConsumerOnProvider creates a consumer chain registration on the provider.
@@ -531,20 +540,20 @@ func (s *IntegrationTestSuite) initAndStartConsumer(consumerGenesisJSON []byte) 
 	s.Require().NoError(err, "consumer failed to produce blocks")
 	s.T().Log("consumer chain is producing blocks")
 
-	// Create consumer val1 (second validator node with val2's keys)
+	// Create consumer val1 (second validator node with val1's keys)
 	s.T().Log("setting up consumer val1 node...")
 
-	consumerVal2Dir, err := os.MkdirTemp("", "vaas-e2e-consumer-val2-")
+	consumerVal1Dir, err := os.MkdirTemp("", "vaas-e2e-consumer-val1-")
 	s.Require().NoError(err)
-	s.tmpDirs = append(s.tmpDirs, consumerVal2Dir)
-	s.consumerVal2DataDir = consumerVal2Dir
-	s.Require().NoError(os.Chmod(consumerVal2Dir, 0o777))
+	s.tmpDirs = append(s.tmpDirs, consumerVal1Dir)
+	s.consumerVal1DataDir = consumerVal1Dir
+	s.Require().NoError(os.Chmod(consumerVal1Dir, 0o777))
 
-	// Run consumer init for val2's node
-	consumerVal2HomePath := consumerHomePath + "-val2"
-	s.runInitContainer("consumer-val2-init", scriptPath, "/scripts/consumer-init.sh", consumerVal2Dir, consumerVal2HomePath, []string{
+	// Run consumer init for val1's node
+	consumerVal1HomePath := consumerHomePath + "-val1"
+	s.runInitContainer("consumer-val1-init", scriptPath, "/scripts/consumer-init.sh", consumerVal1Dir, consumerVal1HomePath, []string{
 		"BINARY=" + consumerBinary,
-		"HOME_DIR=" + consumerVal2HomePath,
+		"HOME_DIR=" + consumerVal1HomePath,
 		"CHAIN_ID=" + consumerChainID,
 		"DENOM=" + bondDenom,
 		"MNEMONIC=" + relayerMnemonic,
@@ -552,28 +561,30 @@ func (s *IntegrationTestSuite) initAndStartConsumer(consumerGenesisJSON []byte) 
 
 	// Copy the patched genesis from consumer val0
 	s.Require().NoError(
-		copyFile(genesisFile, filepath.Join(consumerVal2Dir, "config", "genesis.json")),
-		"failed to copy consumer genesis to val2 data dir",
+		copyFile(genesisFile, filepath.Join(consumerVal1Dir, "config", "genesis.json")),
+		"failed to copy consumer genesis to val1 data dir",
 	)
 
-	// Copy val2's validator keys from provider val2 to consumer val2
+	// Copy val1's validator keys from provider val1 to consumer val1
 	s.Require().NoError(
 		copyFile(
-			filepath.Join(s.providerVal2DataDir, "config", "priv_validator_key.json"),
-			filepath.Join(consumerVal2Dir, "config", "priv_validator_key.json"),
+			filepath.Join(s.providerVal1DataDir, "config", "priv_validator_key.json"),
+			filepath.Join(consumerVal1Dir, "config", "priv_validator_key.json"),
 		),
-		"failed to copy val2 priv_validator_key.json to consumer val2",
+		"failed to copy val1 priv_validator_key.json to consumer val1",
 	)
 
 	// Start consumer val1 connecting to val0 as persistent peer
-	consumerVal0P2PAddr := fmt.Sprintf("%s:26656", consumerVal0Resource.Container.Name)
+	consumerVal0NodeID, err := getNodeID(filepath.Join(consumerDir, "config", "node_key.json"))
+	s.Require().NoError(err, "failed to get consumer val0 node ID")
+	consumerVal0P2PAddr := fmt.Sprintf("%s@%s:26656", consumerVal0NodeID, consumerVal0Resource.Container.Name[1:])
 	consumerVal1Resource, err := s.dkrPool.RunWithOptions(
 		&dockertest.RunOptions{
 			Name:       fmt.Sprintf("%s-val1", consumerChainID),
 			Repository: e2eChainImage,
 			NetworkID:  s.dkrNet.Network.ID,
 			Mounts: []string{
-				fmt.Sprintf("%s:%s", consumerVal2Dir, consumerVal2HomePath),
+				fmt.Sprintf("%s:%s", consumerVal1Dir, consumerVal1HomePath),
 			},
 			PortBindings: map[docker.Port][]docker.PortBinding{
 				"26657/tcp": {{HostIP: "", HostPort: "26668"}},
@@ -583,7 +594,7 @@ func (s *IntegrationTestSuite) initAndStartConsumer(consumerGenesisJSON []byte) 
 			},
 			Cmd: []string{
 				consumerBinary, "start",
-				"--home", consumerVal2HomePath,
+				"--home", consumerVal1HomePath,
 				"--p2p.persistent-peers", consumerVal0P2PAddr,
 			},
 		},
@@ -596,7 +607,12 @@ func (s *IntegrationTestSuite) initAndStartConsumer(consumerGenesisJSON []byte) 
 	s.consumerValRes = append(s.consumerValRes, consumerVal1Resource)
 	s.T().Logf("consumer val1 container started: %s", consumerVal1Resource.Container.ID[:12])
 
-	time.Sleep(5 * time.Second)
+	// Wait for consumer val1 to catch up
+	waitCtx2, waitCancel2 := context.WithTimeout(context.Background(), 2*time.Minute)
+	defer waitCancel2()
+	err = s.waitForChainHeight(waitCtx2, "http://localhost:26668", 3)
+	s.Require().NoError(err, "consumer val1 failed to catch up")
+	s.T().Log("consumer val1 is caught up")
 }
 
 // setupTSRelayer starts the ts-relayer container, configures it with
@@ -637,6 +653,35 @@ func (s *IntegrationTestSuite) waitForChainHeight(ctx context.Context, rpcEndpoi
 			}
 		}
 	}
+}
+
+// getNodeID reads a CometBFT node_key.json file and returns the hex-encoded node ID.
+func getNodeID(nodeKeyPath string) (string, error) {
+	data, err := os.ReadFile(nodeKeyPath)
+	if err != nil {
+		return "", fmt.Errorf("failed to read node_key.json: %w", err)
+	}
+
+	var nodeKey struct {
+		PrivKey struct {
+			Value string `json:"value"`
+		} `json:"priv_key"`
+	}
+	if err := json.Unmarshal(data, &nodeKey); err != nil {
+		return "", fmt.Errorf("failed to parse node_key.json: %w", err)
+	}
+
+	privBytes, err := base64.StdEncoding.DecodeString(nodeKey.PrivKey.Value)
+	if err != nil {
+		return "", fmt.Errorf("failed to decode privkey: %w", err)
+	}
+
+	if len(privBytes) != ed25519.PrivateKeySize {
+		return "", fmt.Errorf("invalid privkey size: %d", len(privBytes))
+	}
+
+	pubKey := ed25519.PrivateKey(privBytes).Public().(ed25519.PublicKey)
+	return fmt.Sprintf("%x", pubKey), nil
 }
 
 // chmodRecursive changes permissions on a directory recursively.
