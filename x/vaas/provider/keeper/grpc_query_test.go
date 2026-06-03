@@ -3,9 +3,15 @@ package keeper_test
 import (
 	"testing"
 
+	"cosmossdk.io/math"
 	"github.com/stretchr/testify/require"
+	"google.golang.org/grpc/codes"
+	"google.golang.org/grpc/status"
+
+	sdk "github.com/cosmos/cosmos-sdk/types"
 
 	testkeeper "github.com/allinbits/vaas/testutil/keeper"
+	providerkeeper "github.com/allinbits/vaas/x/vaas/provider/keeper"
 	providertypes "github.com/allinbits/vaas/x/vaas/provider/types"
 )
 
@@ -30,4 +36,119 @@ func TestQueryConsumerChainIncludesFeePoolAddress(t *testing.T) {
 	chain, err := k.GetConsumerChain(ctx, consumerId)
 	require.NoError(t, err)
 	require.Equal(t, expected, chain.FeePoolAddress)
+}
+
+func TestQueryConsumerFeesPerBlock(t *testing.T) {
+	defaultFees := sdk.NewInt64Coin("uphoton", 1000)
+
+	// A zero-value math.Int (IsNil()) in overrideAmount means "no override is set".
+	cases := []struct {
+		name           string
+		overrideAmount math.Int
+		wantCoin       sdk.Coin
+		wantIsOverride bool
+	}{
+		{
+			name:           "no override returns default",
+			wantCoin:       defaultFees,
+			wantIsOverride: false,
+		},
+		{
+			name:           "override returns the override amount",
+			overrideAmount: math.NewInt(2500),
+			wantCoin:       sdk.NewInt64Coin("uphoton", 2500),
+			wantIsOverride: true,
+		},
+	}
+
+	for _, tc := range cases {
+		tc := tc
+		t.Run(tc.name, func(t *testing.T) {
+			params := testkeeper.NewInMemKeeperParams(t)
+			k, ctx, ctrl, _ := testkeeper.GetProviderKeeperAndCtx(t, params)
+			defer ctrl.Finish()
+
+			providerParams := providertypes.DefaultParams()
+			providerParams.FeesPerBlock = defaultFees
+			k.SetParams(ctx, providerParams)
+
+			consumerId := k.FetchAndIncrementConsumerId(ctx)
+			k.SetConsumerPhase(ctx, consumerId, providertypes.CONSUMER_PHASE_REGISTERED)
+
+			if !tc.overrideAmount.IsNil() {
+				require.NoError(t, k.ConsumerFeesPerBlockOverride.Set(ctx, consumerId, tc.overrideAmount))
+			}
+
+			res, err := k.QueryConsumerFeesPerBlock(ctx, &providertypes.QueryConsumerFeesPerBlockRequest{
+				ConsumerId: consumerId,
+			})
+			require.NoError(t, err)
+			require.Equal(t, tc.wantIsOverride, res.IsOverride)
+			require.Equal(t, tc.wantCoin, res.FeesPerBlock)
+		})
+	}
+}
+
+func TestQueryConsumerFeesPerBlock_UnknownOrDeletedConsumer(t *testing.T) {
+	cases := []struct {
+		name  string
+		setup func(k providerkeeper.Keeper, ctx sdk.Context) uint64
+	}{
+		{
+			name: "unknown consumer",
+			setup: func(_ providerkeeper.Keeper, _ sdk.Context) uint64 {
+				return 999
+			},
+		},
+		{
+			name: "deleted consumer",
+			setup: func(k providerkeeper.Keeper, ctx sdk.Context) uint64 {
+				consumerId := k.FetchAndIncrementConsumerId(ctx)
+				k.SetConsumerPhase(ctx, consumerId, providertypes.CONSUMER_PHASE_DELETED)
+				return consumerId
+			},
+		},
+	}
+
+	for _, tc := range cases {
+		tc := tc
+		t.Run(tc.name, func(t *testing.T) {
+			params := testkeeper.NewInMemKeeperParams(t)
+			k, ctx, ctrl, _ := testkeeper.GetProviderKeeperAndCtx(t, params)
+			defer ctrl.Finish()
+			k.SetParams(ctx, providertypes.DefaultParams())
+
+			consumerId := tc.setup(k, ctx)
+
+			_, err := k.QueryConsumerFeesPerBlock(ctx, &providertypes.QueryConsumerFeesPerBlockRequest{
+				ConsumerId: consumerId,
+			})
+			require.Error(t, err)
+			require.Equal(t, codes.NotFound, status.Code(err))
+		})
+	}
+}
+
+func TestQueryAllConsumerFeesPerBlockOverrides(t *testing.T) {
+	params := testkeeper.NewInMemKeeperParams(t)
+	k, ctx, ctrl, _ := testkeeper.GetProviderKeeperAndCtx(t, params)
+	defer ctrl.Finish()
+
+	a := k.FetchAndIncrementConsumerId(ctx)
+	b := k.FetchAndIncrementConsumerId(ctx)
+	c := k.FetchAndIncrementConsumerId(ctx)
+	for _, id := range []uint64{a, b, c} {
+		k.SetConsumerPhase(ctx, id, providertypes.CONSUMER_PHASE_REGISTERED)
+	}
+	require.NoError(t, k.ConsumerFeesPerBlockOverride.Set(ctx, a, math.NewInt(500)))
+	require.NoError(t, k.ConsumerFeesPerBlockOverride.Set(ctx, c, math.NewInt(700)))
+
+	res, err := k.QueryAllConsumerFeesPerBlockOverrides(ctx, &providertypes.QueryAllConsumerFeesPerBlockOverridesRequest{})
+	require.NoError(t, err)
+	require.Len(t, res.Overrides, 2)
+	// Collection iteration is ordered by uint64 key ascending.
+	require.Equal(t, a, res.Overrides[0].ConsumerId)
+	require.Equal(t, "500", res.Overrides[0].Amount)
+	require.Equal(t, c, res.Overrides[1].ConsumerId)
+	require.Equal(t, "700", res.Overrides[1].Amount)
 }
