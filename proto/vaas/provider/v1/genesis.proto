@@ -4,6 +4,7 @@ package vaas.provider.v1;
 
 option go_package = "github.com/allinbits/vaas/x/vaas/provider/types";
 
+import "cosmos_proto/cosmos.proto";
 import "gogoproto/gogo.proto";
 import "google/protobuf/timestamp.proto";
 import "vaas/v1/shared_consumer.proto";
@@ -32,6 +33,11 @@ message GenesisState {
 
   // empty for a new chain
   repeated ConsumerAddrsToPrune consumer_addrs_to_prune = 7
+      [ (gogoproto.nullable) = false ];
+
+  // Per-consumer fees_per_block amount overrides. Empty for a new chain.
+  // Each entry's consumer_id MUST appear in consumer_states.
+  repeated ConsumerFeesPerBlockOverride consumer_fees_per_block_overrides = 8
       [ (gogoproto.nullable) = false ];
 }
 
@@ -83,4 +89,12 @@ message ConsumerState {
 message ValsetUpdateIdToHeight {
   uint64 valset_update_id = 1;
   uint64 height = 2;
+}
+
+// ConsumerFeesPerBlockOverride is a single per-consumer override entry for
+// the per-block fee amount. Reused by query.proto for the override-list query.
+message ConsumerFeesPerBlockOverride {
+  uint64 consumer_id = 1;
+  // amount is a non-negative math.Int in string form.
+  string amount = 2 [(cosmos_proto.scalar) = "cosmos.Int"];
 }

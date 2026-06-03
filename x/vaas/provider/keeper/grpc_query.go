@@ -13,6 +13,7 @@ import (
 	"google.golang.org/grpc/status"
 
 	errorsmod "cosmossdk.io/errors"
+	"cosmossdk.io/math"
 
 	sdk "github.com/cosmos/cosmos-sdk/types"
 	"github.com/cosmos/cosmos-sdk/types/query"
@@ -352,5 +353,56 @@ func (k Keeper) QueryConsumerGenesisTime(goCtx context.Context, req *types.Query
 
 	return &types.QueryConsumerGenesisTimeResponse{
 		GenesisTime: time.Unix(0, int64(cs.GetTimestamp())), //nolint:staticcheck
+	}, nil
+}
+
+// QueryConsumerFeesPerBlock returns the effective per-block fee for the
+// given consumer (override if set, else Params.FeesPerBlock).
+func (k Keeper) QueryConsumerFeesPerBlock(
+	goCtx context.Context,
+	req *types.QueryConsumerFeesPerBlockRequest,
+) (*types.QueryConsumerFeesPerBlockResponse, error) {
+	if req == nil {
+		return nil, status.Errorf(codes.InvalidArgument, "empty request")
+	}
+	// Reject unknown and deleted consumers rather than reporting the default
+	// fee for an id that does not (or no longer) exists.
+	phase := k.GetConsumerPhase(goCtx, req.ConsumerId)
+	if phase == types.CONSUMER_PHASE_UNSPECIFIED || phase == types.CONSUMER_PHASE_DELETED {
+		return nil, status.Errorf(codes.NotFound, "consumer %d not found", req.ConsumerId)
+	}
+	coin, isOverride := k.GetEffectiveFeesPerBlock(goCtx, req.ConsumerId)
+	return &types.QueryConsumerFeesPerBlockResponse{
+		FeesPerBlock: coin,
+		IsOverride:   isOverride,
+	}, nil
+}
+
+// QueryAllConsumerFeesPerBlockOverrides returns the full list of overrides,
+// paginated, ordered by consumer_id ascending.
+func (k Keeper) QueryAllConsumerFeesPerBlockOverrides(
+	goCtx context.Context,
+	req *types.QueryAllConsumerFeesPerBlockOverridesRequest,
+) (*types.QueryAllConsumerFeesPerBlockOverridesResponse, error) {
+	if req == nil {
+		return nil, status.Errorf(codes.InvalidArgument, "empty request")
+	}
+	overrides, pageRes, err := query.CollectionPaginate(
+		goCtx,
+		k.ConsumerFeesPerBlockOverride,
+		req.Pagination,
+		func(consumerId uint64, amt math.Int) (types.ConsumerFeesPerBlockOverride, error) {
+			return types.ConsumerFeesPerBlockOverride{
+				ConsumerId: consumerId,
+				Amount:     amt.String(),
+			}, nil
+		},
+	)
+	if err != nil {
+		return nil, status.Error(codes.Internal, err.Error())
+	}
+	return &types.QueryAllConsumerFeesPerBlockOverridesResponse{
+		Overrides:  overrides,
+		Pagination: pageRes,
 	}, nil
 }

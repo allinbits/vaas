@@ -6,11 +6,13 @@ option go_package = "github.com/allinbits/vaas/x/vaas/provider/types";
 import "google/api/annotations.proto";
 import "gogoproto/gogo.proto";
 import "google/protobuf/timestamp.proto";
+import "vaas/provider/v1/genesis.proto";
 import "vaas/provider/v1/provider.proto";
 import "vaas/v1/shared_consumer.proto";
 import "vaas/v1/wire.proto";
 import "tendermint/crypto/keys.proto";
 import "cosmos_proto/cosmos.proto";
+import "cosmos/base/v1beta1/coin.proto";
 import "cosmos/staking/v1beta1/staking.proto";
 import "cosmos/base/query/v1beta1/pagination.proto";
 
@@ -105,6 +107,22 @@ service Query {
       returns (QueryConsumerGenesisTimeResponse) {
     option (google.api.http).get =
         "/vaas/provider/consumer_genesis_time/{consumer_id}";
+  }
+
+  // QueryConsumerFeesPerBlock returns the effective per-block fee for a
+  // consumer chain: the override if one is set, else Params.FeesPerBlock.
+  rpc QueryConsumerFeesPerBlock(QueryConsumerFeesPerBlockRequest)
+      returns (QueryConsumerFeesPerBlockResponse) {
+    option (google.api.http).get =
+        "/vaas/provider/consumer_fees_per_block/{consumer_id}";
+  }
+
+  // QueryAllConsumerFeesPerBlockOverrides returns the list of per-consumer
+  // fees_per_block amount overrides.
+  rpc QueryAllConsumerFeesPerBlockOverrides(QueryAllConsumerFeesPerBlockOverridesRequest)
+      returns (QueryAllConsumerFeesPerBlockOverridesResponse) {
+    option (google.api.http).get =
+        "/vaas/provider/consumer_fees_per_block_overrides";
   }
 }
 
@@ -273,4 +291,28 @@ message QueryConsumerGenesisTimeRequest {
 message QueryConsumerGenesisTimeResponse {
   google.protobuf.Timestamp genesis_time = 1
   [ (gogoproto.stdtime) = true, (gogoproto.nullable) = false ];
+}
+
+message QueryConsumerFeesPerBlockRequest {
+  uint64 consumer_id = 1;
+}
+
+// Effective fee for the consumer: the override if one is set, else
+// Params.FeesPerBlock. is_override distinguishes the two cases.
+message QueryConsumerFeesPerBlockResponse {
+  cosmos.base.v1beta1.Coin fees_per_block = 1 [
+    (gogoproto.casttype) = "github.com/cosmos/cosmos-sdk/types.Coin",
+    (gogoproto.nullable) = false
+  ];
+  bool is_override = 2;
+}
+
+message QueryAllConsumerFeesPerBlockOverridesRequest {
+  cosmos.base.query.v1beta1.PageRequest pagination = 1;
+}
+
+message QueryAllConsumerFeesPerBlockOverridesResponse {
+  repeated ConsumerFeesPerBlockOverride overrides = 1
+      [ (gogoproto.nullable) = false ];
+  cosmos.base.query.v1beta1.PageResponse pagination = 2;
 }

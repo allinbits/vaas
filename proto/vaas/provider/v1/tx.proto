@@ -27,6 +27,8 @@ service Msg {
   rpc UpdateConsumer(MsgUpdateConsumer) returns (MsgUpdateConsumerResponse);
   rpc RemoveConsumer(MsgRemoveConsumer) returns (MsgRemoveConsumerResponse);
   rpc UpdateParams(MsgUpdateParams) returns (MsgUpdateParamsResponse);
+  rpc SetConsumerFeesPerBlock(MsgSetConsumerFeesPerBlock)
+      returns (MsgSetConsumerFeesPerBlockResponse);
 }
 
 message MsgAssignConsumerKey {
@@ -159,3 +161,24 @@ message MsgUpdateConsumer {
 
 // MsgUpdateConsumerResponse defines response type for MsgUpdateConsumer messages
 message MsgUpdateConsumerResponse {}
+
+// MsgSetConsumerFeesPerBlock sets or clears a per-consumer override for the
+// per-block fee amount. Only the gov authority may submit this message.
+message MsgSetConsumerFeesPerBlock {
+  option (cosmos.msg.v1.signer) = "authority";
+  // authority is the module's gov authority address (e.g. the gov module).
+  string authority = 1 [(cosmos_proto.scalar) = "cosmos.AddressString"];
+  // consumer_id is the internal numeric id of the target consumer.
+  uint64 consumer_id = 2;
+  // amount is the per-block fee charged to the consumer, expressed in the
+  // module's fee denom (Params.FeesPerBlock.Denom).
+  //
+  // Empty string clears any existing override; the consumer reverts to
+  // Params.FeesPerBlock.Amount. A non-empty value must parse as a
+  // cosmossdk.io/math.Int and must be strictly greater than the module-wide
+  // Params.FeesPerBlock.Amount, which acts as a floor: an override may only
+  // raise a consumer's per-block fee above the global default, never lower it.
+  string amount = 3 [(cosmos_proto.scalar) = "cosmos.Int"];
+}
+
+message MsgSetConsumerFeesPerBlockResponse {}
