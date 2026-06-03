@@ -398,21 +398,6 @@ func (m *MockSlashingKeeper) EXPECT() *MockSlashingKeeperMockRecorder {
 	return m.recorder
 }
 
-// DowntimeJailDuration mocks base method.
-func (m *MockSlashingKeeper) DowntimeJailDuration(arg0 context.Context) (time.Duration, error) {
-	m.ctrl.T.Helper()
-	ret := m.ctrl.Call(m, "DowntimeJailDuration", arg0)
-	ret0, _ := ret[0].(time.Duration)
-	ret1, _ := ret[1].(error)
-	return ret0, ret1
-}
-
-// DowntimeJailDuration indicates an expected call of DowntimeJailDuration.
-func (mr *MockSlashingKeeperMockRecorder) DowntimeJailDuration(arg0 any) *gomock.Call {
-	mr.mock.ctrl.T.Helper()
-	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "DowntimeJailDuration", reflect.TypeOf((*MockSlashingKeeper)(nil).DowntimeJailDuration), arg0)
-}
-
 // IsTombstoned mocks base method.
 func (m *MockSlashingKeeper) IsTombstoned(arg0 context.Context, arg1 types.ConsAddress) bool {
 	m.ctrl.T.Helper()
@@ -441,20 +426,6 @@ func (mr *MockSlashingKeeperMockRecorder) JailUntil(arg0, arg1, arg2 any) *gomoc
 	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "JailUntil", reflect.TypeOf((*MockSlashingKeeper)(nil).JailUntil), arg0, arg1, arg2)
 }
 
-// SlashFractionDoubleSign mocks base method.
-func (m *MockSlashingKeeper) SlashFractionDoubleSign(arg0 context.Context) (math.LegacyDec, error) {
-	m.ctrl.T.Helper()
-	ret := m.ctrl.Call(m, "SlashFractionDoubleSign", arg0)
-	ret0, _ := ret[0].(math.LegacyDec)
-	ret1, _ := ret[1].(error)
-	return ret0, ret1
-}
-
-// SlashFractionDoubleSign indicates an expected call of SlashFractionDoubleSign.
-func (mr *MockSlashingKeeperMockRecorder) SlashFractionDoubleSign(arg0 any) *gomock.Call {
-	mr.mock.ctrl.T.Helper()
-	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "SlashFractionDoubleSign", reflect.TypeOf((*MockSlashingKeeper)(nil).SlashFractionDoubleSign), arg0)
-}
 
 // Tombstone mocks base method.
 func (m *MockSlashingKeeper) Tombstone(arg0 context.Context, arg1 types.ConsAddress) error {

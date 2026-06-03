@@ -283,6 +283,7 @@ func TestSubmitConsumerDoubleVotingHappyPath(t *testing.T) {
 	chainID := "consumer-chain-id"
 	providerKeeper.SetConsumerChainId(ctx, consumerID, chainID)
 	providerKeeper.SetConsumerPhase(ctx, consumerID, providertypes.CONSUMER_PHASE_LAUNCHED)
+	providerKeeper.SetInfractionParams(ctx, providertypes.DefaultInfractionParameters())
 
 	height := int64(12)
 
@@ -323,11 +324,7 @@ func TestSubmitConsumerDoubleVotingHappyPath(t *testing.T) {
 	valOperBytes, err := providerKeeper.ValidatorAddressCodec().StringToBytes(stakingValidator.GetOperator())
 	require.NoError(t, err)
 
-	// DefaultConsumerInfractionParameters only reads the double-sign fraction
-	// (downtime uses a fixed default).
-	mocks.MockSlashingKeeper.EXPECT().SlashFractionDoubleSign(ctx).Return(math.LegacyNewDecWithPrec(5, 2), nil).Times(1)
-
-	// SlashValidator path.
+	// SlashValidator path (uses default infraction params: double-sign slash fraction = 0.05).
 	mocks.MockStakingKeeper.EXPECT().GetValidatorByConsAddr(ctx, consAddr).Return(stakingValidator, nil).Times(1)
 	mocks.MockSlashingKeeper.EXPECT().IsTombstoned(ctx, consAddr).Return(false).Times(1)
 	mocks.MockStakingKeeper.EXPECT().GetUnbondingDelegationsFromValidator(ctx, valOperBytes).Return([]stakingtypes.UnbondingDelegation{}, nil).Times(1)

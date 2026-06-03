@@ -73,11 +73,8 @@ func (k Keeper) HandleConsumerDoubleVoting(
 		types.NewConsumerConsAddress(sdk.ConsAddress(evidence.VoteA.ValidatorAddress.Bytes())),
 	)
 
-	// get default infraction parameters (per-consumer params removed)
-	infractionParams, err := types.DefaultConsumerInfractionParameters(ctx, k.slashingKeeper)
-	if err != nil {
-		return err
-	}
+	// get infraction parameters
+	infractionParams := k.GetInfractionParams(ctx)
 
 	alreadyTombstoned := false
 	if err = k.SlashValidator(ctx, providerAddr, infractionParams.DoubleSign, stakingtypes.Infraction_INFRACTION_DOUBLE_SIGN); err != nil {
@@ -273,12 +270,9 @@ func (k Keeper) HandleConsumerDowntime(ctx sdk.Context, consumerId uint64, evide
 		)
 	}
 
-	infractionParams, err := types.DefaultConsumerInfractionParameters(ctx, k.slashingKeeper)
-	if err != nil {
-		return err
-	}
+	infractionParams := k.GetInfractionParams(ctx)
 
-	if err = k.SlashValidator(ctx, providerAddr, infractionParams.Downtime, stakingtypes.Infraction_INFRACTION_DOWNTIME); err != nil {
+	if err := k.SlashValidator(ctx, providerAddr, infractionParams.Downtime, stakingtypes.Infraction_INFRACTION_DOWNTIME); err != nil {
 		return err
 	}
 

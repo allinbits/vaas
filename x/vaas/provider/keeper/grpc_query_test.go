@@ -5,7 +5,6 @@ import (
 
 	"cosmossdk.io/math"
 	"github.com/stretchr/testify/require"
-	"go.uber.org/mock/gomock"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
 
@@ -17,7 +16,7 @@ import (
 )
 
 func TestQueryConsumerChainIncludesFeePoolAddress(t *testing.T) {
-	k, ctx, ctrl, mocks := testkeeper.GetProviderKeeperAndCtx(t, testkeeper.NewInMemKeeperParams(t))
+	k, ctx, ctrl, _ := testkeeper.GetProviderKeeperAndCtx(t, testkeeper.NewInMemKeeperParams(t))
 	defer ctrl.Finish()
 
 	consumerId := k.FetchAndIncrementConsumerId(ctx)
@@ -27,8 +26,6 @@ func TestQueryConsumerChainIncludesFeePoolAddress(t *testing.T) {
 	require.NoError(t, k.SetConsumerMetadata(ctx, consumerId, providertypes.ConsumerMetadata{
 		Name: "name", Description: "description", Metadata: "metadata",
 	}))
-
-	mocks.MockSlashingKeeper.EXPECT().SlashFractionDoubleSign(gomock.Any()).Return(math.LegacyNewDec(0), nil).AnyTimes()
 
 	expected := k.GetConsumerFeePoolAddress(consumerId).String()
 

@@ -6,6 +6,10 @@ import (
 
 	vaastypes "github.com/allinbits/vaas/x/vaas/types"
 
+	clienttypes "github.com/cosmos/ibc-go/v10/modules/core/02-client/types"
+
+	"cosmossdk.io/math"
+
 	sdk "github.com/cosmos/cosmos-sdk/types"
 )
 
@@ -32,6 +36,12 @@ const (
 
 	// DefaultFeesPerBlockAmount is the default amount (in DefaultFeesPerBlockDenom) charged per block.
 	DefaultFeesPerBlockAmount = int64(1000)
+
+	// DefaultDoubleSignSlashFraction is the default slash fraction for double-sign infractions on consumer chains.
+	DefaultDoubleSignSlashFraction = "0.05"
+
+	// DefaultDowntimeSlashFraction is the default slash fraction for downtime infractions on consumer chains (0.05%).
+	DefaultDowntimeSlashFraction = "0.0005"
 )
 
 // NewParams creates new provider parameters with provided arguments
@@ -59,6 +69,67 @@ func DefaultParams() Params {
 		DefaultMaxProviderConsensusValidators,
 		sdk.NewInt64Coin(DefaultFeesPerBlockDenom, DefaultFeesPerBlockAmount),
 	)
+}
+
+// DefaultInfractionParameters returns the default infraction parameters for consumer chain slashing.
+func DefaultInfractionParameters() InfractionParameters {
+	doubleSignSlashFraction, _ := math.LegacyNewDecFromStr(DefaultDoubleSignSlashFraction)
+	downtimeSlashFraction, _ := math.LegacyNewDecFromStr(DefaultDowntimeSlashFraction)
+	return InfractionParameters{
+		DoubleSign: &SlashJailParameters{
+			JailDuration:  time.Duration(1<<63 - 1),
+			SlashFraction: doubleSignSlashFraction,
+			Tombstone:     true,
+		},
+		Downtime: &SlashJailParameters{
+			JailDuration:  0,
+			SlashFraction: downtimeSlashFraction,
+			Tombstone:     false,
+		},
+	}
+}
+
+func DefaultConsumerInitializationParameters() ConsumerInitializationParameters {
+	return ConsumerInitializationParameters{
+		InitialHeight: clienttypes.Height{
+			RevisionNumber: 1,
+			RevisionHeight: 1,
+		},
+		GenesisHash:       []byte{},
+		BinaryHash:        []byte{},
+		SpawnTime:         time.Time{},
+		UnbondingPeriod:   vaastypes.DefaultConsumerUnbondingPeriod,
+		VaasTimeoutPeriod: vaastypes.DefaultVAASTimeoutPeriod,
+		HistoricalEntries: vaastypes.DefaultHistoricalEntries,
+	}
+}
+
+// Validate performs basic validation of infraction parameters.
+func (ip InfractionParameters) Validate() error {
+	if ip.DoubleSign == nil {
+		return fmt.Errorf("double_sign infraction parameters must be set")
+	}
+	if err := ip.DoubleSign.Validate(); err != nil {
+		return fmt.Errorf("double_sign: %s", err)
+	}
+	if ip.Downtime == nil {
+		return fmt.Errorf("downtime infraction parameters must be set")
+	}
+	if err := ip.Downtime.Validate(); err != nil {
+		return fmt.Errorf("downtime: %s", err)
+	}
+	return nil
+}
+
+// Validate performs basic validation of slash/jail parameters.
+func (sjp SlashJailParameters) Validate() error {
+	if err := vaastypes.ValidateFraction(sjp.SlashFraction); err != nil {
+		return fmt.Errorf("slash_fraction: %s", err)
+	}
+	if sjp.JailDuration < 0 {
+		return fmt.Errorf("jail_duration must not be negative")
+	}
+	return nil
 }
 
 // Validate all VAAS-provider module parameters

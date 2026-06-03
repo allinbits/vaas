@@ -66,7 +66,7 @@ func TestInitGenesis(t *testing.T) {
 		{ValsetUpdateId: vscID, Height: blockHeight},
 	}
 
-	params := vaastypes.DefaultParams()
+	params := vaastypes.DefaultConsumerParams()
 	params.Enabled = true
 
 	testCases := []struct {
@@ -149,7 +149,7 @@ func TestExportGenesis(t *testing.T) {
 	defaultHeightValsetUpdateIDs := []consumertypes.HeightToValsetUpdateID{
 		{ValsetUpdateId: vscID, Height: blockHeight},
 	}
-	params := vaastypes.DefaultParams()
+	params := vaastypes.DefaultConsumerParams()
 	params.Enabled = true
 
 	testCases := []struct {
