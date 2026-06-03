@@ -283,6 +283,7 @@ func TestSubmitConsumerDoubleVotingHappyPath(t *testing.T) {
 	chainID := "consumer-chain-id"
 	providerKeeper.SetConsumerChainId(ctx, consumerID, chainID)
 	providerKeeper.SetConsumerPhase(ctx, consumerID, providertypes.CONSUMER_PHASE_LAUNCHED)
+	providerKeeper.SetInfractionParams(ctx, providertypes.DefaultInfractionParameters())
 
 	height := int64(12)
 

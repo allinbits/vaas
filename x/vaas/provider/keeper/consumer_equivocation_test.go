@@ -837,6 +837,7 @@ func TestHandleConsumerEvidencePacket(t *testing.T) {
 	providerKeeper.SetConsumerChainId(ctx, consumerId, "consumer-chain")
 	providerKeeper.SetConsumerClientId(ctx, consumerId, "07-tendermint-0")
 	providerKeeper.SetEquivocationEvidenceMinHeight(ctx, consumerId, 1)
+	providerKeeper.SetInfractionParams(ctx, types.DefaultInfractionParameters())
 
 	pubKey, _ := cryptocodec.FromCmtPubKeyInterface(tmtypes.NewMockPV().PrivKey.PubKey())
 	validator, err := stakingtypes.NewValidator(

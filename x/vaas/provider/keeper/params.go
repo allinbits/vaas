@@ -138,7 +138,7 @@ func (k Keeper) SetParams(ctx context.Context, params types.Params) {
 func (k Keeper) GetInfractionParams(ctx context.Context) types.InfractionParameters {
 	params, err := k.InfractionParams.Get(ctx)
 	if err != nil {
-		return types.DefaultInfractionParameters()
+		panic(fmt.Sprintf("error getting infraction parameters: %v", err))
 	}
 	return params
 }
