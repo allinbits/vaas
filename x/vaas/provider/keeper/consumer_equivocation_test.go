@@ -1088,7 +1088,7 @@ func TestHandleConsumerEvidencePacketRejectsNonLaunchedConsumer(t *testing.T) {
 	require.Error(t, err)
 }
 
-func TestSlashPacketDataJSONRoundTrip(t *testing.T) {
+func TestEvidencePacketDataJSONRoundTrip(t *testing.T) {
 	addr := sdk.ConsAddress([]byte{0x01, 0x02, 0x03, 0x04, 0x05})
 	packet := vaastypes.NewEvidencePacketData(addr, 42, stakingtypes.Infraction_INFRACTION_DOWNTIME)
 

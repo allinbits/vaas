@@ -24,7 +24,6 @@ func TestQueryConsumerChainIncludesFeePoolAddress(t *testing.T) {
 	}))
 
 	mocks.MockSlashingKeeper.EXPECT().SlashFractionDoubleSign(gomock.Any()).Return(math.LegacyNewDec(0), nil).AnyTimes()
-	mocks.MockSlashingKeeper.EXPECT().SlashFractionDowntime(gomock.Any()).Return(math.LegacyNewDec(0), nil).AnyTimes()
 
 	expected := k.GetConsumerFeePoolAddress(consumerId).String()
 

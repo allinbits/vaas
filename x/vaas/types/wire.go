@@ -64,7 +64,7 @@ func (spd EvidencePacketData) Validate() error {
 		return errorsmod.Wrap(ErrInvalidPacketData, "infraction height must be positive")
 	}
 	if spd.Infraction != stakingtypes.Infraction_INFRACTION_DOWNTIME {
-		return fmt.Errorf("only DOWNTIME infractions can be sent as slash packets, got %s", spd.Infraction)
+		return fmt.Errorf("only DOWNTIME infractions can be sent as evidence packets, got %s", spd.Infraction)
 	}
 	return nil
 }

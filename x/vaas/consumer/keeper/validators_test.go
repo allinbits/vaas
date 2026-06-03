@@ -141,14 +141,14 @@ func TestSlash(t *testing.T) {
 	require.NoError(t, err)
 	require.True(t, slashed.IsZero())
 
-	require.Equal(t, 1, consumerKeeper.GetPendingSlashPacketCount(ctx))
+	require.Equal(t, 1, consumerKeeper.GetPendingEvidencePacketCount(ctx))
 
 	// double-sign should not queue a packet
 	slashed, err = consumerKeeper.SlashWithInfractionReason(ctx, addr, 5, 6, math.LegacyNewDec(9.0), stakingtypes.Infraction_INFRACTION_DOUBLE_SIGN)
 	require.NoError(t, err)
 	require.True(t, slashed.IsZero())
 
-	require.Equal(t, 1, consumerKeeper.GetPendingSlashPacketCount(ctx))
+	require.Equal(t, 1, consumerKeeper.GetPendingEvidencePacketCount(ctx))
 }
 
 func TestSlashSkipsDuplicateDowntime(t *testing.T) {
@@ -161,20 +161,20 @@ func TestSlashSkipsDuplicateDowntime(t *testing.T) {
 	slashed, err := consumerKeeper.SlashWithInfractionReason(ctx, addr, 5, 6, math.LegacyNewDec(9.0), stakingtypes.Infraction_INFRACTION_DOWNTIME)
 	require.NoError(t, err)
 	require.True(t, slashed.IsZero())
-	require.Equal(t, 1, consumerKeeper.GetPendingSlashPacketCount(ctx))
+	require.Equal(t, 1, consumerKeeper.GetPendingEvidencePacketCount(ctx))
 
 	// Duplicate downtime → skipped (validator already has pending packet)
 	slashed, err = consumerKeeper.SlashWithInfractionReason(ctx, addr, 5, 6, math.LegacyNewDec(9.0), stakingtypes.Infraction_INFRACTION_DOWNTIME)
 	require.NoError(t, err)
 	require.True(t, slashed.IsZero())
-	require.Equal(t, 1, consumerKeeper.GetPendingSlashPacketCount(ctx))
+	require.Equal(t, 1, consumerKeeper.GetPendingEvidencePacketCount(ctx))
 
 	// Different validator → queues packet
 	addr2 := sdk.ConsAddress([]byte{0x04, 0x05, 0x06})
 	slashed, err = consumerKeeper.SlashWithInfractionReason(ctx, addr2, 5, 6, math.LegacyNewDec(9.0), stakingtypes.Infraction_INFRACTION_DOWNTIME)
 	require.NoError(t, err)
 	require.True(t, slashed.IsZero())
-	require.Equal(t, 2, consumerKeeper.GetPendingSlashPacketCount(ctx))
+	require.Equal(t, 2, consumerKeeper.GetPendingEvidencePacketCount(ctx))
 }
 
 // Tests the getter and setter behavior for historical info
