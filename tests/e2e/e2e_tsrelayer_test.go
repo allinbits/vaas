@@ -65,7 +65,7 @@ func (s *IntegrationTestSuite) verifyTSRelayerConnectivity(chainName, rpcURL str
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 	defer cancel()
 
-	for attempt := 0; attempt < 10; attempt++ {
+	for attempt := range 10 {
 		exec, err := s.dkrPool.Client.CreateExec(docker.CreateExecOptions{
 			Context:      ctx,
 			AttachStdout: true,

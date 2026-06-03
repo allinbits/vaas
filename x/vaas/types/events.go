@@ -10,7 +10,7 @@ const (
 	EventTypeSubmitConsumerMisbehaviour = "submit_consumer_misbehaviour"
 	EventTypeSubmitConsumerDoubleVoting = "submit_consumer_double_voting"
 	EventTypeExecuteConsumerChainSlash  = "execute_consumer_chain_slash"
-	EventTypeConsumerSlashRequest       = "consumer_slash_request"
+	EventTypeConsumerEvidenceRequest    = "consumer_evidence_request"
 
 	AttributeKeyAckSuccess            = "success"
 	AttributeKeyAck                   = "acknowledgement"

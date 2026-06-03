@@ -2,6 +2,7 @@ package provider
 
 import (
 	"bytes"
+	"encoding/json"
 	"strconv"
 
 	"github.com/allinbits/vaas/x/vaas/provider/keeper"
@@ -69,14 +70,68 @@ func (im IBCModule) OnRecvPacket(
 	payload channeltypesv2.Payload,
 	relayer sdk.AccAddress,
 ) channeltypesv2.RecvPacketResult {
-	im.keeper.Logger(ctx).Error("provider received unexpected packet",
-		"sourceClient", sourceClient,
-		"destinationClient", destinationClient,
+	logger := im.keeper.Logger(ctx)
+
+	if payload.DestinationPort != vaastypes.ProviderAppID {
+		logger.Error("invalid destination port",
+			"expected", vaastypes.ProviderAppID,
+			"got", payload.DestinationPort,
+		)
+		return channeltypesv2.RecvPacketResult{
+			Status: channeltypesv2.PacketStatus_Failure,
+		}
+	}
+
+	if payload.SourcePort != vaastypes.ConsumerAppID {
+		logger.Error("invalid source port",
+			"expected", vaastypes.ConsumerAppID,
+			"got", payload.SourcePort,
+		)
+		return channeltypesv2.RecvPacketResult{
+			Status: channeltypesv2.PacketStatus_Failure,
+		}
+	}
+
+	// destinationClient is the provider's own client pointing to the consumer.
+	consumerId, found := im.keeper.GetClientIdToConsumerId(ctx, destinationClient)
+	if !found {
+		logger.Error("received packet from unknown client",
+			"destinationClient", destinationClient,
+			"sourceClient", sourceClient,
+		)
+		return channeltypesv2.RecvPacketResult{
+			Status: channeltypesv2.PacketStatus_Failure,
+		}
+	}
+
+	var evidencePacket vaastypes.EvidencePacketData
+	if err := json.Unmarshal(payload.Value, &evidencePacket); err != nil {
+		logger.Error("cannot unmarshal evidence packet data", "error", err)
+		return channeltypesv2.RecvPacketResult{
+			Status: channeltypesv2.PacketStatus_Failure,
+		}
+	}
+
+	if err := im.keeper.HandleConsumerEvidencePacket(ctx, consumerId, evidencePacket); err != nil {
+		logger.Error("failed to handle evidence packet",
+			"consumerId", consumerId,
+			"error", err,
+		)
+		return channeltypesv2.RecvPacketResult{
+			Status: channeltypesv2.PacketStatus_Failure,
+		}
+	}
+
+	logger.Info("successfully handled evidence packet",
+		"consumerId", consumerId,
 		"sequence", sequence,
+		"validator", evidencePacket.ValidatorAddr.String(),
+		"infraction", evidencePacket.Infraction.String(),
 	)
 
 	return channeltypesv2.RecvPacketResult{
-		Status: channeltypesv2.PacketStatus_Failure,
+		Status:          channeltypesv2.PacketStatus_Success,
+		Acknowledgement: []byte{byte(1)},
 	}
 }
 

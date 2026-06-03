@@ -322,9 +322,8 @@ func TestSubmitConsumerDoubleVotingHappyPath(t *testing.T) {
 	valOperBytes, err := providerKeeper.ValidatorAddressCodec().StringToBytes(stakingValidator.GetOperator())
 	require.NoError(t, err)
 
-	// DefaultConsumerInfractionParameters reads both fractions even though only
-	// DoubleSign is used for this evidence type.
-	mocks.MockSlashingKeeper.EXPECT().DowntimeJailDuration(ctx).Return(10*time.Minute, nil).Times(1)
+	// DefaultConsumerInfractionParameters only reads the double-sign fraction
+	// (downtime uses a fixed default).
 	mocks.MockSlashingKeeper.EXPECT().SlashFractionDoubleSign(ctx).Return(math.LegacyNewDecWithPrec(5, 2), nil).Times(1)
 
 	// SlashValidator path.

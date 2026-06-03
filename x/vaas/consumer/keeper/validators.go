@@ -6,6 +6,7 @@ import (
 	"time"
 
 	"github.com/allinbits/vaas/x/vaas/consumer/types"
+	vaastypes "github.com/allinbits/vaas/x/vaas/types"
 
 	abci "github.com/cometbft/cometbft/abci/types"
 
@@ -111,19 +112,51 @@ func (k Keeper) Slash(ctx context.Context, addr sdk.ConsAddress, infractionHeigh
 	return k.SlashWithInfractionReason(ctx, addr, infractionHeight, power, slashFactor, stakingtypes.Infraction_INFRACTION_UNSPECIFIED)
 }
 
-// SlashWithInfractionReason is a no-op as slash functionality has been removed.
-// Note: Slash packets are no longer sent to the provider.
+// SlashWithInfractionReason queues an evidence packet for downtime infractions
+// to be sent to the provider chain. Double-sign and other infractions are logged but not forwarded.
+// Only one evidence packet is sent per downtime incident — if the validator already has a pending
+// evidence packet, the request is skipped to avoid duplicate reporting.
 func (k Keeper) SlashWithInfractionReason(goCtx context.Context, addr sdk.ConsAddress, infractionHeight, power int64, slashFactor math.LegacyDec, infraction stakingtypes.Infraction) (math.Int, error) {
 	ctx := sdk.UnwrapSDKContext(goCtx)
 
-	// Log the slash request but don't send slash packet
-	k.Logger(ctx).Info("slash request received but slash packets are disabled",
-		"validator", addr.String(),
-		"infraction_height", infractionHeight,
-		"infraction", infraction.String(),
-	)
+	if infraction == stakingtypes.Infraction_INFRACTION_DOWNTIME {
+		has, err := k.PendingEvidencePackets.Has(ctx, addr)
+		if err != nil {
+			k.Logger(ctx).Error("failed to check pending evidence packet",
+				"validator", addr.String(),
+				"error", err,
+			)
+			return math.ZeroInt(), nil
+		}
+		if has {
+			k.Logger(ctx).Debug("skipping duplicate downtime evidence packet",
+				"validator", addr.String(),
+				"infraction_height", infractionHeight,
+			)
+			return math.ZeroInt(), nil
+		}
 
-	// Only return to comply with the interface restriction
+		evidencePacket := vaastypes.NewEvidencePacketData(addr, infractionHeight, infraction)
+		if err := k.QueueEvidencePacket(ctx, evidencePacket); err != nil {
+			k.Logger(ctx).Error("failed to queue downtime evidence packet",
+				"validator", addr.String(),
+				"infraction_height", infractionHeight,
+				"error", err,
+			)
+			return math.ZeroInt(), nil
+		}
+		k.Logger(ctx).Info("queued downtime evidence packet",
+			"validator", addr.String(),
+			"infraction_height", infractionHeight,
+		)
+	} else {
+		k.Logger(ctx).Info("slash request received but not forwarded",
+			"validator", addr.String(),
+			"infraction_height", infractionHeight,
+			"infraction", infraction.String(),
+		)
+	}
+
 	return math.ZeroInt(), nil
 }
 

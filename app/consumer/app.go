@@ -333,6 +333,7 @@ func New(
 		runtime.NewKVStoreService(keys[ibcconsumertypes.StoreKey]),
 		app.IBCKeeper.ClientKeeper,
 		app.IBCKeeper.ClientV2Keeper,
+		app.IBCKeeper.ChannelKeeperV2,
 		app.SlashingKeeper,
 		app.BankKeeper,
 		app.AccountKeeper,

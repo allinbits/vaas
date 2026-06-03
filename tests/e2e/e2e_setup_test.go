@@ -239,12 +239,12 @@ func (s *IntegrationTestSuite) initAndStartProvider() {
 
 	// Modify genesis on the host: set fast voting period and small blocks_per_epoch
 	genesisFile := filepath.Join(providerDir, "config", "genesis.json")
-	s.patchGenesisJSON(genesisFile, func(genesis map[string]interface{}) {
-		appState := genesis["app_state"].(map[string]interface{})
+	s.patchGenesisJSON(genesisFile, func(genesis map[string]any) {
+		appState := genesis["app_state"].(map[string]any)
 
 		// Set fast voting period
-		if gov, ok := appState["gov"].(map[string]interface{}); ok {
-			if params, ok := gov["params"].(map[string]interface{}); ok {
+		if gov, ok := appState["gov"].(map[string]any); ok {
+			if params, ok := gov["params"].(map[string]any); ok {
 				params["voting_period"] = "15s"
 			}
 		}
@@ -252,10 +252,10 @@ func (s *IntegrationTestSuite) initAndStartProvider() {
 		// Set fast epoch for VSC, and override fees_per_block to use the
 		// bond denom so the e2e debt-flow test can fund the consumer fee
 		// pool from existing genesis accounts.
-		if provider, ok := appState["provider"].(map[string]interface{}); ok {
-			if params, ok := provider["params"].(map[string]interface{}); ok {
+		if provider, ok := appState["provider"].(map[string]any); ok {
+			if params, ok := provider["params"].(map[string]any); ok {
 				params["blocks_per_epoch"] = "5"
-				params["fees_per_block"] = map[string]interface{}{
+				params["fees_per_block"] = map[string]any{
 					"denom":  bondDenom,
 					"amount": "1000",
 				}
@@ -340,7 +340,7 @@ func (s *IntegrationTestSuite) fetchConsumerGenesis() []byte {
 	var lastErr error
 
 	// Retry fetching consumer genesis (it may take a few blocks)
-	for i := 0; i < 30; i++ {
+	for range 30 {
 		stdout, _, err := s.dockerExec(s.providerValRes[0].Container.ID, []string{
 			providerBinary, "query", "provider", "consumer-genesis", "0",
 			"--home", providerHomePath,
@@ -385,6 +385,9 @@ func (s *IntegrationTestSuite) initAndStartConsumer(consumerGenesisJSON []byte) 
 	genesisFile := filepath.Join(consumerDir, "config", "genesis.json")
 	err = patchConsumerGenesisWithProviderData(genesisFile, consumerGenesisJSON)
 	s.Require().NoError(err, "failed to patch consumer genesis")
+
+	// Patch consumer slashing params for aggressive downtime detection
+	s.patchConsumerSlashingParams()
 
 	// Copy validator keys from provider to consumer
 	providerDir := s.provider.dataDir

@@ -8,6 +8,7 @@ import (
 	consumerkeeper "github.com/allinbits/vaas/x/vaas/consumer/keeper"
 	consumertypes "github.com/allinbits/vaas/x/vaas/consumer/types"
 	providerkeeper "github.com/allinbits/vaas/x/vaas/provider/keeper"
+	providertypes "github.com/allinbits/vaas/x/vaas/provider/types"
 	"github.com/allinbits/vaas/x/vaas/types"
 	"github.com/stretchr/testify/require"
 	"go.uber.org/mock/gomock"
@@ -71,6 +72,7 @@ func NewInMemKeeperParams(tb testing.TB) InMemKeeperParams {
 type MockedKeepers struct {
 	*MockClientKeeper
 	*MockClientV2Keeper
+	*MockChannelV2Keeper
 	*MockStakingKeeper
 	*MockSlashingKeeper
 	*MockAccountKeeper
@@ -80,12 +82,13 @@ type MockedKeepers struct {
 // NewMockedKeepers instantiates a struct with pointers to properly instantiated mocked keepers.
 func NewMockedKeepers(ctrl *gomock.Controller) MockedKeepers {
 	mocks := MockedKeepers{
-		MockClientKeeper:   NewMockClientKeeper(ctrl),
-		MockClientV2Keeper: NewMockClientV2Keeper(ctrl),
-		MockStakingKeeper:  NewMockStakingKeeper(ctrl),
-		MockSlashingKeeper: NewMockSlashingKeeper(ctrl),
-		MockAccountKeeper:  NewMockAccountKeeper(ctrl),
-		MockBankKeeper:     NewMockBankKeeper(ctrl),
+		MockClientKeeper:    NewMockClientKeeper(ctrl),
+		MockClientV2Keeper:  NewMockClientV2Keeper(ctrl),
+		MockChannelV2Keeper: NewMockChannelV2Keeper(ctrl),
+		MockStakingKeeper:   NewMockStakingKeeper(ctrl),
+		MockSlashingKeeper:  NewMockSlashingKeeper(ctrl),
+		MockAccountKeeper:   NewMockAccountKeeper(ctrl),
+		MockBankKeeper:      NewMockBankKeeper(ctrl),
 	}
 	mocks.MockClientV2Keeper.EXPECT().GetClientCounterparty(gomock.Any(), gomock.Any()).Return(clientv2types.CounterpartyInfo{}, false).AnyTimes()
 	mocks.MockClientV2Keeper.EXPECT().SetClientCounterparty(gomock.Any(), gomock.Any(), gomock.Any()).AnyTimes()
@@ -100,6 +103,7 @@ func NewInMemProviderKeeper(params InMemKeeperParams, mocks MockedKeepers) provi
 		storeService,
 		mocks.MockClientKeeper,
 		mocks.MockClientV2Keeper,
+		mocks.MockChannelV2Keeper,
 		mocks.MockStakingKeeper,
 		mocks.MockSlashingKeeper,
 		mocks.MockAccountKeeper,
@@ -121,6 +125,7 @@ func NewInMemConsumerKeeper(params InMemKeeperParams, mocks MockedKeepers) consu
 		storeService,
 		mocks.MockClientKeeper,
 		mocks.MockClientV2Keeper,
+		mocks.MockChannelV2Keeper,
 		mocks.MockSlashingKeeper,
 		mocks.MockBankKeeper,
 		mocks.MockAccountKeeper,
@@ -141,7 +146,10 @@ func GetProviderKeeperAndCtx(t *testing.T, params InMemKeeperParams) (
 	t.Helper()
 	ctrl := gomock.NewController(t)
 	mocks := NewMockedKeepers(ctrl)
-	return NewInMemProviderKeeper(params, mocks), params.Ctx, ctrl, mocks
+	providerKeeper := NewInMemProviderKeeper(params, mocks)
+	providerKeeper.SetParams(params.Ctx, providertypes.DefaultParams())
+
+	return providerKeeper, params.Ctx, ctrl, mocks
 }
 
 // Return an in-memory consumer keeper, context, controller, and mocks, given a test instance and parameters.
