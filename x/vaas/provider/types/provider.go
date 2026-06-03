@@ -27,11 +27,6 @@ func DefaultConsumerInitializationParameters() ConsumerInitializationParameters 
 }
 
 func DefaultConsumerInfractionParameters(ctx context.Context, slashingKeeper vaastypes.SlashingKeeper) (InfractionParameters, error) {
-	jailDuration, err := slashingKeeper.DowntimeJailDuration(ctx)
-	if err != nil {
-		return InfractionParameters{}, err
-	}
-
 	doubleSignSlashingFraction, err := slashingKeeper.SlashFractionDoubleSign(ctx)
 	if err != nil {
 		return InfractionParameters{}, err
@@ -39,13 +34,13 @@ func DefaultConsumerInfractionParameters(ctx context.Context, slashingKeeper vaa
 
 	return InfractionParameters{
 		DoubleSign: &SlashJailParameters{
-			JailDuration:  time.Duration(1<<63 - 1), // the largest value a time.Duration can hold 9223372036854775807 (approximately 292 years)
+			JailDuration:  time.Duration(1<<63 - 1),
 			SlashFraction: doubleSignSlashingFraction,
 			Tombstone:     true,
 		},
 		Downtime: &SlashJailParameters{
-			JailDuration:  jailDuration,
-			SlashFraction: math.LegacyNewDec(0),
+			JailDuration:  0,
+			SlashFraction: math.LegacyNewDecWithPrec(5, 4),
 			Tombstone:     false,
 		},
 	}, nil

@@ -9,6 +9,8 @@ import (
 
 	abci "github.com/cometbft/cometbft/abci/types"
 
+	clienttypes "github.com/cosmos/ibc-go/v10/modules/core/02-client/types"
+
 	testkeeper "github.com/allinbits/vaas/testutil/keeper"
 	providertypes "github.com/allinbits/vaas/x/vaas/provider/types"
 	vaastypes "github.com/allinbits/vaas/x/vaas/types"
@@ -138,9 +140,9 @@ func TestClientIdToConsumerIdMapping(t *testing.T) {
 }
 
 // TestSendVSCPacketsToChainNoHandler tests that SendVSCPacketsToChain gracefully
-// handles the case when no IBC v2 channel keeper is configured.
+// handles the case when the IBC v2 channel keeper returns ErrClientNotActive.
 func TestSendVSCPacketsToChainNoHandler(t *testing.T) {
-	providerKeeper, ctx, ctrl, _ := testkeeper.GetProviderKeeperAndCtx(t, testkeeper.NewInMemKeeperParams(t))
+	providerKeeper, ctx, ctrl, mocks := testkeeper.GetProviderKeeperAndCtx(t, testkeeper.NewInMemKeeperParams(t))
 	defer ctrl.Finish()
 
 	consumerId := uint64(0)
@@ -156,12 +158,15 @@ func TestSendVSCPacketsToChainNoHandler(t *testing.T) {
 		ValsetUpdateId:   1,
 	})
 
-	// Without setting ChannelKeeperV2, SendVSCPacketsToChain should return nil
-	// and not send any packets (graceful no-op)
+	// Simulate an inactive client so packets are not sent
+	mocks.MockChannelV2Keeper.EXPECT().
+		SendPacket(gomock.Any(), gomock.Any()).
+		Return(nil, clienttypes.ErrClientNotActive)
+
 	err := providerKeeper.SendVSCPacketsToChain(ctx, consumerId, clientId)
 	require.NoError(t, err)
 
-	// Pending packets should still be there since no keeper was configured
+	// Pending packets should still be there since the client was not active
 	pending := providerKeeper.GetPendingVSCPackets(ctx, consumerId)
 	require.Len(t, pending, 1)
 }

@@ -85,6 +85,7 @@ func NewKeeper(
 	cdc codec.BinaryCodec, storeService corestoretypes.KVStoreService,
 	clientKeeper vaastypes.ClientKeeper,
 	clientV2Keeper vaastypes.ClientV2Keeper,
+	channelKeeperV2 vaastypes.ChannelV2Keeper,
 	stakingKeeper vaastypes.StakingKeeper, slashingKeeper vaastypes.SlashingKeeper,
 	accountKeeper vaastypes.AccountKeeper,
 	bankKeeper vaastypes.BankKeeper,
@@ -108,6 +109,7 @@ func NewKeeper(
 		feeCollectorName:      feeCollectorName,
 		validatorAddressCodec: validatorAddressCodec,
 		consensusAddressCodec: consensusAddressCodec,
+		channelKeeperV2:       channelKeeperV2,
 		govKeeper:             govKeeper,
 
 		// Initialize collections
@@ -166,11 +168,6 @@ func NewKeeper(
 	k.Schema = schema
 
 	return k
-}
-
-// SetChannelKeeperV2 sets the IBC v2 channel keeper for client-based packet sending.
-func (k *Keeper) SetChannelKeeperV2(keeper vaastypes.ChannelV2Keeper) {
-	k.channelKeeperV2 = keeper
 }
 
 // GetAuthority returns the x/ccv/provider module's authority.
