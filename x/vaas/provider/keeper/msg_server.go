@@ -603,12 +603,18 @@ func (k msgServer) FundConsumerFeePool(
 	}
 
 	if params.MinDepositBlocks > 0 {
-		floor := params.FeesPerBlock.Amount.Mul(math.NewIntFromUint64(params.MinDepositBlocks))
+		// Floor uses this consumer's effective per-block fee (per-consumer
+		// override if set, else the global default). Overrides can only raise
+		// the per-consumer fee above the global default (see
+		// MsgSetConsumerFeesPerBlock), so for consumers with an override the
+		// floor scales up to reflect their actual per-block cost.
+		effectiveFees, _ := k.GetEffectiveFeesPerBlock(ctx, msg.ConsumerId)
+		floor := effectiveFees.Amount.Mul(math.NewIntFromUint64(params.MinDepositBlocks))
 		if msg.Amount.Amount.LT(floor) {
 			return nil, errorsmod.Wrapf(types.ErrDepositBelowMinimum,
-				"deposit %s below floor %s%s (fees_per_block %s x min_deposit_blocks %d)",
-				msg.Amount, floor.String(), params.FeesPerBlock.Denom,
-				params.FeesPerBlock.Amount.String(), params.MinDepositBlocks,
+				"deposit %s below floor %s%s (effective fees_per_block %s x min_deposit_blocks %d)",
+				msg.Amount, floor.String(), effectiveFees.Denom,
+				effectiveFees.Amount.String(), params.MinDepositBlocks,
 			)
 		}
 	}

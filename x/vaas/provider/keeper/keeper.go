@@ -177,19 +177,19 @@ func NewKeeper(
 
 	// Fee pool collections
 	k.ConsumerFeePoolShares = collections.NewMap(
-		sb, types.ConsumerFeePoolSharesKeyPrefix,
+		sb, types.ConsumerFeePoolSharesPrefix,
 		types.ConsumerFeePoolSharesKeyName,
 		collections.TripleKeyCodec(collections.Uint64Key, collections.StringKey, sdk.AccAddressKey),
 		sdk.IntValue,
 	)
 	k.ConsumerFeePoolTotalShares = collections.NewMap(
-		sb, types.ConsumerFeePoolTotalSharesKeyPrefix,
+		sb, types.ConsumerFeePoolTotalSharesPrefix,
 		types.ConsumerFeePoolTotalSharesKeyName,
 		collections.PairKeyCodec(collections.Uint64Key, collections.StringKey),
 		sdk.IntValue,
 	)
 	k.FeePoolAddressToConsumerId = collections.NewMap(
-		sb, types.FeePoolAddressToConsumerIdKeyPrefix,
+		sb, types.FeePoolAddressToConsumerIdPrefix,
 		types.FeePoolAddressToConsumerIdKeyName,
 		sdk.AccAddressKey,
 		collections.Uint64Value,

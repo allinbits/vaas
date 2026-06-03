@@ -675,10 +675,13 @@ func TestFundConsumerFeePool(t *testing.T) {
 		govSigner        bool
 		feesAmount       int64 // amount for FeesPerBlock param (default 10)
 		minDepositBlocks uint64
-		amount           sdk.Coin
-		setupMocks       func(mocks testkeeper.MockedKeepers, ctx sdk.Context, poolAddr sdk.AccAddress)
-		wantErr          error
-		postCheck        func(t *testing.T, k providerkeeper.Keeper, ctx sdk.Context, consumerId uint64)
+		// seedOverride is the per-consumer fees_per_block override to seed
+		// before the call. IsNil() means "no override set".
+		seedOverride math.Int
+		amount       sdk.Coin
+		setupMocks   func(mocks testkeeper.MockedKeepers, ctx sdk.Context, poolAddr sdk.AccAddress)
+		wantErr      error
+		postCheck    func(t *testing.T, k providerkeeper.Keeper, ctx sdk.Context, consumerId uint64)
 	}{
 		{
 			name:     "regular signer in REGISTERED mints shares",
@@ -793,6 +796,50 @@ func TestFundConsumerFeePool(t *testing.T) {
 				regularSuccessMocks(mocks, ctx, poolAddr, coins)
 			},
 		},
+		{
+			// global floor = 1000 * 14400 = 14_400_000; per-consumer override
+			// raises effective fee to 5000, so the per-consumer floor is
+			// 5000 * 14400 = 72_000_000. A 50M deposit clears the global
+			// floor but is below the per-consumer floor and must be rejected.
+			name:             "override raises floor: deposit between global and override floor rejected",
+			phase:            providertypes.CONSUMER_PHASE_REGISTERED,
+			register:         true,
+			feesAmount:       1000,
+			minDepositBlocks: providertypes.DefaultMinDepositBlocks,
+			seedOverride:     math.NewInt(5000),
+			amount:           sdk.NewInt64Coin("uphoton", 50_000_000),
+			wantErr:          providertypes.ErrDepositBelowMinimum,
+		},
+		{
+			// Same setup; deposit clears the override floor (>= 72M) and the
+			// fund succeeds. Locks the override math down end-to-end.
+			name:             "override raises floor: deposit above override floor accepted",
+			phase:            providertypes.CONSUMER_PHASE_REGISTERED,
+			register:         true,
+			feesAmount:       1000,
+			minDepositBlocks: providertypes.DefaultMinDepositBlocks,
+			seedOverride:     math.NewInt(5000),
+			amount:           sdk.NewInt64Coin("uphoton", 100_000_000),
+			setupMocks: func(mocks testkeeper.MockedKeepers, ctx sdk.Context, poolAddr sdk.AccAddress) {
+				coins := sdk.NewCoins(sdk.NewInt64Coin("uphoton", 100_000_000))
+				regularSuccessMocks(mocks, ctx, poolAddr, coins)
+			},
+		},
+		{
+			// Override + gov signer: the floor check fires before any
+			// signer-specific branching, so gov funds are subject to the same
+			// per-consumer floor as regular depositors. 50M clears the global
+			// floor but is below the override floor (72M) and must be rejected.
+			name:             "override raises floor: gov rejected below override floor",
+			phase:            providertypes.CONSUMER_PHASE_REGISTERED,
+			register:         true,
+			govSigner:        true,
+			feesAmount:       1000,
+			minDepositBlocks: providertypes.DefaultMinDepositBlocks,
+			seedOverride:     math.NewInt(5000),
+			amount:           sdk.NewInt64Coin("uphoton", 50_000_000),
+			wantErr:          providertypes.ErrDepositBelowMinimum,
+		},
 	}
 
 	for _, tc := range testCases {
@@ -816,6 +863,10 @@ func TestFundConsumerFeePool(t *testing.T) {
 				consumerId = k.FetchAndIncrementConsumerId(ctx)
 				k.SetConsumerPhase(ctx, consumerId, tc.phase)
 				poolAddr = k.GetConsumerFeePoolAddress(consumerId)
+			}
+
+			if !tc.seedOverride.IsNil() {
+				require.NoError(t, k.ConsumerFeesPerBlockOverride.Set(ctx, consumerId, tc.seedOverride))
 			}
 
 			if tc.setupMocks != nil {

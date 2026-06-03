@@ -45,12 +45,20 @@ the depositor.
 ### Minimum deposit
 
 `MsgFundConsumerFeePool` enforces a minimum deposit equal to
-`fees_per_block.Amount * min_deposit_blocks`, where `min_deposit_blocks`
-is a provider-module parameter. Deposits below the floor are rejected
-with `ErrDepositBelowMinimum`. Setting `min_deposit_blocks = 0` disables
-the check. The floor applies to every depositor including the gov
-authority -- gov funds are subject to the same minimum as any other
-funder. The default is 14400 blocks (~1 day at a 6-second block time).
+`effective_fees_per_block.Amount * min_deposit_blocks`, where
+`min_deposit_blocks` is a provider-module parameter and
+`effective_fees_per_block` is the per-consumer fee in effect (the
+per-consumer override if one is set via `MsgSetConsumerFeesPerBlock`,
+else the global `fees_per_block`). Because overrides can only raise a
+consumer's per-block fee above the global default, consumers with an
+override have a proportionally higher minimum deposit -- the floor
+always reflects the actual per-block cost the deposit will cover.
+
+Deposits below the floor are rejected with `ErrDepositBelowMinimum`.
+Setting `min_deposit_blocks = 0` disables the check. The floor applies
+to every depositor including the gov authority -- gov funds are subject
+to the same minimum as any other funder. The default is 14400 blocks
+(~1 day at a 6-second block time).
 
 ## Withdrawing
 
