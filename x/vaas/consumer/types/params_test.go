@@ -16,22 +16,22 @@ func TestValidateParams(t *testing.T) {
 		params  vaastypes.ConsumerParams
 		expPass bool
 	}{
-		{"default params", vaastypes.DefaultParams(), true},
+		{"default params", vaastypes.DefaultConsumerParams(), true},
 		{
 			"custom valid params",
-			vaastypes.NewParams(true, vaastypes.DefaultVAASTimeoutPeriod, 1000, 24*21*time.Hour), true,
+			vaastypes.NewConsumerParams(true, vaastypes.DefaultVAASTimeoutPeriod, 1000, 24*21*time.Hour), true,
 		},
 		{
 			"custom invalid params, VAAS timeout",
-			vaastypes.NewParams(true, 0, 1000, 24*21*time.Hour), false,
+			vaastypes.NewConsumerParams(true, 0, 1000, 24*21*time.Hour), false,
 		},
 		{
 			"custom invalid params, negative num historical entries",
-			vaastypes.NewParams(true, vaastypes.DefaultVAASTimeoutPeriod, -100, 24*21*time.Hour), false,
+			vaastypes.NewConsumerParams(true, vaastypes.DefaultVAASTimeoutPeriod, -100, 24*21*time.Hour), false,
 		},
 		{
 			"custom invalid params, negative unbonding period",
-			vaastypes.NewParams(true, vaastypes.DefaultVAASTimeoutPeriod, 1000, -24*21*time.Hour), false,
+			vaastypes.NewConsumerParams(true, vaastypes.DefaultVAASTimeoutPeriod, 1000, -24*21*time.Hour), false,
 		},
 	}
 

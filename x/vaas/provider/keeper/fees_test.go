@@ -54,6 +54,48 @@ func TestCollectFeesFromConsumers(t *testing.T) {
 	require.False(t, k.IsConsumerInDebt(ctx, consumer1))
 }
 
+// TestCollectFeesFromConsumers_PerConsumerOverride verifies that each consumer
+// is charged its effective per-block fee: consumer1 has an override and pays
+// the override amount; consumer0 has no override and pays Params.FeesPerBlock.
+func TestCollectFeesFromConsumers_PerConsumerOverride(t *testing.T) {
+	params := testkeeper.NewInMemKeeperParams(t)
+	k, ctx, ctrl, mocks := testkeeper.GetProviderKeeperAndCtx(t, params)
+	defer ctrl.Finish()
+
+	consumer0 := k.FetchAndIncrementConsumerId(ctx)
+	consumer1 := k.FetchAndIncrementConsumerId(ctx)
+	k.SetConsumerPhase(ctx, consumer0, providertypes.CONSUMER_PHASE_LAUNCHED)
+	k.SetConsumerPhase(ctx, consumer1, providertypes.CONSUMER_PHASE_LAUNCHED)
+
+	defaultFees := sdk.NewInt64Coin("uphoton", 10)
+	overrideAmount := math.NewInt(25)
+	overrideFees := sdk.NewCoin("uphoton", overrideAmount)
+
+	providerParams := providertypes.DefaultParams()
+	providerParams.FeesPerBlock = defaultFees
+	k.SetParams(ctx, providerParams)
+
+	// consumer1 gets an override; consumer0 keeps the default.
+	require.NoError(t, k.ConsumerFeesPerBlockOverride.Set(ctx, consumer1, overrideAmount))
+
+	consumer0FeePoolAddr := k.GetConsumerFeePoolAddress(consumer0)
+	consumer1FeePoolAddr := k.GetConsumerFeePoolAddress(consumer1)
+
+	gomock.InOrder(
+		mocks.MockBankKeeper.EXPECT().
+			SendCoinsFromAccountToModule(gomock.Any(), consumer0FeePoolAddr, providertypes.ModuleName, sdk.NewCoins(defaultFees)).
+			Return(nil),
+		mocks.MockBankKeeper.EXPECT().
+			SendCoinsFromAccountToModule(gomock.Any(), consumer1FeePoolAddr, providertypes.ModuleName, sdk.NewCoins(overrideFees)).
+			Return(nil),
+	)
+
+	total := k.CollectFeesFromConsumers(ctx)
+	require.Equal(t, sdk.NewInt64Coin("uphoton", 35), total)
+	require.False(t, k.IsConsumerInDebt(ctx, consumer0))
+	require.False(t, k.IsConsumerInDebt(ctx, consumer1))
+}
+
 func TestCollectFeesFromConsumersSkipsWhenInsufficient(t *testing.T) {
 	params := testkeeper.NewInMemKeeperParams(t)
 	k, ctx, ctrl, mocks := testkeeper.GetProviderKeeperAndCtx(t, params)

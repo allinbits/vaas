@@ -8,6 +8,7 @@ const (
 	EventTypeCreateConsumer            = "create_consumer"
 	EventTypeUpdateConsumer            = "update_consumer"
 	EventTypeRemoveConsumer            = "remove_consumer"
+	EventTypeSetConsumerFeesPerBlock   = "set_consumer_fees_per_block"
 
 	AttributeInfractionHeight         = "infraction_height"
 	AttributeInitialHeight            = "initial_height"
@@ -23,4 +24,5 @@ const (
 	AttributeConsumerOwner            = "consumer_owner"
 	AttributeConsumerSpawnTime        = "consumer_spawn_time"
 	AttributeConsumerPhase            = "consumer_phase"
+	AttributeKeyAmount                = "amount"
 )

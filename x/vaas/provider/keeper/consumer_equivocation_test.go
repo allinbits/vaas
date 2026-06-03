@@ -837,6 +837,7 @@ func TestHandleConsumerEvidencePacket(t *testing.T) {
 	providerKeeper.SetConsumerChainId(ctx, consumerId, "consumer-chain")
 	providerKeeper.SetConsumerClientId(ctx, consumerId, "07-tendermint-0")
 	providerKeeper.SetEquivocationEvidenceMinHeight(ctx, consumerId, 1)
+	providerKeeper.SetInfractionParams(ctx, types.DefaultInfractionParameters())
 
 	pubKey, _ := cryptocodec.FromCmtPubKeyInterface(tmtypes.NewMockPV().PrivKey.PubKey())
 	validator, err := stakingtypes.NewValidator(
@@ -871,9 +872,6 @@ func TestHandleConsumerEvidencePacket(t *testing.T) {
 		mocks.MockClientKeeper.EXPECT().
 			GetClientConsensusState(ctx, "07-tendermint-0", ibcclienttypes.NewHeight(0, 100)).
 			Return(ibcexported.ConsensusState(&ibctmtypes.ConsensusState{}), true),
-		mocks.MockSlashingKeeper.EXPECT().
-			SlashFractionDoubleSign(ctx).
-			Return(math.LegacyNewDecWithPrec(5, 1), nil),
 		mocks.MockStakingKeeper.EXPECT().
 			GetValidatorByConsAddr(ctx, providerAddr.ToSdkConsAddr()).
 			Return(validator, nil),

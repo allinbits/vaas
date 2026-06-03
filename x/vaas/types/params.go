@@ -19,8 +19,8 @@ const (
 	DefaultConsumerUnbondingPeriod = stakingtypes.DefaultUnbondingTime - 24*time.Hour
 )
 
-// NewParams creates new consumer parameters with provided arguments
-func NewParams(enabled bool,
+// NewConsumerParams creates new consumer parameters with provided arguments.
+func NewConsumerParams(enabled bool,
 	vaasTimeoutPeriod time.Duration,
 	historicalEntries int64,
 	consumerUnbondingPeriod time.Duration,
@@ -33,9 +33,9 @@ func NewParams(enabled bool,
 	}
 }
 
-// DefaultParams is the default params for the consumer module
-func DefaultParams() ConsumerParams {
-	return NewParams(
+// DefaultConsumerParams is the default params for the consumer module.
+func DefaultConsumerParams() ConsumerParams {
+	return NewConsumerParams(
 		false,
 		DefaultVAASTimeoutPeriod,
 		DefaultHistoricalEntries,
@@ -45,9 +45,6 @@ func DefaultParams() ConsumerParams {
 
 // Validate all VAAS-consumer module parameters
 func (p ConsumerParams) Validate() error {
-	if err := ValidateBool(p.Enabled); err != nil {
-		return err
-	}
 	if err := ValidateDuration(p.VaasTimeoutPeriod); err != nil {
 		return err
 	}
