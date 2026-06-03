@@ -7,46 +7,70 @@ set -e
 
 BINARY="${BINARY:-provider}"
 HOME_DIR="${HOME_DIR:-/home/nonroot/.provider}"
+VAL2_HOME_DIR="${HOME_DIR}-val2"
 CHAIN_ID="${CHAIN_ID:-provider-e2e}"
 DENOM="${DENOM:-uatone}"
 MNEMONIC="${MNEMONIC:-abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon art}"
 
-# Initialize chain
+# Initialize chain (val0)
 $BINARY init localnet --default-denom "$DENOM" --chain-id "$CHAIN_ID" --home "$HOME_DIR"
 
 # Configure client
 $BINARY config set client chain-id "$CHAIN_ID" --home "$HOME_DIR"
 $BINARY config set client keyring-backend test --home "$HOME_DIR"
 
-# Add keys
+# Add keys for val0
 $BINARY keys add val --home "$HOME_DIR" --keyring-backend test
 $BINARY keys add user --home "$HOME_DIR" --keyring-backend test
 echo "$MNEMONIC" | $BINARY keys add relayer --recover --home "$HOME_DIR" --keyring-backend test
 
-# Add genesis accounts
+# Add genesis accounts for val0
 $BINARY genesis add-genesis-account val "1000000000000${DENOM}" --home "$HOME_DIR" --keyring-backend test
 $BINARY genesis add-genesis-account user "1000000000${DENOM}" --home "$HOME_DIR" --keyring-backend test
 $BINARY genesis add-genesis-account relayer "100000000${DENOM}" --home "$HOME_DIR" --keyring-backend test
 
-# Create and collect gentx
+# Initialize val2 node (separate home with its own consensus key)
+$BINARY init val2 --default-denom "$DENOM" --chain-id "$CHAIN_ID" --home "$VAL2_HOME_DIR"
+$BINARY keys add val2 --home "$VAL2_HOME_DIR" --keyring-backend test
+
+# Copy val0's genesis to val2 so both share the same genesis state
+cp "$HOME_DIR/config/genesis.json" "$VAL2_HOME_DIR/config/genesis.json"
+
+# Add val2 genesis account (operates on the shared genesis)
+$BINARY genesis add-genesis-account val2 "1000000000000${DENOM}" --home "$VAL2_HOME_DIR" --keyring-backend test
+
+# Copy updated genesis back to val0 (now includes val2's account)
+cp "$VAL2_HOME_DIR/config/genesis.json" "$HOME_DIR/config/genesis.json"
+
+# Create gentx for val0
 $BINARY genesis gentx val "1000000000${DENOM}" --home "$HOME_DIR" --keyring-backend test --chain-id "$CHAIN_ID"
+
+# Create gentx for val2
+$BINARY genesis gentx val2 "1000000000${DENOM}" --home "$VAL2_HOME_DIR" --keyring-backend test --chain-id "$CHAIN_ID"
+
+# Copy val2's gentx to val0's gentx directory
+cp "$VAL2_HOME_DIR"/config/gentx/*.json "$HOME_DIR/config/gentx/"
+
+# Collect all gentxs
 $BINARY genesis collect-gentxs --home "$HOME_DIR"
 
-# Enable REST API
+# Copy final genesis to val2
+cp "$HOME_DIR/config/genesis.json" "$VAL2_HOME_DIR/config/genesis.json"
+
+# Configure val0 node
 $BINARY config set app api.enable true --home "$HOME_DIR"
-
-# Set minimum gas prices
 sed -i "s#^minimum-gas-prices = .*#minimum-gas-prices = \"0.01${DENOM}\"#g" "$HOME_DIR/config/app.toml"
-
-# Bind RPC to all interfaces
 sed -i 's#laddr = "tcp://127.0.0.1:26657"#laddr = "tcp://0.0.0.0:26657"#g' "$HOME_DIR/config/config.toml"
-
-# Bind REST API to all interfaces
 sed -i 's#address = "tcp://localhost:1317"#address = "tcp://0.0.0.0:1317"#g' "$HOME_DIR/config/app.toml"
-
-# Bind gRPC to all interfaces
 sed -i 's#address = "localhost:9090"#address = "0.0.0.0:9090"#g' "$HOME_DIR/config/app.toml"
 
-find "$HOME_DIR" -mindepth 1 -exec chmod 777 {} +
+# Configure val2 node
+sed -i "s#^minimum-gas-prices = .*#minimum-gas-prices = \"0.01${DENOM}\"#g" "$VAL2_HOME_DIR/config/app.toml"
+sed -i 's#laddr = "tcp://127.0.0.1:26657"#laddr = "tcp://0.0.0.0:26657"#g' "$VAL2_HOME_DIR/config/config.toml"
+sed -i 's#address = "tcp://localhost:1317"#address = "tcp://0.0.0.0:1317"#g' "$VAL2_HOME_DIR/config/app.toml"
+sed -i 's#address = "localhost:9090"#address = "0.0.0.0:9090"#g' "$VAL2_HOME_DIR/config/app.toml"
 
-echo "Provider init complete."
+find "$HOME_DIR" -mindepth 1 -exec chmod 777 {} +
+find "$VAL2_HOME_DIR" -mindepth 1 -exec chmod 777 {} +
+
+echo "Provider init complete (2 validators)."

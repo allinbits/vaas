@@ -41,6 +41,9 @@ type IntegrationTestSuite struct {
 	providerValRes    []*dockertest.Resource
 	consumerValRes    []*dockertest.Resource
 	tsRelayerResource *dockertest.Resource
+
+	providerVal2DataDir string
+	consumerVal2DataDir string
 }
 
 // makeCodec creates a proto codec with the standard cosmos SDK interfaces registered.
@@ -154,8 +157,11 @@ func (s *IntegrationTestSuite) cleanupStaleContainers() {
 	staleNames := []string{
 		"provider-init",
 		"consumer-init",
+		"consumer-val2-init",
 		fmt.Sprintf("%s-val0", providerChainID),
+		fmt.Sprintf("%s-val1", providerChainID),
 		fmt.Sprintf("%s-val0", consumerChainID),
+		fmt.Sprintf("%s-val1", consumerChainID),
 		fmt.Sprintf("%s-%s-ts-relayer", providerChainID, consumerChainID),
 	}
 	for _, name := range staleNames {
@@ -216,26 +222,68 @@ func (s *IntegrationTestSuite) runInitContainer(name, scriptPath, containerScrip
 }
 
 // initAndStartProvider initializes the provider chain using a temporary Docker
-// container that runs provider-init.sh, then starts the actual chain container.
+// container that runs provider-init.sh, then starts the actual chain containers.
 func (s *IntegrationTestSuite) initAndStartProvider() {
-	// Create host directory for provider data
+	// Create host directory for provider val0 data
 	providerDir, err := os.MkdirTemp("", "vaas-e2e-provider-")
 	s.Require().NoError(err)
 	s.tmpDirs = append(s.tmpDirs, providerDir)
 	s.provider.dataDir = providerDir
 
+	// Create host directory for provider val2 data
+	providerVal2Dir, err := os.MkdirTemp("", "vaas-e2e-provider-val2-")
+	s.Require().NoError(err)
+	s.tmpDirs = append(s.tmpDirs, providerVal2Dir)
+	s.providerVal2DataDir = providerVal2Dir
+
 	// Make writable
 	s.Require().NoError(os.Chmod(providerDir, 0o777))
+	s.Require().NoError(os.Chmod(providerVal2Dir, 0o777))
 
-	// Run init script in a temporary container
+	// Run init script in a temporary container with both data dirs mounted
 	scriptPath := filepath.Join(testDir(), "scripts", "provider-init.sh")
-	s.runInitContainer("provider-init", scriptPath, "/scripts/provider-init.sh", providerDir, providerHomePath, []string{
-		"BINARY=" + providerBinary,
-		"HOME_DIR=" + providerHomePath,
-		"CHAIN_ID=" + providerChainID,
-		"DENOM=" + bondDenom,
-		"MNEMONIC=" + relayerMnemonic,
+	providerVal2HomePath := providerHomePath + "-val2"
+	initResource, err := s.dkrPool.RunWithOptions(
+		&dockertest.RunOptions{
+			Name:       "provider-init",
+			Repository: e2eChainImage,
+			NetworkID:  s.dkrNet.Network.ID,
+			User:       "nonroot",
+			Env: []string{
+				"BINARY=" + providerBinary,
+				"HOME_DIR=" + providerHomePath,
+				"CHAIN_ID=" + providerChainID,
+				"DENOM=" + bondDenom,
+				"MNEMONIC=" + relayerMnemonic,
+			},
+			Mounts: []string{
+				fmt.Sprintf("%s:%s", providerDir, providerHomePath),
+				fmt.Sprintf("%s:%s", providerVal2Dir, providerVal2HomePath),
+				fmt.Sprintf("%s:/scripts/provider-init.sh", scriptPath),
+			},
+			Entrypoint: []string{"sh", "/scripts/provider-init.sh"},
+		},
+		func(config *docker.HostConfig) {
+			config.RestartPolicy = docker.RestartPolicy{Name: "no"}
+		},
+	)
+	s.Require().NoError(err, "failed to start provider-init container")
+
+	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Minute)
+	defer cancel()
+	exitCode, err := s.dkrPool.Client.WaitContainerWithContext(initResource.Container.ID, ctx)
+	s.Require().NoError(err, "provider-init container wait failed")
+
+	var logBuf bytes.Buffer
+	_ = s.dkrPool.Client.Logs(docker.LogsOptions{
+		Container:    initResource.Container.ID,
+		OutputStream: &logBuf,
+		ErrorStream:  &logBuf,
+		Stdout:       true,
+		Stderr:       true,
 	})
+	s.Require().Equal(0, exitCode, "provider-init exited with code %d\noutput:\n%s", exitCode, logBuf.String())
+	s.Require().NoError(s.dkrPool.Purge(initResource), "failed to purge provider-init container")
 
 	// Modify genesis on the host: set fast voting period and small blocks_per_epoch
 	genesisFile := filepath.Join(providerDir, "config", "genesis.json")
@@ -263,10 +311,16 @@ func (s *IntegrationTestSuite) initAndStartProvider() {
 		}
 	})
 
-	// Now start the actual provider container
-	s.T().Log("starting provider chain container...")
+	// Copy the patched genesis to val2's data dir
+	s.Require().NoError(
+		copyFile(genesisFile, filepath.Join(providerVal2Dir, "config", "genesis.json")),
+		"failed to copy patched genesis to val2 data dir",
+	)
 
-	resource, err := s.dkrPool.RunWithOptions(
+	// Now start the provider val0 container
+	s.T().Log("starting provider val0 container...")
+
+	val0Resource, err := s.dkrPool.RunWithOptions(
 		&dockertest.RunOptions{
 			Name:       fmt.Sprintf("%s-val0", providerChainID),
 			Repository: e2eChainImage,
@@ -289,17 +343,53 @@ func (s *IntegrationTestSuite) initAndStartProvider() {
 			config.RestartPolicy = docker.RestartPolicy{Name: "no"}
 		},
 	)
-	s.Require().NoError(err, "failed to start provider container")
+	s.Require().NoError(err, "failed to start provider val0 container")
 
-	s.providerValRes = append(s.providerValRes, resource)
-	s.T().Logf("provider container started: %s", resource.Container.ID[:12])
+	s.providerValRes = append(s.providerValRes, val0Resource)
+	s.T().Logf("provider val0 container started: %s", val0Resource.Container.ID[:12])
 
-	// Wait for provider to produce blocks
+	// Wait for provider val0 to produce blocks
 	waitCtx, waitCancel := context.WithTimeout(context.Background(), 2*time.Minute)
 	defer waitCancel()
 	err = s.waitForChainHeight(waitCtx, "http://localhost:26657", 3)
 	s.Require().NoError(err, "provider failed to produce blocks")
 	s.T().Log("provider chain is producing blocks")
+
+	// Start provider val1 (second validator node) connecting to val0 as persistent peer
+	s.T().Log("starting provider val1 container...")
+
+	val0P2PAddr := fmt.Sprintf("%s:26656", val0Resource.Container.Name)
+	val1Resource, err := s.dkrPool.RunWithOptions(
+		&dockertest.RunOptions{
+			Name:       fmt.Sprintf("%s-val1", providerChainID),
+			Repository: e2eChainImage,
+			NetworkID:  s.dkrNet.Network.ID,
+			Mounts: []string{
+				fmt.Sprintf("%s:%s", providerVal2Dir, providerVal2HomePath),
+			},
+			PortBindings: map[docker.Port][]docker.PortBinding{
+				"26657/tcp": {{HostIP: "", HostPort: "26658"}},
+				"9090/tcp":  {{HostIP: "", HostPort: "9091"}},
+				"1317/tcp":  {{HostIP: "", HostPort: "1318"}},
+				"26656/tcp": {{HostIP: "", HostPort: "26658"}},
+			},
+			Cmd: []string{
+				providerBinary, "start",
+				"--home", providerVal2HomePath,
+				"--p2p.persistent-peers", val0P2PAddr,
+			},
+		},
+		func(config *docker.HostConfig) {
+			config.RestartPolicy = docker.RestartPolicy{Name: "no"}
+		},
+	)
+	s.Require().NoError(err, "failed to start provider val1 container")
+
+	s.providerValRes = append(s.providerValRes, val1Resource)
+	s.T().Logf("provider val1 container started: %s", val1Resource.Container.ID[:12])
+
+	// Wait briefly for val1 to connect and catch up
+	time.Sleep(5 * time.Second)
 }
 
 // registerConsumerOnProvider creates a consumer chain registration on the provider.
@@ -363,7 +453,7 @@ func (s *IntegrationTestSuite) fetchConsumerGenesis() []byte {
 
 // initAndStartConsumer initializes the consumer chain and starts it.
 func (s *IntegrationTestSuite) initAndStartConsumer(consumerGenesisJSON []byte) {
-	// Create host directory for consumer data
+	// Create host directory for consumer val0 data
 	consumerDir, err := os.MkdirTemp("", "vaas-e2e-consumer-")
 	s.Require().NoError(err)
 	s.tmpDirs = append(s.tmpDirs, consumerDir)
@@ -389,7 +479,7 @@ func (s *IntegrationTestSuite) initAndStartConsumer(consumerGenesisJSON []byte) 
 	// Patch consumer slashing params for aggressive downtime detection
 	s.patchConsumerSlashingParams()
 
-	// Copy validator keys from provider to consumer
+	// Copy validator keys from provider val0 to consumer val0
 	providerDir := s.provider.dataDir
 	err = copyFile(
 		filepath.Join(providerDir, "config", "priv_validator_key.json"),
@@ -403,10 +493,10 @@ func (s *IntegrationTestSuite) initAndStartConsumer(consumerGenesisJSON []byte) 
 	)
 	s.Require().NoError(err, "failed to copy node_key.json")
 
-	// Start the actual consumer container
-	s.T().Log("starting consumer chain container...")
+	// Start the consumer val0 container
+	s.T().Log("starting consumer val0 container...")
 
-	resource, err := s.dkrPool.RunWithOptions(
+	consumerVal0Resource, err := s.dkrPool.RunWithOptions(
 		&dockertest.RunOptions{
 			Name:       fmt.Sprintf("%s-val0", consumerChainID),
 			Repository: e2eChainImage,
@@ -429,10 +519,10 @@ func (s *IntegrationTestSuite) initAndStartConsumer(consumerGenesisJSON []byte) 
 			config.RestartPolicy = docker.RestartPolicy{Name: "no"}
 		},
 	)
-	s.Require().NoError(err, "failed to start consumer container")
+	s.Require().NoError(err, "failed to start consumer val0 container")
 
-	s.consumerValRes = append(s.consumerValRes, resource)
-	s.T().Logf("consumer container started: %s", resource.Container.ID[:12])
+	s.consumerValRes = append(s.consumerValRes, consumerVal0Resource)
+	s.T().Logf("consumer val0 container started: %s", consumerVal0Resource.Container.ID[:12])
 
 	// Wait for consumer to produce blocks
 	waitCtx, waitCancel := context.WithTimeout(context.Background(), 2*time.Minute)
@@ -440,6 +530,73 @@ func (s *IntegrationTestSuite) initAndStartConsumer(consumerGenesisJSON []byte) 
 	err = s.waitForChainHeight(waitCtx, "http://localhost:26667", 3)
 	s.Require().NoError(err, "consumer failed to produce blocks")
 	s.T().Log("consumer chain is producing blocks")
+
+	// Create consumer val1 (second validator node with val2's keys)
+	s.T().Log("setting up consumer val1 node...")
+
+	consumerVal2Dir, err := os.MkdirTemp("", "vaas-e2e-consumer-val2-")
+	s.Require().NoError(err)
+	s.tmpDirs = append(s.tmpDirs, consumerVal2Dir)
+	s.consumerVal2DataDir = consumerVal2Dir
+	s.Require().NoError(os.Chmod(consumerVal2Dir, 0o777))
+
+	// Run consumer init for val2's node
+	consumerVal2HomePath := consumerHomePath + "-val2"
+	s.runInitContainer("consumer-val2-init", scriptPath, "/scripts/consumer-init.sh", consumerVal2Dir, consumerVal2HomePath, []string{
+		"BINARY=" + consumerBinary,
+		"HOME_DIR=" + consumerVal2HomePath,
+		"CHAIN_ID=" + consumerChainID,
+		"DENOM=" + bondDenom,
+		"MNEMONIC=" + relayerMnemonic,
+	})
+
+	// Copy the patched genesis from consumer val0
+	s.Require().NoError(
+		copyFile(genesisFile, filepath.Join(consumerVal2Dir, "config", "genesis.json")),
+		"failed to copy consumer genesis to val2 data dir",
+	)
+
+	// Copy val2's validator keys from provider val2 to consumer val2
+	s.Require().NoError(
+		copyFile(
+			filepath.Join(s.providerVal2DataDir, "config", "priv_validator_key.json"),
+			filepath.Join(consumerVal2Dir, "config", "priv_validator_key.json"),
+		),
+		"failed to copy val2 priv_validator_key.json to consumer val2",
+	)
+
+	// Start consumer val1 connecting to val0 as persistent peer
+	consumerVal0P2PAddr := fmt.Sprintf("%s:26656", consumerVal0Resource.Container.Name)
+	consumerVal1Resource, err := s.dkrPool.RunWithOptions(
+		&dockertest.RunOptions{
+			Name:       fmt.Sprintf("%s-val1", consumerChainID),
+			Repository: e2eChainImage,
+			NetworkID:  s.dkrNet.Network.ID,
+			Mounts: []string{
+				fmt.Sprintf("%s:%s", consumerVal2Dir, consumerVal2HomePath),
+			},
+			PortBindings: map[docker.Port][]docker.PortBinding{
+				"26657/tcp": {{HostIP: "", HostPort: "26668"}},
+				"9090/tcp":  {{HostIP: "", HostPort: "9093"}},
+				"1317/tcp":  {{HostIP: "", HostPort: "1328"}},
+				"26656/tcp": {{HostIP: "", HostPort: "26669"}},
+			},
+			Cmd: []string{
+				consumerBinary, "start",
+				"--home", consumerVal2HomePath,
+				"--p2p.persistent-peers", consumerVal0P2PAddr,
+			},
+		},
+		func(config *docker.HostConfig) {
+			config.RestartPolicy = docker.RestartPolicy{Name: "no"}
+		},
+	)
+	s.Require().NoError(err, "failed to start consumer val1 container")
+
+	s.consumerValRes = append(s.consumerValRes, consumerVal1Resource)
+	s.T().Logf("consumer val1 container started: %s", consumerVal1Resource.Container.ID[:12])
+
+	time.Sleep(5 * time.Second)
 }
 
 // setupTSRelayer starts the ts-relayer container, configures it with
