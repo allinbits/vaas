@@ -1,6 +1,5 @@
 package e2e
 
-
 func (s *IntegrationTestSuite) TestVAAS() {
 	s.testProviderBlockProduction()
 	s.testConsumerBlockProduction()
@@ -8,6 +7,7 @@ func (s *IntegrationTestSuite) TestVAAS() {
 	s.testProviderOnConsumer()
 	s.testValidatorSetSync()
 	s.testConsumerDebtFlow()
+	s.testDowntimeSlash()
 	s.testFeePoolSendRestriction()
 	s.testFeePoolFundAndLockEnforcement()
 	s.testFeePoolGovSubsidyClawback()

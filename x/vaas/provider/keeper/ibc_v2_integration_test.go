@@ -12,6 +12,8 @@ import (
 	cryptocodec "github.com/cosmos/cosmos-sdk/crypto/codec"
 	"github.com/cosmos/cosmos-sdk/crypto/keys/ed25519"
 
+	clienttypes "github.com/cosmos/ibc-go/v10/modules/core/02-client/types"
+
 	testkeeper "github.com/allinbits/vaas/testutil/keeper"
 	providertypes "github.com/allinbits/vaas/x/vaas/provider/types"
 	vaastypes "github.com/allinbits/vaas/x/vaas/types"
@@ -20,7 +22,7 @@ import (
 // TestIBCV2PacketQueueing tests that VSC packets are correctly queued
 // and stored for later sending via IBC v2 client-based routing.
 func TestIBCV2PacketQueueing(t *testing.T) {
-	providerKeeper, ctx, ctrl, _ := testkeeper.GetProviderKeeperAndCtx(t, testkeeper.NewInMemKeeperParams(t))
+	providerKeeper, ctx, ctrl, mocks := testkeeper.GetProviderKeeperAndCtx(t, testkeeper.NewInMemKeeperParams(t))
 	defer ctrl.Finish()
 
 	consumerId := uint64(0)
@@ -47,6 +49,10 @@ func TestIBCV2PacketQueueing(t *testing.T) {
 	require.Len(t, pending, 1)
 	require.Equal(t, uint64(1), pending[0].ValsetUpdateId)
 	require.Len(t, pending[0].ValidatorUpdates, 2)
+
+	mocks.MockChannelV2Keeper.EXPECT().
+		SendPacket(gomock.Any(), gomock.Any()).
+		Return(nil, clienttypes.ErrClientNotActive)
 
 	err = providerKeeper.SendVSCPacketsToChain(ctx, consumerId, clientId)
 	require.NoError(t, err)

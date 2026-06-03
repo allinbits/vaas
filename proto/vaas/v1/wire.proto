@@ -8,6 +8,7 @@ import "cosmos/staking/v1beta1/staking.proto";
 
 import "gogoproto/gogo.proto";
 import "tendermint/abci/types.proto";
+import "cosmos_proto/cosmos.proto";
 
 //
 // Note any type defined in this file is used by both the consumer and provider
