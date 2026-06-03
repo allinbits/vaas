@@ -7,6 +7,7 @@ import (
 	vaastypes "github.com/allinbits/vaas/x/vaas/types"
 
 	errorsmod "cosmossdk.io/errors"
+	"cosmossdk.io/math"
 
 	sdk "github.com/cosmos/cosmos-sdk/types"
 )
@@ -19,17 +20,19 @@ func NewGenesisState(
 	validatorConsumerPubkeys []ValidatorConsumerPubKey,
 	validatorsByConsumerAddr []ValidatorByConsumerAddr,
 	consumerAddrsToPrune []ConsumerAddrsToPrune,
+	consumerFeesPerBlockOverrides []ConsumerFeesPerBlockOverride,
 	consumerFeePoolShares []ConsumerFeePoolShare,
 ) *GenesisState {
 	return &GenesisState{
-		ValsetUpdateId:           vscID,
-		ValsetUpdateIdToHeight:   vscIdToHeights,
-		ConsumerStates:           consumerStates,
-		Params:                   params,
-		ValidatorConsumerPubkeys: validatorConsumerPubkeys,
-		ValidatorsByConsumerAddr: validatorsByConsumerAddr,
-		ConsumerAddrsToPrune:     consumerAddrsToPrune,
-		ConsumerFeePoolShares:    consumerFeePoolShares,
+		ValsetUpdateId:                vscID,
+		ValsetUpdateIdToHeight:        vscIdToHeights,
+		ConsumerStates:                consumerStates,
+		Params:                        params,
+		ValidatorConsumerPubkeys:      validatorConsumerPubkeys,
+		ValidatorsByConsumerAddr:      validatorsByConsumerAddr,
+		ConsumerAddrsToPrune:          consumerAddrsToPrune,
+		ConsumerFeesPerBlockOverrides: consumerFeesPerBlockOverrides,
+		ConsumerFeePoolShares:         consumerFeePoolShares,
 	}
 }
 
@@ -75,6 +78,28 @@ func (gs GenesisState) Validate() error {
 		gs.ConsumerAddrsToPrune,
 	); err != nil {
 		return err
+	}
+
+	// Build a set of known consumer ids from consumer_states.
+	known := make(map[uint64]struct{}, len(gs.ConsumerStates))
+	for _, cs := range gs.ConsumerStates {
+		known[cs.ConsumerId] = struct{}{}
+	}
+	// Overrides must reference a known consumer and stay strictly above the
+	// module-wide fees_per_block floor (the same invariant the msg handler and
+	// UpdateParams reconciliation enforce at runtime).
+	floor := gs.Params.FeesPerBlock.Amount
+	for _, ov := range gs.ConsumerFeesPerBlockOverrides {
+		amt, ok := math.NewIntFromString(ov.Amount)
+		if !ok {
+			return fmt.Errorf("consumer_fees_per_block_overrides[consumer_id=%d]: amount %q is not a valid integer", ov.ConsumerId, ov.Amount)
+		}
+		if _, ok := known[ov.ConsumerId]; !ok {
+			return fmt.Errorf("consumer_fees_per_block_overrides: orphan override for unknown consumer %d", ov.ConsumerId)
+		}
+		if !amt.GT(floor) {
+			return fmt.Errorf("consumer_fees_per_block_overrides[consumer_id=%d]: amount %q must be greater than the global fees_per_block (%s)", ov.ConsumerId, ov.Amount, floor)
+		}
 	}
 
 	if err := validateConsumerFeePoolShares(gs.ConsumerFeePoolShares, seenConsumerIds); err != nil {

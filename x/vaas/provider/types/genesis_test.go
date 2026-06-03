@@ -90,6 +90,7 @@ func TestValidateGenesisState(t *testing.T) {
 				nil,
 				nil,
 				nil,
+				nil,
 			),
 			true,
 		},
@@ -134,6 +135,7 @@ func TestValidateGenesisState(t *testing.T) {
 				nil,
 				nil,
 				nil,
+				nil,
 			),
 			false,
 		},
@@ -147,6 +149,7 @@ func TestValidateGenesisState(t *testing.T) {
 					types.DefaultTrustingPeriodFraction,
 					0, // 0 ccv timeout here
 					600, 180, sdk.NewInt64Coin("uphoton", 42), types.DefaultMinDepositBlocks),
+				nil,
 				nil,
 				nil,
 				nil,

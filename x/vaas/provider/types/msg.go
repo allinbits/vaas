@@ -15,6 +15,7 @@ import (
 	ibctmtypes "github.com/cosmos/ibc-go/v10/modules/light-clients/07-tendermint"
 
 	errorsmod "cosmossdk.io/errors"
+	"cosmossdk.io/math"
 
 	sdk "github.com/cosmos/cosmos-sdk/types"
 	sdkerrors "github.com/cosmos/cosmos-sdk/types/errors"
@@ -50,6 +51,7 @@ var (
 	_ sdk.HasValidateBasic = (*MsgCreateConsumer)(nil)
 	_ sdk.HasValidateBasic = (*MsgUpdateConsumer)(nil)
 	_ sdk.HasValidateBasic = (*MsgRemoveConsumer)(nil)
+	_ sdk.HasValidateBasic = (*MsgSetConsumerFeesPerBlock)(nil)
 	_ sdk.HasValidateBasic = (*MsgFundConsumerFeePool)(nil)
 	_ sdk.HasValidateBasic = (*MsgWithdrawConsumerFeePool)(nil)
 	_ sdk.HasValidateBasic = (*MsgSweepConsumerFeePool)(nil)
@@ -292,6 +294,26 @@ func NewMsgRemoveConsumer(owner string, consumerId uint64) (*MsgRemoveConsumer, 
 
 // ValidateBasic implements the sdk.HasValidateBasic interface.
 func (msg MsgRemoveConsumer) ValidateBasic() error {
+	return nil
+}
+
+// ValidateBasic enforces:
+//   - authority parses as bech32
+//   - amount is empty (clear semantics) OR parses as a positive math.Int
+func (msg MsgSetConsumerFeesPerBlock) ValidateBasic() error {
+	if _, err := sdk.AccAddressFromBech32(msg.Authority); err != nil {
+		return errorsmod.Wrapf(sdkerrors.ErrInvalidAddress, "invalid authority address: %s", err)
+	}
+	if msg.Amount == "" {
+		return nil
+	}
+	amt, ok := math.NewIntFromString(msg.Amount)
+	if !ok {
+		return errorsmod.Wrapf(sdkerrors.ErrInvalidRequest, "amount %q is not a valid integer", msg.Amount)
+	}
+	if !amt.IsPositive() {
+		return errorsmod.Wrapf(sdkerrors.ErrInvalidRequest, "amount %q must be positive", msg.Amount)
+	}
 	return nil
 }
 

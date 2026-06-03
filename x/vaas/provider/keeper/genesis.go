@@ -123,6 +123,15 @@ func (k Keeper) InitGenesis(ctx sdk.Context, genState *types.GenesisState) []abc
 		}
 	}
 
+	// Import per-consumer fees_per_block overrides.
+	// GenesisState.Validate guarantees parseable, non-negative amounts.
+	for _, ov := range genState.ConsumerFeesPerBlockOverrides {
+		amt, _ := math.NewIntFromString(ov.Amount)
+		if err := k.ConsumerFeesPerBlockOverride.Set(ctx, ov.ConsumerId, amt); err != nil {
+			panic(fmt.Errorf("init: set fees-per-block override for %d: %w", ov.ConsumerId, err))
+		}
+	}
+
 	// Import key assignment state
 	for _, item := range genState.ValidatorConsumerPubkeys {
 		providerAddr := types.NewProviderConsAddress(item.ProviderAddr)
@@ -329,6 +338,17 @@ func (k Keeper) ExportGenesis(ctx sdk.Context) *types.GenesisState {
 			k.GetAllConsumerAddrsToPrune(ctx, consumerId)...)
 	}
 
+	overrides := []types.ConsumerFeesPerBlockOverride{}
+	if err := k.ConsumerFeesPerBlockOverride.Walk(ctx, nil, func(consumerId uint64, amt math.Int) (bool, error) {
+		overrides = append(overrides, types.ConsumerFeesPerBlockOverride{
+			ConsumerId: consumerId,
+			Amount:     amt.String(),
+		})
+		return false, nil
+	}); err != nil {
+		panic(fmt.Errorf("export: walk fees-per-block overrides: %w", err))
+	}
+
 	// Export share records and accumulate per-(consumer, denom) totals in
 	// a single pass for the sanity check below.
 	feePoolShares, recomputedTotals := k.exportFeePoolShares(ctx)
@@ -348,6 +368,7 @@ func (k Keeper) ExportGenesis(ctx sdk.Context) *types.GenesisState {
 		k.GetAllValidatorConsumerPubKeys(ctx, nil),
 		k.GetAllValidatorsByConsumerAddr(ctx, nil),
 		consumerAddrsToPrune,
+		overrides,
 		feePoolShares,
 	)
 }

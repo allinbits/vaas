@@ -11,6 +11,8 @@ import (
 	"cosmossdk.io/math"
 
 	sdk "github.com/cosmos/cosmos-sdk/types"
+	authtypes "github.com/cosmos/cosmos-sdk/x/auth/types"
+	govtypes "github.com/cosmos/cosmos-sdk/x/gov/types"
 
 	cryptoutil "github.com/allinbits/vaas/testutil/crypto"
 	"github.com/allinbits/vaas/x/vaas/provider/types"
@@ -664,5 +666,89 @@ func TestValidateChainId(t *testing.T) {
 		} else {
 			require.Error(t, err, "invalid case: '%s' must return error but got none", tc.name)
 		}
+	}
+}
+
+func TestMsgSetConsumerFeesPerBlock_ValidateBasic(t *testing.T) {
+	validAuthority := authtypes.NewModuleAddress(govtypes.ModuleName).String()
+	cases := []struct {
+		name      string
+		msg       types.MsgSetConsumerFeesPerBlock
+		wantError bool
+	}{
+		{
+			name: "empty amount (clear) is valid",
+			msg: types.MsgSetConsumerFeesPerBlock{
+				Authority:  validAuthority,
+				ConsumerId: 1,
+				Amount:     "",
+			},
+			wantError: false,
+		},
+		{
+			name: "positive amount is valid",
+			msg: types.MsgSetConsumerFeesPerBlock{
+				Authority:  validAuthority,
+				ConsumerId: 1,
+				Amount:     "2500",
+			},
+			wantError: false,
+		},
+		{
+			name: "zero amount rejected",
+			msg: types.MsgSetConsumerFeesPerBlock{
+				Authority:  validAuthority,
+				ConsumerId: 1,
+				Amount:     "0",
+			},
+			wantError: true,
+		},
+		{
+			name: "negative amount rejected",
+			msg: types.MsgSetConsumerFeesPerBlock{
+				Authority:  validAuthority,
+				ConsumerId: 1,
+				Amount:     "-1",
+			},
+			wantError: true,
+		},
+		{
+			name: "garbage amount rejected",
+			msg: types.MsgSetConsumerFeesPerBlock{
+				Authority:  validAuthority,
+				ConsumerId: 1,
+				Amount:     "twopointfive",
+			},
+			wantError: true,
+		},
+		{
+			name: "empty authority rejected",
+			msg: types.MsgSetConsumerFeesPerBlock{
+				Authority:  "",
+				ConsumerId: 1,
+				Amount:     "100",
+			},
+			wantError: true,
+		},
+		{
+			name: "malformed bech32 authority rejected",
+			msg: types.MsgSetConsumerFeesPerBlock{
+				Authority:  "not-a-bech32",
+				ConsumerId: 1,
+				Amount:     "100",
+			},
+			wantError: true,
+		},
+	}
+	for _, tc := range cases {
+		tc := tc
+		t.Run(tc.name, func(t *testing.T) {
+			err := tc.msg.ValidateBasic()
+			if tc.wantError {
+				require.Error(t, err)
+			} else {
+				require.NoError(t, err)
+			}
+		})
 	}
 }

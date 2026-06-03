@@ -8,6 +8,7 @@ const (
 	EventTypeCreateConsumer            = "create_consumer"
 	EventTypeUpdateConsumer            = "update_consumer"
 	EventTypeRemoveConsumer            = "remove_consumer"
+	EventTypeSetConsumerFeesPerBlock   = "set_consumer_fees_per_block"
 	EventTypeConsumerFeePoolFund       = "consumer_fee_pool_fund"
 	EventTypeConsumerFeePoolWithdraw   = "consumer_fee_pool_withdraw"
 	EventTypeConsumerFeePoolSweep      = "consumer_fee_pool_sweep"

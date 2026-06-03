@@ -66,6 +66,7 @@ type Keeper struct {
 	ConsumerInitParams            collections.Map[uint64, types.ConsumerInitializationParameters]
 	ConsumerPhase                 collections.Map[uint64, uint32]
 	ConsumerDebt                  collections.Map[uint64, bool]
+	ConsumerFeesPerBlockOverride  collections.Map[uint64, math.Int]
 	EquivocationEvidenceMinHeight collections.Map[uint64, uint64]
 	ConsumerRemovalTime           collections.Map[uint64, []byte]
 	SpawnTimeToConsumerIds        collections.Map[[]byte, types.ConsumerIds]
@@ -158,6 +159,7 @@ func NewKeeper(
 		ConsumerInitParams:            collections.NewMap(sb, types.ConsumerIdToInitializationParamsPrefix, "consumer_init_params", collections.Uint64Key, codec.CollValue[types.ConsumerInitializationParameters](cdc)),
 		ConsumerPhase:                 collections.NewMap(sb, types.ConsumerIdToPhasePrefix, "consumer_phase", collections.Uint64Key, collections.Uint32Value),
 		ConsumerDebt:                  collections.NewMap(sb, types.ConsumerIdToDebtPrefix, "consumer_debt", collections.Uint64Key, collections.BoolValue),
+		ConsumerFeesPerBlockOverride:  collections.NewMap(sb, types.ConsumerIdToFeesPerBlockOverridePrefix, types.ConsumerIdToFeesPerBlockOverrideKeyName, collections.Uint64Key, sdk.IntValue),
 		EquivocationEvidenceMinHeight: collections.NewMap(sb, types.EquivocationEvidenceMinHeightPrefix, "equivocation_evidence_min_height", collections.Uint64Key, collections.Uint64Value),
 		ConsumerRemovalTime:           collections.NewMap(sb, types.ConsumerIdToRemovalTimePrefix, "consumer_removal_time", collections.Uint64Key, collections.BytesValue),
 		SpawnTimeToConsumerIds:        collections.NewMap(sb, types.SpawnTimeToConsumerIdsPrefix, "spawn_time_to_consumer_ids", collections.BytesKey, codec.CollValue[types.ConsumerIds](cdc)),

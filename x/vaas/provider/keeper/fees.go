@@ -31,8 +31,8 @@ func (k Keeper) GetConsumerFeePoolAddress(consumerId uint64) sdk.AccAddress {
 // Unexpected per-consumer transfer failures are logged and skipped so one
 // bad consumer account does not block collection from the rest.
 func (k Keeper) CollectFeesFromConsumers(ctx sdk.Context) sdk.Coin {
-	feesPerBlock := k.GetFeesPerBlock(ctx)
-	totalFeesCollected := sdk.NewCoin(feesPerBlock.Denom, math.ZeroInt())
+	defaultFee := k.GetFeesPerBlock(ctx)
+	totalFeesCollected := sdk.NewCoin(defaultFee.Denom, math.ZeroInt())
 
 	// Get all active consumer IDs
 	consumerIds := k.GetAllActiveConsumerIds(ctx)
@@ -42,6 +42,7 @@ func (k Keeper) CollectFeesFromConsumers(ctx sdk.Context) sdk.Coin {
 		if k.GetConsumerPhase(ctx, consumerId) != types.CONSUMER_PHASE_LAUNCHED {
 			continue
 		}
+		feesPerBlock, _ := k.effectiveFeesPerBlock(ctx, consumerId, defaultFee)
 		consumerFeePoolAddr := k.GetConsumerFeePoolAddress(consumerId)
 
 		// Transfer fees from the consumer fee pool into the provider module account.

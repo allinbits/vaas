@@ -75,6 +75,8 @@ const (
 
 	ConsumerIdToDebtKeyName = "ConsumerIdToDebtKeyName"
 
+	ConsumerIdToFeesPerBlockOverrideKeyName = "ConsumerIdToFeesPerBlockOverrideKey"
+
 	ConsumerFeePoolSharesKeyName      = "ConsumerFeePoolSharesKey"
 	ConsumerFeePoolTotalSharesKeyName = "ConsumerFeePoolTotalSharesKey"
 	FeePoolAddressToConsumerIdKeyName = "FeePoolAddressToConsumerIdKey"
@@ -105,8 +107,9 @@ var (
 	RemovalTimeToConsumerIdsPrefix         = collections.NewPrefix(20)
 	ClientIdToConsumerIdPrefix             = collections.NewPrefix(21)
 	ConsumerIdToDebtPrefix                 = collections.NewPrefix(22)
-	ConsumerFeePoolSharesKeyPrefix         = collections.NewPrefix(23)
-	ConsumerFeePoolTotalSharesKeyPrefix    = collections.NewPrefix(24)
-	FeePoolAddressToConsumerIdKeyPrefix    = collections.NewPrefix(25)
+	ConsumerIdToFeesPerBlockOverridePrefix = collections.NewPrefix(23)
+	ConsumerFeePoolSharesKeyPrefix         = collections.NewPrefix(24)
+	ConsumerFeePoolTotalSharesKeyPrefix    = collections.NewPrefix(25)
+	FeePoolAddressToConsumerIdKeyPrefix    = collections.NewPrefix(26)
 	ParametersPrefix                       = collections.NewPrefix(0xFF)
 )

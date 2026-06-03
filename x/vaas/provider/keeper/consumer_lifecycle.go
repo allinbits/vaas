@@ -2,6 +2,7 @@ package keeper
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"time"
 
@@ -414,6 +415,11 @@ func (k Keeper) DeleteConsumerChain(ctx sdk.Context, consumerId uint64) (err err
 	k.DeleteConsumerRemovalTime(ctx, consumerId)
 	k.DeleteConsumerDebt(ctx, consumerId)
 
+	if err := k.ConsumerFeesPerBlockOverride.Remove(ctx, consumerId); err != nil {
+		if !errors.Is(err, collections.ErrNotFound) {
+			return err
+		}
+	}
 	// Removing the reverse-lookup entry can only fail on a store/codec error,
 	// i.e. corruption; panic rather than abort the delete (see auto-sweep above).
 	if err := k.FeePoolAddressToConsumerId.Remove(ctx, k.GetConsumerFeePoolAddress(consumerId)); err != nil {

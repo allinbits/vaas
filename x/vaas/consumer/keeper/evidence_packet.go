@@ -68,7 +68,7 @@ func (k Keeper) SendEvidencePackets(ctx sdk.Context) error {
 			kv.Value,
 		)
 
-		timeoutPeriod := k.GetVAASTimeoutPeriod(ctx)
+		timeoutPeriod := min(k.GetVAASTimeoutPeriod(ctx), channeltypesv2.MaxTimeoutDelta)
 		timeoutTimestamp := uint64(ctx.BlockTime().Add(timeoutPeriod).Unix())
 
 		msg := channeltypesv2.NewMsgSendPacket(

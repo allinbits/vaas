@@ -14,6 +14,8 @@ import (
 
 	clienttypes "github.com/cosmos/ibc-go/v10/modules/core/02-client/types"
 
+	"cosmossdk.io/math"
+
 	sdk "github.com/cosmos/cosmos-sdk/types"
 	stakingtypes "github.com/cosmos/cosmos-sdk/x/staking/types"
 
@@ -414,6 +416,148 @@ func TestGenesisRoundTrip(t *testing.T) {
 	})
 
 	require.Equal(t, expA, expB, "round-trip must be a fixed point")
+}
+
+// TestGenesisRoundTrip_PreservesFeesPerBlockOverrides verifies that
+// per-consumer fees_per_block overrides are exported, validated, and
+// re-imported losslessly.
+func TestGenesisRoundTrip_PreservesFeesPerBlockOverrides(t *testing.T) {
+	params := testkeeper.NewInMemKeeperParams(t)
+	k, ctx, ctrl, mocks := testkeeper.GetProviderKeeperAndCtx(t, params)
+	defer ctrl.Finish()
+
+	owner := sdk.AccAddress([]byte("vaas-test-owner-1234")).String()
+	md := providertypes.ConsumerMetadata{Name: "n", Description: "d", Metadata: "m"}
+	ip := providertypes.ConsumerInitializationParameters{
+		InitialHeight:     clienttypes.Height{RevisionNumber: 0, RevisionHeight: 42},
+		GenesisHash:       []byte("g"),
+		BinaryHash:        []byte("b"),
+		SpawnTime:         time.Unix(1_700_000_000, 0).UTC(),
+		UnbondingPeriod:   time.Hour,
+		VaasTimeoutPeriod: time.Hour,
+		HistoricalEntries: 10,
+	}
+	cg := *vaastypes.DefaultConsumerGenesisState()
+	cg.NewChain = true
+
+	consumerA := k.FetchAndIncrementConsumerId(ctx)
+	consumerB := k.FetchAndIncrementConsumerId(ctx)
+	consumerC := k.FetchAndIncrementConsumerId(ctx)
+
+	// Minimum per-consumer scaffolding so ExportGenesis doesn't choke and
+	// the exported state validates: chain_id, owner, metadata (all phases);
+	// init_params, client_id, ConsumerGenesis for LAUNCHED.
+	k.SetConsumerChainId(ctx, consumerA, "consumer-a")
+	k.SetConsumerPhase(ctx, consumerA, providertypes.CONSUMER_PHASE_LAUNCHED)
+	k.SetConsumerOwnerAddress(ctx, consumerA, owner)
+	require.NoError(t, k.SetConsumerMetadata(ctx, consumerA, md))
+	require.NoError(t, k.SetConsumerInitializationParameters(ctx, consumerA, ip))
+	k.SetConsumerClientId(ctx, consumerA, "07-tendermint-0")
+	require.NoError(t, k.SetConsumerGenesis(ctx, consumerA, cg))
+
+	k.SetConsumerChainId(ctx, consumerB, "consumer-b")
+	k.SetConsumerPhase(ctx, consumerB, providertypes.CONSUMER_PHASE_REGISTERED)
+	k.SetConsumerOwnerAddress(ctx, consumerB, owner)
+	require.NoError(t, k.SetConsumerMetadata(ctx, consumerB, md))
+
+	k.SetConsumerChainId(ctx, consumerC, "consumer-c")
+	k.SetConsumerPhase(ctx, consumerC, providertypes.CONSUMER_PHASE_LAUNCHED)
+	k.SetConsumerOwnerAddress(ctx, consumerC, owner)
+	require.NoError(t, k.SetConsumerMetadata(ctx, consumerC, md))
+	require.NoError(t, k.SetConsumerInitializationParameters(ctx, consumerC, ip))
+	k.SetConsumerClientId(ctx, consumerC, "07-tendermint-1")
+	require.NoError(t, k.SetConsumerGenesis(ctx, consumerC, cg))
+
+	k.SetParams(ctx, providertypes.DefaultParams())
+	k.SetValidatorSetUpdateId(ctx, 1)
+
+	// Both overrides must stay strictly above the global fees_per_block floor
+	// (DefaultParams uses 1000), or exported.Validate() would reject them.
+	require.NoError(t, k.ConsumerFeesPerBlockOverride.Set(ctx, consumerA, math.NewInt(2500)))
+	require.NoError(t, k.ConsumerFeesPerBlockOverride.Set(ctx, consumerC, math.NewInt(1500)))
+
+	exported := k.ExportGenesis(ctx)
+	require.Len(t, exported.ConsumerFeesPerBlockOverrides, 2)
+	require.NoError(t, exported.Validate())
+
+	// Fresh keeper, import the exported state.
+	params2 := testkeeper.NewInMemKeeperParams(t)
+	k2, ctx2, ctrl2, mocks2 := testkeeper.GetProviderKeeperAndCtx(t, params2)
+	defer ctrl2.Finish()
+
+	mocks.MockStakingKeeper.EXPECT().GetBondedValidatorsByPower(gomock.Any()).Return(nil, nil).AnyTimes()
+	mocks2.MockStakingKeeper.EXPECT().GetBondedValidatorsByPower(gomock.Any()).Return(nil, nil).AnyTimes()
+
+	k2.InitGenesis(ctx2, exported)
+
+	amtA, err := k2.ConsumerFeesPerBlockOverride.Get(ctx2, consumerA)
+	require.NoError(t, err)
+	require.Equal(t, math.NewInt(2500), amtA)
+
+	hasB, err := k2.ConsumerFeesPerBlockOverride.Has(ctx2, consumerB)
+	require.NoError(t, err)
+	require.False(t, hasB)
+
+	amtC, err := k2.ConsumerFeesPerBlockOverride.Get(ctx2, consumerC)
+	require.NoError(t, err)
+	require.Equal(t, math.NewInt(1500), amtC)
+}
+
+func TestGenesisState_Validate_OverrideRejections(t *testing.T) {
+	owner := sdk.AccAddress([]byte("vaas-test-owner-1234")).String()
+	md := providertypes.ConsumerMetadata{Name: "n", Description: "d", Metadata: "m"}
+	knownConsumer := providertypes.ConsumerState{
+		ConsumerId: 1, ChainId: "test-1", Phase: providertypes.CONSUMER_PHASE_REGISTERED,
+		OwnerAddress: owner, Metadata: &md,
+	}
+
+	// DefaultGenesisState carries a global fees_per_block of 1000, which acts as
+	// the floor every override must exceed.
+	cases := []struct {
+		name       string
+		consumers  []providertypes.ConsumerState
+		override   providertypes.ConsumerFeesPerBlockOverride
+		wantErrMsg string
+	}{
+		{
+			name:       "orphan override for unknown consumer",
+			consumers:  nil, // consumer 99 is not present in consumer_states
+			override:   providertypes.ConsumerFeesPerBlockOverride{ConsumerId: 99, Amount: "2000"},
+			wantErrMsg: "orphan",
+		},
+		{
+			name:       "malformed amount",
+			consumers:  []providertypes.ConsumerState{knownConsumer},
+			override:   providertypes.ConsumerFeesPerBlockOverride{ConsumerId: 1, Amount: "garbage"},
+			wantErrMsg: "not a valid integer",
+		},
+		{
+			name:       "negative amount is below the floor",
+			consumers:  []providertypes.ConsumerState{knownConsumer},
+			override:   providertypes.ConsumerFeesPerBlockOverride{ConsumerId: 1, Amount: "-1"},
+			wantErrMsg: "must be greater than",
+		},
+		{
+			name:       "positive amount below the floor",
+			consumers:  []providertypes.ConsumerState{knownConsumer},
+			override:   providertypes.ConsumerFeesPerBlockOverride{ConsumerId: 1, Amount: "500"},
+			wantErrMsg: "must be greater than",
+		},
+	}
+
+	for _, tc := range cases {
+		tc := tc
+		t.Run(tc.name, func(t *testing.T) {
+			gs := providertypes.DefaultGenesisState()
+			if tc.consumers != nil {
+				gs.ConsumerStates = tc.consumers
+			}
+			gs.ConsumerFeesPerBlockOverrides = []providertypes.ConsumerFeesPerBlockOverride{tc.override}
+			err := gs.Validate()
+			require.Error(t, err)
+			require.Contains(t, err.Error(), tc.wantErrMsg)
+		})
+	}
 }
 
 func TestExportGenesis_IncludesShares(t *testing.T) {

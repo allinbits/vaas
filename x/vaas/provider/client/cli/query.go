@@ -44,6 +44,8 @@ func NewQueryCmd() *cobra.Command {
 	cmd.AddCommand(CmdConsumerIdFromClientId())
 	cmd.AddCommand(CmdConsumerChain())
 	cmd.AddCommand(CmdConsumerGenesisTime())
+	cmd.AddCommand(CmdConsumerFeesPerBlock())
+	cmd.AddCommand(CmdAllConsumerFeesPerBlockOverrides())
 	cmd.AddCommand(CmdConsumerFeePoolClaim())
 	cmd.AddCommand(CmdConsumerFeePoolClaims())
 	return cmd
@@ -448,6 +450,78 @@ func CmdConsumerGenesisTime() *cobra.Command {
 	}
 
 	flags.AddQueryFlagsToCmd(cmd)
+
+	return cmd
+}
+
+// CmdConsumerFeesPerBlock queries the effective per-block fee for a consumer
+// (either the per-consumer override, or the module-wide default from params).
+func CmdConsumerFeesPerBlock() *cobra.Command {
+	cmd := &cobra.Command{
+		Use:   "consumer-fees-per-block [consumer-id]",
+		Short: "Query the effective per-block fee for a consumer",
+		Args:  cobra.ExactArgs(1),
+		RunE: func(cmd *cobra.Command, args []string) error {
+			clientCtx, err := client.GetClientQueryContext(cmd)
+			if err != nil {
+				return err
+			}
+			queryClient := types.NewQueryClient(clientCtx)
+
+			cid, err := parseConsumerIdArg(args[0])
+			if err != nil {
+				return err
+			}
+			req := &types.QueryConsumerFeesPerBlockRequest{ConsumerId: cid}
+			res, err := queryClient.QueryConsumerFeesPerBlock(cmd.Context(), req)
+			if err != nil {
+				return err
+			}
+
+			return clientCtx.PrintProto(res)
+		},
+	}
+
+	flags.AddQueryFlagsToCmd(cmd)
+
+	return cmd
+}
+
+// CmdAllConsumerFeesPerBlockOverrides queries all per-consumer fees-per-block overrides.
+func CmdAllConsumerFeesPerBlockOverrides() *cobra.Command {
+	cmd := &cobra.Command{
+		Use:   "all-consumer-fees-per-block-overrides",
+		Short: "Query all per-consumer fees-per-block overrides",
+		Args:  cobra.NoArgs,
+		RunE: func(cmd *cobra.Command, args []string) error {
+			clientCtx, err := client.GetClientQueryContext(cmd)
+			if err != nil {
+				return err
+			}
+			queryClient := types.NewQueryClient(clientCtx)
+
+			fs, err := client.FlagSetWithPageKeyDecoded(cmd.Flags())
+			if err != nil {
+				return err
+			}
+
+			pageReq, err := client.ReadPageRequest(fs)
+			if err != nil {
+				return err
+			}
+
+			req := &types.QueryAllConsumerFeesPerBlockOverridesRequest{Pagination: pageReq}
+			res, err := queryClient.QueryAllConsumerFeesPerBlockOverrides(cmd.Context(), req)
+			if err != nil {
+				return err
+			}
+
+			return clientCtx.PrintProto(res)
+		},
+	}
+
+	flags.AddQueryFlagsToCmd(cmd)
+	flags.AddPaginationFlagsToCmd(cmd, "consumer fees-per-block overrides")
 
 	return cmd
 }
