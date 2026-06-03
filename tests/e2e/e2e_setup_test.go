@@ -3,12 +3,8 @@ package e2e
 import (
 	"bytes"
 	"context"
-	"crypto/ed25519"
-	"encoding/base64"
-	"encoding/json"
 	"fmt"
 	"os"
-	"os/exec"
 	"path/filepath"
 	"runtime"
 	"strings"
@@ -361,9 +357,7 @@ func (s *IntegrationTestSuite) initAndStartProvider() {
 	// Start provider val1 (second validator node) connecting to val0 as persistent peer
 	s.T().Log("starting provider val1 container...")
 
-	val0NodeID, err := getNodeID(filepath.Join(providerDir, "config", "node_key.json"))
-	s.Require().NoError(err, "failed to get val0 node ID")
-	val0P2PAddr := fmt.Sprintf("%s@%s:26656", val0NodeID, val0Resource.Container.Name[1:])
+	val0P2PAddr := fmt.Sprintf("%s@%s:26656", queryNodeID("http://localhost:26657"), val0Resource.Container.Name[1:])
 	val1Resource, err := s.dkrPool.RunWithOptions(
 		&dockertest.RunOptions{
 			Name:       fmt.Sprintf("%s-val1", providerChainID),
@@ -575,9 +569,7 @@ func (s *IntegrationTestSuite) initAndStartConsumer(consumerGenesisJSON []byte) 
 	)
 
 	// Start consumer val1 connecting to val0 as persistent peer
-	consumerVal0NodeID, err := getNodeID(filepath.Join(consumerDir, "config", "node_key.json"))
-	s.Require().NoError(err, "failed to get consumer val0 node ID")
-	consumerVal0P2PAddr := fmt.Sprintf("%s@%s:26656", consumerVal0NodeID, consumerVal0Resource.Container.Name[1:])
+	consumerVal0P2PAddr := fmt.Sprintf("%s@%s:26656", queryNodeID("http://localhost:26667"), consumerVal0Resource.Container.Name[1:])
 	consumerVal1Resource, err := s.dkrPool.RunWithOptions(
 		&dockertest.RunOptions{
 			Name:       fmt.Sprintf("%s-val1", consumerChainID),
@@ -653,39 +645,4 @@ func (s *IntegrationTestSuite) waitForChainHeight(ctx context.Context, rpcEndpoi
 			}
 		}
 	}
-}
-
-// getNodeID reads a CometBFT node_key.json file and returns the hex-encoded node ID.
-func getNodeID(nodeKeyPath string) (string, error) {
-	data, err := os.ReadFile(nodeKeyPath)
-	if err != nil {
-		return "", fmt.Errorf("failed to read node_key.json: %w", err)
-	}
-
-	var nodeKey struct {
-		PrivKey struct {
-			Value string `json:"value"`
-		} `json:"priv_key"`
-	}
-	if err := json.Unmarshal(data, &nodeKey); err != nil {
-		return "", fmt.Errorf("failed to parse node_key.json: %w", err)
-	}
-
-	privBytes, err := base64.StdEncoding.DecodeString(nodeKey.PrivKey.Value)
-	if err != nil {
-		return "", fmt.Errorf("failed to decode privkey: %w", err)
-	}
-
-	if len(privBytes) != ed25519.PrivateKeySize {
-		return "", fmt.Errorf("invalid privkey size: %d", len(privBytes))
-	}
-
-	pubKey := ed25519.PrivateKey(privBytes).Public().(ed25519.PublicKey)
-	return fmt.Sprintf("%x", pubKey), nil
-}
-
-// chmodRecursive changes permissions on a directory recursively.
-func chmodRecursive(path string, mode os.FileMode) error {
-	cmd := exec.Command("chmod", "-R", fmt.Sprintf("%o", mode), path)
-	return cmd.Run()
 }
