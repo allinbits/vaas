@@ -112,40 +112,40 @@ func (k Keeper) Slash(ctx context.Context, addr sdk.ConsAddress, infractionHeigh
 	return k.SlashWithInfractionReason(ctx, addr, infractionHeight, power, slashFactor, stakingtypes.Infraction_INFRACTION_UNSPECIFIED)
 }
 
-// SlashWithInfractionReason queues a slash packet for downtime infractions
+// SlashWithInfractionReason queues an evidence packet for downtime infractions
 // to be sent to the provider chain. Double-sign and other infractions are logged but not forwarded.
-// Only one slash packet is sent per downtime incident — if the validator already has a pending
-// slash packet, the request is skipped to avoid duplicate reporting.
+// Only one evidence packet is sent per downtime incident — if the validator already has a pending
+// evidence packet, the request is skipped to avoid duplicate reporting.
 func (k Keeper) SlashWithInfractionReason(goCtx context.Context, addr sdk.ConsAddress, infractionHeight, power int64, slashFactor math.LegacyDec, infraction stakingtypes.Infraction) (math.Int, error) {
 	ctx := sdk.UnwrapSDKContext(goCtx)
 
 	if infraction == stakingtypes.Infraction_INFRACTION_DOWNTIME {
-		has, err := k.PendingSlashPackets.Has(ctx, addr)
+		has, err := k.PendingEvidencePackets.Has(ctx, addr)
 		if err != nil {
-			k.Logger(ctx).Error("failed to check pending slash packet",
+			k.Logger(ctx).Error("failed to check pending evidence packet",
 				"validator", addr.String(),
 				"error", err,
 			)
 			return math.ZeroInt(), nil
 		}
 		if has {
-			k.Logger(ctx).Debug("skipping duplicate downtime slash packet",
+			k.Logger(ctx).Debug("skipping duplicate downtime evidence packet",
 				"validator", addr.String(),
 				"infraction_height", infractionHeight,
 			)
 			return math.ZeroInt(), nil
 		}
 
-		slashPacket := vaastypes.NewEvidencePacketData(addr, infractionHeight, infraction)
-		if err := k.QueueSlashPacket(ctx, slashPacket); err != nil {
-			k.Logger(ctx).Error("failed to queue downtime slash packet",
+		evidencePacket := vaastypes.NewEvidencePacketData(addr, infractionHeight, infraction)
+		if err := k.QueueEvidencePacket(ctx, evidencePacket); err != nil {
+			k.Logger(ctx).Error("failed to queue downtime evidence packet",
 				"validator", addr.String(),
 				"infraction_height", infractionHeight,
 				"error", err,
 			)
 			return math.ZeroInt(), nil
 		}
-		k.Logger(ctx).Info("queued downtime slash packet",
+		k.Logger(ctx).Info("queued downtime evidence packet",
 			"validator", addr.String(),
 			"infraction_height", infractionHeight,
 		)

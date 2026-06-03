@@ -1,5 +1,5 @@
 package types
 
 const (
-	EventTypeConsumerSlashRequest = "consumer_slash_request"
+	EventTypeConsumerEvidenceRequest = "consumer_evidence_request"
 )
