@@ -110,7 +110,8 @@ service Query {
   }
 
   // QueryConsumerFeesPerBlock returns the effective per-block fee for a
-  // consumer chain: the override if one is set, else Params.FeesPerBlock.
+  // consumer chain: the override amount if one is set, else
+  // Params.FeesPerBlockAmount, carried at the module's wired fee denom.
   rpc QueryConsumerFeesPerBlock(QueryConsumerFeesPerBlockRequest)
       returns (QueryConsumerFeesPerBlockResponse) {
     option (google.api.http).get =
@@ -297,8 +298,9 @@ message QueryConsumerFeesPerBlockRequest {
   uint64 consumer_id = 1;
 }
 
-// Effective fee for the consumer: the override if one is set, else
-// Params.FeesPerBlock. is_override distinguishes the two cases.
+// Effective fee for the consumer (a resolved coin at the module's wired fee
+// denom): the override amount if one is set, else Params.FeesPerBlockAmount.
+// is_override distinguishes the two cases.
 message QueryConsumerFeesPerBlockResponse {
   cosmos.base.v1beta1.Coin fees_per_block = 1 [
     (gogoproto.casttype) = "github.com/cosmos/cosmos-sdk/types.Coin",

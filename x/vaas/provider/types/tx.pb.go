@@ -720,12 +720,12 @@ type MsgSetConsumerFeesPerBlock struct {
 	// consumer_id is the internal numeric id of the target consumer.
 	ConsumerId uint64 `protobuf:"varint,2,opt,name=consumer_id,json=consumerId,proto3" json:"consumer_id,omitempty"`
 	// amount is the per-block fee charged to the consumer, expressed in the
-	// module's fee denom (Params.FeesPerBlock.Denom).
+	// module's fee denom (fixed at module wiring).
 	//
 	// Empty string clears any existing override; the consumer reverts to
-	// Params.FeesPerBlock.Amount. A non-empty value must parse as a
+	// Params.FeesPerBlockAmount. A non-empty value must parse as a
 	// cosmossdk.io/math.Int and must be strictly greater than the module-wide
-	// Params.FeesPerBlock.Amount, which acts as a floor: an override may only
+	// Params.FeesPerBlockAmount, which acts as a floor: an override may only
 	// raise a consumer's per-block fee above the global default, never lower it.
 	Amount string `protobuf:"bytes,3,opt,name=amount,proto3" json:"amount,omitempty"`
 }
