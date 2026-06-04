@@ -595,7 +595,7 @@ func TestUpdateParams_ReconcilesFeesPerBlockOverrides(t *testing.T) {
 
 	// Raise the global default to 2000.
 	newParams := providertypes.DefaultParams()
-	newParams.FeesPerBlock = sdk.NewInt64Coin(providertypes.DefaultFeesPerBlockDenom, 2000)
+	newParams.FeesPerBlockAmount = math.NewInt(2000)
 
 	msgSrv := providerkeeper.NewMsgServerImpl(&k)
 	_, err := msgSrv.UpdateParams(ctx, &providertypes.MsgUpdateParams{
@@ -618,7 +618,7 @@ func TestUpdateParams_ReconcilesFeesPerBlockOverrides(t *testing.T) {
 
 	// Lowering the floor never invalidates overrides: the survivor stays.
 	lowerParams := providertypes.DefaultParams()
-	lowerParams.FeesPerBlock = sdk.NewInt64Coin(providertypes.DefaultFeesPerBlockDenom, 500)
+	lowerParams.FeesPerBlockAmount = math.NewInt(500)
 	_, err = msgSrv.UpdateParams(ctx, &providertypes.MsgUpdateParams{
 		Authority: k.GetAuthority(),
 		Params:    lowerParams,

@@ -55,8 +55,8 @@ func (k msgServer) UpdateParams(goCtx context.Context, msg *types.MsgUpdateParam
 	// Per-consumer fees_per_block overrides must stay strictly above the global
 	// default. Only a higher floor can leave an existing override underwater; an
 	// unchanged or lower floor keeps every override valid, so skip the walk.
-	if msg.Params.FeesPerBlock.Amount.GT(oldFloor) {
-		if err := k.reconcileFeesPerBlockOverrides(ctx, msg.Params.FeesPerBlock.Amount); err != nil {
+	if msg.Params.FeesPerBlockAmount.GT(oldFloor) {
+		if err := k.reconcileFeesPerBlockOverrides(ctx, msg.Params.FeesPerBlockAmount); err != nil {
 			return nil, err
 		}
 	}

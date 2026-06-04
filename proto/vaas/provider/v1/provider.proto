@@ -3,7 +3,6 @@ syntax = "proto3";
 package vaas.provider.v1;
 
 import "amino/amino.proto";
-import "cosmos/base/v1beta1/coin.proto";
 import "cosmos_proto/cosmos.proto";
 import "gogoproto/gogo.proto";
 import "cosmos/evidence/v1beta1/evidence.proto";
@@ -38,12 +37,14 @@ message Params {
   // to the consensus engine on the provider.
   int64 max_provider_consensus_validators = 4;
 
-  // The fee charged per block for consumer chain operation.
-  cosmos.base.v1beta1.Coin fees_per_block = 5 [
-    (gogoproto.casttype) = "github.com/cosmos/cosmos-sdk/types.Coin",
-    (amino.encoding) = "legacy_coin",
-    (amino.dont_omitempty) = true,
-    (gogoproto.nullable) = false
+  // The per-block fee amount charged for consumer chain operation. The denom
+  // is not a parameter: it is fixed at module wiring (see Keeper.feeDenom) and
+  // cannot be changed without a binary upgrade.
+  string fees_per_block_amount = 5 [
+    (cosmos_proto.scalar) = "cosmos.Int",
+    (gogoproto.customtype) = "cosmossdk.io/math.Int",
+    (gogoproto.nullable) = false,
+    (amino.dont_omitempty) = true
   ];
 }
 

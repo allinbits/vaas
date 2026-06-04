@@ -60,17 +60,18 @@ func (k Keeper) GetMaxProviderConsensusValidators(ctx context.Context) int64 {
 	return params.MaxProviderConsensusValidators
 }
 
-// GetFeesPerBlock returns the fees that each consumer chain must pay per block
+// GetFeesPerBlock returns the fees that each consumer chain must pay per block.
+// The amount is governed via Params.FeesPerBlockAmount while the denom is a
+// keeper-wired constant and cannot be changed without a binary upgrade.
 func (k Keeper) GetFeesPerBlock(ctx context.Context) sdk.Coin {
-	params := k.GetParams(ctx)
-	return params.FeesPerBlock
+	return sdk.NewCoin(k.feeDenom, k.GetParams(ctx).FeesPerBlockAmount)
 }
 
 // GetEffectiveFeesPerBlock returns the per-block fee charged to a specific
-// consumer: the override amount if one is set, else Params.FeesPerBlock.
-// The returned Coin always carries Params.FeesPerBlock.Denom. The bool
-// reports whether an override was applied (true) or the default was used
-// (false).
+// consumer: the override amount if one is set, else the default
+// Params.FeesPerBlockAmount. The returned Coin always carries the module fee
+// denom (Keeper.feeDenom). The bool reports whether an override was applied
+// (true) or the default was used (false).
 func (k Keeper) GetEffectiveFeesPerBlock(ctx context.Context, consumerId uint64) (sdk.Coin, bool) {
 	return k.effectiveFeesPerBlock(ctx, consumerId, k.GetFeesPerBlock(ctx))
 }
@@ -91,8 +92,8 @@ func (k Keeper) effectiveFeesPerBlock(ctx context.Context, consumerId uint64, de
 }
 
 // reconcileFeesPerBlockOverrides drops every per-consumer override that is no
-// longer strictly greater than floor (the module-wide Params.FeesPerBlock
-// amount). It is called when the global fees_per_block rises so the "override
+// longer strictly greater than floor (the module-wide Params.FeesPerBlockAmount).
+// It is called when the global fees_per_block rises so the "override
 // must exceed the default" floor holds as a true invariant, not just at set
 // time: a higher default can leave overrides underwater, and those consumers
 // should revert to paying the new (higher) default.

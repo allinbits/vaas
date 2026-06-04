@@ -41,6 +41,10 @@ type Keeper struct {
 	bankKeeper       vaastypes.BankKeeper
 	govKeeper        govkeeper.Keeper
 	feeCollectorName string
+	// feeDenom is the denom charged to consumers per block. It is fixed at
+	// construction and cannot be changed without a binary upgrade. The amount
+	// is instead governed via Params.FeesPerBlockAmount.
+	feeDenom string
 
 	validatorAddressCodec addresscodec.Codec
 	consensusAddressCodec addresscodec.Codec
@@ -94,7 +98,15 @@ func NewKeeper(
 	authority string,
 	validatorAddressCodec, consensusAddressCodec addresscodec.Codec,
 	feeCollectorName string,
+	feeDenom string,
 ) Keeper {
+	// The per-block fee denom is fixed for the lifetime of the binary. A bad
+	// value is a wiring mistake that must fail loudly at startup rather than
+	// surface later as malformed fee coins.
+	if err := sdk.ValidateDenom(feeDenom); err != nil {
+		panic(fmt.Errorf("invalid provider fee denom %q: %w", feeDenom, err))
+	}
+
 	sb := collections.NewSchemaBuilder(storeService)
 
 	k := Keeper{
@@ -108,6 +120,7 @@ func NewKeeper(
 		accountKeeper:         accountKeeper,
 		bankKeeper:            bankKeeper,
 		feeCollectorName:      feeCollectorName,
+		feeDenom:              feeDenom,
 		validatorAddressCodec: validatorAddressCodec,
 		consensusAddressCodec: consensusAddressCodec,
 		channelKeeperV2:       channelKeeperV2,
@@ -175,6 +188,12 @@ func NewKeeper(
 // GetAuthority returns the x/ccv/provider module's authority.
 func (k Keeper) GetAuthority() string {
 	return k.authority
+}
+
+// GetFeeDenom returns the denom charged to consumer chains per block. It is
+// fixed at module wiring and immutable without a binary upgrade.
+func (k Keeper) GetFeeDenom() string {
+	return k.feeDenom
 }
 
 // ValidatorAddressCodec returns the app validator address codec.
