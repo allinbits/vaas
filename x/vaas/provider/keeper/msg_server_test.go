@@ -628,3 +628,247 @@ func TestUpdateParams_ReconcilesFeesPerBlockOverrides(t *testing.T) {
 	require.NoError(t, err)
 	require.Equal(t, math.NewInt(2500), amtAbove)
 }
+
+func TestRemoveConsumerGovAuth(t *testing.T) {
+	providerKeeper, ctx, ctrl, mocks := testkeeper.GetProviderKeeperAndCtx(t, testkeeper.NewInMemKeeperParams(t))
+	defer ctrl.Finish()
+
+	msgServer := providerkeeper.NewMsgServerImpl(&providerKeeper)
+
+	// create a consumer chain and set it to LAUNCHED
+	createResp, err := msgServer.CreateConsumer(ctx,
+		&providertypes.MsgCreateConsumer{
+			Submitter: "submitter", ChainId: "chainId",
+			Metadata: providertypes.ConsumerMetadata{
+				Name:        "name",
+				Description: "description",
+			},
+			InitializationParameters: &providertypes.ConsumerInitializationParameters{},
+		})
+	require.NoError(t, err)
+	consumerId := createResp.ConsumerId
+
+	providerKeeper.SetConsumerPhase(ctx, consumerId, providertypes.CONSUMER_PHASE_LAUNCHED)
+
+	mocks.MockStakingKeeper.EXPECT().UnbondingTime(gomock.Any()).Return(time.Hour*24*7*3, nil).Times(1)
+
+	// non-authority should be rejected
+	_, err = msgServer.RemoveConsumer(ctx,
+		&providertypes.MsgRemoveConsumer{
+			Authority:  "cosmos1notthegovauth000000000000000000000000",
+			ConsumerId: consumerId,
+		})
+	require.Error(t, err)
+	require.Contains(t, err.Error(), "invalid authority")
+
+	// correct authority succeeds
+	_, err = msgServer.RemoveConsumer(ctx,
+		&providertypes.MsgRemoveConsumer{
+			Authority:  providerKeeper.GetAuthority(),
+			ConsumerId: consumerId,
+		})
+	require.NoError(t, err)
+
+	// verify the chain is stopped
+	phase := providerKeeper.GetConsumerPhase(ctx, consumerId)
+	require.Equal(t, providertypes.CONSUMER_PHASE_STOPPED, phase)
+}
+
+func TestRemoveConsumerNonLaunchedRejected(t *testing.T) {
+	providerKeeper, ctx, ctrl, _ := testkeeper.GetProviderKeeperAndCtx(t, testkeeper.NewInMemKeeperParams(t))
+	defer ctrl.Finish()
+
+	msgServer := providerkeeper.NewMsgServerImpl(&providerKeeper)
+
+	// create a consumer chain (stays in REGISTERED phase)
+	createResp, err := msgServer.CreateConsumer(ctx,
+		&providertypes.MsgCreateConsumer{
+			Submitter: "submitter", ChainId: "chainId",
+			Metadata: providertypes.ConsumerMetadata{
+				Name:        "name",
+				Description: "description",
+			},
+			InitializationParameters: &providertypes.ConsumerInitializationParameters{},
+		})
+	require.NoError(t, err)
+
+	// gov authority cannot remove a non-launched chain
+	_, err = msgServer.RemoveConsumer(ctx,
+		&providertypes.MsgRemoveConsumer{
+			Authority:  providerKeeper.GetAuthority(),
+			ConsumerId: createResp.ConsumerId,
+		})
+	require.Error(t, err)
+	require.ErrorIs(t, err, providertypes.ErrInvalidPhase)
+}
+
+func TestUpdateConsumerLaunchedOnlyMetadata(t *testing.T) {
+	providerKeeper, ctx, ctrl, mocks := testkeeper.GetProviderKeeperAndCtx(t, testkeeper.NewInMemKeeperParams(t))
+	defer ctrl.Finish()
+
+	msgServer := providerkeeper.NewMsgServerImpl(&providerKeeper)
+
+	// create a consumer chain
+	createResp, err := msgServer.CreateConsumer(ctx,
+		&providertypes.MsgCreateConsumer{
+			Submitter: "submitter", ChainId: "chainId",
+			Metadata: providertypes.ConsumerMetadata{
+				Name:        "name",
+				Description: "description",
+			},
+			InitializationParameters: &providertypes.ConsumerInitializationParameters{},
+		})
+	require.NoError(t, err)
+	consumerId := createResp.ConsumerId
+
+	// set to LAUNCHED
+	providerKeeper.SetConsumerPhase(ctx, consumerId, providertypes.CONSUMER_PHASE_LAUNCHED)
+
+	mocks.MockAccountKeeper.EXPECT().AddressCodec().Return(address.NewBech32Codec("cosmos")).AnyTimes()
+
+	// metadata update should succeed
+	newMetadata := providertypes.ConsumerMetadata{
+		Name:        "new-name",
+		Description: "new-description",
+		Metadata:    "new-metadata",
+	}
+	_, err = msgServer.UpdateConsumer(ctx,
+		&providertypes.MsgUpdateConsumer{
+			Owner:      "submitter",
+			ConsumerId: consumerId,
+			Metadata:   &newMetadata,
+		})
+	require.NoError(t, err)
+	actualMetadata, err := providerKeeper.GetConsumerMetadata(ctx, consumerId)
+	require.NoError(t, err)
+	require.Equal(t, newMetadata, actualMetadata)
+
+	// chain-id update should fail
+	_, err = msgServer.UpdateConsumer(ctx,
+		&providertypes.MsgUpdateConsumer{
+			Owner:      "submitter",
+			ConsumerId: consumerId,
+			NewChainId: "newChainId",
+		})
+	require.Error(t, err)
+	require.ErrorIs(t, err, providertypes.ErrInvalidPhase)
+
+	// owner transfer should fail
+	_, err = msgServer.UpdateConsumer(ctx,
+		&providertypes.MsgUpdateConsumer{
+			Owner:           "submitter",
+			ConsumerId:      consumerId,
+			NewOwnerAddress: "cosmos1dkas8mu4kyhl5jrh4nzvm65qz588hy9qcz08la",
+		})
+	require.Error(t, err)
+	require.ErrorIs(t, err, providertypes.ErrInvalidPhase)
+
+	// initialization parameters update should fail
+	_, err = msgServer.UpdateConsumer(ctx,
+		&providertypes.MsgUpdateConsumer{
+			Owner:      "submitter",
+			ConsumerId: consumerId,
+			InitializationParameters: &providertypes.ConsumerInitializationParameters{
+				SpawnTime: time.Now().Add(24 * time.Hour),
+			},
+		})
+	require.Error(t, err)
+	require.ErrorIs(t, err, providertypes.ErrInvalidPhase)
+}
+
+func TestUpdateConsumerPreLaunchAllowsAll(t *testing.T) {
+	providerKeeper, ctx, ctrl, mocks := testkeeper.GetProviderKeeperAndCtx(t, testkeeper.NewInMemKeeperParams(t))
+	defer ctrl.Finish()
+
+	msgServer := providerkeeper.NewMsgServerImpl(&providerKeeper)
+
+	// create a consumer chain (REGISTERED phase)
+	createResp, err := msgServer.CreateConsumer(ctx,
+		&providertypes.MsgCreateConsumer{
+			Submitter: "submitter", ChainId: "chainId-1",
+			Metadata: providertypes.ConsumerMetadata{
+				Name:        "name",
+				Description: "description",
+			},
+		})
+	require.NoError(t, err)
+	consumerId := createResp.ConsumerId
+
+	mocks.MockAccountKeeper.EXPECT().AddressCodec().Return(address.NewBech32Codec("cosmos")).AnyTimes()
+
+	// all updates should succeed in pre-launch phase
+	_, err = msgServer.UpdateConsumer(ctx,
+		&providertypes.MsgUpdateConsumer{
+			Owner:           "submitter",
+			ConsumerId:      consumerId,
+			NewChainId:      "newChainId-1",
+			NewOwnerAddress: "cosmos1dkas8mu4kyhl5jrh4nzvm65qz588hy9qcz08la",
+			Metadata: &providertypes.ConsumerMetadata{
+				Name:        "new-name",
+				Description: "new-description",
+			},
+		})
+	require.NoError(t, err)
+
+	// verify chain id updated
+	chainId, err := providerKeeper.GetConsumerChainId(ctx, consumerId)
+	require.NoError(t, err)
+	require.Equal(t, "newChainId-1", chainId)
+
+	// verify owner updated
+	owner, err := providerKeeper.GetConsumerOwnerAddress(ctx, consumerId)
+	require.NoError(t, err)
+	require.Equal(t, "cosmos1dkas8mu4kyhl5jrh4nzvm65qz588hy9qcz08la", owner)
+}
+
+func TestCreateConsumerEventsIncludeInitParams(t *testing.T) {
+	providerKeeper, ctx, ctrl, _ := testkeeper.GetProviderKeeperAndCtx(t, testkeeper.NewInMemKeeperParams(t))
+	defer ctrl.Finish()
+
+	msgServer := providerkeeper.NewMsgServerImpl(&providerKeeper)
+
+	binaryHash := []byte("deadbeef")
+	genesisHash := []byte("cafebabe")
+	spawnTime := time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC)
+
+	_, err := msgServer.CreateConsumer(ctx,
+		&providertypes.MsgCreateConsumer{
+			Submitter: "submitter",
+			ChainId:   "chainId",
+			Metadata: providertypes.ConsumerMetadata{
+				Name:        "name",
+				Description: "description",
+			},
+			InitializationParameters: &providertypes.ConsumerInitializationParameters{
+				BinaryHash:  binaryHash,
+				GenesisHash: genesisHash,
+				SpawnTime:   spawnTime,
+			},
+		})
+	require.NoError(t, err)
+
+	// verify the event has binary_hash, genesis_hash, and spawn_time attributes
+	var found bool
+	for _, ev := range ctx.EventManager().Events() {
+		if ev.Type != "create_consumer" {
+			continue
+		}
+		found = true
+		var sawBinaryHash, sawGenesisHash, sawSpawnTime bool
+		for _, attr := range ev.Attributes {
+			if attr.Key == "consumer_binary_hash" && attr.Value == string(binaryHash) {
+				sawBinaryHash = true
+			}
+			if attr.Key == "consumer_genesis_hash" && attr.Value == string(genesisHash) {
+				sawGenesisHash = true
+			}
+			if attr.Key == "consumer_spawn_time" {
+				sawSpawnTime = true
+			}
+		}
+		require.True(t, sawBinaryHash, "consumer_binary_hash attribute missing")
+		require.True(t, sawGenesisHash, "consumer_genesis_hash attribute missing")
+		require.True(t, sawSpawnTime, "consumer_spawn_time attribute missing")
+	}
+	require.True(t, found, "create_consumer event not emitted")
+}

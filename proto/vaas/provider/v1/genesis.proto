@@ -64,7 +64,7 @@ message ConsumerState {
   // the phase of the consumer chain
   ConsumerPhase phase = 8;
   // OwnerAddress is the bech32 address that authorises owner-only operations
-  // (UpdateConsumer, RemoveConsumer, key assignment, etc.) on the consumer.
+  // (UpdateConsumer, key assignment, etc.) on the consumer.
   // Always non-empty for any existing consumer record; set at REGISTERED.
   string owner_address = 9;
   // Metadata is the owner-supplied descriptor (name/description/repo).

@@ -160,7 +160,7 @@ type ConsumerState struct {
 	// the phase of the consumer chain
 	Phase ConsumerPhase `protobuf:"varint,8,opt,name=phase,proto3,enum=vaas.provider.v1.ConsumerPhase" json:"phase,omitempty"`
 	// OwnerAddress is the bech32 address that authorises owner-only operations
-	// (UpdateConsumer, RemoveConsumer, key assignment, etc.) on the consumer.
+	// (UpdateConsumer, key assignment, etc.) on the consumer.
 	// Always non-empty for any existing consumer record; set at REGISTERED.
 	OwnerAddress string `protobuf:"bytes,9,opt,name=owner_address,json=ownerAddress,proto3" json:"owner_address,omitempty"`
 	// Metadata is the owner-supplied descriptor (name/description/repo).

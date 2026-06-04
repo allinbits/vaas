@@ -24,5 +24,7 @@ const (
 	AttributeConsumerOwner            = "consumer_owner"
 	AttributeConsumerSpawnTime        = "consumer_spawn_time"
 	AttributeConsumerPhase            = "consumer_phase"
+	AttributeConsumerBinaryHash       = "consumer_binary_hash"
+	AttributeConsumerGenesisHash      = "consumer_genesis_hash"
 	AttributeKeyAmount                = "amount"
 )

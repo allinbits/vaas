@@ -388,9 +388,9 @@ If one of the fields is missing, it will be set to its zero value.
 func NewRemoveConsumerCmd() *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "remove-consumer [consumer-id]",
-		Short: "remove a consumer chain",
+		Short: "remove a consumer chain (gov authority only)",
 		Long: strings.TrimSpace(
-			fmt.Sprintf(`Removes (and stops) a consumer chain. Note that only the owner of the chain can remove it.
+			fmt.Sprintf(`Removes (and stops) a consumer chain. Only the governance authority can remove a consumer chain.
 Example:
 %s tx provider remove-consumer [consumer-id]
 `, version.AppName)),
@@ -407,13 +407,13 @@ Example:
 			}
 			txf = txf.WithTxConfig(clientCtx.TxConfig).WithAccountRetriever(clientCtx.AccountRetriever)
 
-			owner := clientCtx.GetFromAddress().String()
+			authority := clientCtx.GetFromAddress().String()
 			consumerId, err := parseConsumerIdArg(args[0])
 			if err != nil {
 				return err
 			}
 
-			msg, err := types.NewMsgRemoveConsumer(owner, consumerId)
+			msg, err := types.NewMsgRemoveConsumer(authority, consumerId)
 			if err != nil {
 				return err
 			}
