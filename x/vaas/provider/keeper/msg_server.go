@@ -342,20 +342,16 @@ func (k msgServer) UpdateConsumer(goCtx context.Context, msg *types.MsgUpdateCon
 
 	isLaunched := k.GetConsumerPhase(ctx, consumerId) == types.CONSUMER_PHASE_LAUNCHED
 
-	// When the chain is already launched, the owner can only update metadata.
-	// Chain-id, initialization parameters, and owner transfer are restricted to pre-launch phases.
+	// When the chain is already launched, the owner can only update metadata and transfer ownership.
+	// Chain-id and initialization parameters are restricted to pre-launch phases.
 	if isLaunched {
 		if strings.TrimSpace(msg.NewChainId) != "" {
 			return &resp, errorsmod.Wrapf(types.ErrInvalidPhase,
-				"cannot update chain id of a launched chain; only metadata updates are allowed after launch")
-		}
-		if strings.TrimSpace(msg.NewOwnerAddress) != "" {
-			return &resp, errorsmod.Wrapf(types.ErrInvalidPhase,
-				"cannot transfer ownership of a launched chain; only metadata updates are allowed after launch")
+				"cannot update chain id of a launched chain")
 		}
 		if msg.InitializationParameters != nil {
 			return &resp, errorsmod.Wrapf(types.ErrInvalidPhase,
-				"cannot update initialization parameters of a launched chain; only metadata updates are allowed after launch")
+				"cannot update initialization parameters of a launched chain")
 		}
 	}
 

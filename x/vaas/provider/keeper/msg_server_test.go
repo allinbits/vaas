@@ -753,20 +753,23 @@ func TestUpdateConsumerLaunchedOnlyMetadata(t *testing.T) {
 	require.Error(t, err)
 	require.ErrorIs(t, err, providertypes.ErrInvalidPhase)
 
-	// owner transfer should fail
+	// owner transfer should succeed on launched chain
+	newOwner := "cosmos1dkas8mu4kyhl5jrh4nzvm65qz588hy9qcz08la"
 	_, err = msgServer.UpdateConsumer(ctx,
 		&providertypes.MsgUpdateConsumer{
 			Owner:           "submitter",
 			ConsumerId:      consumerId,
-			NewOwnerAddress: "cosmos1dkas8mu4kyhl5jrh4nzvm65qz588hy9qcz08la",
+			NewOwnerAddress: newOwner,
 		})
-	require.Error(t, err)
-	require.ErrorIs(t, err, providertypes.ErrInvalidPhase)
+	require.NoError(t, err)
+	actualOwner, err := providerKeeper.GetConsumerOwnerAddress(ctx, consumerId)
+	require.NoError(t, err)
+	require.Equal(t, newOwner, actualOwner)
 
-	// initialization parameters update should fail
+	// initialization parameters update should fail (use new owner since ownership was transferred)
 	_, err = msgServer.UpdateConsumer(ctx,
 		&providertypes.MsgUpdateConsumer{
-			Owner:      "submitter",
+			Owner:      newOwner,
 			ConsumerId: consumerId,
 			InitializationParameters: &providertypes.ConsumerInitializationParameters{
 				SpawnTime: time.Now().Add(24 * time.Hour),
