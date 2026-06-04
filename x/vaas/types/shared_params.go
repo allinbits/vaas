@@ -2,77 +2,34 @@ package types
 
 import (
 	"errors"
-	fmt "fmt"
+	"fmt"
 	"time"
 
 	"cosmossdk.io/math"
-
-	sdktypes "github.com/cosmos/cosmos-sdk/types"
 )
 
 const (
-	// Default timeout period is 4 weeks to ensure channel doesn't close on timeout
+	// DefaultVAASTimeoutPeriod is 4 weeks to ensure channel doesn't close on timeout.
 	DefaultVAASTimeoutPeriod = 4 * 7 * 24 * time.Hour
 )
 
 var KeyVAASTimeoutPeriod = []byte("VaasTimeoutPeriod")
 
-func ValidateDuration(i any) error {
-	period, ok := i.(time.Duration)
-	if !ok {
-		return fmt.Errorf("invalid parameter type: %T", i)
-	}
-	if period <= time.Duration(0) {
+func ValidateDuration(d time.Duration) error {
+	if d <= time.Duration(0) {
 		return errors.New("duration must be positive")
 	}
 	return nil
 }
 
-func ValidateBool(i any) error {
-	if _, ok := i.(bool); !ok {
-		return fmt.Errorf("invalid parameter type: %T", i)
-	}
-	return nil
-}
-
-func ValidateInt64(i any) error {
-	if _, ok := i.(int64); !ok {
-		return fmt.Errorf("invalid parameter type: %T", i)
-	}
-	return nil
-}
-
-func ValidatePositiveInt64(i any) error {
-	if err := ValidateInt64(i); err != nil {
-		return err
-	}
-	if i.(int64) <= int64(0) {
+func ValidatePositiveInt64(n int64) error {
+	if n <= int64(0) {
 		return errors.New("int must be positive")
 	}
 	return nil
 }
 
-func ValidateString(i any) error {
-	if _, ok := i.(string); !ok {
-		return fmt.Errorf("invalid parameter type: %T", i)
-	}
-	return nil
-}
-
-func ValidateAccAddress(i any) error {
-	value, ok := i.(string)
-	if !ok {
-		return fmt.Errorf("invalid parameter type: %T", i)
-	}
-	_, err := sdktypes.AccAddressFromBech32(value)
-	return err
-}
-
-func ValidateStringFraction(i any) error {
-	str, ok := i.(string)
-	if !ok {
-		return fmt.Errorf("invalid parameter type: %T", i)
-	}
+func ValidateStringFractionNonZero(str string) error {
 	dec, err := math.LegacyNewDecFromStr(str)
 	if err != nil {
 		return err
@@ -83,19 +40,9 @@ func ValidateStringFraction(i any) error {
 	if dec.Sub(math.LegacyNewDec(1)).IsPositive() {
 		return fmt.Errorf("param cannot be greater than 1, got %s", str)
 	}
-	return nil
-}
-
-func ValidateStringFractionNonZero(i any) error {
-	if err := ValidateStringFraction(i); err != nil {
-		return err
-	}
-	str, _ := i.(string)
-	dec, _ := math.LegacyNewDecFromStr(str)
 	if dec.IsZero() {
 		return fmt.Errorf("param cannot be zero, got %s", str)
 	}
-
 	return nil
 }
 

@@ -32,7 +32,7 @@ func NewRestartGenesisState(
 // unless explicitly specified in genesis.
 func DefaultGenesisState() *GenesisState {
 	return &GenesisState{
-		Params: vaastypes.DefaultParams(),
+		Params: vaastypes.DefaultConsumerParams(),
 	}
 }
 
