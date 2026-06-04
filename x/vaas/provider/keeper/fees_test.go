@@ -5,9 +5,6 @@ import (
 	"errors"
 	"testing"
 
-	abci "github.com/cometbft/cometbft/abci/types"
-	cmtproto "github.com/cometbft/cometbft/proto/tendermint/types"
-
 	addresscodec "cosmossdk.io/core/address"
 	"cosmossdk.io/math"
 	testkeeper "github.com/allinbits/vaas/testutil/keeper"
@@ -190,11 +187,9 @@ func TestCollectFeesFromConsumersContinuesOnGenericError(t *testing.T) {
 
 // Helpers for the distribution tests.
 
-// newBondedValidator builds a Validator with a freshly generated consensus
-// keypair so that val.GetConsAddr() returns a valid address. Returns the
-// validator, its operator bytes (for sdk.AccAddress cast), and the consensus
-// address to stamp into VoteInfos.
-func newBondedValidator(t *testing.T, codec addresscodec.Codec, opSeed byte) (stakingtypes.Validator, []byte, sdk.ConsAddress) {
+// newBondedValidator builds a Validator with an operator address derived from
+// opSeed. Returns the validator and its operator bytes.
+func newBondedValidator(t *testing.T, codec addresscodec.Codec, opSeed byte) (stakingtypes.Validator, []byte) {
 	t.Helper()
 	opBytes := bytes.Repeat([]byte{opSeed}, 20)
 	op, err := codec.BytesToString(opBytes)
@@ -205,25 +200,11 @@ func newBondedValidator(t *testing.T, codec addresscodec.Codec, opSeed byte) (st
 	val.Status = stakingtypes.Bonded
 	val.Tokens = sdk.DefaultPowerReduction
 	val.DelegatorShares = math.LegacyNewDecFromInt(sdk.DefaultPowerReduction)
-	return val, opBytes, sdk.GetConsAddress(pk)
+	return val, opBytes
 }
 
-func signerVote(consAddr sdk.ConsAddress) abci.VoteInfo {
-	return abci.VoteInfo{
-		Validator:   abci.Validator{Address: consAddr, Power: 1},
-		BlockIdFlag: cmtproto.BlockIDFlagCommit,
-	}
-}
-
-func absentVote(consAddr sdk.ConsAddress) abci.VoteInfo {
-	return abci.VoteInfo{
-		Validator:   abci.Validator{Address: consAddr, Power: 1},
-		BlockIdFlag: cmtproto.BlockIDFlagAbsent,
-	}
-}
-
-// TestDistributeFeesToValidators splits the pool evenly among signers,
-// independent of their stake (tokens differ but shares are equal).
+// TestDistributeFeesToValidators splits the pool evenly among all bonded
+// validators, independent of their stake (tokens differ but shares are equal).
 func TestDistributeFeesToValidators(t *testing.T) {
 	params := testkeeper.NewInMemKeeperParams(t)
 	k, ctx, ctrl, mocks := testkeeper.GetProviderKeeperAndCtx(t, params)
@@ -232,15 +213,14 @@ func TestDistributeFeesToValidators(t *testing.T) {
 	valAddrCodec := address.NewBech32Codec("cosmosvaloper")
 	mocks.MockStakingKeeper.EXPECT().ValidatorAddressCodec().Return(valAddrCodec).AnyTimes()
 
-	val1, op1Bytes, cons1 := newBondedValidator(t, valAddrCodec, 1)
+	val1, op1Bytes := newBondedValidator(t, valAddrCodec, 1)
 	val1.Tokens = sdk.DefaultPowerReduction.MulRaw(10) // stake differs on purpose
-	val2, op2Bytes, cons2 := newBondedValidator(t, valAddrCodec, 2)
+	val2, op2Bytes := newBondedValidator(t, valAddrCodec, 2)
 	val2.Tokens = sdk.DefaultPowerReduction.MulRaw(20)
 
 	providerParams := providertypes.DefaultParams()
 	providerParams.FeesPerBlock = sdk.NewInt64Coin("uphoton", 10)
 	k.SetParams(ctx, providerParams)
-	ctx = ctx.WithVoteInfos([]abci.VoteInfo{signerVote(cons1), signerVote(cons2)})
 
 	mocks.MockBankKeeper.EXPECT().
 		GetBalance(gomock.Any(), authtypes.NewModuleAddress(providertypes.ModuleName), providerParams.FeesPerBlock.Denom).
@@ -276,7 +256,7 @@ func TestDistributeFeesToValidatorsZeroFees(t *testing.T) {
 }
 
 // TestDistributeFeesToValidatorsSkipsWhenFeesTooSmall: pool holds 1 coin,
-// 2 signers → floor(1/2) = 0 → nothing sent, balance stays pooled.
+// 2 validators → floor(1/2) = 0 → nothing sent, balance stays pooled.
 func TestDistributeFeesToValidatorsSkipsWhenFeesTooSmall(t *testing.T) {
 	params := testkeeper.NewInMemKeeperParams(t)
 	k, ctx, ctrl, mocks := testkeeper.GetProviderKeeperAndCtx(t, params)
@@ -285,13 +265,12 @@ func TestDistributeFeesToValidatorsSkipsWhenFeesTooSmall(t *testing.T) {
 	valAddrCodec := address.NewBech32Codec("cosmosvaloper")
 	mocks.MockStakingKeeper.EXPECT().ValidatorAddressCodec().Return(valAddrCodec).AnyTimes()
 
-	val1, _, cons1 := newBondedValidator(t, valAddrCodec, 1)
-	val2, _, cons2 := newBondedValidator(t, valAddrCodec, 2)
+	val1, _ := newBondedValidator(t, valAddrCodec, 1)
+	val2, _ := newBondedValidator(t, valAddrCodec, 2)
 
 	providerParams := providertypes.DefaultParams()
 	providerParams.FeesPerBlock = sdk.NewInt64Coin("uphoton", 1)
 	k.SetParams(ctx, providerParams)
-	ctx = ctx.WithVoteInfos([]abci.VoteInfo{signerVote(cons1), signerVote(cons2)})
 
 	mocks.MockBankKeeper.EXPECT().
 		GetBalance(gomock.Any(), authtypes.NewModuleAddress(providertypes.ModuleName), providerParams.FeesPerBlock.Denom).
@@ -303,7 +282,7 @@ func TestDistributeFeesToValidatorsSkipsWhenFeesTooSmall(t *testing.T) {
 	require.NoError(t, k.DistributeFeesToValidators(ctx))
 }
 
-// TestDistributeFeesToValidatorsRemainderStaysPooled: 10 coins / 3 signers
+// TestDistributeFeesToValidatorsRemainderStaysPooled: 10 coins / 3 validators
 // → each gets floor(10/3) = 3, 1 coin stays in the pool.
 func TestDistributeFeesToValidatorsRemainderStaysPooled(t *testing.T) {
 	params := testkeeper.NewInMemKeeperParams(t)
@@ -313,14 +292,13 @@ func TestDistributeFeesToValidatorsRemainderStaysPooled(t *testing.T) {
 	valAddrCodec := address.NewBech32Codec("cosmosvaloper")
 	mocks.MockStakingKeeper.EXPECT().ValidatorAddressCodec().Return(valAddrCodec).AnyTimes()
 
-	val1, op1, cons1 := newBondedValidator(t, valAddrCodec, 1)
-	val2, op2, cons2 := newBondedValidator(t, valAddrCodec, 2)
-	val3, op3, cons3 := newBondedValidator(t, valAddrCodec, 3)
+	val1, op1 := newBondedValidator(t, valAddrCodec, 1)
+	val2, op2 := newBondedValidator(t, valAddrCodec, 2)
+	val3, op3 := newBondedValidator(t, valAddrCodec, 3)
 
 	providerParams := providertypes.DefaultParams()
 	providerParams.FeesPerBlock = sdk.NewInt64Coin("uphoton", 10)
 	k.SetParams(ctx, providerParams)
-	ctx = ctx.WithVoteInfos([]abci.VoteInfo{signerVote(cons1), signerVote(cons2), signerVote(cons3)})
 
 	mocks.MockBankKeeper.EXPECT().
 		GetBalance(gomock.Any(), authtypes.NewModuleAddress(providertypes.ModuleName), providerParams.FeesPerBlock.Denom).
@@ -338,8 +316,8 @@ func TestDistributeFeesToValidatorsRemainderStaysPooled(t *testing.T) {
 	require.NoError(t, k.DistributeFeesToValidators(ctx))
 }
 
-// TestDistributeFeesToValidatorsNoSigners: empty VoteInfos → nothing sent.
-func TestDistributeFeesToValidatorsNoSigners(t *testing.T) {
+// TestDistributeFeesToValidatorsNoBondedValidators: no bonded validators → nothing sent.
+func TestDistributeFeesToValidatorsNoBondedValidators(t *testing.T) {
 	params := testkeeper.NewInMemKeeperParams(t)
 	k, ctx, ctrl, mocks := testkeeper.GetProviderKeeperAndCtx(t, params)
 	defer ctrl.Finish()
@@ -358,9 +336,9 @@ func TestDistributeFeesToValidatorsNoSigners(t *testing.T) {
 	require.NoError(t, k.DistributeFeesToValidators(ctx))
 }
 
-// TestDistributeFeesToValidatorsSkipsAbsentSigners: absent / nil-voting
-// validators are filtered out by BlockIdFlag; only commit votes earn.
-func TestDistributeFeesToValidatorsSkipsAbsentSigners(t *testing.T) {
+// TestDistributeFeesToValidatorsIncludesOfflineValidators: all bonded
+// validators receive an equal share regardless of signing status.
+func TestDistributeFeesToValidatorsIncludesOfflineValidators(t *testing.T) {
 	params := testkeeper.NewInMemKeeperParams(t)
 	k, ctx, ctrl, mocks := testkeeper.GetProviderKeeperAndCtx(t, params)
 	defer ctrl.Finish()
@@ -368,16 +346,12 @@ func TestDistributeFeesToValidatorsSkipsAbsentSigners(t *testing.T) {
 	valAddrCodec := address.NewBech32Codec("cosmosvaloper")
 	mocks.MockStakingKeeper.EXPECT().ValidatorAddressCodec().Return(valAddrCodec).AnyTimes()
 
-	val1, op1, cons1 := newBondedValidator(t, valAddrCodec, 1)
-	val2, _, cons2 := newBondedValidator(t, valAddrCodec, 2)
+	val1, op1 := newBondedValidator(t, valAddrCodec, 1)
+	val2, op2 := newBondedValidator(t, valAddrCodec, 2)
 
 	providerParams := providertypes.DefaultParams()
 	providerParams.FeesPerBlock = sdk.NewInt64Coin("uphoton", 10)
 	k.SetParams(ctx, providerParams)
-	ctx = ctx.WithVoteInfos([]abci.VoteInfo{
-		signerVote(cons1), // will be paid
-		absentVote(cons2), // skipped — absent signer
-	})
 
 	mocks.MockBankKeeper.EXPECT().
 		GetBalance(gomock.Any(), authtypes.NewModuleAddress(providertypes.ModuleName), providerParams.FeesPerBlock.Denom).
@@ -385,43 +359,13 @@ func TestDistributeFeesToValidatorsSkipsAbsentSigners(t *testing.T) {
 	mocks.MockStakingKeeper.EXPECT().
 		GetBondedValidatorsByPower(gomock.Any()).
 		Return([]stakingtypes.Validator{val1, val2}, nil)
-	// Sole committing signer gets the entire pool.
+	// Both validators get an equal share (100/2 = 50), even if one was offline.
+	share := sdk.NewCoins(sdk.NewInt64Coin("uphoton", 50))
 	mocks.MockBankKeeper.EXPECT().
-		SendCoinsFromModuleToAccount(gomock.Any(), providertypes.ModuleName, sdk.AccAddress(op1), sdk.NewCoins(sdk.NewInt64Coin("uphoton", 100))).
+		SendCoinsFromModuleToAccount(gomock.Any(), providertypes.ModuleName, sdk.AccAddress(op1), share).
 		Return(nil)
-
-	require.NoError(t, k.DistributeFeesToValidators(ctx))
-}
-
-// TestDistributeFeesToValidatorsSkipsNonBondedSigner: a validator in VoteInfos
-// whose consensus address is not in the current bonded set (because they were
-// unbonded/removed since signing) forfeits its share.
-func TestDistributeFeesToValidatorsSkipsNonBondedSigner(t *testing.T) {
-	params := testkeeper.NewInMemKeeperParams(t)
-	k, ctx, ctrl, mocks := testkeeper.GetProviderKeeperAndCtx(t, params)
-	defer ctrl.Finish()
-
-	valAddrCodec := address.NewBech32Codec("cosmosvaloper")
-	mocks.MockStakingKeeper.EXPECT().ValidatorAddressCodec().Return(valAddrCodec).AnyTimes()
-
-	val1, op1, cons1 := newBondedValidator(t, valAddrCodec, 1)
-	// val2 signed the previous block but is no longer in the bonded set.
-	_, _, consGone := newBondedValidator(t, valAddrCodec, 2)
-
-	providerParams := providertypes.DefaultParams()
-	providerParams.FeesPerBlock = sdk.NewInt64Coin("uphoton", 10)
-	k.SetParams(ctx, providerParams)
-	ctx = ctx.WithVoteInfos([]abci.VoteInfo{signerVote(cons1), signerVote(consGone)})
-
 	mocks.MockBankKeeper.EXPECT().
-		GetBalance(gomock.Any(), authtypes.NewModuleAddress(providertypes.ModuleName), providerParams.FeesPerBlock.Denom).
-		Return(sdk.NewInt64Coin("uphoton", 100))
-	mocks.MockStakingKeeper.EXPECT().
-		GetBondedValidatorsByPower(gomock.Any()).
-		Return([]stakingtypes.Validator{val1}, nil) // val2 missing — unbonded since
-	// Only the still-bonded signer is paid, and gets the full pool.
-	mocks.MockBankKeeper.EXPECT().
-		SendCoinsFromModuleToAccount(gomock.Any(), providertypes.ModuleName, sdk.AccAddress(op1), sdk.NewCoins(sdk.NewInt64Coin("uphoton", 100))).
+		SendCoinsFromModuleToAccount(gomock.Any(), providertypes.ModuleName, sdk.AccAddress(op2), share).
 		Return(nil)
 
 	require.NoError(t, k.DistributeFeesToValidators(ctx))
