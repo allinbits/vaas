@@ -36,7 +36,6 @@ func GetTxCmd() *cobra.Command {
 	cmd.AddCommand(NewSubmitConsumerDoubleVotingCmd())
 	cmd.AddCommand(NewCreateConsumerCmd())
 	cmd.AddCommand(NewUpdateConsumerCmd())
-	cmd.AddCommand(NewRemoveConsumerCmd())
 
 	return cmd
 }
@@ -253,8 +252,8 @@ where create_consumer.json has the following structure:
 }
 
 Note that both 'chain_id' and 'metadata' are mandatory;
-and 'initialization_parameters' is optional. 
-The parameters not provided are set to their zero value. 
+and 'initialization_parameters' is optional.
+The parameters not provided are set to their zero value.
 `, version.AppName)),
 		Args: cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
@@ -367,53 +366,6 @@ If one of the fields is missing, it will be set to its zero value.
 
 			msg, err := types.NewMsgUpdateConsumer(owner, consUpdate.ConsumerId, consUpdate.NewOwnerAddress, consUpdate.Metadata,
 				consUpdate.InitializationParameters, consUpdate.NewChainId)
-			if err != nil {
-				return err
-			}
-			if err := msg.ValidateBasic(); err != nil {
-				return err
-			}
-
-			return tx.GenerateOrBroadcastTxWithFactory(clientCtx, txf, msg)
-		},
-	}
-
-	flags.AddTxFlagsToCmd(cmd)
-
-	_ = cmd.MarkFlagRequired(flags.FlagFrom)
-
-	return cmd
-}
-
-func NewRemoveConsumerCmd() *cobra.Command {
-	cmd := &cobra.Command{
-		Use:   "remove-consumer [consumer-id]",
-		Short: "remove a consumer chain (gov authority only)",
-		Long: strings.TrimSpace(
-			fmt.Sprintf(`Removes (and stops) a consumer chain. Only the governance authority can remove a consumer chain.
-Example:
-%s tx provider remove-consumer [consumer-id]
-`, version.AppName)),
-		Args: cobra.ExactArgs(1),
-		RunE: func(cmd *cobra.Command, args []string) error {
-			clientCtx, err := client.GetClientTxContext(cmd)
-			if err != nil {
-				return err
-			}
-
-			txf, err := tx.NewFactoryCLI(clientCtx, cmd.Flags())
-			if err != nil {
-				return err
-			}
-			txf = txf.WithTxConfig(clientCtx.TxConfig).WithAccountRetriever(clientCtx.AccountRetriever)
-
-			authority := clientCtx.GetFromAddress().String()
-			consumerId, err := parseConsumerIdArg(args[0])
-			if err != nil {
-				return err
-			}
-
-			msg, err := types.NewMsgRemoveConsumer(authority, consumerId)
 			if err != nil {
 				return err
 			}
