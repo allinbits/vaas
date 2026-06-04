@@ -6,6 +6,7 @@ const (
 	providerHomePath = "/home/nonroot/.provider"
 	consumerHomePath = "/home/nonroot/.consumer"
 	bondDenom        = "uatone"
+	feeDenom         = "uphoton"
 	providerChainID  = "provider-e2e"
 	consumerChainID  = "consumer-e2e"
 )

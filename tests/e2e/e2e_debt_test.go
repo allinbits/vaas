@@ -93,7 +93,7 @@ func (s *IntegrationTestSuite) testConsumerDebtFlow() {
 			"consumer did not enter debt; last dry-run did not surface debt error")
 
 		s.T().Log("funding consumer fee pool on provider...")
-		s.providerFundAddress(feePoolAddr, "10000000"+bondDenom)
+		s.providerFundAddress(feePoolAddr, "10000000"+feeDenom)
 
 		s.T().Log("waiting for consumer to exit debt (bank send should succeed)...")
 		s.Require().Eventuallyf(func() bool {
