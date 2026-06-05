@@ -5,7 +5,6 @@ import (
 
 	"github.com/allinbits/vaas/x/vaas/provider/types"
 
-
 	errorsmod "cosmossdk.io/errors"
 	"cosmossdk.io/math"
 
