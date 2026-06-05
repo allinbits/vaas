@@ -167,7 +167,18 @@ consumer-start: consumer-init consumer-create
 	$(MAKE) consumer-genesis CONSUMER_ID=0
 	$(MAKE) consumer-run
 
-.PHONY: consumer-init consumer-create consumer-genesis consumer-run consumer-start
+# Fund a consumer's fee pool so the provider can collect its per-block fees and
+# the consumer stays out of debt. The fee denom is uphoton (fixed at module
+# wiring); FEE_POOL_AMOUNT must clear the min-deposit floor
+# (fees_per_block_amount x min_deposit_blocks). Run after the consumer exists,
+# e.g. make provider-fund-consumer-fee-pool CONSUMER_ID=0
+FEE_POOL_AMOUNT ?= 100000000uphoton
+provider-fund-consumer-fee-pool:
+	$(providerd) tx provider fund-consumer-fee-pool $(CONSUMER_ID) $(FEE_POOL_AMOUNT) \
+		--from val --keyring-backend test --chain-id provider-localnet \
+		--gas auto --gas-adjustment 1.5 --fees 10000uatone -y
+
+.PHONY: consumer-init consumer-create consumer-genesis consumer-run consumer-start provider-fund-consumer-fee-pool
 
 ###############################################################################
 ###                               TS Relayer                                ###

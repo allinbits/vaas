@@ -56,7 +56,8 @@ func TestCollectFeesFromConsumers(t *testing.T) {
 
 // TestCollectFeesFromConsumers_PerConsumerOverride verifies that each consumer
 // is charged its effective per-block fee: consumer1 has an override and pays
-// the override amount; consumer0 has no override and pays Params.FeesPerBlock.
+// the override amount; consumer0 has no override and pays
+// Params.FeesPerBlockAmount.
 func TestCollectFeesFromConsumers_PerConsumerOverride(t *testing.T) {
 	params := testkeeper.NewInMemKeeperParams(t)
 	k, ctx, ctrl, mocks := testkeeper.GetProviderKeeperAndCtx(t, params)

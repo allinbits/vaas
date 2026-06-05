@@ -128,7 +128,7 @@ func (s *IntegrationTestSuite) providerFundCommunityPool(amount string) {
 func (s *IntegrationTestSuite) testFeePoolFundAndLockEnforcement() {
 	s.Run("fee pool fund and lock enforcement", func() {
 		const consumerID = "0"
-		denom := bondDenom
+		denom := feeDenom
 		valAddr := s.providerKeyAddress("val")
 		userAddr := s.providerKeyAddress("user")
 
@@ -222,7 +222,7 @@ func (s *IntegrationTestSuite) testFeePoolSendRestriction() {
 func (s *IntegrationTestSuite) testFeePoolGovSubsidyClawback() {
 	s.Run("fee pool gov subsidy + clawback", func() {
 		const consumerID = "0"
-		denom := bondDenom
+		denom := feeDenom
 		govAddr := s.queryGovAuthority()
 		distrAddr := s.queryModuleAccountAddress("distribution")
 
@@ -242,7 +242,7 @@ func (s *IntegrationTestSuite) testFeePoolGovSubsidyClawback() {
   "deposit": "10000000%s",
   "title": "Subsidize consumer %s",
   "summary": "e2e gov subsidy test"
-}`, govAddr, consumerID, denom, denom, consumerID)
+}`, govAddr, consumerID, denom, bondDenom, consumerID)
 
 		s.submitAndPassProposal(fundJSON)
 
@@ -263,7 +263,7 @@ func (s *IntegrationTestSuite) testFeePoolGovSubsidyClawback() {
   "deposit": "10000000%s",
   "title": "Clawback consumer %s subsidy",
   "summary": "e2e gov clawback test"
-}`, govAddr, consumerID, denom, denom, consumerID)
+}`, govAddr, consumerID, denom, bondDenom, consumerID)
 
 		s.submitAndPassProposal(clawbackJSON)
 
