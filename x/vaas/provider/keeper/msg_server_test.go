@@ -850,7 +850,7 @@ func TestFundConsumerFeePool(t *testing.T) {
 			if feesAmount == 0 {
 				feesAmount = 10
 			}
-			params.FeesPerBlock = sdk.NewInt64Coin("uphoton", feesAmount)
+			params.FeesPerBlockAmount = math.NewInt(feesAmount)
 			params.MinDepositBlocks = tc.minDepositBlocks
 			k.SetParams(ctx, params)
 

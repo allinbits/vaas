@@ -597,9 +597,10 @@ func (k msgServer) FundConsumerFeePool(
 	}
 
 	params := k.GetParams(ctx)
-	if msg.Amount.Denom != params.FeesPerBlock.Denom {
+	feeDenom := k.GetFeeDenom()
+	if msg.Amount.Denom != feeDenom {
 		return nil, errorsmod.Wrapf(types.ErrInvalidFundDenom,
-			"expected denom %s, got %s", params.FeesPerBlock.Denom, msg.Amount.Denom)
+			"expected denom %s, got %s", feeDenom, msg.Amount.Denom)
 	}
 
 	if params.MinDepositBlocks > 0 {

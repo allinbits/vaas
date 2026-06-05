@@ -33,7 +33,7 @@ func TestNewKeeperRejectsInvalidFeeDenom(t *testing.T) {
 			require.Containsf(t, fmt.Sprint(r), "fee denom", "denom %q should trip the fee-denom guard", denom)
 		}()
 		providerkeeper.NewKeeper(
-			nil, nil, nil, nil, nil, nil, nil, nil, nil,
+			nil, nil, nil, nil, nil, nil, nil, nil, nil, nil,
 			govkeeper.Keeper{},
 			"authority",
 			nil, nil,
