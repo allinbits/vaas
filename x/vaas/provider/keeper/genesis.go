@@ -149,6 +149,78 @@ func (k Keeper) InitGenesis(ctx sdk.Context, genState *types.GenesisState) []abc
 		}
 	}
 
+	// Load primary share records and accumulate per-(consumer, denom) totals
+	// in a single pass. GenesisState.Validate has already vetted the input.
+	totals := map[uint64]map[string]math.Int{}
+	for _, s := range genState.ConsumerFeePoolShares {
+		addr, err := sdk.AccAddressFromBech32(s.Depositor)
+		if err != nil {
+			panic(fmt.Errorf("invalid depositor in genesis: %w", err))
+		}
+		if err := k.ConsumerFeePoolShares.Set(ctx,
+			collections.Join3(s.ConsumerId, s.Denom, addr), s.Shares,
+		); err != nil {
+			panic(err)
+		}
+		if _, ok := totals[s.ConsumerId]; !ok {
+			totals[s.ConsumerId] = map[string]math.Int{}
+		}
+		if cur, ok := totals[s.ConsumerId][s.Denom]; ok {
+			totals[s.ConsumerId][s.Denom] = cur.Add(s.Shares)
+		} else {
+			totals[s.ConsumerId][s.Denom] = s.Shares
+		}
+	}
+	for consumerId, byDenom := range totals {
+		for denom, sum := range byDenom {
+			if err := k.ConsumerFeePoolTotalShares.Set(ctx,
+				collections.Join(consumerId, denom), sum,
+			); err != nil {
+				panic(err)
+			}
+		}
+	}
+
+	// Rebuild reverse-lookup from non-DELETED consumers (read phase collection)
+	// and, in the same pass, check that no fee pool address holds a balance
+	// without a matching share record. Bank's InitGenesis runs before ours
+	// (see app.go OrderInitGenesis), so any pool balance present here was put
+	// there by the genesis file itself. Such a balance with no shares would
+	// be unreachable from runtime ops (only MintShares moves funds into a
+	// pool, and it always credits shares), so we treat it as a malformed
+	// genesis and halt rather than silently accept funds nobody can claim.
+	phaseIter, err := k.ConsumerPhase.Iterate(ctx, nil)
+	if err != nil {
+		panic(err)
+	}
+	defer phaseIter.Close()
+	for ; phaseIter.Valid(); phaseIter.Next() {
+		consumerId, err := phaseIter.Key()
+		if err != nil {
+			panic(err)
+		}
+		phaseRaw, err := phaseIter.Value()
+		if err != nil {
+			panic(err)
+		}
+		if types.ConsumerPhase(phaseRaw) == types.CONSUMER_PHASE_DELETED {
+			continue
+		}
+		poolAddr := k.GetConsumerFeePoolAddress(consumerId)
+		if err := k.FeePoolAddressToConsumerId.Set(ctx, poolAddr, consumerId); err != nil {
+			panic(err)
+		}
+		denomsWithShares := totals[consumerId]
+		for _, coin := range k.bankKeeper.GetAllBalances(ctx, poolAddr) {
+			if _, ok := denomsWithShares[coin.Denom]; !ok {
+				panic(fmt.Errorf(
+					"fee-pool genesis invariant violated: consumer %d pool %s holds %s but has no shares for that denom",
+					consumerId, poolAddr.String(), coin.String(),
+				))
+			}
+		}
+	}
+
 	k.SetParams(ctx, genState.Params)
 	k.SetInfractionParams(ctx, types.DefaultInfractionParameters())
 
@@ -279,6 +351,16 @@ func (k Keeper) ExportGenesis(ctx sdk.Context) *types.GenesisState {
 		panic(fmt.Errorf("export: walk fees-per-block overrides: %w", err))
 	}
 
+	// Export share records and accumulate per-(consumer, denom) totals in
+	// a single pass for the sanity check below.
+	feePoolShares, recomputedTotals := k.exportFeePoolShares(ctx)
+
+	// Sanity check: compare stored ConsumerFeePoolTotalShares against the
+	// totals we just recomputed. Divergence is logged but not blocking —
+	// export should never fail on a sanity check (spec section "Genesis
+	// export/import").
+	k.checkFeePoolTotalsConsistency(ctx, recomputedTotals)
+
 	// TODO (PERMISSIONLESS)
 	return types.NewGenesisState(
 		k.GetValidatorSetUpdateId(ctx),
@@ -289,5 +371,100 @@ func (k Keeper) ExportGenesis(ctx sdk.Context) *types.GenesisState {
 		k.GetAllValidatorsByConsumerAddr(ctx, nil),
 		consumerAddrsToPrune,
 		overrides,
+		feePoolShares,
 	)
+}
+
+// exportFeePoolShares walks ConsumerFeePoolShares once, emitting both the
+// flat list for genesis export and a per-(consumer, denom) recomputed-totals
+// map for the export-time sanity check.
+func (k Keeper) exportFeePoolShares(
+	ctx sdk.Context,
+) ([]types.ConsumerFeePoolShare, map[uint64]map[string]math.Int) {
+	shares := []types.ConsumerFeePoolShare{}
+	totals := map[uint64]map[string]math.Int{}
+	iter, err := k.ConsumerFeePoolShares.Iterate(ctx, nil)
+	if err != nil {
+		k.Logger(ctx).Error("fee-pool shares: iterate failed at export", "error", err.Error())
+		return shares, totals
+	}
+	defer iter.Close()
+	for ; iter.Valid(); iter.Next() {
+		key, err := iter.Key()
+		if err != nil {
+			k.Logger(ctx).Error("fee-pool shares: key read failed at export", "error", err.Error())
+			return shares, totals
+		}
+		val, err := iter.Value()
+		if err != nil {
+			k.Logger(ctx).Error("fee-pool shares: value read failed at export", "error", err.Error())
+			return shares, totals
+		}
+		shares = append(shares, types.ConsumerFeePoolShare{
+			ConsumerId: key.K1(),
+			Depositor:  key.K3().String(),
+			Denom:      key.K2(),
+			Shares:     val,
+		})
+		if _, ok := totals[key.K1()]; !ok {
+			totals[key.K1()] = map[string]math.Int{}
+		}
+		if cur, ok := totals[key.K1()][key.K2()]; ok {
+			totals[key.K1()][key.K2()] = cur.Add(val)
+		} else {
+			totals[key.K1()][key.K2()] = val
+		}
+	}
+	return shares, totals
+}
+
+// checkFeePoolTotalsConsistency compares stored ConsumerFeePoolTotalShares
+// against a recomputed total map and logs both directions of mismatch.
+func (k Keeper) checkFeePoolTotalsConsistency(
+	ctx sdk.Context, recomputed map[uint64]map[string]math.Int,
+) {
+	seen := map[uint64]map[string]bool{}
+	totIter, err := k.ConsumerFeePoolTotalShares.Iterate(ctx, nil)
+	if err != nil {
+		k.Logger(ctx).Error("fee-pool totals: iterate failed at export", "error", err.Error())
+		return
+	}
+	defer totIter.Close()
+	for ; totIter.Valid(); totIter.Next() {
+		key, err := totIter.Key()
+		if err != nil {
+			k.Logger(ctx).Error("fee-pool totals: key read failed at export", "error", err.Error())
+			return
+		}
+		val, err := totIter.Value()
+		if err != nil {
+			k.Logger(ctx).Error("fee-pool totals: value read failed at export", "error", err.Error())
+			return
+		}
+		consumerId, denom := key.K1(), key.K2()
+		if _, ok := seen[consumerId]; !ok {
+			seen[consumerId] = map[string]bool{}
+		}
+		seen[consumerId][denom] = true
+
+		expected, ok := recomputed[consumerId][denom]
+		if !ok || !expected.Equal(val) {
+			k.Logger(ctx).Error(
+				"fee-pool total_shares: stored != recomputed at export",
+				"consumer_id", consumerId, "denom", denom,
+				"stored", val.String(),
+			)
+		}
+	}
+	// Reverse direction: recomputed total exists but no stored total.
+	for consumerId, byDenom := range recomputed {
+		for denom := range byDenom {
+			if !seen[consumerId][denom] {
+				k.Logger(ctx).Error(
+					"fee-pool total_shares: shares exist without stored total at export",
+					"consumer_id", consumerId, "denom", denom,
+				)
+			}
+		}
+	}
 }

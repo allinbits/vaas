@@ -43,6 +43,11 @@ const (
 
 	// DefaultDowntimeSlashFraction is the default slash fraction for downtime infractions on consumer chains (0.05%).
 	DefaultDowntimeSlashFraction = "0.0005"
+
+	// DefaultMinDepositBlocks is the default minimum-deposit floor expressed
+	// as a multiplier of FeesPerBlock.Amount. 14400 blocks is roughly one day
+	// at a 6s block time, so the default floor is "one day's worth of fees."
+	DefaultMinDepositBlocks = uint64(14400)
 )
 
 // NewParams creates new provider parameters with provided arguments
@@ -52,6 +57,7 @@ func NewParams(
 	blocksPerEpoch int64,
 	maxProviderConsensusValidators int64,
 	feesPerBlockAmount math.Int,
+	minDepositBlocks uint64,
 ) Params {
 	return Params{
 		TrustingPeriodFraction:         trustingPeriodFraction,
@@ -59,6 +65,7 @@ func NewParams(
 		BlocksPerEpoch:                 blocksPerEpoch,
 		MaxProviderConsensusValidators: maxProviderConsensusValidators,
 		FeesPerBlockAmount:             feesPerBlockAmount,
+		MinDepositBlocks:               minDepositBlocks,
 	}
 }
 
@@ -69,6 +76,7 @@ func DefaultParams() Params {
 		DefaultBlocksPerEpoch,
 		DefaultMaxProviderConsensusValidators,
 		math.NewInt(DefaultFeesPerBlockAmount),
+		DefaultMinDepositBlocks,
 	)
 }
 

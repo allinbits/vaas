@@ -9,6 +9,9 @@ const (
 	EventTypeUpdateConsumer            = "update_consumer"
 	EventTypeRemoveConsumer            = "remove_consumer"
 	EventTypeSetConsumerFeesPerBlock   = "set_consumer_fees_per_block"
+	EventTypeConsumerFeePoolFund       = "consumer_fee_pool_fund"
+	EventTypeConsumerFeePoolWithdraw   = "consumer_fee_pool_withdraw"
+	EventTypeConsumerFeePoolSweep      = "consumer_fee_pool_sweep"
 
 	AttributeInfractionHeight         = "infraction_height"
 	AttributeInitialHeight            = "initial_height"
@@ -24,5 +27,15 @@ const (
 	AttributeConsumerOwner            = "consumer_owner"
 	AttributeConsumerSpawnTime        = "consumer_spawn_time"
 	AttributeConsumerPhase            = "consumer_phase"
-	AttributeKeyAmount                = "amount"
+	AttributeDepositor                = "depositor"
+	AttributeRecipient                = "recipient"
+	AttributeAmount                   = "amount"
+	AttributeDenom                    = "denom"
+	AttributeTotalDistributed         = "total_distributed"
+	AttributeDust                     = "dust"
+	AttributeWithdrawPath             = "withdraw_path"
+
+	// AttributeWithdrawPath values
+	WithdrawPathDirect        = "direct"
+	WithdrawPathCommunityPool = "community_pool"
 )
