@@ -46,6 +46,8 @@ func NewQueryCmd() *cobra.Command {
 	cmd.AddCommand(CmdConsumerGenesisTime())
 	cmd.AddCommand(CmdConsumerFeesPerBlock())
 	cmd.AddCommand(CmdAllConsumerFeesPerBlockOverrides())
+	cmd.AddCommand(CmdConsumerFeePoolClaim())
+	cmd.AddCommand(CmdConsumerFeePoolClaims())
 	return cmd
 }
 
@@ -521,5 +523,68 @@ func CmdAllConsumerFeesPerBlockOverrides() *cobra.Command {
 	flags.AddQueryFlagsToCmd(cmd)
 	flags.AddPaginationFlagsToCmd(cmd, "consumer fees-per-block overrides")
 
+	return cmd
+}
+
+func CmdConsumerFeePoolClaim() *cobra.Command {
+	cmd := &cobra.Command{
+		Use:   "consumer-fee-pool-claim [consumer-id] [depositor]",
+		Short: "Query a depositor's claimable balance on a consumer fee pool",
+		Args:  cobra.ExactArgs(2),
+		RunE: func(cmd *cobra.Command, args []string) error {
+			clientCtx, err := client.GetClientQueryContext(cmd)
+			if err != nil {
+				return err
+			}
+			consumerId, err := parseConsumerIdArg(args[0])
+			if err != nil {
+				return err
+			}
+			qc := types.NewQueryClient(clientCtx)
+			res, err := qc.ConsumerFeePoolClaim(cmd.Context(), &types.QueryConsumerFeePoolClaimRequest{
+				ConsumerId: consumerId,
+				Depositor:  args[1],
+			})
+			if err != nil {
+				return err
+			}
+			return clientCtx.PrintProto(res)
+		},
+	}
+	flags.AddQueryFlagsToCmd(cmd)
+	return cmd
+}
+
+func CmdConsumerFeePoolClaims() *cobra.Command {
+	cmd := &cobra.Command{
+		Use:   "consumer-fee-pool-claims [consumer-id]",
+		Short: "Query all depositor claims on a consumer fee pool (paginated)",
+		Args:  cobra.ExactArgs(1),
+		RunE: func(cmd *cobra.Command, args []string) error {
+			clientCtx, err := client.GetClientQueryContext(cmd)
+			if err != nil {
+				return err
+			}
+			consumerId, err := parseConsumerIdArg(args[0])
+			if err != nil {
+				return err
+			}
+			pageReq, err := client.ReadPageRequest(cmd.Flags())
+			if err != nil {
+				return err
+			}
+			qc := types.NewQueryClient(clientCtx)
+			res, err := qc.ConsumerFeePoolClaims(cmd.Context(), &types.QueryConsumerFeePoolClaimsRequest{
+				ConsumerId: consumerId,
+				Pagination: pageReq,
+			})
+			if err != nil {
+				return err
+			}
+			return clientCtx.PrintProto(res)
+		},
+	}
+	flags.AddPaginationFlagsToCmd(cmd, "consumer-fee-pool-claims")
+	flags.AddQueryFlagsToCmd(cmd)
 	return cmd
 }

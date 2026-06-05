@@ -45,6 +45,12 @@ message Params {
     (amino.dont_omitempty) = true,
     (gogoproto.nullable) = false
   ];
+
+  // Minimum deposit on MsgFundConsumerFeePool, expressed as a multiplier of
+  // fees_per_block.Amount (the floor is fees_per_block.Amount *
+  // min_deposit_blocks). Zero disables the check. The floor applies to every
+  // funder including the gov authority.
+  uint64 min_deposit_blocks = 6;
 }
 
 // AddressList contains a list of consensus addresses

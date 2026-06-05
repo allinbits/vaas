@@ -76,6 +76,10 @@ const (
 	ConsumerIdToDebtKeyName = "ConsumerIdToDebtKeyName"
 
 	ConsumerIdToFeesPerBlockOverrideKeyName = "ConsumerIdToFeesPerBlockOverrideKey"
+
+	ConsumerFeePoolSharesKeyName      = "ConsumerFeePoolSharesKey"
+	ConsumerFeePoolTotalSharesKeyName = "ConsumerFeePoolTotalSharesKey"
+	FeePoolAddressToConsumerIdKeyName = "FeePoolAddressToConsumerIdKey"
 )
 
 // Collection key prefixes for use with cosmossdk.io/collections
@@ -104,6 +108,9 @@ var (
 	ClientIdToConsumerIdPrefix             = collections.NewPrefix(21)
 	ConsumerIdToDebtPrefix                 = collections.NewPrefix(22)
 	InfractionParamsPrefix                 = collections.NewPrefix(23)
-	ConsumerIdToFeesPerBlockOverridePrefix = collections.NewPrefix(26)
+	ConsumerIdToFeesPerBlockOverridePrefix = collections.NewPrefix(24)
+	ConsumerFeePoolSharesPrefix            = collections.NewPrefix(25)
+	ConsumerFeePoolTotalSharesPrefix       = collections.NewPrefix(26)
+	FeePoolAddressToConsumerIdPrefix       = collections.NewPrefix(27)
 	ParametersPrefix                       = collections.NewPrefix(0xFF)
 )

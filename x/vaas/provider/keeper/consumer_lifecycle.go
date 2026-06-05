@@ -395,6 +395,11 @@ func (k Keeper) DeleteConsumerChain(ctx sdk.Context, consumerId uint64) (err err
 		return fmt.Errorf("cannot delete non-stopped chain: %d", consumerId)
 	}
 
+	// Auto-sweep the fee pool. This cannot fail under valid state; on state
+	// corruption it panics rather than returning, so deletion is never silently
+	// aborted (which would strand the consumer in STOPPED with no way out).
+	k.SweepConsumerFeePool(ctx, consumerId, nil)
+
 	// clean up states
 	k.DeleteConsumerClientId(ctx, consumerId)
 	k.DeleteConsumerGenesis(ctx, consumerId)
@@ -414,6 +419,11 @@ func (k Keeper) DeleteConsumerChain(ctx sdk.Context, consumerId uint64) (err err
 		if !errors.Is(err, collections.ErrNotFound) {
 			return err
 		}
+	}
+	// Removing the reverse-lookup entry can only fail on a store/codec error,
+	// i.e. corruption; panic rather than abort the delete (see auto-sweep above).
+	if err := k.FeePoolAddressToConsumerId.Remove(ctx, k.GetConsumerFeePoolAddress(consumerId)); err != nil {
+		panic(fmt.Sprintf("delete consumer %d: remove fee-pool reverse lookup: %s", consumerId, err))
 	}
 
 	// TODO (PERMISSIONLESS) add newly-added state to be deleted
