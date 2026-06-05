@@ -78,7 +78,7 @@ provider-start: build-apps
 	$(providerd) config set client chain-id provider-localnet
 	$(providerd) config set client keyring-backend test
 	$(providerd) keys add val
-	$(providerd) genesis add-genesis-account val 1000000000000uatone
+	$(providerd) genesis add-genesis-account val 1000000000000uatone,1000000000000uphoton
 	$(providerd) keys add user
 	$(providerd) genesis add-genesis-account user 1000000000uatone
 	$(providerd) genesis gentx val 1000000000uatone
