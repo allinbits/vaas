@@ -199,6 +199,12 @@ enum ConsumerPhase {
 message InfractionParameters {
   SlashJailParameters double_sign = 1;
   SlashJailParameters downtime = 2;
+  // downtime_grace_period is the duration after a consumer chain launches
+  // during which downtime slashing is suppressed. This gives validators time
+  // to spin up their consumer chain nodes without being penalized for early
+  // downtime. Set to 0 to disable the grace period.
+  google.protobuf.Duration downtime_grace_period = 3
+      [ (gogoproto.nullable) = false, (gogoproto.stdduration) = true ];
 }
 
 //

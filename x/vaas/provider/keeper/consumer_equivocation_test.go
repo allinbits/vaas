@@ -837,7 +837,9 @@ func TestHandleConsumerEvidencePacket(t *testing.T) {
 	providerKeeper.SetConsumerChainId(ctx, consumerId, "consumer-chain")
 	providerKeeper.SetConsumerClientId(ctx, consumerId, "07-tendermint-0")
 	providerKeeper.SetEquivocationEvidenceMinHeight(ctx, consumerId, 1)
-	providerKeeper.SetInfractionParams(ctx, types.DefaultInfractionParameters())
+	noGraceParams := types.DefaultInfractionParameters()
+	noGraceParams.DowntimeGracePeriod = 0
+	providerKeeper.SetInfractionParams(ctx, noGraceParams)
 
 	pubKey, _ := cryptocodec.FromCmtPubKeyInterface(tmtypes.NewMockPV().PrivKey.PubKey())
 	validator, err := stakingtypes.NewValidator(
@@ -909,6 +911,9 @@ func TestHandleConsumerDowntimeRejectsTooOldEvidence(t *testing.T) {
 	providerKeeper.SetConsumerPhase(ctx, consumerId, types.CONSUMER_PHASE_LAUNCHED)
 	providerKeeper.SetConsumerChainId(ctx, consumerId, "consumer-chain")
 	providerKeeper.SetEquivocationEvidenceMinHeight(ctx, consumerId, 200)
+	noGraceParams := types.DefaultInfractionParameters()
+	noGraceParams.DowntimeGracePeriod = 0
+	providerKeeper.SetInfractionParams(ctx, noGraceParams)
 
 	evidencePacket := vaastypes.NewEvidencePacketData(
 		sdk.ConsAddress([]byte{0x01, 0x02, 0x03}),
@@ -930,6 +935,9 @@ func TestHandleConsumerDowntimeRejectsNoClient(t *testing.T) {
 	providerKeeper.SetConsumerPhase(ctx, consumerId, types.CONSUMER_PHASE_LAUNCHED)
 	providerKeeper.SetConsumerChainId(ctx, consumerId, "consumer-chain")
 	providerKeeper.SetEquivocationEvidenceMinHeight(ctx, consumerId, 1)
+	noGraceParams := types.DefaultInfractionParameters()
+	noGraceParams.DowntimeGracePeriod = 0
+	providerKeeper.SetInfractionParams(ctx, noGraceParams)
 
 	evidencePacket := vaastypes.NewEvidencePacketData(
 		sdk.ConsAddress([]byte{0x01, 0x02, 0x03}),
@@ -952,6 +960,9 @@ func TestHandleConsumerDowntimeRejectsNoConsensusState(t *testing.T) {
 	providerKeeper.SetConsumerChainId(ctx, consumerId, "consumer-chain")
 	providerKeeper.SetConsumerClientId(ctx, consumerId, "07-tendermint-0")
 	providerKeeper.SetEquivocationEvidenceMinHeight(ctx, consumerId, 1)
+	noGraceParams := types.DefaultInfractionParameters()
+	noGraceParams.DowntimeGracePeriod = 0
+	providerKeeper.SetInfractionParams(ctx, noGraceParams)
 
 	evidencePacket := vaastypes.NewEvidencePacketData(
 		sdk.ConsAddress([]byte{0x01, 0x02, 0x03}),
@@ -981,6 +992,9 @@ func TestHandleConsumerDowntimeRejectsValidatorNotInSet(t *testing.T) {
 	providerKeeper.SetConsumerChainId(ctx, consumerId, "consumer-chain")
 	providerKeeper.SetConsumerClientId(ctx, consumerId, "07-tendermint-0")
 	providerKeeper.SetEquivocationEvidenceMinHeight(ctx, consumerId, 1)
+	noGraceParams := types.DefaultInfractionParameters()
+	noGraceParams.DowntimeGracePeriod = 0
+	providerKeeper.SetInfractionParams(ctx, noGraceParams)
 
 	// Use a validator that is NOT in the consumer's validator set
 	evidencePacket := vaastypes.NewEvidencePacketData(
@@ -1011,6 +1025,9 @@ func TestHandleConsumerDowntimeRejectsInfractionBeforeJoin(t *testing.T) {
 	providerKeeper.SetConsumerChainId(ctx, consumerId, "consumer-chain")
 	providerKeeper.SetConsumerClientId(ctx, consumerId, "07-tendermint-0")
 	providerKeeper.SetEquivocationEvidenceMinHeight(ctx, consumerId, 1)
+	noGraceParams := types.DefaultInfractionParameters()
+	noGraceParams.DowntimeGracePeriod = 0
+	providerKeeper.SetInfractionParams(ctx, noGraceParams)
 
 	pubKey, _ := cryptocodec.FromCmtPubKeyInterface(tmtypes.NewMockPV().PrivKey.PubKey())
 	validator, err := stakingtypes.NewValidator(
@@ -1098,4 +1115,137 @@ func TestEvidencePacketDataJSONRoundTrip(t *testing.T) {
 	require.Equal(t, packet.ValidatorAddr, decoded.ValidatorAddr)
 	require.Equal(t, packet.InfractionHeight, decoded.InfractionHeight)
 	require.Equal(t, packet.Infraction, decoded.Infraction)
+}
+
+func TestHandleConsumerDowntimeRejectsDuringGracePeriod(t *testing.T) {
+	keeperParams := testkeeper.NewInMemKeeperParams(t)
+	providerKeeper, ctx, ctrl, _ := testkeeper.GetProviderKeeperAndCtx(t, keeperParams)
+	defer ctrl.Finish()
+
+	consumerId := uint64(0)
+	providerKeeper.SetConsumerPhase(ctx, consumerId, types.CONSUMER_PHASE_LAUNCHED)
+	providerKeeper.SetConsumerChainId(ctx, consumerId, "consumer-chain")
+
+	spawnTime := time.Date(2025, 1, 1, 0, 0, 0, 0, time.UTC)
+	gracePeriod := 24 * time.Hour
+	now := spawnTime.Add(12 * time.Hour) // still within grace period
+	ctx = ctx.WithBlockTime(now)
+
+	providerKeeper.SetConsumerInitializationParameters(ctx, consumerId, types.ConsumerInitializationParameters{
+		SpawnTime: spawnTime,
+	})
+
+	providerKeeper.SetInfractionParams(ctx, types.InfractionParameters{
+		DoubleSign: &types.SlashJailParameters{
+			SlashFraction: math.LegacyMustNewDecFromStr("0.05"),
+			JailDuration:  time.Duration(1<<63 - 1),
+			Tombstone:     true,
+		},
+		Downtime: &types.SlashJailParameters{
+			SlashFraction: math.LegacyMustNewDecFromStr("0.0005"),
+			JailDuration:  0,
+			Tombstone:     false,
+		},
+		DowntimeGracePeriod: gracePeriod,
+	})
+
+	evidencePacket := vaastypes.NewEvidencePacketData(
+		sdk.ConsAddress([]byte{0x01, 0x02, 0x03}),
+		100,
+		stakingtypes.Infraction_INFRACTION_DOWNTIME,
+	)
+
+	err := providerKeeper.HandleConsumerEvidencePacket(ctx, consumerId, evidencePacket)
+	require.Error(t, err)
+	require.Contains(t, err.Error(), "grace period")
+}
+
+func TestHandleConsumerDowntimePassesAfterGracePeriod(t *testing.T) {
+	keeperParams := testkeeper.NewInMemKeeperParams(t)
+	providerKeeper, ctx, ctrl, _ := testkeeper.GetProviderKeeperAndCtx(t, keeperParams)
+	defer ctrl.Finish()
+
+	consumerId := uint64(0)
+	providerKeeper.SetConsumerPhase(ctx, consumerId, types.CONSUMER_PHASE_LAUNCHED)
+	providerKeeper.SetConsumerChainId(ctx, consumerId, "consumer-chain")
+
+	spawnTime := time.Date(2025, 1, 1, 0, 0, 0, 0, time.UTC)
+	gracePeriod := 24 * time.Hour
+	now := spawnTime.Add(48 * time.Hour) // past grace period
+	ctx = ctx.WithBlockTime(now)
+
+	providerKeeper.SetConsumerInitializationParameters(ctx, consumerId, types.ConsumerInitializationParameters{
+		SpawnTime: spawnTime,
+	})
+
+	providerKeeper.SetInfractionParams(ctx, types.InfractionParameters{
+		DoubleSign: &types.SlashJailParameters{
+			SlashFraction: math.LegacyMustNewDecFromStr("0.05"),
+			JailDuration:  time.Duration(1<<63 - 1),
+			Tombstone:     true,
+		},
+		Downtime: &types.SlashJailParameters{
+			SlashFraction: math.LegacyMustNewDecFromStr("0.0005"),
+			JailDuration:  0,
+			Tombstone:     false,
+		},
+		DowntimeGracePeriod: gracePeriod,
+	})
+
+	evidencePacket := vaastypes.NewEvidencePacketData(
+		sdk.ConsAddress([]byte{0x01, 0x02, 0x03}),
+		100,
+		stakingtypes.Infraction_INFRACTION_DOWNTIME,
+	)
+
+	// Grace period check passes; the next validation (too-old evidence) should
+	// fail because no min-height is set (defaults to 0).
+	err := providerKeeper.HandleConsumerEvidencePacket(ctx, consumerId, evidencePacket)
+	require.Error(t, err)
+	require.NotContains(t, err.Error(), "grace period")
+}
+
+func TestHandleConsumerDowntimeNoGracePeriodSkipsCheck(t *testing.T) {
+	keeperParams := testkeeper.NewInMemKeeperParams(t)
+	providerKeeper, ctx, ctrl, _ := testkeeper.GetProviderKeeperAndCtx(t, keeperParams)
+	defer ctrl.Finish()
+
+	consumerId := uint64(0)
+	providerKeeper.SetConsumerPhase(ctx, consumerId, types.CONSUMER_PHASE_LAUNCHED)
+	providerKeeper.SetConsumerChainId(ctx, consumerId, "consumer-chain")
+
+	// spawn time is very recent but grace period is 0 (disabled)
+	spawnTime := time.Now()
+	ctx = ctx.WithBlockTime(spawnTime)
+
+	providerKeeper.SetConsumerInitializationParameters(ctx, consumerId, types.ConsumerInitializationParameters{
+		SpawnTime: spawnTime,
+	})
+
+	providerKeeper.SetInfractionParams(ctx, types.InfractionParameters{
+		DoubleSign: &types.SlashJailParameters{
+			SlashFraction: math.LegacyMustNewDecFromStr("0.05"),
+			JailDuration:  time.Duration(1<<63 - 1),
+			Tombstone:     true,
+		},
+		Downtime: &types.SlashJailParameters{
+			SlashFraction: math.LegacyMustNewDecFromStr("0.0005"),
+			JailDuration:  0,
+			Tombstone:     false,
+		},
+		DowntimeGracePeriod: 0, // grace period disabled
+	})
+
+	evidencePacket := vaastypes.NewEvidencePacketData(
+		sdk.ConsAddress([]byte{0x01, 0x02, 0x03}),
+		100,
+		stakingtypes.Infraction_INFRACTION_DOWNTIME,
+	)
+
+	// Grace period is 0, so the check is skipped; should fail on the next
+	// validation (no IBC client) rather than grace period.
+	err := providerKeeper.HandleConsumerEvidencePacket(ctx, consumerId, evidencePacket)
+	require.Error(t, err)
+	require.NotContains(t, err.Error(), "grace period")
+	require.Contains(t, err.Error(), "no IBC client")
 }
