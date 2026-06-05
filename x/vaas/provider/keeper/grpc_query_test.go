@@ -72,7 +72,7 @@ func TestQueryConsumerFeesPerBlock(t *testing.T) {
 			defer ctrl.Finish()
 
 			providerParams := providertypes.DefaultParams()
-			providerParams.FeesPerBlock = defaultFees
+			providerParams.FeesPerBlockAmount = defaultFees.Amount
 			k.SetParams(ctx, providerParams)
 
 			consumerId := k.FetchAndIncrementConsumerId(ctx)

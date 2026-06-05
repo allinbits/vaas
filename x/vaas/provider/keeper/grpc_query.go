@@ -572,7 +572,7 @@ func (k Keeper) QueryConsumerGenesisTime(goCtx context.Context, req *types.Query
 }
 
 // QueryConsumerFeesPerBlock returns the effective per-block fee for the
-// given consumer (override if set, else Params.FeesPerBlock).
+// given consumer (override if set, else the default Params.FeesPerBlockAmount).
 func (k Keeper) QueryConsumerFeesPerBlock(
 	goCtx context.Context,
 	req *types.QueryConsumerFeesPerBlockRequest,

@@ -169,7 +169,7 @@ func (s *IntegrationTestSuite) testConsumerDebtFlow() {
 		s.T().Log("funding consumer fee pool on provider...")
 		// Must clear the min-deposit floor: fees_per_block (1000) *
 		// MinDepositBlocks (14400) = 14_400_000. Fund above it with margin.
-		s.providerFundConsumerFeePool("0", "20000000"+bondDenom)
+		s.providerFundConsumerFeePool("0", "20000000"+feeDenom)
 
 		s.T().Log("waiting for consumer to exit debt (bank send should succeed)...")
 		s.Require().Eventuallyf(func() bool {

@@ -9,8 +9,6 @@ import (
 	clienttypes "github.com/cosmos/ibc-go/v10/modules/core/02-client/types"
 
 	"cosmossdk.io/math"
-
-	sdk "github.com/cosmos/cosmos-sdk/types"
 )
 
 const (
@@ -31,7 +29,10 @@ const (
 	// be passed on from the staking module to the consensus engine on the provider.
 	DefaultMaxProviderConsensusValidators = 180
 
-	// DefaultFeesPerBlockDenom is the base denom charged to each consumer chain per block.
+	// DefaultFeesPerBlockDenom is the denom charged to each consumer chain per
+	// block. It is not a module parameter: it is wired into the keeper at app
+	// construction (Keeper.feeDenom) and cannot be changed without a binary
+	// upgrade. The atomone hub wires photontypes.Denom here.
 	DefaultFeesPerBlockDenom = "uphoton"
 
 	// DefaultFeesPerBlockAmount is the default amount (in DefaultFeesPerBlockDenom) charged per block.
@@ -55,7 +56,7 @@ func NewParams(
 	vaasTimeoutPeriod time.Duration,
 	blocksPerEpoch int64,
 	maxProviderConsensusValidators int64,
-	feesPerBlock sdk.Coin,
+	feesPerBlockAmount math.Int,
 	minDepositBlocks uint64,
 ) Params {
 	return Params{
@@ -63,7 +64,7 @@ func NewParams(
 		VaasTimeoutPeriod:              vaasTimeoutPeriod,
 		BlocksPerEpoch:                 blocksPerEpoch,
 		MaxProviderConsensusValidators: maxProviderConsensusValidators,
-		FeesPerBlock:                   feesPerBlock,
+		FeesPerBlockAmount:             feesPerBlockAmount,
 		MinDepositBlocks:               minDepositBlocks,
 	}
 }
@@ -74,7 +75,7 @@ func DefaultParams() Params {
 		vaastypes.DefaultVAASTimeoutPeriod,
 		DefaultBlocksPerEpoch,
 		DefaultMaxProviderConsensusValidators,
-		sdk.NewInt64Coin(DefaultFeesPerBlockDenom, DefaultFeesPerBlockAmount),
+		math.NewInt(DefaultFeesPerBlockAmount),
 		DefaultMinDepositBlocks,
 	)
 }
@@ -154,19 +155,19 @@ func (p Params) Validate() error {
 	if err := vaastypes.ValidatePositiveInt64(p.MaxProviderConsensusValidators); err != nil {
 		return fmt.Errorf("max provider consensus validators is invalid: %s", err)
 	}
-	if err := validateFeesPerBlock(p.FeesPerBlock); err != nil {
+	if err := validateFeesPerBlockAmount(p.FeesPerBlockAmount); err != nil {
 		return err
 	}
 
 	return nil
 }
 
-func validateFeesPerBlock(coin sdk.Coin) error {
-	if !coin.IsValid() {
-		return fmt.Errorf("fees per block coin is invalid: %s", coin)
+func validateFeesPerBlockAmount(amount math.Int) error {
+	if amount.IsNil() {
+		return fmt.Errorf("fees per block amount must be set")
 	}
-	if coin.IsZero() {
-		return fmt.Errorf("fees per block must be positive")
+	if !amount.IsPositive() {
+		return fmt.Errorf("fees per block amount must be positive")
 	}
 	return nil
 }

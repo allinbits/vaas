@@ -4,17 +4,18 @@ import (
 	"testing"
 	"time"
 
-	sdkmath "cosmossdk.io/math"
+	"cosmossdk.io/math"
 
-	"github.com/allinbits/vaas/testutil/crypto"
-	"github.com/allinbits/vaas/x/vaas/provider/types"
-	vaastypes "github.com/allinbits/vaas/x/vaas/types"
 	tmtypes "github.com/cometbft/cometbft/types"
 	sdk "github.com/cosmos/cosmos-sdk/types"
 	clienttypes "github.com/cosmos/ibc-go/v10/modules/core/02-client/types"
 	commitmenttypes "github.com/cosmos/ibc-go/v10/modules/core/23-commitment/types"
 	ibctmtypes "github.com/cosmos/ibc-go/v10/modules/light-clients/07-tendermint"
 	"github.com/stretchr/testify/require"
+
+	"github.com/allinbits/vaas/testutil/crypto"
+	"github.com/allinbits/vaas/x/vaas/provider/types"
+	vaastypes "github.com/allinbits/vaas/x/vaas/types"
 )
 
 func TestValidateGenesisState(t *testing.T) {
@@ -87,7 +88,7 @@ func TestValidateGenesisState(t *testing.T) {
 				nil,
 				[]types.ConsumerState{launchedCS(0, "chainid-1", "client-id", false)},
 				types.NewParams(
-					types.DefaultTrustingPeriodFraction, time.Hour, 600, 180, sdk.NewInt64Coin("uphoton", 42), types.DefaultMinDepositBlocks),
+					types.DefaultTrustingPeriodFraction, time.Hour, 600, 180, math.NewInt(42), types.DefaultMinDepositBlocks),
 				nil,
 				nil,
 				nil,
@@ -134,7 +135,7 @@ func TestValidateGenesisState(t *testing.T) {
 				[]types.ConsumerState{launchedCS(0, "chainid-1", "client-id", false)},
 				types.NewParams(
 					"0.0", // 0 trusting period fraction here
-					vaastypes.DefaultVAASTimeoutPeriod, 600, 180, sdk.NewInt64Coin("uphoton", 42), types.DefaultMinDepositBlocks),
+					vaastypes.DefaultVAASTimeoutPeriod, 600, 180, math.NewInt(42), types.DefaultMinDepositBlocks),
 				nil,
 				nil,
 				nil,
@@ -152,7 +153,7 @@ func TestValidateGenesisState(t *testing.T) {
 				types.NewParams(
 					types.DefaultTrustingPeriodFraction,
 					0, // 0 ccv timeout here
-					600, 180, sdk.NewInt64Coin("uphoton", 42), types.DefaultMinDepositBlocks),
+					600, 180, math.NewInt(42), types.DefaultMinDepositBlocks),
 				nil,
 				nil,
 				nil,
@@ -249,7 +250,7 @@ func TestValidateGenesisState_FeePoolShares(t *testing.T) {
 	t.Run("valid share record", func(t *testing.T) {
 		err := build(types.ConsumerFeePoolShare{
 			ConsumerId: 0, Depositor: alice, Denom: "uphoton",
-			Shares: sdkmath.NewInt(100),
+			Shares: math.NewInt(100),
 		}).Validate()
 		require.NoError(t, err)
 	})
@@ -257,7 +258,7 @@ func TestValidateGenesisState_FeePoolShares(t *testing.T) {
 	t.Run("invalid depositor bech32", func(t *testing.T) {
 		err := build(types.ConsumerFeePoolShare{
 			ConsumerId: 0, Depositor: "not-a-bech32", Denom: "uphoton",
-			Shares: sdkmath.NewInt(100),
+			Shares: math.NewInt(100),
 		}).Validate()
 		require.Error(t, err)
 	})
@@ -265,7 +266,7 @@ func TestValidateGenesisState_FeePoolShares(t *testing.T) {
 	t.Run("invalid denom", func(t *testing.T) {
 		err := build(types.ConsumerFeePoolShare{
 			ConsumerId: 0, Depositor: alice, Denom: "",
-			Shares: sdkmath.NewInt(100),
+			Shares: math.NewInt(100),
 		}).Validate()
 		require.Error(t, err)
 	})
@@ -273,7 +274,7 @@ func TestValidateGenesisState_FeePoolShares(t *testing.T) {
 	t.Run("zero shares", func(t *testing.T) {
 		err := build(types.ConsumerFeePoolShare{
 			ConsumerId: 0, Depositor: alice, Denom: "uphoton",
-			Shares: sdkmath.ZeroInt(),
+			Shares: math.ZeroInt(),
 		}).Validate()
 		require.Error(t, err)
 	})
@@ -281,7 +282,7 @@ func TestValidateGenesisState_FeePoolShares(t *testing.T) {
 	t.Run("negative shares", func(t *testing.T) {
 		err := build(types.ConsumerFeePoolShare{
 			ConsumerId: 0, Depositor: alice, Denom: "uphoton",
-			Shares: sdkmath.NewInt(-1),
+			Shares: math.NewInt(-1),
 		}).Validate()
 		require.Error(t, err)
 	})
@@ -289,7 +290,7 @@ func TestValidateGenesisState_FeePoolShares(t *testing.T) {
 	t.Run("orphan consumer id", func(t *testing.T) {
 		err := build(types.ConsumerFeePoolShare{
 			ConsumerId: 99, Depositor: alice, Denom: "uphoton",
-			Shares: sdkmath.NewInt(100),
+			Shares: math.NewInt(100),
 		}).Validate()
 		require.Error(t, err)
 	})
@@ -298,11 +299,11 @@ func TestValidateGenesisState_FeePoolShares(t *testing.T) {
 		err := build(
 			types.ConsumerFeePoolShare{
 				ConsumerId: 0, Depositor: alice, Denom: "uphoton",
-				Shares: sdkmath.NewInt(50),
+				Shares: math.NewInt(50),
 			},
 			types.ConsumerFeePoolShare{
 				ConsumerId: 0, Depositor: alice, Denom: "uphoton",
-				Shares: sdkmath.NewInt(50),
+				Shares: math.NewInt(50),
 			},
 		).Validate()
 		require.Error(t, err)
@@ -312,11 +313,11 @@ func TestValidateGenesisState_FeePoolShares(t *testing.T) {
 		err := build(
 			types.ConsumerFeePoolShare{
 				ConsumerId: 0, Depositor: alice, Denom: "uphoton",
-				Shares: sdkmath.NewInt(60),
+				Shares: math.NewInt(60),
 			},
 			types.ConsumerFeePoolShare{
 				ConsumerId: 0, Depositor: bob, Denom: "uphoton",
-				Shares: sdkmath.NewInt(40),
+				Shares: math.NewInt(40),
 			},
 		).Validate()
 		require.NoError(t, err)

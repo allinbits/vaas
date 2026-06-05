@@ -88,7 +88,7 @@ func (gs GenesisState) Validate() error {
 	// Overrides must reference a known consumer and stay strictly above the
 	// module-wide fees_per_block floor (the same invariant the msg handler and
 	// UpdateParams reconciliation enforce at runtime).
-	floor := gs.Params.FeesPerBlock.Amount
+	floor := gs.Params.FeesPerBlockAmount
 	for _, ov := range gs.ConsumerFeesPerBlockOverrides {
 		amt, ok := math.NewIntFromString(ov.Amount)
 		if !ok {

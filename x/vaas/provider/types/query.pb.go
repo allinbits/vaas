@@ -1390,8 +1390,9 @@ func (m *QueryConsumerFeesPerBlockRequest) GetConsumerId() uint64 {
 	return 0
 }
 
-// Effective fee for the consumer: the override if one is set, else
-// Params.FeesPerBlock. is_override distinguishes the two cases.
+// Effective fee for the consumer (a resolved coin at the module's wired fee
+// denom): the override amount if one is set, else Params.FeesPerBlockAmount.
+// is_override distinguishes the two cases.
 type QueryConsumerFeesPerBlockResponse struct {
 	FeesPerBlock github_com_cosmos_cosmos_sdk_types.Coin `protobuf:"bytes,1,opt,name=fees_per_block,json=feesPerBlock,proto3,casttype=github.com/cosmos/cosmos-sdk/types.Coin" json:"fees_per_block"`
 	IsOverride   bool                                    `protobuf:"varint,2,opt,name=is_override,json=isOverride,proto3" json:"is_override,omitempty"`
@@ -2029,7 +2030,8 @@ type QueryClient interface {
 	// of the consumer chain associated with the provided consumer id
 	QueryConsumerGenesisTime(ctx context.Context, in *QueryConsumerGenesisTimeRequest, opts ...grpc.CallOption) (*QueryConsumerGenesisTimeResponse, error)
 	// QueryConsumerFeesPerBlock returns the effective per-block fee for a
-	// consumer chain: the override if one is set, else Params.FeesPerBlock.
+	// consumer chain: the override amount if one is set, else
+	// Params.FeesPerBlockAmount, carried at the module's wired fee denom.
 	QueryConsumerFeesPerBlock(ctx context.Context, in *QueryConsumerFeesPerBlockRequest, opts ...grpc.CallOption) (*QueryConsumerFeesPerBlockResponse, error)
 	// QueryAllConsumerFeesPerBlockOverrides returns the list of per-consumer
 	// fees_per_block amount overrides.
@@ -2217,7 +2219,8 @@ type QueryServer interface {
 	// of the consumer chain associated with the provided consumer id
 	QueryConsumerGenesisTime(context.Context, *QueryConsumerGenesisTimeRequest) (*QueryConsumerGenesisTimeResponse, error)
 	// QueryConsumerFeesPerBlock returns the effective per-block fee for a
-	// consumer chain: the override if one is set, else Params.FeesPerBlock.
+	// consumer chain: the override amount if one is set, else
+	// Params.FeesPerBlockAmount, carried at the module's wired fee denom.
 	QueryConsumerFeesPerBlock(context.Context, *QueryConsumerFeesPerBlockRequest) (*QueryConsumerFeesPerBlockResponse, error)
 	// QueryAllConsumerFeesPerBlockOverrides returns the list of per-consumer
 	// fees_per_block amount overrides.

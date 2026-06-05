@@ -116,6 +116,7 @@ func NewInMemProviderKeeper(params InMemKeeperParams, mocks MockedKeepers) provi
 		address.NewBech32Codec("cosmosvaloper"),
 		address.NewBech32Codec("cosmosvalcons"),
 		authtypes.FeeCollectorName,
+		providertypes.DefaultFeesPerBlockDenom,
 	)
 }
 
