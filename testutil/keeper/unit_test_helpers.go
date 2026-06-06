@@ -77,18 +77,20 @@ type MockedKeepers struct {
 	*MockSlashingKeeper
 	*MockAccountKeeper
 	*MockBankKeeper
+	*MockDistributionKeeper
 }
 
 // NewMockedKeepers instantiates a struct with pointers to properly instantiated mocked keepers.
 func NewMockedKeepers(ctrl *gomock.Controller) MockedKeepers {
 	mocks := MockedKeepers{
-		MockClientKeeper:    NewMockClientKeeper(ctrl),
-		MockClientV2Keeper:  NewMockClientV2Keeper(ctrl),
-		MockChannelV2Keeper: NewMockChannelV2Keeper(ctrl),
-		MockStakingKeeper:   NewMockStakingKeeper(ctrl),
-		MockSlashingKeeper:  NewMockSlashingKeeper(ctrl),
-		MockAccountKeeper:   NewMockAccountKeeper(ctrl),
-		MockBankKeeper:      NewMockBankKeeper(ctrl),
+		MockClientKeeper:       NewMockClientKeeper(ctrl),
+		MockClientV2Keeper:     NewMockClientV2Keeper(ctrl),
+		MockChannelV2Keeper:    NewMockChannelV2Keeper(ctrl),
+		MockStakingKeeper:      NewMockStakingKeeper(ctrl),
+		MockSlashingKeeper:     NewMockSlashingKeeper(ctrl),
+		MockAccountKeeper:      NewMockAccountKeeper(ctrl),
+		MockBankKeeper:         NewMockBankKeeper(ctrl),
+		MockDistributionKeeper: NewMockDistributionKeeper(ctrl),
 	}
 	mocks.MockClientV2Keeper.EXPECT().GetClientCounterparty(gomock.Any(), gomock.Any()).Return(clientv2types.CounterpartyInfo{}, false).AnyTimes()
 	mocks.MockClientV2Keeper.EXPECT().SetClientCounterparty(gomock.Any(), gomock.Any(), gomock.Any()).AnyTimes()
@@ -108,11 +110,13 @@ func NewInMemProviderKeeper(params InMemKeeperParams, mocks MockedKeepers) provi
 		mocks.MockSlashingKeeper,
 		mocks.MockAccountKeeper,
 		mocks.MockBankKeeper,
+		mocks.MockDistributionKeeper,
 		govkeeper.Keeper{}, // HACK: to make parts of the test work
 		authtypes.NewModuleAddress(govtypes.ModuleName).String(),
 		address.NewBech32Codec("cosmosvaloper"),
 		address.NewBech32Codec("cosmosvalcons"),
 		authtypes.FeeCollectorName,
+		providertypes.DefaultFeesPerBlockDenom,
 	)
 }
 

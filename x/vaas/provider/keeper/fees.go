@@ -87,7 +87,7 @@ func (k Keeper) CollectFeesFromConsumers(ctx sdk.Context) sdk.Coin {
 // does via BeginBlock VoteInfos. Signers that have since unbonded or been
 // removed from the set forfeit their share — we only pay current participants.
 func (k Keeper) DistributeFeesToValidators(ctx sdk.Context) error {
-	totalFees := k.bankKeeper.GetBalance(ctx, authtypes.NewModuleAddress(types.ModuleName), k.GetFeesPerBlock(ctx).Denom)
+	totalFees := k.bankKeeper.GetBalance(ctx, authtypes.NewModuleAddress(types.ModuleName), k.GetFeeDenom())
 	if totalFees.IsZero() {
 		return nil
 	}

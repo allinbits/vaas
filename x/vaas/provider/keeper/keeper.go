@@ -3,6 +3,7 @@ package keeper
 import (
 	"context"
 	"fmt"
+	"strings"
 	"time"
 
 	"github.com/allinbits/vaas/x/vaas/provider/types"
@@ -32,15 +33,20 @@ type Keeper struct {
 
 	storeService corestoretypes.KVStoreService
 
-	cdc              codec.BinaryCodec
-	accountKeeper    vaastypes.AccountKeeper
-	clientKeeper     vaastypes.ClientKeeper
-	clientV2Keeper   vaastypes.ClientV2Keeper
-	stakingKeeper    vaastypes.StakingKeeper
-	slashingKeeper   vaastypes.SlashingKeeper
-	bankKeeper       vaastypes.BankKeeper
-	govKeeper        govkeeper.Keeper
-	feeCollectorName string
+	cdc                codec.BinaryCodec
+	accountKeeper      vaastypes.AccountKeeper
+	clientKeeper       vaastypes.ClientKeeper
+	clientV2Keeper     vaastypes.ClientV2Keeper
+	stakingKeeper      vaastypes.StakingKeeper
+	slashingKeeper     vaastypes.SlashingKeeper
+	bankKeeper         vaastypes.BankKeeper
+	distributionKeeper vaastypes.DistributionKeeper
+	govKeeper          govkeeper.Keeper
+	feeCollectorName   string
+	// feeDenom is the denom charged to consumers per block. It is fixed at
+	// construction and cannot be changed without a binary upgrade. The amount
+	// is instead governed via Params.FeesPerBlockAmount.
+	feeDenom string
 
 	validatorAddressCodec addresscodec.Codec
 	consensusAddressCodec addresscodec.Codec
@@ -79,6 +85,16 @@ type Keeper struct {
 	// Validator set collections
 	ConsumerValidators        collections.Map[collections.Pair[uint64, []byte], types.ConsensusValidator]
 	LastProviderConsensusVals collections.Map[[]byte, types.ConsensusValidator]
+
+	// Fee pool collections.
+	//
+	// ConsumerFeePoolShares is keyed (consumer_id, denom, depositor): denom
+	// is the second component so that per-denom operations (sweep, claim,
+	// invalidation) can prefix-iterate a single (consumer_id, denom) range
+	// without scanning across the full depositor set for the consumer.
+	ConsumerFeePoolShares      collections.Map[collections.Triple[uint64, string, sdk.AccAddress], math.Int]
+	ConsumerFeePoolTotalShares collections.Map[collections.Pair[uint64, string], math.Int]
+	FeePoolAddressToConsumerId collections.Map[sdk.AccAddress, uint64]
 }
 
 // NewKeeper creates a new provider Keeper instance
@@ -90,11 +106,20 @@ func NewKeeper(
 	stakingKeeper vaastypes.StakingKeeper, slashingKeeper vaastypes.SlashingKeeper,
 	accountKeeper vaastypes.AccountKeeper,
 	bankKeeper vaastypes.BankKeeper,
+	distributionKeeper vaastypes.DistributionKeeper,
 	govKeeper govkeeper.Keeper,
 	authority string,
 	validatorAddressCodec, consensusAddressCodec addresscodec.Codec,
 	feeCollectorName string,
+	feeDenom string,
 ) Keeper {
+	// The per-block fee denom is fixed for the lifetime of the binary. A bad
+	// value is a wiring mistake that must fail loudly at startup rather than
+	// surface later as malformed fee coins.
+	if err := sdk.ValidateDenom(feeDenom); err != nil {
+		panic(fmt.Errorf("invalid provider fee denom %q: %w", feeDenom, err))
+	}
+
 	sb := collections.NewSchemaBuilder(storeService)
 
 	k := Keeper{
@@ -107,7 +132,9 @@ func NewKeeper(
 		slashingKeeper:        slashingKeeper,
 		accountKeeper:         accountKeeper,
 		bankKeeper:            bankKeeper,
+		distributionKeeper:    distributionKeeper,
 		feeCollectorName:      feeCollectorName,
+		feeDenom:              feeDenom,
 		validatorAddressCodec: validatorAddressCodec,
 		consensusAddressCodec: consensusAddressCodec,
 		channelKeeperV2:       channelKeeperV2,
@@ -163,6 +190,26 @@ func NewKeeper(
 		LastProviderConsensusVals: collections.NewMap(sb, types.LastProviderConsensusVals, "last_provider_consensus_vals", collections.BytesKey, codec.CollValue[types.ConsensusValidator](cdc)),
 	}
 
+	// Fee pool collections
+	k.ConsumerFeePoolShares = collections.NewMap(
+		sb, types.ConsumerFeePoolSharesPrefix,
+		types.ConsumerFeePoolSharesKeyName,
+		collections.TripleKeyCodec(collections.Uint64Key, collections.StringKey, sdk.AccAddressKey),
+		sdk.IntValue,
+	)
+	k.ConsumerFeePoolTotalShares = collections.NewMap(
+		sb, types.ConsumerFeePoolTotalSharesPrefix,
+		types.ConsumerFeePoolTotalSharesKeyName,
+		collections.PairKeyCodec(collections.Uint64Key, collections.StringKey),
+		sdk.IntValue,
+	)
+	k.FeePoolAddressToConsumerId = collections.NewMap(
+		sb, types.FeePoolAddressToConsumerIdPrefix,
+		types.FeePoolAddressToConsumerIdKeyName,
+		sdk.AccAddressKey,
+		collections.Uint64Value,
+	)
+
 	schema, err := sb.Build()
 	if err != nil {
 		panic(err)
@@ -175,6 +222,20 @@ func NewKeeper(
 // GetAuthority returns the x/ccv/provider module's authority.
 func (k Keeper) GetAuthority() string {
 	return k.authority
+}
+
+// IsAuthority reports whether addr is the module authority (the account
+// permitted to execute gov-gated messages). The comparison is case-insensitive
+// via EqualFold, so a valid-but-non-canonical bech32 (e.g. uppercase) still
+// matches.
+func (k Keeper) IsAuthority(addr string) bool {
+	return strings.EqualFold(addr, k.authority)
+}
+
+// GetFeeDenom returns the denom charged to consumer chains per block. It is
+// fixed at module wiring and immutable without a binary upgrade.
+func (k Keeper) GetFeeDenom() string {
+	return k.feeDenom
 }
 
 // ValidatorAddressCodec returns the app validator address codec.

@@ -110,7 +110,8 @@ service Query {
   }
 
   // QueryConsumerFeesPerBlock returns the effective per-block fee for a
-  // consumer chain: the override if one is set, else Params.FeesPerBlock.
+  // consumer chain: the override amount if one is set, else
+  // Params.FeesPerBlockAmount, carried at the module's wired fee denom.
   rpc QueryConsumerFeesPerBlock(QueryConsumerFeesPerBlockRequest)
       returns (QueryConsumerFeesPerBlockResponse) {
     option (google.api.http).get =
@@ -123,6 +124,13 @@ service Query {
       returns (QueryAllConsumerFeesPerBlockOverridesResponse) {
     option (google.api.http).get =
         "/vaas/provider/consumer_fees_per_block_overrides";
+  }
+
+  rpc ConsumerFeePoolClaim(QueryConsumerFeePoolClaimRequest) returns (QueryConsumerFeePoolClaimResponse) {
+    option (google.api.http).get = "/vaas/provider/v1/consumer_fee_pool_claim/{consumer_id}/{depositor}";
+  }
+  rpc ConsumerFeePoolClaims(QueryConsumerFeePoolClaimsRequest) returns (QueryConsumerFeePoolClaimsResponse) {
+    option (google.api.http).get = "/vaas/provider/v1/consumer_fee_pool_claims/{consumer_id}";
   }
 }
 
@@ -297,8 +305,9 @@ message QueryConsumerFeesPerBlockRequest {
   uint64 consumer_id = 1;
 }
 
-// Effective fee for the consumer: the override if one is set, else
-// Params.FeesPerBlock. is_override distinguishes the two cases.
+// Effective fee for the consumer (a resolved coin at the module's wired fee
+// denom): the override amount if one is set, else Params.FeesPerBlockAmount.
+// is_override distinguishes the two cases.
 message QueryConsumerFeesPerBlockResponse {
   cosmos.base.v1beta1.Coin fees_per_block = 1 [
     (gogoproto.casttype) = "github.com/cosmos/cosmos-sdk/types.Coin",
@@ -314,5 +323,38 @@ message QueryAllConsumerFeesPerBlockOverridesRequest {
 message QueryAllConsumerFeesPerBlockOverridesResponse {
   repeated ConsumerFeesPerBlockOverride overrides = 1
       [ (gogoproto.nullable) = false ];
+  cosmos.base.query.v1beta1.PageResponse pagination = 2;
+}
+
+message QueryConsumerFeePoolClaimRequest {
+  uint64 consumer_id = 1;
+  // bech32 address; if equal to the gov module authority, aliases to the
+  // distribution module account address
+  string depositor = 2 [(cosmos_proto.scalar) = "cosmos.AddressString"];
+}
+
+message QueryConsumerFeePoolClaimResponse {
+  // claimable balance across all denoms; excludes zero-claim denoms
+  repeated cosmos.base.v1beta1.Coin claim = 1 [
+    (gogoproto.nullable) = false,
+    (gogoproto.castrepeated) = "github.com/cosmos/cosmos-sdk/types.Coins"
+  ];
+}
+
+message DepositorClaim {
+  string depositor = 1 [(cosmos_proto.scalar) = "cosmos.AddressString"];
+  repeated cosmos.base.v1beta1.Coin claim = 2 [
+    (gogoproto.nullable) = false,
+    (gogoproto.castrepeated) = "github.com/cosmos/cosmos-sdk/types.Coins"
+  ];
+}
+
+message QueryConsumerFeePoolClaimsRequest {
+  uint64 consumer_id = 1;
+  cosmos.base.query.v1beta1.PageRequest pagination = 2;
+}
+
+message QueryConsumerFeePoolClaimsResponse {
+  repeated DepositorClaim claims = 1 [(gogoproto.nullable) = false];
   cosmos.base.query.v1beta1.PageResponse pagination = 2;
 }
