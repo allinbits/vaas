@@ -9,9 +9,10 @@ import (
 	"github.com/stretchr/testify/require"
 	"go.uber.org/mock/gomock"
 
-	clienttypes "github.com/cosmos/ibc-go/v10/modules/core/02-client/types"
-
+	"cosmossdk.io/collections"
 	"cosmossdk.io/math"
+
+	clienttypes "github.com/cosmos/ibc-go/v10/modules/core/02-client/types"
 
 	sdk "github.com/cosmos/cosmos-sdk/types"
 	stakingtypes "github.com/cosmos/cosmos-sdk/x/staking/types"
@@ -156,6 +157,12 @@ func TestInitGenesisRestoresPerConsumerStateAndDerivedQueues(t *testing.T) {
 	// MaxValidators is not called (GetMaxProviderConsensusValidators reads from keeper params),
 	// so we only expect GetBondedValidatorsByPower once.
 	mocks.MockStakingKeeper.EXPECT().GetBondedValidatorsByPower(gomock.Any()).Return([]stakingtypes.Validator{}, nil).Times(1)
+
+	// InitGenesis walks each non-DELETED consumer's pool address to check for
+	// orphan balances. No genesis fixture in this test puts any coins at those
+	// addresses, so the bank reports empty balances.
+	mocks.MockBankKeeper.EXPECT().GetAllBalances(gomock.Any(), gomock.Any()).
+		Return(sdk.NewCoins()).AnyTimes()
 
 	owner := sdk.AccAddress([]byte("vaas-test-owner-1234")).String()
 	md := providertypes.ConsumerMetadata{Name: "n", Description: "d", Metadata: "m"}
@@ -376,6 +383,9 @@ func TestGenesisRoundTrip(t *testing.T) {
 	// InitGenesisValUpdates reads from staking; mock it on both keepers.
 	stakingA.MockStakingKeeper.EXPECT().GetBondedValidatorsByPower(gomock.Any()).Return(nil, nil).AnyTimes()
 	stakingB.MockStakingKeeper.EXPECT().GetBondedValidatorsByPower(gomock.Any()).Return(nil, nil).AnyTimes()
+	// InitGenesis walks fee-pool addresses for an orphan-balance check.
+	stakingB.MockBankKeeper.EXPECT().GetAllBalances(gomock.Any(), gomock.Any()).
+		Return(sdk.NewCoins()).AnyTimes()
 
 	_ = pkB.InitGenesis(ctxB, expA)
 
@@ -475,6 +485,8 @@ func TestGenesisRoundTrip_PreservesFeesPerBlockOverrides(t *testing.T) {
 
 	mocks.MockStakingKeeper.EXPECT().GetBondedValidatorsByPower(gomock.Any()).Return(nil, nil).AnyTimes()
 	mocks2.MockStakingKeeper.EXPECT().GetBondedValidatorsByPower(gomock.Any()).Return(nil, nil).AnyTimes()
+	mocks2.MockBankKeeper.EXPECT().GetAllBalances(gomock.Any(), gomock.Any()).
+		Return(sdk.NewCoins()).AnyTimes()
 
 	k2.InitGenesis(ctx2, exported)
 
@@ -546,4 +558,81 @@ func TestGenesisState_Validate_OverrideRejections(t *testing.T) {
 			require.Contains(t, err.Error(), tc.wantErrMsg)
 		})
 	}
+}
+
+func TestExportGenesis_IncludesShares(t *testing.T) {
+	k, ctx, ctrl, _ := testkeeper.GetProviderKeeperAndCtx(t, testkeeper.NewInMemKeeperParams(t))
+	defer ctrl.Finish()
+
+	k.SetParams(ctx, providertypes.DefaultParams())
+
+	alice := sdk.AccAddress([]byte("alice___________"))
+	bob := sdk.AccAddress([]byte("bob_____________"))
+	require.NoError(t, k.ConsumerFeePoolShares.Set(ctx,
+		collections.Join3(uint64(0), "uphoton", alice), math.NewInt(60)))
+	require.NoError(t, k.ConsumerFeePoolShares.Set(ctx,
+		collections.Join3(uint64(0), "uphoton", bob), math.NewInt(40)))
+	require.NoError(t, k.ConsumerFeePoolTotalShares.Set(ctx,
+		collections.Join(uint64(0), "uphoton"), math.NewInt(100)))
+
+	gs := k.ExportGenesis(ctx)
+	require.Len(t, gs.ConsumerFeePoolShares, 2)
+	found := map[string]math.Int{}
+	for _, s := range gs.ConsumerFeePoolShares {
+		found[s.Depositor] = s.Shares
+	}
+	require.Equal(t, math.NewInt(60), found[alice.String()])
+	require.Equal(t, math.NewInt(40), found[bob.String()])
+}
+
+func TestInitGenesis_RebuildsDerivedCollections(t *testing.T) {
+	k, ctx, ctrl, mocks := testkeeper.GetProviderKeeperAndCtx(t, testkeeper.NewInMemKeeperParams(t))
+	defer ctrl.Finish()
+
+	// InitGenesisValUpdates queries the staking keeper for the validator set.
+	mocks.MockStakingKeeper.EXPECT().GetBondedValidatorsByPower(gomock.Any()).Return(nil, nil).Times(1)
+	// InitGenesis walks fee-pool addresses for an orphan-balance check.
+	mocks.MockBankKeeper.EXPECT().GetAllBalances(gomock.Any(), gomock.Any()).
+		Return(sdk.NewCoins()).AnyTimes()
+
+	alice := sdk.AccAddress([]byte("alice___________"))
+	bob := sdk.AccAddress([]byte("bob_____________"))
+	gs := &providertypes.GenesisState{
+		Params: providertypes.DefaultParams(),
+		ConsumerStates: []providertypes.ConsumerState{
+			{
+				ConsumerId:      0,
+				ChainId:         "chain-a",
+				Phase:           providertypes.CONSUMER_PHASE_LAUNCHED,
+				ConsumerGenesis: *vaastypes.DefaultConsumerGenesisState(),
+			},
+			{
+				ConsumerId:      1,
+				ChainId:         "chain-b",
+				Phase:           providertypes.CONSUMER_PHASE_DELETED,
+				ConsumerGenesis: *vaastypes.DefaultConsumerGenesisState(),
+			},
+		},
+		ConsumerFeePoolShares: []providertypes.ConsumerFeePoolShare{
+			{ConsumerId: 0, Depositor: alice.String(), Denom: "uphoton", Shares: math.NewInt(60)},
+			{ConsumerId: 0, Depositor: bob.String(), Denom: "uphoton", Shares: math.NewInt(40)},
+		},
+	}
+
+	k.InitGenesis(ctx, gs)
+
+	s, err := k.ConsumerFeePoolShares.Get(ctx, collections.Join3(uint64(0), "uphoton", alice))
+	require.NoError(t, err)
+	require.Equal(t, math.NewInt(60), s)
+
+	total, err := k.ConsumerFeePoolTotalShares.Get(ctx, collections.Join(uint64(0), "uphoton"))
+	require.NoError(t, err)
+	require.Equal(t, math.NewInt(100), total)
+
+	cid, err := k.FeePoolAddressToConsumerId.Get(ctx, k.GetConsumerFeePoolAddress(0))
+	require.NoError(t, err)
+	require.Equal(t, uint64(0), cid)
+
+	_, err = k.FeePoolAddressToConsumerId.Get(ctx, k.GetConsumerFeePoolAddress(1))
+	require.ErrorIs(t, err, collections.ErrNotFound)
 }

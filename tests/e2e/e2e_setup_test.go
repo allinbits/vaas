@@ -249,16 +249,13 @@ func (s *IntegrationTestSuite) initAndStartProvider() {
 			}
 		}
 
-		// Set fast epoch for VSC, and override fees_per_block to use the
-		// bond denom so the e2e debt-flow test can fund the consumer fee
-		// pool from existing genesis accounts.
+		// Set fast epoch for VSC and a small per-block fee amount. The fee
+		// denom is fixed to feeDenom at module wiring, only the amount is
+		// configurable here. val is funded with feeDenom in provider-init.sh
 		if provider, ok := appState["provider"].(map[string]any); ok {
 			if params, ok := provider["params"].(map[string]any); ok {
 				params["blocks_per_epoch"] = "5"
-				params["fees_per_block"] = map[string]any{
-					"denom":  bondDenom,
-					"amount": "1000",
-				}
+				params["fees_per_block_amount"] = "1000"
 			}
 		}
 	})

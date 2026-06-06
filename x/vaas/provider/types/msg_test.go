@@ -8,6 +8,8 @@ import (
 	clienttypes "github.com/cosmos/ibc-go/v10/modules/core/02-client/types"
 	"github.com/stretchr/testify/require"
 
+	"cosmossdk.io/math"
+
 	sdk "github.com/cosmos/cosmos-sdk/types"
 	authtypes "github.com/cosmos/cosmos-sdk/x/auth/types"
 	govtypes "github.com/cosmos/cosmos-sdk/x/gov/types"
@@ -487,6 +489,136 @@ func TestValidateInitialHeight(t *testing.T) {
 		} else {
 			require.Error(t, err, "invalid case: '%s' must return error but got none", tc.name)
 		}
+	}
+}
+
+func TestMsgFundConsumerFeePool_ValidateBasic(t *testing.T) {
+	validSigner := sdk.AccAddress([]byte("alice___________")).String()
+	tests := []struct {
+		name    string
+		msg     types.MsgFundConsumerFeePool
+		wantErr bool
+	}{
+		{"valid", types.MsgFundConsumerFeePool{
+			Signer:     validSigner,
+			ConsumerId: 0,
+			Amount:     sdk.NewInt64Coin("uphoton", 100),
+		}, false},
+		{"invalid signer", types.MsgFundConsumerFeePool{
+			Signer:     "not-bech32",
+			ConsumerId: 0,
+			Amount:     sdk.NewInt64Coin("uphoton", 100),
+		}, true},
+		{"zero amount", types.MsgFundConsumerFeePool{
+			Signer:     validSigner,
+			ConsumerId: 0,
+			Amount:     sdk.NewInt64Coin("uphoton", 0),
+		}, true},
+		{"invalid denom", types.MsgFundConsumerFeePool{
+			Signer:     validSigner,
+			ConsumerId: 0,
+			Amount:     sdk.Coin{Denom: "", Amount: math.NewInt(100)},
+		}, true},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			err := tc.msg.ValidateBasic()
+			if tc.wantErr {
+				require.Error(t, err)
+			} else {
+				require.NoError(t, err)
+			}
+		})
+	}
+}
+
+func TestMsgWithdrawConsumerFeePool_ValidateBasic(t *testing.T) {
+	validSigner := sdk.AccAddress([]byte("alice___________")).String()
+	tests := []struct {
+		name    string
+		msg     types.MsgWithdrawConsumerFeePool
+		wantErr bool
+	}{
+		{"valid", types.MsgWithdrawConsumerFeePool{
+			Signer:     validSigner,
+			ConsumerId: 0,
+			Amount:     sdk.NewCoins(sdk.NewInt64Coin("uphoton", 100)),
+		}, false},
+		{"invalid signer", types.MsgWithdrawConsumerFeePool{
+			Signer:     "not-bech32",
+			ConsumerId: 0,
+			Amount:     sdk.NewCoins(sdk.NewInt64Coin("uphoton", 100)),
+		}, true},
+		{"empty coins", types.MsgWithdrawConsumerFeePool{
+			Signer:     validSigner,
+			ConsumerId: 0,
+			Amount:     sdk.Coins{},
+		}, true},
+		{"coins with zero amount", types.MsgWithdrawConsumerFeePool{
+			Signer:     validSigner,
+			ConsumerId: 0,
+			Amount:     sdk.Coins{sdk.NewInt64Coin("uphoton", 0)},
+		}, true},
+		{"coins with duplicate denom", types.MsgWithdrawConsumerFeePool{
+			Signer:     validSigner,
+			ConsumerId: 0,
+			Amount:     sdk.Coins{sdk.NewInt64Coin("uphoton", 50), sdk.NewInt64Coin("uphoton", 50)},
+		}, true},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			err := tc.msg.ValidateBasic()
+			if tc.wantErr {
+				require.Error(t, err)
+			} else {
+				require.NoError(t, err)
+			}
+		})
+	}
+}
+
+func TestMsgSweepConsumerFeePool_ValidateBasic(t *testing.T) {
+	validSigner := sdk.AccAddress([]byte("alice___________")).String()
+	tests := []struct {
+		name    string
+		msg     types.MsgSweepConsumerFeePool
+		wantErr bool
+	}{
+		{"valid with explicit denoms", types.MsgSweepConsumerFeePool{
+			Signer:     validSigner,
+			ConsumerId: 0,
+			Denoms:     []string{"uphoton", "uatom"},
+		}, false},
+		{"valid with empty denoms", types.MsgSweepConsumerFeePool{
+			Signer:     validSigner,
+			ConsumerId: 0,
+			Denoms:     []string{},
+		}, false},
+		{"invalid signer", types.MsgSweepConsumerFeePool{
+			Signer:     "not-bech32",
+			ConsumerId: 0,
+			Denoms:     []string{"uphoton"},
+		}, true},
+		{"invalid denom string", types.MsgSweepConsumerFeePool{
+			Signer:     validSigner,
+			ConsumerId: 0,
+			Denoms:     []string{"INVALID DENOM WITH SPACES"},
+		}, true},
+		{"duplicate denom", types.MsgSweepConsumerFeePool{
+			Signer:     validSigner,
+			ConsumerId: 0,
+			Denoms:     []string{"uphoton", "uphoton"},
+		}, true},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			err := tc.msg.ValidateBasic()
+			if tc.wantErr {
+				require.Error(t, err)
+			} else {
+				require.NoError(t, err)
+			}
+		})
 	}
 }
 

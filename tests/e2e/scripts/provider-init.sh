@@ -9,6 +9,7 @@ BINARY="${BINARY:-provider}"
 HOME_DIR="${HOME_DIR:-/home/nonroot/.provider}"
 CHAIN_ID="${CHAIN_ID:-provider-e2e}"
 DENOM="${DENOM:-uatone}"
+FEE_DENOM="${FEE_DENOM:-uphoton}"
 MNEMONIC="${MNEMONIC:-abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon art}"
 
 # Initialize chain
@@ -24,7 +25,7 @@ $BINARY keys add user --home "$HOME_DIR" --keyring-backend test
 echo "$MNEMONIC" | $BINARY keys add relayer --recover --home "$HOME_DIR" --keyring-backend test
 
 # Add genesis accounts
-$BINARY genesis add-genesis-account val "1000000000000${DENOM}" --home "$HOME_DIR" --keyring-backend test
+$BINARY genesis add-genesis-account val "1000000000000${DENOM},1000000000000${FEE_DENOM}" --home "$HOME_DIR" --keyring-backend test
 $BINARY genesis add-genesis-account user "1000000000${DENOM}" --home "$HOME_DIR" --keyring-backend test
 $BINARY genesis add-genesis-account relayer "100000000${DENOM}" --home "$HOME_DIR" --keyring-backend test
 

@@ -79,7 +79,7 @@ func (k Keeper) CollectFeesFromConsumers(ctx sdk.Context) sdk.Coin {
 // Every bonded validator receives an equal share regardless of whether it
 // signed the previous block. Offline or absent validators are not excluded.
 func (k Keeper) DistributeFeesToValidators(ctx sdk.Context) error {
-	totalFees := k.bankKeeper.GetBalance(ctx, authtypes.NewModuleAddress(types.ModuleName), k.GetFeesPerBlock(ctx).Denom)
+	totalFees := k.bankKeeper.GetBalance(ctx, authtypes.NewModuleAddress(types.ModuleName), k.GetFeeDenom())
 	if totalFees.IsZero() {
 		return nil
 	}
