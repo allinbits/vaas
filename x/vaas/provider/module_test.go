@@ -5,9 +5,6 @@ import (
 	"errors"
 	"testing"
 
-	abci "github.com/cometbft/cometbft/abci/types"
-	cmtproto "github.com/cometbft/cometbft/proto/tendermint/types"
-
 	"cosmossdk.io/math"
 	testkeeper "github.com/allinbits/vaas/testutil/keeper"
 	providertypes "github.com/allinbits/vaas/x/vaas/provider/types"
@@ -45,8 +42,7 @@ func TestBeginBlockCommitsDebtStateWhenDistributionFails(t *testing.T) {
 	consumerInDebtFeePoolAddr := k.GetConsumerFeePoolAddress(consumerInDebt)
 	consumerPayingFeePoolAddr := k.GetConsumerFeePoolAddress(consumerPaying)
 
-	// Prime one bonded signer with a real consensus key so GetConsAddr works;
-	// the bank send during distribution will be the failure point.
+	// Prime one bonded validator so distribution attempts to pay out.
 	valAddrCodec := address.NewBech32Codec("cosmosvaloper")
 	mocks.MockStakingKeeper.EXPECT().ValidatorAddressCodec().Return(valAddrCodec).AnyTimes()
 	opBytes := bytes.Repeat([]byte{0xfe}, 20)
@@ -58,13 +54,6 @@ func TestBeginBlockCommitsDebtStateWhenDistributionFails(t *testing.T) {
 	val.Status = stakingtypes.Bonded
 	val.Tokens = sdk.DefaultPowerReduction
 	val.DelegatorShares = math.LegacyNewDecFromInt(sdk.DefaultPowerReduction)
-
-	ctx = ctx.WithVoteInfos([]abci.VoteInfo{
-		{
-			Validator:   abci.Validator{Address: sdk.GetConsAddress(pk), Power: 1},
-			BlockIdFlag: cmtproto.BlockIDFlagCommit,
-		},
-	})
 
 	// Collection phase: one consumer underfunded (ErrInsufficientFunds), one pays.
 	mocks.MockBankKeeper.EXPECT().
