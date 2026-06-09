@@ -1119,12 +1119,14 @@ func TestEvidencePacketDataJSONRoundTrip(t *testing.T) {
 
 func TestHandleConsumerDowntimeRejectsDuringGracePeriod(t *testing.T) {
 	keeperParams := testkeeper.NewInMemKeeperParams(t)
-	providerKeeper, ctx, ctrl, _ := testkeeper.GetProviderKeeperAndCtx(t, keeperParams)
+	providerKeeper, ctx, ctrl, mocks := testkeeper.GetProviderKeeperAndCtx(t, keeperParams)
 	defer ctrl.Finish()
 
 	consumerId := uint64(0)
 	providerKeeper.SetConsumerPhase(ctx, consumerId, types.CONSUMER_PHASE_LAUNCHED)
 	providerKeeper.SetConsumerChainId(ctx, consumerId, "consumer-chain")
+	providerKeeper.SetConsumerClientId(ctx, consumerId, "07-tendermint-0")
+	providerKeeper.SetEquivocationEvidenceMinHeight(ctx, consumerId, 1)
 
 	spawnTime := time.Date(2025, 1, 1, 0, 0, 0, 0, time.UTC)
 	gracePeriod := 24 * time.Hour
@@ -1154,6 +1156,13 @@ func TestHandleConsumerDowntimeRejectsDuringGracePeriod(t *testing.T) {
 		100,
 		stakingtypes.Infraction_INFRACTION_DOWNTIME,
 	)
+
+	consensusStateTimestamp := spawnTime.Add(12 * time.Hour)
+	mocks.MockClientKeeper.EXPECT().
+		GetClientConsensusState(ctx, "07-tendermint-0", ibcclienttypes.NewHeight(0, 100)).
+		Return(ibcexported.ConsensusState(&ibctmtypes.ConsensusState{
+			Timestamp: consensusStateTimestamp,
+		}), true)
 
 	err := providerKeeper.HandleConsumerEvidencePacket(ctx, consumerId, evidencePacket)
 	require.Error(t, err)
