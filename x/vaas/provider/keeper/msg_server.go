@@ -266,6 +266,20 @@ func (k msgServer) CreateConsumer(goCtx context.Context, msg *types.MsgCreateCon
 			"cannot set consumer initialization parameters: %s", err.Error())
 	}
 
+	// add init params event attributes for validator discovery
+	if !initializationParameters.SpawnTime.IsZero() {
+		eventAttributes = append(eventAttributes,
+			sdk.NewAttribute(types.AttributeConsumerSpawnTime, initializationParameters.SpawnTime.String()))
+	}
+	if len(initializationParameters.BinaryHash) > 0 {
+		eventAttributes = append(eventAttributes,
+			sdk.NewAttribute(types.AttributeConsumerBinaryHash, string(initializationParameters.BinaryHash)))
+	}
+	if len(initializationParameters.GenesisHash) > 0 {
+		eventAttributes = append(eventAttributes,
+			sdk.NewAttribute(types.AttributeConsumerGenesisHash, string(initializationParameters.GenesisHash)))
+	}
+
 	// Power shaping and infraction parameters removed - all validators validate all consumers
 	// with default provider parameters
 
@@ -274,10 +288,6 @@ func (k msgServer) CreateConsumer(goCtx context.Context, msg *types.MsgCreateCon
 			return &resp, errorsmod.Wrapf(vaastypes.ErrInvalidConsumerState,
 				"prepare consumer for launch, consumerId(%d), spawnTime(%s): %s", consumerId, spawnTime, err.Error())
 		}
-
-		// add SpawnTime event attribute
-		eventAttributes = append(eventAttributes,
-			sdk.NewAttribute(types.AttributeConsumerSpawnTime, initializationParameters.SpawnTime.String()))
 	}
 
 	// add Phase event attribute
@@ -337,6 +347,21 @@ func (k msgServer) UpdateConsumer(goCtx context.Context, msg *types.MsgUpdateCon
 	chainId, err := k.GetConsumerChainId(ctx, consumerId)
 	if err != nil {
 		return &resp, errorsmod.Wrapf(vaastypes.ErrInvalidConsumerState, "cannot get consumer chain ID: %s", err.Error())
+	}
+
+	isLaunched := k.GetConsumerPhase(ctx, consumerId) == types.CONSUMER_PHASE_LAUNCHED
+
+	// When the chain is already launched, the owner can only update metadata and transfer ownership.
+	// Chain-id and initialization parameters are restricted to pre-launch phases.
+	if isLaunched {
+		if strings.TrimSpace(msg.NewChainId) != "" {
+			return &resp, errorsmod.Wrapf(types.ErrInvalidPhase,
+				"cannot update chain id of a launched chain")
+		}
+		if msg.InitializationParameters != nil {
+			return &resp, errorsmod.Wrapf(types.ErrInvalidPhase,
+				"cannot update initialization parameters of a launched chain")
+		}
 	}
 
 	// We only validate and use `NewChainId` if it is not empty (because `NewChainId` is an optional argument)
@@ -423,6 +448,15 @@ func (k msgServer) UpdateConsumer(goCtx context.Context, msg *types.MsgUpdateCon
 		eventAttributes = append(eventAttributes,
 			sdk.NewAttribute(types.AttributeConsumerSpawnTime, msg.InitializationParameters.SpawnTime.String()))
 
+		if len(msg.InitializationParameters.BinaryHash) > 0 {
+			eventAttributes = append(eventAttributes,
+				sdk.NewAttribute(types.AttributeConsumerBinaryHash, string(msg.InitializationParameters.BinaryHash)))
+		}
+		if len(msg.InitializationParameters.GenesisHash) > 0 {
+			eventAttributes = append(eventAttributes,
+				sdk.NewAttribute(types.AttributeConsumerGenesisHash, string(msg.InitializationParameters.GenesisHash)))
+		}
+
 		if err = k.Keeper.SetConsumerInitializationParameters(ctx, msg.ConsumerId, *msg.InitializationParameters); err != nil {
 			return &resp, errorsmod.Wrapf(types.ErrInvalidConsumerInitializationParameters,
 				"cannot set consumer initialization parameters: %s", err.Error())
@@ -469,25 +503,22 @@ func (k msgServer) UpdateConsumer(goCtx context.Context, msg *types.MsgUpdateCon
 	return &resp, nil
 }
 
-// RemoveConsumer defines an RPC handler method for MsgRemoveConsumer
+// RemoveConsumer defines an RPC handler method for MsgRemoveConsumer.
+// Only the governance authority can remove a consumer chain.
 func (k msgServer) RemoveConsumer(goCtx context.Context, msg *types.MsgRemoveConsumer) (*types.MsgRemoveConsumerResponse, error) {
 	ctx := sdk.UnwrapSDKContext(goCtx)
+
+	if k.GetAuthority() != msg.Authority {
+		return nil, errorsmod.Wrapf(govtypes.ErrInvalidSigner, "invalid authority; expected %s, got %s", k.authority, msg.Authority)
+	}
 
 	resp := types.MsgRemoveConsumerResponse{}
 
 	consumerId := msg.ConsumerId
-	ownerAddress, err := k.Keeper.GetConsumerOwnerAddress(ctx, consumerId)
-	if err != nil {
-		return &resp, errorsmod.Wrapf(types.ErrNoOwnerAddress, "cannot retrieve owner address %s", ownerAddress)
-	}
 
 	chainId, err := k.GetConsumerChainId(ctx, consumerId)
 	if err != nil {
 		return &resp, errorsmod.Wrapf(vaastypes.ErrInvalidConsumerState, "cannot get consumer chain ID: %s", err.Error())
-	}
-
-	if msg.Owner != ownerAddress {
-		return &resp, errorsmod.Wrapf(types.ErrUnauthorized, "expected owner address %s, got %s", ownerAddress, msg.Owner)
 	}
 
 	phase := k.Keeper.GetConsumerPhase(ctx, consumerId)
@@ -510,7 +541,7 @@ func (k msgServer) RemoveConsumer(goCtx context.Context, msg *types.MsgRemoveCon
 			sdk.NewAttribute(sdk.AttributeKeyModule, types.ModuleName),
 			sdk.NewAttribute(types.AttributeConsumerId, strconv.FormatUint(consumerId, 10)),
 			sdk.NewAttribute(types.AttributeConsumerChainId, chainId),
-			sdk.NewAttribute(types.AttributeSubmitterAddress, msg.Owner),
+			sdk.NewAttribute(types.AttributeSubmitterAddress, msg.Authority),
 		),
 	)
 

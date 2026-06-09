@@ -44,6 +44,11 @@ const (
 	// DefaultDowntimeSlashFraction is the default slash fraction for downtime infractions on consumer chains (0.05%).
 	DefaultDowntimeSlashFraction = "0.0005"
 
+	// DefaultDowntimeGracePeriod is the default grace period after a consumer chain launches
+	// during which downtime slashing is suppressed. This gives validators time to spin up
+	// their consumer chain nodes without being penalized for early downtime.
+	DefaultDowntimeGracePeriod = 7 * 24 * time.Hour // 1 week
+
 	// DefaultMinDepositBlocks is the default minimum-deposit floor expressed
 	// as a multiplier of FeesPerBlock.Amount. 14400 blocks is roughly one day
 	// at a 6s block time, so the default floor is "one day's worth of fees."
@@ -95,6 +100,7 @@ func DefaultInfractionParameters() InfractionParameters {
 			SlashFraction: downtimeSlashFraction,
 			Tombstone:     false,
 		},
+		DowntimeGracePeriod: DefaultDowntimeGracePeriod,
 	}
 }
 
@@ -126,6 +132,9 @@ func (ip InfractionParameters) Validate() error {
 	}
 	if err := ip.Downtime.Validate(); err != nil {
 		return fmt.Errorf("downtime: %s", err)
+	}
+	if ip.DowntimeGracePeriod < 0 {
+		return fmt.Errorf("downtime_grace_period must not be negative")
 	}
 	return nil
 }

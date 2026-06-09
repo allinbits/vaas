@@ -256,8 +256,8 @@ where create_consumer.json has the following structure:
 }
 
 Note that both 'chain_id' and 'metadata' are mandatory;
-and 'initialization_parameters' is optional. 
-The parameters not provided are set to their zero value. 
+and 'initialization_parameters' is optional.
+The parameters not provided are set to their zero value.
 `, version.AppName)),
 		Args: cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
