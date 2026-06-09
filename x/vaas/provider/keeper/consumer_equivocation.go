@@ -263,14 +263,14 @@ func (k Keeper) HandleConsumerDowntime(ctx sdk.Context, consumerId uint64, evide
 			)
 		}
 		gracePeriodEnd := initParams.SpawnTime.Add(infractionParams.DowntimeGracePeriod)
-		if consensusState.GetTimestamp() < uint64(gracePeriodEnd.UnixNano()) { //nolint:staticcheck
+		if consumerTime := consensusState.GetTimestamp(); consumerTime < uint64(gracePeriodEnd.UnixNano()) { //nolint:staticcheck
 			return errorsmod.Wrapf(
 				vaastypes.ErrInvalidPacketData,
-				"consumer chain %d is still in downtime grace period (launched %s, grace ends %s, now %s)",
+				"consumer chain %d is still in downtime grace period (launched %d, grace ends %d, infraction time %d)",
 				consumerId,
-				initParams.SpawnTime.UTC(),
-				gracePeriodEnd.UTC(),
-				ctx.BlockTime().UTC(),
+				initParams.SpawnTime.UnixNano(),
+				gracePeriodEnd.UnixNano(),
+				consumerTime,
 			)
 		}
 	}
