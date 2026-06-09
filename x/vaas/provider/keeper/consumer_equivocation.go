@@ -215,32 +215,6 @@ func (k Keeper) HandleConsumerDowntime(ctx sdk.Context, consumerId uint64, evide
 
 	providerAddr := k.GetProviderAddrFromConsumerAddr(ctx, consumerId, consumerAddr)
 
-	// Check that the consumer chain is outside its downtime grace period.
-	// During the grace period after launch, downtime evidence is suppressed to give
-	// validators time to spin up their consumer chain nodes.
-	infractionParams := k.GetInfractionParams(ctx)
-	if infractionParams.DowntimeGracePeriod > 0 {
-		initParams, err := k.GetConsumerInitializationParameters(ctx, consumerId)
-		if err != nil {
-			return errorsmod.Wrapf(
-				vaastypes.ErrInvalidConsumerState,
-				"cannot get initialization parameters for consumer chain %d: %s",
-				consumerId, err,
-			)
-		}
-		gracePeriodEnd := initParams.SpawnTime.Add(infractionParams.DowntimeGracePeriod)
-		if ctx.BlockTime().Before(gracePeriodEnd) {
-			return errorsmod.Wrapf(
-				vaastypes.ErrInvalidPacketData,
-				"consumer chain %d is still in downtime grace period (launched %s, grace ends %s, now %s)",
-				consumerId,
-				initParams.SpawnTime.UTC(),
-				gracePeriodEnd.UTC(),
-				ctx.BlockTime().UTC(),
-			)
-		}
-	}
-
 	// Verify the infraction height is not too old.
 	minHeight := k.GetEquivocationEvidenceMinHeight(ctx, consumerId)
 	if uint64(evidencePacket.InfractionHeight) < minHeight {
@@ -265,13 +239,40 @@ func (k Keeper) HandleConsumerDowntime(ctx sdk.Context, consumerId uint64, evide
 	}
 
 	consensusHeight := ibcclienttypes.NewHeight(0, uint64(evidencePacket.InfractionHeight))
-	if _, ok := k.clientKeeper.GetClientConsensusState(ctx, clientId, consensusHeight); !ok {
+	consensusState, ok := k.clientKeeper.GetClientConsensusState(ctx, clientId, consensusHeight)
+	if !ok {
 		return errorsmod.Wrapf(
 			vaastypes.ErrInvalidPacketData,
 			"no consensus state for consumer chain %d at infraction height %d: cannot verify downtime",
 			consumerId,
 			evidencePacket.InfractionHeight,
 		)
+	}
+
+	// Check that the consumer chain is outside its downtime grace period.
+	// During the grace period after launch, downtime evidence is suppressed to give
+	// validators time to spin up their consumer chain nodes.
+	infractionParams := k.GetInfractionParams(ctx)
+	if infractionParams.DowntimeGracePeriod > 0 {
+		initParams, err := k.GetConsumerInitializationParameters(ctx, consumerId)
+		if err != nil {
+			return errorsmod.Wrapf(
+				vaastypes.ErrInvalidConsumerState,
+				"cannot get initialization parameters for consumer chain %d: %s",
+				consumerId, err,
+			)
+		}
+		gracePeriodEnd := initParams.SpawnTime.Add(infractionParams.DowntimeGracePeriod)
+		if consumerTime := consensusState.GetTimestamp(); consumerTime < uint64(gracePeriodEnd.UnixNano()) { //nolint:staticcheck
+			return errorsmod.Wrapf(
+				vaastypes.ErrInvalidPacketData,
+				"consumer chain %d is still in downtime grace period (launched %d, grace ends %d, infraction time %d)",
+				consumerId,
+				initParams.SpawnTime.UnixNano(),
+				gracePeriodEnd.UnixNano(),
+				consumerTime,
+			)
+		}
 	}
 
 	// Verify the validator was part of the consumer's validator set.
