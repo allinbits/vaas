@@ -11,14 +11,17 @@ import (
 
 	clienttypes "github.com/cosmos/ibc-go/v10/modules/core/02-client/types"
 
+	"github.com/allinbits/vaas/testutil/crypto"
 	testkeeper "github.com/allinbits/vaas/testutil/keeper"
 	providertypes "github.com/allinbits/vaas/x/vaas/provider/types"
 	vaastypes "github.com/allinbits/vaas/x/vaas/types"
 )
 
 // TestOnAcknowledgementPacketV2 tests the IBC v2 acknowledgement handler.
+// A successful ack refreshes liveness; an error ack keeps the consumer (removal
+// is driven by the grace sweep, not the callback).
 func TestOnAcknowledgementPacketV2(t *testing.T) {
-	providerKeeper, ctx, ctrl, mocks := testkeeper.GetProviderKeeperAndCtx(t, testkeeper.NewInMemKeeperParams(t))
+	providerKeeper, ctx, ctrl, _ := testkeeper.GetProviderKeeperAndCtx(t, testkeeper.NewInMemKeeperParams(t))
 	defer ctrl.Finish()
 
 	consumerId := uint64(0)
@@ -29,25 +32,24 @@ func TestOnAcknowledgementPacketV2(t *testing.T) {
 	providerKeeper.SetConsumerPhase(ctx, consumerId, providertypes.CONSUMER_PHASE_LAUNCHED)
 	providerKeeper.SetConsumerChainId(ctx, consumerId, "consumer-chain")
 
-	// Test 1: Success acknowledgement (empty error) - no action needed
-	err := providerKeeper.OnAcknowledgementPacketV2(ctx, clientId, "")
+	// Test 1: Success acknowledgement (empty error) - refreshes liveness, no removal
+	err := providerKeeper.OnAcknowledgementPacketV2(ctx, clientId, 1, "")
 	require.NoError(t, err)
 
-	// Consumer should still be launched
 	phase := providerKeeper.GetConsumerPhase(ctx, consumerId)
 	require.Equal(t, providertypes.CONSUMER_PHASE_LAUNCHED, phase)
 
-	// Setup mock expectation for StopAndPrepareForConsumerRemoval
-	// which calls UnbondingTime
-	mocks.MockStakingKeeper.EXPECT().UnbondingTime(gomock.Any()).Return(time.Hour*24*21, nil).Times(1)
+	last, found := providerKeeper.GetConsumerLastLivenessTime(ctx, consumerId)
+	require.True(t, found)
+	require.Equal(t, ctx.BlockTime(), last)
 
-	// Test 2: Error acknowledgement - should trigger consumer removal
-	err = providerKeeper.OnAcknowledgementPacketV2(ctx, clientId, "packet data could not be decoded")
+	// Test 2: Error acknowledgement - consumer is NOT removed (kept, liveness not
+	// refreshed); the grace sweep is the only removal path.
+	err = providerKeeper.OnAcknowledgementPacketV2(ctx, clientId, 1, "packet data could not be decoded")
 	require.NoError(t, err)
 
-	// Consumer should now be stopped
 	phase = providerKeeper.GetConsumerPhase(ctx, consumerId)
-	require.Equal(t, providertypes.CONSUMER_PHASE_STOPPED, phase)
+	require.Equal(t, providertypes.CONSUMER_PHASE_LAUNCHED, phase)
 }
 
 // TestOnAcknowledgementPacketV2UnknownClient tests error handling for unknown clients.
@@ -58,14 +60,15 @@ func TestOnAcknowledgementPacketV2UnknownClient(t *testing.T) {
 	unknownClientId := "07-tendermint-999"
 
 	// Error ack with unknown client should return error
-	err := providerKeeper.OnAcknowledgementPacketV2(ctx, unknownClientId, "some error")
+	err := providerKeeper.OnAcknowledgementPacketV2(ctx, unknownClientId, 1, "some error")
 	require.Error(t, err)
 	require.Contains(t, err.Error(), "unknown client")
 }
 
-// TestOnTimeoutPacketV2 tests the IBC v2 timeout handler.
+// TestOnTimeoutPacketV2 tests the IBC v2 timeout handler. A timeout is a liveness
+// signal, not misbehaviour: the consumer is kept (removal is the grace sweep's job).
 func TestOnTimeoutPacketV2(t *testing.T) {
-	providerKeeper, ctx, ctrl, mocks := testkeeper.GetProviderKeeperAndCtx(t, testkeeper.NewInMemKeeperParams(t))
+	providerKeeper, ctx, ctrl, _ := testkeeper.GetProviderKeeperAndCtx(t, testkeeper.NewInMemKeeperParams(t))
 	defer ctrl.Finish()
 
 	consumerId := uint64(0)
@@ -76,20 +79,12 @@ func TestOnTimeoutPacketV2(t *testing.T) {
 	providerKeeper.SetConsumerPhase(ctx, consumerId, providertypes.CONSUMER_PHASE_LAUNCHED)
 	providerKeeper.SetConsumerChainId(ctx, consumerId, "consumer-chain")
 
-	// Verify consumer is launched
-	phase := providerKeeper.GetConsumerPhase(ctx, consumerId)
-	require.Equal(t, providertypes.CONSUMER_PHASE_LAUNCHED, phase)
-
-	// Setup mock expectation for StopAndPrepareForConsumerRemoval
-	mocks.MockStakingKeeper.EXPECT().UnbondingTime(gomock.Any()).Return(time.Hour*24*21, nil).Times(1)
-
-	// Timeout should trigger consumer removal
+	// Timeout should NOT remove the consumer.
 	err := providerKeeper.OnTimeoutPacketV2(ctx, clientId)
 	require.NoError(t, err)
 
-	// Consumer should now be stopped
-	phase = providerKeeper.GetConsumerPhase(ctx, consumerId)
-	require.Equal(t, providertypes.CONSUMER_PHASE_STOPPED, phase)
+	phase := providerKeeper.GetConsumerPhase(ctx, consumerId)
+	require.Equal(t, providertypes.CONSUMER_PHASE_LAUNCHED, phase)
 }
 
 // TestOnTimeoutPacketV2UnknownClient tests error handling for unknown clients.
@@ -103,6 +98,72 @@ func TestOnTimeoutPacketV2UnknownClient(t *testing.T) {
 	err := providerKeeper.OnTimeoutPacketV2(ctx, unknownClientId)
 	require.Error(t, err)
 	require.Contains(t, err.Error(), "unknown client")
+}
+
+// TestBeginBlockRemoveUnresponsiveConsumers verifies the liveness grace sweep:
+// a consumer is removed only once it has had no successful ack for longer than
+// the derived grace period.
+func TestBeginBlockRemoveUnresponsiveConsumers(t *testing.T) {
+	providerKeeper, ctx, ctrl, mocks := testkeeper.GetProviderKeeperAndCtx(t, testkeeper.NewInMemKeeperParams(t))
+	defer ctrl.Finish()
+
+	// 21d unbonding -> grace = 0.33 * 21d ~= 6.93d. Called by both the grace
+	// computation and StopAndPrepareForConsumerRemoval.
+	mocks.MockStakingKeeper.EXPECT().UnbondingTime(gomock.Any()).Return(time.Hour*24*21, nil).AnyTimes()
+
+	clientId := "07-tendermint-0"
+	consumerId := providerKeeper.FetchAndIncrementConsumerId(ctx)
+	providerKeeper.SetConsumerClientId(ctx, consumerId, clientId)
+	providerKeeper.SetConsumerPhase(ctx, consumerId, providertypes.CONSUMER_PHASE_LAUNCHED)
+	providerKeeper.SetConsumerChainId(ctx, consumerId, "consumer-chain")
+
+	// Within grace: last ack 1 hour ago -> kept.
+	require.NoError(t, providerKeeper.SetConsumerLastLivenessTime(ctx, consumerId, ctx.BlockTime().Add(-time.Hour)))
+	require.NoError(t, providerKeeper.BeginBlockRemoveUnresponsiveConsumers(ctx))
+	require.Equal(t, providertypes.CONSUMER_PHASE_LAUNCHED, providerKeeper.GetConsumerPhase(ctx, consumerId))
+
+	// Beyond grace: last ack 30 days ago -> removed.
+	require.NoError(t, providerKeeper.SetConsumerLastLivenessTime(ctx, consumerId, ctx.BlockTime().Add(-30*24*time.Hour)))
+	require.NoError(t, providerKeeper.BeginBlockRemoveUnresponsiveConsumers(ctx))
+	require.Equal(t, providertypes.CONSUMER_PHASE_STOPPED, providerKeeper.GetConsumerPhase(ctx, consumerId))
+}
+
+// TestAdvanceAckedBaselineOnAck verifies that a successful ack for the latest-sent
+// vsc id advances the acknowledged baseline to the latest-sent snapshot, while an
+// ack for a stale id leaves the baseline untouched.
+func TestAdvanceAckedBaselineOnAck(t *testing.T) {
+	providerKeeper, ctx, ctrl, _ := testkeeper.GetProviderKeeperAndCtx(t, testkeeper.NewInMemKeeperParams(t))
+	defer ctrl.Finish()
+
+	consumerId := uint64(0)
+	clientId := "07-tendermint-0"
+	providerKeeper.SetConsumerClientId(ctx, consumerId, clientId)
+	providerKeeper.SetConsumerPhase(ctx, consumerId, providertypes.CONSUMER_PHASE_LAUNCHED)
+	providerKeeper.SetConsumerChainId(ctx, consumerId, "consumer-chain")
+
+	ci := crypto.NewCryptoIdentityFromIntSeed(1)
+	pk := ci.TMProtoCryptoPublicKey()
+	latestSent := []providertypes.ConsensusValidator{{
+		ProviderConsAddr: ci.SDKValConsAddress(),
+		Power:            100,
+		PublicKey:        &pk,
+	}}
+	require.NoError(t, providerKeeper.SetLatestSentConsumerValSet(ctx, consumerId, latestSent))
+	require.NoError(t, providerKeeper.SetConsumerLatestSentVscId(ctx, consumerId, 5))
+
+	// Ack for a stale id: baseline must NOT advance.
+	require.NoError(t, providerKeeper.OnAcknowledgementPacketV2(ctx, clientId, 4, ""))
+	baseline, err := providerKeeper.GetAckedConsumerValSet(ctx, consumerId)
+	require.NoError(t, err)
+	require.Empty(t, baseline)
+
+	// Ack for the latest-sent id: baseline advances to the latest-sent snapshot.
+	require.NoError(t, providerKeeper.OnAcknowledgementPacketV2(ctx, clientId, 5, ""))
+	baseline, err = providerKeeper.GetAckedConsumerValSet(ctx, consumerId)
+	require.NoError(t, err)
+	require.Len(t, baseline, 1)
+	require.Equal(t, latestSent[0].ProviderConsAddr, baseline[0].ProviderConsAddr)
+	require.Equal(t, int64(100), baseline[0].Power)
 }
 
 // TestClientIdToConsumerIdMapping tests the client ID to consumer ID mapping used in IBC v2.

@@ -155,6 +155,12 @@ func (am AppModule) BeginBlock(ctx context.Context) error {
 		return err
 	}
 
+	// Stop consumer chains that have been unreachable (no successful VSC
+	// acknowledgement) beyond the liveness grace period.
+	if err := am.keeper.BeginBlockRemoveUnresponsiveConsumers(sdkCtx); err != nil {
+		return err
+	}
+
 	am.keeper.CollectFeesFromConsumers(sdkCtx)
 
 	// Distribute all currently available provider-held fees in a cached context

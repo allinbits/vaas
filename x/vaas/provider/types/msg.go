@@ -425,7 +425,7 @@ func ValidateInitializationParameters(initializationParameters ConsumerInitializ
 		return errorsmod.Wrapf(ErrInvalidConsumerInitializationParameters, "HistoricalEntries: %s", err.Error())
 	}
 
-	if err := vaastypes.ValidateDuration(initializationParameters.VaasTimeoutPeriod); err != nil {
+	if err := vaastypes.ValidateVAASTimeoutPeriod(initializationParameters.VaasTimeoutPeriod); err != nil {
 		return errorsmod.Wrapf(ErrInvalidConsumerInitializationParameters, "VaasTimeoutPeriod: %s", err.Error())
 	}
 

@@ -146,7 +146,7 @@ func (p Params) Validate() error {
 	if err := vaastypes.ValidateStringFractionNonZero(p.TrustingPeriodFraction); err != nil {
 		return fmt.Errorf("trusting period fraction is invalid: %s", err)
 	}
-	if err := vaastypes.ValidateDuration(p.VaasTimeoutPeriod); err != nil {
+	if err := vaastypes.ValidateVAASTimeoutPeriod(p.VaasTimeoutPeriod); err != nil {
 		return fmt.Errorf("VAAS timeout period is invalid: %s", err)
 	}
 	if err := vaastypes.ValidatePositiveInt64(p.BlocksPerEpoch); err != nil {

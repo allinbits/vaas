@@ -77,6 +77,20 @@ type Keeper struct {
 	SpawnTimeToConsumerIds        collections.Map[[]byte, types.ConsumerIds]
 	RemovalTimeToConsumerIds      collections.Map[[]byte, types.ConsumerIds]
 
+	// Liveness / resync collections (see docs/consumer-timeout-grace.md).
+	//
+	// ConsumerLastLivenessTime stores the block time of the last successful VSC
+	// acknowledgement per consumer; it drives the grace-period removal sweep.
+	// AckedConsumerValidators is the last *acknowledged* validator set, used as
+	// the baseline for computing VSC diffs so a delta lost to a timeout is
+	// re-sent until acknowledged. LatestSentConsumerValidators /
+	// ConsumerLatestSentVscId snapshot the set and id of the most recent
+	// successfully-sent VSC packet, used to advance the acknowledged baseline.
+	ConsumerLastLivenessTime     collections.Map[uint64, []byte]
+	AckedConsumerValidators      collections.Map[collections.Pair[uint64, []byte], types.ConsensusValidator]
+	LatestSentConsumerValidators collections.Map[collections.Pair[uint64, []byte], types.ConsensusValidator]
+	ConsumerLatestSentVscId      collections.Map[uint64, uint64]
+
 	// Key assignment collections
 	ValidatorConsumerPubKey collections.Map[collections.Pair[uint64, []byte], []byte]
 	ValidatorByConsumerAddr collections.Map[collections.Pair[uint64, []byte], []byte]
@@ -188,6 +202,12 @@ func NewKeeper(
 		// Validator set collections
 		ConsumerValidators:        collections.NewMap(sb, types.ConsumerValidatorPrefix, "consumer_validators", collections.PairKeyCodec(collections.Uint64Key, collections.BytesKey), codec.CollValue[types.ConsensusValidator](cdc)),
 		LastProviderConsensusVals: collections.NewMap(sb, types.LastProviderConsensusVals, "last_provider_consensus_vals", collections.BytesKey, codec.CollValue[types.ConsensusValidator](cdc)),
+
+		// Liveness / resync collections
+		ConsumerLastLivenessTime:     collections.NewMap(sb, types.ConsumerIdToLastLivenessTimePrefix, "consumer_last_liveness_time", collections.Uint64Key, collections.BytesValue),
+		AckedConsumerValidators:      collections.NewMap(sb, types.AckedConsumerValidatorsPrefix, "acked_consumer_validators", collections.PairKeyCodec(collections.Uint64Key, collections.BytesKey), codec.CollValue[types.ConsensusValidator](cdc)),
+		LatestSentConsumerValidators: collections.NewMap(sb, types.LatestSentConsumerValidatorsPrefix, "latest_sent_consumer_validators", collections.PairKeyCodec(collections.Uint64Key, collections.BytesKey), codec.CollValue[types.ConsensusValidator](cdc)),
+		ConsumerLatestSentVscId:      collections.NewMap(sb, types.ConsumerIdToLatestSentVscIdPrefix, "consumer_latest_sent_vsc_id", collections.Uint64Key, collections.Uint64Value),
 	}
 
 	// Fee pool collections

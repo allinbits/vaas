@@ -255,6 +255,12 @@ func (k Keeper) LaunchConsumer(
 
 	k.SetConsumerPhase(ctx, consumerId, types.CONSUMER_PHASE_LAUNCHED)
 
+	// Start the liveness clock so the grace sweep measures unresponsiveness from
+	// launch rather than from the zero time.
+	if err := k.SetConsumerLastLivenessTime(ctx, consumerId, ctx.BlockTime()); err != nil {
+		k.Logger(ctx).Error("failed to init liveness time at launch", "consumerId", consumerId, "err", err.Error())
+	}
+
 	k.Logger(ctx).Info("consumer successfully launched",
 		"consumerId", consumerId,
 		"valset size", len(initialValUpdates),
@@ -411,6 +417,12 @@ func (k Keeper) DeleteConsumerChain(ctx sdk.Context, consumerId uint64) (err err
 	k.DeletePendingVSCPackets(ctx, consumerId)
 
 	k.DeleteConsumerValSet(ctx, consumerId)
+
+	// Liveness / resync state
+	k.DeleteConsumerLastLivenessTime(ctx, consumerId)
+	k.DeleteAckedConsumerValSet(ctx, consumerId)
+	k.DeleteLatestSentConsumerValSet(ctx, consumerId)
+	k.DeleteConsumerLatestSentVscId(ctx, consumerId)
 
 	k.DeleteConsumerRemovalTime(ctx, consumerId)
 	k.DeleteConsumerDebt(ctx, consumerId)

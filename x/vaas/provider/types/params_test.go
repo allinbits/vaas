@@ -23,6 +23,10 @@ func TestValidateParams(t *testing.T) {
 			"0.00", time.Hour, 1000, 180, math.NewInt(1), types.DefaultMinDepositBlocks), false},
 		{"0 ccv timeout period", types.NewParams(
 			"0.33", 0, 1000, 180, math.NewInt(1), types.DefaultMinDepositBlocks), false},
+		{"timeout equal to max delta (allowed)", types.NewParams(
+			"0.33", 24*time.Hour, 1000, 180, math.NewInt(1), types.DefaultMinDepositBlocks), true},
+		{"timeout above max delta", types.NewParams(
+			"0.33", 25*time.Hour, 1000, 180, math.NewInt(1), types.DefaultMinDepositBlocks), false},
 	}
 
 	for _, tc := range testCases {

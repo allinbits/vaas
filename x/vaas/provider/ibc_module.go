@@ -173,7 +173,17 @@ func (im IBCModule) OnAcknowledgementPacket(
 		ackError = "error acknowledgement received"
 	}
 
-	if err := im.keeper.OnAcknowledgementPacketV2(ctx, sourceClient, ackError); err != nil {
+	// Recover the acknowledged VSC id from the original payload so the keeper can
+	// advance its acknowledged baseline. The provider only ever sends VSC packets,
+	// so the payload is always ValidatorSetChangePacketData; on a decode failure
+	// vscId stays 0 and the keeper simply will not advance the baseline.
+	var vscId uint64
+	var data vaastypes.ValidatorSetChangePacketData
+	if err := vaastypes.ModuleCdc.UnmarshalJSON(payload.Value, &data); err == nil {
+		vscId = data.ValsetUpdateId
+	}
+
+	if err := im.keeper.OnAcknowledgementPacketV2(ctx, sourceClient, vscId, ackError); err != nil {
 		return err
 	}
 

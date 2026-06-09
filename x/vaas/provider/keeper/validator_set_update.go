@@ -196,8 +196,27 @@ func (k Keeper) ComputeConsumerNextValSet(
 			fmt.Errorf("setting consumer validator set, consumerId(%d): %w", consumerId, err)
 	}
 
-	// get the initial updates with the latest set consumer public keys
-	valUpdates := DiffValidators(currentConsumerValSet, nextValidators)
+	// Compute the diff against the last *acknowledged* baseline rather than the
+	// last queued set. This makes VSC packets self-healing: any delta lost to a
+	// timeout is re-expressed every epoch until the consumer acknowledges it (see
+	// docs/consumer-timeout-grace.md). When no baseline is stored yet (consumers
+	// launched before this feature, or before their first ack) it is seeded with
+	// the current set, so the diff matches the pre-feature behaviour until the
+	// first acknowledgement advances the baseline.
+	baseline, err := k.GetAckedConsumerValSet(ctx, consumerId)
+	if err != nil {
+		return []abci.ValidatorUpdate{},
+			fmt.Errorf("getting acked consumer validator set, consumerId(%d): %w", consumerId, err)
+	}
+	if len(baseline) == 0 {
+		baseline = currentConsumerValSet
+		if err := k.SetAckedConsumerValSet(ctx, consumerId, baseline); err != nil {
+			return []abci.ValidatorUpdate{},
+				fmt.Errorf("seeding acked consumer validator set, consumerId(%d): %w", consumerId, err)
+		}
+	}
+
+	valUpdates := DiffValidators(baseline, nextValidators)
 
 	return valUpdates, nil
 }

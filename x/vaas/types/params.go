@@ -45,7 +45,7 @@ func DefaultConsumerParams() ConsumerParams {
 
 // Validate all VAAS-consumer module parameters
 func (p ConsumerParams) Validate() error {
-	if err := ValidateDuration(p.VaasTimeoutPeriod); err != nil {
+	if err := ValidateVAASTimeoutPeriod(p.VaasTimeoutPeriod); err != nil {
 		return err
 	}
 	if err := ValidatePositiveInt64(p.HistoricalEntries); err != nil {

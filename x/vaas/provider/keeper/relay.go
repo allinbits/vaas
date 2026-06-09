@@ -19,18 +19,34 @@ import (
 	sdk "github.com/cosmos/cosmos-sdk/types"
 )
 
-func (k Keeper) OnAcknowledgementPacketV2(ctx sdk.Context, sourceClientID string, ackError string) error {
-	if ackError != "" {
-		k.Logger(ctx).Error(
-			"recv ErrorAcknowledgement",
-			"clientID", sourceClientID,
-			"error", ackError,
-		)
-		if consumerId, found := k.GetClientIdToConsumerId(ctx, sourceClientID); found {
-			return k.StopAndPrepareForConsumerRemoval(ctx, consumerId)
+func (k Keeper) OnAcknowledgementPacketV2(ctx sdk.Context, sourceClientID string, vscId uint64, ackError string) error {
+	consumerId, found := k.GetClientIdToConsumerId(ctx, sourceClientID)
+	if !found {
+		if ackError != "" {
+			return errorsmod.Wrapf(providertypes.ErrInvalidConsumerClient, "recv ErrorAcknowledgement on unknown client %s", sourceClientID)
 		}
-		return errorsmod.Wrapf(providertypes.ErrInvalidConsumerClient, "recv ErrorAcknowledgement on unknown client %s", sourceClientID)
+		k.Logger(ctx).Error("recv acknowledgement on unknown client", "clientID", sourceClientID)
+		return nil
 	}
+
+	if ackError != "" {
+		// An error acknowledgement means the consumer received and rejected the
+		// packet (e.g. version or wire-format mismatch). It is not transient and
+		// won't self-heal, but per design it is handled on the same time-based
+		// grace as a timeout: liveness is not refreshed, so the grace sweep
+		// (BeginBlockRemoveUnresponsiveConsumers) removes the consumer if no
+		// successful acknowledgement arrives within the grace period.
+		k.Logger(ctx).Error("recv ErrorAcknowledgement, consumer kept (liveness not refreshed)",
+			"clientID", sourceClientID, "consumerId", consumerId, "error", ackError)
+		return nil
+	}
+
+	// Successful acknowledgement: the consumer confirmed receipt of vscId. Refresh
+	// liveness and advance the acknowledged baseline used to compute future diffs.
+	if err := k.SetConsumerLastLivenessTime(ctx, consumerId, ctx.BlockTime()); err != nil {
+		k.Logger(ctx).Error("failed to set liveness time", "consumerId", consumerId, "err", err.Error())
+	}
+	k.advanceAckedBaseline(ctx, consumerId, vscId)
 	return nil
 }
 
@@ -43,8 +59,14 @@ func (k Keeper) OnTimeoutPacketV2(ctx sdk.Context, sourceClientID string) error 
 			"timeout on unknown client %s", sourceClientID,
 		)
 	}
-	k.Logger(ctx).Info("packet timeout, deleting the consumer:", "consumerId", consumerId, "clientId", sourceClientID)
-	return k.StopAndPrepareForConsumerRemoval(ctx, consumerId)
+	// A timeout is a liveness signal, not misbehaviour: the consumer or the
+	// relayer/RPC was unreachable within the packet timeout. Keep the consumer;
+	// the next epoch re-sends the validator-set delta against the last
+	// acknowledged baseline (self-healing), and the grace sweep removes the
+	// consumer only after a sustained outage with no successful acknowledgement.
+	k.Logger(ctx).Info("packet timeout, consumer unreachable (kept, will retry):",
+		"consumerId", consumerId, "clientId", sourceClientID)
+	return nil
 }
 
 // EndBlockVSU contains the EndBlock logic needed for
@@ -208,6 +230,10 @@ func (k Keeper) SendVSCPacketsToChain(ctx sdk.Context, consumerId uint64, client
 	timeoutTimestamp := uint64(ctx.BlockTime().Add(timeoutPeriod).Unix())
 
 	pendingPackets := k.GetPendingVSCPackets(ctx, consumerId)
+	var (
+		lastSentVscId uint64
+		sentAny       bool
+	)
 	for _, data := range pendingPackets {
 		payload := channeltypesv2.NewPayload(
 			vaastypes.ProviderAppID,
@@ -232,29 +258,42 @@ func (k Keeper) SendVSCPacketsToChain(ctx sdk.Context, consumerId uint64, client
 					"clientId", clientId,
 					"vscid", data.ValsetUpdateId,
 				)
-				return nil
+			} else {
+				// A send failure is a transient/local condition, not consumer
+				// misbehaviour. Keep the consumer and leave the pending packets
+				// queued for retry on the next epoch; the liveness grace sweep
+				// removes the consumer only if it stays unreachable.
+				k.Logger(ctx).Error("cannot send VSC, leaving packet data stored for retry:",
+					"consumerId", consumerId,
+					"clientId", clientId,
+					"vscid", data.ValsetUpdateId,
+					"err", err.Error(),
+				)
 			}
-
-			k.Logger(ctx).Error("cannot send VSC, removing consumer:",
-				"consumerId", consumerId,
-				"clientId", clientId,
-				"vscid", data.ValsetUpdateId,
-				"err", err.Error(),
-			)
-
-			err := k.StopAndPrepareForConsumerRemoval(ctx, consumerId)
-			if err != nil {
-				k.Logger(ctx).Info("consumer chain failed to stop:", "consumerId", consumerId, "error", err.Error())
-			}
+			// Pending packets are intentionally left stored (not deleted) so they
+			// are retried. The latest-sent snapshot is recorded only on a full
+			// drain below, because only then does the highest sent id correspond
+			// to the current (latest-queued) ConsumerValSet.
 			return nil
 		}
 
+		lastSentVscId = data.ValsetUpdateId
+		sentAny = true
 		k.Logger(ctx).Info("VSCPacket sent:",
 			"consumerId", consumerId,
 			"clientId", clientId,
 			"vscid", data.ValsetUpdateId,
 			"sequence", resp.Sequence,
 		)
+	}
+
+	// All pending packets drained successfully: the highest sent id matches the
+	// current ConsumerValSet, so snapshot it as the latest-sent set for baseline
+	// advancement on acknowledgement.
+	if sentAny {
+		if err := k.recordLatestSentVSC(ctx, consumerId, lastSentVscId); err != nil {
+			return fmt.Errorf("recording latest sent VSC, consumerId(%d): %w", consumerId, err)
+		}
 	}
 	k.DeletePendingVSCPackets(ctx, consumerId)
 
