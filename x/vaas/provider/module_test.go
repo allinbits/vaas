@@ -5,9 +5,6 @@ import (
 	"errors"
 	"testing"
 
-	abci "github.com/cometbft/cometbft/abci/types"
-	cmtproto "github.com/cometbft/cometbft/proto/tendermint/types"
-
 	"cosmossdk.io/math"
 	testkeeper "github.com/allinbits/vaas/testutil/keeper"
 	providertypes "github.com/allinbits/vaas/x/vaas/provider/types"
@@ -37,15 +34,15 @@ func TestBeginBlockCommitsDebtStateWhenDistributionFails(t *testing.T) {
 	k.SetConsumerPhase(ctx, consumerInDebt, providertypes.CONSUMER_PHASE_LAUNCHED)
 	k.SetConsumerPhase(ctx, consumerPaying, providertypes.CONSUMER_PHASE_LAUNCHED)
 
+	feesPerBlock := sdk.NewInt64Coin("uphoton", 10)
 	providerParams := providertypes.DefaultParams()
-	providerParams.FeesPerBlock = sdk.NewInt64Coin("uphoton", 10)
+	providerParams.FeesPerBlockAmount = feesPerBlock.Amount
 	k.SetParams(ctx, providerParams)
 
 	consumerInDebtFeePoolAddr := k.GetConsumerFeePoolAddress(consumerInDebt)
 	consumerPayingFeePoolAddr := k.GetConsumerFeePoolAddress(consumerPaying)
 
-	// Prime one bonded signer with a real consensus key so GetConsAddr works;
-	// the bank send during distribution will be the failure point.
+	// Prime one bonded validator so distribution attempts to pay out.
 	valAddrCodec := address.NewBech32Codec("cosmosvaloper")
 	mocks.MockStakingKeeper.EXPECT().ValidatorAddressCodec().Return(valAddrCodec).AnyTimes()
 	opBytes := bytes.Repeat([]byte{0xfe}, 20)
@@ -58,29 +55,22 @@ func TestBeginBlockCommitsDebtStateWhenDistributionFails(t *testing.T) {
 	val.Tokens = sdk.DefaultPowerReduction
 	val.DelegatorShares = math.LegacyNewDecFromInt(sdk.DefaultPowerReduction)
 
-	ctx = ctx.WithVoteInfos([]abci.VoteInfo{
-		{
-			Validator:   abci.Validator{Address: sdk.GetConsAddress(pk), Power: 1},
-			BlockIdFlag: cmtproto.BlockIDFlagCommit,
-		},
-	})
-
 	// Collection phase: one consumer underfunded (ErrInsufficientFunds), one pays.
 	mocks.MockBankKeeper.EXPECT().
-		SendCoinsFromAccountToModule(gomock.Any(), consumerInDebtFeePoolAddr, providertypes.ModuleName, sdk.NewCoins(providerParams.FeesPerBlock)).
+		SendCoinsFromAccountToModule(gomock.Any(), consumerInDebtFeePoolAddr, providertypes.ModuleName, sdk.NewCoins(feesPerBlock)).
 		Return(sdkerrors.ErrInsufficientFunds.Wrapf("spendable 5 < 10"))
 	mocks.MockBankKeeper.EXPECT().
-		SendCoinsFromAccountToModule(gomock.Any(), consumerPayingFeePoolAddr, providertypes.ModuleName, sdk.NewCoins(providerParams.FeesPerBlock)).
+		SendCoinsFromAccountToModule(gomock.Any(), consumerPayingFeePoolAddr, providertypes.ModuleName, sdk.NewCoins(feesPerBlock)).
 		Return(nil)
 	// Distribution phase: bank send errors out, rolls back distribution only.
 	mocks.MockBankKeeper.EXPECT().
-		GetBalance(gomock.Any(), authtypes.NewModuleAddress(providertypes.ModuleName), providerParams.FeesPerBlock.Denom).
-		Return(providerParams.FeesPerBlock)
+		GetBalance(gomock.Any(), authtypes.NewModuleAddress(providertypes.ModuleName), providertypes.DefaultFeesPerBlockDenom).
+		Return(feesPerBlock)
 	mocks.MockStakingKeeper.EXPECT().
 		GetBondedValidatorsByPower(gomock.Any()).
 		Return([]stakingtypes.Validator{val}, nil)
 	mocks.MockBankKeeper.EXPECT().
-		SendCoinsFromModuleToAccount(gomock.Any(), providertypes.ModuleName, sdk.AccAddress(opBytes), sdk.NewCoins(providerParams.FeesPerBlock)).
+		SendCoinsFromModuleToAccount(gomock.Any(), providertypes.ModuleName, sdk.AccAddress(opBytes), sdk.NewCoins(feesPerBlock)).
 		Return(errors.New("distribution boom"))
 
 	require.NoError(t, appModule.BeginBlock(sdk.WrapSDKContext(ctx)))

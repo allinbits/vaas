@@ -203,10 +203,11 @@ func (k Keeper) HandleConsumerEvidencePacket(ctx sdk.Context, consumerId uint64,
 
 // HandleConsumerDowntime slashes a validator that was offline on a consumer chain.
 // The provider verifies the downtime claim by checking:
-//  1. The infraction height is not older than the minimum evidence height for this consumer.
-//  2. The provider's IBC client for the consumer has a consensus state at the infraction height,
+//  1. The consumer chain is outside its downtime grace period (if configured).
+//  2. The infraction height is not older than the minimum evidence height for this consumer.
+//  3. The provider's IBC client for the consumer has a consensus state at the infraction height,
 //     proving the consumer chain actually reached that height.
-//  3. The validator was part of the consumer's validator set at the time of the infraction.
+//  4. The validator was part of the consumer's validator set at the time of the infraction.
 //
 // CONTRACT: A downtime infraction must never jail a validator.
 func (k Keeper) HandleConsumerDowntime(ctx sdk.Context, consumerId uint64, evidencePacket vaastypes.EvidencePacketData) error {
@@ -238,13 +239,40 @@ func (k Keeper) HandleConsumerDowntime(ctx sdk.Context, consumerId uint64, evide
 	}
 
 	consensusHeight := ibcclienttypes.NewHeight(0, uint64(evidencePacket.InfractionHeight))
-	if _, ok := k.clientKeeper.GetClientConsensusState(ctx, clientId, consensusHeight); !ok {
+	consensusState, ok := k.clientKeeper.GetClientConsensusState(ctx, clientId, consensusHeight)
+	if !ok {
 		return errorsmod.Wrapf(
 			vaastypes.ErrInvalidPacketData,
 			"no consensus state for consumer chain %d at infraction height %d: cannot verify downtime",
 			consumerId,
 			evidencePacket.InfractionHeight,
 		)
+	}
+
+	// Check that the consumer chain is outside its downtime grace period.
+	// During the grace period after launch, downtime evidence is suppressed to give
+	// validators time to spin up their consumer chain nodes.
+	infractionParams := k.GetInfractionParams(ctx)
+	if infractionParams.DowntimeGracePeriod > 0 {
+		initParams, err := k.GetConsumerInitializationParameters(ctx, consumerId)
+		if err != nil {
+			return errorsmod.Wrapf(
+				vaastypes.ErrInvalidConsumerState,
+				"cannot get initialization parameters for consumer chain %d: %s",
+				consumerId, err,
+			)
+		}
+		gracePeriodEnd := initParams.SpawnTime.Add(infractionParams.DowntimeGracePeriod)
+		if consumerTime := consensusState.GetTimestamp(); consumerTime < uint64(gracePeriodEnd.UnixNano()) { //nolint:staticcheck
+			return errorsmod.Wrapf(
+				vaastypes.ErrInvalidPacketData,
+				"consumer chain %d is still in downtime grace period (launched %d, grace ends %d, infraction time %d)",
+				consumerId,
+				initParams.SpawnTime.UnixNano(),
+				gracePeriodEnd.UnixNano(),
+				consumerTime,
+			)
+		}
 	}
 
 	// Verify the validator was part of the consumer's validator set.
@@ -269,8 +297,6 @@ func (k Keeper) HandleConsumerDowntime(ctx sdk.Context, consumerId uint64, evide
 			validator.JoinHeight,
 		)
 	}
-
-	infractionParams := k.GetInfractionParams(ctx)
 
 	if err := k.SlashValidator(ctx, providerAddr, infractionParams.Downtime, stakingtypes.Infraction_INFRACTION_DOWNTIME); err != nil {
 		return err

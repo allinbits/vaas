@@ -3,7 +3,6 @@ syntax = "proto3";
 package vaas.provider.v1;
 
 import "amino/amino.proto";
-import "cosmos/base/v1beta1/coin.proto";
 import "cosmos_proto/cosmos.proto";
 import "gogoproto/gogo.proto";
 import "cosmos/evidence/v1beta1/evidence.proto";
@@ -38,13 +37,21 @@ message Params {
   // to the consensus engine on the provider.
   int64 max_provider_consensus_validators = 4;
 
-  // The fee charged per block for consumer chain operation.
-  cosmos.base.v1beta1.Coin fees_per_block = 5 [
-    (gogoproto.casttype) = "github.com/cosmos/cosmos-sdk/types.Coin",
-    (amino.encoding) = "legacy_coin",
-    (amino.dont_omitempty) = true,
-    (gogoproto.nullable) = false
+  // The per-block fee amount charged for consumer chain operation. The denom
+  // is not a parameter: it is fixed at module wiring (see Keeper.feeDenom) and
+  // cannot be changed without a binary upgrade.
+  string fees_per_block_amount = 5 [
+    (cosmos_proto.scalar) = "cosmos.Int",
+    (gogoproto.customtype) = "cosmossdk.io/math.Int",
+    (gogoproto.nullable) = false,
+    (amino.dont_omitempty) = true
   ];
+
+  // Minimum deposit on MsgFundConsumerFeePool, expressed as a multiplier of
+  // fees_per_block.Amount (the floor is fees_per_block.Amount *
+  // min_deposit_blocks). Zero disables the check. The floor applies to every
+  // funder including the gov authority.
+  uint64 min_deposit_blocks = 6;
 }
 
 // AddressList contains a list of consensus addresses
@@ -199,6 +206,12 @@ enum ConsumerPhase {
 message InfractionParameters {
   SlashJailParameters double_sign = 1;
   SlashJailParameters downtime = 2;
+  // downtime_grace_period is the duration after a consumer chain launches
+  // during which downtime slashing is suppressed. This gives validators time
+  // to spin up their consumer chain nodes without being penalized for early
+  // downtime. Set to 0 to disable the grace period.
+  google.protobuf.Duration downtime_grace_period = 3
+      [ (gogoproto.nullable) = false, (gogoproto.stdduration) = true ];
 }
 
 //

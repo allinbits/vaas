@@ -39,6 +39,10 @@ message GenesisState {
   // Each entry's consumer_id MUST appear in consumer_states.
   repeated ConsumerFeesPerBlockOverride consumer_fees_per_block_overrides = 8
       [ (gogoproto.nullable) = false ];
+
+  // empty for a new chain
+  repeated ConsumerFeePoolShare consumer_fee_pool_shares = 9
+      [ (gogoproto.nullable) = false ];
 }
 
 // The provider VAAS module's knowledge of consumer state.
@@ -64,7 +68,7 @@ message ConsumerState {
   // the phase of the consumer chain
   ConsumerPhase phase = 8;
   // OwnerAddress is the bech32 address that authorises owner-only operations
-  // (UpdateConsumer, RemoveConsumer, key assignment, etc.) on the consumer.
+  // (UpdateConsumer, key assignment, etc.) on the consumer.
   // Always non-empty for any existing consumer record; set at REGISTERED.
   string owner_address = 9;
   // Metadata is the owner-supplied descriptor (name/description/repo).
@@ -97,4 +101,18 @@ message ConsumerFeesPerBlockOverride {
   uint64 consumer_id = 1;
   // amount is a non-negative math.Int in string form.
   string amount = 2 [(cosmos_proto.scalar) = "cosmos.Int"];
+}
+
+// ConsumerFeePoolShare is a single depositor's share holding in a consumer
+// fee pool, scoped to one denom. The triple (consumer_id, depositor, denom)
+// is unique.
+message ConsumerFeePoolShare {
+  uint64 consumer_id = 1;
+  string depositor = 2 [(cosmos_proto.scalar) = "cosmos.AddressString"];
+  string denom = 3;
+  string shares = 4 [
+    (cosmos_proto.scalar) = "cosmos.Int",
+    (gogoproto.customtype) = "cosmossdk.io/math.Int",
+    (gogoproto.nullable) = false
+  ];
 }

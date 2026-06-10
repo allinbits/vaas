@@ -393,12 +393,16 @@ func New(
 		app.SlashingKeeper,
 		app.AccountKeeper,
 		app.BankKeeper,
+		app.DistrKeeper,
 		govkeeper.Keeper{}, // will be set after the GovKeeper is created
 		authtypes.NewModuleAddress(govtypes.ModuleName).String(),
 		authcodec.NewBech32Codec(sdk.GetConfig().GetBech32ValidatorAddrPrefix()),
 		authcodec.NewBech32Codec(sdk.GetConfig().GetBech32ConsensusAddrPrefix()),
 		authtypes.FeeCollectorName,
+		// Per-block consumer fee denom, fixed for the lifetime of the binary.
+		providertypes.DefaultFeesPerBlockDenom,
 	)
+	app.BankKeeper.AppendSendRestriction(app.ProviderKeeper.FeePoolSendRestriction())
 
 	govConfig := govtypes.DefaultConfig()
 	app.GovKeeper = govkeeper.NewKeeper(

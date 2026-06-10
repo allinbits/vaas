@@ -19,6 +19,8 @@ import (
 	cryptocodec "github.com/cosmos/cosmos-sdk/crypto/codec"
 	sdk "github.com/cosmos/cosmos-sdk/types"
 	sdkerrors "github.com/cosmos/cosmos-sdk/types/errors"
+	authtypes "github.com/cosmos/cosmos-sdk/x/auth/types"
+	disttypes "github.com/cosmos/cosmos-sdk/x/distribution/types"
 	govtypes "github.com/cosmos/cosmos-sdk/x/gov/types"
 	stakingtypes "github.com/cosmos/cosmos-sdk/x/staking/types"
 )
@@ -55,8 +57,8 @@ func (k msgServer) UpdateParams(goCtx context.Context, msg *types.MsgUpdateParam
 	// Per-consumer fees_per_block overrides must stay strictly above the global
 	// default. Only a higher floor can leave an existing override underwater; an
 	// unchanged or lower floor keeps every override valid, so skip the walk.
-	if msg.Params.FeesPerBlock.Amount.GT(oldFloor) {
-		if err := k.reconcileFeesPerBlockOverrides(ctx, msg.Params.FeesPerBlock.Amount); err != nil {
+	if msg.Params.FeesPerBlockAmount.GT(oldFloor) {
+		if err := k.reconcileFeesPerBlockOverrides(ctx, msg.Params.FeesPerBlockAmount); err != nil {
 			return nil, err
 		}
 	}
@@ -264,6 +266,20 @@ func (k msgServer) CreateConsumer(goCtx context.Context, msg *types.MsgCreateCon
 			"cannot set consumer initialization parameters: %s", err.Error())
 	}
 
+	// add init params event attributes for validator discovery
+	if !initializationParameters.SpawnTime.IsZero() {
+		eventAttributes = append(eventAttributes,
+			sdk.NewAttribute(types.AttributeConsumerSpawnTime, initializationParameters.SpawnTime.String()))
+	}
+	if len(initializationParameters.BinaryHash) > 0 {
+		eventAttributes = append(eventAttributes,
+			sdk.NewAttribute(types.AttributeConsumerBinaryHash, string(initializationParameters.BinaryHash)))
+	}
+	if len(initializationParameters.GenesisHash) > 0 {
+		eventAttributes = append(eventAttributes,
+			sdk.NewAttribute(types.AttributeConsumerGenesisHash, string(initializationParameters.GenesisHash)))
+	}
+
 	// Power shaping and infraction parameters removed - all validators validate all consumers
 	// with default provider parameters
 
@@ -272,10 +288,6 @@ func (k msgServer) CreateConsumer(goCtx context.Context, msg *types.MsgCreateCon
 			return &resp, errorsmod.Wrapf(vaastypes.ErrInvalidConsumerState,
 				"prepare consumer for launch, consumerId(%d), spawnTime(%s): %s", consumerId, spawnTime, err.Error())
 		}
-
-		// add SpawnTime event attribute
-		eventAttributes = append(eventAttributes,
-			sdk.NewAttribute(types.AttributeConsumerSpawnTime, initializationParameters.SpawnTime.String()))
 	}
 
 	// add Phase event attribute
@@ -298,6 +310,13 @@ func (k msgServer) CreateConsumer(goCtx context.Context, msg *types.MsgCreateCon
 	)
 
 	resp.ConsumerId = consumerId
+
+	if err := k.FeePoolAddressToConsumerId.Set(ctx,
+		k.GetConsumerFeePoolAddress(consumerId), consumerId,
+	); err != nil {
+		return &resp, err
+	}
+
 	return &resp, nil
 }
 
@@ -328,6 +347,21 @@ func (k msgServer) UpdateConsumer(goCtx context.Context, msg *types.MsgUpdateCon
 	chainId, err := k.GetConsumerChainId(ctx, consumerId)
 	if err != nil {
 		return &resp, errorsmod.Wrapf(vaastypes.ErrInvalidConsumerState, "cannot get consumer chain ID: %s", err.Error())
+	}
+
+	isLaunched := k.GetConsumerPhase(ctx, consumerId) == types.CONSUMER_PHASE_LAUNCHED
+
+	// When the chain is already launched, the owner can only update metadata and transfer ownership.
+	// Chain-id and initialization parameters are restricted to pre-launch phases.
+	if isLaunched {
+		if strings.TrimSpace(msg.NewChainId) != "" {
+			return &resp, errorsmod.Wrapf(types.ErrInvalidPhase,
+				"cannot update chain id of a launched chain")
+		}
+		if msg.InitializationParameters != nil {
+			return &resp, errorsmod.Wrapf(types.ErrInvalidPhase,
+				"cannot update initialization parameters of a launched chain")
+		}
 	}
 
 	// We only validate and use `NewChainId` if it is not empty (because `NewChainId` is an optional argument)
@@ -414,6 +448,15 @@ func (k msgServer) UpdateConsumer(goCtx context.Context, msg *types.MsgUpdateCon
 		eventAttributes = append(eventAttributes,
 			sdk.NewAttribute(types.AttributeConsumerSpawnTime, msg.InitializationParameters.SpawnTime.String()))
 
+		if len(msg.InitializationParameters.BinaryHash) > 0 {
+			eventAttributes = append(eventAttributes,
+				sdk.NewAttribute(types.AttributeConsumerBinaryHash, string(msg.InitializationParameters.BinaryHash)))
+		}
+		if len(msg.InitializationParameters.GenesisHash) > 0 {
+			eventAttributes = append(eventAttributes,
+				sdk.NewAttribute(types.AttributeConsumerGenesisHash, string(msg.InitializationParameters.GenesisHash)))
+		}
+
 		if err = k.Keeper.SetConsumerInitializationParameters(ctx, msg.ConsumerId, *msg.InitializationParameters); err != nil {
 			return &resp, errorsmod.Wrapf(types.ErrInvalidConsumerInitializationParameters,
 				"cannot set consumer initialization parameters: %s", err.Error())
@@ -460,25 +503,22 @@ func (k msgServer) UpdateConsumer(goCtx context.Context, msg *types.MsgUpdateCon
 	return &resp, nil
 }
 
-// RemoveConsumer defines an RPC handler method for MsgRemoveConsumer
+// RemoveConsumer defines an RPC handler method for MsgRemoveConsumer.
+// Only the governance authority can remove a consumer chain.
 func (k msgServer) RemoveConsumer(goCtx context.Context, msg *types.MsgRemoveConsumer) (*types.MsgRemoveConsumerResponse, error) {
 	ctx := sdk.UnwrapSDKContext(goCtx)
+
+	if k.GetAuthority() != msg.Authority {
+		return nil, errorsmod.Wrapf(govtypes.ErrInvalidSigner, "invalid authority; expected %s, got %s", k.authority, msg.Authority)
+	}
 
 	resp := types.MsgRemoveConsumerResponse{}
 
 	consumerId := msg.ConsumerId
-	ownerAddress, err := k.Keeper.GetConsumerOwnerAddress(ctx, consumerId)
-	if err != nil {
-		return &resp, errorsmod.Wrapf(types.ErrNoOwnerAddress, "cannot retrieve owner address %s", ownerAddress)
-	}
 
 	chainId, err := k.GetConsumerChainId(ctx, consumerId)
 	if err != nil {
 		return &resp, errorsmod.Wrapf(vaastypes.ErrInvalidConsumerState, "cannot get consumer chain ID: %s", err.Error())
-	}
-
-	if msg.Owner != ownerAddress {
-		return &resp, errorsmod.Wrapf(types.ErrUnauthorized, "expected owner address %s, got %s", ownerAddress, msg.Owner)
 	}
 
 	phase := k.Keeper.GetConsumerPhase(ctx, consumerId)
@@ -501,7 +541,7 @@ func (k msgServer) RemoveConsumer(goCtx context.Context, msg *types.MsgRemoveCon
 			sdk.NewAttribute(sdk.AttributeKeyModule, types.ModuleName),
 			sdk.NewAttribute(types.AttributeConsumerId, strconv.FormatUint(consumerId, 10)),
 			sdk.NewAttribute(types.AttributeConsumerChainId, chainId),
-			sdk.NewAttribute(types.AttributeSubmitterAddress, msg.Owner),
+			sdk.NewAttribute(types.AttributeSubmitterAddress, msg.Authority),
 		),
 	)
 
@@ -562,8 +602,232 @@ func (k msgServer) SetConsumerFeesPerBlock(
 		types.EventTypeSetConsumerFeesPerBlock,
 		sdk.NewAttribute(sdk.AttributeKeyModule, types.ModuleName),
 		sdk.NewAttribute(types.AttributeConsumerId, strconv.FormatUint(msg.ConsumerId, 10)),
-		sdk.NewAttribute(types.AttributeKeyAmount, msg.Amount),
+		sdk.NewAttribute(types.AttributeAmount, msg.Amount),
 	))
 
 	return &types.MsgSetConsumerFeesPerBlockResponse{}, nil
+}
+
+// FundConsumerFeePool deposits funds into a consumer's fee pool.
+func (k msgServer) FundConsumerFeePool(
+	goCtx context.Context, msg *types.MsgFundConsumerFeePool,
+) (*types.MsgFundConsumerFeePoolResponse, error) {
+	ctx := sdk.UnwrapSDKContext(goCtx)
+
+	exists, err := k.ConsumerPhase.Has(ctx, msg.ConsumerId)
+	if err != nil {
+		return nil, err
+	}
+	if !exists {
+		return nil, errorsmod.Wrapf(types.ErrUnknownConsumerId,
+			"consumer %d does not exist", msg.ConsumerId)
+	}
+	if k.GetConsumerPhase(ctx, msg.ConsumerId) == types.CONSUMER_PHASE_DELETED {
+		return nil, errorsmod.Wrapf(types.ErrInvalidPhase,
+			"consumer %d is deleted", msg.ConsumerId)
+	}
+
+	params := k.GetParams(ctx)
+	feeDenom := k.GetFeeDenom()
+	if msg.Amount.Denom != feeDenom {
+		return nil, errorsmod.Wrapf(types.ErrInvalidFundDenom,
+			"expected denom %s, got %s", feeDenom, msg.Amount.Denom)
+	}
+
+	if params.MinDepositBlocks > 0 {
+		// Floor uses this consumer's effective per-block fee (per-consumer
+		// override if set, else the global default). Overrides can only raise
+		// the per-consumer fee above the global default (see
+		// MsgSetConsumerFeesPerBlock), so for consumers with an override the
+		// floor scales up to reflect their actual per-block cost.
+		effectiveFees, _ := k.GetEffectiveFeesPerBlock(ctx, msg.ConsumerId)
+		floor := effectiveFees.Amount.Mul(math.NewIntFromUint64(params.MinDepositBlocks))
+		if msg.Amount.Amount.LT(floor) {
+			return nil, errorsmod.Wrapf(types.ErrDepositBelowMinimum,
+				"deposit %s below floor %s%s (effective fees_per_block %s x min_deposit_blocks %d)",
+				msg.Amount, floor.String(), effectiveFees.Denom,
+				effectiveFees.Amount.String(), params.MinDepositBlocks,
+			)
+		}
+	}
+
+	poolAddr := k.GetConsumerFeePoolAddress(msg.ConsumerId)
+	coins := sdk.NewCoins(msg.Amount)
+
+	isGov := k.IsAuthority(msg.Signer)
+
+	var depositor sdk.AccAddress
+	if isGov {
+		depositor = authtypes.NewModuleAddress(disttypes.ModuleName)
+	} else {
+		signerAddr, err := sdk.AccAddressFromBech32(msg.Signer)
+		if err != nil {
+			return nil, err
+		}
+		if err := k.bankKeeper.SendCoinsFromAccountToModule(
+			ctx, signerAddr, types.ModuleName, coins,
+		); err != nil {
+			return nil, err
+		}
+		depositor = signerAddr
+	}
+
+	// MintShares must run before the funds land in the pool, because the
+	// share math reads the pool balance as "balance before this deposit".
+	if err := k.MintShares(ctx, msg.ConsumerId, depositor, msg.Amount); err != nil {
+		return nil, err
+	}
+
+	if isGov {
+		if err := k.distributionKeeper.DistributeFromFeePool(ctx, coins, poolAddr); err != nil {
+			return nil, err
+		}
+	} else {
+		if err := k.bankKeeper.SendCoinsFromModuleToAccount(
+			ctx, types.ModuleName, poolAddr, coins,
+		); err != nil {
+			return nil, err
+		}
+	}
+
+	ctx.EventManager().EmitEvent(sdk.NewEvent(
+		types.EventTypeConsumerFeePoolFund,
+		sdk.NewAttribute(types.AttributeConsumerId, strconv.FormatUint(msg.ConsumerId, 10)),
+		sdk.NewAttribute(types.AttributeDepositor, depositor.String()),
+		sdk.NewAttribute(types.AttributeAmount, msg.Amount.String()),
+	))
+	return &types.MsgFundConsumerFeePoolResponse{}, nil
+}
+
+// WithdrawConsumerFeePool burns the depositor's shares across one or more
+// denoms and returns the corresponding tokens. The handler is all-or-nothing
+// at the tx boundary: a mid-flight failure on any denom returns an error and
+// the SDK rolls back the entire tx.
+//
+// When the signer is the gov authority, the depositor identity is the
+// distribution module account and the tokens are routed back to the community
+// pool rather than to the signer.
+func (k msgServer) WithdrawConsumerFeePool(
+	goCtx context.Context, msg *types.MsgWithdrawConsumerFeePool,
+) (*types.MsgWithdrawConsumerFeePoolResponse, error) {
+	ctx := sdk.UnwrapSDKContext(goCtx)
+
+	exists, err := k.ConsumerPhase.Has(ctx, msg.ConsumerId)
+	if err != nil {
+		return nil, err
+	}
+	if !exists {
+		return nil, errorsmod.Wrapf(types.ErrUnknownConsumerId,
+			"consumer %d does not exist", msg.ConsumerId)
+	}
+	if k.GetConsumerPhase(ctx, msg.ConsumerId) == types.CONSUMER_PHASE_DELETED {
+		return nil, errorsmod.Wrapf(types.ErrInvalidPhase,
+			"consumer %d is deleted", msg.ConsumerId)
+	}
+
+	isGov := k.IsAuthority(msg.Signer)
+
+	if !isGov && k.GetConsumerPhase(ctx, msg.ConsumerId) == types.CONSUMER_PHASE_LAUNCHED {
+		return nil, errorsmod.Wrapf(types.ErrFeePoolLocked,
+			"withdraws are locked while consumer %d is launched; only the gov authority may withdraw at this stage",
+			msg.ConsumerId)
+	}
+
+	var depositor sdk.AccAddress
+	if isGov {
+		depositor = authtypes.NewModuleAddress(disttypes.ModuleName)
+	} else {
+		signerAddr, err := sdk.AccAddressFromBech32(msg.Signer)
+		if err != nil {
+			return nil, err
+		}
+		depositor = signerAddr
+	}
+
+	delivered := sdk.NewCoins()
+	for _, amt := range msg.Amount {
+		tokens, err := k.WithdrawShares(ctx, msg.ConsumerId, depositor, amt)
+		if err != nil {
+			return nil, err
+		}
+		delivered = delivered.Add(tokens)
+	}
+
+	if !delivered.IsZero() {
+		poolAddr := k.GetConsumerFeePoolAddress(msg.ConsumerId)
+		providerAddr := authtypes.NewModuleAddress(types.ModuleName)
+		if err := k.bankKeeper.SendCoinsFromAccountToModule(
+			ctx, poolAddr, types.ModuleName, delivered,
+		); err != nil {
+			return nil, err
+		}
+		if isGov {
+			if err := k.distributionKeeper.FundCommunityPool(ctx, delivered, providerAddr); err != nil {
+				return nil, err
+			}
+		} else {
+			if err := k.bankKeeper.SendCoinsFromModuleToAccount(
+				ctx, types.ModuleName, depositor, delivered,
+			); err != nil {
+				return nil, err
+			}
+		}
+	}
+
+	// On the gov path, depositor and recipient are both the distribution
+	// module account, so the recipient attribute alone can't tell apart a
+	// regular withdraw from a gov clawback to the community pool. The
+	// withdraw_path attribute disambiguates for indexers.
+	withdrawPath := types.WithdrawPathDirect
+	if isGov {
+		withdrawPath = types.WithdrawPathCommunityPool
+	}
+	ctx.EventManager().EmitEvent(sdk.NewEvent(
+		types.EventTypeConsumerFeePoolWithdraw,
+		sdk.NewAttribute(types.AttributeConsumerId, strconv.FormatUint(msg.ConsumerId, 10)),
+		sdk.NewAttribute(types.AttributeDepositor, depositor.String()),
+		sdk.NewAttribute(types.AttributeRecipient, depositor.String()),
+		sdk.NewAttribute(types.AttributeAmount, delivered.String()),
+		sdk.NewAttribute(types.AttributeWithdrawPath, withdrawPath),
+	))
+	return &types.MsgWithdrawConsumerFeePoolResponse{Amount: delivered}, nil
+}
+
+func (k msgServer) SweepConsumerFeePool(
+	goCtx context.Context, msg *types.MsgSweepConsumerFeePool,
+) (*types.MsgSweepConsumerFeePoolResponse, error) {
+	ctx := sdk.UnwrapSDKContext(goCtx)
+
+	exists, err := k.ConsumerPhase.Has(ctx, msg.ConsumerId)
+	if err != nil {
+		return nil, err
+	}
+	if !exists {
+		return nil, errorsmod.Wrapf(types.ErrUnknownConsumerId,
+			"consumer %d does not exist", msg.ConsumerId)
+	}
+	phase := k.GetConsumerPhase(ctx, msg.ConsumerId)
+	if phase == types.CONSUMER_PHASE_DELETED {
+		return nil, errorsmod.Wrapf(types.ErrInvalidPhase,
+			"consumer %d is deleted; pool already auto-swept on delete", msg.ConsumerId)
+	}
+	if phase == types.CONSUMER_PHASE_LAUNCHED {
+		return nil, errorsmod.Wrapf(types.ErrFeePoolLocked,
+			"sweep is locked while consumer %d is launched", msg.ConsumerId)
+	}
+
+	ownerAddrString, err := k.GetConsumerOwnerAddress(ctx, msg.ConsumerId)
+	if err != nil {
+		return nil, errorsmod.Wrapf(types.ErrNoOwnerAddress,
+			"consumer %d has no owner: %s", msg.ConsumerId, err)
+	}
+	if !strings.EqualFold(msg.Signer, ownerAddrString) {
+		return nil, errorsmod.Wrapf(types.ErrUnauthorized,
+			"only consumer owner %s may sweep, got %s", ownerAddrString, msg.Signer)
+	}
+
+	// k.SweepConsumerFeePool here would recurse; call the embedded Keeper's.
+	// The sweep cannot fail under valid state; it panics on corruption.
+	k.Keeper.SweepConsumerFeePool(ctx, msg.ConsumerId, msg.Denoms)
+	return &types.MsgSweepConsumerFeePoolResponse{}, nil
 }

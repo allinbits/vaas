@@ -25,6 +25,9 @@ func RegisterInterfaces(registry codectypes.InterfaceRegistry) {
 		&MsgSubmitConsumerMisbehaviour{},
 		&MsgSubmitConsumerDoubleVoting{},
 		&MsgSetConsumerFeesPerBlock{},
+		&MsgFundConsumerFeePool{},
+		&MsgWithdrawConsumerFeePool{},
+		&MsgSweepConsumerFeePool{},
 	)
 	registry.RegisterImplementations(
 		(*exported.ClientMessage)(nil),
