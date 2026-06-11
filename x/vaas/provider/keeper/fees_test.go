@@ -19,6 +19,9 @@ import (
 	"go.uber.org/mock/gomock"
 )
 
+// epochMultiplier is the default BlocksPerEpoch used in provider params.
+const epochMultiplier = providertypes.DefaultBlocksPerEpoch // 600
+
 func TestCollectFeesFromConsumers(t *testing.T) {
 	params := testkeeper.NewInMemKeeperParams(t)
 	k, ctx, ctrl, mocks := testkeeper.GetProviderKeeperAndCtx(t, params)
@@ -30,6 +33,7 @@ func TestCollectFeesFromConsumers(t *testing.T) {
 	k.SetConsumerPhase(ctx, consumer1, providertypes.CONSUMER_PHASE_LAUNCHED)
 
 	feesPerBlock := sdk.NewInt64Coin("uphoton", 10)
+	feesPerEpoch := sdk.NewCoin("uphoton", feesPerBlock.Amount.MulRaw(epochMultiplier))
 	providerParams := providertypes.DefaultParams()
 	providerParams.FeesPerBlockAmount = feesPerBlock.Amount
 	k.SetParams(ctx, providerParams)
@@ -38,23 +42,24 @@ func TestCollectFeesFromConsumers(t *testing.T) {
 
 	gomock.InOrder(
 		mocks.MockBankKeeper.EXPECT().
-			SendCoinsFromAccountToModule(gomock.Any(), consumer0FeePoolAddr, providertypes.ModuleName, sdk.NewCoins(feesPerBlock)).
+			SendCoinsFromAccountToModule(gomock.Any(), consumer0FeePoolAddr, providertypes.ModuleName, sdk.NewCoins(feesPerEpoch)).
 			Return(nil),
 		mocks.MockBankKeeper.EXPECT().
-			SendCoinsFromAccountToModule(gomock.Any(), consumer1FeePoolAddr, providertypes.ModuleName, sdk.NewCoins(feesPerBlock)).
+			SendCoinsFromAccountToModule(gomock.Any(), consumer1FeePoolAddr, providertypes.ModuleName, sdk.NewCoins(feesPerEpoch)).
 			Return(nil),
 	)
 
 	total := k.CollectFeesFromConsumers(ctx)
-	require.Equal(t, sdk.NewInt64Coin("uphoton", 20), total)
+	expectedTotal := sdk.NewCoin("uphoton", feesPerBlock.Amount.MulRaw(epochMultiplier).MulRaw(2))
+	require.Equal(t, expectedTotal, total)
 	require.False(t, k.IsConsumerInDebt(ctx, consumer0))
 	require.False(t, k.IsConsumerInDebt(ctx, consumer1))
 }
 
 // TestCollectFeesFromConsumers_PerConsumerOverride verifies that each consumer
-// is charged its effective per-block fee: consumer1 has an override and pays
-// the override amount; consumer0 has no override and pays
-// Params.FeesPerBlockAmount.
+// is charged its effective per-epoch fee: consumer1 has an override and pays
+// the override amount * blocks_per_epoch; consumer0 has no override and pays
+// the default * blocks_per_epoch.
 func TestCollectFeesFromConsumers_PerConsumerOverride(t *testing.T) {
 	params := testkeeper.NewInMemKeeperParams(t)
 	k, ctx, ctrl, mocks := testkeeper.GetProviderKeeperAndCtx(t, params)
@@ -65,31 +70,33 @@ func TestCollectFeesFromConsumers_PerConsumerOverride(t *testing.T) {
 	k.SetConsumerPhase(ctx, consumer0, providertypes.CONSUMER_PHASE_LAUNCHED)
 	k.SetConsumerPhase(ctx, consumer1, providertypes.CONSUMER_PHASE_LAUNCHED)
 
-	defaultFees := sdk.NewInt64Coin("uphoton", 10)
-	overrideAmount := math.NewInt(25)
-	overrideFees := sdk.NewCoin("uphoton", overrideAmount)
+	defaultFeesPerBlock := sdk.NewInt64Coin("uphoton", 10)
+	overrideAmountPerBlock := math.NewInt(25)
+	overrideFeesPerEpoch := sdk.NewCoin("uphoton", overrideAmountPerBlock.MulRaw(epochMultiplier))
+	defaultFeesPerEpoch := sdk.NewCoin("uphoton", defaultFeesPerBlock.Amount.MulRaw(epochMultiplier))
 
 	providerParams := providertypes.DefaultParams()
-	providerParams.FeesPerBlockAmount = defaultFees.Amount
+	providerParams.FeesPerBlockAmount = defaultFeesPerBlock.Amount
 	k.SetParams(ctx, providerParams)
 
 	// consumer1 gets an override; consumer0 keeps the default.
-	require.NoError(t, k.ConsumerFeesPerBlockOverride.Set(ctx, consumer1, overrideAmount))
+	require.NoError(t, k.ConsumerFeesPerBlockOverride.Set(ctx, consumer1, overrideAmountPerBlock))
 
 	consumer0FeePoolAddr := k.GetConsumerFeePoolAddress(consumer0)
 	consumer1FeePoolAddr := k.GetConsumerFeePoolAddress(consumer1)
 
 	gomock.InOrder(
 		mocks.MockBankKeeper.EXPECT().
-			SendCoinsFromAccountToModule(gomock.Any(), consumer0FeePoolAddr, providertypes.ModuleName, sdk.NewCoins(defaultFees)).
+			SendCoinsFromAccountToModule(gomock.Any(), consumer0FeePoolAddr, providertypes.ModuleName, sdk.NewCoins(defaultFeesPerEpoch)).
 			Return(nil),
 		mocks.MockBankKeeper.EXPECT().
-			SendCoinsFromAccountToModule(gomock.Any(), consumer1FeePoolAddr, providertypes.ModuleName, sdk.NewCoins(overrideFees)).
+			SendCoinsFromAccountToModule(gomock.Any(), consumer1FeePoolAddr, providertypes.ModuleName, sdk.NewCoins(overrideFeesPerEpoch)).
 			Return(nil),
 	)
 
 	total := k.CollectFeesFromConsumers(ctx)
-	require.Equal(t, sdk.NewInt64Coin("uphoton", 35), total)
+	expectedTotal := sdk.NewCoin("uphoton", defaultFeesPerEpoch.Amount.Add(overrideFeesPerEpoch.Amount))
+	require.Equal(t, expectedTotal, total)
 	require.False(t, k.IsConsumerInDebt(ctx, consumer0))
 	require.False(t, k.IsConsumerInDebt(ctx, consumer1))
 }
@@ -105,6 +112,7 @@ func TestCollectFeesFromConsumersSkipsWhenInsufficient(t *testing.T) {
 	k.SetConsumerPhase(ctx, consumer1, providertypes.CONSUMER_PHASE_LAUNCHED)
 
 	feesPerBlock := sdk.NewInt64Coin("uphoton", 10)
+	feesPerEpoch := sdk.NewCoin("uphoton", feesPerBlock.Amount.MulRaw(epochMultiplier))
 	providerParams := providertypes.DefaultParams()
 	providerParams.FeesPerBlockAmount = feesPerBlock.Amount
 	k.SetParams(ctx, providerParams)
@@ -113,15 +121,15 @@ func TestCollectFeesFromConsumersSkipsWhenInsufficient(t *testing.T) {
 
 	gomock.InOrder(
 		mocks.MockBankKeeper.EXPECT().
-			SendCoinsFromAccountToModule(gomock.Any(), consumer0FeePoolAddr, providertypes.ModuleName, sdk.NewCoins(feesPerBlock)).
-			Return(sdkerrors.ErrInsufficientFunds.Wrapf("spendable 5 < 10")),
+			SendCoinsFromAccountToModule(gomock.Any(), consumer0FeePoolAddr, providertypes.ModuleName, sdk.NewCoins(feesPerEpoch)).
+			Return(sdkerrors.ErrInsufficientFunds.Wrapf("spendable 5 < 6000")),
 		mocks.MockBankKeeper.EXPECT().
-			SendCoinsFromAccountToModule(gomock.Any(), consumer1FeePoolAddr, providertypes.ModuleName, sdk.NewCoins(feesPerBlock)).
+			SendCoinsFromAccountToModule(gomock.Any(), consumer1FeePoolAddr, providertypes.ModuleName, sdk.NewCoins(feesPerEpoch)).
 			Return(nil),
 	)
 
 	total := k.CollectFeesFromConsumers(ctx)
-	require.Equal(t, sdk.NewInt64Coin("uphoton", 10), total)
+	require.Equal(t, feesPerEpoch, total)
 	require.True(t, k.IsConsumerInDebt(ctx, consumer0))
 	require.False(t, k.IsConsumerInDebt(ctx, consumer1))
 }
@@ -136,17 +144,18 @@ func TestCollectFeesFromConsumersClearsDebtWhenRecovered(t *testing.T) {
 	k.SetConsumerInDebt(ctx, consumer0, true)
 
 	feesPerBlock := sdk.NewInt64Coin("uphoton", 10)
+	feesPerEpoch := sdk.NewCoin("uphoton", feesPerBlock.Amount.MulRaw(epochMultiplier))
 	providerParams := providertypes.DefaultParams()
 	providerParams.FeesPerBlockAmount = feesPerBlock.Amount
 	k.SetParams(ctx, providerParams)
 	consumer0FeePoolAddr := k.GetConsumerFeePoolAddress(consumer0)
 
 	mocks.MockBankKeeper.EXPECT().
-		SendCoinsFromAccountToModule(gomock.Any(), consumer0FeePoolAddr, providertypes.ModuleName, sdk.NewCoins(feesPerBlock)).
+		SendCoinsFromAccountToModule(gomock.Any(), consumer0FeePoolAddr, providertypes.ModuleName, sdk.NewCoins(feesPerEpoch)).
 		Return(nil)
 
 	total := k.CollectFeesFromConsumers(ctx)
-	require.Equal(t, sdk.NewInt64Coin("uphoton", 10), total)
+	require.Equal(t, feesPerEpoch, total)
 	require.False(t, k.IsConsumerInDebt(ctx, consumer0))
 }
 
@@ -165,6 +174,7 @@ func TestCollectFeesFromConsumersContinuesOnGenericError(t *testing.T) {
 	k.SetConsumerPhase(ctx, consumer1, providertypes.CONSUMER_PHASE_LAUNCHED)
 
 	feesPerBlock := sdk.NewInt64Coin("uphoton", 10)
+	feesPerEpoch := sdk.NewCoin("uphoton", feesPerBlock.Amount.MulRaw(epochMultiplier))
 	providerParams := providertypes.DefaultParams()
 	providerParams.FeesPerBlockAmount = feesPerBlock.Amount
 	k.SetParams(ctx, providerParams)
@@ -173,23 +183,21 @@ func TestCollectFeesFromConsumersContinuesOnGenericError(t *testing.T) {
 
 	gomock.InOrder(
 		mocks.MockBankKeeper.EXPECT().
-			SendCoinsFromAccountToModule(gomock.Any(), consumer0FeePoolAddr, providertypes.ModuleName, sdk.NewCoins(feesPerBlock)).
+			SendCoinsFromAccountToModule(gomock.Any(), consumer0FeePoolAddr, providertypes.ModuleName, sdk.NewCoins(feesPerEpoch)).
 			Return(errors.New("bank send restriction")),
 		mocks.MockBankKeeper.EXPECT().
-			SendCoinsFromAccountToModule(gomock.Any(), consumer1FeePoolAddr, providertypes.ModuleName, sdk.NewCoins(feesPerBlock)).
+			SendCoinsFromAccountToModule(gomock.Any(), consumer1FeePoolAddr, providertypes.ModuleName, sdk.NewCoins(feesPerEpoch)).
 			Return(nil),
 	)
 
 	total := k.CollectFeesFromConsumers(ctx)
-	require.Equal(t, sdk.NewInt64Coin("uphoton", 10), total)
+	require.Equal(t, feesPerEpoch, total)
 	require.False(t, k.IsConsumerInDebt(ctx, consumer0))
 	require.False(t, k.IsConsumerInDebt(ctx, consumer1))
 }
 
 // Helpers for the distribution tests.
 
-// newBondedValidator builds a Validator with an operator address derived from
-// opSeed. Returns the validator and its operator bytes.
 func newBondedValidator(t *testing.T, codec addresscodec.Codec, opSeed byte) (stakingtypes.Validator, []byte) {
 	t.Helper()
 	opBytes := bytes.Repeat([]byte{opSeed}, 20)
@@ -392,4 +400,116 @@ func TestDistributeFeesToValidatorsPropagatesBondedFetchError(t *testing.T) {
 
 	err := k.DistributeFeesToValidators(ctx)
 	require.ErrorContains(t, err, "boom")
+}
+
+// TestDistributeFeesToValidatorsExcludesDowntime: validators with epoch
+// downtime evidence do not receive rewards, and their share is NOT
+// redistributed to others (the share stays in the module account).
+func TestDistributeFeesToValidatorsExcludesDowntime(t *testing.T) {
+	params := testkeeper.NewInMemKeeperParams(t)
+	k, ctx, ctrl, mocks := testkeeper.GetProviderKeeperAndCtx(t, params)
+	defer ctrl.Finish()
+
+	valAddrCodec := address.NewBech32Codec("cosmosvaloper")
+	mocks.MockStakingKeeper.EXPECT().ValidatorAddressCodec().Return(valAddrCodec).AnyTimes()
+
+	val1, op1 := newBondedValidator(t, valAddrCodec, 1)
+	val2, _ := newBondedValidator(t, valAddrCodec, 2)
+
+	consAddr1, err := val1.GetConsAddr()
+	require.NoError(t, err)
+
+	providerParams := providertypes.DefaultParams()
+	providerParams.FeesPerBlockAmount = math.NewInt(10)
+	k.SetParams(ctx, providerParams)
+
+	// Mark val2 as having downtime
+	consAddr2, err := val2.GetConsAddr()
+	require.NoError(t, err)
+	k.MarkEpochDowntime(ctx, consAddr2)
+
+	mocks.MockBankKeeper.EXPECT().
+		GetBalance(gomock.Any(), authtypes.NewModuleAddress(providertypes.ModuleName), providertypes.DefaultFeesPerBlockDenom).
+		Return(sdk.NewInt64Coin("uphoton", 100))
+	mocks.MockStakingKeeper.EXPECT().
+		GetBondedValidatorsByPower(gomock.Any()).
+		Return([]stakingtypes.Validator{val1, val2}, nil)
+
+	// Share = 100 / 2 = 50 per validator. val2 is excluded but the share
+	// amount stays the same for val1 (no redistribution).
+	share := sdk.NewCoins(sdk.NewInt64Coin("uphoton", 50))
+	mocks.MockBankKeeper.EXPECT().
+		SendCoinsFromModuleToAccount(gomock.Any(), providertypes.ModuleName, sdk.AccAddress(op1), share).
+		Return(nil)
+	// val2 is NOT paid — no mock for val2's send.
+
+	// val1 should not be in downtime set
+	require.False(t, k.IsEpochDowntime(ctx, consAddr1))
+	require.True(t, k.IsEpochDowntime(ctx, consAddr2))
+
+	require.NoError(t, k.DistributeFeesToValidators(ctx))
+}
+
+// TestEpochDowntimeTracking tests the lifecycle: mark, check, clear.
+func TestEpochDowntimeTracking(t *testing.T) {
+	params := testkeeper.NewInMemKeeperParams(t)
+	k, ctx, _, _ := testkeeper.GetProviderKeeperAndCtx(t, params)
+
+	consAddr1 := sdk.ConsAddress([]byte("validator1"))
+	consAddr2 := sdk.ConsAddress([]byte("validator2"))
+
+	// Initially empty
+	require.False(t, k.IsEpochDowntime(ctx, consAddr1))
+	require.False(t, k.IsEpochDowntime(ctx, consAddr2))
+
+	// Mark one
+	k.MarkEpochDowntime(ctx, consAddr1)
+	require.True(t, k.IsEpochDowntime(ctx, consAddr1))
+	require.False(t, k.IsEpochDowntime(ctx, consAddr2))
+
+	// Mark another
+	k.MarkEpochDowntime(ctx, consAddr2)
+	require.True(t, k.IsEpochDowntime(ctx, consAddr1))
+	require.True(t, k.IsEpochDowntime(ctx, consAddr2))
+
+	// Clear all
+	k.ClearEpochDowntime(ctx)
+	require.False(t, k.IsEpochDowntime(ctx, consAddr1))
+	require.False(t, k.IsEpochDowntime(ctx, consAddr2))
+}
+
+// TestDistributeFeesToValidatorsAllDowntime: when all validators have
+// downtime, nobody gets paid. The full balance stays in the module account.
+func TestDistributeFeesToValidatorsAllDowntime(t *testing.T) {
+	params := testkeeper.NewInMemKeeperParams(t)
+	k, ctx, ctrl, mocks := testkeeper.GetProviderKeeperAndCtx(t, params)
+	defer ctrl.Finish()
+
+	valAddrCodec := address.NewBech32Codec("cosmosvaloper")
+	mocks.MockStakingKeeper.EXPECT().ValidatorAddressCodec().Return(valAddrCodec).AnyTimes()
+
+	val1, _ := newBondedValidator(t, valAddrCodec, 1)
+	val2, _ := newBondedValidator(t, valAddrCodec, 2)
+
+	// Mark both as downtime
+	consAddr1, err := val1.GetConsAddr()
+	require.NoError(t, err)
+	consAddr2, err := val2.GetConsAddr()
+	require.NoError(t, err)
+	k.MarkEpochDowntime(ctx, consAddr1)
+	k.MarkEpochDowntime(ctx, consAddr2)
+
+	providerParams := providertypes.DefaultParams()
+	providerParams.FeesPerBlockAmount = math.NewInt(10)
+	k.SetParams(ctx, providerParams)
+
+	mocks.MockBankKeeper.EXPECT().
+		GetBalance(gomock.Any(), authtypes.NewModuleAddress(providertypes.ModuleName), providertypes.DefaultFeesPerBlockDenom).
+		Return(sdk.NewInt64Coin("uphoton", 100))
+	mocks.MockStakingKeeper.EXPECT().
+		GetBondedValidatorsByPower(gomock.Any()).
+		Return([]stakingtypes.Validator{val1, val2}, nil)
+
+	// No bank sends expected — both validators are excluded.
+	require.NoError(t, k.DistributeFeesToValidators(ctx))
 }

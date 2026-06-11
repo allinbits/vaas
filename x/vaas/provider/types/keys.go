@@ -80,6 +80,8 @@ const (
 	ConsumerFeePoolSharesKeyName      = "ConsumerFeePoolSharesKey"
 	ConsumerFeePoolTotalSharesKeyName = "ConsumerFeePoolTotalSharesKey"
 	FeePoolAddressToConsumerIdKeyName = "FeePoolAddressToConsumerIdKey"
+
+	EpochDowntimeKeyName = "EpochDowntimeKey"
 )
 
 // Collection key prefixes for use with cosmossdk.io/collections
@@ -112,5 +114,6 @@ var (
 	ConsumerFeePoolSharesPrefix            = collections.NewPrefix(25)
 	ConsumerFeePoolTotalSharesPrefix       = collections.NewPrefix(26)
 	FeePoolAddressToConsumerIdPrefix       = collections.NewPrefix(27)
+	EpochDowntimePrefix                    = collections.NewPrefix(28)
 	ParametersPrefix                       = collections.NewPrefix(0xFF)
 )

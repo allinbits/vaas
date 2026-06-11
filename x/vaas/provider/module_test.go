@@ -35,6 +35,7 @@ func TestBeginBlockCommitsDebtStateWhenDistributionFails(t *testing.T) {
 	k.SetConsumerPhase(ctx, consumerPaying, providertypes.CONSUMER_PHASE_LAUNCHED)
 
 	feesPerBlock := sdk.NewInt64Coin("uphoton", 10)
+	feesPerEpoch := sdk.NewCoin("uphoton", feesPerBlock.Amount.MulRaw(providertypes.DefaultBlocksPerEpoch))
 	providerParams := providertypes.DefaultParams()
 	providerParams.FeesPerBlockAmount = feesPerBlock.Amount
 	k.SetParams(ctx, providerParams)
@@ -56,25 +57,84 @@ func TestBeginBlockCommitsDebtStateWhenDistributionFails(t *testing.T) {
 	val.DelegatorShares = math.LegacyNewDecFromInt(sdk.DefaultPowerReduction)
 
 	// Collection phase: one consumer underfunded (ErrInsufficientFunds), one pays.
+	// Fees are charged per epoch: fees_per_block * blocks_per_epoch.
 	mocks.MockBankKeeper.EXPECT().
-		SendCoinsFromAccountToModule(gomock.Any(), consumerInDebtFeePoolAddr, providertypes.ModuleName, sdk.NewCoins(feesPerBlock)).
-		Return(sdkerrors.ErrInsufficientFunds.Wrapf("spendable 5 < 10"))
+		SendCoinsFromAccountToModule(gomock.Any(), consumerInDebtFeePoolAddr, providertypes.ModuleName, sdk.NewCoins(feesPerEpoch)).
+		Return(sdkerrors.ErrInsufficientFunds.Wrapf("spendable 5 < 6000"))
 	mocks.MockBankKeeper.EXPECT().
-		SendCoinsFromAccountToModule(gomock.Any(), consumerPayingFeePoolAddr, providertypes.ModuleName, sdk.NewCoins(feesPerBlock)).
+		SendCoinsFromAccountToModule(gomock.Any(), consumerPayingFeePoolAddr, providertypes.ModuleName, sdk.NewCoins(feesPerEpoch)).
 		Return(nil)
 	// Distribution phase: bank send errors out, rolls back distribution only.
 	mocks.MockBankKeeper.EXPECT().
 		GetBalance(gomock.Any(), authtypes.NewModuleAddress(providertypes.ModuleName), providertypes.DefaultFeesPerBlockDenom).
-		Return(feesPerBlock)
+		Return(feesPerEpoch)
 	mocks.MockStakingKeeper.EXPECT().
 		GetBondedValidatorsByPower(gomock.Any()).
 		Return([]stakingtypes.Validator{val}, nil)
 	mocks.MockBankKeeper.EXPECT().
-		SendCoinsFromModuleToAccount(gomock.Any(), providertypes.ModuleName, sdk.AccAddress(opBytes), sdk.NewCoins(feesPerBlock)).
+		SendCoinsFromModuleToAccount(gomock.Any(), providertypes.ModuleName, sdk.AccAddress(opBytes), sdk.NewCoins(feesPerEpoch)).
 		Return(errors.New("distribution boom"))
 
 	require.NoError(t, appModule.BeginBlock(sdk.WrapSDKContext(ctx)))
 
 	require.True(t, k.IsConsumerInDebt(ctx, consumerInDebt))
 	require.False(t, k.IsConsumerInDebt(ctx, consumerPaying))
+}
+
+// TestBeginBlockSkipsFeeCollectionWhenNotAtEpochBoundary verifies that the
+// per-epoch fee collection and distribution only run at epoch boundaries.
+func TestBeginBlockSkipsFeeCollectionWhenNotAtEpochBoundary(t *testing.T) {
+	params := testkeeper.NewInMemKeeperParams(t)
+	k, ctx, ctrl, _ := testkeeper.GetProviderKeeperAndCtx(t, params)
+	defer ctrl.Finish()
+
+	appModule := NewAppModule(&k)
+
+	consumer := k.FetchAndIncrementConsumerId(ctx)
+	k.SetConsumerPhase(ctx, consumer, providertypes.CONSUMER_PHASE_LAUNCHED)
+
+	feesPerBlock := sdk.NewInt64Coin("uphoton", 10)
+	providerParams := providertypes.DefaultParams()
+	providerParams.FeesPerBlockAmount = feesPerBlock.Amount
+	k.SetParams(ctx, providerParams)
+
+	// Set height to 100 (not an epoch boundary for blocks_per_epoch=600)
+	ctx = ctx.WithBlockHeight(100)
+
+	// No bank or staking mock expectations — nothing should be called.
+	require.NoError(t, appModule.BeginBlock(sdk.WrapSDKContext(ctx)))
+}
+
+// TestBeginBlockCollectsFeesAtEpochBoundary verifies that fee collection
+// and distribution run when the epoch boundary is reached.
+func TestBeginBlockCollectsFeesAtEpochBoundary(t *testing.T) {
+	params := testkeeper.NewInMemKeeperParams(t)
+	k, ctx, ctrl, mocks := testkeeper.GetProviderKeeperAndCtx(t, params)
+	defer ctrl.Finish()
+
+	appModule := NewAppModule(&k)
+
+	consumer := k.FetchAndIncrementConsumerId(ctx)
+	k.SetConsumerPhase(ctx, consumer, providertypes.CONSUMER_PHASE_LAUNCHED)
+
+	feesPerBlock := sdk.NewInt64Coin("uphoton", 10)
+	feesPerEpoch := sdk.NewCoin("uphoton", feesPerBlock.Amount.MulRaw(providertypes.DefaultBlocksPerEpoch))
+	providerParams := providertypes.DefaultParams()
+	providerParams.FeesPerBlockAmount = feesPerBlock.Amount
+	k.SetParams(ctx, providerParams)
+
+	consumerFeePoolAddr := k.GetConsumerFeePoolAddress(consumer)
+
+	// Height 600 is an epoch boundary (600 % 600 == 0)
+	ctx = ctx.WithBlockHeight(600)
+
+	// Expect per-epoch collection and zero-fee distribution
+	mocks.MockBankKeeper.EXPECT().
+		SendCoinsFromAccountToModule(gomock.Any(), consumerFeePoolAddr, providertypes.ModuleName, sdk.NewCoins(feesPerEpoch)).
+		Return(nil)
+	mocks.MockBankKeeper.EXPECT().
+		GetBalance(gomock.Any(), authtypes.NewModuleAddress(providertypes.ModuleName), providertypes.DefaultFeesPerBlockDenom).
+		Return(sdk.NewCoin("uphoton", math.ZeroInt()))
+
+	require.NoError(t, appModule.BeginBlock(sdk.WrapSDKContext(ctx)))
 }
