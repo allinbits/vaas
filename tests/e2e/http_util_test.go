@@ -80,3 +80,25 @@ func queryBlockHeight(rpcEndpoint string) (int64, error) {
 
 	return height, nil
 }
+
+// queryNodeID queries a CometBFT RPC /status endpoint and returns the node ID.
+func queryNodeID(rpcEndpoint string) string {
+	bz, err := httpGet(fmt.Sprintf("%s/status", rpcEndpoint))
+	if err != nil {
+		return ""
+	}
+
+	var status struct {
+		Result struct {
+			NodeInfo struct {
+				ID string `json:"id"`
+			} `json:"node_info"`
+		} `json:"result"`
+	}
+
+	if err := json.Unmarshal(bz, &status); err != nil {
+		return ""
+	}
+
+	return status.Result.NodeInfo.ID
+}

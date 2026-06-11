@@ -46,9 +46,55 @@ func (s *IntegrationTestSuite) testDowntimeSlash() {
 		s.Require().False(jailed, "validator should not be jailed after downtime evidence")
 	})
 
-	// TODO: add individual validator downtime slash test once multiple validators
-	// are supported in e2e. The test should pause a single validator on the
-	// consumer chain and verify the provider slashes and jails that validator.
+	s.Run("individual validator downtime slash", func() {
+		s.Require().GreaterOrEqual(len(s.consumerValRes), 2,
+			"need at least 2 consumer validator containers for individual downtime test")
+
+		valoperAddr, tokensBefore := s.getProviderValidatorTokens()
+		s.Require().False(tokensBefore.IsZero(), "validator should have tokens before downtime test")
+
+		jailed := s.isProviderValidatorJailed()
+		s.Require().False(jailed, "validator should not be jailed before downtime test")
+
+		// Pause only consumer val1 (the second validator node). Consumer val0
+		// keeps running so the chain continues producing blocks while val1 is
+		// offline, triggering downtime detection on the consumer.
+		s.T().Log("pausing consumer val1 container to simulate individual validator downtime...")
+		err := s.dkrPool.Client.PauseContainer(s.consumerValRes[1].Container.ID)
+		s.Require().NoError(err, "failed to pause consumer val1 container")
+
+		// Wait long enough for the consumer's slashing module to detect the
+		// downtime (signed_blocks_window=5, min_signed_per_window=0.05) and
+		// for the evidence packet to be relayed to the provider.
+		time.Sleep(30 * time.Second)
+
+		s.T().Log("unpausing consumer val1 container...")
+		err = s.dkrPool.Client.UnpauseContainer(s.consumerValRes[1].Container.ID)
+		s.Require().NoError(err, "failed to unpause consumer val1 container")
+
+		s.T().Log("waiting for provider to process downtime evidence from consumer...")
+		s.Require().Eventuallyf(func() bool {
+			tokensAfter, err := s.getProviderValidatorTokensByAddr(valoperAddr)
+			if err != nil {
+				return false
+			}
+			return tokensAfter.LT(tokensBefore)
+		},
+			3*time.Minute,
+			5*time.Second,
+			"validator tokens were not slashed on provider after consumer downtime (before: %s, valoper: %s)",
+			tokensBefore.String(), valoperAddr,
+		)
+
+		s.T().Log("verifying validator was jailed after downtime slash...")
+		s.Require().Eventuallyf(func() bool {
+			return s.isProviderValidatorJailed()
+		},
+			2*time.Minute,
+			5*time.Second,
+			"validator should be jailed after downtime slash",
+		)
+	})
 }
 
 func (s *IntegrationTestSuite) patchConsumerSlashingParams() {
@@ -87,18 +133,26 @@ func (s *IntegrationTestSuite) isProviderValidatorJailed() bool {
 	return false
 }
 
-// getProviderValidatorTokens returns the first bonded validator's operator address and token amount.
+// getProviderValidatorTokens returns the minority bonded validator's operator
+// address and token amount (the one with the least tokens). This is the
+// validator expected to be slashed when taken offline individually.
 func (s *IntegrationTestSuite) getProviderValidatorTokens() (string, math.Int) {
 	vals, err := s.queryProviderValidators()
 	if err != nil {
 		return "", math.ZeroInt()
 	}
+	var minTokens math.Int
+	var minAddr string
 	for _, v := range vals {
-		if v.Status == stakingtypes.Bonded {
-			return v.OperatorAddress, v.Tokens
+		if v.Status != stakingtypes.Bonded {
+			continue
+		}
+		if minAddr == "" || v.Tokens.LT(minTokens) {
+			minTokens = v.Tokens
+			minAddr = v.OperatorAddress
 		}
 	}
-	return "", math.ZeroInt()
+	return minAddr, minTokens
 }
 
 // getProviderValidatorTokensByAddr returns the token amount for a specific validator by operator address.
