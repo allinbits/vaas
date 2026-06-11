@@ -32,7 +32,7 @@ func (k Keeper) MarkEpochDowntime(ctx sdk.Context, providerConsAddr sdk.ConsAddr
 func (k Keeper) IsEpochDowntime(ctx sdk.Context, providerConsAddr sdk.ConsAddress) bool {
 	found, err := k.EpochDowntime.Has(ctx, providerConsAddr.Bytes())
 	if err != nil {
-		return false
+		panic(fmt.Errorf("failed to check epoch downtime for %x: %w", providerConsAddr, err))
 	}
 	return found
 }
@@ -104,7 +104,12 @@ func (k Keeper) CollectFeesFromConsumers(ctx sdk.Context) sdk.Coin {
 // Validators flagged with downtime evidence during the current epoch are
 // excluded from receiving rewards. The reward amount per eligible validator
 // stays fixed (total / num_bonded); the excluded validator's share is NOT
-// redistributed to others — it remains in the provider module account.
+// redistributed to others — it remains in the provider module account and
+// is picked up by the next epoch's distribution.
+//
+// This avoids creating DOS incentives: validators cannot profit by causing
+// others to miss blocks, and the consumer does not pay for services not
+// rendered (the leftover carries forward rather than being burned).
 func (k Keeper) DistributeFeesToValidators(ctx sdk.Context) error {
 	totalFees := k.bankKeeper.GetBalance(ctx, authtypes.NewModuleAddress(types.ModuleName), k.GetFeeDenom())
 	if totalFees.IsZero() {
@@ -130,7 +135,7 @@ func (k Keeper) DistributeFeesToValidators(ctx sdk.Context) error {
 	for _, val := range bonded {
 		consAddr, err := val.GetConsAddr()
 		if err != nil {
-			continue
+			return fmt.Errorf("failed to get consensus address for validator %s: %w", val.GetOperator(), err)
 		}
 
 		// Skip validators flagged for downtime this epoch
