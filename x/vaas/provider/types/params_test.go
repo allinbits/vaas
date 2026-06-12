@@ -43,13 +43,13 @@ func TestValidateInfractionParameters(t *testing.T) {
 	}{
 		{"default infraction params", types.DefaultInfractionParameters(), true},
 		{"negative grace period", types.InfractionParameters{
-			DoubleSign:         types.DefaultInfractionParameters().DoubleSign,
-			Downtime:           types.DefaultInfractionParameters().Downtime,
+			DoubleSign:          types.DefaultInfractionParameters().DoubleSign,
+			Downtime:            types.DefaultInfractionParameters().Downtime,
 			DowntimeGracePeriod: -1 * time.Second,
 		}, false},
 		{"zero grace period (disabled)", types.InfractionParameters{
-			DoubleSign:         types.DefaultInfractionParameters().DoubleSign,
-			Downtime:           types.DefaultInfractionParameters().Downtime,
+			DoubleSign:          types.DefaultInfractionParameters().DoubleSign,
+			Downtime:            types.DefaultInfractionParameters().Downtime,
 			DowntimeGracePeriod: 0,
 		}, true},
 		{"nil double_sign", types.InfractionParameters{

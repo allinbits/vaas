@@ -157,21 +157,12 @@ func (am AppModule) BeginBlock(ctx context.Context) error {
 
 	// Collect and distribute fees once per epoch, not every block.
 	if am.keeper.BlocksUntilNextEpoch(sdkCtx) == 0 {
-		am.keeper.CollectFeesFromConsumers(sdkCtx)
-
-		// Distribute all currently available provider-held fees in a cached context
-		// so a distribution failure does not undo the already-committed collection
-		// and debt state from the call above.
-		distributionCtx, writeDistribution := sdkCtx.CacheContext()
-		if err := am.keeper.DistributeFeesToValidators(distributionCtx); err != nil {
+		if err := am.keeper.DistributeConsumerFees(sdkCtx); err != nil {
 			sdkCtx.Logger().Error(
-				"failed to distribute collected fees to validators",
+				"failed to distribute consumer fees to validators",
 				"err", err,
 				"height", sdkCtx.BlockHeight(),
 			)
-			// Do not write cached changes; effectively roll back distribution only.
-		} else {
-			writeDistribution()
 		}
 
 		// Clear downtime records for the next epoch
