@@ -96,10 +96,12 @@ type Keeper struct {
 	ConsumerFeePoolTotalShares collections.Map[collections.Pair[uint64, string], math.Int]
 	FeePoolAddressToConsumerId collections.Map[sdk.AccAddress, uint64]
 
-	// EpochDowntime tracks provider consensus addresses of validators that
-	// received downtime evidence during the current epoch. Cleared at each
-	// epoch boundary. Used to exclude those validators from epoch rewards.
-	EpochDowntime collections.Map[[]byte, bool]
+	// EpochDowntime tracks per-consumer provider consensus addresses of
+	// validators that received downtime evidence during the current epoch.
+	// Keyed by (consumer_id, cons_addr) so that downtime on one consumer
+	// does not exclude a validator from rewards on another. Cleared at each
+	// epoch boundary.
+	EpochDowntime collections.Map[collections.Pair[uint64, []byte], bool]
 }
 
 // NewKeeper creates a new provider Keeper instance
@@ -218,7 +220,7 @@ func NewKeeper(
 	k.EpochDowntime = collections.NewMap(
 		sb, types.EpochDowntimePrefix,
 		types.EpochDowntimeKeyName,
-		collections.BytesKey,
+		collections.PairKeyCodec(collections.Uint64Key, collections.BytesKey),
 		collections.BoolValue,
 	)
 

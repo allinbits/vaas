@@ -303,7 +303,7 @@ func (k Keeper) HandleConsumerDowntime(ctx sdk.Context, consumerId uint64, evide
 	}
 
 	// Record downtime for epoch reward exclusion
-	k.MarkEpochDowntime(ctx, providerAddr.ToSdkConsAddr())
+	k.MarkEpochDowntime(ctx, consumerId, providerAddr.ToSdkConsAddr())
 
 	k.Logger(ctx).Info(
 		"handled consumer downtime",

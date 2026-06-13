@@ -5,6 +5,7 @@ import (
 
 	"github.com/allinbits/vaas/x/vaas/provider/types"
 
+	"cosmossdk.io/collections"
 	"cosmossdk.io/math"
 
 	sdk "github.com/cosmos/cosmos-sdk/types"
@@ -19,19 +20,20 @@ func (k Keeper) GetConsumerFeePoolAddress(consumerId uint64) sdk.AccAddress {
 	return authtypes.NewModuleAddress(fmt.Sprintf("%s-consumer-fee-pool-%d", types.ModuleName, consumerId))
 }
 
-// MarkEpochDowntime records a validator's provider consensus address as having
-// downtime evidence in the current epoch.
-func (k Keeper) MarkEpochDowntime(ctx sdk.Context, providerConsAddr sdk.ConsAddress) {
-	if err := k.EpochDowntime.Set(ctx, providerConsAddr.Bytes(), true); err != nil {
-		panic(fmt.Errorf("failed to mark epoch downtime for %x: %w", providerConsAddr, err))
+// MarkEpochDowntime records a validator's provider consensus address as
+// having downtime evidence in the current epoch for the given consumer.
+func (k Keeper) MarkEpochDowntime(ctx sdk.Context, consumerId uint64, providerConsAddr sdk.ConsAddress) {
+	if err := k.EpochDowntime.Set(ctx, collections.Join(consumerId, providerConsAddr.Bytes()), true); err != nil {
+		panic(fmt.Errorf("failed to mark epoch downtime for consumer %d, %x: %w", consumerId, providerConsAddr, err))
 	}
 }
 
-// IsEpochDowntime returns true if the validator had downtime evidence this epoch.
-func (k Keeper) IsEpochDowntime(ctx sdk.Context, providerConsAddr sdk.ConsAddress) bool {
-	found, err := k.EpochDowntime.Has(ctx, providerConsAddr.Bytes())
+// IsEpochDowntime returns true if the validator had downtime evidence this
+// epoch on the given consumer.
+func (k Keeper) IsEpochDowntime(ctx sdk.Context, consumerId uint64, providerConsAddr sdk.ConsAddress) bool {
+	found, err := k.EpochDowntime.Has(ctx, collections.Join(consumerId, providerConsAddr.Bytes()))
 	if err != nil {
-		panic(fmt.Errorf("failed to check epoch downtime for %x: %w", providerConsAddr, err))
+		panic(fmt.Errorf("failed to check epoch downtime for consumer %d, %x: %w", consumerId, providerConsAddr, err))
 	}
 	return found
 }
@@ -67,28 +69,35 @@ func (k Keeper) DistributeConsumerFees(ctx sdk.Context) error {
 	}
 	numBonded := math.NewInt(int64(len(bonded)))
 
-	// Precompute eligible (non-downtime) validator operator addresses.
-	var eligibleOps []string
-	for _, val := range bonded {
+	// Precompute consensus addresses for all bonded validators.
+	type bondedVal struct {
+		consAddr sdk.ConsAddress
+		operator string
+	}
+	bondedVals := make([]bondedVal, len(bonded))
+	for i, val := range bonded {
 		consAddr, err := val.GetConsAddr()
 		if err != nil {
 			return fmt.Errorf("failed to get consensus address for validator %s: %w", val.GetOperator(), err)
 		}
-		if k.IsEpochDowntime(ctx, consAddr) {
-			k.Logger(ctx).Debug("skipping epoch reward for downtime validator",
-				"validator", val.GetOperator(),
-			)
-			continue
-		}
-		eligibleOps = append(eligibleOps, val.GetOperator())
-	}
-	if len(eligibleOps) == 0 {
-		return nil
+		bondedVals[i] = bondedVal{consAddr: consAddr, operator: val.GetOperator()}
 	}
 
 	consumerIds := k.GetAllActiveConsumerIds(ctx)
 	for _, consumerId := range consumerIds {
 		if k.GetConsumerPhase(ctx, consumerId) != types.CONSUMER_PHASE_LAUNCHED {
+			continue
+		}
+
+		// Filter eligible validators for this consumer.
+		var eligibleOps []string
+		for _, bv := range bondedVals {
+			if k.IsEpochDowntime(ctx, consumerId, bv.consAddr) {
+				continue
+			}
+			eligibleOps = append(eligibleOps, bv.operator)
+		}
+		if len(eligibleOps) == 0 {
 			continue
 		}
 

@@ -291,7 +291,6 @@ func TestDistributeConsumerFeesExcludesDowntime(t *testing.T) {
 	require.NoError(t, err)
 	consAddr2, err := val2.GetConsAddr()
 	require.NoError(t, err)
-	k.MarkEpochDowntime(ctx, consAddr2)
 
 	feesPerBlock := sdk.NewInt64Coin("uphoton", 10)
 	feesPerEpoch := sdk.NewCoin("uphoton", feesPerBlock.Amount.MulRaw(epochMultiplier))
@@ -300,6 +299,7 @@ func TestDistributeConsumerFeesExcludesDowntime(t *testing.T) {
 
 	consumer0 := k.FetchAndIncrementConsumerId(ctx)
 	k.SetConsumerPhase(ctx, consumer0, providertypes.CONSUMER_PHASE_LAUNCHED)
+	k.MarkEpochDowntime(ctx, consumer0, consAddr2)
 
 	providerParams := providertypes.DefaultParams()
 	providerParams.FeesPerBlockAmount = math.NewInt(10)
@@ -324,34 +324,50 @@ func TestDistributeConsumerFeesExcludesDowntime(t *testing.T) {
 			},
 		).Return(nil)
 
-	require.False(t, k.IsEpochDowntime(ctx, consAddr1))
-	require.True(t, k.IsEpochDowntime(ctx, consAddr2))
+	require.False(t, k.IsEpochDowntime(ctx, consumer0, consAddr1))
+	require.True(t, k.IsEpochDowntime(ctx, consumer0, consAddr2))
 	require.NoError(t, k.DistributeConsumerFees(ctx))
 	require.False(t, k.IsConsumerInDebt(ctx, consumer0))
 }
 
 // TestEpochDowntimeTracking tests the lifecycle: mark, check, clear.
+// Downtime is tracked per consumer, so the same validator can be flagged on
+// one consumer but not another.
 func TestEpochDowntimeTracking(t *testing.T) {
 	params := testkeeper.NewInMemKeeperParams(t)
 	k, ctx, _, _ := testkeeper.GetProviderKeeperAndCtx(t, params)
 
 	consAddr1 := sdk.ConsAddress([]byte("validator1"))
 	consAddr2 := sdk.ConsAddress([]byte("validator2"))
+	const consumer0 uint64 = 0
+	const consumer1 uint64 = 1
 
-	require.False(t, k.IsEpochDowntime(ctx, consAddr1))
-	require.False(t, k.IsEpochDowntime(ctx, consAddr2))
+	require.False(t, k.IsEpochDowntime(ctx, consumer0, consAddr1))
+	require.False(t, k.IsEpochDowntime(ctx, consumer0, consAddr2))
+	require.False(t, k.IsEpochDowntime(ctx, consumer1, consAddr1))
 
-	k.MarkEpochDowntime(ctx, consAddr1)
-	require.True(t, k.IsEpochDowntime(ctx, consAddr1))
-	require.False(t, k.IsEpochDowntime(ctx, consAddr2))
+	// Mark consAddr1 on consumer0 only
+	k.MarkEpochDowntime(ctx, consumer0, consAddr1)
+	require.True(t, k.IsEpochDowntime(ctx, consumer0, consAddr1))
+	require.False(t, k.IsEpochDowntime(ctx, consumer0, consAddr2))
+	require.False(t, k.IsEpochDowntime(ctx, consumer1, consAddr1), "downtime should be per-consumer")
 
-	k.MarkEpochDowntime(ctx, consAddr2)
-	require.True(t, k.IsEpochDowntime(ctx, consAddr1))
-	require.True(t, k.IsEpochDowntime(ctx, consAddr2))
+	// Mark consAddr2 on consumer0 too
+	k.MarkEpochDowntime(ctx, consumer0, consAddr2)
+	require.True(t, k.IsEpochDowntime(ctx, consumer0, consAddr1))
+	require.True(t, k.IsEpochDowntime(ctx, consumer0, consAddr2))
 
+	// Mark consAddr1 on consumer1
+	k.MarkEpochDowntime(ctx, consumer1, consAddr1)
+	require.True(t, k.IsEpochDowntime(ctx, consumer1, consAddr1))
+	require.False(t, k.IsEpochDowntime(ctx, consumer1, consAddr2))
+
+	// Clear all
 	k.ClearEpochDowntime(ctx)
-	require.False(t, k.IsEpochDowntime(ctx, consAddr1))
-	require.False(t, k.IsEpochDowntime(ctx, consAddr2))
+	require.False(t, k.IsEpochDowntime(ctx, consumer0, consAddr1))
+	require.False(t, k.IsEpochDowntime(ctx, consumer0, consAddr2))
+	require.False(t, k.IsEpochDowntime(ctx, consumer1, consAddr1))
+	require.False(t, k.IsEpochDowntime(ctx, consumer1, consAddr2))
 }
 
 // TestDistributeConsumerFeesAllDowntime: when all validators have downtime,
@@ -371,8 +387,10 @@ func TestDistributeConsumerFeesAllDowntime(t *testing.T) {
 	require.NoError(t, err)
 	consAddr2, err := val2.GetConsAddr()
 	require.NoError(t, err)
-	k.MarkEpochDowntime(ctx, consAddr1)
-	k.MarkEpochDowntime(ctx, consAddr2)
+	consumer0 := k.FetchAndIncrementConsumerId(ctx)
+	k.SetConsumerPhase(ctx, consumer0, providertypes.CONSUMER_PHASE_LAUNCHED)
+	k.MarkEpochDowntime(ctx, consumer0, consAddr1)
+	k.MarkEpochDowntime(ctx, consumer0, consAddr2)
 
 	providerParams := providertypes.DefaultParams()
 	providerParams.FeesPerBlockAmount = math.NewInt(10)
