@@ -36,6 +36,11 @@ func newBondedValidator(t *testing.T, codec addresscodec.Codec, opSeed byte) (st
 	return val, opBytes
 }
 
+// accAddr converts raw operator bytes to an account-prefixed bech32 string.
+func accAddr(opBytes []byte) string {
+	return sdk.AccAddress(opBytes).String()
+}
+
 // TestDistributeConsumerFees splits each consumer's fees directly to bonded
 // validators via a single InputOutputCoins call.
 func TestDistributeConsumerFees(t *testing.T) {
@@ -46,9 +51,9 @@ func TestDistributeConsumerFees(t *testing.T) {
 	valAddrCodec := address.NewBech32Codec("cosmosvaloper")
 	mocks.MockStakingKeeper.EXPECT().ValidatorAddressCodec().Return(valAddrCodec).AnyTimes()
 
-	val1, _ := newBondedValidator(t, valAddrCodec, 1)
+	val1, val1Bytes := newBondedValidator(t, valAddrCodec, 1)
 	val1.Tokens = sdk.DefaultPowerReduction.MulRaw(10)
-	val2, _ := newBondedValidator(t, valAddrCodec, 2)
+	val2, val2Bytes := newBondedValidator(t, valAddrCodec, 2)
 	val2.Tokens = sdk.DefaultPowerReduction.MulRaw(20)
 
 	feesPerBlock := sdk.NewInt64Coin("uphoton", 10)
@@ -80,8 +85,8 @@ func TestDistributeConsumerFees(t *testing.T) {
 		InputOutputCoins(gomock.Any(),
 			banktypes.Input{Address: consumer0Pool.String(), Coins: sdk.NewCoins(sdk.NewCoin("uphoton", share.MulRaw(2)))},
 			[]banktypes.Output{
-				{Address: val1.GetOperator(), Coins: shareCoins},
-				{Address: val2.GetOperator(), Coins: shareCoins},
+				{Address: accAddr(val1Bytes), Coins: shareCoins},
+				{Address: accAddr(val2Bytes), Coins: shareCoins},
 			},
 		).Return(nil)
 
@@ -93,8 +98,8 @@ func TestDistributeConsumerFees(t *testing.T) {
 		InputOutputCoins(gomock.Any(),
 			banktypes.Input{Address: consumer1Pool.String(), Coins: sdk.NewCoins(sdk.NewCoin("uphoton", share.MulRaw(2)))},
 			[]banktypes.Output{
-				{Address: val1.GetOperator(), Coins: shareCoins},
-				{Address: val2.GetOperator(), Coins: shareCoins},
+				{Address: accAddr(val1Bytes), Coins: shareCoins},
+				{Address: accAddr(val2Bytes), Coins: shareCoins},
 			},
 		).Return(nil)
 
@@ -151,8 +156,8 @@ func TestDistributeConsumerFeesClearsDebtWhenRecovered(t *testing.T) {
 	valAddrCodec := address.NewBech32Codec("cosmosvaloper")
 	mocks.MockStakingKeeper.EXPECT().ValidatorAddressCodec().Return(valAddrCodec).AnyTimes()
 
-	val1, _ := newBondedValidator(t, valAddrCodec, 1)
-	val2, _ := newBondedValidator(t, valAddrCodec, 2)
+	val1, val1Bytes := newBondedValidator(t, valAddrCodec, 1)
+	val2, val2Bytes := newBondedValidator(t, valAddrCodec, 2)
 
 	consumer0 := k.FetchAndIncrementConsumerId(ctx)
 	k.SetConsumerPhase(ctx, consumer0, providertypes.CONSUMER_PHASE_LAUNCHED)
@@ -179,8 +184,8 @@ func TestDistributeConsumerFeesClearsDebtWhenRecovered(t *testing.T) {
 		InputOutputCoins(gomock.Any(),
 			banktypes.Input{Address: consumer0Pool.String(), Coins: sdk.NewCoins(sdk.NewCoin("uphoton", share.MulRaw(2)))},
 			[]banktypes.Output{
-				{Address: val1.GetOperator(), Coins: shareCoins},
-				{Address: val2.GetOperator(), Coins: shareCoins},
+				{Address: accAddr(val1Bytes), Coins: shareCoins},
+				{Address: accAddr(val2Bytes), Coins: shareCoins},
 			},
 		).Return(nil)
 
@@ -198,8 +203,8 @@ func TestDistributeConsumerFeesContinuesOnGenericError(t *testing.T) {
 	valAddrCodec := address.NewBech32Codec("cosmosvaloper")
 	mocks.MockStakingKeeper.EXPECT().ValidatorAddressCodec().Return(valAddrCodec).AnyTimes()
 
-	val1, _ := newBondedValidator(t, valAddrCodec, 1)
-	val2, _ := newBondedValidator(t, valAddrCodec, 2)
+	val1, val1Bytes := newBondedValidator(t, valAddrCodec, 1)
+	val2, val2Bytes := newBondedValidator(t, valAddrCodec, 2)
 
 	feesPerBlock := sdk.NewInt64Coin("uphoton", 10)
 	feesPerEpoch := sdk.NewCoin("uphoton", feesPerBlock.Amount.MulRaw(epochMultiplier))
@@ -226,8 +231,8 @@ func TestDistributeConsumerFeesContinuesOnGenericError(t *testing.T) {
 		InputOutputCoins(gomock.Any(),
 			banktypes.Input{Address: consumer0Pool.String(), Coins: sdk.NewCoins(sdk.NewCoin("uphoton", share.MulRaw(2)))},
 			[]banktypes.Output{
-				{Address: val1.GetOperator(), Coins: shareCoins},
-				{Address: val2.GetOperator(), Coins: shareCoins},
+				{Address: accAddr(val1Bytes), Coins: shareCoins},
+				{Address: accAddr(val2Bytes), Coins: shareCoins},
 			},
 		).Return(errors.New("bank send restriction"))
 
@@ -284,7 +289,7 @@ func TestDistributeConsumerFeesExcludesDowntime(t *testing.T) {
 	valAddrCodec := address.NewBech32Codec("cosmosvaloper")
 	mocks.MockStakingKeeper.EXPECT().ValidatorAddressCodec().Return(valAddrCodec).AnyTimes()
 
-	val1, _ := newBondedValidator(t, valAddrCodec, 1)
+	val1, val1Bytes := newBondedValidator(t, valAddrCodec, 1)
 	val2, _ := newBondedValidator(t, valAddrCodec, 2)
 
 	consAddr1, err := val1.GetConsAddr()
@@ -320,7 +325,7 @@ func TestDistributeConsumerFeesExcludesDowntime(t *testing.T) {
 		InputOutputCoins(gomock.Any(),
 			banktypes.Input{Address: consumer0Pool.String(), Coins: sdk.NewCoins(sdk.NewCoin("uphoton", share))},
 			[]banktypes.Output{
-				{Address: val1.GetOperator(), Coins: shareCoins},
+				{Address: accAddr(val1Bytes), Coins: shareCoins},
 			},
 		).Return(nil)
 

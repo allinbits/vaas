@@ -70,7 +70,7 @@ func TestBeginBlockCommitsDebtStateWhenDistributionFails(t *testing.T) {
 		InputOutputCoins(gomock.Any(),
 			banktypes.Input{Address: consumerPayingPool.String(), Coins: sdk.NewCoins(feesPerEpoch)},
 			[]banktypes.Output{
-				{Address: op, Coins: sdk.NewCoins(feesPerEpoch)},
+				{Address: sdk.AccAddress(opBytes).String(), Coins: sdk.NewCoins(feesPerEpoch)},
 			},
 		).Return(nil)
 
@@ -151,7 +151,7 @@ func TestBeginBlockCollectsFeesAtEpochBoundary(t *testing.T) {
 		InputOutputCoins(gomock.Any(),
 			banktypes.Input{Address: consumerFeePoolAddr.String(), Coins: sdk.NewCoins(feesPerEpoch)},
 			[]banktypes.Output{
-				{Address: op, Coins: sdk.NewCoins(feesPerEpoch)},
+				{Address: sdk.AccAddress(opBytes).String(), Coins: sdk.NewCoins(feesPerEpoch)},
 			},
 		).Return(nil)
 

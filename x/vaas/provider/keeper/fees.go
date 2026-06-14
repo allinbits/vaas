@@ -69,10 +69,10 @@ func (k Keeper) DistributeConsumerFees(ctx sdk.Context) error {
 	}
 	numBonded := math.NewInt(int64(len(bonded)))
 
-	// Precompute consensus addresses for all bonded validators.
+	// Precompute consensus and account addresses for all bonded validators.
 	type bondedVal struct {
 		consAddr sdk.ConsAddress
-		operator string
+		accAddr  sdk.AccAddress
 	}
 	bondedVals := make([]bondedVal, len(bonded))
 	for i, val := range bonded {
@@ -80,7 +80,11 @@ func (k Keeper) DistributeConsumerFees(ctx sdk.Context) error {
 		if err != nil {
 			return fmt.Errorf("failed to get consensus address for validator %s: %w", val.GetOperator(), err)
 		}
-		bondedVals[i] = bondedVal{consAddr: consAddr, operator: val.GetOperator()}
+		valAddr, err := k.stakingKeeper.ValidatorAddressCodec().StringToBytes(val.GetOperator())
+		if err != nil {
+			return fmt.Errorf("failed to parse validator address %s: %w", val.GetOperator(), err)
+		}
+		bondedVals[i] = bondedVal{consAddr: consAddr, accAddr: valAddr}
 	}
 
 	consumerIds := k.GetAllActiveConsumerIds(ctx)
@@ -90,14 +94,14 @@ func (k Keeper) DistributeConsumerFees(ctx sdk.Context) error {
 		}
 
 		// Filter eligible validators for this consumer.
-		var eligibleOps []string
+		var eligibleAddrs []sdk.AccAddress
 		for _, bv := range bondedVals {
 			if k.IsEpochDowntime(ctx, consumerId, bv.consAddr) {
 				continue
 			}
-			eligibleOps = append(eligibleOps, bv.operator)
+			eligibleAddrs = append(eligibleAddrs, bv.accAddr)
 		}
-		if len(eligibleOps) == 0 {
+		if len(eligibleAddrs) == 0 {
 			continue
 		}
 
@@ -124,10 +128,10 @@ func (k Keeper) DistributeConsumerFees(ctx sdk.Context) error {
 		}
 
 		// Single InputOutputCoins: consumer pool → all eligible validators.
-		totalOut := share.MulRaw(int64(len(eligibleOps)))
-		outputs := make([]banktypes.Output, len(eligibleOps))
-		for i, op := range eligibleOps {
-			outputs[i] = banktypes.Output{Address: op, Coins: shareCoins}
+		totalOut := share.MulRaw(int64(len(eligibleAddrs)))
+		outputs := make([]banktypes.Output, len(eligibleAddrs))
+		for i, addr := range eligibleAddrs {
+			outputs[i] = banktypes.Output{Address: addr.String(), Coins: shareCoins}
 		}
 		input := banktypes.Input{
 			Address: consumerFeePoolAddr.String(),
