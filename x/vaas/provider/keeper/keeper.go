@@ -95,6 +95,13 @@ type Keeper struct {
 	ConsumerFeePoolShares      collections.Map[collections.Triple[uint64, string, sdk.AccAddress], math.Int]
 	ConsumerFeePoolTotalShares collections.Map[collections.Pair[uint64, string], math.Int]
 	FeePoolAddressToConsumerId collections.Map[sdk.AccAddress, uint64]
+
+	// EpochDowntime tracks per-consumer provider consensus addresses of
+	// validators that received downtime evidence during the current epoch.
+	// Keyed by (consumer_id, cons_addr) so that downtime on one consumer
+	// does not exclude a validator from rewards on another. Cleared at each
+	// epoch boundary.
+	EpochDowntime collections.Map[collections.Pair[uint64, []byte], bool]
 }
 
 // NewKeeper creates a new provider Keeper instance
@@ -208,6 +215,13 @@ func NewKeeper(
 		types.FeePoolAddressToConsumerIdKeyName,
 		sdk.AccAddressKey,
 		collections.Uint64Value,
+	)
+
+	k.EpochDowntime = collections.NewMap(
+		sb, types.EpochDowntimePrefix,
+		types.EpochDowntimeKeyName,
+		collections.PairKeyCodec(collections.Uint64Key, collections.BytesKey),
+		collections.BoolValue,
 	)
 
 	schema, err := sb.Build()

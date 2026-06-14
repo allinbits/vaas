@@ -5,12 +5,12 @@ import (
 
 	"github.com/allinbits/vaas/x/vaas/provider/types"
 
-	errorsmod "cosmossdk.io/errors"
+	"cosmossdk.io/collections"
 	"cosmossdk.io/math"
 
 	sdk "github.com/cosmos/cosmos-sdk/types"
-	sdkerrors "github.com/cosmos/cosmos-sdk/types/errors"
 	authtypes "github.com/cosmos/cosmos-sdk/x/auth/types"
+	banktypes "github.com/cosmos/cosmos-sdk/x/bank/types"
 )
 
 // GetConsumerFeePoolAddress returns the deterministic provider-side fee pool
@@ -20,69 +20,45 @@ func (k Keeper) GetConsumerFeePoolAddress(consumerId uint64) sdk.AccAddress {
 	return authtypes.NewModuleAddress(fmt.Sprintf("%s-consumer-fee-pool-%d", types.ModuleName, consumerId))
 }
 
-// CollectFeesFromConsumers collects fees from all active consumer chains.
-// For each consumer, it checks if the consumer has enough balance to pay the fees.
-// If a consumer doesn't have enough funds, it is marked as in debt; the flag
-// is then propagated on the next VSC packet so the consumer's ante gate
-// blocks non-IBC, non-gov user transactions until the pool is funded again.
-// Unexpected per-consumer transfer failures are logged and skipped so one
-// bad consumer account does not block collection from the rest.
-func (k Keeper) CollectFeesFromConsumers(ctx sdk.Context) sdk.Coin {
-	defaultFee := k.GetFeesPerBlock(ctx)
-	totalFeesCollected := sdk.NewCoin(defaultFee.Denom, math.ZeroInt())
-
-	// Get all active consumer IDs
-	consumerIds := k.GetAllActiveConsumerIds(ctx)
-	for _, consumerId := range consumerIds {
-		// Only collect fees from LAUNCHED consumers
-		// REGISTERED and INITIALIZED consumers are not yet running and shouldn't be charged
-		if k.GetConsumerPhase(ctx, consumerId) != types.CONSUMER_PHASE_LAUNCHED {
-			continue
-		}
-		feesPerBlock, _ := k.effectiveFeesPerBlock(ctx, consumerId, defaultFee)
-		consumerFeePoolAddr := k.GetConsumerFeePoolAddress(consumerId)
-
-		// Transfer fees from the consumer fee pool into the provider module account.
-		// SendCoins enforces spendable balance, so the underfunded case (including
-		// vesting lockup) surfaces here as ErrInsufficientFunds.
-		feeCoins := sdk.NewCoins(feesPerBlock)
-		if err := k.bankKeeper.SendCoinsFromAccountToModule(ctx, consumerFeePoolAddr, types.ModuleName, feeCoins); err != nil {
-			if errorsmod.IsOf(err, sdkerrors.ErrInsufficientFunds) {
-				k.UpdateConsumerDebtStatus(ctx, consumerId, true)
-				continue
-			}
-			// Any other error is a chain-config / bug condition (blocked
-			// address, denom send disabled, send restriction, etc.), not a
-			// consumer fault. Log loudly but leave the debt flag untouched
-			// to avoid misleading the operator, who has a funded pool.
-			k.Logger(ctx).Error("failed to collect fees from consumer; chain-config issue likely",
-				"consumerId", consumerId,
-				"amount", feeCoins.String(),
-				"err", err,
-			)
-			continue
-		}
-		k.UpdateConsumerDebtStatus(ctx, consumerId, false)
-		k.Logger(ctx).Debug("collected fees from consumer",
-			"consumerId", consumerId,
-			"amount", feeCoins.String(),
-		)
-
-		totalFeesCollected = totalFeesCollected.Add(feesPerBlock)
+// MarkEpochDowntime records a validator's provider consensus address as
+// having downtime evidence in the current epoch for the given consumer.
+func (k Keeper) MarkEpochDowntime(ctx sdk.Context, consumerId uint64, providerConsAddr sdk.ConsAddress) {
+	if err := k.EpochDowntime.Set(ctx, collections.Join(consumerId, providerConsAddr.Bytes()), true); err != nil {
+		panic(fmt.Errorf("failed to mark epoch downtime for consumer %d, %x: %w", consumerId, providerConsAddr, err))
 	}
-	return totalFeesCollected
 }
 
-// DistributeFeesToValidators splits the provider module account's currently
-// available consumer-fee balance equally among all bonded validators.
-//
-// Every bonded validator receives an equal share regardless of whether it
-// signed the previous block. Offline or absent validators are not excluded.
-func (k Keeper) DistributeFeesToValidators(ctx sdk.Context) error {
-	totalFees := k.bankKeeper.GetBalance(ctx, authtypes.NewModuleAddress(types.ModuleName), k.GetFeeDenom())
-	if totalFees.IsZero() {
-		return nil
+// IsEpochDowntime returns true if the validator had downtime evidence this
+// epoch on the given consumer.
+func (k Keeper) IsEpochDowntime(ctx sdk.Context, consumerId uint64, providerConsAddr sdk.ConsAddress) bool {
+	found, err := k.EpochDowntime.Has(ctx, collections.Join(consumerId, providerConsAddr.Bytes()))
+	if err != nil {
+		panic(fmt.Errorf("failed to check epoch downtime for consumer %d, %x: %w", consumerId, providerConsAddr, err))
 	}
+	return found
+}
+
+// ClearEpochDowntime removes all downtime records for the current epoch.
+func (k Keeper) ClearEpochDowntime(ctx sdk.Context) {
+	if err := k.EpochDowntime.Clear(ctx, nil); err != nil {
+		panic(fmt.Errorf("failed to clear epoch downtime: %w", err))
+	}
+}
+
+// DistributeConsumerFees collects fees from each launched consumer's fee pool
+// and distributes them directly to bonded validators in a single bank
+// InputOutputCoins call per consumer. The bonded validator set is queried once;
+// each consumer pays fees_per_epoch (fees_per_block * blocks_per_epoch), split
+// equally as share = fees_per_epoch / num_bonded. Validators flagged with
+// downtime are excluded from the outputs — their share stays in the consumer
+// pool.
+//
+// If a consumer's pool balance is below fees_per_epoch, the consumer is marked
+// as in debt and skipped entirely (no partial distribution).
+func (k Keeper) DistributeConsumerFees(ctx sdk.Context) error {
+	defaultFeePerBlock := k.GetFeesPerBlock(ctx)
+	blocksPerEpoch := k.GetBlocksPerEpoch(ctx)
+	feePerEpoch := sdk.NewCoin(defaultFeePerBlock.Denom, defaultFeePerBlock.Amount.MulRaw(blocksPerEpoch))
 
 	bonded, err := k.stakingKeeper.GetBondedValidatorsByPower(ctx)
 	if err != nil {
@@ -91,23 +67,88 @@ func (k Keeper) DistributeFeesToValidators(ctx sdk.Context) error {
 	if len(bonded) == 0 {
 		return nil
 	}
+	numBonded := math.NewInt(int64(len(bonded)))
 
-	// Equal split. Any integer-division remainder stays in the provider
-	// module account and is picked up by the next block's GetBalance.
-	share := totalFees.Amount.Quo(math.NewInt(int64(len(bonded))))
-	if share.IsZero() {
-		return nil
+	// Precompute consensus and account addresses for all bonded validators.
+	type bondedVal struct {
+		consAddr sdk.ConsAddress
+		accAddr  sdk.AccAddress
 	}
-	shareCoins := sdk.NewCoins(sdk.NewCoin(totalFees.Denom, share))
-
-	for _, val := range bonded {
+	bondedVals := make([]bondedVal, len(bonded))
+	for i, val := range bonded {
+		consAddr, err := val.GetConsAddr()
+		if err != nil {
+			return fmt.Errorf("failed to get consensus address for validator %s: %w", val.GetOperator(), err)
+		}
 		valAddr, err := k.stakingKeeper.ValidatorAddressCodec().StringToBytes(val.GetOperator())
 		if err != nil {
-			return fmt.Errorf("failed to parse validator address: %w", err)
+			return fmt.Errorf("failed to parse validator address %s: %w", val.GetOperator(), err)
 		}
-		if err := k.bankKeeper.SendCoinsFromModuleToAccount(ctx, types.ModuleName, sdk.AccAddress(valAddr), shareCoins); err != nil {
-			return fmt.Errorf("failed to distribute fees to validator (%s): %w", val.GetOperator(), err)
+		bondedVals[i] = bondedVal{consAddr: consAddr, accAddr: valAddr}
+	}
+
+	consumerIds := k.GetAllActiveConsumerIds(ctx)
+	for _, consumerId := range consumerIds {
+		if k.GetConsumerPhase(ctx, consumerId) != types.CONSUMER_PHASE_LAUNCHED {
+			continue
 		}
+
+		// Filter eligible validators for this consumer.
+		var eligibleAddrs []sdk.AccAddress
+		for _, bv := range bondedVals {
+			if k.IsEpochDowntime(ctx, consumerId, bv.consAddr) {
+				continue
+			}
+			eligibleAddrs = append(eligibleAddrs, bv.accAddr)
+		}
+		if len(eligibleAddrs) == 0 {
+			continue
+		}
+
+		feesPerEpoch, _ := k.effectiveFeesPerEpoch(ctx, consumerId, feePerEpoch, defaultFeePerBlock)
+		share := feesPerEpoch.Amount.Quo(numBonded)
+		if share.IsZero() {
+			continue
+		}
+		shareCoin := sdk.NewCoin(feesPerEpoch.Denom, share)
+		shareCoins := sdk.NewCoins(shareCoin)
+		consumerFeePoolAddr := k.GetConsumerFeePoolAddress(consumerId)
+
+		// Check the pool can cover the full epoch fee before paying any
+		// validator. This avoids unfair partial distribution.
+		balance := k.bankKeeper.GetBalance(ctx, consumerFeePoolAddr, feesPerEpoch.Denom)
+		if balance.Amount.LT(feesPerEpoch.Amount) {
+			k.UpdateConsumerDebtStatus(ctx, consumerId, true)
+			k.Logger(ctx).Debug("consumer fee pool underfunded; skipping distribution",
+				"consumerId", consumerId,
+				"balance", balance.String(),
+				"required", feesPerEpoch.String(),
+			)
+			continue
+		}
+
+		// Single InputOutputCoins: consumer pool → all eligible validators.
+		totalOut := share.MulRaw(int64(len(eligibleAddrs)))
+		outputs := make([]banktypes.Output, len(eligibleAddrs))
+		for i, addr := range eligibleAddrs {
+			outputs[i] = banktypes.Output{Address: addr.String(), Coins: shareCoins}
+		}
+		input := banktypes.Input{
+			Address: consumerFeePoolAddr.String(),
+			Coins:   sdk.NewCoins(sdk.NewCoin(feesPerEpoch.Denom, totalOut)),
+		}
+		if err := k.bankKeeper.InputOutputCoins(ctx, input, outputs); err != nil {
+			k.Logger(ctx).Error("failed to distribute consumer fees",
+				"consumerId", consumerId,
+				"err", err,
+			)
+			continue
+		}
+		k.UpdateConsumerDebtStatus(ctx, consumerId, false)
+		k.Logger(ctx).Debug("distributed consumer fees to validators",
+			"consumerId", consumerId,
+			"sharePerValidator", shareCoins.String(),
+		)
 	}
 
 	return nil

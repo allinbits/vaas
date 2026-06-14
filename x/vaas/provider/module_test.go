@@ -2,7 +2,6 @@ package provider
 
 import (
 	"bytes"
-	"errors"
 	"testing"
 
 	"cosmossdk.io/math"
@@ -11,17 +10,15 @@ import (
 	"github.com/cosmos/cosmos-sdk/codec/address"
 	"github.com/cosmos/cosmos-sdk/crypto/keys/ed25519"
 	sdk "github.com/cosmos/cosmos-sdk/types"
-	sdkerrors "github.com/cosmos/cosmos-sdk/types/errors"
-	authtypes "github.com/cosmos/cosmos-sdk/x/auth/types"
+	banktypes "github.com/cosmos/cosmos-sdk/x/bank/types"
 	stakingtypes "github.com/cosmos/cosmos-sdk/x/staking/types"
 	"github.com/stretchr/testify/require"
 	"go.uber.org/mock/gomock"
 )
 
-// TestBeginBlockCommitsDebtStateWhenDistributionFails verifies that when the
-// distribution step errors, the fee-collection state (including the
-// consumer-in-debt flag) is still committed — distribution runs in its own
-// CacheContext so its rollback does not undo collection.
+// TestBeginBlockCommitsDebtStateWhenDistributionFails verifies that when
+// a consumer is underfunded it is marked in debt, while funded consumers
+// pay normally.
 func TestBeginBlockCommitsDebtStateWhenDistributionFails(t *testing.T) {
 	params := testkeeper.NewInMemKeeperParams(t)
 	k, ctx, ctrl, mocks := testkeeper.GetProviderKeeperAndCtx(t, params)
@@ -35,14 +32,15 @@ func TestBeginBlockCommitsDebtStateWhenDistributionFails(t *testing.T) {
 	k.SetConsumerPhase(ctx, consumerPaying, providertypes.CONSUMER_PHASE_LAUNCHED)
 
 	feesPerBlock := sdk.NewInt64Coin("uphoton", 10)
+	feesPerEpoch := sdk.NewCoin("uphoton", feesPerBlock.Amount.MulRaw(providertypes.DefaultBlocksPerEpoch))
 	providerParams := providertypes.DefaultParams()
 	providerParams.FeesPerBlockAmount = feesPerBlock.Amount
 	k.SetParams(ctx, providerParams)
 
-	consumerInDebtFeePoolAddr := k.GetConsumerFeePoolAddress(consumerInDebt)
-	consumerPayingFeePoolAddr := k.GetConsumerFeePoolAddress(consumerPaying)
+	consumerInDebtPool := k.GetConsumerFeePoolAddress(consumerInDebt)
+	consumerPayingPool := k.GetConsumerFeePoolAddress(consumerPaying)
 
-	// Prime one bonded validator so distribution attempts to pay out.
+	// One bonded validator.
 	valAddrCodec := address.NewBech32Codec("cosmosvaloper")
 	mocks.MockStakingKeeper.EXPECT().ValidatorAddressCodec().Return(valAddrCodec).AnyTimes()
 	opBytes := bytes.Repeat([]byte{0xfe}, 20)
@@ -55,26 +53,107 @@ func TestBeginBlockCommitsDebtStateWhenDistributionFails(t *testing.T) {
 	val.Tokens = sdk.DefaultPowerReduction
 	val.DelegatorShares = math.LegacyNewDecFromInt(sdk.DefaultPowerReduction)
 
-	// Collection phase: one consumer underfunded (ErrInsufficientFunds), one pays.
-	mocks.MockBankKeeper.EXPECT().
-		SendCoinsFromAccountToModule(gomock.Any(), consumerInDebtFeePoolAddr, providertypes.ModuleName, sdk.NewCoins(feesPerBlock)).
-		Return(sdkerrors.ErrInsufficientFunds.Wrapf("spendable 5 < 10"))
-	mocks.MockBankKeeper.EXPECT().
-		SendCoinsFromAccountToModule(gomock.Any(), consumerPayingFeePoolAddr, providertypes.ModuleName, sdk.NewCoins(feesPerBlock)).
-		Return(nil)
-	// Distribution phase: bank send errors out, rolls back distribution only.
-	mocks.MockBankKeeper.EXPECT().
-		GetBalance(gomock.Any(), authtypes.NewModuleAddress(providertypes.ModuleName), providertypes.DefaultFeesPerBlockDenom).
-		Return(feesPerBlock)
 	mocks.MockStakingKeeper.EXPECT().
 		GetBondedValidatorsByPower(gomock.Any()).
 		Return([]stakingtypes.Validator{val}, nil)
+
+	// consumerInDebt: balance too low → in debt, no InputOutputCoins
 	mocks.MockBankKeeper.EXPECT().
-		SendCoinsFromModuleToAccount(gomock.Any(), providertypes.ModuleName, sdk.AccAddress(opBytes), sdk.NewCoins(feesPerBlock)).
-		Return(errors.New("distribution boom"))
+		GetBalance(gomock.Any(), consumerInDebtPool, "uphoton").
+		Return(sdk.NewCoin("uphoton", feesPerEpoch.Amount.QuoRaw(2)))
+
+	// consumerPaying: balance sufficient → pays via InputOutputCoins
+	mocks.MockBankKeeper.EXPECT().
+		GetBalance(gomock.Any(), consumerPayingPool, "uphoton").
+		Return(feesPerEpoch)
+	mocks.MockBankKeeper.EXPECT().
+		InputOutputCoins(gomock.Any(),
+			banktypes.Input{Address: consumerPayingPool.String(), Coins: sdk.NewCoins(feesPerEpoch)},
+			[]banktypes.Output{
+				{Address: sdk.AccAddress(opBytes).String(), Coins: sdk.NewCoins(feesPerEpoch)},
+			},
+		).Return(nil)
 
 	require.NoError(t, appModule.BeginBlock(sdk.WrapSDKContext(ctx)))
 
 	require.True(t, k.IsConsumerInDebt(ctx, consumerInDebt))
 	require.False(t, k.IsConsumerInDebt(ctx, consumerPaying))
+}
+
+// TestBeginBlockSkipsFeeCollectionWhenNotAtEpochBoundary verifies that the
+// per-epoch fee distribution only runs at epoch boundaries.
+func TestBeginBlockSkipsFeeCollectionWhenNotAtEpochBoundary(t *testing.T) {
+	params := testkeeper.NewInMemKeeperParams(t)
+	k, ctx, ctrl, _ := testkeeper.GetProviderKeeperAndCtx(t, params)
+	defer ctrl.Finish()
+
+	appModule := NewAppModule(&k)
+
+	consumer := k.FetchAndIncrementConsumerId(ctx)
+	k.SetConsumerPhase(ctx, consumer, providertypes.CONSUMER_PHASE_LAUNCHED)
+
+	feesPerBlock := sdk.NewInt64Coin("uphoton", 10)
+	providerParams := providertypes.DefaultParams()
+	providerParams.FeesPerBlockAmount = feesPerBlock.Amount
+	k.SetParams(ctx, providerParams)
+
+	// Height 100 is not an epoch boundary (blocks_per_epoch=600)
+	ctx = ctx.WithBlockHeight(100)
+
+	// No bank or staking mock expectations — nothing should be called.
+	require.NoError(t, appModule.BeginBlock(sdk.WrapSDKContext(ctx)))
+}
+
+// TestBeginBlockCollectsFeesAtEpochBoundary verifies that fee distribution
+// runs when the epoch boundary is reached.
+func TestBeginBlockCollectsFeesAtEpochBoundary(t *testing.T) {
+	params := testkeeper.NewInMemKeeperParams(t)
+	k, ctx, ctrl, mocks := testkeeper.GetProviderKeeperAndCtx(t, params)
+	defer ctrl.Finish()
+
+	appModule := NewAppModule(&k)
+
+	consumer := k.FetchAndIncrementConsumerId(ctx)
+	k.SetConsumerPhase(ctx, consumer, providertypes.CONSUMER_PHASE_LAUNCHED)
+
+	feesPerBlock := sdk.NewInt64Coin("uphoton", 10)
+	feesPerEpoch := sdk.NewCoin("uphoton", feesPerBlock.Amount.MulRaw(providertypes.DefaultBlocksPerEpoch))
+	providerParams := providertypes.DefaultParams()
+	providerParams.FeesPerBlockAmount = feesPerBlock.Amount
+	k.SetParams(ctx, providerParams)
+
+	consumerFeePoolAddr := k.GetConsumerFeePoolAddress(consumer)
+
+	// Height 600 is an epoch boundary (600 % 600 == 0)
+	ctx = ctx.WithBlockHeight(600)
+
+	valAddrCodec := address.NewBech32Codec("cosmosvaloper")
+	mocks.MockStakingKeeper.EXPECT().ValidatorAddressCodec().Return(valAddrCodec).AnyTimes()
+	opBytes := bytes.Repeat([]byte{0xfe}, 20)
+	op, err := valAddrCodec.BytesToString(opBytes)
+	require.NoError(t, err)
+	pk := ed25519.GenPrivKey().PubKey()
+	val, err := stakingtypes.NewValidator(op, pk, stakingtypes.Description{})
+	require.NoError(t, err)
+	val.Status = stakingtypes.Bonded
+	val.Tokens = sdk.DefaultPowerReduction
+	val.DelegatorShares = math.LegacyNewDecFromInt(sdk.DefaultPowerReduction)
+
+	mocks.MockStakingKeeper.EXPECT().
+		GetBondedValidatorsByPower(gomock.Any()).
+		Return([]stakingtypes.Validator{val}, nil)
+
+	// Balance check passes, then single InputOutputCoins
+	mocks.MockBankKeeper.EXPECT().
+		GetBalance(gomock.Any(), consumerFeePoolAddr, "uphoton").
+		Return(feesPerEpoch)
+	mocks.MockBankKeeper.EXPECT().
+		InputOutputCoins(gomock.Any(),
+			banktypes.Input{Address: consumerFeePoolAddr.String(), Coins: sdk.NewCoins(feesPerEpoch)},
+			[]banktypes.Output{
+				{Address: sdk.AccAddress(opBytes).String(), Coins: sdk.NewCoins(feesPerEpoch)},
+			},
+		).Return(nil)
+
+	require.NoError(t, appModule.BeginBlock(sdk.WrapSDKContext(ctx)))
 }

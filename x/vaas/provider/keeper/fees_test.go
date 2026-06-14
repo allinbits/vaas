@@ -1,7 +1,6 @@
 package keeper_test
 
 import (
-	"bytes"
 	"errors"
 	"testing"
 
@@ -12,187 +11,20 @@ import (
 	"github.com/cosmos/cosmos-sdk/codec/address"
 	"github.com/cosmos/cosmos-sdk/crypto/keys/ed25519"
 	sdk "github.com/cosmos/cosmos-sdk/types"
-	sdkerrors "github.com/cosmos/cosmos-sdk/types/errors"
-	authtypes "github.com/cosmos/cosmos-sdk/x/auth/types"
+	banktypes "github.com/cosmos/cosmos-sdk/x/bank/types"
 	stakingtypes "github.com/cosmos/cosmos-sdk/x/staking/types"
 	"github.com/stretchr/testify/require"
 	"go.uber.org/mock/gomock"
 )
 
-func TestCollectFeesFromConsumers(t *testing.T) {
-	params := testkeeper.NewInMemKeeperParams(t)
-	k, ctx, ctrl, mocks := testkeeper.GetProviderKeeperAndCtx(t, params)
-	defer ctrl.Finish()
+const epochMultiplier = providertypes.DefaultBlocksPerEpoch // 600
 
-	consumer0 := k.FetchAndIncrementConsumerId(ctx)
-	consumer1 := k.FetchAndIncrementConsumerId(ctx)
-	k.SetConsumerPhase(ctx, consumer0, providertypes.CONSUMER_PHASE_LAUNCHED)
-	k.SetConsumerPhase(ctx, consumer1, providertypes.CONSUMER_PHASE_LAUNCHED)
-
-	feesPerBlock := sdk.NewInt64Coin("uphoton", 10)
-	providerParams := providertypes.DefaultParams()
-	providerParams.FeesPerBlockAmount = feesPerBlock.Amount
-	k.SetParams(ctx, providerParams)
-	consumer0FeePoolAddr := k.GetConsumerFeePoolAddress(consumer0)
-	consumer1FeePoolAddr := k.GetConsumerFeePoolAddress(consumer1)
-
-	gomock.InOrder(
-		mocks.MockBankKeeper.EXPECT().
-			SendCoinsFromAccountToModule(gomock.Any(), consumer0FeePoolAddr, providertypes.ModuleName, sdk.NewCoins(feesPerBlock)).
-			Return(nil),
-		mocks.MockBankKeeper.EXPECT().
-			SendCoinsFromAccountToModule(gomock.Any(), consumer1FeePoolAddr, providertypes.ModuleName, sdk.NewCoins(feesPerBlock)).
-			Return(nil),
-	)
-
-	total := k.CollectFeesFromConsumers(ctx)
-	require.Equal(t, sdk.NewInt64Coin("uphoton", 20), total)
-	require.False(t, k.IsConsumerInDebt(ctx, consumer0))
-	require.False(t, k.IsConsumerInDebt(ctx, consumer1))
-}
-
-// TestCollectFeesFromConsumers_PerConsumerOverride verifies that each consumer
-// is charged its effective per-block fee: consumer1 has an override and pays
-// the override amount; consumer0 has no override and pays
-// Params.FeesPerBlockAmount.
-func TestCollectFeesFromConsumers_PerConsumerOverride(t *testing.T) {
-	params := testkeeper.NewInMemKeeperParams(t)
-	k, ctx, ctrl, mocks := testkeeper.GetProviderKeeperAndCtx(t, params)
-	defer ctrl.Finish()
-
-	consumer0 := k.FetchAndIncrementConsumerId(ctx)
-	consumer1 := k.FetchAndIncrementConsumerId(ctx)
-	k.SetConsumerPhase(ctx, consumer0, providertypes.CONSUMER_PHASE_LAUNCHED)
-	k.SetConsumerPhase(ctx, consumer1, providertypes.CONSUMER_PHASE_LAUNCHED)
-
-	defaultFees := sdk.NewInt64Coin("uphoton", 10)
-	overrideAmount := math.NewInt(25)
-	overrideFees := sdk.NewCoin("uphoton", overrideAmount)
-
-	providerParams := providertypes.DefaultParams()
-	providerParams.FeesPerBlockAmount = defaultFees.Amount
-	k.SetParams(ctx, providerParams)
-
-	// consumer1 gets an override; consumer0 keeps the default.
-	require.NoError(t, k.ConsumerFeesPerBlockOverride.Set(ctx, consumer1, overrideAmount))
-
-	consumer0FeePoolAddr := k.GetConsumerFeePoolAddress(consumer0)
-	consumer1FeePoolAddr := k.GetConsumerFeePoolAddress(consumer1)
-
-	gomock.InOrder(
-		mocks.MockBankKeeper.EXPECT().
-			SendCoinsFromAccountToModule(gomock.Any(), consumer0FeePoolAddr, providertypes.ModuleName, sdk.NewCoins(defaultFees)).
-			Return(nil),
-		mocks.MockBankKeeper.EXPECT().
-			SendCoinsFromAccountToModule(gomock.Any(), consumer1FeePoolAddr, providertypes.ModuleName, sdk.NewCoins(overrideFees)).
-			Return(nil),
-	)
-
-	total := k.CollectFeesFromConsumers(ctx)
-	require.Equal(t, sdk.NewInt64Coin("uphoton", 35), total)
-	require.False(t, k.IsConsumerInDebt(ctx, consumer0))
-	require.False(t, k.IsConsumerInDebt(ctx, consumer1))
-}
-
-func TestCollectFeesFromConsumersSkipsWhenInsufficient(t *testing.T) {
-	params := testkeeper.NewInMemKeeperParams(t)
-	k, ctx, ctrl, mocks := testkeeper.GetProviderKeeperAndCtx(t, params)
-	defer ctrl.Finish()
-
-	consumer0 := k.FetchAndIncrementConsumerId(ctx)
-	consumer1 := k.FetchAndIncrementConsumerId(ctx)
-	k.SetConsumerPhase(ctx, consumer0, providertypes.CONSUMER_PHASE_LAUNCHED)
-	k.SetConsumerPhase(ctx, consumer1, providertypes.CONSUMER_PHASE_LAUNCHED)
-
-	feesPerBlock := sdk.NewInt64Coin("uphoton", 10)
-	providerParams := providertypes.DefaultParams()
-	providerParams.FeesPerBlockAmount = feesPerBlock.Amount
-	k.SetParams(ctx, providerParams)
-	consumer0FeePoolAddr := k.GetConsumerFeePoolAddress(consumer0)
-	consumer1FeePoolAddr := k.GetConsumerFeePoolAddress(consumer1)
-
-	gomock.InOrder(
-		mocks.MockBankKeeper.EXPECT().
-			SendCoinsFromAccountToModule(gomock.Any(), consumer0FeePoolAddr, providertypes.ModuleName, sdk.NewCoins(feesPerBlock)).
-			Return(sdkerrors.ErrInsufficientFunds.Wrapf("spendable 5 < 10")),
-		mocks.MockBankKeeper.EXPECT().
-			SendCoinsFromAccountToModule(gomock.Any(), consumer1FeePoolAddr, providertypes.ModuleName, sdk.NewCoins(feesPerBlock)).
-			Return(nil),
-	)
-
-	total := k.CollectFeesFromConsumers(ctx)
-	require.Equal(t, sdk.NewInt64Coin("uphoton", 10), total)
-	require.True(t, k.IsConsumerInDebt(ctx, consumer0))
-	require.False(t, k.IsConsumerInDebt(ctx, consumer1))
-}
-
-func TestCollectFeesFromConsumersClearsDebtWhenRecovered(t *testing.T) {
-	params := testkeeper.NewInMemKeeperParams(t)
-	k, ctx, ctrl, mocks := testkeeper.GetProviderKeeperAndCtx(t, params)
-	defer ctrl.Finish()
-
-	consumer0 := k.FetchAndIncrementConsumerId(ctx)
-	k.SetConsumerPhase(ctx, consumer0, providertypes.CONSUMER_PHASE_LAUNCHED)
-	k.SetConsumerInDebt(ctx, consumer0, true)
-
-	feesPerBlock := sdk.NewInt64Coin("uphoton", 10)
-	providerParams := providertypes.DefaultParams()
-	providerParams.FeesPerBlockAmount = feesPerBlock.Amount
-	k.SetParams(ctx, providerParams)
-	consumer0FeePoolAddr := k.GetConsumerFeePoolAddress(consumer0)
-
-	mocks.MockBankKeeper.EXPECT().
-		SendCoinsFromAccountToModule(gomock.Any(), consumer0FeePoolAddr, providertypes.ModuleName, sdk.NewCoins(feesPerBlock)).
-		Return(nil)
-
-	total := k.CollectFeesFromConsumers(ctx)
-	require.Equal(t, sdk.NewInt64Coin("uphoton", 10), total)
-	require.False(t, k.IsConsumerInDebt(ctx, consumer0))
-}
-
-// TestCollectFeesFromConsumersContinuesOnGenericError: a non-insufficient-
-// funds error from the bank keeper (chain-config issue) is logged and
-// skipped without flipping the debt flag — consumer0 remains not-in-debt
-// because its pool is funded and the error is not its fault.
-func TestCollectFeesFromConsumersContinuesOnGenericError(t *testing.T) {
-	params := testkeeper.NewInMemKeeperParams(t)
-	k, ctx, ctrl, mocks := testkeeper.GetProviderKeeperAndCtx(t, params)
-	defer ctrl.Finish()
-
-	consumer0 := k.FetchAndIncrementConsumerId(ctx)
-	consumer1 := k.FetchAndIncrementConsumerId(ctx)
-	k.SetConsumerPhase(ctx, consumer0, providertypes.CONSUMER_PHASE_LAUNCHED)
-	k.SetConsumerPhase(ctx, consumer1, providertypes.CONSUMER_PHASE_LAUNCHED)
-
-	feesPerBlock := sdk.NewInt64Coin("uphoton", 10)
-	providerParams := providertypes.DefaultParams()
-	providerParams.FeesPerBlockAmount = feesPerBlock.Amount
-	k.SetParams(ctx, providerParams)
-	consumer0FeePoolAddr := k.GetConsumerFeePoolAddress(consumer0)
-	consumer1FeePoolAddr := k.GetConsumerFeePoolAddress(consumer1)
-
-	gomock.InOrder(
-		mocks.MockBankKeeper.EXPECT().
-			SendCoinsFromAccountToModule(gomock.Any(), consumer0FeePoolAddr, providertypes.ModuleName, sdk.NewCoins(feesPerBlock)).
-			Return(errors.New("bank send restriction")),
-		mocks.MockBankKeeper.EXPECT().
-			SendCoinsFromAccountToModule(gomock.Any(), consumer1FeePoolAddr, providertypes.ModuleName, sdk.NewCoins(feesPerBlock)).
-			Return(nil),
-	)
-
-	total := k.CollectFeesFromConsumers(ctx)
-	require.Equal(t, sdk.NewInt64Coin("uphoton", 10), total)
-	require.False(t, k.IsConsumerInDebt(ctx, consumer0))
-	require.False(t, k.IsConsumerInDebt(ctx, consumer1))
-}
-
-// Helpers for the distribution tests.
-
-// newBondedValidator builds a Validator with an operator address derived from
-// opSeed. Returns the validator and its operator bytes.
 func newBondedValidator(t *testing.T, codec addresscodec.Codec, opSeed byte) (stakingtypes.Validator, []byte) {
 	t.Helper()
-	opBytes := bytes.Repeat([]byte{opSeed}, 20)
+	opBytes := make([]byte, 20)
+	for i := range opBytes {
+		opBytes[i] = opSeed
+	}
 	op, err := codec.BytesToString(opBytes)
 	require.NoError(t, err)
 	pk := ed25519.GenPrivKey().PubKey()
@@ -204,9 +36,14 @@ func newBondedValidator(t *testing.T, codec addresscodec.Codec, opSeed byte) (st
 	return val, opBytes
 }
 
-// TestDistributeFeesToValidators splits the pool evenly among all bonded
-// validators, independent of their stake (tokens differ but shares are equal).
-func TestDistributeFeesToValidators(t *testing.T) {
+// accAddr converts raw operator bytes to an account-prefixed bech32 string.
+func accAddr(opBytes []byte) string {
+	return sdk.AccAddress(opBytes).String()
+}
+
+// TestDistributeConsumerFees splits each consumer's fees directly to bonded
+// validators via a single InputOutputCoins call.
+func TestDistributeConsumerFees(t *testing.T) {
 	params := testkeeper.NewInMemKeeperParams(t)
 	k, ctx, ctrl, mocks := testkeeper.GetProviderKeeperAndCtx(t, params)
 	defer ctrl.Finish()
@@ -214,51 +51,66 @@ func TestDistributeFeesToValidators(t *testing.T) {
 	valAddrCodec := address.NewBech32Codec("cosmosvaloper")
 	mocks.MockStakingKeeper.EXPECT().ValidatorAddressCodec().Return(valAddrCodec).AnyTimes()
 
-	val1, op1Bytes := newBondedValidator(t, valAddrCodec, 1)
-	val1.Tokens = sdk.DefaultPowerReduction.MulRaw(10) // stake differs on purpose
-	val2, op2Bytes := newBondedValidator(t, valAddrCodec, 2)
+	val1, val1Bytes := newBondedValidator(t, valAddrCodec, 1)
+	val1.Tokens = sdk.DefaultPowerReduction.MulRaw(10)
+	val2, val2Bytes := newBondedValidator(t, valAddrCodec, 2)
 	val2.Tokens = sdk.DefaultPowerReduction.MulRaw(20)
 
+	feesPerBlock := sdk.NewInt64Coin("uphoton", 10)
+	feesPerEpoch := sdk.NewCoin("uphoton", feesPerBlock.Amount.MulRaw(epochMultiplier))
+	share := feesPerEpoch.Amount.QuoRaw(2) // 3000
+	shareCoins := sdk.NewCoins(sdk.NewCoin("uphoton", share))
+
+	consumer0 := k.FetchAndIncrementConsumerId(ctx)
+	consumer1 := k.FetchAndIncrementConsumerId(ctx)
+	k.SetConsumerPhase(ctx, consumer0, providertypes.CONSUMER_PHASE_LAUNCHED)
+	k.SetConsumerPhase(ctx, consumer1, providertypes.CONSUMER_PHASE_LAUNCHED)
+
 	providerParams := providertypes.DefaultParams()
-	providerParams.FeesPerBlockAmount = math.NewInt(10)
+	providerParams.FeesPerBlockAmount = feesPerBlock.Amount
 	k.SetParams(ctx, providerParams)
 
-	mocks.MockBankKeeper.EXPECT().
-		GetBalance(gomock.Any(), authtypes.NewModuleAddress(providertypes.ModuleName), providertypes.DefaultFeesPerBlockDenom).
-		Return(sdk.NewInt64Coin("uphoton", 300))
+	consumer0Pool := k.GetConsumerFeePoolAddress(consumer0)
+	consumer1Pool := k.GetConsumerFeePoolAddress(consumer1)
+
 	mocks.MockStakingKeeper.EXPECT().
 		GetBondedValidatorsByPower(gomock.Any()).
 		Return([]stakingtypes.Validator{val1, val2}, nil)
-	// Equal split: 300 / 2 = 150 each, regardless of stake.
-	mocks.MockBankKeeper.EXPECT().
-		SendCoinsFromModuleToAccount(gomock.Any(), providertypes.ModuleName, sdk.AccAddress(op1Bytes), sdk.NewCoins(sdk.NewInt64Coin("uphoton", 150))).
-		Return(nil)
-	mocks.MockBankKeeper.EXPECT().
-		SendCoinsFromModuleToAccount(gomock.Any(), providertypes.ModuleName, sdk.AccAddress(op2Bytes), sdk.NewCoins(sdk.NewInt64Coin("uphoton", 150))).
-		Return(nil)
 
-	require.NoError(t, k.DistributeFeesToValidators(ctx))
+	// consumer0
+	mocks.MockBankKeeper.EXPECT().
+		GetBalance(gomock.Any(), consumer0Pool, "uphoton").
+		Return(feesPerEpoch)
+	mocks.MockBankKeeper.EXPECT().
+		InputOutputCoins(gomock.Any(),
+			banktypes.Input{Address: consumer0Pool.String(), Coins: sdk.NewCoins(sdk.NewCoin("uphoton", share.MulRaw(2)))},
+			[]banktypes.Output{
+				{Address: accAddr(val1Bytes), Coins: shareCoins},
+				{Address: accAddr(val2Bytes), Coins: shareCoins},
+			},
+		).Return(nil)
+
+	// consumer1
+	mocks.MockBankKeeper.EXPECT().
+		GetBalance(gomock.Any(), consumer1Pool, "uphoton").
+		Return(feesPerEpoch)
+	mocks.MockBankKeeper.EXPECT().
+		InputOutputCoins(gomock.Any(),
+			banktypes.Input{Address: consumer1Pool.String(), Coins: sdk.NewCoins(sdk.NewCoin("uphoton", share.MulRaw(2)))},
+			[]banktypes.Output{
+				{Address: accAddr(val1Bytes), Coins: shareCoins},
+				{Address: accAddr(val2Bytes), Coins: shareCoins},
+			},
+		).Return(nil)
+
+	require.NoError(t, k.DistributeConsumerFees(ctx))
+	require.False(t, k.IsConsumerInDebt(ctx, consumer0))
+	require.False(t, k.IsConsumerInDebt(ctx, consumer1))
 }
 
-func TestDistributeFeesToValidatorsZeroFees(t *testing.T) {
-	params := testkeeper.NewInMemKeeperParams(t)
-	k, ctx, ctrl, mocks := testkeeper.GetProviderKeeperAndCtx(t, params)
-	defer ctrl.Finish()
-
-	providerParams := providertypes.DefaultParams()
-	providerParams.FeesPerBlockAmount = math.NewInt(10)
-	k.SetParams(ctx, providerParams)
-
-	mocks.MockBankKeeper.EXPECT().
-		GetBalance(gomock.Any(), authtypes.NewModuleAddress(providertypes.ModuleName), providertypes.DefaultFeesPerBlockDenom).
-		Return(sdk.NewCoin("uphoton", math.ZeroInt()))
-
-	require.NoError(t, k.DistributeFeesToValidators(ctx))
-}
-
-// TestDistributeFeesToValidatorsSkipsWhenFeesTooSmall: pool holds 1 coin,
-// 2 validators → floor(1/2) = 0 → nothing sent, balance stays pooled.
-func TestDistributeFeesToValidatorsSkipsWhenFeesTooSmall(t *testing.T) {
+// TestDistributeConsumerFeesSkipsUnderfunded: insufficient balance → all
+// validators skipped, consumer marked in debt.
+func TestDistributeConsumerFeesSkipsUnderfunded(t *testing.T) {
 	params := testkeeper.NewInMemKeeperParams(t)
 	k, ctx, ctrl, mocks := testkeeper.GetProviderKeeperAndCtx(t, params)
 	defer ctrl.Finish()
@@ -269,23 +121,34 @@ func TestDistributeFeesToValidatorsSkipsWhenFeesTooSmall(t *testing.T) {
 	val1, _ := newBondedValidator(t, valAddrCodec, 1)
 	val2, _ := newBondedValidator(t, valAddrCodec, 2)
 
+	feesPerBlock := sdk.NewInt64Coin("uphoton", 10)
+	feesPerEpoch := sdk.NewCoin("uphoton", feesPerBlock.Amount.MulRaw(epochMultiplier))
+
+	consumer0 := k.FetchAndIncrementConsumerId(ctx)
+	k.SetConsumerPhase(ctx, consumer0, providertypes.CONSUMER_PHASE_LAUNCHED)
+
 	providerParams := providertypes.DefaultParams()
-	providerParams.FeesPerBlockAmount = math.NewInt(1)
+	providerParams.FeesPerBlockAmount = feesPerBlock.Amount
 	k.SetParams(ctx, providerParams)
 
-	mocks.MockBankKeeper.EXPECT().
-		GetBalance(gomock.Any(), authtypes.NewModuleAddress(providertypes.ModuleName), providertypes.DefaultFeesPerBlockDenom).
-		Return(sdk.NewInt64Coin("uphoton", 1))
+	consumer0Pool := k.GetConsumerFeePoolAddress(consumer0)
+
 	mocks.MockStakingKeeper.EXPECT().
 		GetBondedValidatorsByPower(gomock.Any()).
 		Return([]stakingtypes.Validator{val1, val2}, nil)
 
-	require.NoError(t, k.DistributeFeesToValidators(ctx))
+	// Balance too low → in debt, no InputOutputCoins
+	mocks.MockBankKeeper.EXPECT().
+		GetBalance(gomock.Any(), consumer0Pool, "uphoton").
+		Return(sdk.NewCoin("uphoton", feesPerEpoch.Amount.QuoRaw(2)))
+
+	require.NoError(t, k.DistributeConsumerFees(ctx))
+	require.True(t, k.IsConsumerInDebt(ctx, consumer0))
 }
 
-// TestDistributeFeesToValidatorsRemainderStaysPooled: 10 coins / 3 validators
-// → each gets floor(10/3) = 3, 1 coin stays in the pool.
-func TestDistributeFeesToValidatorsRemainderStaysPooled(t *testing.T) {
+// TestDistributeConsumerFeesClearsDebtWhenRecovered: a consumer previously in
+// debt pays successfully and the flag is cleared.
+func TestDistributeConsumerFeesClearsDebtWhenRecovered(t *testing.T) {
 	params := testkeeper.NewInMemKeeperParams(t)
 	k, ctx, ctrl, mocks := testkeeper.GetProviderKeeperAndCtx(t, params)
 	defer ctrl.Finish()
@@ -293,53 +156,105 @@ func TestDistributeFeesToValidatorsRemainderStaysPooled(t *testing.T) {
 	valAddrCodec := address.NewBech32Codec("cosmosvaloper")
 	mocks.MockStakingKeeper.EXPECT().ValidatorAddressCodec().Return(valAddrCodec).AnyTimes()
 
-	val1, op1 := newBondedValidator(t, valAddrCodec, 1)
-	val2, op2 := newBondedValidator(t, valAddrCodec, 2)
-	val3, op3 := newBondedValidator(t, valAddrCodec, 3)
+	val1, val1Bytes := newBondedValidator(t, valAddrCodec, 1)
+	val2, val2Bytes := newBondedValidator(t, valAddrCodec, 2)
+
+	consumer0 := k.FetchAndIncrementConsumerId(ctx)
+	k.SetConsumerPhase(ctx, consumer0, providertypes.CONSUMER_PHASE_LAUNCHED)
+	k.SetConsumerInDebt(ctx, consumer0, true)
+
+	feesPerBlock := sdk.NewInt64Coin("uphoton", 10)
+	feesPerEpoch := sdk.NewCoin("uphoton", feesPerBlock.Amount.MulRaw(epochMultiplier))
+	share := feesPerEpoch.Amount.QuoRaw(2)
+	shareCoins := sdk.NewCoins(sdk.NewCoin("uphoton", share))
 
 	providerParams := providertypes.DefaultParams()
-	providerParams.FeesPerBlockAmount = math.NewInt(10)
+	providerParams.FeesPerBlockAmount = feesPerBlock.Amount
 	k.SetParams(ctx, providerParams)
 
-	mocks.MockBankKeeper.EXPECT().
-		GetBalance(gomock.Any(), authtypes.NewModuleAddress(providertypes.ModuleName), providertypes.DefaultFeesPerBlockDenom).
-		Return(sdk.NewInt64Coin("uphoton", 10))
+	consumer0Pool := k.GetConsumerFeePoolAddress(consumer0)
+
 	mocks.MockStakingKeeper.EXPECT().
 		GetBondedValidatorsByPower(gomock.Any()).
-		Return([]stakingtypes.Validator{val1, val2, val3}, nil)
-	share := sdk.NewCoins(sdk.NewInt64Coin("uphoton", 3))
-	for _, op := range [][]byte{op1, op2, op3} {
-		mocks.MockBankKeeper.EXPECT().
-			SendCoinsFromModuleToAccount(gomock.Any(), providertypes.ModuleName, sdk.AccAddress(op), share).
-			Return(nil)
-	}
+		Return([]stakingtypes.Validator{val1, val2}, nil)
+	mocks.MockBankKeeper.EXPECT().
+		GetBalance(gomock.Any(), consumer0Pool, "uphoton").
+		Return(feesPerEpoch)
+	mocks.MockBankKeeper.EXPECT().
+		InputOutputCoins(gomock.Any(),
+			banktypes.Input{Address: consumer0Pool.String(), Coins: sdk.NewCoins(sdk.NewCoin("uphoton", share.MulRaw(2)))},
+			[]banktypes.Output{
+				{Address: accAddr(val1Bytes), Coins: shareCoins},
+				{Address: accAddr(val2Bytes), Coins: shareCoins},
+			},
+		).Return(nil)
 
-	require.NoError(t, k.DistributeFeesToValidators(ctx))
+	require.NoError(t, k.DistributeConsumerFees(ctx))
+	require.False(t, k.IsConsumerInDebt(ctx, consumer0))
 }
 
-// TestDistributeFeesToValidatorsNoBondedValidators: no bonded validators → nothing sent.
-func TestDistributeFeesToValidatorsNoBondedValidators(t *testing.T) {
+// TestDistributeConsumerFeesContinuesOnGenericError: InputOutputCoins fails
+// with a non-insufficient-funds error — logged, debt flag unchanged.
+func TestDistributeConsumerFeesContinuesOnGenericError(t *testing.T) {
 	params := testkeeper.NewInMemKeeperParams(t)
 	k, ctx, ctrl, mocks := testkeeper.GetProviderKeeperAndCtx(t, params)
 	defer ctrl.Finish()
 
+	valAddrCodec := address.NewBech32Codec("cosmosvaloper")
+	mocks.MockStakingKeeper.EXPECT().ValidatorAddressCodec().Return(valAddrCodec).AnyTimes()
+
+	val1, val1Bytes := newBondedValidator(t, valAddrCodec, 1)
+	val2, val2Bytes := newBondedValidator(t, valAddrCodec, 2)
+
+	feesPerBlock := sdk.NewInt64Coin("uphoton", 10)
+	feesPerEpoch := sdk.NewCoin("uphoton", feesPerBlock.Amount.MulRaw(epochMultiplier))
+	share := feesPerEpoch.Amount.QuoRaw(2)
+	shareCoins := sdk.NewCoins(sdk.NewCoin("uphoton", share))
+
+	consumer0 := k.FetchAndIncrementConsumerId(ctx)
+	k.SetConsumerPhase(ctx, consumer0, providertypes.CONSUMER_PHASE_LAUNCHED)
+
 	providerParams := providertypes.DefaultParams()
-	providerParams.FeesPerBlockAmount = math.NewInt(50)
+	providerParams.FeesPerBlockAmount = feesPerBlock.Amount
 	k.SetParams(ctx, providerParams)
 
+	consumer0Pool := k.GetConsumerFeePoolAddress(consumer0)
+
+	mocks.MockStakingKeeper.EXPECT().
+		GetBondedValidatorsByPower(gomock.Any()).
+		Return([]stakingtypes.Validator{val1, val2}, nil)
+
 	mocks.MockBankKeeper.EXPECT().
-		GetBalance(gomock.Any(), authtypes.NewModuleAddress(providertypes.ModuleName), providertypes.DefaultFeesPerBlockDenom).
-		Return(sdk.NewInt64Coin("uphoton", 50))
+		GetBalance(gomock.Any(), consumer0Pool, "uphoton").
+		Return(feesPerEpoch)
+	mocks.MockBankKeeper.EXPECT().
+		InputOutputCoins(gomock.Any(),
+			banktypes.Input{Address: consumer0Pool.String(), Coins: sdk.NewCoins(sdk.NewCoin("uphoton", share.MulRaw(2)))},
+			[]banktypes.Output{
+				{Address: accAddr(val1Bytes), Coins: shareCoins},
+				{Address: accAddr(val2Bytes), Coins: shareCoins},
+			},
+		).Return(errors.New("bank send restriction"))
+
+	require.NoError(t, k.DistributeConsumerFees(ctx))
+	require.False(t, k.IsConsumerInDebt(ctx, consumer0))
+}
+
+// TestDistributeConsumerFeesNoBondedValidators: no bonded validators → nothing sent.
+func TestDistributeConsumerFeesNoBondedValidators(t *testing.T) {
+	params := testkeeper.NewInMemKeeperParams(t)
+	k, ctx, ctrl, mocks := testkeeper.GetProviderKeeperAndCtx(t, params)
+	defer ctrl.Finish()
+
 	mocks.MockStakingKeeper.EXPECT().
 		GetBondedValidatorsByPower(gomock.Any()).
 		Return(nil, nil)
 
-	require.NoError(t, k.DistributeFeesToValidators(ctx))
+	require.NoError(t, k.DistributeConsumerFees(ctx))
 }
 
-// TestDistributeFeesToValidatorsIncludesOfflineValidators: all bonded
-// validators receive an equal share regardless of signing status.
-func TestDistributeFeesToValidatorsIncludesOfflineValidators(t *testing.T) {
+// TestDistributeConsumerFeesSkipsNonLaunched: only LAUNCHED consumers are charged.
+func TestDistributeConsumerFeesSkipsNonLaunched(t *testing.T) {
 	params := testkeeper.NewInMemKeeperParams(t)
 	k, ctx, ctrl, mocks := testkeeper.GetProviderKeeperAndCtx(t, params)
 	defer ctrl.Finish()
@@ -347,34 +262,156 @@ func TestDistributeFeesToValidatorsIncludesOfflineValidators(t *testing.T) {
 	valAddrCodec := address.NewBech32Codec("cosmosvaloper")
 	mocks.MockStakingKeeper.EXPECT().ValidatorAddressCodec().Return(valAddrCodec).AnyTimes()
 
-	val1, op1 := newBondedValidator(t, valAddrCodec, 1)
-	val2, op2 := newBondedValidator(t, valAddrCodec, 2)
+	val1, _ := newBondedValidator(t, valAddrCodec, 1)
+
+	consumer0 := k.FetchAndIncrementConsumerId(ctx)
+	k.SetConsumerPhase(ctx, consumer0, providertypes.CONSUMER_PHASE_REGISTERED)
 
 	providerParams := providertypes.DefaultParams()
 	providerParams.FeesPerBlockAmount = math.NewInt(10)
 	k.SetParams(ctx, providerParams)
 
-	mocks.MockBankKeeper.EXPECT().
-		GetBalance(gomock.Any(), authtypes.NewModuleAddress(providertypes.ModuleName), providertypes.DefaultFeesPerBlockDenom).
-		Return(sdk.NewInt64Coin("uphoton", 100))
+	mocks.MockStakingKeeper.EXPECT().
+		GetBondedValidatorsByPower(gomock.Any()).
+		Return([]stakingtypes.Validator{val1}, nil)
+
+	// No GetBalance/InputOutputCoins expected — consumer0 is REGISTERED.
+	require.NoError(t, k.DistributeConsumerFees(ctx))
+}
+
+// TestDistributeConsumerFeesExcludesDowntime: validators with epoch downtime
+// are excluded from outputs. Their share stays in the consumer pool.
+func TestDistributeConsumerFeesExcludesDowntime(t *testing.T) {
+	params := testkeeper.NewInMemKeeperParams(t)
+	k, ctx, ctrl, mocks := testkeeper.GetProviderKeeperAndCtx(t, params)
+	defer ctrl.Finish()
+
+	valAddrCodec := address.NewBech32Codec("cosmosvaloper")
+	mocks.MockStakingKeeper.EXPECT().ValidatorAddressCodec().Return(valAddrCodec).AnyTimes()
+
+	val1, val1Bytes := newBondedValidator(t, valAddrCodec, 1)
+	val2, _ := newBondedValidator(t, valAddrCodec, 2)
+
+	consAddr1, err := val1.GetConsAddr()
+	require.NoError(t, err)
+	consAddr2, err := val2.GetConsAddr()
+	require.NoError(t, err)
+
+	feesPerBlock := sdk.NewInt64Coin("uphoton", 10)
+	feesPerEpoch := sdk.NewCoin("uphoton", feesPerBlock.Amount.MulRaw(epochMultiplier))
+	share := feesPerEpoch.Amount.QuoRaw(2) // share = total / num_bonded (not eligible)
+	shareCoins := sdk.NewCoins(sdk.NewCoin("uphoton", share))
+
+	consumer0 := k.FetchAndIncrementConsumerId(ctx)
+	k.SetConsumerPhase(ctx, consumer0, providertypes.CONSUMER_PHASE_LAUNCHED)
+	k.MarkEpochDowntime(ctx, consumer0, consAddr2)
+
+	providerParams := providertypes.DefaultParams()
+	providerParams.FeesPerBlockAmount = math.NewInt(10)
+	k.SetParams(ctx, providerParams)
+
+	consumer0Pool := k.GetConsumerFeePoolAddress(consumer0)
+
 	mocks.MockStakingKeeper.EXPECT().
 		GetBondedValidatorsByPower(gomock.Any()).
 		Return([]stakingtypes.Validator{val1, val2}, nil)
-	// Both validators get an equal share (100/2 = 50), even if one was offline.
-	share := sdk.NewCoins(sdk.NewInt64Coin("uphoton", 50))
-	mocks.MockBankKeeper.EXPECT().
-		SendCoinsFromModuleToAccount(gomock.Any(), providertypes.ModuleName, sdk.AccAddress(op1), share).
-		Return(nil)
-	mocks.MockBankKeeper.EXPECT().
-		SendCoinsFromModuleToAccount(gomock.Any(), providertypes.ModuleName, sdk.AccAddress(op2), share).
-		Return(nil)
 
-	require.NoError(t, k.DistributeFeesToValidators(ctx))
+	mocks.MockBankKeeper.EXPECT().
+		GetBalance(gomock.Any(), consumer0Pool, "uphoton").
+		Return(feesPerEpoch)
+
+	// Only val1 in outputs. Input is share (not share*2) since only 1 eligible.
+	mocks.MockBankKeeper.EXPECT().
+		InputOutputCoins(gomock.Any(),
+			banktypes.Input{Address: consumer0Pool.String(), Coins: sdk.NewCoins(sdk.NewCoin("uphoton", share))},
+			[]banktypes.Output{
+				{Address: accAddr(val1Bytes), Coins: shareCoins},
+			},
+		).Return(nil)
+
+	require.False(t, k.IsEpochDowntime(ctx, consumer0, consAddr1))
+	require.True(t, k.IsEpochDowntime(ctx, consumer0, consAddr2))
+	require.NoError(t, k.DistributeConsumerFees(ctx))
+	require.False(t, k.IsConsumerInDebt(ctx, consumer0))
 }
 
-// TestDistributeFeesToValidatorsPropagatesBondedFetchError: error from the
+// TestEpochDowntimeTracking tests the lifecycle: mark, check, clear.
+// Downtime is tracked per consumer, so the same validator can be flagged on
+// one consumer but not another.
+func TestEpochDowntimeTracking(t *testing.T) {
+	params := testkeeper.NewInMemKeeperParams(t)
+	k, ctx, _, _ := testkeeper.GetProviderKeeperAndCtx(t, params)
+
+	consAddr1 := sdk.ConsAddress([]byte("validator1"))
+	consAddr2 := sdk.ConsAddress([]byte("validator2"))
+	const consumer0 uint64 = 0
+	const consumer1 uint64 = 1
+
+	require.False(t, k.IsEpochDowntime(ctx, consumer0, consAddr1))
+	require.False(t, k.IsEpochDowntime(ctx, consumer0, consAddr2))
+	require.False(t, k.IsEpochDowntime(ctx, consumer1, consAddr1))
+
+	// Mark consAddr1 on consumer0 only
+	k.MarkEpochDowntime(ctx, consumer0, consAddr1)
+	require.True(t, k.IsEpochDowntime(ctx, consumer0, consAddr1))
+	require.False(t, k.IsEpochDowntime(ctx, consumer0, consAddr2))
+	require.False(t, k.IsEpochDowntime(ctx, consumer1, consAddr1), "downtime should be per-consumer")
+
+	// Mark consAddr2 on consumer0 too
+	k.MarkEpochDowntime(ctx, consumer0, consAddr2)
+	require.True(t, k.IsEpochDowntime(ctx, consumer0, consAddr1))
+	require.True(t, k.IsEpochDowntime(ctx, consumer0, consAddr2))
+
+	// Mark consAddr1 on consumer1
+	k.MarkEpochDowntime(ctx, consumer1, consAddr1)
+	require.True(t, k.IsEpochDowntime(ctx, consumer1, consAddr1))
+	require.False(t, k.IsEpochDowntime(ctx, consumer1, consAddr2))
+
+	// Clear all
+	k.ClearEpochDowntime(ctx)
+	require.False(t, k.IsEpochDowntime(ctx, consumer0, consAddr1))
+	require.False(t, k.IsEpochDowntime(ctx, consumer0, consAddr2))
+	require.False(t, k.IsEpochDowntime(ctx, consumer1, consAddr1))
+	require.False(t, k.IsEpochDowntime(ctx, consumer1, consAddr2))
+}
+
+// TestDistributeConsumerFeesAllDowntime: when all validators have downtime,
+// no outputs → early return, no bank calls.
+func TestDistributeConsumerFeesAllDowntime(t *testing.T) {
+	params := testkeeper.NewInMemKeeperParams(t)
+	k, ctx, ctrl, mocks := testkeeper.GetProviderKeeperAndCtx(t, params)
+	defer ctrl.Finish()
+
+	valAddrCodec := address.NewBech32Codec("cosmosvaloper")
+	mocks.MockStakingKeeper.EXPECT().ValidatorAddressCodec().Return(valAddrCodec).AnyTimes()
+
+	val1, _ := newBondedValidator(t, valAddrCodec, 1)
+	val2, _ := newBondedValidator(t, valAddrCodec, 2)
+
+	consAddr1, err := val1.GetConsAddr()
+	require.NoError(t, err)
+	consAddr2, err := val2.GetConsAddr()
+	require.NoError(t, err)
+	consumer0 := k.FetchAndIncrementConsumerId(ctx)
+	k.SetConsumerPhase(ctx, consumer0, providertypes.CONSUMER_PHASE_LAUNCHED)
+	k.MarkEpochDowntime(ctx, consumer0, consAddr1)
+	k.MarkEpochDowntime(ctx, consumer0, consAddr2)
+
+	providerParams := providertypes.DefaultParams()
+	providerParams.FeesPerBlockAmount = math.NewInt(10)
+	k.SetParams(ctx, providerParams)
+
+	mocks.MockStakingKeeper.EXPECT().
+		GetBondedValidatorsByPower(gomock.Any()).
+		Return([]stakingtypes.Validator{val1, val2}, nil)
+
+	// No GetBalance/InputOutputCoins — all validators excluded.
+	require.NoError(t, k.DistributeConsumerFees(ctx))
+}
+
+// TestDistributeConsumerFeesPropagatesBondedFetchError: error from the
 // staking keeper is surfaced, not swallowed.
-func TestDistributeFeesToValidatorsPropagatesBondedFetchError(t *testing.T) {
+func TestDistributeConsumerFeesPropagatesBondedFetchError(t *testing.T) {
 	params := testkeeper.NewInMemKeeperParams(t)
 	k, ctx, ctrl, mocks := testkeeper.GetProviderKeeperAndCtx(t, params)
 	defer ctrl.Finish()
@@ -383,13 +420,74 @@ func TestDistributeFeesToValidatorsPropagatesBondedFetchError(t *testing.T) {
 	providerParams.FeesPerBlockAmount = math.NewInt(10)
 	k.SetParams(ctx, providerParams)
 
-	mocks.MockBankKeeper.EXPECT().
-		GetBalance(gomock.Any(), authtypes.NewModuleAddress(providertypes.ModuleName), providertypes.DefaultFeesPerBlockDenom).
-		Return(sdk.NewInt64Coin("uphoton", 100))
 	mocks.MockStakingKeeper.EXPECT().
 		GetBondedValidatorsByPower(gomock.Any()).
 		Return(nil, errors.New("boom"))
 
-	err := k.DistributeFeesToValidators(ctx)
+	err := k.DistributeConsumerFees(ctx)
 	require.ErrorContains(t, err, "boom")
+}
+
+// TestDistributeConsumerFeesShareTooSmall: when fees_per_epoch / num_bonded
+// floors to zero, nothing is sent.
+func TestDistributeConsumerFeesShareTooSmall(t *testing.T) {
+	params := testkeeper.NewInMemKeeperParams(t)
+	k, ctx, ctrl, mocks := testkeeper.GetProviderKeeperAndCtx(t, params)
+	defer ctrl.Finish()
+
+	valAddrCodec := address.NewBech32Codec("cosmosvaloper")
+	mocks.MockStakingKeeper.EXPECT().ValidatorAddressCodec().Return(valAddrCodec).AnyTimes()
+
+	val1, _ := newBondedValidator(t, valAddrCodec, 1)
+	val2, _ := newBondedValidator(t, valAddrCodec, 2)
+
+	consumer0 := k.FetchAndIncrementConsumerId(ctx)
+	k.SetConsumerPhase(ctx, consumer0, providertypes.CONSUMER_PHASE_LAUNCHED)
+
+	providerParams := providertypes.DefaultParams()
+	providerParams.FeesPerBlockAmount = math.NewInt(1)
+	providerParams.BlocksPerEpoch = 1
+	k.SetParams(ctx, providerParams)
+
+	mocks.MockStakingKeeper.EXPECT().
+		GetBondedValidatorsByPower(gomock.Any()).
+		Return([]stakingtypes.Validator{val1, val2}, nil)
+
+	// share = 1 / 2 = 0 → nothing sent
+	require.NoError(t, k.DistributeConsumerFees(ctx))
+}
+
+// TestDistributeConsumerFeesZeroBalance: empty pool → in debt, no bank send.
+func TestDistributeConsumerFeesZeroBalance(t *testing.T) {
+	params := testkeeper.NewInMemKeeperParams(t)
+	k, ctx, ctrl, mocks := testkeeper.GetProviderKeeperAndCtx(t, params)
+	defer ctrl.Finish()
+
+	valAddrCodec := address.NewBech32Codec("cosmosvaloper")
+	mocks.MockStakingKeeper.EXPECT().ValidatorAddressCodec().Return(valAddrCodec).AnyTimes()
+
+	val1, _ := newBondedValidator(t, valAddrCodec, 1)
+	val2, _ := newBondedValidator(t, valAddrCodec, 2)
+
+	feesPerBlock := sdk.NewInt64Coin("uphoton", 10)
+
+	consumer0 := k.FetchAndIncrementConsumerId(ctx)
+	k.SetConsumerPhase(ctx, consumer0, providertypes.CONSUMER_PHASE_LAUNCHED)
+
+	providerParams := providertypes.DefaultParams()
+	providerParams.FeesPerBlockAmount = feesPerBlock.Amount
+	k.SetParams(ctx, providerParams)
+
+	consumer0Pool := k.GetConsumerFeePoolAddress(consumer0)
+
+	mocks.MockStakingKeeper.EXPECT().
+		GetBondedValidatorsByPower(gomock.Any()).
+		Return([]stakingtypes.Validator{val1, val2}, nil)
+
+	mocks.MockBankKeeper.EXPECT().
+		GetBalance(gomock.Any(), consumer0Pool, "uphoton").
+		Return(sdk.NewCoin("uphoton", math.ZeroInt()))
+
+	require.NoError(t, k.DistributeConsumerFees(ctx))
+	require.True(t, k.IsConsumerInDebt(ctx, consumer0))
 }

@@ -17,11 +17,12 @@ import (
 	address "cosmossdk.io/core/address"
 	math "cosmossdk.io/math"
 	types "github.com/cosmos/cosmos-sdk/types"
-	types0 "github.com/cosmos/cosmos-sdk/x/staking/types"
-	types1 "github.com/cosmos/ibc-go/v10/modules/apps/transfer/types"
-	types2 "github.com/cosmos/ibc-go/v10/modules/core/02-client/types"
-	types3 "github.com/cosmos/ibc-go/v10/modules/core/02-client/v2/types"
-	types4 "github.com/cosmos/ibc-go/v10/modules/core/04-channel/v2/types"
+	types0 "github.com/cosmos/cosmos-sdk/x/bank/types"
+	types1 "github.com/cosmos/cosmos-sdk/x/staking/types"
+	types2 "github.com/cosmos/ibc-go/v10/modules/apps/transfer/types"
+	types3 "github.com/cosmos/ibc-go/v10/modules/core/02-client/types"
+	types4 "github.com/cosmos/ibc-go/v10/modules/core/02-client/v2/types"
+	types5 "github.com/cosmos/ibc-go/v10/modules/core/04-channel/v2/types"
 	exported "github.com/cosmos/ibc-go/v10/modules/core/exported"
 	gomock "go.uber.org/mock/gomock"
 )
@@ -81,10 +82,10 @@ func (mr *MockStakingKeeperMockRecorder) BondedRatio(ctx any) *gomock.Call {
 }
 
 // GetBondedValidatorsByPower mocks base method.
-func (m *MockStakingKeeper) GetBondedValidatorsByPower(ctx context.Context) ([]types0.Validator, error) {
+func (m *MockStakingKeeper) GetBondedValidatorsByPower(ctx context.Context) ([]types1.Validator, error) {
 	m.ctrl.T.Helper()
 	ret := m.ctrl.Call(m, "GetBondedValidatorsByPower", ctx)
-	ret0, _ := ret[0].([]types0.Validator)
+	ret0, _ := ret[0].([]types1.Validator)
 	ret1, _ := ret[1].(error)
 	return ret0, ret1
 }
@@ -96,10 +97,10 @@ func (mr *MockStakingKeeperMockRecorder) GetBondedValidatorsByPower(ctx any) *go
 }
 
 // GetHistoricalInfo mocks base method.
-func (m *MockStakingKeeper) GetHistoricalInfo(ctx context.Context, height int64) (types0.HistoricalInfo, error) {
+func (m *MockStakingKeeper) GetHistoricalInfo(ctx context.Context, height int64) (types1.HistoricalInfo, error) {
 	m.ctrl.T.Helper()
 	ret := m.ctrl.Call(m, "GetHistoricalInfo", ctx, height)
-	ret0, _ := ret[0].(types0.HistoricalInfo)
+	ret0, _ := ret[0].(types1.HistoricalInfo)
 	ret1, _ := ret[1].(error)
 	return ret0, ret1
 }
@@ -126,10 +127,10 @@ func (mr *MockStakingKeeperMockRecorder) GetLastValidatorPower(ctx, operator any
 }
 
 // GetRedelegationsFromSrcValidator mocks base method.
-func (m *MockStakingKeeper) GetRedelegationsFromSrcValidator(ctx context.Context, valAddr types.ValAddress) ([]types0.Redelegation, error) {
+func (m *MockStakingKeeper) GetRedelegationsFromSrcValidator(ctx context.Context, valAddr types.ValAddress) ([]types1.Redelegation, error) {
 	m.ctrl.T.Helper()
 	ret := m.ctrl.Call(m, "GetRedelegationsFromSrcValidator", ctx, valAddr)
-	ret0, _ := ret[0].([]types0.Redelegation)
+	ret0, _ := ret[0].([]types1.Redelegation)
 	ret1, _ := ret[1].(error)
 	return ret0, ret1
 }
@@ -141,10 +142,10 @@ func (mr *MockStakingKeeperMockRecorder) GetRedelegationsFromSrcValidator(ctx, v
 }
 
 // GetUnbondingDelegationsFromValidator mocks base method.
-func (m *MockStakingKeeper) GetUnbondingDelegationsFromValidator(ctx context.Context, valAddr types.ValAddress) ([]types0.UnbondingDelegation, error) {
+func (m *MockStakingKeeper) GetUnbondingDelegationsFromValidator(ctx context.Context, valAddr types.ValAddress) ([]types1.UnbondingDelegation, error) {
 	m.ctrl.T.Helper()
 	ret := m.ctrl.Call(m, "GetUnbondingDelegationsFromValidator", ctx, valAddr)
-	ret0, _ := ret[0].([]types0.UnbondingDelegation)
+	ret0, _ := ret[0].([]types1.UnbondingDelegation)
 	ret1, _ := ret[1].(error)
 	return ret0, ret1
 }
@@ -156,10 +157,10 @@ func (mr *MockStakingKeeperMockRecorder) GetUnbondingDelegationsFromValidator(ct
 }
 
 // GetValidator mocks base method.
-func (m *MockStakingKeeper) GetValidator(ctx context.Context, addr types.ValAddress) (types0.Validator, error) {
+func (m *MockStakingKeeper) GetValidator(ctx context.Context, addr types.ValAddress) (types1.Validator, error) {
 	m.ctrl.T.Helper()
 	ret := m.ctrl.Call(m, "GetValidator", ctx, addr)
-	ret0, _ := ret[0].(types0.Validator)
+	ret0, _ := ret[0].(types1.Validator)
 	ret1, _ := ret[1].(error)
 	return ret0, ret1
 }
@@ -171,10 +172,10 @@ func (mr *MockStakingKeeperMockRecorder) GetValidator(ctx, addr any) *gomock.Cal
 }
 
 // GetValidatorByConsAddr mocks base method.
-func (m *MockStakingKeeper) GetValidatorByConsAddr(ctx context.Context, consAddr types.ConsAddress) (types0.Validator, error) {
+func (m *MockStakingKeeper) GetValidatorByConsAddr(ctx context.Context, consAddr types.ConsAddress) (types1.Validator, error) {
 	m.ctrl.T.Helper()
 	ret := m.ctrl.Call(m, "GetValidatorByConsAddr", ctx, consAddr)
-	ret0, _ := ret[0].(types0.Validator)
+	ret0, _ := ret[0].(types1.Validator)
 	ret1, _ := ret[1].(error)
 	return ret0, ret1
 }
@@ -186,7 +187,7 @@ func (mr *MockStakingKeeperMockRecorder) GetValidatorByConsAddr(ctx, consAddr an
 }
 
 // IterateBondedValidatorsByPower mocks base method.
-func (m *MockStakingKeeper) IterateBondedValidatorsByPower(arg0 context.Context, arg1 func(int64, types0.ValidatorI) bool) error {
+func (m *MockStakingKeeper) IterateBondedValidatorsByPower(arg0 context.Context, arg1 func(int64, types1.ValidatorI) bool) error {
 	m.ctrl.T.Helper()
 	ret := m.ctrl.Call(m, "IterateBondedValidatorsByPower", arg0, arg1)
 	ret0, _ := ret[0].(error)
@@ -200,7 +201,7 @@ func (mr *MockStakingKeeperMockRecorder) IterateBondedValidatorsByPower(arg0, ar
 }
 
 // IterateDelegations mocks base method.
-func (m *MockStakingKeeper) IterateDelegations(ctx context.Context, delegator types.AccAddress, fn func(int64, types0.DelegationI) bool) error {
+func (m *MockStakingKeeper) IterateDelegations(ctx context.Context, delegator types.AccAddress, fn func(int64, types1.DelegationI) bool) error {
 	m.ctrl.T.Helper()
 	ret := m.ctrl.Call(m, "IterateDelegations", ctx, delegator, fn)
 	ret0, _ := ret[0].(error)
@@ -257,7 +258,7 @@ func (mr *MockStakingKeeperMockRecorder) PowerReduction(ctx any) *gomock.Call {
 }
 
 // SlashRedelegation mocks base method.
-func (m *MockStakingKeeper) SlashRedelegation(ctx context.Context, srcValidator types0.Validator, redelegation types0.Redelegation, infractionHeight int64, slashFactor math.LegacyDec) (math.Int, error) {
+func (m *MockStakingKeeper) SlashRedelegation(ctx context.Context, srcValidator types1.Validator, redelegation types1.Redelegation, infractionHeight int64, slashFactor math.LegacyDec) (math.Int, error) {
 	m.ctrl.T.Helper()
 	ret := m.ctrl.Call(m, "SlashRedelegation", ctx, srcValidator, redelegation, infractionHeight, slashFactor)
 	ret0, _ := ret[0].(math.Int)
@@ -272,7 +273,7 @@ func (mr *MockStakingKeeperMockRecorder) SlashRedelegation(ctx, srcValidator, re
 }
 
 // SlashUnbondingDelegation mocks base method.
-func (m *MockStakingKeeper) SlashUnbondingDelegation(ctx context.Context, unbondingDelegation types0.UnbondingDelegation, infractionHeight int64, slashFactor math.LegacyDec) (math.Int, error) {
+func (m *MockStakingKeeper) SlashUnbondingDelegation(ctx context.Context, unbondingDelegation types1.UnbondingDelegation, infractionHeight int64, slashFactor math.LegacyDec) (math.Int, error) {
 	m.ctrl.T.Helper()
 	ret := m.ctrl.Call(m, "SlashUnbondingDelegation", ctx, unbondingDelegation, infractionHeight, slashFactor)
 	ret0, _ := ret[0].(math.Int)
@@ -287,7 +288,7 @@ func (mr *MockStakingKeeperMockRecorder) SlashUnbondingDelegation(ctx, unbonding
 }
 
 // SlashWithInfractionReason mocks base method.
-func (m *MockStakingKeeper) SlashWithInfractionReason(ctx context.Context, consAddr types.ConsAddress, infractionHeight, power int64, slashFactor math.LegacyDec, infraction types0.Infraction) (math.Int, error) {
+func (m *MockStakingKeeper) SlashWithInfractionReason(ctx context.Context, consAddr types.ConsAddress, infractionHeight, power int64, slashFactor math.LegacyDec, infraction types1.Infraction) (math.Int, error) {
 	m.ctrl.T.Helper()
 	ret := m.ctrl.Call(m, "SlashWithInfractionReason", ctx, consAddr, infractionHeight, power, slashFactor, infraction)
 	ret0, _ := ret[0].(math.Int)
@@ -426,7 +427,6 @@ func (mr *MockSlashingKeeperMockRecorder) JailUntil(arg0, arg1, arg2 any) *gomoc
 	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "JailUntil", reflect.TypeOf((*MockSlashingKeeper)(nil).JailUntil), arg0, arg1, arg2)
 }
 
-
 // Tombstone mocks base method.
 func (m *MockSlashingKeeper) Tombstone(arg0 context.Context, arg1 types.ConsAddress) error {
 	m.ctrl.T.Helper()
@@ -525,10 +525,10 @@ func (mr *MockClientKeeperMockRecorder) GetClientStatus(ctx, clientID any) *gomo
 }
 
 // GetStoreProvider mocks base method.
-func (m *MockClientKeeper) GetStoreProvider() types2.StoreProvider {
+func (m *MockClientKeeper) GetStoreProvider() types3.StoreProvider {
 	m.ctrl.T.Helper()
 	ret := m.ctrl.Call(m, "GetStoreProvider")
-	ret0, _ := ret[0].(types2.StoreProvider)
+	ret0, _ := ret[0].(types3.StoreProvider)
 	return ret0
 }
 
@@ -575,10 +575,10 @@ func (m *MockClientV2Keeper) EXPECT() *MockClientV2KeeperMockRecorder {
 }
 
 // GetClientCounterparty mocks base method.
-func (m *MockClientV2Keeper) GetClientCounterparty(ctx types.Context, clientID string) (types3.CounterpartyInfo, bool) {
+func (m *MockClientV2Keeper) GetClientCounterparty(ctx types.Context, clientID string) (types4.CounterpartyInfo, bool) {
 	m.ctrl.T.Helper()
 	ret := m.ctrl.Call(m, "GetClientCounterparty", ctx, clientID)
-	ret0, _ := ret[0].(types3.CounterpartyInfo)
+	ret0, _ := ret[0].(types4.CounterpartyInfo)
 	ret1, _ := ret[1].(bool)
 	return ret0, ret1
 }
@@ -590,7 +590,7 @@ func (mr *MockClientV2KeeperMockRecorder) GetClientCounterparty(ctx, clientID an
 }
 
 // SetClientCounterparty mocks base method.
-func (m *MockClientV2Keeper) SetClientCounterparty(ctx types.Context, clientID string, counterparty types3.CounterpartyInfo) {
+func (m *MockClientV2Keeper) SetClientCounterparty(ctx types.Context, clientID string, counterparty types4.CounterpartyInfo) {
 	m.ctrl.T.Helper()
 	m.ctrl.Call(m, "SetClientCounterparty", ctx, clientID, counterparty)
 }
@@ -689,6 +689,20 @@ func (m *MockBankKeeper) GetBalance(ctx context.Context, addr types.AccAddress, 
 func (mr *MockBankKeeperMockRecorder) GetBalance(ctx, addr, denom any) *gomock.Call {
 	mr.mock.ctrl.T.Helper()
 	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "GetBalance", reflect.TypeOf((*MockBankKeeper)(nil).GetBalance), ctx, addr, denom)
+}
+
+// InputOutputCoins mocks base method.
+func (m *MockBankKeeper) InputOutputCoins(ctx context.Context, input types0.Input, outputs []types0.Output) error {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "InputOutputCoins", ctx, input, outputs)
+	ret0, _ := ret[0].(error)
+	return ret0
+}
+
+// InputOutputCoins indicates an expected call of InputOutputCoins.
+func (mr *MockBankKeeperMockRecorder) InputOutputCoins(ctx, input, outputs any) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "InputOutputCoins", reflect.TypeOf((*MockBankKeeper)(nil).InputOutputCoins), ctx, input, outputs)
 }
 
 // SendCoinsFromAccountToModule mocks base method.
@@ -810,10 +824,10 @@ func (m *MockChannelV2Keeper) EXPECT() *MockChannelV2KeeperMockRecorder {
 }
 
 // SendPacket mocks base method.
-func (m *MockChannelV2Keeper) SendPacket(ctx context.Context, msg *types4.MsgSendPacket) (*types4.MsgSendPacketResponse, error) {
+func (m *MockChannelV2Keeper) SendPacket(ctx context.Context, msg *types5.MsgSendPacket) (*types5.MsgSendPacketResponse, error) {
 	m.ctrl.T.Helper()
 	ret := m.ctrl.Call(m, "SendPacket", ctx, msg)
-	ret0, _ := ret[0].(*types4.MsgSendPacketResponse)
+	ret0, _ := ret[0].(*types5.MsgSendPacketResponse)
 	ret1, _ := ret[1].(error)
 	return ret0, ret1
 }
@@ -849,10 +863,10 @@ func (m *MockIBCTransferKeeper) EXPECT() *MockIBCTransferKeeperMockRecorder {
 }
 
 // Transfer mocks base method.
-func (m *MockIBCTransferKeeper) Transfer(arg0 context.Context, arg1 *types1.MsgTransfer) (*types1.MsgTransferResponse, error) {
+func (m *MockIBCTransferKeeper) Transfer(arg0 context.Context, arg1 *types2.MsgTransfer) (*types2.MsgTransferResponse, error) {
 	m.ctrl.T.Helper()
 	ret := m.ctrl.Call(m, "Transfer", arg0, arg1)
-	ret0, _ := ret[0].(*types1.MsgTransferResponse)
+	ret0, _ := ret[0].(*types2.MsgTransferResponse)
 	ret1, _ := ret[1].(error)
 	return ret0, ret1
 }
