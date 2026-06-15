@@ -194,7 +194,9 @@ func TestDistributeConsumerFeesClearsDebtWhenRecovered(t *testing.T) {
 }
 
 // TestDistributeConsumerFeesContinuesOnGenericError: InputOutputCoins fails
-// with a non-insufficient-funds error — logged, debt flag unchanged.
+// with a non-insufficient-funds error on one consumer — logged, debt flag
+// unchanged. A second consumer in the same call distributes normally,
+// proving one consumer's error does not block the others.
 func TestDistributeConsumerFeesContinuesOnGenericError(t *testing.T) {
 	params := testkeeper.NewInMemKeeperParams(t)
 	k, ctx, ctrl, mocks := testkeeper.GetProviderKeeperAndCtx(t, params)
@@ -212,18 +214,22 @@ func TestDistributeConsumerFeesContinuesOnGenericError(t *testing.T) {
 	shareCoins := sdk.NewCoins(sdk.NewCoin("uphoton", share))
 
 	consumer0 := k.FetchAndIncrementConsumerId(ctx)
+	consumer1 := k.FetchAndIncrementConsumerId(ctx)
 	k.SetConsumerPhase(ctx, consumer0, providertypes.CONSUMER_PHASE_LAUNCHED)
+	k.SetConsumerPhase(ctx, consumer1, providertypes.CONSUMER_PHASE_LAUNCHED)
 
 	providerParams := providertypes.DefaultParams()
 	providerParams.FeesPerBlockAmount = feesPerBlock.Amount
 	k.SetParams(ctx, providerParams)
 
 	consumer0Pool := k.GetConsumerFeePoolAddress(consumer0)
+	consumer1Pool := k.GetConsumerFeePoolAddress(consumer1)
 
 	mocks.MockStakingKeeper.EXPECT().
 		GetBondedValidatorsByPower(gomock.Any()).
 		Return([]stakingtypes.Validator{val1, val2}, nil)
 
+	// consumer0: InputOutputCoins fails with a generic error.
 	mocks.MockBankKeeper.EXPECT().
 		GetBalance(gomock.Any(), consumer0Pool, "uphoton").
 		Return(feesPerEpoch)
@@ -236,8 +242,22 @@ func TestDistributeConsumerFeesContinuesOnGenericError(t *testing.T) {
 			},
 		).Return(errors.New("bank send restriction"))
 
+	// consumer1: distribution succeeds despite consumer0's failure.
+	mocks.MockBankKeeper.EXPECT().
+		GetBalance(gomock.Any(), consumer1Pool, "uphoton").
+		Return(feesPerEpoch)
+	mocks.MockBankKeeper.EXPECT().
+		InputOutputCoins(gomock.Any(),
+			banktypes.Input{Address: consumer1Pool.String(), Coins: sdk.NewCoins(sdk.NewCoin("uphoton", share.MulRaw(2)))},
+			[]banktypes.Output{
+				{Address: accAddr(val1Bytes), Coins: shareCoins},
+				{Address: accAddr(val2Bytes), Coins: shareCoins},
+			},
+		).Return(nil)
+
 	require.NoError(t, k.DistributeConsumerFees(ctx))
 	require.False(t, k.IsConsumerInDebt(ctx, consumer0))
+	require.False(t, k.IsConsumerInDebt(ctx, consumer1))
 }
 
 // TestDistributeConsumerFeesNoBondedValidators: no bonded validators → nothing sent.

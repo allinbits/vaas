@@ -50,15 +50,19 @@ func (k Keeper) ClearEpochDowntime(ctx sdk.Context) {
 // InputOutputCoins call per consumer. The bonded validator set is queried once;
 // each consumer pays fees_per_epoch (fees_per_block * blocks_per_epoch), split
 // equally as share = fees_per_epoch / num_bonded. Validators flagged with
-// downtime are excluded from the outputs — their share stays in the consumer
-// pool.
+// downtime are excluded from the outputs — only the eligible validators'
+// shares (share * num_eligible) are drawn from the consumer pool, so the
+// withheld shares remain available for the consumer. This ensures the
+// consumer never pays for validation work that did not happen, and avoids
+// incentivizing validators to DOS competitors (the other validators' shares
+// do not increase when someone is excluded).
 //
 // If a consumer's pool balance is below fees_per_epoch, the consumer is marked
 // as in debt and skipped entirely (no partial distribution).
 func (k Keeper) DistributeConsumerFees(ctx sdk.Context) error {
 	defaultFeePerBlock := k.GetFeesPerBlock(ctx)
 	blocksPerEpoch := k.GetBlocksPerEpoch(ctx)
-	feePerEpoch := sdk.NewCoin(defaultFeePerBlock.Denom, defaultFeePerBlock.Amount.MulRaw(blocksPerEpoch))
+	defaultFeePerEpoch := sdk.NewCoin(defaultFeePerBlock.Denom, defaultFeePerBlock.Amount.MulRaw(blocksPerEpoch))
 
 	bonded, err := k.stakingKeeper.GetBondedValidatorsByPower(ctx)
 	if err != nil {
@@ -105,29 +109,31 @@ func (k Keeper) DistributeConsumerFees(ctx sdk.Context) error {
 			continue
 		}
 
-		feesPerEpoch, _ := k.effectiveFeesPerEpoch(ctx, consumerId, feePerEpoch, defaultFeePerBlock)
-		share := feesPerEpoch.Amount.Quo(numBonded)
+		consumerFeePerEpoch, _ := k.effectiveFeesPerEpoch(ctx, consumerId, defaultFeePerEpoch, defaultFeePerBlock)
+		share := consumerFeePerEpoch.Amount.Quo(numBonded)
 		if share.IsZero() {
 			continue
 		}
-		shareCoin := sdk.NewCoin(feesPerEpoch.Denom, share)
+		shareCoin := sdk.NewCoin(consumerFeePerEpoch.Denom, share)
 		shareCoins := sdk.NewCoins(shareCoin)
 		consumerFeePoolAddr := k.GetConsumerFeePoolAddress(consumerId)
 
 		// Check the pool can cover the full epoch fee before paying any
 		// validator. This avoids unfair partial distribution.
-		balance := k.bankKeeper.GetBalance(ctx, consumerFeePoolAddr, feesPerEpoch.Denom)
-		if balance.Amount.LT(feesPerEpoch.Amount) {
+		balance := k.bankKeeper.GetBalance(ctx, consumerFeePoolAddr, consumerFeePerEpoch.Denom)
+		if balance.Amount.LT(consumerFeePerEpoch.Amount) {
 			k.UpdateConsumerDebtStatus(ctx, consumerId, true)
 			k.Logger(ctx).Debug("consumer fee pool underfunded; skipping distribution",
 				"consumerId", consumerId,
 				"balance", balance.String(),
-				"required", feesPerEpoch.String(),
+				"required", consumerFeePerEpoch.String(),
 			)
 			continue
 		}
 
 		// Single InputOutputCoins: consumer pool → all eligible validators.
+		// Only share*num_eligible is drawn; excluded validators' shares stay
+		// in the consumer pool.
 		totalOut := share.MulRaw(int64(len(eligibleAddrs)))
 		outputs := make([]banktypes.Output, len(eligibleAddrs))
 		for i, addr := range eligibleAddrs {
@@ -135,19 +141,25 @@ func (k Keeper) DistributeConsumerFees(ctx sdk.Context) error {
 		}
 		input := banktypes.Input{
 			Address: consumerFeePoolAddr.String(),
-			Coins:   sdk.NewCoins(sdk.NewCoin(feesPerEpoch.Denom, totalOut)),
+			Coins:   sdk.NewCoins(sdk.NewCoin(consumerFeePerEpoch.Denom, totalOut)),
 		}
-		if err := k.bankKeeper.InputOutputCoins(ctx, input, outputs); err != nil {
+		// Run in a cached context so a mid-distribution error (e.g. a send
+		// restriction on one output) rolls back the entire operation instead
+		// of leaving some validators paid and others not.
+		cachedCtx, write := ctx.CacheContext()
+		if err := k.bankKeeper.InputOutputCoins(cachedCtx, input, outputs); err != nil {
 			k.Logger(ctx).Error("failed to distribute consumer fees",
 				"consumerId", consumerId,
 				"err", err,
 			)
 			continue
 		}
+		write()
 		k.UpdateConsumerDebtStatus(ctx, consumerId, false)
 		k.Logger(ctx).Debug("distributed consumer fees to validators",
 			"consumerId", consumerId,
 			"sharePerValidator", shareCoins.String(),
+			"totalDistributed", sdk.NewCoins(sdk.NewCoin(consumerFeePerEpoch.Denom, totalOut)).String(),
 		)
 	}
 
