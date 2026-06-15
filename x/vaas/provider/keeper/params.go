@@ -76,6 +76,21 @@ func (k Keeper) GetEffectiveFeesPerBlock(ctx context.Context, consumerId uint64)
 	return k.effectiveFeesPerBlock(ctx, consumerId, k.GetFeesPerBlock(ctx))
 }
 
+// effectiveFeesPerEpoch resolves the per-consumer epoch fee given an already-read
+// default epoch fee and default per-block fee. If a per-consumer override exists,
+// it's multiplied by blocks_per_epoch; otherwise the default epoch fee is used.
+func (k Keeper) effectiveFeesPerEpoch(ctx context.Context, consumerId uint64, defaultEpochFee, defaultFeePerBlock sdk.Coin) (sdk.Coin, bool) {
+	overrideAmt, err := k.ConsumerFeesPerBlockOverride.Get(ctx, consumerId)
+	if err != nil {
+		if errors.Is(err, collections.ErrNotFound) {
+			return defaultEpochFee, false
+		}
+		panic(fmt.Errorf("error getting fees-per-block override for consumer %d: %w", consumerId, err))
+	}
+	blocksPerEpoch := k.GetBlocksPerEpoch(ctx)
+	return sdk.NewCoin(defaultFeePerBlock.Denom, overrideAmt.MulRaw(blocksPerEpoch)), true
+}
+
 // effectiveFeesPerBlock resolves the per-consumer fee given an already-read
 // default. The per-block fee collection loop reads the default once and reuses
 // it across all consumers via this method, avoiding a redundant params read
