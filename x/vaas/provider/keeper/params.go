@@ -7,6 +7,7 @@ import (
 	"time"
 
 	"github.com/allinbits/vaas/x/vaas/provider/types"
+	vaastypes "github.com/allinbits/vaas/x/vaas/types"
 
 	clienttypes "github.com/cosmos/ibc-go/v10/modules/core/02-client/types"
 	commitmenttypes "github.com/cosmos/ibc-go/v10/modules/core/23-commitment/types"
@@ -164,4 +165,15 @@ func (k Keeper) SetInfractionParams(ctx context.Context, params types.Infraction
 	if err := k.InfractionParams.Set(ctx, params); err != nil {
 		panic(fmt.Sprintf("error setting infraction parameters: %v", err))
 	}
+}
+
+// LivenessGracePeriod returns the maximum time a launched consumer may go
+// without a successful VSC ack before it is removed, derived from the provider
+// unbonding period so it stays inside the slashable window.
+func (k Keeper) LivenessGracePeriod(ctx context.Context) (time.Duration, error) {
+	unbonding, err := k.stakingKeeper.UnbondingTime(ctx)
+	if err != nil {
+		return 0, err
+	}
+	return vaastypes.CalculateTrustPeriod(unbonding, types.LivenessGraceFraction)
 }

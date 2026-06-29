@@ -19,17 +19,23 @@ import (
 	sdk "github.com/cosmos/cosmos-sdk/types"
 )
 
-func (k Keeper) OnAcknowledgementPacketV2(ctx sdk.Context, sourceClientID string, ackError string) error {
+func (k Keeper) OnAcknowledgementPacketV2(ctx sdk.Context, sourceClientID string, ackVscId uint64, ackError string) error {
+	consumerId, found := k.GetClientIdToConsumerId(ctx, sourceClientID)
+	if !found {
+		return errorsmod.Wrapf(providertypes.ErrInvalidConsumerClient, "recv acknowledgement on unknown client %s", sourceClientID)
+	}
+
 	if ackError != "" {
-		k.Logger(ctx).Error(
-			"recv ErrorAcknowledgement",
-			"clientID", sourceClientID,
-			"error", ackError,
-		)
-		if consumerId, found := k.GetClientIdToConsumerId(ctx, sourceClientID); found {
-			return k.StopAndPrepareForConsumerRemoval(ctx, consumerId)
-		}
-		return errorsmod.Wrapf(providertypes.ErrInvalidConsumerClient, "recv ErrorAcknowledgement on unknown client %s", sourceClientID)
+		k.Logger(ctx).Error("recv ErrorAcknowledgement, retrying next epoch; liveness sweep owns removal",
+			"clientID", sourceClientID, "consumerId", consumerId, "error", ackError)
+		return nil
+	}
+
+	if err := k.SetConsumerLastAckTime(ctx, consumerId, ctx.BlockTime()); err != nil {
+		return err
+	}
+	if ackVscId > k.GetConsumerHighestAckedVscId(ctx, consumerId) {
+		k.SetConsumerHighestAckedVscId(ctx, consumerId, ackVscId)
 	}
 	return nil
 }
@@ -38,13 +44,11 @@ func (k Keeper) OnTimeoutPacketV2(ctx sdk.Context, sourceClientID string) error 
 	consumerId, found := k.GetClientIdToConsumerId(ctx, sourceClientID)
 	if !found {
 		k.Logger(ctx).Error("packet timeout, unknown client:", "clientID", sourceClientID)
-		return errorsmod.Wrapf(
-			providertypes.ErrInvalidConsumerClient,
-			"timeout on unknown client %s", sourceClientID,
-		)
+		return errorsmod.Wrapf(providertypes.ErrInvalidConsumerClient, "timeout on unknown client %s", sourceClientID)
 	}
-	k.Logger(ctx).Info("packet timeout, deleting the consumer:", "consumerId", consumerId, "clientId", sourceClientID)
-	return k.StopAndPrepareForConsumerRemoval(ctx, consumerId)
+	k.Logger(ctx).Info("packet timeout, retrying next epoch; liveness sweep owns removal",
+		"consumerId", consumerId, "clientId", sourceClientID)
+	return nil
 }
 
 // EndBlockVSU contains the EndBlock logic needed for
@@ -235,17 +239,8 @@ func (k Keeper) SendVSCPacketsToChain(ctx sdk.Context, consumerId uint64, client
 				return nil
 			}
 
-			k.Logger(ctx).Error("cannot send VSC, removing consumer:",
-				"consumerId", consumerId,
-				"clientId", clientId,
-				"vscid", data.ValsetUpdateId,
-				"err", err.Error(),
-			)
-
-			err := k.StopAndPrepareForConsumerRemoval(ctx, consumerId)
-			if err != nil {
-				k.Logger(ctx).Info("consumer chain failed to stop:", "consumerId", consumerId, "error", err.Error())
-			}
+			k.Logger(ctx).Error("cannot send VSC, leaving packet data stored; liveness sweep owns removal",
+				"consumerId", consumerId, "clientId", clientId, "vscid", data.ValsetUpdateId, "err", err.Error())
 			return nil
 		}
 
@@ -255,6 +250,9 @@ func (k Keeper) SendVSCPacketsToChain(ctx sdk.Context, consumerId uint64, client
 			"vscid", data.ValsetUpdateId,
 			"sequence", resp.Sequence,
 		)
+		if data.ValsetUpdateId > k.GetConsumerHighestSentVscId(ctx, consumerId) {
+			k.SetConsumerHighestSentVscId(ctx, consumerId, data.ValsetUpdateId)
+		}
 	}
 	k.DeletePendingVSCPackets(ctx, consumerId)
 

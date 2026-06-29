@@ -74,6 +74,9 @@ type Keeper struct {
 	ConsumerFeesPerBlockOverride  collections.Map[uint64, math.Int]
 	EquivocationEvidenceMinHeight collections.Map[uint64, uint64]
 	ConsumerRemovalTime           collections.Map[uint64, []byte]
+	ConsumerLastAckTime           collections.Map[uint64, []byte]
+	ConsumerHighestSentVscId      collections.Map[uint64, uint64]
+	ConsumerHighestAckedVscId     collections.Map[uint64, uint64]
 	SpawnTimeToConsumerIds        collections.Map[[]byte, types.ConsumerIds]
 	RemovalTimeToConsumerIds      collections.Map[[]byte, types.ConsumerIds]
 
@@ -184,6 +187,9 @@ func NewKeeper(
 		ConsumerFeesPerBlockOverride:  collections.NewMap(sb, types.ConsumerIdToFeesPerBlockOverridePrefix, types.ConsumerIdToFeesPerBlockOverrideKeyName, collections.Uint64Key, sdk.IntValue),
 		EquivocationEvidenceMinHeight: collections.NewMap(sb, types.EquivocationEvidenceMinHeightPrefix, "equivocation_evidence_min_height", collections.Uint64Key, collections.Uint64Value),
 		ConsumerRemovalTime:           collections.NewMap(sb, types.ConsumerIdToRemovalTimePrefix, "consumer_removal_time", collections.Uint64Key, collections.BytesValue),
+		ConsumerLastAckTime:           collections.NewMap(sb, types.ConsumerIdToLastAckTimePrefix, "consumer_last_ack_time", collections.Uint64Key, collections.BytesValue),
+		ConsumerHighestSentVscId:      collections.NewMap(sb, types.ConsumerIdToHighestSentVscIdPrefix, "consumer_highest_sent_vsc_id", collections.Uint64Key, collections.Uint64Value),
+		ConsumerHighestAckedVscId:     collections.NewMap(sb, types.ConsumerIdToHighestAckedVscIdPrefix, "consumer_highest_acked_vsc_id", collections.Uint64Key, collections.Uint64Value),
 		SpawnTimeToConsumerIds:        collections.NewMap(sb, types.SpawnTimeToConsumerIdsPrefix, "spawn_time_to_consumer_ids", collections.BytesKey, codec.CollValue[types.ConsumerIds](cdc)),
 		RemovalTimeToConsumerIds:      collections.NewMap(sb, types.RemovalTimeToConsumerIdsPrefix, "removal_time_to_consumer_ids", collections.BytesKey, codec.CollValue[types.ConsumerIds](cdc)),
 
@@ -568,6 +574,76 @@ func (k Keeper) GetConsumerRemovalTime(ctx context.Context, consumerId uint64) (
 func (k Keeper) DeleteConsumerRemovalTime(ctx context.Context, consumerId uint64) {
 	if err := k.ConsumerRemovalTime.Remove(ctx, consumerId); err != nil {
 		panic(fmt.Errorf("failed to delete removal time for consumer id (%d): %w", consumerId, err))
+	}
+}
+
+// SetConsumerLastAckTime records the block time of the consumer's most recent successful VSC ack.
+func (k Keeper) SetConsumerLastAckTime(ctx context.Context, consumerId uint64, t time.Time) error {
+	buf, err := t.MarshalBinary()
+	if err != nil {
+		return fmt.Errorf("failed to marshal last ack time (%+v) for consumer id (%d): %w", t, consumerId, err)
+	}
+	return k.ConsumerLastAckTime.Set(ctx, consumerId, buf)
+}
+
+// GetConsumerLastAckTime returns the consumer's last successful VSC ack time.
+// When absent it returns the current block time, so a consumer is never treated
+// as stale before its first recorded ack.
+func (k Keeper) GetConsumerLastAckTime(ctx context.Context, consumerId uint64) time.Time {
+	buf, err := k.ConsumerLastAckTime.Get(ctx, consumerId)
+	if err != nil {
+		return sdk.UnwrapSDKContext(ctx).BlockTime()
+	}
+	var t time.Time
+	if err := t.UnmarshalBinary(buf); err != nil {
+		return sdk.UnwrapSDKContext(ctx).BlockTime()
+	}
+	return t
+}
+
+func (k Keeper) DeleteConsumerLastAckTime(ctx context.Context, consumerId uint64) {
+	if err := k.ConsumerLastAckTime.Remove(ctx, consumerId); err != nil {
+		panic(fmt.Errorf("failed to delete last ack time for consumer id (%d): %w", consumerId, err))
+	}
+}
+
+func (k Keeper) SetConsumerHighestSentVscId(ctx context.Context, consumerId, vscId uint64) {
+	if err := k.ConsumerHighestSentVscId.Set(ctx, consumerId, vscId); err != nil {
+		panic(fmt.Errorf("failed to set highest sent vscId for consumer id (%d): %w", consumerId, err))
+	}
+}
+
+func (k Keeper) GetConsumerHighestSentVscId(ctx context.Context, consumerId uint64) uint64 {
+	v, err := k.ConsumerHighestSentVscId.Get(ctx, consumerId)
+	if err != nil {
+		return 0
+	}
+	return v
+}
+
+func (k Keeper) DeleteConsumerHighestSentVscId(ctx context.Context, consumerId uint64) {
+	if err := k.ConsumerHighestSentVscId.Remove(ctx, consumerId); err != nil {
+		panic(fmt.Errorf("failed to delete highest sent vscId for consumer id (%d): %w", consumerId, err))
+	}
+}
+
+func (k Keeper) SetConsumerHighestAckedVscId(ctx context.Context, consumerId, vscId uint64) {
+	if err := k.ConsumerHighestAckedVscId.Set(ctx, consumerId, vscId); err != nil {
+		panic(fmt.Errorf("failed to set highest acked vscId for consumer id (%d): %w", consumerId, err))
+	}
+}
+
+func (k Keeper) GetConsumerHighestAckedVscId(ctx context.Context, consumerId uint64) uint64 {
+	v, err := k.ConsumerHighestAckedVscId.Get(ctx, consumerId)
+	if err != nil {
+		return 0
+	}
+	return v
+}
+
+func (k Keeper) DeleteConsumerHighestAckedVscId(ctx context.Context, consumerId uint64) {
+	if err := k.ConsumerHighestAckedVscId.Remove(ctx, consumerId); err != nil {
+		panic(fmt.Errorf("failed to delete highest acked vscId for consumer id (%d): %w", consumerId, err))
 	}
 }
 

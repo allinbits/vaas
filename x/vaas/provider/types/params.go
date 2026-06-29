@@ -20,6 +20,13 @@ const (
 	// as UnbondingPeriod * TrustingPeriodFraction
 	DefaultTrustingPeriodFraction = "0.66"
 
+	// LivenessGraceFraction sets the consumer liveness grace period as a
+	// fraction of the provider unbonding period. A consumer that produces no
+	// successful VSC ack for longer than this is removed. 0.66 mirrors the
+	// trusting-period fraction: the grace ends around the client recovery
+	// horizon, leaving margin below the unbonding (slashable) window.
+	LivenessGraceFraction = "0.66"
+
 	// DefaultBlocksPerEpoch defines the default blocks that constitute an epoch. Assuming we need 6 seconds per block,
 	// an epoch corresponds to 1 hour (6 * 600 = 3600 seconds).
 	// forcing int64 as the Params KeyTable expects an int64 and not int.

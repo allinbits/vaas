@@ -2,7 +2,6 @@ package keeper_test
 
 import (
 	"testing"
-	"time"
 
 	"github.com/stretchr/testify/require"
 	"go.uber.org/mock/gomock"
@@ -18,7 +17,7 @@ import (
 
 // TestOnAcknowledgementPacketV2 tests the IBC v2 acknowledgement handler.
 func TestOnAcknowledgementPacketV2(t *testing.T) {
-	providerKeeper, ctx, ctrl, mocks := testkeeper.GetProviderKeeperAndCtx(t, testkeeper.NewInMemKeeperParams(t))
+	providerKeeper, ctx, ctrl, _ := testkeeper.GetProviderKeeperAndCtx(t, testkeeper.NewInMemKeeperParams(t))
 	defer ctrl.Finish()
 
 	consumerId := uint64(0)
@@ -30,24 +29,20 @@ func TestOnAcknowledgementPacketV2(t *testing.T) {
 	providerKeeper.SetConsumerChainId(ctx, consumerId, "consumer-chain")
 
 	// Test 1: Success acknowledgement (empty error) - no action needed
-	err := providerKeeper.OnAcknowledgementPacketV2(ctx, clientId, "")
+	err := providerKeeper.OnAcknowledgementPacketV2(ctx, clientId, 1, "")
 	require.NoError(t, err)
 
 	// Consumer should still be launched
 	phase := providerKeeper.GetConsumerPhase(ctx, consumerId)
 	require.Equal(t, providertypes.CONSUMER_PHASE_LAUNCHED, phase)
 
-	// Setup mock expectation for StopAndPrepareForConsumerRemoval
-	// which calls UnbondingTime
-	mocks.MockStakingKeeper.EXPECT().UnbondingTime(gomock.Any()).Return(time.Hour*24*21, nil).Times(1)
-
-	// Test 2: Error acknowledgement - should trigger consumer removal
-	err = providerKeeper.OnAcknowledgementPacketV2(ctx, clientId, "packet data could not be decoded")
+	// Test 2: Error acknowledgement - liveness sweep owns removal, consumer stays launched
+	err = providerKeeper.OnAcknowledgementPacketV2(ctx, clientId, 1, "packet data could not be decoded")
 	require.NoError(t, err)
 
-	// Consumer should now be stopped
+	// Consumer stays launched; liveness sweep will handle removal
 	phase = providerKeeper.GetConsumerPhase(ctx, consumerId)
-	require.Equal(t, providertypes.CONSUMER_PHASE_STOPPED, phase)
+	require.Equal(t, providertypes.CONSUMER_PHASE_LAUNCHED, phase)
 }
 
 // TestOnAcknowledgementPacketV2UnknownClient tests error handling for unknown clients.
@@ -58,14 +53,14 @@ func TestOnAcknowledgementPacketV2UnknownClient(t *testing.T) {
 	unknownClientId := "07-tendermint-999"
 
 	// Error ack with unknown client should return error
-	err := providerKeeper.OnAcknowledgementPacketV2(ctx, unknownClientId, "some error")
+	err := providerKeeper.OnAcknowledgementPacketV2(ctx, unknownClientId, 0, "some error")
 	require.Error(t, err)
 	require.Contains(t, err.Error(), "unknown client")
 }
 
 // TestOnTimeoutPacketV2 tests the IBC v2 timeout handler.
 func TestOnTimeoutPacketV2(t *testing.T) {
-	providerKeeper, ctx, ctrl, mocks := testkeeper.GetProviderKeeperAndCtx(t, testkeeper.NewInMemKeeperParams(t))
+	providerKeeper, ctx, ctrl, _ := testkeeper.GetProviderKeeperAndCtx(t, testkeeper.NewInMemKeeperParams(t))
 	defer ctrl.Finish()
 
 	consumerId := uint64(0)
@@ -80,16 +75,13 @@ func TestOnTimeoutPacketV2(t *testing.T) {
 	phase := providerKeeper.GetConsumerPhase(ctx, consumerId)
 	require.Equal(t, providertypes.CONSUMER_PHASE_LAUNCHED, phase)
 
-	// Setup mock expectation for StopAndPrepareForConsumerRemoval
-	mocks.MockStakingKeeper.EXPECT().UnbondingTime(gomock.Any()).Return(time.Hour*24*21, nil).Times(1)
-
-	// Timeout should trigger consumer removal
+	// Timeout is now log-only; liveness sweep owns removal
 	err := providerKeeper.OnTimeoutPacketV2(ctx, clientId)
 	require.NoError(t, err)
 
-	// Consumer should now be stopped
+	// Consumer stays launched; liveness sweep will handle removal
 	phase = providerKeeper.GetConsumerPhase(ctx, consumerId)
-	require.Equal(t, providertypes.CONSUMER_PHASE_STOPPED, phase)
+	require.Equal(t, providertypes.CONSUMER_PHASE_LAUNCHED, phase)
 }
 
 // TestOnTimeoutPacketV2UnknownClient tests error handling for unknown clients.

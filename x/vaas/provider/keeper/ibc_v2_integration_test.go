@@ -2,7 +2,6 @@ package keeper_test
 
 import (
 	"testing"
-	"time"
 
 	"github.com/stretchr/testify/require"
 	"go.uber.org/mock/gomock"
@@ -97,9 +96,9 @@ func TestIBCV2MultipleConsumers(t *testing.T) {
 	}
 }
 
-// TestIBCV2ConsumerRemovalOnTimeout tests that a timeout triggers consumer removal.
-func TestIBCV2ConsumerRemovalOnTimeout(t *testing.T) {
-	providerKeeper, ctx, ctrl, mocks := testkeeper.GetProviderKeeperAndCtx(t, testkeeper.NewInMemKeeperParams(t))
+// TestIBCV2TimeoutIsLogOnly tests that a timeout is log-only; liveness sweep owns removal.
+func TestIBCV2TimeoutIsLogOnly(t *testing.T) {
+	providerKeeper, ctx, ctrl, _ := testkeeper.GetProviderKeeperAndCtx(t, testkeeper.NewInMemKeeperParams(t))
 	defer ctrl.Finish()
 
 	consumerId := uint64(0)
@@ -116,18 +115,17 @@ func TestIBCV2ConsumerRemovalOnTimeout(t *testing.T) {
 	require.True(t, found)
 	require.Equal(t, consumerId, gotConsumerId)
 
-	mocks.MockStakingKeeper.EXPECT().UnbondingTime(gomock.Any()).Return(time.Hour*24*21, nil).Times(1)
-
 	err := providerKeeper.OnTimeoutPacketV2(ctx, clientId)
 	require.NoError(t, err)
 
+	// Consumer stays launched; liveness sweep will handle removal
 	phase = providerKeeper.GetConsumerPhase(ctx, consumerId)
-	require.Equal(t, providertypes.CONSUMER_PHASE_STOPPED, phase)
+	require.Equal(t, providertypes.CONSUMER_PHASE_LAUNCHED, phase)
 }
 
-// TestIBCV2ConsumerRemovalOnErrorAck tests that an error acknowledgement triggers consumer removal.
-func TestIBCV2ConsumerRemovalOnErrorAck(t *testing.T) {
-	providerKeeper, ctx, ctrl, mocks := testkeeper.GetProviderKeeperAndCtx(t, testkeeper.NewInMemKeeperParams(t))
+// TestIBCV2ErrorAckIsLogOnly tests that an error acknowledgement is log-only; liveness sweep owns removal.
+func TestIBCV2ErrorAckIsLogOnly(t *testing.T) {
+	providerKeeper, ctx, ctrl, _ := testkeeper.GetProviderKeeperAndCtx(t, testkeeper.NewInMemKeeperParams(t))
 	defer ctrl.Finish()
 
 	consumerId := uint64(0)
@@ -140,13 +138,12 @@ func TestIBCV2ConsumerRemovalOnErrorAck(t *testing.T) {
 	phase := providerKeeper.GetConsumerPhase(ctx, consumerId)
 	require.Equal(t, providertypes.CONSUMER_PHASE_LAUNCHED, phase)
 
-	mocks.MockStakingKeeper.EXPECT().UnbondingTime(gomock.Any()).Return(time.Hour*24*21, nil).Times(1)
-
-	err := providerKeeper.OnAcknowledgementPacketV2(ctx, clientId, "packet decode error")
+	err := providerKeeper.OnAcknowledgementPacketV2(ctx, clientId, 0, "packet decode error")
 	require.NoError(t, err)
 
+	// Consumer stays launched; liveness sweep will handle removal
 	phase = providerKeeper.GetConsumerPhase(ctx, consumerId)
-	require.Equal(t, providertypes.CONSUMER_PHASE_STOPPED, phase)
+	require.Equal(t, providertypes.CONSUMER_PHASE_LAUNCHED, phase)
 }
 
 // TestIBCV2DualModeRouting tests that the provider correctly selects v2 routing

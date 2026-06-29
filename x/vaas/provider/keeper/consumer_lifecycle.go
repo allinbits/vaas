@@ -254,6 +254,9 @@ func (k Keeper) LaunchConsumer(
 	k.SetEquivocationEvidenceMinHeight(ctx, consumerId, initializationRecord.InitialHeight.RevisionHeight)
 
 	k.SetConsumerPhase(ctx, consumerId, types.CONSUMER_PHASE_LAUNCHED)
+	if err := k.SetConsumerLastAckTime(ctx, consumerId, ctx.BlockTime()); err != nil {
+		return err
+	}
 
 	k.Logger(ctx).Info("consumer successfully launched",
 		"consumerId", consumerId,
@@ -413,6 +416,9 @@ func (k Keeper) DeleteConsumerChain(ctx sdk.Context, consumerId uint64) (err err
 	k.DeleteConsumerValSet(ctx, consumerId)
 
 	k.DeleteConsumerRemovalTime(ctx, consumerId)
+	k.DeleteConsumerLastAckTime(ctx, consumerId)
+	k.DeleteConsumerHighestSentVscId(ctx, consumerId)
+	k.DeleteConsumerHighestAckedVscId(ctx, consumerId)
 	k.DeleteConsumerDebt(ctx, consumerId)
 
 	if err := k.ConsumerFeesPerBlockOverride.Remove(ctx, consumerId); err != nil {
@@ -436,5 +442,28 @@ func (k Keeper) DeleteConsumerChain(ctx sdk.Context, consumerId uint64) (err err
 	k.SetConsumerPhase(ctx, consumerId, types.CONSUMER_PHASE_DELETED)
 	k.Logger(ctx).Info("consumer chain deleted from provider", "consumerId", consumerId)
 
+	return nil
+}
+
+// SweepUnresponsiveConsumers stops any launched consumer that has produced no
+// successful VSC ack within the liveness grace period. It is the sole authority
+// for removing unresponsive consumers and runs on the provider block clock, so
+// it does not depend on a live IBC client or an available relayer.
+func (k Keeper) SweepUnresponsiveConsumers(ctx sdk.Context) error {
+	grace, err := k.LivenessGracePeriod(ctx)
+	if err != nil {
+		return err
+	}
+	for _, consumerId := range k.GetAllLaunchedConsumerIds(ctx) {
+		lastAck := k.GetConsumerLastAckTime(ctx, consumerId)
+		if ctx.BlockTime().Sub(lastAck) <= grace {
+			continue
+		}
+		k.Logger(ctx).Info("consumer unresponsive past liveness grace, stopping",
+			"consumerId", consumerId, "lastAck", lastAck, "grace", grace)
+		if err := k.StopAndPrepareForConsumerRemoval(ctx, consumerId); err != nil {
+			k.Logger(ctx).Error("failed to stop unresponsive consumer", "consumerId", consumerId, "error", err.Error())
+		}
+	}
 	return nil
 }
