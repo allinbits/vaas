@@ -593,6 +593,31 @@ func (k Keeper) QueryConsumerFeesPerBlock(
 	}, nil
 }
 
+func (k Keeper) QueryConsumerLiveness(goCtx context.Context, req *types.QueryConsumerLivenessRequest) (*types.QueryConsumerLivenessResponse, error) {
+	if req == nil {
+		return nil, status.Errorf(codes.InvalidArgument, "empty request")
+	}
+	ctx := sdk.UnwrapSDKContext(goCtx)
+
+	if k.GetConsumerPhase(ctx, req.ConsumerId) == types.CONSUMER_PHASE_UNSPECIFIED {
+		return nil, status.Errorf(codes.InvalidArgument, "unknown consumer: %d", req.ConsumerId)
+	}
+
+	grace, err := k.LivenessGracePeriod(ctx)
+	if err != nil {
+		return nil, status.Error(codes.Internal, err.Error())
+	}
+	lastAck := k.GetConsumerLastAckTime(ctx, req.ConsumerId)
+	removalEta := lastAck.Add(grace)
+
+	return &types.QueryConsumerLivenessResponse{
+		LastAckTime: lastAck,
+		GracePeriod: grace,
+		RemovalEta:  removalEta,
+		Degraded:    ctx.BlockTime().After(lastAck.Add(grace / 2)),
+	}, nil
+}
+
 // QueryAllConsumerFeesPerBlockOverrides returns the full list of overrides,
 // paginated, ordered by consumer_id ascending.
 func (k Keeper) QueryAllConsumerFeesPerBlockOverrides(

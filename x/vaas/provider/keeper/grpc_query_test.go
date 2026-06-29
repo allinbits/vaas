@@ -2,10 +2,12 @@ package keeper_test
 
 import (
 	"testing"
+	"time"
 
 	"cosmossdk.io/collections"
 	"cosmossdk.io/math"
 	"github.com/stretchr/testify/require"
+	"go.uber.org/mock/gomock"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
 
@@ -255,4 +257,19 @@ func TestQueryConsumerFeePoolClaims_UnknownConsumer(t *testing.T) {
 	})
 	require.Error(t, err)
 	require.Equal(t, codes.NotFound, status.Code(err))
+}
+
+func TestQueryConsumerLiveness(t *testing.T) {
+	k, ctx, ctrl, mocks := testkeeper.GetProviderKeeperAndCtx(t, testkeeper.NewInMemKeeperParams(t))
+	defer ctrl.Finish()
+	mocks.MockStakingKeeper.EXPECT().UnbondingTime(gomock.Any()).Return(21*24*time.Hour, nil).AnyTimes()
+
+	const cid = uint64(0)
+	k.SetConsumerPhase(ctx, cid, providertypes.CONSUMER_PHASE_LAUNCHED)
+	require.NoError(t, k.SetConsumerLastAckTime(ctx, cid, ctx.BlockTime()))
+
+	resp, err := k.QueryConsumerLiveness(ctx, &providertypes.QueryConsumerLivenessRequest{ConsumerId: cid})
+	require.NoError(t, err)
+	require.False(t, resp.Degraded)
+	require.Equal(t, ctx.BlockTime().Add(resp.GracePeriod).UTC(), resp.RemovalEta.UTC())
 }
