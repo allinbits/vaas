@@ -3,6 +3,7 @@ package keeper_test
 import (
 	"sort"
 	"testing"
+	"time"
 
 	"github.com/stretchr/testify/require"
 
@@ -13,6 +14,7 @@ import (
 
 	testcrypto "github.com/allinbits/vaas/testutil/crypto"
 	testkeeper "github.com/allinbits/vaas/testutil/keeper"
+	consumertypes "github.com/allinbits/vaas/x/vaas/consumer/types"
 	"github.com/allinbits/vaas/x/vaas/types"
 )
 
@@ -243,4 +245,38 @@ func TestOnRecvVSCPacketV2DebtStatus(t *testing.T) {
 	pd2.ConsumerInDebt = false
 	require.NoError(t, consumerKeeper.OnRecvVSCPacketV2(ctx, providerClientID, pd2))
 	require.False(t, consumerKeeper.IsConsumerInDebt(ctx))
+}
+
+func TestConsumerVSCStaleness(t *testing.T) {
+	k, ctx, ctrl, _ := testkeeper.GetConsumerKeeperAndCtx(t, testkeeper.NewInMemKeeperParams(t))
+	defer ctrl.Finish()
+
+	require.False(t, k.IsVSCStale(ctx)) // absent -> BlockTime -> fresh
+
+	k.SetLastVSCRecvTime(ctx, ctx.BlockTime())
+	require.False(t, k.IsVSCStale(ctx))
+
+	stale := ctx.WithBlockTime(ctx.BlockTime().Add(consumertypes.DefaultSafeModeThreshold + time.Minute))
+	require.True(t, k.IsVSCStale(stale))
+}
+
+func TestOnRecvVSCRecordsRecvTime(t *testing.T) {
+	providerClientID := "07-tendermint-0"
+
+	pk1, err := cryptocodec.ToCmtProtoPublicKey(ed25519.GenPrivKey().PubKey())
+	require.NoError(t, err)
+
+	consumerKeeper, ctx, ctrl, _ := testkeeper.GetConsumerKeeperAndCtx(t, testkeeper.NewInMemKeeperParams(t))
+	defer ctrl.Finish()
+
+	advancedTime := ctx.BlockTime().Add(10 * time.Minute)
+	ctx = ctx.WithBlockTime(advancedTime)
+
+	changes := []abci.ValidatorUpdate{{PubKey: pk1, Power: 100}}
+	pd := types.NewValidatorSetChangePacketData(changes, 1)
+	err = consumerKeeper.OnRecvVSCPacketV2(ctx, providerClientID, pd)
+	require.NoError(t, err)
+
+	got := consumerKeeper.GetLastVSCRecvTime(ctx)
+	require.Equal(t, advancedTime, got)
 }

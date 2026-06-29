@@ -30,6 +30,8 @@ func (k Keeper) OnRecvVSCPacketV2(ctx sdk.Context, sourceClientID string, newCha
 		return nil
 	}
 
+	k.SetLastVSCRecvTime(ctx, sdk.UnwrapSDKContext(ctx).BlockTime())
+
 	_, found = k.GetProviderClientID(ctx)
 	if !found {
 		k.SetProviderClientID(ctx, sourceClientID)

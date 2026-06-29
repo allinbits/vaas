@@ -35,4 +35,5 @@ var (
 	HighestValsetUpdateIDPrefix  = collections.NewPrefix(12)
 	ConsumerDebtPrefix           = collections.NewPrefix(13)
 	PendingEvidencePacketsPrefix = collections.NewPrefix(14)
+	LastVSCRecvTimePrefix        = collections.NewPrefix(15)
 )
