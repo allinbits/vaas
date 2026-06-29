@@ -174,30 +174,41 @@ func (k Keeper) GetLastProviderConsensusActiveValidators(ctx sdk.Context) ([]sta
 	return vaastypes.GetLastBondedValidatorsUtil(ctx, k.stakingKeeper, uint32(maxVals))
 }
 
+// FullValSetUpdates renders a complete validator set as absolute-power updates.
+// Used for snapshot VSC packets: the consumer replaces its set with these,
+// deriving removals against its own current set.
+func FullValSetUpdates(validators []types.ConsensusValidator) []abci.ValidatorUpdate {
+	updates := make([]abci.ValidatorUpdate, 0, len(validators))
+	for _, v := range validators {
+		updates = append(updates, abci.ValidatorUpdate{PubKey: *v.PublicKey, Power: v.Power})
+	}
+	return updates
+}
+
 // ComputeConsumerNextValSet computes the consumer next validator set and returns
 // the validator updates to be sent to the consumer chain.
-// PSS (Partial Set Security) has been removed - all validators validate all consumers.
+// When isSnapshot is true, it returns the full set as absolute-power updates;
+// otherwise it returns the diff against currentConsumerValSet.
 func (k Keeper) ComputeConsumerNextValSet(
 	ctx sdk.Context,
 	bondedValidators []stakingtypes.Validator,
 	consumerId uint64,
 	currentConsumerValSet []types.ConsensusValidator,
+	isSnapshot bool,
 ) ([]abci.ValidatorUpdate, error) {
-	// All validators validate all consumers (no opt-in/out, no power shaping)
 	nextValidators, err := k.ComputeNextValidators(ctx, consumerId, bondedValidators)
 	if err != nil {
 		return []abci.ValidatorUpdate{},
 			fmt.Errorf("computing next validators, consumerId(%d): %w", consumerId, err)
 	}
 
-	err = k.SetConsumerValSet(ctx, consumerId, nextValidators)
-	if err != nil {
+	if err = k.SetConsumerValSet(ctx, consumerId, nextValidators); err != nil {
 		return []abci.ValidatorUpdate{},
 			fmt.Errorf("setting consumer validator set, consumerId(%d): %w", consumerId, err)
 	}
 
-	// get the initial updates with the latest set consumer public keys
-	valUpdates := DiffValidators(currentConsumerValSet, nextValidators)
-
-	return valUpdates, nil
+	if isSnapshot {
+		return FullValSetUpdates(nextValidators), nil
+	}
+	return DiffValidators(currentConsumerValSet, nextValidators), nil
 }

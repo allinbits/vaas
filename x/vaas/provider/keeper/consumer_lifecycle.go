@@ -232,7 +232,7 @@ func (k Keeper) LaunchConsumer(
 	}
 
 	// compute consumer initial validator set (all validators validate all consumers)
-	initialValUpdates, err := k.ComputeConsumerNextValSet(ctx, bondedValidators, consumerId, []types.ConsensusValidator{})
+	initialValUpdates, err := k.ComputeConsumerNextValSet(ctx, bondedValidators, consumerId, []types.ConsensusValidator{}, false)
 	if err != nil {
 		return fmt.Errorf("computing consumer next validator set, consumerId(%d): %w", consumerId, err)
 	}

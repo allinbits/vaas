@@ -308,3 +308,35 @@ func (k Keeper) GetAllValidators(ctx context.Context) ([]stakingtypes.Validator,
 func (k Keeper) GetBondedValidatorsByPower(goCtx context.Context) ([]stakingtypes.Validator, error) {
 	return []stakingtypes.Validator{}, nil
 }
+
+// computeReplaceUpdates turns a complete target set into the updates needed to
+// move the consumer's current cross-chain set to exactly that target: every
+// target entry at its absolute power, plus a power-0 removal for each current
+// validator absent from the target.
+//
+// Identity matching uses the cmt proto public key string, which is the same
+// identity used by MustGetCurrentValidatorsAsABCIUpdates and ApplyCCValidatorChanges.
+func (k Keeper) computeReplaceUpdates(ctx context.Context, target []abci.ValidatorUpdate) []abci.ValidatorUpdate {
+	inTarget := make(map[string]struct{}, len(target))
+	for _, u := range target {
+		inTarget[u.PubKey.String()] = struct{}{}
+	}
+
+	updates := make([]abci.ValidatorUpdate, 0, len(target)+len(k.GetAllCCValidator(ctx)))
+	updates = append(updates, target...)
+
+	for _, v := range k.GetAllCCValidator(ctx) {
+		pk, err := v.ConsPubKey()
+		if err != nil {
+			continue
+		}
+		tmPk, err := cryptocodec.ToCmtProtoPublicKey(pk)
+		if err != nil {
+			continue
+		}
+		if _, ok := inTarget[tmPk.String()]; !ok {
+			updates = append(updates, abci.ValidatorUpdate{PubKey: tmPk, Power: 0})
+		}
+	}
+	return updates
+}

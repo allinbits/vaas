@@ -260,6 +260,38 @@ func TestConsumerVSCStaleness(t *testing.T) {
 	require.True(t, k.IsVSCStale(stale))
 }
 
+func TestSnapshotReplacesValidatorSet(t *testing.T) {
+	k, ctx, ctrl, _ := testkeeper.GetConsumerKeeperAndCtx(t, testkeeper.NewInMemKeeperParams(t))
+	defer ctrl.Finish()
+
+	pkA := ed25519.GenPrivKey().PubKey()
+	pkB := ed25519.GenPrivKey().PubKey()
+	tmA, err := cryptocodec.ToCmtProtoPublicKey(pkA)
+	require.NoError(t, err)
+	tmB, err := cryptocodec.ToCmtProtoPublicKey(pkB)
+	require.NoError(t, err)
+
+	// Seed current CC set: A=10, B=5.
+	k.ApplyCCValidatorChanges(ctx, []abci.ValidatorUpdate{{PubKey: tmA, Power: 10}, {PubKey: tmB, Power: 5}})
+	require.NoError(t, k.SetHighestValsetUpdateID(ctx, 1))
+	k.SetProviderClientID(ctx, "07-tendermint-0")
+
+	snap := types.NewValidatorSetChangePacketData([]abci.ValidatorUpdate{{PubKey: tmA, Power: 10}}, 2)
+	snap.IsSnapshot = true
+	require.NoError(t, k.OnRecvVSCPacketV2(ctx, "07-tendermint-0", snap))
+
+	pending, ok := k.GetPendingChanges(ctx)
+	require.True(t, ok)
+	// snapshot must produce exactly 2 entries: A at 10 and B at 0 (explicit removal)
+	require.Len(t, pending.ValidatorUpdates, 2)
+	powers := map[string]int64{}
+	for _, u := range pending.ValidatorUpdates {
+		powers[u.PubKey.String()] = u.Power
+	}
+	require.Equal(t, int64(10), powers[tmA.String()])
+	require.Equal(t, int64(0), powers[tmB.String()]) // B explicitly removed
+}
+
 func TestOnRecvVSCRecordsRecvTime(t *testing.T) {
 	providerClientID := "07-tendermint-0"
 

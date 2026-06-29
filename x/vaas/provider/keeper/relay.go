@@ -277,8 +277,11 @@ func (k Keeper) QueueVSCPackets(ctx sdk.Context) error {
 			return fmt.Errorf("getting consumer current validator set, consumerId(%d): %w", consumerId, err)
 		}
 
-		// compute consumer next validator set (all validators validate all consumers)
-		valUpdates, err := k.ComputeConsumerNextValSet(ctx, bondedValidators, consumerId, currentValSet)
+		// Send a full snapshot when the consumer is behind (i.e. it has
+		// unacknowledged packets), otherwise send a diff.
+		isSnapshot := k.GetConsumerHighestAckedVscId(ctx, consumerId) < k.GetConsumerHighestSentVscId(ctx, consumerId)
+
+		valUpdates, err := k.ComputeConsumerNextValSet(ctx, bondedValidators, consumerId, currentValSet, isSnapshot)
 		if err != nil {
 			return fmt.Errorf("computing consumer next validator set, consumerId(%d): %w", consumerId, err)
 		}
@@ -292,6 +295,7 @@ func (k Keeper) QueueVSCPackets(ctx sdk.Context) error {
 		// bounded: at most one packet per consumer per epoch.
 		packet := vaastypes.NewValidatorSetChangePacketData(valUpdates, valUpdateID)
 		packet.ConsumerInDebt = k.IsConsumerInDebt(ctx, consumerId)
+		packet.IsSnapshot = isSnapshot
 		k.AppendPendingVSCPackets(ctx, consumerId, packet)
 		k.Logger(ctx).Info("VSCPacket enqueued:",
 			"consumerId", consumerId,
