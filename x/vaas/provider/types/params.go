@@ -7,6 +7,7 @@ import (
 	vaastypes "github.com/allinbits/vaas/x/vaas/types"
 
 	clienttypes "github.com/cosmos/ibc-go/v10/modules/core/02-client/types"
+	channeltypesv2 "github.com/cosmos/ibc-go/v10/modules/core/04-channel/v2/types"
 
 	"cosmossdk.io/math"
 )
@@ -162,7 +163,7 @@ func (p Params) Validate() error {
 	if err := vaastypes.ValidateStringFractionNonZero(p.TrustingPeriodFraction); err != nil {
 		return fmt.Errorf("trusting period fraction is invalid: %s", err)
 	}
-	if err := vaastypes.ValidateDuration(p.VaasTimeoutPeriod); err != nil {
+	if err := vaastypes.ValidateVAASTimeoutPeriod(p.VaasTimeoutPeriod, channeltypesv2.MaxTimeoutDelta); err != nil {
 		return fmt.Errorf("VAAS timeout period is invalid: %s", err)
 	}
 	if err := vaastypes.ValidatePositiveInt64(p.BlocksPerEpoch); err != nil {

@@ -4,10 +4,13 @@ import (
 	"testing"
 	"time"
 
-	"github.com/allinbits/vaas/x/vaas/provider/types"
 	"github.com/stretchr/testify/require"
 
+	channeltypesv2 "github.com/cosmos/ibc-go/v10/modules/core/04-channel/v2/types"
+
 	"cosmossdk.io/math"
+
+	"github.com/allinbits/vaas/x/vaas/provider/types"
 )
 
 func TestValidateParams(t *testing.T) {
@@ -33,6 +36,18 @@ func TestValidateParams(t *testing.T) {
 			require.NotNil(t, err, "expected error but got nil for testcase: %s", tc.name)
 		}
 	}
+}
+
+func TestParamsRejectsTimeoutAboveMaxDelta(t *testing.T) {
+	p := types.DefaultParams()
+	p.VaasTimeoutPeriod = channeltypesv2.MaxTimeoutDelta + time.Hour
+	require.Error(t, p.Validate())
+}
+
+func TestParamsAcceptsTimeoutAtCap(t *testing.T) {
+	p := types.DefaultParams()
+	p.VaasTimeoutPeriod = channeltypesv2.MaxTimeoutDelta
+	require.NoError(t, p.Validate())
 }
 
 func TestValidateInfractionParameters(t *testing.T) {

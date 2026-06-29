@@ -12,6 +12,7 @@ import (
 	cmttypes "github.com/cometbft/cometbft/types"
 
 	clienttypes "github.com/cosmos/ibc-go/v10/modules/core/02-client/types"
+	channeltypesv2 "github.com/cosmos/ibc-go/v10/modules/core/04-channel/v2/types"
 	ibctmtypes "github.com/cosmos/ibc-go/v10/modules/light-clients/07-tendermint"
 
 	errorsmod "cosmossdk.io/errors"
@@ -428,7 +429,7 @@ func ValidateInitializationParameters(initializationParameters ConsumerInitializ
 		return errorsmod.Wrapf(ErrInvalidConsumerInitializationParameters, "HistoricalEntries: %s", err.Error())
 	}
 
-	if err := vaastypes.ValidateDuration(initializationParameters.VaasTimeoutPeriod); err != nil {
+	if err := vaastypes.ValidateVAASTimeoutPeriod(initializationParameters.VaasTimeoutPeriod, channeltypesv2.MaxTimeoutDelta); err != nil {
 		return errorsmod.Wrapf(ErrInvalidConsumerInitializationParameters, "VaasTimeoutPeriod: %s", err.Error())
 	}
 

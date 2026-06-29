@@ -218,6 +218,25 @@ func (k msgServer) SubmitConsumerDoubleVoting(goCtx context.Context, msg *types.
 	return &types.MsgSubmitConsumerDoubleVotingResponse{}, nil
 }
 
+// validateConsumerUnbonding enforces floor <= consumer unbonding <= provider
+// unbonding, so a consumer's relayer-derived trusting period stays sane and the
+// consumer cannot outlive the provider's slashable window.
+func (k Keeper) validateConsumerUnbonding(ctx sdk.Context, d time.Duration) error {
+	providerUnbonding, err := k.stakingKeeper.UnbondingTime(ctx)
+	if err != nil {
+		return err
+	}
+	if d < vaastypes.MinConsumerUnbondingPeriod {
+		return errorsmod.Wrapf(types.ErrInvalidConsumerInitializationParameters,
+			"unbonding period must be >= %s, got %s", vaastypes.MinConsumerUnbondingPeriod, d)
+	}
+	if d > providerUnbonding {
+		return errorsmod.Wrapf(types.ErrInvalidConsumerInitializationParameters,
+			"unbonding period %s must not exceed provider unbonding %s", d, providerUnbonding)
+	}
+	return nil
+}
+
 // CreateConsumer creates a consumer chain
 func (k msgServer) CreateConsumer(goCtx context.Context, msg *types.MsgCreateConsumer) (*types.MsgCreateConsumerResponse, error) {
 	ctx := sdk.UnwrapSDKContext(goCtx)
@@ -260,6 +279,9 @@ func (k msgServer) CreateConsumer(goCtx context.Context, msg *types.MsgCreateCon
 	initializationParameters := types.DefaultConsumerInitializationParameters() // default params
 	if msg.InitializationParameters != nil {
 		initializationParameters = *msg.InitializationParameters
+	}
+	if err := k.Keeper.validateConsumerUnbonding(ctx, initializationParameters.UnbondingPeriod); err != nil {
+		return &resp, err
 	}
 	if err := k.Keeper.SetConsumerInitializationParameters(ctx, consumerId, initializationParameters); err != nil {
 		return &resp, errorsmod.Wrapf(types.ErrInvalidConsumerInitializationParameters,
@@ -457,6 +479,9 @@ func (k msgServer) UpdateConsumer(goCtx context.Context, msg *types.MsgUpdateCon
 				sdk.NewAttribute(types.AttributeConsumerGenesisHash, string(msg.InitializationParameters.GenesisHash)))
 		}
 
+		if err = k.Keeper.validateConsumerUnbonding(ctx, msg.InitializationParameters.UnbondingPeriod); err != nil {
+			return &resp, err
+		}
 		if err = k.Keeper.SetConsumerInitializationParameters(ctx, msg.ConsumerId, *msg.InitializationParameters); err != nil {
 			return &resp, errorsmod.Wrapf(types.ErrInvalidConsumerInitializationParameters,
 				"cannot set consumer initialization parameters: %s", err.Error())

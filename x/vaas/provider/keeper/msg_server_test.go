@@ -49,8 +49,10 @@ func validSubmitter() string {
 }
 
 func TestCreateConsumer(t *testing.T) {
-	providerKeeper, ctx, ctrl, _ := testkeeper.GetProviderKeeperAndCtx(t, testkeeper.NewInMemKeeperParams(t))
+	providerKeeper, ctx, ctrl, mocks := testkeeper.GetProviderKeeperAndCtx(t, testkeeper.NewInMemKeeperParams(t))
 	defer ctrl.Finish()
+
+	mocks.MockStakingKeeper.EXPECT().UnbondingTime(gomock.Any()).Return(21*24*time.Hour, nil).AnyTimes()
 
 	msgServer := providerkeeper.NewMsgServerImpl(&providerKeeper)
 
@@ -61,7 +63,9 @@ func TestCreateConsumer(t *testing.T) {
 	response, err := msgServer.CreateConsumer(ctx,
 		&providertypes.MsgCreateConsumer{
 			Submitter: "submitter", ChainId: "chainId", Metadata: consumerMetadata,
-			InitializationParameters: &providertypes.ConsumerInitializationParameters{},
+			InitializationParameters: &providertypes.ConsumerInitializationParameters{
+				UnbondingPeriod: 21 * 24 * time.Hour,
+			},
 		})
 	require.NoError(t, err)
 	require.Equal(t, uint64(0), response.ConsumerId)
@@ -82,7 +86,9 @@ func TestCreateConsumer(t *testing.T) {
 	response, err = msgServer.CreateConsumer(ctx,
 		&providertypes.MsgCreateConsumer{
 			Submitter: "submitter2", ChainId: "chainId2", Metadata: consumerMetadata,
-			InitializationParameters: &providertypes.ConsumerInitializationParameters{},
+			InitializationParameters: &providertypes.ConsumerInitializationParameters{
+				UnbondingPeriod: 21 * 24 * time.Hour,
+			},
 		})
 	require.NoError(t, err)
 	// assert that the consumer id is different from the previously registered chain
@@ -98,8 +104,11 @@ func TestCreateConsumer(t *testing.T) {
 }
 
 func TestCreateConsumerDuplicateChainId(t *testing.T) {
-	providerKeeper, ctx, ctrl, _ := testkeeper.GetProviderKeeperAndCtx(t, testkeeper.NewInMemKeeperParams(t))
+	providerKeeper, ctx, ctrl, mocks := testkeeper.GetProviderKeeperAndCtx(t, testkeeper.NewInMemKeeperParams(t))
 	defer ctrl.Finish()
+
+	// only the first CreateConsumer reaches validateConsumerUnbonding; the duplicate is rejected earlier
+	mocks.MockStakingKeeper.EXPECT().UnbondingTime(gomock.Any()).Return(21*24*time.Hour, nil).Times(1)
 
 	msgServer := providerkeeper.NewMsgServerImpl(&providerKeeper)
 
@@ -112,16 +121,20 @@ func TestCreateConsumerDuplicateChainId(t *testing.T) {
 	response, err := msgServer.CreateConsumer(ctx,
 		&providertypes.MsgCreateConsumer{
 			Submitter: "submitter1", ChainId: "duplicateChainId", Metadata: consumerMetadata,
-			InitializationParameters: &providertypes.ConsumerInitializationParameters{},
+			InitializationParameters: &providertypes.ConsumerInitializationParameters{
+				UnbondingPeriod: 21 * 24 * time.Hour,
+			},
 		})
 	require.NoError(t, err)
 	require.Equal(t, uint64(0), response.ConsumerId)
 
-	// Attempt to register another consumer with the same chainId
+	// Attempt to register another consumer with the same chainId — rejected before unbonding check
 	_, err = msgServer.CreateConsumer(ctx,
 		&providertypes.MsgCreateConsumer{
 			Submitter: "submitter2", ChainId: "duplicateChainId", Metadata: consumerMetadata,
-			InitializationParameters: &providertypes.ConsumerInitializationParameters{},
+			InitializationParameters: &providertypes.ConsumerInitializationParameters{
+				UnbondingPeriod: 21 * 24 * time.Hour,
+			},
 		})
 	require.Error(t, err)
 	require.ErrorIs(t, err, providertypes.ErrDuplicateChainId)
@@ -130,6 +143,8 @@ func TestCreateConsumerDuplicateChainId(t *testing.T) {
 func TestUpdateConsumer(t *testing.T) {
 	providerKeeper, ctx, ctrl, mocks := testkeeper.GetProviderKeeperAndCtx(t, testkeeper.NewInMemKeeperParams(t))
 	defer ctrl.Finish()
+
+	mocks.MockStakingKeeper.EXPECT().UnbondingTime(gomock.Any()).Return(21*24*time.Hour, nil).Times(1)
 
 	msgServer := providerkeeper.NewMsgServerImpl(&providerKeeper)
 
@@ -200,8 +215,10 @@ func TestUpdateConsumer(t *testing.T) {
 }
 
 func TestUpdateConsumerDuplicateChainId(t *testing.T) {
-	providerKeeper, ctx, ctrl, _ := testkeeper.GetProviderKeeperAndCtx(t, testkeeper.NewInMemKeeperParams(t))
+	providerKeeper, ctx, ctrl, mocks := testkeeper.GetProviderKeeperAndCtx(t, testkeeper.NewInMemKeeperParams(t))
 	defer ctrl.Finish()
+
+	mocks.MockStakingKeeper.EXPECT().UnbondingTime(gomock.Any()).Return(21*24*time.Hour, nil).Times(2)
 
 	msgServer := providerkeeper.NewMsgServerImpl(&providerKeeper)
 
@@ -638,6 +655,9 @@ func TestRemoveConsumerGovAuth(t *testing.T) {
 
 	msgServer := providerkeeper.NewMsgServerImpl(&providerKeeper)
 
+	// CreateConsumer calls validateConsumerUnbonding; RemoveConsumer also calls UnbondingTime
+	mocks.MockStakingKeeper.EXPECT().UnbondingTime(gomock.Any()).Return(21*24*time.Hour, nil).Times(2)
+
 	// create a consumer chain and set it to LAUNCHED
 	createResp, err := msgServer.CreateConsumer(ctx,
 		&providertypes.MsgCreateConsumer{
@@ -646,14 +666,14 @@ func TestRemoveConsumerGovAuth(t *testing.T) {
 				Name:        "name",
 				Description: "description",
 			},
-			InitializationParameters: &providertypes.ConsumerInitializationParameters{},
+			InitializationParameters: &providertypes.ConsumerInitializationParameters{
+				UnbondingPeriod: 21 * 24 * time.Hour,
+			},
 		})
 	require.NoError(t, err)
 	consumerId := createResp.ConsumerId
 
 	providerKeeper.SetConsumerPhase(ctx, consumerId, providertypes.CONSUMER_PHASE_LAUNCHED)
-
-	mocks.MockStakingKeeper.EXPECT().UnbondingTime(gomock.Any()).Return(time.Hour*24*7*3, nil).Times(1)
 
 	// non-authority should be rejected
 	_, err = msgServer.RemoveConsumer(ctx,
@@ -678,8 +698,10 @@ func TestRemoveConsumerGovAuth(t *testing.T) {
 }
 
 func TestRemoveConsumerNonLaunchedRejected(t *testing.T) {
-	providerKeeper, ctx, ctrl, _ := testkeeper.GetProviderKeeperAndCtx(t, testkeeper.NewInMemKeeperParams(t))
+	providerKeeper, ctx, ctrl, mocks := testkeeper.GetProviderKeeperAndCtx(t, testkeeper.NewInMemKeeperParams(t))
 	defer ctrl.Finish()
+
+	mocks.MockStakingKeeper.EXPECT().UnbondingTime(gomock.Any()).Return(21*24*time.Hour, nil).Times(1)
 
 	msgServer := providerkeeper.NewMsgServerImpl(&providerKeeper)
 
@@ -691,7 +713,9 @@ func TestRemoveConsumerNonLaunchedRejected(t *testing.T) {
 				Name:        "name",
 				Description: "description",
 			},
-			InitializationParameters: &providertypes.ConsumerInitializationParameters{},
+			InitializationParameters: &providertypes.ConsumerInitializationParameters{
+				UnbondingPeriod: 21 * 24 * time.Hour,
+			},
 		})
 	require.NoError(t, err)
 
@@ -709,6 +733,8 @@ func TestUpdateConsumerLaunchedOnlyMetadata(t *testing.T) {
 	providerKeeper, ctx, ctrl, mocks := testkeeper.GetProviderKeeperAndCtx(t, testkeeper.NewInMemKeeperParams(t))
 	defer ctrl.Finish()
 
+	mocks.MockStakingKeeper.EXPECT().UnbondingTime(gomock.Any()).Return(21*24*time.Hour, nil).Times(1)
+
 	msgServer := providerkeeper.NewMsgServerImpl(&providerKeeper)
 
 	// create a consumer chain
@@ -719,7 +745,9 @@ func TestUpdateConsumerLaunchedOnlyMetadata(t *testing.T) {
 				Name:        "name",
 				Description: "description",
 			},
-			InitializationParameters: &providertypes.ConsumerInitializationParameters{},
+			InitializationParameters: &providertypes.ConsumerInitializationParameters{
+				UnbondingPeriod: 21 * 24 * time.Hour,
+			},
 		})
 	require.NoError(t, err)
 	consumerId := createResp.ConsumerId
@@ -786,6 +814,8 @@ func TestUpdateConsumerPreLaunchAllowsAll(t *testing.T) {
 	providerKeeper, ctx, ctrl, mocks := testkeeper.GetProviderKeeperAndCtx(t, testkeeper.NewInMemKeeperParams(t))
 	defer ctrl.Finish()
 
+	mocks.MockStakingKeeper.EXPECT().UnbondingTime(gomock.Any()).Return(21*24*time.Hour, nil).Times(1)
+
 	msgServer := providerkeeper.NewMsgServerImpl(&providerKeeper)
 
 	// create a consumer chain (REGISTERED phase)
@@ -828,8 +858,10 @@ func TestUpdateConsumerPreLaunchAllowsAll(t *testing.T) {
 }
 
 func TestCreateConsumerEventsIncludeInitParams(t *testing.T) {
-	providerKeeper, ctx, ctrl, _ := testkeeper.GetProviderKeeperAndCtx(t, testkeeper.NewInMemKeeperParams(t))
+	providerKeeper, ctx, ctrl, mocks := testkeeper.GetProviderKeeperAndCtx(t, testkeeper.NewInMemKeeperParams(t))
 	defer ctrl.Finish()
+
+	mocks.MockStakingKeeper.EXPECT().UnbondingTime(gomock.Any()).Return(21*24*time.Hour, nil).Times(1)
 
 	msgServer := providerkeeper.NewMsgServerImpl(&providerKeeper)
 
@@ -846,9 +878,10 @@ func TestCreateConsumerEventsIncludeInitParams(t *testing.T) {
 				Description: "description",
 			},
 			InitializationParameters: &providertypes.ConsumerInitializationParameters{
-				BinaryHash:  binaryHash,
-				GenesisHash: genesisHash,
-				SpawnTime:   spawnTime,
+				BinaryHash:      binaryHash,
+				GenesisHash:     genesisHash,
+				SpawnTime:       spawnTime,
+				UnbondingPeriod: 21 * 24 * time.Hour,
 			},
 		})
 	require.NoError(t, err)
@@ -880,14 +913,19 @@ func TestCreateConsumerEventsIncludeInitParams(t *testing.T) {
 }
 
 func TestCreateConsumer_PopulatesReverseLookup(t *testing.T) {
-	k, ctx, ctrl, _ := testkeeper.GetProviderKeeperAndCtx(t, testkeeper.NewInMemKeeperParams(t))
+	k, ctx, ctrl, mocks := testkeeper.GetProviderKeeperAndCtx(t, testkeeper.NewInMemKeeperParams(t))
 	defer ctrl.Finish()
+
+	mocks.MockStakingKeeper.EXPECT().UnbondingTime(gomock.Any()).Return(21*24*time.Hour, nil).Times(1)
+
 	ms := providerkeeper.NewMsgServerImpl(&k)
 
 	resp, err := ms.CreateConsumer(ctx, &providertypes.MsgCreateConsumer{
 		Submitter: "submitter", ChainId: "chainId",
-		Metadata:                 providertypes.ConsumerMetadata{Name: "n", Description: "d"},
-		InitializationParameters: &providertypes.ConsumerInitializationParameters{},
+		Metadata: providertypes.ConsumerMetadata{Name: "n", Description: "d"},
+		InitializationParameters: &providertypes.ConsumerInitializationParameters{
+			UnbondingPeriod: 21 * 24 * time.Hour,
+		},
 	})
 	require.NoError(t, err)
 
@@ -1265,6 +1303,67 @@ func TestWithdrawConsumerFeePool(t *testing.T) {
 
 			if tc.postCheck != nil {
 				tc.postCheck(t, resp)
+			}
+		})
+	}
+}
+
+func TestCreateConsumerUnbondingBounds(t *testing.T) {
+	providerUnbonding := 21 * 24 * time.Hour
+
+	tests := []struct {
+		name            string
+		unbondingPeriod time.Duration
+		wantErr         bool
+	}{
+		{
+			name:            "too long: exceeds provider unbonding",
+			unbondingPeriod: 30 * 24 * time.Hour,
+			wantErr:         true,
+		},
+		{
+			name:            "too short: below minimum",
+			unbondingPeriod: 1 * 24 * time.Hour,
+			wantErr:         true,
+		},
+		{
+			name:            "valid: equal to provider unbonding",
+			unbondingPeriod: 21 * 24 * time.Hour,
+			wantErr:         false,
+		},
+		{
+			name:            "valid: equal to minimum",
+			unbondingPeriod: 5 * 24 * time.Hour,
+			wantErr:         false,
+		},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			providerKeeper, ctx, ctrl, mocks := testkeeper.GetProviderKeeperAndCtx(t, testkeeper.NewInMemKeeperParams(t))
+			defer ctrl.Finish()
+
+			msgServer := providerkeeper.NewMsgServerImpl(&providerKeeper)
+
+			mocks.MockStakingKeeper.EXPECT().UnbondingTime(gomock.Any()).Return(providerUnbonding, nil).Times(1)
+
+			_, err := msgServer.CreateConsumer(ctx,
+				&providertypes.MsgCreateConsumer{
+					Submitter: "submitter",
+					ChainId:   "chainId",
+					Metadata: providertypes.ConsumerMetadata{
+						Name:        "name",
+						Description: "description",
+					},
+					InitializationParameters: &providertypes.ConsumerInitializationParameters{
+						UnbondingPeriod: tc.unbondingPeriod,
+					},
+				})
+			if tc.wantErr {
+				require.Error(t, err)
+				require.ErrorIs(t, err, providertypes.ErrInvalidConsumerInitializationParameters)
+			} else {
+				require.NoError(t, err)
 			}
 		})
 	}
