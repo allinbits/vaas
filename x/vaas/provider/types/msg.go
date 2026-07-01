@@ -437,6 +437,10 @@ func ValidateInitializationParameters(initializationParameters ConsumerInitializ
 		return errorsmod.Wrapf(ErrInvalidConsumerInitializationParameters, "UnbondingPeriod: %s", err.Error())
 	}
 
+	if err := vaastypes.ValidateDuration(initializationParameters.SafeModeThreshold); err != nil {
+		return errorsmod.Wrapf(ErrInvalidConsumerInitializationParameters, "SafeModeThreshold: %s", err.Error())
+	}
+
 	return nil
 }
 

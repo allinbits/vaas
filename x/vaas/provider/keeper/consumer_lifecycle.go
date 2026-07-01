@@ -284,6 +284,7 @@ func (k Keeper) MakeConsumerGenesis(
 		initializationRecord.VaasTimeoutPeriod,
 		initializationRecord.HistoricalEntries,
 		initializationRecord.UnbondingPeriod,
+		initializationRecord.SafeModeThreshold,
 	)
 
 	providerUnbondingPeriod, err := k.stakingKeeper.UnbondingTime(ctx)

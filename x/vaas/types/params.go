@@ -24,12 +24,14 @@ func NewConsumerParams(enabled bool,
 	vaasTimeoutPeriod time.Duration,
 	historicalEntries int64,
 	consumerUnbondingPeriod time.Duration,
+	safeModeThreshold time.Duration,
 ) ConsumerParams {
 	return ConsumerParams{
 		Enabled:           enabled,
 		VaasTimeoutPeriod: vaasTimeoutPeriod,
 		HistoricalEntries: historicalEntries,
 		UnbondingPeriod:   consumerUnbondingPeriod,
+		SafeModeThreshold: safeModeThreshold,
 	}
 }
 
@@ -40,6 +42,7 @@ func DefaultConsumerParams() ConsumerParams {
 		DefaultVAASTimeoutPeriod,
 		DefaultHistoricalEntries,
 		DefaultConsumerUnbondingPeriod,
+		DefaultSafeModeThreshold,
 	)
 }
 
@@ -52,6 +55,9 @@ func (p ConsumerParams) Validate() error {
 		return err
 	}
 	if err := ValidateDuration(p.UnbondingPeriod); err != nil {
+		return err
+	}
+	if err := ValidateDuration(p.SafeModeThreshold); err != nil {
 		return err
 	}
 	return nil

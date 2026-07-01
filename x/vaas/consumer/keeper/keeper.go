@@ -486,5 +486,5 @@ func (k Keeper) GetLastVSCRecvTime(ctx context.Context) time.Time {
 // the safe-mode threshold.
 func (k Keeper) IsVSCStale(ctx context.Context) bool {
 	sdkCtx := sdk.UnwrapSDKContext(ctx)
-	return sdkCtx.BlockTime().Sub(k.GetLastVSCRecvTime(ctx)) > types.DefaultSafeModeThreshold
+	return sdkCtx.BlockTime().Sub(k.GetLastVSCRecvTime(ctx)) > k.GetConsumerParams(ctx).SafeModeThreshold
 }

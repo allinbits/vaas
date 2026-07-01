@@ -9,6 +9,12 @@ import (
 )
 
 const (
+	// DefaultSafeModeThreshold is how long the consumer may go without
+	// receiving a VSC packet before its tx admission gate enters safe mode
+	// (only ibc.core and gov messages pass). Set well below the provider
+	// liveness grace period.
+	DefaultSafeModeThreshold = 3 * time.Hour
+
 	// DefaultVAASTimeoutPeriod is the IBC packet timeout for VAAS packets.
 	// One epoch-scale value: undelivered packets are superseded the next
 	// epoch and late ones are dropped by the consumer, so a long timeout
@@ -19,11 +25,6 @@ const (
 	// above realistic IBC relay latency so packets are not expired before
 	// they can be delivered.
 	MinVAASTimeoutPeriod = 10 * time.Minute
-
-	// MinConsumerUnbondingPeriod floors the consumer unbonding so the
-	// relayer-derived trusting period (unbonding * fraction) is at least a
-	// few days.
-	MinConsumerUnbondingPeriod = 5 * 24 * time.Hour
 )
 
 var KeyVAASTimeoutPeriod = []byte("VaasTimeoutPeriod")

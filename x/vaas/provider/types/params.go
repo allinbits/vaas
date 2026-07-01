@@ -21,12 +21,13 @@ const (
 	// as UnbondingPeriod * TrustingPeriodFraction
 	DefaultTrustingPeriodFraction = "0.66"
 
-	// LivenessGraceFraction sets the consumer liveness grace period as a
-	// fraction of the provider unbonding period. A consumer that produces no
-	// successful VSC ack for longer than this is removed. 0.66 mirrors the
-	// trusting-period fraction: the grace ends around the client recovery
-	// horizon, leaving margin below the unbonding (slashable) window.
-	LivenessGraceFraction = "0.66"
+	// DefaultLivenessGraceFraction is the default value of the LivenessGraceFraction
+	// param, which sets the consumer liveness grace period as a fraction of the
+	// provider unbonding period (grace = unbonding * fraction). A consumer that
+	// produces no successful VSC ack for longer than the grace is removed. 0.66
+	// mirrors the trusting-period fraction: the grace ends around the client
+	// recovery horizon, leaving margin below the unbonding (slashable) window.
+	DefaultLivenessGraceFraction = "0.66"
 
 	// DefaultBlocksPerEpoch defines the default blocks that constitute an epoch. Assuming we need 6 seconds per block,
 	// an epoch corresponds to 1 hour (6 * 600 = 3600 seconds).
@@ -66,6 +67,7 @@ const (
 // NewParams creates new provider parameters with provided arguments
 func NewParams(
 	trustingPeriodFraction string,
+	livenessGraceFraction string,
 	vaasTimeoutPeriod time.Duration,
 	blocksPerEpoch int64,
 	maxProviderConsensusValidators int64,
@@ -74,6 +76,7 @@ func NewParams(
 ) Params {
 	return Params{
 		TrustingPeriodFraction:         trustingPeriodFraction,
+		LivenessGraceFraction:          livenessGraceFraction,
 		VaasTimeoutPeriod:              vaasTimeoutPeriod,
 		BlocksPerEpoch:                 blocksPerEpoch,
 		MaxProviderConsensusValidators: maxProviderConsensusValidators,
@@ -85,6 +88,7 @@ func NewParams(
 func DefaultParams() Params {
 	return NewParams(
 		DefaultTrustingPeriodFraction,
+		DefaultLivenessGraceFraction,
 		vaastypes.DefaultVAASTimeoutPeriod,
 		DefaultBlocksPerEpoch,
 		DefaultMaxProviderConsensusValidators,
@@ -124,6 +128,7 @@ func DefaultConsumerInitializationParameters() ConsumerInitializationParameters 
 		UnbondingPeriod:   vaastypes.DefaultConsumerUnbondingPeriod,
 		VaasTimeoutPeriod: vaastypes.DefaultVAASTimeoutPeriod,
 		HistoricalEntries: vaastypes.DefaultHistoricalEntries,
+		SafeModeThreshold: vaastypes.DefaultSafeModeThreshold,
 	}
 }
 
@@ -174,6 +179,9 @@ func (p Params) Validate() error {
 	}
 	if err := validateFeesPerBlockAmount(p.FeesPerBlockAmount); err != nil {
 		return err
+	}
+	if err := vaastypes.ValidateStringFractionNonZero(p.LivenessGraceFraction); err != nil {
+		return fmt.Errorf("liveness grace fraction is invalid: %s", err)
 	}
 
 	return nil

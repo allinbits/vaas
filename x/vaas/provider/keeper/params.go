@@ -169,11 +169,12 @@ func (k Keeper) SetInfractionParams(ctx context.Context, params types.Infraction
 
 // LivenessGracePeriod returns the maximum time a launched consumer may go
 // without a successful VSC ack before it is removed, derived from the provider
-// unbonding period so it stays inside the slashable window.
+// unbonding period and the LivenessGraceFraction param so it stays inside the
+// slashable window.
 func (k Keeper) LivenessGracePeriod(ctx context.Context) (time.Duration, error) {
 	unbonding, err := k.stakingKeeper.UnbondingTime(ctx)
 	if err != nil {
 		return 0, err
 	}
-	return vaastypes.CalculateTrustPeriod(unbonding, types.LivenessGraceFraction)
+	return vaastypes.CalculateTrustPeriod(unbonding, k.GetParams(ctx).LivenessGraceFraction)
 }

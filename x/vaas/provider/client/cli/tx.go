@@ -393,7 +393,7 @@ func NewRemoveConsumerCmd() *cobra.Command {
 		Use:   "remove-consumer [consumer-id]",
 		Short: "remove a consumer chain",
 		Long: strings.TrimSpace(
-			fmt.Sprintf(`Removes (and stops) a consumer chain. Note that only the owner of the chain can remove it.
+			fmt.Sprintf(`Removes (and stops) a consumer chain. Removal must be performed via governance: submit a proposal containing MsgRemoveConsumer with the governance module address as authority.
 Example:
 %s tx provider remove-consumer [consumer-id]
 `, version.AppName)),

@@ -218,17 +218,17 @@ func (k msgServer) SubmitConsumerDoubleVoting(goCtx context.Context, msg *types.
 	return &types.MsgSubmitConsumerDoubleVotingResponse{}, nil
 }
 
-// validateConsumerUnbonding enforces floor <= consumer unbonding <= provider
-// unbonding, so a consumer's relayer-derived trusting period stays sane and the
-// consumer cannot outlive the provider's slashable window.
+// validateConsumerUnbonding enforces the one safety-relevant bound on a
+// consumer's unbonding period: it must not exceed the provider's, so the
+// consumer cannot outlive the provider's slashable window. Positivity is
+// already checked by ValidateInitializationParameters. No lower floor is
+// imposed: choosing an unbonding short enough that the relayer-derived
+// trusting period becomes impractical is an operator concern (and is needed
+// for short-lived test/dev chains), not a protocol-enforced minimum.
 func (k Keeper) validateConsumerUnbonding(ctx sdk.Context, d time.Duration) error {
 	providerUnbonding, err := k.stakingKeeper.UnbondingTime(ctx)
 	if err != nil {
 		return err
-	}
-	if d < vaastypes.MinConsumerUnbondingPeriod {
-		return errorsmod.Wrapf(types.ErrInvalidConsumerInitializationParameters,
-			"unbonding period must be >= %s, got %s", vaastypes.MinConsumerUnbondingPeriod, d)
 	}
 	if d > providerUnbonding {
 		return errorsmod.Wrapf(types.ErrInvalidConsumerInitializationParameters,

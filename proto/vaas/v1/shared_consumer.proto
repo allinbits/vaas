@@ -39,6 +39,11 @@ message ConsumerParams {
     // which should be smaller than that of the provider in general.
     google.protobuf.Duration unbonding_period = 4
         [ (gogoproto.nullable) = false, (gogoproto.stdduration) = true ];
+
+    // How long the consumer may go without receiving a VSC packet before its
+    // tx admission gate enters safe mode (only ibc.core and gov messages pass).
+    google.protobuf.Duration safe_mode_threshold = 5
+        [ (gogoproto.nullable) = false, (gogoproto.stdduration) = true ];
 }
 
 // ConsumerGenesisState defines shared genesis information between provider and
