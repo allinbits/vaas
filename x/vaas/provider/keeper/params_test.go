@@ -27,6 +27,7 @@ func TestParams(t *testing.T) {
 
 	newParams := providertypes.NewParams(
 		"0.25",
+		"0.5",
 		7*24*time.Hour,
 		600,
 		10,

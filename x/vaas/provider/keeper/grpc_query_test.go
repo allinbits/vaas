@@ -273,3 +273,44 @@ func TestQueryConsumerLiveness(t *testing.T) {
 	require.False(t, resp.Degraded)
 	require.Equal(t, ctx.BlockTime().Add(resp.GracePeriod).UTC(), resp.RemovalEta.UTC())
 }
+
+// TestQueryConsumerLiveness_DegradedFlag verifies that Degraded is true when
+// the last ack time is more than grace/2 ago.
+//
+// The Degraded condition is: blockTime.After(lastAck + grace/2).
+// We set lastAck = blockTime - grace/2 - 1ns so elapsed > grace/2 by 1ns.
+func TestQueryConsumerLiveness_DegradedFlag(t *testing.T) {
+	k, ctx, ctrl, mocks := testkeeper.GetProviderKeeperAndCtx(t, testkeeper.NewInMemKeeperParams(t))
+	defer ctrl.Finish()
+
+	unbonding := 21 * 24 * time.Hour
+	mocks.MockStakingKeeper.EXPECT().UnbondingTime(gomock.Any()).Return(unbonding, nil).AnyTimes()
+
+	const cid = uint64(0)
+	k.SetConsumerPhase(ctx, cid, providertypes.CONSUMER_PHASE_LAUNCHED)
+
+	// Compute grace first so we can position lastAck precisely.
+	grace, err := k.LivenessGracePeriod(ctx)
+	require.NoError(t, err)
+
+	// lastAck is grace/2 + 1ns before blockTime: blockTime.After(lastAck + grace/2) == true.
+	lastAck := ctx.BlockTime().Add(-(grace/2 + time.Nanosecond))
+	require.NoError(t, k.SetConsumerLastAckTime(ctx, cid, lastAck))
+
+	resp, err := k.QueryConsumerLiveness(ctx, &providertypes.QueryConsumerLivenessRequest{ConsumerId: cid})
+	require.NoError(t, err)
+	require.True(t, resp.Degraded, "expected Degraded=true when lastAck is past the half-grace mark")
+}
+
+// TestQueryConsumerLiveness_UnknownConsumer verifies that a consumer whose phase
+// is UNSPECIFIED (never registered) causes QueryConsumerLiveness to return a
+// codes.InvalidArgument gRPC error.
+func TestQueryConsumerLiveness_UnknownConsumer(t *testing.T) {
+	k, ctx, ctrl, _ := testkeeper.GetProviderKeeperAndCtx(t, testkeeper.NewInMemKeeperParams(t))
+	defer ctrl.Finish()
+
+	// Consumer 999 was never registered; its phase is UNSPECIFIED.
+	_, err := k.QueryConsumerLiveness(ctx, &providertypes.QueryConsumerLivenessRequest{ConsumerId: 999})
+	require.Error(t, err)
+	require.Equal(t, codes.InvalidArgument, status.Code(err))
+}

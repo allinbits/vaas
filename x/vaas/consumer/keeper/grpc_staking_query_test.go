@@ -31,6 +31,7 @@ func TestStakingQueryServerParams(t *testing.T) {
 		vaastypes.DefaultVAASTimeoutPeriod,
 		1234,
 		13*24*time.Hour,
+		vaastypes.DefaultSafeModeThreshold,
 	))
 
 	server := consumerkeeper.NewStakingQueryServer(&consumerKeeper)

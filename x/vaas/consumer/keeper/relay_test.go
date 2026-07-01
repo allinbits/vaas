@@ -14,7 +14,6 @@ import (
 
 	testcrypto "github.com/allinbits/vaas/testutil/crypto"
 	testkeeper "github.com/allinbits/vaas/testutil/keeper"
-	consumertypes "github.com/allinbits/vaas/x/vaas/consumer/types"
 	"github.com/allinbits/vaas/x/vaas/types"
 )
 
@@ -251,12 +250,28 @@ func TestConsumerVSCStaleness(t *testing.T) {
 	k, ctx, ctrl, _ := testkeeper.GetConsumerKeeperAndCtx(t, testkeeper.NewInMemKeeperParams(t))
 	defer ctrl.Finish()
 
+	// Use a non-default threshold so this proves IsVSCStale reads the param
+	// value (not a constant) and that the boundary tracks the param.
+	const threshold = 2 * time.Hour
+	k.SetParams(ctx, types.NewConsumerParams(
+		true,
+		types.DefaultVAASTimeoutPeriod,
+		types.DefaultHistoricalEntries,
+		types.DefaultConsumerUnbondingPeriod,
+		threshold,
+	))
+
 	require.False(t, k.IsVSCStale(ctx)) // absent -> BlockTime -> fresh
 
 	k.SetLastVSCRecvTime(ctx, ctx.BlockTime())
 	require.False(t, k.IsVSCStale(ctx))
 
-	stale := ctx.WithBlockTime(ctx.BlockTime().Add(consumertypes.DefaultSafeModeThreshold + time.Minute))
+	// Exactly at the threshold is not stale (the check is strict >).
+	atBoundary := ctx.WithBlockTime(ctx.BlockTime().Add(threshold))
+	require.False(t, k.IsVSCStale(atBoundary))
+
+	// Past the threshold is stale.
+	stale := ctx.WithBlockTime(ctx.BlockTime().Add(threshold + time.Minute))
 	require.True(t, k.IsVSCStale(stale))
 }
 
@@ -311,4 +326,271 @@ func TestOnRecvVSCRecordsRecvTime(t *testing.T) {
 
 	got := consumerKeeper.GetLastVSCRecvTime(ctx)
 	require.Equal(t, advancedTime, got)
+}
+
+// TestDedupDoesNotResetLastVSCRecvTime verifies that an out-of-order (duplicate)
+// packet -- one whose ValsetUpdateId <= HighestValsetUpdateID -- returns early
+// before recording block time, so a stale replay cannot silently reset the clock.
+func TestDedupDoesNotResetLastVSCRecvTime(t *testing.T) {
+	providerClientID := "07-tendermint-0"
+
+	pk1, err := cryptocodec.ToCmtProtoPublicKey(ed25519.GenPrivKey().PubKey())
+	require.NoError(t, err)
+
+	k, ctx, ctrl, _ := testkeeper.GetConsumerKeeperAndCtx(t, testkeeper.NewInMemKeeperParams(t))
+	defer ctrl.Finish()
+
+	// Deliver packet at blockTime T1 -- records lastVSCRecvTime = T1.
+	t1 := ctx.BlockTime().Add(5 * time.Minute)
+	ctx1 := ctx.WithBlockTime(t1)
+	pd1 := types.NewValidatorSetChangePacketData([]abci.ValidatorUpdate{{PubKey: pk1, Power: 10}}, 5)
+	require.NoError(t, k.OnRecvVSCPacketV2(ctx1, providerClientID, pd1))
+	require.Equal(t, t1, k.GetLastVSCRecvTime(ctx1))
+
+	// Deliver an out-of-order packet (vscId 3 < highest 5) at a later blockTime T2.
+	// The dedup early-return fires before SetLastVSCRecvTime, so the clock must NOT advance.
+	t2 := t1.Add(10 * time.Minute)
+	ctx2 := ctx.WithBlockTime(t2)
+	pd2 := types.NewValidatorSetChangePacketData([]abci.ValidatorUpdate{{PubKey: pk1, Power: 99}}, 3)
+	require.NoError(t, k.OnRecvVSCPacketV2(ctx2, providerClientID, pd2))
+
+	got := k.GetLastVSCRecvTime(ctx2)
+	require.Equal(t, t1, got, "dedup replay must not reset lastVSCRecvTime")
+}
+
+// TestRecvPacketAfterStalenessLiftsStale drives the consumer into safe mode by
+// making the last VSC receipt time appear far in the past, then delivers a
+// higher-id packet at a fresh block time and verifies IsVSCStale returns false.
+func TestRecvPacketAfterStalenessLiftsStale(t *testing.T) {
+	providerClientID := "07-tendermint-0"
+
+	pk1, err := cryptocodec.ToCmtProtoPublicKey(ed25519.GenPrivKey().PubKey())
+	require.NoError(t, err)
+
+	k, ctx, ctrl, _ := testkeeper.GetConsumerKeeperAndCtx(t, testkeeper.NewInMemKeeperParams(t))
+	defer ctrl.Finish()
+
+	const threshold = 2 * time.Hour
+	k.SetParams(ctx, types.NewConsumerParams(
+		true,
+		types.DefaultVAASTimeoutPeriod,
+		types.DefaultHistoricalEntries,
+		types.DefaultConsumerUnbondingPeriod,
+		threshold,
+	))
+
+	// Seed the consumer with an initial packet delivered at blockTime now.
+	baseTime := ctx.BlockTime()
+	ctxBase := ctx.WithBlockTime(baseTime)
+	pd1 := types.NewValidatorSetChangePacketData([]abci.ValidatorUpdate{{PubKey: pk1, Power: 10}}, 1)
+	require.NoError(t, k.OnRecvVSCPacketV2(ctxBase, providerClientID, pd1))
+
+	// Fast-forward block time past the threshold so the consumer is stale.
+	staleCtx := ctx.WithBlockTime(baseTime.Add(threshold + time.Minute))
+	require.True(t, k.IsVSCStale(staleCtx), "consumer should be stale before resync")
+
+	// Deliver a higher-id packet at the stale block time -- this constitutes resync.
+	pd2 := types.NewValidatorSetChangePacketData([]abci.ValidatorUpdate{{PubKey: pk1, Power: 20}}, 2)
+	require.NoError(t, k.OnRecvVSCPacketV2(staleCtx, providerClientID, pd2))
+
+	// After the resync, IsVSCStale should be false because lastVSCRecvTime was updated.
+	require.False(t, k.IsVSCStale(staleCtx), "resync must lift safe mode")
+}
+
+// TestSnapshotPowerChange seeds the CC set with A=10 and delivers a snapshot
+// that changes A's power to 50. PendingChanges must contain A at power 50.
+func TestSnapshotPowerChange(t *testing.T) {
+	k, ctx, ctrl, _ := testkeeper.GetConsumerKeeperAndCtx(t, testkeeper.NewInMemKeeperParams(t))
+	defer ctrl.Finish()
+
+	pkA, err := cryptocodec.ToCmtProtoPublicKey(ed25519.GenPrivKey().PubKey())
+	require.NoError(t, err)
+
+	k.ApplyCCValidatorChanges(ctx, []abci.ValidatorUpdate{{PubKey: pkA, Power: 10}})
+	require.NoError(t, k.SetHighestValsetUpdateID(ctx, 1))
+	k.SetProviderClientID(ctx, "07-tendermint-0")
+
+	snap := types.NewValidatorSetChangePacketData([]abci.ValidatorUpdate{{PubKey: pkA, Power: 50}}, 2)
+	snap.IsSnapshot = true
+	require.NoError(t, k.OnRecvVSCPacketV2(ctx, "07-tendermint-0", snap))
+
+	pending, ok := k.GetPendingChanges(ctx)
+	require.True(t, ok)
+	require.Len(t, pending.ValidatorUpdates, 1)
+	require.Equal(t, int64(50), pending.ValidatorUpdates[0].Power)
+}
+
+// TestSnapshotAddsNewValidator seeds {A} and delivers a snapshot {A, B}.
+// PendingChanges must contain both A and B at their snapshot powers, with no
+// power-0 entry for A.
+func TestSnapshotAddsNewValidator(t *testing.T) {
+	k, ctx, ctrl, _ := testkeeper.GetConsumerKeeperAndCtx(t, testkeeper.NewInMemKeeperParams(t))
+	defer ctrl.Finish()
+
+	pkA, err := cryptocodec.ToCmtProtoPublicKey(ed25519.GenPrivKey().PubKey())
+	require.NoError(t, err)
+	pkB, err := cryptocodec.ToCmtProtoPublicKey(ed25519.GenPrivKey().PubKey())
+	require.NoError(t, err)
+
+	k.ApplyCCValidatorChanges(ctx, []abci.ValidatorUpdate{{PubKey: pkA, Power: 10}})
+	require.NoError(t, k.SetHighestValsetUpdateID(ctx, 1))
+	k.SetProviderClientID(ctx, "07-tendermint-0")
+
+	snap := types.NewValidatorSetChangePacketData([]abci.ValidatorUpdate{
+		{PubKey: pkA, Power: 10},
+		{PubKey: pkB, Power: 20},
+	}, 2)
+	snap.IsSnapshot = true
+	require.NoError(t, k.OnRecvVSCPacketV2(ctx, "07-tendermint-0", snap))
+
+	pending, ok := k.GetPendingChanges(ctx)
+	require.True(t, ok)
+	require.Len(t, pending.ValidatorUpdates, 2)
+
+	powers := map[string]int64{}
+	for _, u := range pending.ValidatorUpdates {
+		powers[u.PubKey.String()] = u.Power
+	}
+	require.Equal(t, int64(10), powers[pkA.String()])
+	require.Equal(t, int64(20), powers[pkB.String()])
+}
+
+// TestSnapshotMultipleRemovals seeds {A, B, C} and delivers a snapshot {A only}.
+// PendingChanges must contain exactly 3 entries: A at its power, B=0, C=0.
+func TestSnapshotMultipleRemovals(t *testing.T) {
+	k, ctx, ctrl, _ := testkeeper.GetConsumerKeeperAndCtx(t, testkeeper.NewInMemKeeperParams(t))
+	defer ctrl.Finish()
+
+	pkA, err := cryptocodec.ToCmtProtoPublicKey(ed25519.GenPrivKey().PubKey())
+	require.NoError(t, err)
+	pkB, err := cryptocodec.ToCmtProtoPublicKey(ed25519.GenPrivKey().PubKey())
+	require.NoError(t, err)
+	pkC, err := cryptocodec.ToCmtProtoPublicKey(ed25519.GenPrivKey().PubKey())
+	require.NoError(t, err)
+
+	k.ApplyCCValidatorChanges(ctx, []abci.ValidatorUpdate{
+		{PubKey: pkA, Power: 30},
+		{PubKey: pkB, Power: 20},
+		{PubKey: pkC, Power: 10},
+	})
+	require.NoError(t, k.SetHighestValsetUpdateID(ctx, 1))
+	k.SetProviderClientID(ctx, "07-tendermint-0")
+
+	snap := types.NewValidatorSetChangePacketData([]abci.ValidatorUpdate{{PubKey: pkA, Power: 30}}, 2)
+	snap.IsSnapshot = true
+	require.NoError(t, k.OnRecvVSCPacketV2(ctx, "07-tendermint-0", snap))
+
+	pending, ok := k.GetPendingChanges(ctx)
+	require.True(t, ok)
+	require.Len(t, pending.ValidatorUpdates, 3)
+
+	powers := map[string]int64{}
+	for _, u := range pending.ValidatorUpdates {
+		powers[u.PubKey.String()] = u.Power
+	}
+	require.Equal(t, int64(30), powers[pkA.String()])
+	require.Equal(t, int64(0), powers[pkB.String()])
+	require.Equal(t, int64(0), powers[pkC.String()])
+}
+
+// TestSnapshotEmptyRemovesAll seeds {A, B} and delivers a snapshot with zero
+// validator updates (IsSnapshot=true, empty list). PendingChanges must contain
+// exactly two entries: A=0 and B=0.
+func TestSnapshotEmptyRemovesAll(t *testing.T) {
+	k, ctx, ctrl, _ := testkeeper.GetConsumerKeeperAndCtx(t, testkeeper.NewInMemKeeperParams(t))
+	defer ctrl.Finish()
+
+	pkA, err := cryptocodec.ToCmtProtoPublicKey(ed25519.GenPrivKey().PubKey())
+	require.NoError(t, err)
+	pkB, err := cryptocodec.ToCmtProtoPublicKey(ed25519.GenPrivKey().PubKey())
+	require.NoError(t, err)
+
+	k.ApplyCCValidatorChanges(ctx, []abci.ValidatorUpdate{
+		{PubKey: pkA, Power: 10},
+		{PubKey: pkB, Power: 5},
+	})
+	require.NoError(t, k.SetHighestValsetUpdateID(ctx, 1))
+	k.SetProviderClientID(ctx, "07-tendermint-0")
+
+	snap := types.NewValidatorSetChangePacketData(nil, 2)
+	snap.IsSnapshot = true
+	require.NoError(t, k.OnRecvVSCPacketV2(ctx, "07-tendermint-0", snap))
+
+	pending, ok := k.GetPendingChanges(ctx)
+	require.True(t, ok)
+	require.Len(t, pending.ValidatorUpdates, 2)
+
+	for _, u := range pending.ValidatorUpdates {
+		require.Equal(t, int64(0), u.Power, "all validators should be removed by empty snapshot")
+	}
+}
+
+// TestSnapshotReplacesEarlierPendingChanges delivers a diff packet to populate
+// PendingChanges, then immediately delivers a snapshot. The final PendingChanges
+// must contain only snapshot-derived updates (snapshot replaces, does not merge).
+func TestSnapshotReplacesEarlierPendingChanges(t *testing.T) {
+	k, ctx, ctrl, _ := testkeeper.GetConsumerKeeperAndCtx(t, testkeeper.NewInMemKeeperParams(t))
+	defer ctrl.Finish()
+
+	pkA, err := cryptocodec.ToCmtProtoPublicKey(ed25519.GenPrivKey().PubKey())
+	require.NoError(t, err)
+	pkB, err := cryptocodec.ToCmtProtoPublicKey(ed25519.GenPrivKey().PubKey())
+	require.NoError(t, err)
+
+	k.SetProviderClientID(ctx, "07-tendermint-0")
+
+	// First: a diff packet introducing A and B.
+	diff := types.NewValidatorSetChangePacketData([]abci.ValidatorUpdate{
+		{PubKey: pkA, Power: 10},
+		{PubKey: pkB, Power: 20},
+	}, 1)
+	require.NoError(t, k.OnRecvVSCPacketV2(ctx, "07-tendermint-0", diff))
+
+	// Apply so the CC set reflects A and B.
+	k.ApplyCCValidatorChanges(ctx, []abci.ValidatorUpdate{
+		{PubKey: pkA, Power: 10},
+		{PubKey: pkB, Power: 20},
+	})
+
+	// Second: a snapshot containing only A. B must be removed; the earlier diff
+	// entry for B must not survive in PendingChanges.
+	snap := types.NewValidatorSetChangePacketData([]abci.ValidatorUpdate{{PubKey: pkA, Power: 10}}, 2)
+	snap.IsSnapshot = true
+	require.NoError(t, k.OnRecvVSCPacketV2(ctx, "07-tendermint-0", snap))
+
+	pending, ok := k.GetPendingChanges(ctx)
+	require.True(t, ok)
+
+	powers := map[string]int64{}
+	for _, u := range pending.ValidatorUpdates {
+		powers[u.PubKey.String()] = u.Power
+	}
+	// Snapshot produced: A at 10, B at 0 (explicit removal). No other entries.
+	require.Len(t, pending.ValidatorUpdates, 2)
+	require.Equal(t, int64(10), powers[pkA.String()])
+	require.Equal(t, int64(0), powers[pkB.String()])
+}
+
+// TestSnapshotNoDoubleEmitForUnchangedValidator seeds {A=10} and delivers a
+// snapshot {A=10} (no power change). PendingChanges must contain exactly one
+// entry for A -- the identity match must not duplicate the update.
+func TestSnapshotNoDoubleEmitForUnchangedValidator(t *testing.T) {
+	k, ctx, ctrl, _ := testkeeper.GetConsumerKeeperAndCtx(t, testkeeper.NewInMemKeeperParams(t))
+	defer ctrl.Finish()
+
+	pkA, err := cryptocodec.ToCmtProtoPublicKey(ed25519.GenPrivKey().PubKey())
+	require.NoError(t, err)
+
+	k.ApplyCCValidatorChanges(ctx, []abci.ValidatorUpdate{{PubKey: pkA, Power: 10}})
+	require.NoError(t, k.SetHighestValsetUpdateID(ctx, 1))
+	k.SetProviderClientID(ctx, "07-tendermint-0")
+
+	snap := types.NewValidatorSetChangePacketData([]abci.ValidatorUpdate{{PubKey: pkA, Power: 10}}, 2)
+	snap.IsSnapshot = true
+	require.NoError(t, k.OnRecvVSCPacketV2(ctx, "07-tendermint-0", snap))
+
+	pending, ok := k.GetPendingChanges(ctx)
+	require.True(t, ok)
+	require.Len(t, pending.ValidatorUpdates, 1, "unchanged validator must appear exactly once in snapshot pending changes")
+	require.Equal(t, int64(10), pending.ValidatorUpdates[0].Power)
 }

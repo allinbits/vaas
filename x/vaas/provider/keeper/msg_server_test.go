@@ -1322,18 +1322,18 @@ func TestCreateConsumerUnbondingBounds(t *testing.T) {
 			wantErr:         true,
 		},
 		{
-			name:            "too short: below minimum",
-			unbondingPeriod: 1 * 24 * time.Hour,
-			wantErr:         true,
-		},
-		{
 			name:            "valid: equal to provider unbonding",
 			unbondingPeriod: 21 * 24 * time.Hour,
 			wantErr:         false,
 		},
 		{
-			name:            "valid: equal to minimum",
-			unbondingPeriod: 5 * 24 * time.Hour,
+			name:            "short value accepted (no lower floor)",
+			unbondingPeriod: 1 * 24 * time.Hour,
+			wantErr:         false,
+		},
+		{
+			name:            "very short value accepted (no lower floor)",
+			unbondingPeriod: time.Hour,
 			wantErr:         false,
 		},
 	}
@@ -1465,6 +1465,81 @@ func TestSweepConsumerFeePool(t *testing.T) {
 			})
 			if tc.wantErr != nil {
 				require.ErrorIs(t, err, tc.wantErr)
+			} else {
+				require.NoError(t, err)
+			}
+		})
+	}
+}
+
+// TestUpdateConsumerUnbondingBounds mirrors TestCreateConsumerUnbondingBounds
+// but exercises the UpdateConsumer path for a pre-launch (REGISTERED) consumer.
+func TestUpdateConsumerUnbondingBounds(t *testing.T) {
+	providerUnbonding := 21 * 24 * time.Hour
+
+	tests := []struct {
+		name            string
+		unbondingPeriod time.Duration
+		wantErr         bool
+	}{
+		{
+			name:            "above provider unbonding: rejected",
+			unbondingPeriod: 30 * 24 * time.Hour,
+			wantErr:         true,
+		},
+		{
+			name:            "short value accepted (no lower floor)",
+			unbondingPeriod: 1 * 24 * time.Hour,
+			wantErr:         false,
+		},
+		{
+			name:            "very short value accepted (no lower floor)",
+			unbondingPeriod: time.Hour,
+			wantErr:         false,
+		},
+		{
+			name:            "exactly provider unbonding: ok",
+			unbondingPeriod: providerUnbonding,
+			wantErr:         false,
+		},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			providerKeeper, ctx, ctrl, mocks := testkeeper.GetProviderKeeperAndCtx(t, testkeeper.NewInMemKeeperParams(t))
+			defer ctrl.Finish()
+
+			// CreateConsumer calls validateConsumerUnbonding once; UpdateConsumer
+			// calls it once more when InitializationParameters is non-nil.
+			mocks.MockStakingKeeper.EXPECT().UnbondingTime(gomock.Any()).Return(providerUnbonding, nil).Times(2)
+			mocks.MockAccountKeeper.EXPECT().AddressCodec().Return(address.NewBech32Codec("cosmos")).AnyTimes()
+
+			msgServer := providerkeeper.NewMsgServerImpl(&providerKeeper)
+
+			// Register a consumer with a valid unbonding period.
+			createResp, err := msgServer.CreateConsumer(ctx, &providertypes.MsgCreateConsumer{
+				Submitter: "submitter",
+				ChainId:   "chainId",
+				Metadata:  providertypes.ConsumerMetadata{Name: "n", Description: "d"},
+				InitializationParameters: &providertypes.ConsumerInitializationParameters{
+					UnbondingPeriod: 21 * 24 * time.Hour,
+				},
+			})
+			require.NoError(t, err)
+			consumerId := createResp.ConsumerId
+
+			// Consumer stays in REGISTERED (pre-launch), so InitializationParameters
+			// updates are allowed. Override only UnbondingPeriod.
+			_, err = msgServer.UpdateConsumer(ctx, &providertypes.MsgUpdateConsumer{
+				Owner:      "submitter",
+				ConsumerId: consumerId,
+				InitializationParameters: &providertypes.ConsumerInitializationParameters{
+					UnbondingPeriod: tc.unbondingPeriod,
+				},
+			})
+			if tc.wantErr {
+				require.Error(t, err)
+				require.ErrorIs(t, err, providertypes.ErrInvalidConsumerInitializationParameters)
 			} else {
 				require.NoError(t, err)
 			}

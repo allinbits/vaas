@@ -63,13 +63,24 @@ func TestLivenessGracePeriod(t *testing.T) {
 	defer ctrl.Finish()
 
 	unbonding := 21 * 24 * time.Hour
-	mocks.MockStakingKeeper.EXPECT().UnbondingTime(gomock.Any()).Return(unbonding, nil).Times(1)
+	mocks.MockStakingKeeper.EXPECT().UnbondingTime(gomock.Any()).Return(unbonding, nil).AnyTimes()
 
+	// Default fraction (0.66) from the params seeded by the test helper.
 	grace, err := k.LivenessGracePeriod(ctx)
 	require.NoError(t, err)
 	require.Greater(t, grace, time.Duration(0))
 	require.Less(t, grace, unbonding) // safety invariant
 	require.Equal(t, time.Duration(float64(unbonding)*0.66), grace)
+
+	// The grace tracks the LivenessGraceFraction param: lowering it shortens
+	// the grace proportionally (this is what lets e2e/test chains sweep fast).
+	params := k.GetParams(ctx)
+	params.LivenessGraceFraction = "0.1"
+	k.SetParams(ctx, params)
+
+	grace, err = k.LivenessGracePeriod(ctx)
+	require.NoError(t, err)
+	require.Equal(t, time.Duration(float64(unbonding)*0.1), grace)
 }
 
 func TestSweepRemovesStaleConsumer(t *testing.T) {
@@ -89,6 +100,14 @@ func TestSweepRemovesStaleConsumer(t *testing.T) {
 
 	require.NoError(t, k.SweepUnresponsiveConsumers(ctx))
 	require.Equal(t, providertypes.CONSUMER_PHASE_STOPPED, k.GetConsumerPhase(ctx, cid))
+
+	// The sweep does not just stop the consumer, it schedules its deletion at
+	// blockTime + unbonding (the same removal path a gov removal takes). The
+	// e2e suite asserts the LAUNCHED -> STOPPED edge end-to-end and relies on
+	// this assertion for the STOPPED -> DELETED scheduling.
+	removalTime, err := k.GetConsumerRemovalTime(ctx, cid)
+	require.NoError(t, err)
+	require.Equal(t, ctx.BlockTime().Add(unbonding), removalTime)
 }
 
 func TestSweepSparesLiveConsumer(t *testing.T) {
@@ -174,4 +193,130 @@ func TestDeleteConsumerChainClearsLivenessState(t *testing.T) {
 	require.Equal(t, ctx.BlockTime(), k.GetConsumerLastAckTime(ctx, cid))
 	require.Equal(t, uint64(0), k.GetConsumerHighestSentVscId(ctx, cid))
 	require.Equal(t, uint64(0), k.GetConsumerHighestAckedVscId(ctx, cid))
+}
+
+// TestSweepBoundaryExact checks the boundary condition: lastAck exactly at the
+// grace boundary is spared; one nanosecond earlier is stopped.
+func TestSweepBoundaryExact(t *testing.T) {
+	unbonding := 21 * 24 * time.Hour
+
+	t.Run("exactly at grace boundary - spared", func(t *testing.T) {
+		k, ctx, ctrl, mocks := testkeeper.GetProviderKeeperAndCtx(t, testkeeper.NewInMemKeeperParams(t))
+		defer ctrl.Finish()
+
+		mocks.MockStakingKeeper.EXPECT().UnbondingTime(gomock.Any()).Return(unbonding, nil).AnyTimes()
+		grace, err := k.LivenessGracePeriod(ctx)
+		require.NoError(t, err)
+
+		cid := k.FetchAndIncrementConsumerId(ctx)
+		k.SetConsumerPhase(ctx, cid, providertypes.CONSUMER_PHASE_LAUNCHED)
+
+		// lastAck == blockTime - grace: elapsed == grace, check is <= grace, so spared.
+		require.NoError(t, k.SetConsumerLastAckTime(ctx, cid, ctx.BlockTime().Add(-grace)))
+		require.NoError(t, k.SweepUnresponsiveConsumers(ctx))
+		require.Equal(t, providertypes.CONSUMER_PHASE_LAUNCHED, k.GetConsumerPhase(ctx, cid))
+	})
+
+	t.Run("one ns past grace - stopped", func(t *testing.T) {
+		k, ctx, ctrl, mocks := testkeeper.GetProviderKeeperAndCtx(t, testkeeper.NewInMemKeeperParams(t))
+		defer ctrl.Finish()
+
+		mocks.MockStakingKeeper.EXPECT().UnbondingTime(gomock.Any()).Return(unbonding, nil).AnyTimes()
+		grace, err := k.LivenessGracePeriod(ctx)
+		require.NoError(t, err)
+
+		cid := k.FetchAndIncrementConsumerId(ctx)
+		k.SetConsumerPhase(ctx, cid, providertypes.CONSUMER_PHASE_LAUNCHED)
+		k.SetConsumerChainId(ctx, cid, "consumer-boundary")
+
+		// lastAck == blockTime - grace - 1ns: elapsed > grace, should be stopped.
+		require.NoError(t, k.SetConsumerLastAckTime(ctx, cid, ctx.BlockTime().Add(-grace-time.Nanosecond)))
+		require.NoError(t, k.SweepUnresponsiveConsumers(ctx))
+		require.Equal(t, providertypes.CONSUMER_PHASE_STOPPED, k.GetConsumerPhase(ctx, cid))
+	})
+}
+
+// TestSweepMultipleConsumers_PartialRemoval ensures only the stale consumer is
+// stopped when three consumers are present: stale, fresh, and at-grace-boundary.
+func TestSweepMultipleConsumers_PartialRemoval(t *testing.T) {
+	k, ctx, ctrl, mocks := testkeeper.GetProviderKeeperAndCtx(t, testkeeper.NewInMemKeeperParams(t))
+	defer ctrl.Finish()
+
+	unbonding := 21 * 24 * time.Hour
+	mocks.MockStakingKeeper.EXPECT().UnbondingTime(gomock.Any()).Return(unbonding, nil).AnyTimes()
+
+	grace, err := k.LivenessGracePeriod(ctx)
+	require.NoError(t, err)
+
+	// stale: elapsed >> grace.
+	cidStale := k.FetchAndIncrementConsumerId(ctx)
+	k.SetConsumerPhase(ctx, cidStale, providertypes.CONSUMER_PHASE_LAUNCHED)
+	k.SetConsumerChainId(ctx, cidStale, "consumer-stale")
+	require.NoError(t, k.SetConsumerLastAckTime(ctx, cidStale, ctx.BlockTime().Add(-30*24*time.Hour)))
+
+	// fresh: lastAck == blockTime (elapsed = 0).
+	cidFresh := k.FetchAndIncrementConsumerId(ctx)
+	k.SetConsumerPhase(ctx, cidFresh, providertypes.CONSUMER_PHASE_LAUNCHED)
+	require.NoError(t, k.SetConsumerLastAckTime(ctx, cidFresh, ctx.BlockTime()))
+
+	// at boundary: elapsed == grace -> spared (check is <= grace).
+	cidBoundary := k.FetchAndIncrementConsumerId(ctx)
+	k.SetConsumerPhase(ctx, cidBoundary, providertypes.CONSUMER_PHASE_LAUNCHED)
+	require.NoError(t, k.SetConsumerLastAckTime(ctx, cidBoundary, ctx.BlockTime().Add(-grace)))
+
+	require.NoError(t, k.SweepUnresponsiveConsumers(ctx))
+
+	require.Equal(t, providertypes.CONSUMER_PHASE_STOPPED, k.GetConsumerPhase(ctx, cidStale))
+	require.Equal(t, providertypes.CONSUMER_PHASE_LAUNCHED, k.GetConsumerPhase(ctx, cidFresh))
+	require.Equal(t, providertypes.CONSUMER_PHASE_LAUNCHED, k.GetConsumerPhase(ctx, cidBoundary))
+
+	// The sweep is per-consumer: only the stale one is scheduled for removal;
+	// the spared consumers are left entirely untouched (no removal time).
+	staleRemoval, err := k.GetConsumerRemovalTime(ctx, cidStale)
+	require.NoError(t, err)
+	require.Equal(t, ctx.BlockTime().Add(unbonding), staleRemoval)
+	_, err = k.GetConsumerRemovalTime(ctx, cidFresh)
+	require.Error(t, err)
+	_, err = k.GetConsumerRemovalTime(ctx, cidBoundary)
+	require.Error(t, err)
+}
+
+// TestSweepContinuesAfterStopError is SKIPPED.
+//
+// StopAndPrepareForConsumerRemoval sets the consumer phase to STOPPED unconditionally
+// before it calls stakingKeeper.UnbondingTime. There is no mock lever that causes
+// the stop to fail while leaving the consumer in LAUNCHED: by the time UnbondingTime
+// is called, the phase change has already been committed to the store. Injecting an
+// error via UnbondingTime only prevents the removal-time entry from being written, but
+// the consumer phase is already STOPPED. A faithful per-consumer stop failure test
+// would require refactoring production code, which is out of scope here.
+
+// TestSweepRecoversAfterAck confirms a consumer that receives a fresh ack just
+// inside the grace window survives a subsequent sweep once more time elapses.
+func TestSweepRecoversAfterAck(t *testing.T) {
+	k, ctx, ctrl, mocks := testkeeper.GetProviderKeeperAndCtx(t, testkeeper.NewInMemKeeperParams(t))
+	defer ctrl.Finish()
+
+	unbonding := 21 * 24 * time.Hour
+	mocks.MockStakingKeeper.EXPECT().UnbondingTime(gomock.Any()).Return(unbonding, nil).AnyTimes()
+
+	grace, err := k.LivenessGracePeriod(ctx)
+	require.NoError(t, err)
+
+	cid := k.FetchAndIncrementConsumerId(ctx)
+	clientId := "07-tendermint-recover"
+	k.SetConsumerClientId(ctx, cid, clientId)
+	k.SetConsumerPhase(ctx, cid, providertypes.CONSUMER_PHASE_LAUNCHED)
+
+	// Set lastAck to just inside the grace window (1ns before expiry).
+	require.NoError(t, k.SetConsumerLastAckTime(ctx, cid, ctx.BlockTime().Add(-grace+time.Nanosecond)))
+
+	// Simulate ack arriving at current block time, refreshing the liveness clock.
+	require.NoError(t, k.OnAcknowledgementPacketV2(ctx, clientId, 1, ""))
+
+	// Advance block time by exactly grace; elapsed == grace which satisfies <= grace, so spared.
+	ctx = ctx.WithBlockTime(ctx.BlockTime().Add(grace))
+
+	require.NoError(t, k.SweepUnresponsiveConsumers(ctx))
+	require.Equal(t, providertypes.CONSUMER_PHASE_LAUNCHED, k.GetConsumerPhase(ctx, cid))
 }

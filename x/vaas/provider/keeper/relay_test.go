@@ -1,6 +1,7 @@
 package keeper_test
 
 import (
+	"fmt"
 	"testing"
 
 	"github.com/stretchr/testify/require"
@@ -9,6 +10,7 @@ import (
 	abci "github.com/cometbft/cometbft/abci/types"
 
 	clienttypes "github.com/cosmos/ibc-go/v10/modules/core/02-client/types"
+	channeltypesv2 "github.com/cosmos/ibc-go/v10/modules/core/04-channel/v2/types"
 
 	testkeeper "github.com/allinbits/vaas/testutil/keeper"
 	providertypes "github.com/allinbits/vaas/x/vaas/provider/types"
@@ -161,4 +163,121 @@ func TestSendVSCPacketsToChainNoHandler(t *testing.T) {
 	// Pending packets should still be there since the client was not active
 	pending := providerKeeper.GetPendingVSCPackets(ctx, consumerId)
 	require.Len(t, pending, 1)
+}
+
+// TestOnAckHighestAckedDoesNotRegress asserts that a lower vscId arriving after
+// a higher one does not regress the highestAcked counter.
+func TestOnAckHighestAckedDoesNotRegress(t *testing.T) {
+	k, ctx, ctrl, _ := testkeeper.GetProviderKeeperAndCtx(t, testkeeper.NewInMemKeeperParams(t))
+	defer ctrl.Finish()
+
+	consumerId := k.FetchAndIncrementConsumerId(ctx)
+	clientId := "07-tendermint-0"
+	k.SetConsumerClientId(ctx, consumerId, clientId)
+	k.SetConsumerPhase(ctx, consumerId, providertypes.CONSUMER_PHASE_LAUNCHED)
+
+	// First ack: vscId 9.
+	require.NoError(t, k.OnAcknowledgementPacketV2(ctx, clientId, 9, ""))
+	require.Equal(t, uint64(9), k.GetConsumerHighestAckedVscId(ctx, consumerId))
+
+	// Out-of-order ack: vscId 5 must not regress the counter.
+	require.NoError(t, k.OnAcknowledgementPacketV2(ctx, clientId, 5, ""))
+	require.Equal(t, uint64(9), k.GetConsumerHighestAckedVscId(ctx, consumerId))
+}
+
+// TestHighestSentAdvancesOnlyOnSuccess verifies that highestSent and pending
+// packets are unchanged when SendPacket returns a non-ErrClientNotActive error,
+// and that they are updated correctly on success.
+func TestHighestSentAdvancesOnlyOnSuccess(t *testing.T) {
+	consumerId := uint64(0)
+	clientId := "07-tendermint-0"
+
+	t.Run("send error leaves state unchanged", func(t *testing.T) {
+		k, ctx, ctrl, mocks := testkeeper.GetProviderKeeperAndCtx(t, testkeeper.NewInMemKeeperParams(t))
+		defer ctrl.Finish()
+
+		k.SetConsumerClientId(ctx, consumerId, clientId)
+		k.SetConsumerPhase(ctx, consumerId, providertypes.CONSUMER_PHASE_LAUNCHED)
+
+		k.AppendPendingVSCPackets(ctx, consumerId, vaastypes.ValidatorSetChangePacketData{
+			ValidatorUpdates: []abci.ValidatorUpdate{},
+			ValsetUpdateId:   3,
+		})
+		k.AppendPendingVSCPackets(ctx, consumerId, vaastypes.ValidatorSetChangePacketData{
+			ValidatorUpdates: []abci.ValidatorUpdate{},
+			ValsetUpdateId:   5,
+		})
+
+		// Non-ErrClientNotActive error: function logs and returns nil, leaving pending intact.
+		mocks.MockChannelV2Keeper.EXPECT().
+			SendPacket(gomock.Any(), gomock.Any()).
+			Return(nil, fmt.Errorf("some transient send error"))
+
+		require.NoError(t, k.SendVSCPacketsToChain(ctx, consumerId, clientId))
+
+		require.Equal(t, uint64(0), k.GetConsumerHighestSentVscId(ctx, consumerId))
+		require.Len(t, k.GetPendingVSCPackets(ctx, consumerId), 2)
+	})
+
+	t.Run("send success advances highestSent and clears pending", func(t *testing.T) {
+		k, ctx, ctrl, mocks := testkeeper.GetProviderKeeperAndCtx(t, testkeeper.NewInMemKeeperParams(t))
+		defer ctrl.Finish()
+
+		k.SetConsumerClientId(ctx, consumerId, clientId)
+		k.SetConsumerPhase(ctx, consumerId, providertypes.CONSUMER_PHASE_LAUNCHED)
+
+		k.AppendPendingVSCPackets(ctx, consumerId, vaastypes.ValidatorSetChangePacketData{
+			ValidatorUpdates: []abci.ValidatorUpdate{},
+			ValsetUpdateId:   3,
+		})
+		k.AppendPendingVSCPackets(ctx, consumerId, vaastypes.ValidatorSetChangePacketData{
+			ValidatorUpdates: []abci.ValidatorUpdate{},
+			ValsetUpdateId:   5,
+		})
+
+		// Both packets sent successfully.
+		mocks.MockChannelV2Keeper.EXPECT().
+			SendPacket(gomock.Any(), gomock.Any()).
+			Return(&channeltypesv2.MsgSendPacketResponse{Sequence: 1}, nil).Times(1)
+		mocks.MockChannelV2Keeper.EXPECT().
+			SendPacket(gomock.Any(), gomock.Any()).
+			Return(&channeltypesv2.MsgSendPacketResponse{Sequence: 2}, nil).Times(1)
+
+		require.NoError(t, k.SendVSCPacketsToChain(ctx, consumerId, clientId))
+
+		require.Equal(t, uint64(5), k.GetConsumerHighestSentVscId(ctx, consumerId))
+		require.Empty(t, k.GetPendingVSCPackets(ctx, consumerId))
+	})
+
+	t.Run("partial send: first succeeds, second fails, advances to the sent id and leaves pending", func(t *testing.T) {
+		k, ctx, ctrl, mocks := testkeeper.GetProviderKeeperAndCtx(t, testkeeper.NewInMemKeeperParams(t))
+		defer ctrl.Finish()
+
+		k.SetConsumerClientId(ctx, consumerId, clientId)
+		k.SetConsumerPhase(ctx, consumerId, providertypes.CONSUMER_PHASE_LAUNCHED)
+
+		k.AppendPendingVSCPackets(ctx, consumerId, vaastypes.ValidatorSetChangePacketData{
+			ValidatorUpdates: []abci.ValidatorUpdate{},
+			ValsetUpdateId:   3,
+		})
+		k.AppendPendingVSCPackets(ctx, consumerId, vaastypes.ValidatorSetChangePacketData{
+			ValidatorUpdates: []abci.ValidatorUpdate{},
+			ValsetUpdateId:   5,
+		})
+
+		// First packet (vscId 3) sends and advances highestSent; the second
+		// (vscId 5) fails, so SendVSCPacketsToChain returns nil early without
+		// reaching DeletePendingVSCPackets -- all pending packets stay queued.
+		mocks.MockChannelV2Keeper.EXPECT().
+			SendPacket(gomock.Any(), gomock.Any()).
+			Return(&channeltypesv2.MsgSendPacketResponse{Sequence: 1}, nil).Times(1)
+		mocks.MockChannelV2Keeper.EXPECT().
+			SendPacket(gomock.Any(), gomock.Any()).
+			Return(nil, fmt.Errorf("some transient send error")).Times(1)
+
+		require.NoError(t, k.SendVSCPacketsToChain(ctx, consumerId, clientId))
+
+		require.Equal(t, uint64(3), k.GetConsumerHighestSentVscId(ctx, consumerId))
+		require.Len(t, k.GetPendingVSCPackets(ctx, consumerId), 2)
+	})
 }

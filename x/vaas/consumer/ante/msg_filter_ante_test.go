@@ -181,3 +181,33 @@ func TestSafeModeRejectsAppMsgWhenStale(t *testing.T) {
 func testAccAddress(seed byte) sdk.AccAddress {
 	return sdk.AccAddress(bytes.Repeat([]byte{seed}, 20))
 }
+
+// TestSafeModeAllowsGovWhenStale verifies that when the consumer has an
+// established provider client, is not in debt, but has a stale validator set,
+// governance messages still pass (restricted mode allows /cosmos.gov.*).
+func TestSafeModeAllowsGovWhenStale(t *testing.T) {
+	msg := &govtypes.MsgVote{
+		ProposalId: 1,
+		Voter:      testAccAddress(1).String(),
+		Option:     govtypes.OptionYes,
+	}
+	nextCalled, err := runDecorator(t,
+		mockConsumerKeeper{providerClientFound: true, inDebt: false, vscStale: true},
+		[]sdk.Msg{msg},
+	)
+	require.NoError(t, err)
+	require.True(t, nextCalled)
+}
+
+// TestRestrictedWhenBothDebtAndStale verifies that when the consumer is both
+// in debt and has a stale validator set, app messages (e.g. bank) are rejected.
+// The combined condition still routes to restricted mode.
+func TestRestrictedWhenBothDebtAndStale(t *testing.T) {
+	nextCalled, err := runDecorator(t,
+		mockConsumerKeeper{providerClientFound: true, inDebt: true, vscStale: true},
+		[]sdk.Msg{bankSendMsg()},
+	)
+	require.Error(t, err)
+	require.True(t, errorsmod.IsOf(err, consumertypes.ErrConsumerInDebt))
+	require.False(t, nextCalled)
+}
