@@ -322,10 +322,11 @@ func (k Keeper) computeReplaceUpdates(ctx context.Context, target []abci.Validat
 		inTarget[u.PubKey.String()] = struct{}{}
 	}
 
-	updates := make([]abci.ValidatorUpdate, 0, len(target)+len(k.GetAllCCValidator(ctx)))
+	current := k.GetAllCCValidator(ctx)
+	updates := make([]abci.ValidatorUpdate, 0, len(target)+len(current))
 	updates = append(updates, target...)
 
-	for _, v := range k.GetAllCCValidator(ctx) {
+	for _, v := range current {
 		pk, err := v.ConsPubKey()
 		if err != nil {
 			continue

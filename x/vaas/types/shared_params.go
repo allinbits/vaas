@@ -56,6 +56,12 @@ func ValidatePositiveInt64(n int64) error {
 	return nil
 }
 
+// ValidateStringFractionNonZero checks that str parses to a decimal strictly
+// inside the open interval (0, 1). Its two users -- the IBC trusting-period
+// fraction and the liveness grace fraction -- each scale the unbonding period
+// into a duration that must stay strictly below it (the trusting period must be
+// < unbonding for the light client, and the liveness grace must end inside the
+// slashable window), so a fraction of exactly 1 is invalid, not just > 1.
 func ValidateStringFractionNonZero(str string) error {
 	dec, err := math.LegacyNewDecFromStr(str)
 	if err != nil {
@@ -64,8 +70,8 @@ func ValidateStringFractionNonZero(str string) error {
 	if dec.IsNegative() {
 		return fmt.Errorf("param cannot be negative, got %s", str)
 	}
-	if dec.Sub(math.LegacyNewDec(1)).IsPositive() {
-		return fmt.Errorf("param cannot be greater than 1, got %s", str)
+	if dec.GTE(math.LegacyOneDec()) {
+		return fmt.Errorf("param must be less than 1, got %s", str)
 	}
 	if dec.IsZero() {
 		return fmt.Errorf("param cannot be zero, got %s", str)

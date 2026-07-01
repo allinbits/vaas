@@ -462,9 +462,16 @@ func (k Keeper) SweepUnresponsiveConsumers(ctx sdk.Context) error {
 		}
 		k.Logger(ctx).Info("consumer unresponsive past liveness grace, stopping",
 			"consumerId", consumerId, "lastAck", lastAck, "grace", grace)
-		if err := k.StopAndPrepareForConsumerRemoval(ctx, consumerId); err != nil {
+		// Stop in a cached context so a partial failure does not commit the
+		// STOPPED phase without also scheduling removal (which would strand the
+		// consumer STOPPED-but-never-DELETED). On error nothing is written and
+		// the next sweep retries, mirroring BeginBlockRemoveConsumers.
+		cachedCtx, writeFn := ctx.CacheContext()
+		if err := k.StopAndPrepareForConsumerRemoval(cachedCtx, consumerId); err != nil {
 			k.Logger(ctx).Error("failed to stop unresponsive consumer", "consumerId", consumerId, "error", err.Error())
+			continue
 		}
+		writeFn()
 	}
 	return nil
 }

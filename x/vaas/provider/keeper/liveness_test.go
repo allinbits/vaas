@@ -1,6 +1,7 @@
 package keeper_test
 
 import (
+	"errors"
 	"testing"
 	"time"
 
@@ -281,15 +282,37 @@ func TestSweepMultipleConsumers_PartialRemoval(t *testing.T) {
 	require.Error(t, err)
 }
 
-// TestSweepContinuesAfterStopError is SKIPPED.
-//
-// StopAndPrepareForConsumerRemoval sets the consumer phase to STOPPED unconditionally
-// before it calls stakingKeeper.UnbondingTime. There is no mock lever that causes
-// the stop to fail while leaving the consumer in LAUNCHED: by the time UnbondingTime
-// is called, the phase change has already been committed to the store. Injecting an
-// error via UnbondingTime only prevents the removal-time entry from being written, but
-// the consumer phase is already STOPPED. A faithful per-consumer stop failure test
-// would require refactoring production code, which is out of scope here.
+// TestSweepStrandOnStopErrorPrevented verifies that a per-consumer stop failure
+// during the sweep does not strand the consumer STOPPED-with-no-removal. The
+// sweep runs StopAndPrepareForConsumerRemoval in a cached context and only
+// commits on success, so an error (here: UnbondingTime failing when the stop
+// reads it, after the phase write in the cache) discards everything and leaves
+// the consumer LAUNCHED for the next sweep to retry.
+func TestSweepStrandOnStopErrorPrevented(t *testing.T) {
+	k, ctx, ctrl, mocks := testkeeper.GetProviderKeeperAndCtx(t, testkeeper.NewInMemKeeperParams(t))
+	defer ctrl.Finish()
+
+	// LivenessGracePeriod (top of the sweep) reads UnbondingTime once and must
+	// succeed; StopAndPrepareForConsumerRemoval reads it again and here fails.
+	gomock.InOrder(
+		mocks.MockStakingKeeper.EXPECT().UnbondingTime(gomock.Any()).Return(21*24*time.Hour, nil),
+		mocks.MockStakingKeeper.EXPECT().UnbondingTime(gomock.Any()).Return(time.Duration(0), errors.New("boom")),
+	)
+
+	cid := k.FetchAndIncrementConsumerId(ctx)
+	k.SetConsumerPhase(ctx, cid, providertypes.CONSUMER_PHASE_LAUNCHED)
+	k.SetConsumerChainId(ctx, cid, "consumer-x")
+	require.NoError(t, k.SetConsumerLastAckTime(ctx, cid, ctx.BlockTime().Add(-30*24*time.Hour)))
+
+	// The sweep logs the per-consumer error and returns nil (it does not abort).
+	require.NoError(t, k.SweepUnresponsiveConsumers(ctx))
+
+	// Nothing was committed: the consumer is still LAUNCHED (not stranded) and
+	// has no scheduled removal.
+	require.Equal(t, providertypes.CONSUMER_PHASE_LAUNCHED, k.GetConsumerPhase(ctx, cid))
+	_, err := k.GetConsumerRemovalTime(ctx, cid)
+	require.Error(t, err)
+}
 
 // TestSweepRecoversAfterAck confirms a consumer that receives a fresh ack just
 // inside the grace window survives a subsequent sweep once more time elapses.

@@ -280,6 +280,14 @@ func (k Keeper) InitGenesisValUpdates(ctx sdk.Context) []abci.ValidatorUpdate {
 // Spawn-time queue, removal-time queue, equivocation-evidence-min-height,
 // and per-consumer debt are NOT exported because they are derivable from
 // the per-consumer fields above and / or other module state at InitGenesis.
+//
+// The liveness clock is also NOT exported and resets to its fresh state on
+// import: the last-ack time defaults to the current block time (so no launched
+// consumer is swept before it has had a fresh grace window), and the
+// highest-sent / highest-acked VSC ids default to 0 and equal (so no consumer
+// is treated as "behind", and the next epoch sends an ordinary diff rather than
+// a snapshot). This is a deliberate reset for a state-export restart, not
+// preserved audit state.
 func (k Keeper) ExportGenesis(ctx sdk.Context) *types.GenesisState {
 	allConsumerIds := k.GetAllConsumerIds(ctx)
 
