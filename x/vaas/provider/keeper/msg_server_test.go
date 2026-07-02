@@ -29,6 +29,7 @@ import (
 	testkeeper "github.com/allinbits/vaas/testutil/keeper"
 	providerkeeper "github.com/allinbits/vaas/x/vaas/provider/keeper"
 	providertypes "github.com/allinbits/vaas/x/vaas/provider/types"
+	vaastypes "github.com/allinbits/vaas/x/vaas/types"
 )
 
 var keeperBech32CfgOnce sync.Once
@@ -1357,6 +1358,59 @@ func TestCreateConsumerUnbondingBounds(t *testing.T) {
 					},
 					InitializationParameters: &providertypes.ConsumerInitializationParameters{
 						UnbondingPeriod: tc.unbondingPeriod,
+					},
+				})
+			if tc.wantErr {
+				require.Error(t, err)
+				require.ErrorIs(t, err, providertypes.ErrInvalidConsumerInitializationParameters)
+			} else {
+				require.NoError(t, err)
+			}
+		})
+	}
+}
+
+// TestCreateConsumerSafeModeThresholdBounds checks that CreateConsumer rejects a
+// safe-mode threshold that is not strictly below the provider's liveness grace
+// (grace = providerUnbonding * LivenessGraceFraction), so a lagging consumer
+// enters safe mode before the provider sweep removes it.
+func TestCreateConsumerSafeModeThresholdBounds(t *testing.T) {
+	providerUnbonding := 21 * 24 * time.Hour
+	// Grace uses the default fraction seeded into params by the test helper.
+	grace, err := vaastypes.CalculateTrustPeriod(providerUnbonding, providertypes.DefaultLivenessGraceFraction)
+	require.NoError(t, err)
+
+	tests := []struct {
+		name      string
+		threshold time.Duration
+		wantErr   bool
+	}{
+		{name: "well below grace", threshold: time.Hour, wantErr: false},
+		{name: "just below grace", threshold: grace - time.Second, wantErr: false},
+		{name: "equal to grace (rejected)", threshold: grace, wantErr: true},
+		{name: "above grace (rejected)", threshold: grace + time.Hour, wantErr: true},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			providerKeeper, ctx, ctrl, mocks := testkeeper.GetProviderKeeperAndCtx(t, testkeeper.NewInMemKeeperParams(t))
+			defer ctrl.Finish()
+
+			msgServer := providerkeeper.NewMsgServerImpl(&providerKeeper)
+
+			mocks.MockStakingKeeper.EXPECT().UnbondingTime(gomock.Any()).Return(providerUnbonding, nil).Times(1)
+
+			_, err := msgServer.CreateConsumer(ctx,
+				&providertypes.MsgCreateConsumer{
+					Submitter: "submitter",
+					ChainId:   "chainId",
+					Metadata: providertypes.ConsumerMetadata{
+						Name:        "name",
+						Description: "description",
+					},
+					InitializationParameters: &providertypes.ConsumerInitializationParameters{
+						UnbondingPeriod:   providerUnbonding,
+						SafeModeThreshold: tc.threshold,
 					},
 				})
 			if tc.wantErr {

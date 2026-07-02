@@ -109,8 +109,10 @@ expired client produces no acks.
 While a consumer is behind, its local validator set may not match the provider's. The
 consumer protects itself during that window. It records the block time of the last VSC packet
 it received, and considers itself **stale** when it has not received one for longer than a
-consumer-local threshold (`DefaultSafeModeThreshold`, 3 hours -- set well below the provider's
-grace period).
+consumer-local threshold (`SafeModeThreshold`, default 3 hours). The threshold is required to
+be strictly below the provider's liveness grace, enforced at `MsgCreateConsumer` /
+`MsgUpdateConsumer` time (see section 5), so a lagging consumer always enters safe mode before
+the provider's sweep would remove it.
 
 While stale (or while flagged in debt for unpaid fees), the consumer's transaction admission
 gate restricts incoming transactions to `/ibc.core.*` and `/cosmos.gov.*` messages only,
@@ -127,7 +129,7 @@ launched consumer is never treated as stale before its first VSC.
 | `VaasTimeoutPeriod` | provider module param (VSC packet timeout) and per-consumer init param (consumer evidence packet timeout) | `[10m, MaxTimeoutDelta (24h)]` | 1h |
 | consumer `UnbondingPeriod` | per-consumer init param | `(0, providerUnbondingPeriod]` | provider default minus 1 day |
 | `LivenessGraceFraction` | provider module param | `(0, 1)` | `0.66` |
-| consumer `SafeModeThreshold` | per-consumer init param | `> 0` | 3h |
+| consumer `SafeModeThreshold` | per-consumer init param | `(0, provider liveness grace)` | 3h |
 
 `VaasTimeoutPeriod` is validated to `[10m, 24h]` at both the provider module param boundary
 and the per-consumer initialization-parameter boundary, so the configured value is honest
@@ -141,6 +143,14 @@ The consumer `UnbondingPeriod` is bounded against the provider's at `MsgCreateCo
 configured to outlive the provider's slashable window. No lower floor is enforced: an
 unbonding short enough to make the relayer-derived trusting period impractical is an
 operator concern (and is useful for short-lived test or dev chains), not a protocol minimum.
+
+The consumer `SafeModeThreshold` is bounded at the same `MsgCreateConsumer` /
+`MsgUpdateConsumer` boundary: it must be strictly less than the provider's liveness grace
+(`unbonding * LivenessGraceFraction`). Both values are cross-chain, but the provider holds
+each at configuration time -- the threshold is an init parameter it ships to the consumer,
+and the grace derives from its own unbonding and fraction -- so the relationship is enforced
+provider-side rather than left to operator discipline. This guarantees the consumer's own
+safe mode engages before the provider's sweep removes it.
 
 ## 6. Operator guidance: the liveness query
 
