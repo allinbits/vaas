@@ -81,6 +81,19 @@ func (k Keeper) InitGenesis(ctx sdk.Context, genState *types.GenesisState) []abc
 				panic(fmt.Errorf("init: set removal time for %d: %w", consumerId, err))
 			}
 		}
+		// Restore the liveness clock (see ExportGenesis): only when present, so
+		// a consumer that never launched keeps the absent-defaults.
+		if cs.LastAckTime != nil {
+			if err := k.SetConsumerLastAckTime(ctx, consumerId, *cs.LastAckTime); err != nil {
+				panic(fmt.Errorf("init: set last ack time for %d: %w", consumerId, err))
+			}
+		}
+		if cs.HighestSentVscId != 0 {
+			k.SetConsumerHighestSentVscId(ctx, consumerId, cs.HighestSentVscId)
+		}
+		if cs.HighestAckedVscId != 0 {
+			k.SetConsumerHighestAckedVscId(ctx, consumerId, cs.HighestAckedVscId)
+		}
 		if len(cs.PendingValsetChanges) > 0 {
 			k.AppendPendingVSCPackets(ctx, consumerId, cs.PendingValsetChanges...)
 		}
@@ -281,13 +294,10 @@ func (k Keeper) InitGenesisValUpdates(ctx sdk.Context) []abci.ValidatorUpdate {
 // and per-consumer debt are NOT exported because they are derivable from
 // the per-consumer fields above and / or other module state at InitGenesis.
 //
-// The liveness clock is also NOT exported and resets to its fresh state on
-// import: the last-ack time defaults to the current block time (so no launched
-// consumer is swept before it has had a fresh grace window), and the
-// highest-sent / highest-acked VSC ids default to 0 and equal (so no consumer
-// is treated as "behind", and the next epoch sends an ordinary diff rather than
-// a snapshot). This is a deliberate reset for a state-export restart, not
-// preserved audit state.
+// The liveness clock (last-ack time and the highest-sent / highest-acked VSC
+// ids) IS exported per consumer and restored at InitGenesis, so a state-export
+// restart preserves each consumer's grace window and resync counters rather
+// than resetting them.
 func (k Keeper) ExportGenesis(ctx sdk.Context) *types.GenesisState {
 	allConsumerIds := k.GetAllConsumerIds(ctx)
 
@@ -337,6 +347,25 @@ func (k Keeper) ExportGenesis(ctx sdk.Context) *types.GenesisState {
 			cs.RemovalTime = &rtCopy
 		} else if !errors.Is(err, collections.ErrNotFound) {
 			panic(fmt.Errorf("export: failed to read removal time for consumer %d: %w", consumerId, err))
+		}
+
+		// Liveness clock: export the last-ack time only when actually recorded
+		// (GetConsumerLastAckTime falls back to block time when absent, which we
+		// must not persist), and the resync counters only when non-zero (zero is
+		// their absent default).
+		hasAck, err := k.ConsumerLastAckTime.Has(ctx, consumerId)
+		if err != nil {
+			panic(fmt.Errorf("export: failed to check last ack time for consumer %d: %w", consumerId, err))
+		}
+		if hasAck {
+			ackCopy := k.GetConsumerLastAckTime(ctx, consumerId)
+			cs.LastAckTime = &ackCopy
+		}
+		if v := k.GetConsumerHighestSentVscId(ctx, consumerId); v != 0 {
+			cs.HighestSentVscId = v
+		}
+		if v := k.GetConsumerHighestAckedVscId(ctx, consumerId); v != 0 {
+			cs.HighestAckedVscId = v
 		}
 
 		consumerStates = append(consumerStates, cs)

@@ -29,6 +29,11 @@ message GenesisState {
   // Flag indicating whether the consumer VAAS module starts in pre-VAAS state
   bool preVAAS = 5;
   vaas.v1.ProviderInfo provider = 6 [ (gogoproto.nullable) = false ];
+  // LastVSCRecvTime is the block time of the last VSC packet the consumer
+  // received; it drives IsVSCStale (safe mode). Round-tripped on restart so a
+  // state-export upgrade preserves the staleness clock. Absent for a new chain
+  // that has not received a VSC yet.
+  google.protobuf.Timestamp last_vsc_recv_time = 7 [ (gogoproto.stdtime) = true ];
 }
 
 // HeightValsetUpdateID represents a mapping internal to the consumer VAAS module
