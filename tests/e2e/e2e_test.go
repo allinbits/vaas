@@ -10,10 +10,6 @@ func (s *IntegrationTestSuite) TestVAAS() {
 	// LAUNCHED and re-converges via snapshot resync after recovery.
 	s.testLivenessTransientOutage()
 	s.testConsumerDebtFlow()
-	// Verify MsgFilterDecorator restricted mode (debt gate) rejects bank sends
-	// and allows gov/ibc.core messages; exercises the same code path as VSC
-	// staleness (safe mode).
-	s.testLivenessSafeMode()
 	s.testDowntimeSlash()
 	s.testFeePoolSendRestriction()
 	s.testFeePoolFundAndLockEnforcement()

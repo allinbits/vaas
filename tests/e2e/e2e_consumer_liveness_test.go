@@ -1,13 +1,19 @@
 package e2e
 
-// e2e_consumer_liveness_test.go exercises the three liveness-removal scenarios
-// introduced by issue #36:
+// e2e_consumer_liveness_test.go exercises the liveness scenarios introduced by
+// issue #36 that require a full provider+consumer network:
 //
-//   1. testLivenessRemoval         - sustained outage causes LAUNCHED -> STOPPED -> DELETED.
-//   2. testLivenessTransientOutage - brief outage + valset change; consumer
-//                                    stays LAUNCHED and re-syncs after grace.
-//   3. testLivenessSafeMode        - while VSC is stale, consumer rejects bank
-//                                    sends; after a fresh VSC it accepts them.
+//   1. testLivenessTransientOutage - brief outage + valset change; the consumer
+//                                    stays LAUNCHED and re-syncs via snapshot.
+//   2. testLivenessRemoval         - explicit governance removal transitions the
+//                                    consumer to STOPPED.
+//
+// Consumer-side safe mode (the MsgFilterDecorator restricting txs while the
+// consumer is in debt or its VSC is stale) is not duplicated here: the ante
+// gate's allow/block logic is covered deterministically by the ante unit tests
+// (x/vaas/consumer/ante), the debt path end-to-end by testConsumerDebtFlow, and
+// the real VSC-staleness safe mode end-to-end by the short-unbonding
+// LivenessIntegrationTestSuite.
 //
 // HARNESS CONSTRAINTS
 //
@@ -17,29 +23,18 @@ package e2e
 // (unbonding * 0.66) is ~13 days.  Waiting for an automatic STOPPED transition
 // in real-time is therefore impractical in CI.
 //
-// For testLivenessRemoval we approximate by issuing an explicit
-// remove-consumer tx (which immediately stops the consumer), then asserting the
-// provider transitions through STOPPED and eventually to DELETED.  The STOPPED
-// -> DELETED leg also relies on time elapsing (the removal_time set at stop),
-// so in a normal CI run the consumer will stay STOPPED until a follow-up epoch
-// advances the chain past removal_time.  We therefore assert STOPPED as the
-// terminal state within the test window, and note that a proper timing-faithful
-// run would need a short unbonding_period consumer (e.g. 60s -> grace ~40s).
+// For testLivenessRemoval we issue an explicit remove-consumer via governance
+// (gov authority is required since PR #53), then assert the provider transitions
+// to STOPPED.  The STOPPED -> DELETED leg relies on removal_time elapsing, which
+// needs a short-unbonding consumer -- exercised by LivenessIntegrationTestSuite.
 //
 // For testLivenessTransientOutage we pause the consumer container (same
 // mechanism as testDowntimeSlash) for a brief window and verify the consumer
 // stays LAUNCHED and its VP re-converges after recovery.  This exercises the
 // snapshot-resync path introduced in issue #36.
 //
-// For testLivenessSafeMode we verify that the consumer's MsgFilterDecorator
-// rejects bank sends while in restricted mode (debt or stale VSC), and accepts
-// them once normal conditions are restored.  The DefaultSafeModeThreshold for
-// VSC staleness is 3 hours (hard-coded), so we trigger restricted mode via the
-// fee-debt path instead, which exercises the same ante-handler code branch.
-//
 // Sequencing in TestVAAS:
 //   testLivenessTransientOutage runs after testValidatorSetSync (non-destructive VP change).
-//   testLivenessSafeMode        runs after testConsumerDebtFlow (reuses the debt cycle).
 //   testLivenessRemoval         runs second-to-last, before testGenesisRoundTrip.
 
 import (
@@ -94,6 +89,11 @@ func (s *IntegrationTestSuite) testLivenessTransientOutage() {
 		s.T().Log("pausing consumer container (transient outage starts)...")
 		err = s.dkrPool.Client.PauseContainer(s.consumerValRes[0].Container.ID)
 		s.Require().NoError(err, "failed to pause consumer container")
+		// Safety net: always unpause on exit so a failure before the explicit
+		// unpause below cannot leave the container paused and cascade into the
+		// next test (a paused container rejects docker exec). Errors ignored:
+		// the happy path already unpaused it, so this is a no-op then.
+		defer func() { _ = s.dkrPool.Client.UnpauseContainer(s.consumerValRes[0].Container.ID) }()
 
 		// While the consumer is paused, delegate extra stake on the provider so
 		// it emits a VSC packet for the VP change.
@@ -107,7 +107,10 @@ func (s *IntegrationTestSuite) testLivenessTransientOutage() {
 		valoperAddr := strings.TrimSpace(stdout.String())
 
 		_, _, err = s.dockerExec(s.providerValRes[0].Container.ID, []string{
-			providerBinary, "tx", "staking", "delegate", valoperAddr, "500000" + bondDenom,
+			// Delegate at least one unit of voting power (tokens / powerReduction,
+			// default 1e6) so the validator's integer power actually increases; a
+			// smaller delegation truncates to +0 power and the VSC never changes.
+			providerBinary, "tx", "staking", "delegate", valoperAddr, "100000000" + bondDenom,
 			"--from", "user",
 			"--home", providerHomePath,
 			"--keyring-backend", "test",
@@ -159,72 +162,6 @@ func (s *IntegrationTestSuite) testLivenessTransientOutage() {
 			return consumerVPs[0] == newProviderVP
 		}, 3*time.Minute, 3*time.Second,
 			"consumer VP did not converge to provider VP %d after snapshot resync", newProviderVP)
-	})
-}
-
-// testLivenessSafeMode verifies that the consumer's MsgFilterDecorator enters
-// restricted mode when the consumer is in debt or has a stale validator set
-// (the two conditions share the same code path in the ante handler), and exits
-// restricted mode after recovery.
-//
-// Issue #36 context: the safe-mode gate allows only /ibc.core.* and
-// /cosmos.gov.* messages through.  A bank send is rejected in restricted mode
-// but accepted in normal mode.
-//
-// Approximation note: VSC staleness (DefaultSafeModeThreshold = 3h) cannot be
-// triggered within a short test run.  Debt (empty fee pool) uses the same
-// restricted-mode branch and can be triggered within epochs.  This test
-// therefore relies on the debt path to trigger restricted mode.
-func (s *IntegrationTestSuite) testLivenessSafeMode() {
-	s.Run("liveness safe mode: bank send rejected while restricted, accepted after recovery", func() {
-		// Wait for the consumer to enter restricted mode (debt due to empty fee pool).
-		s.T().Log("waiting for consumer to enter restricted mode...")
-		s.Require().Eventuallyf(func() bool {
-			out, err := s.consumerBankSendDryRun()
-			return err != nil || strings.Contains(out, "consumer chain is in debt") ||
-				strings.Contains(out, "stale validator set")
-		}, 3*time.Minute, 5*time.Second,
-			"consumer did not enter restricted mode; fee pool may not be empty")
-		s.T().Log("restricted mode confirmed; bank sends are now rejected")
-
-		// A /cosmos.gov.* message must NOT be blocked by the admission gate in
-		// restricted mode.  We probe this with a dry-run gov submit-proposal and
-		// verify the rejection reason (if any) does not come from the gate.
-		user := s.consumerUserBech32()
-		_, govStderr, _ := s.dockerExec(s.consumerValRes[0].Container.ID, []string{
-			consumerBinary, "tx", "gov", "submit-proposal", "/dev/null",
-			"--from", user,
-			"--home", consumerHomePath,
-			"--keyring-backend", "test",
-			"--chain-id", consumerChainID,
-			"--fees", "1000" + bondDenom,
-			"--dry-run",
-			"-y",
-		})
-		govErrStr := govStderr.String()
-		s.Require().False(
-			strings.Contains(govErrStr, "consumer chain is in debt") ||
-				strings.Contains(govErrStr, "stale validator set"),
-			"gov tx must not be rejected by the admission gate in restricted mode; stderr=%q",
-			govErrStr,
-		)
-
-		// Fund the fee pool to restore normal mode.
-		s.T().Log("re-funding consumer fee pool to restore normal mode...")
-		s.providerFundConsumerFeePool("0", "20000000"+feeDenom)
-
-		// After funding, bank sends must be accepted again.
-		s.T().Log("waiting for consumer to exit restricted mode after re-fund...")
-		s.Require().Eventuallyf(func() bool {
-			out, err := s.consumerBankSendDryRun()
-			if err != nil {
-				return false
-			}
-			return !strings.Contains(out, "consumer chain is in debt") &&
-				!strings.Contains(out, "stale validator set")
-		}, 2*time.Minute, 5*time.Second,
-			"consumer did not exit restricted mode after fee pool was re-funded")
-		s.T().Log("consumer back in normal mode; bank sends accepted")
 	})
 }
 

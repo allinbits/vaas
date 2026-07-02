@@ -3,6 +3,7 @@ package e2e
 import (
 	"bytes"
 	"context"
+	"encoding/json"
 	"fmt"
 	"os"
 	"os/exec"
@@ -313,7 +314,7 @@ func (s *IntegrationTestSuite) registerConsumerOnProvider() {
 		"sh", "-c", fmt.Sprintf("echo '%s' > /tmp/create_consumer.json", createConsumerJSON),
 	})
 
-	_, _, err = s.dockerExec(s.providerValRes[0].Container.ID, []string{
+	stdout, stderr, err := s.dockerExec(s.providerValRes[0].Container.ID, []string{
 		providerBinary, "tx", "provider", "create-consumer", "/tmp/create_consumer.json",
 		"--from", "val",
 		"--home", providerHomePath,
@@ -322,10 +323,22 @@ func (s *IntegrationTestSuite) registerConsumerOnProvider() {
 		"--gas", "auto",
 		"--gas-adjustment", "1.5",
 		"--fees", "10000" + bondDenom,
+		"--broadcast-mode", "sync",
 		"-y",
+		"-o", "json",
 	})
+	s.Require().NoErrorf(err, "failed to run create-consumer: stderr=%s", stderr.String())
 
-	s.Require().NoError(err, "failed to create consumer on provider")
+	// Assert the tx was accepted. Without this, a tx rejected at CheckTx (e.g.
+	// an init-parameter validation failure) passes silently here and only
+	// surfaces later as an empty consumer genesis.
+	var res struct {
+		Code   int    `json:"code"`
+		RawLog string `json:"raw_log"`
+	}
+	s.Require().NoErrorf(json.Unmarshal(stdout.Bytes(), &res),
+		"failed to decode create-consumer response:\nstdout=%q\nstderr=%q", stdout.String(), stderr.String())
+	s.Require().Equalf(0, res.Code, "create-consumer tx failed: %s", res.RawLog)
 
 	// Wait for the tx to be included
 	time.Sleep(10 * time.Second)
