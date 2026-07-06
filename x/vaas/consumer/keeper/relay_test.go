@@ -397,6 +397,42 @@ func TestRecvPacketAfterStalenessLiftsStale(t *testing.T) {
 	require.False(t, k.IsVSCStale(staleCtx), "resync must lift safe mode")
 }
 
+// TestSnapshotResyncEmitsEvent verifies the consumer emits EventTypeSnapshotResync
+// when (and only when) it applies a snapshot packet, so the resync is observable
+// (used by the e2e to distinguish a snapshot from a resent diff).
+func TestSnapshotResyncEmitsEvent(t *testing.T) {
+	k, ctx, ctrl, _ := testkeeper.GetConsumerKeeperAndCtx(t, testkeeper.NewInMemKeeperParams(t))
+	defer ctrl.Finish()
+
+	pk := ed25519.GenPrivKey().PubKey()
+	tm, err := cryptocodec.ToCmtProtoPublicKey(pk)
+	require.NoError(t, err)
+	k.ApplyCCValidatorChanges(ctx, []abci.ValidatorUpdate{{PubKey: tm, Power: 10}})
+	require.NoError(t, k.SetHighestValsetUpdateID(ctx, 1))
+	k.SetProviderClientID(ctx, "07-tendermint-0")
+
+	countSnapshotEvents := func() int {
+		n := 0
+		for _, ev := range ctx.EventManager().Events() {
+			if ev.Type == types.EventTypeSnapshotResync {
+				n++
+			}
+		}
+		return n
+	}
+
+	// An ordinary diff packet must NOT emit the snapshot-resync event.
+	diff := types.NewValidatorSetChangePacketData([]abci.ValidatorUpdate{{PubKey: tm, Power: 12}}, 2)
+	require.NoError(t, k.OnRecvVSCPacketV2(ctx, "07-tendermint-0", diff))
+	require.Zero(t, countSnapshotEvents(), "a diff packet must not emit a snapshot-resync event")
+
+	// A snapshot packet must emit exactly one.
+	snap := types.NewValidatorSetChangePacketData([]abci.ValidatorUpdate{{PubKey: tm, Power: 15}}, 3)
+	snap.IsSnapshot = true
+	require.NoError(t, k.OnRecvVSCPacketV2(ctx, "07-tendermint-0", snap))
+	require.Equal(t, 1, countSnapshotEvents(), "a snapshot packet must emit exactly one snapshot-resync event")
+}
+
 // TestSnapshotPowerChange seeds the CC set with A=10 and delivers a snapshot
 // that changes A's power to 50. PendingChanges must contain A at power 50.
 func TestSnapshotPowerChange(t *testing.T) {

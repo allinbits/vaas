@@ -1,6 +1,8 @@
 package keeper
 
 import (
+	"strconv"
+
 	"github.com/allinbits/vaas/x/vaas/consumer/types"
 	vaastypes "github.com/allinbits/vaas/x/vaas/types"
 
@@ -52,6 +54,17 @@ func (k Keeper) OnRecvVSCPacketV2(ctx sdk.Context, sourceClientID string, newCha
 	var pendingChanges []abci.ValidatorUpdate
 	if newChanges.IsSnapshot {
 		pendingChanges = k.computeReplaceUpdates(ctx, newChanges.ValidatorUpdates)
+		// Surface snapshot resyncs (not ordinary diffs) so operators -- and the
+		// e2e -- can observe that a behind consumer was healed by a full-set
+		// replacement rather than an accumulated diff.
+		ctx.EventManager().EmitEvent(
+			sdk.NewEvent(
+				vaastypes.EventTypeSnapshotResync,
+				sdk.NewAttribute(sdk.AttributeKeyModule, types.ModuleName),
+				sdk.NewAttribute(vaastypes.AttributeValSetUpdateID, strconv.FormatUint(newChanges.ValsetUpdateId, 10)),
+				sdk.NewAttribute(vaastypes.AttributeNumValidators, strconv.Itoa(len(newChanges.ValidatorUpdates))),
+			),
+		)
 	} else {
 		currentValUpdates := []abci.ValidatorUpdate{}
 		if currentChanges, exists := k.GetPendingChanges(ctx); exists {

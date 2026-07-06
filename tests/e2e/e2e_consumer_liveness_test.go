@@ -4,7 +4,7 @@ package e2e
 // issue #36 that require a full provider+consumer network:
 //
 //   1. testLivenessTransientOutage - brief outage + valset change; the consumer
-//                                    stays LAUNCHED and re-syncs via snapshot.
+//                                    stays LAUNCHED and re-converges after recovery.
 //   2. testLivenessRemoval         - explicit governance removal transitions the
 //                                    consumer to STOPPED.
 //
@@ -29,9 +29,14 @@ package e2e
 // needs a short-unbonding consumer -- exercised by LivenessIntegrationTestSuite.
 //
 // For testLivenessTransientOutage we pause the consumer container (same
-// mechanism as testDowntimeSlash) for a brief window and verify the consumer
-// stays LAUNCHED and its VP re-converges after recovery.  This exercises the
-// snapshot-resync path introduced in issue #36.
+// mechanism as testDowntimeSlash) for a brief window while the provider's valset
+// changes, then verify the consumer stays LAUNCHED and its VP re-converges after
+// recovery. This is an end-to-end smoke of recovery-after-outage; it does not by
+// itself prove *how* the consumer re-converged (the un-timed-out packet could be
+// resent). That the demoted timeout no longer removes the consumer and that a
+// behind consumer heals via a full snapshot are proven deterministically by unit
+// tests (TestTimeoutDoesNotRemove, the TestSnapshot* set, TestSnapshotResyncEmitsEvent)
+// and end-to-end by LivenessIntegrationTestSuite's forced-timeout snapshot test.
 //
 // Sequencing in TestVAAS:
 //   testLivenessTransientOutage runs after testValidatorSetSync (non-destructive VP change).
@@ -66,15 +71,15 @@ func (s *IntegrationTestSuite) queryConsumerPhase(consumerID string) string {
 	return res.Phase
 }
 
-// testLivenessTransientOutage verifies snapshot resync: a brief consumer
-// outage (shorter than the liveness grace period) does not stop the consumer.
-// After recovery the consumer's consensus VP must re-converge with the
-// provider's updated VP.
-//
-// Issue #36 context: the snapshot resync sends the full current valset (not
-// just a delta) when a reconnecting consumer's last-known VSC ID lags behind.
+// testLivenessTransientOutage is an end-to-end smoke that a brief consumer
+// outage (shorter than the liveness grace period) does not stop the consumer,
+// and that after recovery the consumer's consensus VP re-converges with the
+// provider's updated VP. It does not assert the *mechanism* of re-convergence
+// (the un-timed-out VSC packet could be resent rather than replaced by a
+// snapshot); the snapshot path and the demoted timeout are covered by unit tests
+// and by LivenessIntegrationTestSuite's forced-timeout snapshot test.
 func (s *IntegrationTestSuite) testLivenessTransientOutage() {
-	s.Run("liveness transient outage: consumer stays LAUNCHED and re-syncs valset", func() {
+	s.Run("liveness transient outage: consumer stays LAUNCHED and re-converges", func() {
 		const consumerID = "0"
 
 		// Record provider VP before the outage.
@@ -147,8 +152,8 @@ func (s *IntegrationTestSuite) testLivenessTransientOutage() {
 		s.Require().Equalf("CONSUMER_PHASE_LAUNCHED", phase,
 			"consumer %s must remain LAUNCHED after a transient outage", consumerID)
 
-		// Consumer VP must re-converge to the updated provider VP via snapshot resync.
-		s.T().Log("waiting for consumer valset to re-converge via snapshot resync...")
+		// Consumer VP must re-converge to the updated provider VP after recovery.
+		s.T().Log("waiting for consumer valset to re-converge...")
 		s.Require().Eventuallyf(func() bool {
 			consumerVals, err := s.queryConsumerNetValidators()
 			if err != nil || len(consumerVals) == 0 {
@@ -161,7 +166,7 @@ func (s *IntegrationTestSuite) testLivenessTransientOutage() {
 			s.T().Logf("consumer VP: %d (want %d)", consumerVPs[0], newProviderVP)
 			return consumerVPs[0] == newProviderVP
 		}, 3*time.Minute, 3*time.Second,
-			"consumer VP did not converge to provider VP %d after snapshot resync", newProviderVP)
+			"consumer VP did not re-converge to provider VP %d after the transient outage", newProviderVP)
 	})
 }
 
