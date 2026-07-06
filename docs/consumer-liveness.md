@@ -126,17 +126,19 @@ launched consumer is never treated as stale before its first VSC.
 
 | Parameter | Where | Bound | Default |
 |---|---|---|---|
-| `VaasTimeoutPeriod` | provider module param (VSC packet timeout) and per-consumer init param (consumer evidence packet timeout) | `[10m, MaxTimeoutDelta (24h)]` | 1h |
+| `VaasTimeoutPeriod` | provider module param (VSC packet timeout) and per-consumer init param (consumer evidence packet timeout) | `(0, MaxTimeoutDelta (24h)]` | 1h |
 | consumer `UnbondingPeriod` | per-consumer init param | `(0, providerUnbondingPeriod]` | provider default minus 1 day |
 | `LivenessGraceFraction` | provider module param | `(0, 1)` | `0.66` |
 | consumer `SafeModeThreshold` | per-consumer init param | `(0, provider liveness grace)` | 3h |
 
-`VaasTimeoutPeriod` is validated to `[10m, 24h]` at both the provider module param boundary
+`VaasTimeoutPeriod` is validated to `(0, 24h]` at both the provider module param boundary
 and the per-consumer initialization-parameter boundary, so the configured value is honest
 rather than silently capped. The default was lowered from four weeks (which collapsed to 24h
 under the cap) to one epoch-scale hour: an undelivered packet is superseded by the next
 epoch's packet and a late one is dropped by the consumer's dedup, so a long timeout buys
-nothing.
+nothing. No lower floor is imposed: a persistently unreachable consumer is handled by the
+liveness sweep, so a short timeout is not dangerous -- and a floor would only prevent
+exercising the timeout path in tests.
 
 The consumer `UnbondingPeriod` is bounded against the provider's at `MsgCreateConsumer` /
 `MsgUpdateConsumer` time (it must not exceed the provider's), so a consumer cannot be

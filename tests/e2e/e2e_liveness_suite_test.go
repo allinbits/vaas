@@ -26,8 +26,7 @@ package e2e
 // set of containers (distinct chain IDs, Docker network, and host ports) and
 // registers a single consumer via create_consumer_short_unbonding.json which
 // carries a 200s consumer unbonding (200000000000 ns), 10m vaas_timeout
-// (600000000000 ns, the MinVAASTimeoutPeriod floor), and 5s safe_mode_threshold
-// (5000000000 ns).
+// (600000000000 ns), and 5s safe_mode_threshold (5000000000 ns).
 //
 // Test ordering within TestLivenessVAAS:
 //   1. testRecoverBeforeGrace  - brief pause < grace (~150s); consumer stays LAUNCHED.

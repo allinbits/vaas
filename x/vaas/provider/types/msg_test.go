@@ -775,9 +775,10 @@ func TestMsgSetConsumerFeesPerBlock_ValidateBasic(t *testing.T) {
 	}
 }
 
-// TestValidateInitParams_VaasTimeoutFloor table-drives ValidateInitializationParameters
-// focusing on the VaasTimeoutPeriod boundary at MinVAASTimeoutPeriod (10m).
-// All other fields are set to valid values so only the timeout is under test.
+// TestValidateInitParams_VaasTimeoutBounds table-drives ValidateInitializationParameters
+// focusing on the VaasTimeoutPeriod bound (0, MaxTimeoutDelta]: positive with no
+// lower floor, capped at the ibc-go v2 hard cap. All other fields are valid so
+// only the timeout is under test.
 func TestValidateInitParams_VaasTimeoutBounds(t *testing.T) {
 	base := types.ConsumerInitializationParameters{
 		InitialHeight:     clienttypes.NewHeight(1, 1),
@@ -795,13 +796,18 @@ func TestValidateInitParams_VaasTimeoutBounds(t *testing.T) {
 		wantErr bool
 	}{
 		{
-			name:    "exactly MinVAASTimeoutPeriod: ok",
-			timeout: vaastypes.MinVAASTimeoutPeriod,
+			name:    "small positive value: ok (no lower floor)",
+			timeout: time.Second,
 			wantErr: false,
 		},
 		{
-			name:    "1ns below floor: error",
-			timeout: vaastypes.MinVAASTimeoutPeriod - time.Nanosecond,
+			name:    "zero: error",
+			timeout: 0,
+			wantErr: true,
+		},
+		{
+			name:    "negative: error",
+			timeout: -time.Second,
 			wantErr: true,
 		},
 		{

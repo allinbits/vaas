@@ -20,11 +20,6 @@ const (
 	// epoch and late ones are dropped by the consumer, so a long timeout
 	// buys nothing. Must be <= MaxTimeoutDelta (24h, ibc-go v2 hard cap).
 	DefaultVAASTimeoutPeriod = time.Hour
-
-	// MinVAASTimeoutPeriod is the floor for VaasTimeoutPeriod, comfortably
-	// above realistic IBC relay latency so packets are not expired before
-	// they can be delivered.
-	MinVAASTimeoutPeriod = 10 * time.Minute
 )
 
 var KeyVAASTimeoutPeriod = []byte("VaasTimeoutPeriod")
@@ -37,11 +32,15 @@ func ValidateDuration(d time.Duration) error {
 }
 
 // ValidateVAASTimeoutPeriod checks the VAAS packet timeout is within
-// [MinVAASTimeoutPeriod, maxTimeoutDelta]. maxTimeoutDelta is passed in to
-// avoid importing ibc-go from this shared package.
+// (0, maxTimeoutDelta]. maxTimeoutDelta is passed in to avoid importing ibc-go
+// from this shared package. No lower floor is imposed: an undelivered packet is
+// superseded by the next epoch's packet and a late one is dropped by the
+// consumer's dedup, and a persistently unreachable consumer is handled by the
+// liveness sweep -- so a short timeout is not dangerous, and forbidding one only
+// blocks testing the timeout path.
 func ValidateVAASTimeoutPeriod(d, maxTimeoutDelta time.Duration) error {
-	if d < MinVAASTimeoutPeriod {
-		return fmt.Errorf("VAAS timeout period must be >= %s, got %s", MinVAASTimeoutPeriod, d)
+	if d <= 0 {
+		return fmt.Errorf("VAAS timeout period must be positive, got %s", d)
 	}
 	if d > maxTimeoutDelta {
 		return fmt.Errorf("VAAS timeout period must be <= %s (MaxTimeoutDelta), got %s", maxTimeoutDelta, d)
