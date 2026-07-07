@@ -34,7 +34,14 @@ package e2e
 //                                mode; bank send rejected; relayer unpaused; accepted.
 //   3. testLivenessQuery       - QueryConsumerLiveness via CLI; last_ack_time recent,
 //                                non-zero grace, removal_eta present.
-//   4. testAutoSweepRemoval    - relayer stopped indefinitely; poll until STOPPED.
+//   4. testForcedTimeoutSnapshotResync - relayer paused > the short (20s) provider
+//                                vaas_timeout while the consumer keeps producing
+//                                blocks, so a VSC packet genuinely times out; the
+//                                consumer stays LAUNCHED (demoted OnTimeout) and
+//                                heals via a snapshot resync (asserted via the
+//                                provider timeout log and the consumer's
+//                                snapshot-resync event).
+//   5. testAutoSweepRemoval    - relayer stopped indefinitely; poll until STOPPED.
 //
 // The STOPPED -> DELETED edge (deletion at stop-time + unbonding) is unit-tested
 // (TestSweepRemovesStaleConsumer), not exercised here -- see the note above
@@ -222,6 +229,7 @@ func (s *LivenessIntegrationTestSuite) TestLivenessVAAS() {
 	s.testRecoverBeforeGrace()
 	s.testRealSafeMode()
 	s.testLivenessQuery()
+	s.testForcedTimeoutSnapshotResync()
 	s.testAutoSweepRemoval()
 }
 
@@ -327,6 +335,13 @@ func (s *LivenessIntegrationTestSuite) livenessInitAndStartProvider() {
 				// consumer is never swept between acks.
 				params["blocks_per_epoch"] = "1"
 				params["fees_per_block_amount"] = "1000"
+				// Short VSC packet timeout so testForcedTimeoutSnapshotResync can
+				// make a packet actually time out within a CI run (the relayer is
+				// paused while the consumer keeps producing blocks past this
+				// deadline). Now possible since the MinVAASTimeoutPeriod floor was
+				// dropped. Timeouts are log-only, so this does not perturb the
+				// other liveness tests.
+				params["vaas_timeout_period"] = "20s"
 				// Shrink the liveness grace fraction so the grace period
 				// (unbonding * fraction = 200s * 0.75 = ~150s) is observable in
 				// a CI run, while keeping the unbonding itself long enough that
@@ -1229,6 +1244,88 @@ func (s *LivenessIntegrationTestSuite) testLivenessQuery() {
 		s.Require().Truef(retaAck.After(time.Now().Add(-24*time.Hour)),
 			"removal_eta %s looks implausibly old", livenessRes.RemovalEta)
 	})
+}
+
+// testForcedTimeoutSnapshotResync proves the two behaviours the main suite's
+// transient-outage smoke cannot: that a genuinely timed-out VSC packet does NOT
+// remove the consumer (the demoted OnTimeout), and that a consumer that fell
+// behind heals via a snapshot resync (not a resent diff).
+//
+// A real IBC timeout requires the packet to expire on the *consumer's* clock
+// while still undelivered. Pausing the consumer would freeze that clock, so
+// instead the relayer is paused while the consumer keeps producing blocks: its
+// clock advances past the short vaas_timeout_period (20s) with packets
+// undelivered. On unpause the relayer submits MsgTimeout for the expired packets
+// (the provider's OnTimeout fires, log-only) and delivers a snapshot to the
+// now-behind consumer.
+func (s *LivenessIntegrationTestSuite) testForcedTimeoutSnapshotResync() {
+	s.Run("forced timeout: demoted OnTimeout keeps consumer LAUNCHED; behind consumer heals via snapshot", func() {
+		const consumerID = "0"
+
+		s.Require().Equalf("CONSUMER_PHASE_LAUNCHED", s.livenessQueryConsumerPhase(consumerID),
+			"consumer %s must be LAUNCHED before the forced-timeout test", consumerID)
+
+		// Pause the relayer; the consumer keeps producing blocks, so its clock
+		// advances past the 20s packet timeout while VSC packets go undelivered.
+		s.T().Log("pausing relayer for ~35s (> 20s vaas_timeout) to force VSC packet timeouts...")
+		s.Require().NoError(s.dkrPool.Client.PauseContainer(s.tsRelayerResource.Container.ID),
+			"failed to pause relayer container")
+		time.Sleep(35 * time.Second)
+
+		s.T().Log("unpausing relayer; it submits MsgTimeout for expired packets and delivers a snapshot...")
+		s.Require().NoError(s.dkrPool.Client.UnpauseContainer(s.tsRelayerResource.Container.ID),
+			"failed to unpause relayer container")
+
+		// (a) The demoted OnTimeout must not have removed the consumer.
+		s.Require().Eventuallyf(func() bool {
+			return s.livenessQueryConsumerPhase(consumerID) == "CONSUMER_PHASE_LAUNCHED"
+		}, 30*time.Second, 3*time.Second,
+			"consumer %s must remain LAUNCHED despite VSC packet timeouts", consumerID)
+		s.T().Log("consumer remained LAUNCHED through the timeouts")
+
+		// (b) Prove a real timeout actually fired -- otherwise (a) is vacuous.
+		// The provider logs the demoted OnTimeout handler.
+		s.Require().Eventuallyf(func() bool {
+			return strings.Contains(s.livenessProviderLogs(), "packet timeout, retrying next epoch")
+		}, 30*time.Second, 3*time.Second,
+			"provider never logged a VSC packet timeout; the timeout path was not exercised")
+		s.T().Log("provider processed a demoted VSC timeout (OnTimeout is log-only)")
+
+		// (c) Prove the behind consumer healed via a SNAPSHOT (not a resent diff):
+		// the consumer logs "applied snapshot resync" (and emits the matching
+		// event) only when it applies an is_snapshot packet.
+		s.Require().Eventuallyf(func() bool {
+			return strings.Contains(s.livenessConsumerLogs(), "applied snapshot resync")
+		}, 2*time.Minute, 5*time.Second,
+			"consumer never applied a snapshot resync after recovery")
+		s.T().Log("consumer applied a snapshot resync after recovery")
+	})
+}
+
+// livenessProviderLogs returns the provider container's full stdout+stderr log.
+func (s *LivenessIntegrationTestSuite) livenessProviderLogs() string {
+	var buf bytes.Buffer
+	_ = s.dkrPool.Client.Logs(docker.LogsOptions{
+		Container:    s.providerValRes[0].Container.ID,
+		OutputStream: &buf,
+		ErrorStream:  &buf,
+		Stdout:       true,
+		Stderr:       true,
+	})
+	return buf.String()
+}
+
+// livenessConsumerLogs returns the consumer container's full stdout+stderr log.
+func (s *LivenessIntegrationTestSuite) livenessConsumerLogs() string {
+	var buf bytes.Buffer
+	_ = s.dkrPool.Client.Logs(docker.LogsOptions{
+		Container:    s.consumerValRes[0].Container.ID,
+		OutputStream: &buf,
+		ErrorStream:  &buf,
+		Stdout:       true,
+		Stderr:       true,
+	})
+	return buf.String()
 }
 
 // testAutoSweepRemoval stops the relayer (and pauses the consumer) so no VSC

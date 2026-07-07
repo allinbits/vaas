@@ -56,7 +56,8 @@ func (k Keeper) OnRecvVSCPacketV2(ctx sdk.Context, sourceClientID string, newCha
 		pendingChanges = k.computeReplaceUpdates(ctx, newChanges.ValidatorUpdates)
 		// Surface snapshot resyncs (not ordinary diffs) so operators -- and the
 		// e2e -- can observe that a behind consumer was healed by a full-set
-		// replacement rather than an accumulated diff.
+		// replacement rather than an accumulated diff. Emitted both as an event
+		// (structured/queryable) and a log line (the e2e asserts on the log).
 		ctx.EventManager().EmitEvent(
 			sdk.NewEvent(
 				vaastypes.EventTypeSnapshotResync,
@@ -64,6 +65,10 @@ func (k Keeper) OnRecvVSCPacketV2(ctx sdk.Context, sourceClientID string, newCha
 				sdk.NewAttribute(vaastypes.AttributeValSetUpdateID, strconv.FormatUint(newChanges.ValsetUpdateId, 10)),
 				sdk.NewAttribute(vaastypes.AttributeNumValidators, strconv.Itoa(len(newChanges.ValidatorUpdates))),
 			),
+		)
+		k.Logger(ctx).Info("applied snapshot resync",
+			"vscID", newChanges.ValsetUpdateId,
+			"numValidators", len(newChanges.ValidatorUpdates),
 		)
 	} else {
 		currentValUpdates := []abci.ValidatorUpdate{}
