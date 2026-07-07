@@ -34,12 +34,12 @@ func noRestart(config *docker.HostConfig) {
 	config.RestartPolicy = docker.RestartPolicy{Name: "no"}
 }
 
-func (s *IntegrationTestSuite) startTSRelayer() {
+func (s *baseTestSuite) startTSRelayer() {
 	s.T().Log("starting ts-relayer container")
 
 	resource, err := s.dkrPool.RunWithOptions(
 		&dockertest.RunOptions{
-			Name:       fmt.Sprintf("%s-%s-ts-relayer", providerChainID, consumerChainID),
+			Name:       fmt.Sprintf("%s-%s-ts-relayer", s.cfg.providerChainID, s.cfg.consumerChainID),
 			Repository: tsRelayerImage,
 			Tag:        tsRelayerImageTag,
 			NetworkID:  s.dkrNet.Network.ID,
@@ -61,7 +61,7 @@ func (s *IntegrationTestSuite) startTSRelayer() {
 	s.verifyTSRelayerConnectivity("consumer", consumerURL)
 }
 
-func (s *IntegrationTestSuite) verifyTSRelayerConnectivity(chainName, rpcURL string) {
+func (s *baseTestSuite) verifyTSRelayerConnectivity(chainName, rpcURL string) {
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 	defer cancel()
 
@@ -104,7 +104,7 @@ func (s *IntegrationTestSuite) verifyTSRelayerConnectivity(chainName, rpcURL str
 	s.Require().Fail("ts-relayer cannot reach %s RPC at %s", chainName, rpcURL)
 }
 
-func (s *IntegrationTestSuite) startTSRelayerRelay() {
+func (s *baseTestSuite) startTSRelayerRelay() {
 	s.T().Log("ts-relayer: starting relay process")
 	ctx, cancel := context.WithTimeout(context.Background(), time.Minute)
 	defer cancel()
@@ -134,7 +134,7 @@ func (s *IntegrationTestSuite) startTSRelayerRelay() {
 	s.T().Log("ts-relayer: relay process started")
 }
 
-func (s *IntegrationTestSuite) stopTSRelayer() {
+func (s *baseTestSuite) stopTSRelayer() {
 	if s.tsRelayerResource != nil {
 		s.T().Log("tearing down ts-relayer...")
 		s.Require().NoError(s.dkrPool.Purge(s.tsRelayerResource))
@@ -142,7 +142,7 @@ func (s *IntegrationTestSuite) stopTSRelayer() {
 	}
 }
 
-func (s *IntegrationTestSuite) executeTSRelayerCommand(ctx context.Context, args []string) []byte {
+func (s *baseTestSuite) executeTSRelayerCommand(ctx context.Context, args []string) []byte {
 	tsRelayerBinary := []string{"/bin/with_keyring", "ibc-v2-ts-relayer"}
 	cmd := append(tsRelayerBinary, args...)
 	exec, err := s.dkrPool.Client.CreateExec(docker.CreateExecOptions{
@@ -184,7 +184,7 @@ func (s *IntegrationTestSuite) executeTSRelayerCommand(ctx context.Context, args
 	return out.Bytes()
 }
 
-func (s *IntegrationTestSuite) tsRelayerAddMnemonic(chainID, mnemonic string) {
+func (s *baseTestSuite) tsRelayerAddMnemonic(chainID, mnemonic string) {
 	s.T().Logf("ts-relayer: adding mnemonic for chain %s", chainID)
 	ctx, cancel := context.WithTimeout(context.Background(), time.Minute)
 	defer cancel()
@@ -195,7 +195,7 @@ func (s *IntegrationTestSuite) tsRelayerAddMnemonic(chainID, mnemonic string) {
 	})
 }
 
-func (s *IntegrationTestSuite) tsRelayerAddGasPrice(chainID, gasPrice string) {
+func (s *baseTestSuite) tsRelayerAddGasPrice(chainID, gasPrice string) {
 	s.T().Logf("ts-relayer: adding gas-price for chain %s", chainID)
 	ctx, cancel := context.WithTimeout(context.Background(), time.Minute)
 	defer cancel()
@@ -207,14 +207,14 @@ func (s *IntegrationTestSuite) tsRelayerAddGasPrice(chainID, gasPrice string) {
 	})
 }
 
-func (s *IntegrationTestSuite) tsRelayerAddPath(ibcVersion string) {
-	s.T().Logf("ts-relayer: adding IBCv%s path between %s and %s", ibcVersion, providerChainID, consumerChainID)
+func (s *baseTestSuite) tsRelayerAddPath(ibcVersion string) {
+	s.T().Logf("ts-relayer: adding IBCv%s path between %s and %s", ibcVersion, s.cfg.providerChainID, s.cfg.consumerChainID)
 	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Minute)
 	defer cancel()
 	s.executeTSRelayerCommand(ctx, []string{
 		"add-path",
-		"-s", providerChainID,
-		"-d", consumerChainID,
+		"-s", s.cfg.providerChainID,
+		"-d", s.cfg.consumerChainID,
 		"--surl", "http://" + s.providerValRes[0].Container.Name[1:] + ":26657",
 		"--durl", "http://" + s.consumerValRes[0].Container.Name[1:] + ":26657",
 		"--st", "cosmos",
@@ -225,7 +225,7 @@ func (s *IntegrationTestSuite) tsRelayerAddPath(ibcVersion string) {
 
 var ansiEscapeRegex = regexp.MustCompile(`\x1b\[[0-9;]*m`)
 
-func (s *IntegrationTestSuite) tsRelayerDumpPaths() []tsRelayerPath {
+func (s *baseTestSuite) tsRelayerDumpPaths() []tsRelayerPath {
 	ctx, cancel := context.WithTimeout(context.Background(), time.Minute)
 	defer cancel()
 	out := s.executeTSRelayerCommand(ctx, []string{"dump-paths"})
@@ -241,7 +241,7 @@ func (s *IntegrationTestSuite) tsRelayerDumpPaths() []tsRelayerPath {
 	return paths
 }
 
-func (s *IntegrationTestSuite) collectChainDiagnostics() string {
+func (s *baseTestSuite) collectChainDiagnostics() string {
 	var sb strings.Builder
 	for _, chain := range []struct {
 		name string
@@ -299,7 +299,7 @@ func (s *IntegrationTestSuite) collectIBCDiagnosticsLog() {
 	}
 }
 
-func (s *IntegrationTestSuite) collectIBCDiagnostics() string {
+func (s *baseTestSuite) collectIBCDiagnostics() string {
 	var sb strings.Builder
 	chains := []struct {
 		name      string

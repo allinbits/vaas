@@ -43,33 +43,10 @@ package e2e
 //   testLivenessRemoval         runs second-to-last, before testGenesisRoundTrip.
 
 import (
-	"encoding/json"
 	"fmt"
 	"strings"
 	"time"
 )
-
-// queryConsumerPhase returns the phase string for a given consumer ID from the
-// provider chain (e.g. "CONSUMER_PHASE_LAUNCHED").
-func (s *IntegrationTestSuite) queryConsumerPhase(consumerID string) string {
-	stdout, _, err := s.dockerExec(s.providerValRes[0].Container.ID, []string{
-		providerBinary, "query", "provider", "consumer-chain", consumerID,
-		"--home", providerHomePath,
-		"--output", "json",
-	})
-	if err != nil {
-		s.T().Logf("queryConsumerPhase(%s): exec error: %v", consumerID, err)
-		return ""
-	}
-	var res struct {
-		Phase string `json:"phase"`
-	}
-	if err := json.Unmarshal(stdout.Bytes(), &res); err != nil {
-		s.T().Logf("queryConsumerPhase(%s): decode error: %v (raw: %s)", consumerID, err, stdout.String())
-		return ""
-	}
-	return res.Phase
-}
 
 // testLivenessTransientOutage is an end-to-end smoke that a brief consumer
 // outage (shorter than the liveness grace period) does not stop the consumer,
@@ -148,7 +125,7 @@ func (s *IntegrationTestSuite) testLivenessTransientOutage() {
 		s.Require().NoError(err, "failed to unpause consumer container")
 
 		// The consumer must still be LAUNCHED after the transient outage.
-		phase := s.queryConsumerPhase(consumerID)
+		phase := s.queryProviderConsumerPhase(consumerID)
 		s.Require().Equalf("CONSUMER_PHASE_LAUNCHED", phase,
 			"consumer %s must remain LAUNCHED after a transient outage", consumerID)
 
@@ -192,7 +169,7 @@ func (s *IntegrationTestSuite) testLivenessRemoval() {
 		const consumerID = "0"
 
 		// Precondition: consumer must still be LAUNCHED.
-		phase := s.queryConsumerPhase(consumerID)
+		phase := s.queryProviderConsumerPhase(consumerID)
 		s.Require().Equalf("CONSUMER_PHASE_LAUNCHED", phase,
 			"consumer %s must be LAUNCHED before the liveness removal test", consumerID)
 
@@ -216,14 +193,14 @@ func (s *IntegrationTestSuite) testLivenessRemoval() {
 		// Wait for the provider to reflect the STOPPED phase.
 		s.T().Log("waiting for provider to move consumer to STOPPED or DELETED...")
 		s.Require().Eventuallyf(func() bool {
-			p := s.queryConsumerPhase(consumerID)
+			p := s.queryProviderConsumerPhase(consumerID)
 			s.T().Logf("consumer %s phase: %s", consumerID, p)
 			return p == "CONSUMER_PHASE_STOPPED" || p == "CONSUMER_PHASE_DELETED"
 		}, 2*time.Minute, 5*time.Second,
 			"provider did not transition consumer %s to STOPPED/DELETED after remove-consumer",
 			consumerID)
 
-		finalPhase := s.queryConsumerPhase(consumerID)
+		finalPhase := s.queryProviderConsumerPhase(consumerID)
 		s.T().Logf("consumer %s terminal phase: %s", consumerID, finalPhase)
 		s.Require().True(
 			finalPhase == "CONSUMER_PHASE_STOPPED" || finalPhase == "CONSUMER_PHASE_DELETED",

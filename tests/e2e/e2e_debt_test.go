@@ -29,7 +29,7 @@ func (s *IntegrationTestSuite) queryConsumerFeePoolAddress(consumerID string) st
 
 // consumerUserBech32 returns the bech32 address of the consumer's "user"
 // account. It queries the key ring inside the consumer container.
-func (s *IntegrationTestSuite) consumerUserBech32() string {
+func (s *baseTestSuite) consumerUserBech32() string {
 	stdout, _, err := s.dockerExec(s.consumerValRes[0].Container.ID, []string{
 		consumerBinary, "keys", "show", "user", "-a",
 		"--home", consumerHomePath,
@@ -43,13 +43,13 @@ func (s *IntegrationTestSuite) consumerUserBech32() string {
 // consumer in simulate mode. The simulation traverses the ante chain, so the
 // debt gate fires here just like it would for a real broadcast. Returns the
 // stderr output so callers can inspect rejection reasons.
-func (s *IntegrationTestSuite) consumerBankSendDryRun() (string, error) {
+func (s *baseTestSuite) consumerBankSendDryRun() (string, error) {
 	user := s.consumerUserBech32()
 	_, stderr, err := s.dockerExec(s.consumerValRes[0].Container.ID, []string{
 		consumerBinary, "tx", "bank", "send", user, user, "1" + bondDenom,
 		"--home", consumerHomePath,
 		"--keyring-backend", "test",
-		"--chain-id", consumerChainID,
+		"--chain-id", s.cfg.consumerChainID,
 		"--fees", "1000" + bondDenom,
 		"--dry-run",
 		"-y",
@@ -84,14 +84,14 @@ func (s *IntegrationTestSuite) providerFundAddress(addr, amount string) {
 
 // providerFundConsumerFeePool deposits `amount` into the named consumer's
 // fee pool via MsgFundConsumerFeePool, signed by val.
-func (s *IntegrationTestSuite) providerFundConsumerFeePool(consumerID, amount string) {
+func (s *baseTestSuite) providerFundConsumerFeePool(consumerID, amount string) {
 	stdout, stderr, err := s.dockerExec(s.providerValRes[0].Container.ID, []string{
 		providerBinary, "tx", "provider", "fund-consumer-fee-pool",
 		consumerID, amount,
 		"--from", "val",
 		"--home", providerHomePath,
 		"--keyring-backend", "test",
-		"--chain-id", providerChainID,
+		"--chain-id", s.cfg.providerChainID,
 		"--fees", "10000" + bondDenom,
 		"-y",
 		"-o", "json",
@@ -107,7 +107,7 @@ func (s *IntegrationTestSuite) providerFundConsumerFeePool(consumerID, amount st
 // This surfaces handler-level rejections (e.g. the min-deposit floor) right at
 // the call site with the on-chain raw_log, instead of as a distant downstream
 // timeout.
-func (s *IntegrationTestSuite) requireTxCommitted(broadcastOut []byte) {
+func (s *baseTestSuite) requireTxCommitted(broadcastOut []byte) {
 	var bres struct {
 		TxHash string `json:"txhash"`
 		Code   int    `json:"code"`
