@@ -122,7 +122,7 @@ func (am AppModule) RegisterServices(cfg module.Configurator) {
 }
 
 // InitGenesis performs genesis initialization for the provider module. It returns validator updates
-// by selecting the first MaxProviderConsensusValidators from the staking module's validator set.
+// built from the full staking bonded validator set.
 // Note: This method along with ValidateGenesis satisfies the CCV spec:
 // https://github.com/cosmos/ibc/blob/main/spec/app/ics-028-cross-chain-validation/methods.md#ccv-pcf-initg1
 func (am AppModule) InitGenesis(ctx sdk.Context, cdc codec.JSONCodec, data json.RawMessage) []abci.ValidatorUpdate {

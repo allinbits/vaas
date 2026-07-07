@@ -228,8 +228,7 @@ func (k Keeper) InitGenesis(ctx sdk.Context, genState *types.GenesisState) []abc
 }
 
 // InitGenesisValUpdates returns the genesis validator set updates
-// for the provider module by selecting the first MaxProviderConsensusValidators
-// from the staking module's validator set.
+// for the provider module from the full staking bonded validator set.
 func (k Keeper) InitGenesisValUpdates(ctx sdk.Context) []abci.ValidatorUpdate {
 	// get the staking validator set
 	valSet, err := k.stakingKeeper.GetBondedValidatorsByPower(ctx)
@@ -237,30 +236,23 @@ func (k Keeper) InitGenesisValUpdates(ctx sdk.Context) []abci.ValidatorUpdate {
 		panic(fmt.Errorf("retrieving validator set: %w", err))
 	}
 
-	// restrict the set to the first MaxProviderConsensusValidators
-	maxVals := k.GetMaxProviderConsensusValidators(ctx)
-	if int64(len(valSet)) > maxVals {
-		k.Logger(ctx).Info(fmt.Sprintf("reducing validator set from %d to %d", len(valSet), maxVals))
-		valSet = valSet[:maxVals]
-	}
-
-	reducedValSet := make([]types.ConsensusValidator, len(valSet))
+	consensusValSet := make([]types.ConsensusValidator, len(valSet))
 	for i, val := range valSet {
 		consensusVal, err := k.CreateProviderConsensusValidator(ctx, val)
 		if err != nil {
 			k.Logger(ctx).Error(fmt.Sprintf("failed to create provider consensus validator: %v", err))
 			continue
 		}
-		reducedValSet[i] = consensusVal
+		consensusValSet[i] = consensusVal
 	}
 
-	err = k.SetLastProviderConsensusValSet(ctx, reducedValSet)
+	err = k.SetLastProviderConsensusValSet(ctx, consensusValSet)
 	if err != nil {
 		panic(fmt.Errorf("setting the provider consensus validator set: %w", err))
 	}
 
-	valUpdates := make([]abci.ValidatorUpdate, len(reducedValSet))
-	for i, val := range reducedValSet {
+	valUpdates := make([]abci.ValidatorUpdate, len(consensusValSet))
+	for i, val := range consensusValSet {
 		valUpdates[i] = abci.ValidatorUpdate{
 			PubKey: *val.PublicKey,
 			Power:  val.Power,

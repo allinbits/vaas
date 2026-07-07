@@ -74,7 +74,6 @@ func (k Keeper) EndBlockVSU(ctx sdk.Context) ([]abci.ValidatorUpdate, error) {
 // ProviderValidatorUpdates returns changes in the provider consensus validator set
 // from the last block to the current one.
 // It retrieves the bonded validators from the staking module and creates a `ConsumerValidator` object for each validator.
-// The maximum number of validators is determined by the `maxValidators` parameter.
 // The function returns the difference between the current validator set and the next validator set as a list of `abci.ValidatorUpdate` objects.
 func (k Keeper) ProviderValidatorUpdates(ctx sdk.Context) ([]abci.ValidatorUpdate, error) {
 	// get the bonded validators from the staking module
@@ -90,10 +89,7 @@ func (k Keeper) ProviderValidatorUpdates(ctx sdk.Context) ([]abci.ValidatorUpdat
 	}
 
 	nextValidators := []providertypes.ConsensusValidator{}
-	maxValidators := min(
-		// avoid out of range errors by bounding the max validators to the number of bonded validators
-		k.GetMaxProviderConsensusValidators(ctx), int64(len(bondedValidators)))
-	for _, val := range bondedValidators[:maxValidators] {
+	for _, val := range bondedValidators {
 		nextValidator, err := k.CreateProviderConsensusValidator(ctx, val)
 		if err != nil {
 			return []abci.ValidatorUpdate{},
