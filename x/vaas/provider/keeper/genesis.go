@@ -240,8 +240,7 @@ func (k Keeper) InitGenesisValUpdates(ctx sdk.Context) []abci.ValidatorUpdate {
 	for i, val := range valSet {
 		consensusVal, err := k.CreateProviderConsensusValidator(ctx, val)
 		if err != nil {
-			k.Logger(ctx).Error(fmt.Sprintf("failed to create provider consensus validator: %v", err))
-			continue
+			panic(fmt.Errorf("creating provider consensus validator: %w", err))
 		}
 		consensusValSet[i] = consensusVal
 	}
