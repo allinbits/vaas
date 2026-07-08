@@ -787,10 +787,7 @@ func TestSimulatedAssignmentsAndUpdateApplication(t *testing.T) {
 				})
 			}
 
-			nextValidators, err := k.FilterValidators(ctx, CONSUMERID, bondedValidators,
-				func(providerAddr types.ProviderConsAddress) (bool, error) {
-					return true, nil
-				})
+			nextValidators, err := k.CreateConsumerValidators(ctx, CONSUMERID, bondedValidators)
 			require.NoError(t, err)
 			valSet, err := k.GetConsumerValSet(ctx, CONSUMERID)
 			require.NoError(t, err)

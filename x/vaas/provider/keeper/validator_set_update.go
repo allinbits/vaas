@@ -93,32 +93,20 @@ func (k Keeper) CreateConsumerValidator(ctx sdk.Context, consumerId uint64, vali
 	}, nil
 }
 
-// FilterValidators filters the provided `bondedValidators` according to `predicate` and returns
-// the filtered set.
-func (k Keeper) FilterValidators(
+// CreateConsumerValidators creates a consumer validator for `consumerId` from each
+// of the provided `bondedValidators`.
+func (k Keeper) CreateConsumerValidators(
 	ctx sdk.Context,
 	consumerId uint64,
 	bondedValidators []stakingtypes.Validator,
-	predicate func(providerAddr types.ProviderConsAddress) (bool, error),
 ) ([]types.ConsensusValidator, error) {
 	var nextValidators []types.ConsensusValidator
 	for _, val := range bondedValidators {
-		consAddr, err := val.GetConsAddr()
-		if err != nil {
-			continue
-		}
-
-		ok, err := predicate(types.NewProviderConsAddress(consAddr))
+		nextValidator, err := k.CreateConsumerValidator(ctx, consumerId, val)
 		if err != nil {
 			return nextValidators, err
 		}
-		if ok {
-			nextValidator, err := k.CreateConsumerValidator(ctx, consumerId, val)
-			if err != nil {
-				return nextValidators, err
-			}
-			nextValidators = append(nextValidators, nextValidator)
-		}
+		nextValidators = append(nextValidators, nextValidator)
 	}
 
 	return nextValidators, nil
@@ -143,11 +131,7 @@ func (k Keeper) ComputeConsumerNextValSet(
 	consumerId uint64,
 	currentConsumerValSet []types.ConsensusValidator,
 ) ([]abci.ValidatorUpdate, error) {
-	// All validators validate all consumers (no opt-in/out, no power shaping)
-	nextValidators, err := k.FilterValidators(ctx, consumerId, bondedValidators,
-		func(providerAddr types.ProviderConsAddress) (bool, error) {
-			return true, nil
-		})
+	nextValidators, err := k.CreateConsumerValidators(ctx, consumerId, bondedValidators)
 	if err != nil {
 		return []abci.ValidatorUpdate{},
 			fmt.Errorf("computing next validators, consumerId(%d): %w", consumerId, err)
