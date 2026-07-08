@@ -8,26 +8,24 @@ It complements [consumer-lifecycle.md](consumer-lifecycle.md), which covers the 
 `REGISTERED -> INITIALIZED -> LAUNCHED -> STOPPED -> DELETED` progression. This document
 zooms in on what keeps a `LAUNCHED` consumer healthy and what happens when it is not.
 
-## Why this exists
+## Design rationale
 
 The provider sends a Validator Set Change (VSC) packet to each launched consumer every
-epoch. Earlier, a single failure to deliver one of those packets -- an IBC packet timeout,
-an error acknowledgement, or a local send failure -- immediately and irreversibly moved the
-consumer to `STOPPED`. Two facts made that too severe:
+epoch. Two facts about that delivery shape the design:
 
-1. **The packet timeout is effectively 24h, not the configured value.** VSC packets are
-   sent with a timeout of `min(VaasTimeoutPeriod, MaxTimeoutDelta)`, and IBC v2 hard-caps
-   `MaxTimeoutDelta` at 24h. So a 24h outage of a single relayer or RPC was enough to
-   permanently retire a consumer.
-2. **VSC packets are diffs.** Each packet carries only the validators that changed since
-   the previous one, applied on top of the consumer's current set. If a packet is lost, its
-   change is never re-sent on its own -- so dropping the eager removal would, by itself,
-   leave a departed validator stuck in the consumer's active set (a validator that could
-   later unbond on the provider and validate the consumer with no slashable stake).
+1. **The packet timeout is effectively 24h.** VSC packets are sent with a timeout of
+   `min(VaasTimeoutPeriod, MaxTimeoutDelta)`, and IBC v2 hard-caps `MaxTimeoutDelta` at 24h.
+   A packet timeout is therefore a weak signal -- a 24h outage of a single relayer or RPC
+   produces one -- so removing a consumer must not hinge on a single delivery failure.
+2. **VSC packets are diffs.** Each packet carries only the validators that changed since the
+   previous one, applied on top of the consumer's current set. A lost diff is never re-sent
+   on its own, so a departed validator could otherwise linger in the consumer's active set --
+   able to unbond on the provider and validate the consumer with no slashable stake.
 
-The model below replaces the per-packet kill switch with a provider-local liveness clock,
-pairs it with a self-healing resync so lost diffs cannot strand a stale validator, and adds
-a consumer-side safe mode for the window in which a consumer's set may be out of date.
+The model has three parts that answer these facts: a provider-local liveness clock that
+decides removal on the provider's own block time rather than on per-packet delivery; a
+self-healing snapshot resync so a lost diff cannot strand a stale validator; and a
+consumer-side safe mode for the window in which a consumer's set may be out of date.
 
 ## 1. Liveness clock and removal sweep
 
@@ -86,23 +84,22 @@ The wire format gains only a single boolean (`is_snapshot`); the validator-updat
 reused (a diff when false, the full set when true). The global VSC id counter and the
 consumer's out-of-order dedup are unchanged.
 
-**Guarantee:** a transient outage no longer corrupts the consumer's set. As soon as
+**Guarantee:** a transient outage does not corrupt the consumer's set. As soon as
 connectivity returns, the next snapshot heals it -- including removing any validator that
 left the provider during the outage.
 
-## 3. IBC callbacks no longer remove
+## 3. IBC callbacks are log-only
 
-With the sweep as the single authority for removing unresponsive consumers, the IBC
-callbacks that used to remove are demoted to logging:
+The sweep is the single authority for removing an unresponsive consumer, so the IBC
+delivery-failure callbacks only log and return:
 
 - **Packet timeout** (`OnTimeoutPacketV2`): logs and returns; the next epoch retries.
 - **Error acknowledgement**: logs and returns; the consumer keeps its grace budget.
 - **Local send failure** (including an expired client): logs, leaves the pending packets
   queued, and returns; the next epoch retries.
 
-This also closes a latent gap: previously an expired client left a consumer `LAUNCHED`
-forever with no removal path. Now the sweep removes it once its grace elapses, because an
-expired client produces no acks.
+This keeps an expired client from stranding a consumer: an expired client produces no acks,
+so the sweep removes such a consumer once its grace elapses.
 
 ## 4. Consumer safe mode
 
@@ -117,7 +114,7 @@ the provider's sweep would remove it.
 While stale (or while flagged in debt for unpaid fees), the consumer's transaction admission
 gate restricts incoming transactions to `/ibc.core.*` and `/cosmos.gov.*` messages only,
 rejecting value-bearing application transactions. This bounds the damage of a possibly-stale
-set: the consumer refuses to do value-bearing work under validators it can no longer trust,
+set: the consumer refuses to do value-bearing work under a validator set it cannot trust,
 while keeping the recovery path open -- `/ibc.core.*` still admits the incoming VSC packets
 that let the consumer resync, and `/cosmos.gov.*` keeps governance available. A freshly
 launched consumer is never treated as stale before its first VSC.
@@ -133,12 +130,10 @@ launched consumer is never treated as stale before its first VSC.
 
 `VaasTimeoutPeriod` is validated to `(0, 24h]` at both the provider module param boundary
 and the per-consumer initialization-parameter boundary, so the configured value is honest
-rather than silently capped. The default was lowered from four weeks (which collapsed to 24h
-under the cap) to one epoch-scale hour: an undelivered packet is superseded by the next
-epoch's packet and a late one is dropped by the consumer's dedup, so a long timeout buys
-nothing. No lower floor is imposed: a persistently unreachable consumer is handled by the
-liveness sweep, so a short timeout is not dangerous -- and a floor would only prevent
-exercising the timeout path in tests.
+rather than silently capped. The default is one epoch-scale hour: an undelivered packet is
+superseded by the next epoch's packet and a late one is dropped by the consumer's dedup, so
+a long timeout buys nothing. No lower floor is imposed either: a persistently unreachable
+consumer is handled by the liveness sweep, so a short timeout is not dangerous.
 
 The consumer `UnbondingPeriod` is bounded against the provider's at `MsgCreateConsumer` /
 `MsgUpdateConsumer` time (it must not exceed the provider's), so a consumer cannot be

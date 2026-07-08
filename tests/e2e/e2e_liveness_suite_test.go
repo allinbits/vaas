@@ -37,7 +37,7 @@ package e2e
 //   4. testForcedTimeoutSnapshotResync - relayer paused > the short (20s) provider
 //                                vaas_timeout while the consumer keeps producing
 //                                blocks, so a VSC packet genuinely times out; the
-//                                consumer stays LAUNCHED (demoted OnTimeout) and
+//                                consumer stays LAUNCHED (log-only OnTimeout) and
 //                                heals via a snapshot resync (asserted via the
 //                                provider timeout log and the consumer's
 //                                snapshot-resync event).
@@ -134,8 +134,7 @@ func (s *LivenessIntegrationTestSuite) SetupSuite() {
 					// Short VSC packet timeout so testForcedTimeoutSnapshotResync can
 					// make a packet actually time out within a CI run (the relayer is
 					// paused while the consumer keeps producing blocks past this
-					// deadline). Now possible since the MinVAASTimeoutPeriod floor was
-					// dropped. Timeouts are log-only, so this does not perturb the
+					// deadline). Timeouts are log-only, so this does not perturb the
 					// other liveness tests.
 					params["vaas_timeout_period"] = "20s"
 					// Shrink the liveness grace fraction so the grace period
@@ -430,7 +429,7 @@ func (s *LivenessIntegrationTestSuite) testLivenessQuery() {
 
 // testForcedTimeoutSnapshotResync proves the two behaviours the main suite's
 // transient-outage smoke cannot: that a genuinely timed-out VSC packet does NOT
-// remove the consumer (the demoted OnTimeout), and that a consumer that fell
+// remove the consumer (the log-only OnTimeout), and that a consumer that fell
 // behind heals via a snapshot resync (not a resent diff).
 //
 // A real IBC timeout requires the packet to expire on the *consumer's* clock
@@ -441,7 +440,7 @@ func (s *LivenessIntegrationTestSuite) testLivenessQuery() {
 // (the provider's OnTimeout fires, log-only) and delivers a snapshot to the
 // now-behind consumer.
 func (s *LivenessIntegrationTestSuite) testForcedTimeoutSnapshotResync() {
-	s.Run("forced timeout: demoted OnTimeout keeps consumer LAUNCHED; behind consumer heals via snapshot", func() {
+	s.Run("forced timeout: log-only OnTimeout keeps consumer LAUNCHED; behind consumer heals via snapshot", func() {
 		const consumerID = "0"
 
 		s.Require().Equalf("CONSUMER_PHASE_LAUNCHED", s.queryProviderConsumerPhase(consumerID),
@@ -458,7 +457,7 @@ func (s *LivenessIntegrationTestSuite) testForcedTimeoutSnapshotResync() {
 		s.Require().NoError(s.dkrPool.Client.UnpauseContainer(s.tsRelayerResource.Container.ID),
 			"failed to unpause relayer container")
 
-		// (a) The demoted OnTimeout must not have removed the consumer.
+		// (a) The log-only OnTimeout must not have removed the consumer.
 		s.Require().Eventuallyf(func() bool {
 			return s.queryProviderConsumerPhase(consumerID) == "CONSUMER_PHASE_LAUNCHED"
 		}, 30*time.Second, 3*time.Second,
@@ -466,12 +465,12 @@ func (s *LivenessIntegrationTestSuite) testForcedTimeoutSnapshotResync() {
 		s.T().Log("consumer remained LAUNCHED through the timeouts")
 
 		// (b) Prove a real timeout actually fired -- otherwise (a) is vacuous.
-		// The provider logs the demoted OnTimeout handler.
+		// The provider logs the log-only OnTimeout handler.
 		s.Require().Eventuallyf(func() bool {
 			return strings.Contains(s.providerLogs(), "packet timeout, retrying next epoch")
 		}, 30*time.Second, 3*time.Second,
 			"provider never logged a VSC packet timeout; the timeout path was not exercised")
-		s.T().Log("provider processed a demoted VSC timeout (OnTimeout is log-only)")
+		s.T().Log("provider processed a VSC timeout (OnTimeout is log-only)")
 
 		// (c) Prove the behind consumer healed via a SNAPSHOT (not a resent diff):
 		// the consumer logs "applied snapshot resync" (and emits the matching

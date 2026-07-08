@@ -33,9 +33,9 @@ package e2e
 // changes, then verify the consumer stays LAUNCHED and its VP re-converges after
 // recovery. This is an end-to-end smoke of recovery-after-outage; it does not by
 // itself prove *how* the consumer re-converged (the un-timed-out packet could be
-// resent). That the demoted timeout no longer removes the consumer and that a
-// behind consumer heals via a full snapshot are proven deterministically by unit
-// tests (TestTimeoutDoesNotRemove, the TestSnapshot* set, TestSnapshotResyncEmitsEvent)
+// resent). That a timeout does not remove the consumer and that a behind consumer
+// heals via a full snapshot are proven deterministically by unit tests
+// (TestTimeoutDoesNotRemove, the TestSnapshot* set, TestSnapshotResyncEmitsEvent)
 // and end-to-end by LivenessIntegrationTestSuite's forced-timeout snapshot test.
 //
 // Sequencing in TestVAAS:
@@ -53,7 +53,7 @@ import (
 // and that after recovery the consumer's consensus VP re-converges with the
 // provider's updated VP. It does not assert the *mechanism* of re-convergence
 // (the un-timed-out VSC packet could be resent rather than replaced by a
-// snapshot); the snapshot path and the demoted timeout are covered by unit tests
+// snapshot); the snapshot path and the log-only timeout are covered by unit tests
 // and by LivenessIntegrationTestSuite's forced-timeout snapshot test.
 func (s *IntegrationTestSuite) testLivenessTransientOutage() {
 	s.Run("liveness transient outage: consumer stays LAUNCHED and re-converges", func() {
@@ -150,9 +150,9 @@ func (s *IntegrationTestSuite) testLivenessTransientOutage() {
 // testLivenessRemoval verifies the LAUNCHED -> STOPPED lifecycle when a
 // consumer is explicitly removed via MsgRemoveConsumer.
 //
-// Issue #36 context: the redesign makes explicit removal (and the liveness
-// sweep) the only way to stop a consumer.  Timed-out VSC packets no longer
-// trigger removal.  This test exercises the explicit removal path.
+// Explicit governance removal and the liveness sweep are the only ways to stop a
+// consumer; a timed-out VSC packet does not. This test exercises the explicit
+// removal path.
 //
 // Ordering: this test must run after all other sub-tests that depend on
 // consumer "0" being LAUNCHED, and before testGenesisRoundTrip (which still

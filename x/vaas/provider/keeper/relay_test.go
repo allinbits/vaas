@@ -77,7 +77,7 @@ func TestOnTimeoutPacketV2(t *testing.T) {
 	phase := providerKeeper.GetConsumerPhase(ctx, consumerId)
 	require.Equal(t, providertypes.CONSUMER_PHASE_LAUNCHED, phase)
 
-	// Timeout is now log-only; liveness sweep owns removal
+	// Timeout is log-only; liveness sweep owns removal
 	err := providerKeeper.OnTimeoutPacketV2(ctx, clientId)
 	require.NoError(t, err)
 
