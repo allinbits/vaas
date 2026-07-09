@@ -2,7 +2,6 @@ package keeper
 
 import (
 	"fmt"
-	"sort"
 
 	"github.com/allinbits/vaas/x/vaas/provider/types"
 	vaastypes "github.com/allinbits/vaas/x/vaas/types"
@@ -94,64 +93,20 @@ func (k Keeper) CreateConsumerValidator(ctx sdk.Context, consumerId uint64, vali
 	}, nil
 }
 
-// FilterValidators filters the provided `bondedValidators` according to `predicate` and returns
-// the filtered set.
-func (k Keeper) FilterValidators(
+// CreateConsumerValidators creates a consumer validator for `consumerId` from each
+// of the provided `bondedValidators`.
+func (k Keeper) CreateConsumerValidators(
 	ctx sdk.Context,
 	consumerId uint64,
 	bondedValidators []stakingtypes.Validator,
-	predicate func(providerAddr types.ProviderConsAddress) (bool, error),
 ) ([]types.ConsensusValidator, error) {
 	var nextValidators []types.ConsensusValidator
 	for _, val := range bondedValidators {
-		consAddr, err := val.GetConsAddr()
-		if err != nil {
-			continue
-		}
-
-		ok, err := predicate(types.NewProviderConsAddress(consAddr))
+		nextValidator, err := k.CreateConsumerValidator(ctx, consumerId, val)
 		if err != nil {
 			return nextValidators, err
 		}
-		if ok {
-			nextValidator, err := k.CreateConsumerValidator(ctx, consumerId, val)
-			if err != nil {
-				return nextValidators, err
-			}
-			nextValidators = append(nextValidators, nextValidator)
-		}
-	}
-
-	return nextValidators, nil
-}
-
-// ComputeNextValidators computes the validators for the upcoming epoch based on the currently `bondedValidators`.
-// PSS (Partial Set Security) has been removed - all validators validate all consumers.
-func (k Keeper) ComputeNextValidators(
-	ctx sdk.Context,
-	consumerId uint64,
-	bondedValidators []stakingtypes.Validator,
-) ([]types.ConsensusValidator, error) {
-	// sort the bonded validators by number of staked tokens in descending order
-	sort.Slice(bondedValidators, func(i, j int) bool {
-		return bondedValidators[i].GetBondedTokens().GT(bondedValidators[j].GetBondedTokens())
-	})
-
-	// Only consider the first `MaxProviderConsensusValidators` validators
-	// since those are the ones that participate in consensus on the provider
-	maxProviderConsensusVals := k.GetMaxProviderConsensusValidators(ctx)
-	if len(bondedValidators) > int(maxProviderConsensusVals) {
-		bondedValidators = bondedValidators[:maxProviderConsensusVals]
-	}
-
-	// All validators validate all consumers (no opt-in/out filtering)
-	nextValidators, err := k.FilterValidators(ctx, consumerId, bondedValidators,
-		func(providerAddr types.ProviderConsAddress) (bool, error) {
-			// Always return true - all validators validate all consumers
-			return true, nil
-		})
-	if err != nil {
-		return []types.ConsensusValidator{}, err
+		nextValidators = append(nextValidators, nextValidator)
 	}
 
 	return nextValidators, nil
@@ -167,24 +122,16 @@ func (k Keeper) GetLastBondedValidators(ctx sdk.Context) ([]stakingtypes.Validat
 	return vaastypes.GetLastBondedValidatorsUtil(ctx, k.stakingKeeper, maxVals)
 }
 
-// GetLastProviderConsensusActiveValidators returns the `MaxProviderConsensusValidators` many validators with the largest powers
-// from the last bonded validators in the staking module.
-func (k Keeper) GetLastProviderConsensusActiveValidators(ctx sdk.Context) ([]stakingtypes.Validator, error) {
-	maxVals := k.GetMaxProviderConsensusValidators(ctx)
-	return vaastypes.GetLastBondedValidatorsUtil(ctx, k.stakingKeeper, uint32(maxVals))
-}
-
 // ComputeConsumerNextValSet computes the consumer next validator set and returns
 // the validator updates to be sent to the consumer chain.
-// PSS (Partial Set Security) has been removed - all validators validate all consumers.
+// Every active provider validator validates every consumer.
 func (k Keeper) ComputeConsumerNextValSet(
 	ctx sdk.Context,
 	bondedValidators []stakingtypes.Validator,
 	consumerId uint64,
 	currentConsumerValSet []types.ConsensusValidator,
 ) ([]abci.ValidatorUpdate, error) {
-	// All validators validate all consumers (no opt-in/out, no power shaping)
-	nextValidators, err := k.ComputeNextValidators(ctx, consumerId, bondedValidators)
+	nextValidators, err := k.CreateConsumerValidators(ctx, consumerId, bondedValidators)
 	if err != nil {
 		return []abci.ValidatorUpdate{},
 			fmt.Errorf("computing next validators, consumerId(%d): %w", consumerId, err)

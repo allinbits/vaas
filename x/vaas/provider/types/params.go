@@ -25,10 +25,6 @@ const (
 	// forcing int64 as the Params KeyTable expects an int64 and not int.
 	DefaultBlocksPerEpoch = int64(600)
 
-	// DefaultMaxProviderConsensusValidators is the default maximum number of validators that will
-	// be passed on from the staking module to the consensus engine on the provider.
-	DefaultMaxProviderConsensusValidators = 180
-
 	// DefaultFeesPerBlockDenom is the denom charged to each consumer chain per
 	// block. It is not a module parameter: it is wired into the keeper at app
 	// construction (Keeper.feeDenom) and cannot be changed without a binary
@@ -60,17 +56,15 @@ func NewParams(
 	trustingPeriodFraction string,
 	vaasTimeoutPeriod time.Duration,
 	blocksPerEpoch int64,
-	maxProviderConsensusValidators int64,
 	feesPerBlockAmount math.Int,
 	minDepositBlocks uint64,
 ) Params {
 	return Params{
-		TrustingPeriodFraction:         trustingPeriodFraction,
-		VaasTimeoutPeriod:              vaasTimeoutPeriod,
-		BlocksPerEpoch:                 blocksPerEpoch,
-		MaxProviderConsensusValidators: maxProviderConsensusValidators,
-		FeesPerBlockAmount:             feesPerBlockAmount,
-		MinDepositBlocks:               minDepositBlocks,
+		TrustingPeriodFraction: trustingPeriodFraction,
+		VaasTimeoutPeriod:      vaasTimeoutPeriod,
+		BlocksPerEpoch:         blocksPerEpoch,
+		FeesPerBlockAmount:     feesPerBlockAmount,
+		MinDepositBlocks:       minDepositBlocks,
 	}
 }
 
@@ -79,7 +73,6 @@ func DefaultParams() Params {
 		DefaultTrustingPeriodFraction,
 		vaastypes.DefaultVAASTimeoutPeriod,
 		DefaultBlocksPerEpoch,
-		DefaultMaxProviderConsensusValidators,
 		math.NewInt(DefaultFeesPerBlockAmount),
 		DefaultMinDepositBlocks,
 	)
@@ -160,9 +153,6 @@ func (p Params) Validate() error {
 	}
 	if err := vaastypes.ValidatePositiveInt64(p.BlocksPerEpoch); err != nil {
 		return fmt.Errorf("blocks per epoch is invalid: %s", err)
-	}
-	if err := vaastypes.ValidatePositiveInt64(p.MaxProviderConsensusValidators); err != nil {
-		return fmt.Errorf("max provider consensus validators is invalid: %s", err)
 	}
 	if err := validateFeesPerBlockAmount(p.FeesPerBlockAmount); err != nil {
 		return err

@@ -50,8 +50,8 @@ for users, balances, or contracts.
 ## Consequences
 
 **For chain operators**
-- The chain commits to the provider's security guarantees and accepts the
-  provider's MaxProviderConsensusValidators cap.
+- The chain commits to the provider's security guarantees and receives the
+  full active provider validator set, with no cap.
 - Local governance, fees, and application modules continue unchanged.
 - The chain must coordinate the transition height in advance with the
   provider (via `MsgCreateConsumer` lifecycle, off-chain coordination, or

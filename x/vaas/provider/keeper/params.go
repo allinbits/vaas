@@ -53,13 +53,6 @@ func (k Keeper) GetBlocksPerEpoch(ctx context.Context) int64 {
 	return params.BlocksPerEpoch
 }
 
-// GetMaxProviderConsensusValidators returns the number of validators that will be passed on from the staking module
-// to the consensus engine on the provider
-func (k Keeper) GetMaxProviderConsensusValidators(ctx context.Context) int64 {
-	params := k.GetParams(ctx)
-	return params.MaxProviderConsensusValidators
-}
-
 // GetFeesPerBlock returns the fees that each consumer chain must pay per block.
 // The amount is governed via Params.FeesPerBlockAmount while the denom is a
 // keeper-wired constant and cannot be changed without a binary upgrade.

@@ -21,8 +21,7 @@ work-in-progress.
 ## Guiding Principles
 
 1. **All validators validate everything.** There is no per-consumer
-   selection. The active provider set, capped at
-   `MaxProviderConsensusValidators`, is the consumer set.
+   selection. The full active provider set is the consumer set.
 2. **No cross-chain economics inside the protocol.** No reward distribution,
    no per-consumer commission rates, no slash throttling, no slash meters.
    Consumers stand up their own fee/reward models; the protocol carries only
