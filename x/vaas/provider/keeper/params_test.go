@@ -30,7 +30,6 @@ func TestParams(t *testing.T) {
 		"0.5",
 		7*24*time.Hour,
 		600,
-		10,
 		math.NewInt(50),
 		providertypes.DefaultMinDepositBlocks,
 	)

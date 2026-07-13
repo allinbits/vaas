@@ -81,7 +81,7 @@ The rewrite simplifies the interchain security modules by removing several featu
 - `QueueVSCPackets`: Removed activeValidators parameter
 
 **validator_set_update.go:**
-- `ComputeNextValidators`: Simplified - all validators validate all consumers, no power shaping
+- Consumer validator set: the full provider bonded set, no power shaping
 - `ComputeConsumerNextValSet`: Removed PSS logic and power shaping parameters
 
 **consumer_lifecycle.go:**
@@ -193,7 +193,7 @@ make test-e2e   # Docker-based e2e (requires Docker)
 ## Migration Notes
 
 1. **No opt-in/out**: All validators on the provider automatically validate all consumer chains
-2. **No power shaping**: Consumer chains get the full provider validator set (up to MaxProviderConsensusValidators)
+2. **No power shaping**: Consumer chains get the full provider validator set
 3. **Per-consumer infraction params**: Each consumer can have custom slash/jail parameters
 4. **No rewards**: Consumer chains don't distribute rewards to the provider
 5. **No slash packets**: Consumer chains log infractions but don't send slash packets to provider

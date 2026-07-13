@@ -163,9 +163,8 @@ func TestInitGenesisRestoresPerConsumerStateAndDerivedQueues(t *testing.T) {
 	pk, ctx, ctrl, mocks := testkeeper.GetProviderKeeperAndCtx(t, testkeeper.NewInMemKeeperParams(t))
 	defer ctrl.Finish()
 
-	// InitGenesis calls InitGenesisValUpdates which queries the bonded validator set.
-	// MaxValidators is not called (GetMaxProviderConsensusValidators reads from keeper params),
-	// so we only expect GetBondedValidatorsByPower once.
+	// InitGenesis calls InitGenesisValUpdates, which builds validator updates
+	// from the full bonded validator set, so we only expect GetBondedValidatorsByPower once.
 	mocks.MockStakingKeeper.EXPECT().GetBondedValidatorsByPower(gomock.Any()).Return([]stakingtypes.Validator{}, nil).Times(1)
 
 	// InitGenesis walks each non-DELETED consumer's pool address to check for

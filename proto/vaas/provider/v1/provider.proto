@@ -39,14 +39,10 @@ message Params {
   // The number of blocks that comprise an epoch.
   int64 blocks_per_epoch = 4;
 
-  // The maximal number of validators that will be passed
-  // to the consensus engine on the provider.
-  int64 max_provider_consensus_validators = 5;
-
   // The per-block fee amount charged for consumer chain operation. The denom
   // is not a parameter: it is fixed at module wiring (see Keeper.feeDenom) and
   // cannot be changed without a binary upgrade.
-  string fees_per_block_amount = 6 [
+  string fees_per_block_amount = 5 [
     (cosmos_proto.scalar) = "cosmos.Int",
     (gogoproto.customtype) = "cosmossdk.io/math.Int",
     (gogoproto.nullable) = false,
@@ -57,7 +53,7 @@ message Params {
   // fees_per_block.Amount (the floor is fees_per_block.Amount *
   // min_deposit_blocks). Zero disables the check. The floor applies to every
   // funder including the gov authority.
-  uint64 min_deposit_blocks = 7;
+  uint64 min_deposit_blocks = 6;
 }
 
 // AddressList contains a list of consensus addresses
