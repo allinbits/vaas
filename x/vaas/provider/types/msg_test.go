@@ -6,6 +6,7 @@ import (
 	"time"
 
 	clienttypes "github.com/cosmos/ibc-go/v10/modules/core/02-client/types"
+	channeltypesv2 "github.com/cosmos/ibc-go/v10/modules/core/04-channel/v2/types"
 	"github.com/stretchr/testify/require"
 
 	"cosmossdk.io/math"
@@ -16,6 +17,7 @@ import (
 
 	cryptoutil "github.com/allinbits/vaas/testutil/crypto"
 	"github.com/allinbits/vaas/x/vaas/provider/types"
+	vaastypes "github.com/allinbits/vaas/x/vaas/types"
 )
 
 func TestValidateStringField(t *testing.T) {
@@ -160,78 +162,98 @@ func TestValidateInitializationParameters(t *testing.T) {
 		{
 			name: "valid",
 			params: types.ConsumerInitializationParameters{
-				InitialHeight:     clienttypes.NewHeight(3, 4),
-				GenesisHash:       []byte{0x01},
-				BinaryHash:        []byte{0x01},
-				SpawnTime:         now,
-				UnbondingPeriod:   time.Duration(100000000000),
-				VaasTimeoutPeriod: time.Duration(100000000000),
-				HistoricalEntries: 10000,
+				InitialHeight:      clienttypes.NewHeight(3, 4),
+				GenesisHash:        []byte{0x01},
+				BinaryHash:         []byte{0x01},
+				SpawnTime:          now,
+				UnbondingPeriod:    time.Duration(100000000000),
+				VaasTimeoutPeriod:  15 * time.Minute,
+				HistoricalEntries:  10000,
+				SafeModeThreshold:  vaastypes.DefaultSafeModeThreshold,
 			},
 			valid: true,
 		},
 		{
 			name: "invalid - zero height",
 			params: types.ConsumerInitializationParameters{
-				InitialHeight:     clienttypes.ZeroHeight(),
-				GenesisHash:       []byte{0x01},
-				BinaryHash:        []byte{0x01},
-				SpawnTime:         now,
-				UnbondingPeriod:   time.Duration(100000000000),
-				VaasTimeoutPeriod: time.Duration(100000000000),
-				HistoricalEntries: 10000,
+				InitialHeight:      clienttypes.ZeroHeight(),
+				GenesisHash:        []byte{0x01},
+				BinaryHash:         []byte{0x01},
+				SpawnTime:          now,
+				UnbondingPeriod:    time.Duration(100000000000),
+				VaasTimeoutPeriod:  15 * time.Minute,
+				HistoricalEntries:  10000,
+				SafeModeThreshold:  vaastypes.DefaultSafeModeThreshold,
 			},
 			valid: false,
 		},
 		{
 			name: "invalid - hash too long",
 			params: types.ConsumerInitializationParameters{
-				InitialHeight:     clienttypes.NewHeight(3, 4),
-				GenesisHash:       tooLongHash,
-				BinaryHash:        []byte{0x01},
-				SpawnTime:         now,
-				UnbondingPeriod:   time.Duration(100000000000),
-				VaasTimeoutPeriod: time.Duration(100000000000),
-				HistoricalEntries: 10000,
+				InitialHeight:      clienttypes.NewHeight(3, 4),
+				GenesisHash:        tooLongHash,
+				BinaryHash:         []byte{0x01},
+				SpawnTime:          now,
+				UnbondingPeriod:    time.Duration(100000000000),
+				VaasTimeoutPeriod:  15 * time.Minute,
+				HistoricalEntries:  10000,
+				SafeModeThreshold:  vaastypes.DefaultSafeModeThreshold,
 			},
 			valid: false,
 		},
 		{
 			name: "invalid - zero spawn time",
 			params: types.ConsumerInitializationParameters{
-				InitialHeight:     clienttypes.NewHeight(3, 4),
-				GenesisHash:       []byte{0x01},
-				BinaryHash:        []byte{0x01},
-				SpawnTime:         time.Time{},
-				UnbondingPeriod:   time.Duration(100000000000),
-				VaasTimeoutPeriod: time.Duration(100000000000),
-				HistoricalEntries: 10000,
+				InitialHeight:      clienttypes.NewHeight(3, 4),
+				GenesisHash:        []byte{0x01},
+				BinaryHash:         []byte{0x01},
+				SpawnTime:          time.Time{},
+				UnbondingPeriod:    time.Duration(100000000000),
+				VaasTimeoutPeriod:  15 * time.Minute,
+				HistoricalEntries:  10000,
+				SafeModeThreshold:  vaastypes.DefaultSafeModeThreshold,
 			},
 			valid: true,
 		},
 		{
 			name: "invalid - zero duration",
 			params: types.ConsumerInitializationParameters{
-				InitialHeight:     clienttypes.NewHeight(3, 4),
-				GenesisHash:       []byte{0x01},
-				BinaryHash:        []byte{0x01},
-				SpawnTime:         now,
-				UnbondingPeriod:   0,
-				VaasTimeoutPeriod: time.Duration(100000000000),
-				HistoricalEntries: 10000,
+				InitialHeight:      clienttypes.NewHeight(3, 4),
+				GenesisHash:        []byte{0x01},
+				BinaryHash:         []byte{0x01},
+				SpawnTime:          now,
+				UnbondingPeriod:    0,
+				VaasTimeoutPeriod:  15 * time.Minute,
+				HistoricalEntries:  10000,
+				SafeModeThreshold:  vaastypes.DefaultSafeModeThreshold,
 			},
 			valid: false,
 		},
 		{
 			name: "invalid - HistoricalEntries zero",
 			params: types.ConsumerInitializationParameters{
-				InitialHeight:     clienttypes.NewHeight(3, 4),
-				GenesisHash:       []byte{0x01},
-				BinaryHash:        []byte{0x01},
-				SpawnTime:         now,
-				UnbondingPeriod:   time.Duration(100000000000),
-				VaasTimeoutPeriod: time.Duration(100000000000),
-				HistoricalEntries: 0,
+				InitialHeight:      clienttypes.NewHeight(3, 4),
+				GenesisHash:        []byte{0x01},
+				BinaryHash:         []byte{0x01},
+				SpawnTime:          now,
+				UnbondingPeriod:    time.Duration(100000000000),
+				VaasTimeoutPeriod:  15 * time.Minute,
+				HistoricalEntries:  0,
+				SafeModeThreshold:  vaastypes.DefaultSafeModeThreshold,
+			},
+			valid: false,
+		},
+		{
+			name: "invalid - zero safe mode threshold",
+			params: types.ConsumerInitializationParameters{
+				InitialHeight:      clienttypes.NewHeight(3, 4),
+				GenesisHash:        []byte{0x01},
+				BinaryHash:         []byte{0x01},
+				SpawnTime:          now,
+				UnbondingPeriod:    time.Duration(100000000000),
+				VaasTimeoutPeriod:  15 * time.Minute,
+				HistoricalEntries:  10000,
+				SafeModeThreshold:  0,
 			},
 			valid: false,
 		},
@@ -746,6 +768,68 @@ func TestMsgSetConsumerFeesPerBlock_ValidateBasic(t *testing.T) {
 			err := tc.msg.ValidateBasic()
 			if tc.wantError {
 				require.Error(t, err)
+			} else {
+				require.NoError(t, err)
+			}
+		})
+	}
+}
+
+// TestValidateInitParams_VaasTimeoutBounds table-drives ValidateInitializationParameters
+// focusing on the VaasTimeoutPeriod bound (0, MaxTimeoutDelta]: positive with no
+// lower floor, capped at the ibc-go v2 hard cap. All other fields are valid so
+// only the timeout is under test.
+func TestValidateInitParams_VaasTimeoutBounds(t *testing.T) {
+	base := types.ConsumerInitializationParameters{
+		InitialHeight:     clienttypes.NewHeight(1, 1),
+		GenesisHash:       []byte{0x01},
+		BinaryHash:        []byte{0x01},
+		SpawnTime:         time.Now().UTC(),
+		UnbondingPeriod:   21 * 24 * time.Hour,
+		HistoricalEntries: 1000,
+		SafeModeThreshold: vaastypes.DefaultSafeModeThreshold,
+	}
+
+	tests := []struct {
+		name    string
+		timeout time.Duration
+		wantErr bool
+	}{
+		{
+			name:    "small positive value: ok (no lower floor)",
+			timeout: time.Second,
+			wantErr: false,
+		},
+		{
+			name:    "zero: error",
+			timeout: 0,
+			wantErr: true,
+		},
+		{
+			name:    "negative: error",
+			timeout: -time.Second,
+			wantErr: true,
+		},
+		{
+			name:    "exactly MaxTimeoutDelta: ok",
+			timeout: channeltypesv2.MaxTimeoutDelta,
+			wantErr: false,
+		},
+		{
+			name:    "above MaxTimeoutDelta: error",
+			timeout: channeltypesv2.MaxTimeoutDelta + time.Hour,
+			wantErr: true,
+		},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			params := base
+			params.VaasTimeoutPeriod = tc.timeout
+			err := types.ValidateInitializationParameters(params)
+			if tc.wantErr {
+				require.Error(t, err)
+				require.ErrorIs(t, err, types.ErrInvalidConsumerInitializationParameters)
 			} else {
 				require.NoError(t, err)
 			}

@@ -13,7 +13,7 @@ import (
 
 // queryModuleAccountAddress returns the bech32 address of the named module
 // account on the provider chain.
-func (s *IntegrationTestSuite) queryModuleAccountAddress(name string) string {
+func (s *baseTestSuite) queryModuleAccountAddress(name string) string {
 	stdout, _, err := s.dockerExec(s.providerValRes[0].Container.ID, []string{
 		providerBinary, "query", "auth", "module-account", name,
 		"--home", providerHomePath,
@@ -57,7 +57,7 @@ func (s *IntegrationTestSuite) queryModuleAccountAddress(name string) string {
 }
 
 // queryGovAuthority is a thin wrapper for queryModuleAccountAddress("gov").
-func (s *IntegrationTestSuite) queryGovAuthority() string {
+func (s *baseTestSuite) queryGovAuthority() string {
 	return s.queryModuleAccountAddress("gov")
 }
 
@@ -97,7 +97,7 @@ func (s *IntegrationTestSuite) queryCommunityPoolBalance(denom string) int64 {
 //
 // proposalJSON must be a valid gov v1 proposal body. The submitter and voting
 // fees are paid in bondDenom by val.
-func (s *IntegrationTestSuite) submitAndPassProposal(proposalJSON string) uint64 {
+func (s *baseTestSuite) submitAndPassProposal(proposalJSON string) uint64 {
 	containerID := s.providerValRes[0].Container.ID
 
 	// 1. Write the proposal body to /tmp/proposal.json via base64 to avoid
@@ -115,7 +115,7 @@ func (s *IntegrationTestSuite) submitAndPassProposal(proposalJSON string) uint64
 		"--from", "val",
 		"--home", providerHomePath,
 		"--keyring-backend", "test",
-		"--chain-id", providerChainID,
+		"--chain-id", s.cfg.providerChainID,
 		"--fees", "10000" + bondDenom,
 		"--yes",
 		"-o", "json",
@@ -158,7 +158,7 @@ func (s *IntegrationTestSuite) submitAndPassProposal(proposalJSON string) uint64
 		"--from", "val",
 		"--home", providerHomePath,
 		"--keyring-backend", "test",
-		"--chain-id", providerChainID,
+		"--chain-id", s.cfg.providerChainID,
 		"--fees", "10000" + bondDenom,
 		"--yes",
 	})
@@ -188,7 +188,7 @@ func (s *IntegrationTestSuite) submitAndPassProposal(proposalJSON string) uint64
 
 // dumpProposal returns the raw JSON of a gov proposal query, used to surface
 // the failed_reason / messages on terminal-bad status.
-func (s *IntegrationTestSuite) dumpProposal(proposalID uint64) string {
+func (s *baseTestSuite) dumpProposal(proposalID uint64) string {
 	stdout, _, err := s.dockerExec(s.providerValRes[0].Container.ID, []string{
 		providerBinary, "query", "gov", "proposal", fmt.Sprintf("%d", proposalID),
 		"--home", providerHomePath,
@@ -202,7 +202,7 @@ func (s *IntegrationTestSuite) dumpProposal(proposalID uint64) string {
 
 // queryProposalStatus returns the textual status of a gov proposal (e.g.
 // "PROPOSAL_STATUS_PASSED").
-func (s *IntegrationTestSuite) queryProposalStatus(proposalID uint64) string {
+func (s *baseTestSuite) queryProposalStatus(proposalID uint64) string {
 	stdout, _, err := s.dockerExec(s.providerValRes[0].Container.ID, []string{
 		providerBinary, "query", "gov", "proposal", fmt.Sprintf("%d", proposalID),
 		"--home", providerHomePath,

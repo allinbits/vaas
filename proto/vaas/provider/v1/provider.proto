@@ -26,17 +26,23 @@ message Params {
   // TrustingPeriodFraction is used to compute the consumer and provider IBC
   // client's TrustingPeriod from the chain defined UnbondingPeriod
   string trusting_period_fraction = 1;
+
+  // LivenessGraceFraction sets the consumer liveness grace period as a fraction
+  // of the provider unbonding period (grace = unbonding * fraction). A consumer
+  // with no successful VSC acknowledgement for longer than the grace is removed.
+  string liveness_grace_fraction = 2;
+
   // Sent IBC packets will timeout after this duration
-  google.protobuf.Duration vaas_timeout_period = 2
+  google.protobuf.Duration vaas_timeout_period = 3
       [ (gogoproto.nullable) = false, (gogoproto.stdduration) = true ];
 
   // The number of blocks that comprise an epoch.
-  int64 blocks_per_epoch = 3;
+  int64 blocks_per_epoch = 4;
 
   // The per-block fee amount charged for consumer chain operation. The denom
   // is not a parameter: it is fixed at module wiring (see Keeper.feeDenom) and
   // cannot be changed without a binary upgrade.
-  string fees_per_block_amount = 4 [
+  string fees_per_block_amount = 5 [
     (cosmos_proto.scalar) = "cosmos.Int",
     (gogoproto.customtype) = "cosmossdk.io/math.Int",
     (gogoproto.nullable) = false,
@@ -47,7 +53,7 @@ message Params {
   // fees_per_block.Amount (the floor is fees_per_block.Amount *
   // min_deposit_blocks). Zero disables the check. The floor applies to every
   // funder including the gov authority.
-  uint64 min_deposit_blocks = 5;
+  uint64 min_deposit_blocks = 6;
 }
 
 // AddressList contains a list of consensus addresses
@@ -170,6 +176,10 @@ message ConsumerInitializationParameters {
   // This param is a part of the cosmos sdk staking module. In the case of
   // a VAAS enabled consumer chain, the VAAS module acts as the staking module.
   int64 historical_entries = 7;
+  // How long the consumer may go without receiving a VSC packet before its
+  // tx admission gate enters safe mode (only ibc.core and gov messages pass).
+  google.protobuf.Duration safe_mode_threshold = 8
+      [ (gogoproto.nullable) = false, (gogoproto.stdduration) = true ];
 }
 
 // ConsumerIds contains consumer ids of chains

@@ -10,7 +10,7 @@ import (
 )
 
 // dockerExec runs a command in the specified Docker container and returns stdout/stderr.
-func (s *IntegrationTestSuite) dockerExec(containerID string, cmd []string) (bytes.Buffer, bytes.Buffer, error) {
+func (s *baseTestSuite) dockerExec(containerID string, cmd []string) (bytes.Buffer, bytes.Buffer, error) {
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 	defer cancel()
 
@@ -42,7 +42,7 @@ func (s *IntegrationTestSuite) dockerExec(containerID string, cmd []string) (byt
 }
 
 // dockerExecMust runs a command in a Docker container, failing the test on error.
-func (s *IntegrationTestSuite) dockerExecMust(containerID string, cmd []string) {
+func (s *baseTestSuite) dockerExecMust(containerID string, cmd []string) {
 	stdout, stderr, err := s.dockerExec(containerID, cmd)
 	if err != nil {
 		s.T().Logf("cmd: %v", cmd)

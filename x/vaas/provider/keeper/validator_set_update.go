@@ -122,14 +122,28 @@ func (k Keeper) GetLastBondedValidators(ctx sdk.Context) ([]stakingtypes.Validat
 	return vaastypes.GetLastBondedValidatorsUtil(ctx, k.stakingKeeper, maxVals)
 }
 
+// FullValSetUpdates renders a complete validator set as absolute-power updates.
+// Used for snapshot VSC packets: the consumer replaces its set with these,
+// deriving removals against its own current set.
+func FullValSetUpdates(validators []types.ConsensusValidator) []abci.ValidatorUpdate {
+	updates := make([]abci.ValidatorUpdate, 0, len(validators))
+	for _, v := range validators {
+		updates = append(updates, abci.ValidatorUpdate{PubKey: *v.PublicKey, Power: v.Power})
+	}
+	return updates
+}
+
 // ComputeConsumerNextValSet computes the consumer next validator set and returns
 // the validator updates to be sent to the consumer chain.
 // Every active provider validator validates every consumer.
+// When isSnapshot is true, it returns the full set as absolute-power updates;
+// otherwise it returns the diff against currentConsumerValSet.
 func (k Keeper) ComputeConsumerNextValSet(
 	ctx sdk.Context,
 	bondedValidators []stakingtypes.Validator,
 	consumerId uint64,
 	currentConsumerValSet []types.ConsensusValidator,
+	isSnapshot bool,
 ) ([]abci.ValidatorUpdate, error) {
 	nextValidators, err := k.CreateConsumerValidators(ctx, consumerId, bondedValidators)
 	if err != nil {
@@ -137,14 +151,13 @@ func (k Keeper) ComputeConsumerNextValSet(
 			fmt.Errorf("computing next validators, consumerId(%d): %w", consumerId, err)
 	}
 
-	err = k.SetConsumerValSet(ctx, consumerId, nextValidators)
-	if err != nil {
+	if err = k.SetConsumerValSet(ctx, consumerId, nextValidators); err != nil {
 		return []abci.ValidatorUpdate{},
 			fmt.Errorf("setting consumer validator set, consumerId(%d): %w", consumerId, err)
 	}
 
-	// get the initial updates with the latest set consumer public keys
-	valUpdates := DiffValidators(currentConsumerValSet, nextValidators)
-
-	return valUpdates, nil
+	if isSnapshot {
+		return FullValSetUpdates(nextValidators), nil
+	}
+	return DiffValidators(currentConsumerValSet, nextValidators), nil
 }

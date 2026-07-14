@@ -1,6 +1,7 @@
 package e2e
 
 import (
+	"encoding/json"
 	"fmt"
 	"strings"
 
@@ -8,6 +9,28 @@ import (
 	banktypes "github.com/cosmos/cosmos-sdk/x/bank/types"
 	stakingtypes "github.com/cosmos/cosmos-sdk/x/staking/types"
 )
+
+// queryProviderConsumerPhase returns the phase string for a given consumer ID
+// from the provider chain (e.g. "CONSUMER_PHASE_LAUNCHED").
+func (s *baseTestSuite) queryProviderConsumerPhase(consumerID string) string {
+	stdout, _, err := s.dockerExec(s.providerValRes[0].Container.ID, []string{
+		providerBinary, "query", "provider", "consumer-chain", consumerID,
+		"--home", providerHomePath,
+		"--output", "json",
+	})
+	if err != nil {
+		s.T().Logf("queryProviderConsumerPhase(%s): exec error: %v", consumerID, err)
+		return ""
+	}
+	var res struct {
+		Phase string `json:"phase"`
+	}
+	if err := json.Unmarshal(stdout.Bytes(), &res); err != nil {
+		s.T().Logf("queryProviderConsumerPhase(%s): decode error: %v (raw: %s)", consumerID, err, stdout.String())
+		return ""
+	}
+	return res.Phase
+}
 
 // providerRESTEndpoint returns the provider chain's REST HTTP endpoint using the Docker-assigned host port.
 func (s *IntegrationTestSuite) providerRESTEndpoint() string {

@@ -39,4 +39,11 @@ message ValidatorSetChangePacketData {
   // non-/ibc.core.* and non-/cosmos.gov.* messages until the provider
   // collects fees successfully and propagates false on the next VSC.
   bool consumer_in_debt = 3;
+  // is_snapshot indicates how the consumer must apply validator_updates.
+  // false: validator_updates is a diff against the consumer's previous set
+  // (the consumer accumulates). true: validator_updates is the provider's
+  // complete current set (the consumer replaces its set with it). The
+  // provider sends a snapshot while a consumer is behind on acks, so a
+  // consumer that missed packets converges to the exact set in one packet.
+  bool is_snapshot = 4;
 }

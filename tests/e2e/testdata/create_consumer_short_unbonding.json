@@ -1,8 +1,8 @@
 {
-  "chain_id": "CONSUMER_CHAIN_ID",
+  "chain_id": "CONSUMER_SHORT_CHAIN_ID",
   "metadata": {
-    "name": "consumer",
-    "description": "e2e test consumer chain",
+    "name": "consumer-short",
+    "description": "e2e liveness test consumer with short unbonding period",
     "metadata": "{}"
   },
   "initialization_parameters": {
@@ -13,9 +13,9 @@
     "genesis_hash": "",
     "binary_hash": "",
     "spawn_time": "2024-01-01T00:00:00Z",
-    "unbonding_period": 1728000000000000,
-    "vaas_timeout_period": 3600000000000,
-    "safe_mode_threshold": 10800000000000,
+    "unbonding_period": 200000000000,
+    "vaas_timeout_period": 600000000000,
+    "safe_mode_threshold": 5000000000,
     "historical_entries": 10000
   },
   "infraction_parameters": {

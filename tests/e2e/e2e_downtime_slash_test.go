@@ -51,7 +51,7 @@ func (s *IntegrationTestSuite) testDowntimeSlash() {
 	// consumer chain and verify the provider slashes and jails that validator.
 }
 
-func (s *IntegrationTestSuite) patchConsumerSlashingParams() {
+func (s *baseTestSuite) patchConsumerSlashingParams() {
 	s.patchGenesisJSON(s.consumer.dataDir+"/config/genesis.json", func(genesis map[string]any) {
 		appState, ok := genesis["app_state"].(map[string]any)
 		if !ok {

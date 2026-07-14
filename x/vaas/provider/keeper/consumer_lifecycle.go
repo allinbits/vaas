@@ -232,7 +232,7 @@ func (k Keeper) LaunchConsumer(
 	}
 
 	// compute consumer initial validator set (all validators validate all consumers)
-	initialValUpdates, err := k.ComputeConsumerNextValSet(ctx, bondedValidators, consumerId, []types.ConsensusValidator{})
+	initialValUpdates, err := k.ComputeConsumerNextValSet(ctx, bondedValidators, consumerId, []types.ConsensusValidator{}, false)
 	if err != nil {
 		return fmt.Errorf("computing consumer next validator set, consumerId(%d): %w", consumerId, err)
 	}
@@ -254,6 +254,9 @@ func (k Keeper) LaunchConsumer(
 	k.SetEquivocationEvidenceMinHeight(ctx, consumerId, initializationRecord.InitialHeight.RevisionHeight)
 
 	k.SetConsumerPhase(ctx, consumerId, types.CONSUMER_PHASE_LAUNCHED)
+	if err := k.SetConsumerLastAckTime(ctx, consumerId, ctx.BlockTime()); err != nil {
+		return err
+	}
 
 	k.Logger(ctx).Info("consumer successfully launched",
 		"consumerId", consumerId,
@@ -281,6 +284,7 @@ func (k Keeper) MakeConsumerGenesis(
 		initializationRecord.VaasTimeoutPeriod,
 		initializationRecord.HistoricalEntries,
 		initializationRecord.UnbondingPeriod,
+		initializationRecord.SafeModeThreshold,
 	)
 
 	providerUnbondingPeriod, err := k.stakingKeeper.UnbondingTime(ctx)
@@ -413,6 +417,9 @@ func (k Keeper) DeleteConsumerChain(ctx sdk.Context, consumerId uint64) (err err
 	k.DeleteConsumerValSet(ctx, consumerId)
 
 	k.DeleteConsumerRemovalTime(ctx, consumerId)
+	k.DeleteConsumerLastAckTime(ctx, consumerId)
+	k.DeleteConsumerHighestSentVscId(ctx, consumerId)
+	k.DeleteConsumerHighestAckedVscId(ctx, consumerId)
 	k.DeleteConsumerDebt(ctx, consumerId)
 
 	if err := k.ConsumerFeesPerBlockOverride.Remove(ctx, consumerId); err != nil {
@@ -436,5 +443,35 @@ func (k Keeper) DeleteConsumerChain(ctx sdk.Context, consumerId uint64) (err err
 	k.SetConsumerPhase(ctx, consumerId, types.CONSUMER_PHASE_DELETED)
 	k.Logger(ctx).Info("consumer chain deleted from provider", "consumerId", consumerId)
 
+	return nil
+}
+
+// SweepUnresponsiveConsumers stops any launched consumer that has produced no
+// successful VSC ack within the liveness grace period. It is the sole authority
+// for removing unresponsive consumers and runs on the provider block clock, so
+// it does not depend on a live IBC client or an available relayer.
+func (k Keeper) SweepUnresponsiveConsumers(ctx sdk.Context) error {
+	grace, err := k.LivenessGracePeriod(ctx)
+	if err != nil {
+		return err
+	}
+	for _, consumerId := range k.GetAllLaunchedConsumerIds(ctx) {
+		lastAck := k.GetConsumerLastAckTime(ctx, consumerId)
+		if ctx.BlockTime().Sub(lastAck) <= grace {
+			continue
+		}
+		k.Logger(ctx).Info("consumer unresponsive past liveness grace, stopping",
+			"consumerId", consumerId, "lastAck", lastAck, "grace", grace)
+		// Stop in a cached context so a partial failure does not commit the
+		// STOPPED phase without also scheduling removal (which would strand the
+		// consumer STOPPED-but-never-DELETED). On error nothing is written and
+		// the next sweep retries, mirroring BeginBlockRemoveConsumers.
+		cachedCtx, writeFn := ctx.CacheContext()
+		if err := k.StopAndPrepareForConsumerRemoval(cachedCtx, consumerId); err != nil {
+			k.Logger(ctx).Error("failed to stop unresponsive consumer", "consumerId", consumerId, "error", err.Error())
+			continue
+		}
+		writeFn()
+	}
 	return nil
 }

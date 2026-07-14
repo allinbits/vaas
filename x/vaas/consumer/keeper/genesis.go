@@ -61,6 +61,12 @@ func (k Keeper) InitGenesis(ctx sdk.Context, state *types.GenesisState) []abci.V
 		return []abci.ValidatorUpdate{}
 	}
 
+	// Restore the VSC staleness clock on a restart (see ExportGenesis); absent
+	// (new chain / never received a VSC) leaves the never-stale default.
+	if state.LastVscRecvTime != nil {
+		k.SetLastVSCRecvTime(ctx, *state.LastVscRecvTime)
+	}
+
 	// populate cross chain validators states with initial valset
 	k.ApplyCCValidatorChanges(ctx, state.Provider.InitialValSet)
 	return state.Provider.InitialValSet
@@ -87,6 +93,18 @@ func (k Keeper) ExportGenesis(ctx sdk.Context) (genesis *types.GenesisState) {
 		k.GetAllHeightToValsetUpdateIDs(ctx),
 		params,
 	)
+
+	// Preserve the VSC staleness clock across a restart (see IsVSCStale): export
+	// the last-VSC-recv time only when actually recorded, so a consumer that has
+	// not received a VSC keeps the absent-default (never stale) on import.
+	has, err := k.LastVSCRecvTime.Has(ctx)
+	if err != nil {
+		panic(err)
+	}
+	if has {
+		t := k.GetLastVSCRecvTime(ctx)
+		genesis.LastVscRecvTime = &t
+	}
 
 	return genesis
 }

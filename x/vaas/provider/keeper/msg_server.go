@@ -218,6 +218,42 @@ func (k msgServer) SubmitConsumerDoubleVoting(goCtx context.Context, msg *types.
 	return &types.MsgSubmitConsumerDoubleVotingResponse{}, nil
 }
 
+// validateConsumerInitParams enforces the two bounds on a consumer's
+// initialization parameters that can only be checked against provider state
+// (positivity and format are already checked by ValidateInitializationParameters).
+// Both are cross-chain settings the provider holds at create/update time, so it
+// can validate them here against its own state -- it reads its unbonding once
+// and derives the grace from it:
+//
+//   - UnbondingPeriod must not exceed the provider's unbonding, so the consumer
+//     cannot outlive the provider's slashable window. No lower floor is imposed:
+//     an unbonding short enough to make the relayer-derived trusting period
+//     impractical is an operator concern (and useful for test/dev chains), not
+//     a protocol minimum.
+//   - SafeModeThreshold must be strictly shorter than the provider's liveness
+//     grace (unbonding * LivenessGraceFraction), so a lagging consumer enters
+//     safe mode -- and stops value-bearing work under a possibly-stale set --
+//     before the provider's sweep removes it.
+func (k Keeper) validateConsumerInitParams(ctx sdk.Context, p types.ConsumerInitializationParameters) error {
+	providerUnbonding, err := k.stakingKeeper.UnbondingTime(ctx)
+	if err != nil {
+		return err
+	}
+	if p.UnbondingPeriod > providerUnbonding {
+		return errorsmod.Wrapf(types.ErrInvalidConsumerInitializationParameters,
+			"unbonding period %s must not exceed provider unbonding %s", p.UnbondingPeriod, providerUnbonding)
+	}
+	grace, err := vaastypes.CalculateTrustPeriod(providerUnbonding, k.GetParams(ctx).LivenessGraceFraction)
+	if err != nil {
+		return err
+	}
+	if p.SafeModeThreshold >= grace {
+		return errorsmod.Wrapf(types.ErrInvalidConsumerInitializationParameters,
+			"safe mode threshold %s must be less than the provider liveness grace period %s", p.SafeModeThreshold, grace)
+	}
+	return nil
+}
+
 // CreateConsumer creates a consumer chain
 func (k msgServer) CreateConsumer(goCtx context.Context, msg *types.MsgCreateConsumer) (*types.MsgCreateConsumerResponse, error) {
 	ctx := sdk.UnwrapSDKContext(goCtx)
@@ -260,6 +296,9 @@ func (k msgServer) CreateConsumer(goCtx context.Context, msg *types.MsgCreateCon
 	initializationParameters := types.DefaultConsumerInitializationParameters() // default params
 	if msg.InitializationParameters != nil {
 		initializationParameters = *msg.InitializationParameters
+	}
+	if err := k.Keeper.validateConsumerInitParams(ctx, initializationParameters); err != nil {
+		return &resp, err
 	}
 	if err := k.Keeper.SetConsumerInitializationParameters(ctx, consumerId, initializationParameters); err != nil {
 		return &resp, errorsmod.Wrapf(types.ErrInvalidConsumerInitializationParameters,
@@ -457,6 +496,9 @@ func (k msgServer) UpdateConsumer(goCtx context.Context, msg *types.MsgUpdateCon
 				sdk.NewAttribute(types.AttributeConsumerGenesisHash, string(msg.InitializationParameters.GenesisHash)))
 		}
 
+		if err = k.Keeper.validateConsumerInitParams(ctx, *msg.InitializationParameters); err != nil {
+			return &resp, err
+		}
 		if err = k.Keeper.SetConsumerInitializationParameters(ctx, msg.ConsumerId, *msg.InitializationParameters); err != nil {
 			return &resp, errorsmod.Wrapf(types.ErrInvalidConsumerInitializationParameters,
 				"cannot set consumer initialization parameters: %s", err.Error())

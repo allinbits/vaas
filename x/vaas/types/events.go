@@ -11,6 +11,11 @@ const (
 	EventTypeSubmitConsumerDoubleVoting = "submit_consumer_double_voting"
 	EventTypeExecuteConsumerChainSlash  = "execute_consumer_chain_slash"
 	EventTypeConsumerEvidenceRequest    = "consumer_evidence_request"
+	// EventTypeSnapshotResync is emitted by the consumer when it applies a
+	// snapshot VSC packet (is_snapshot=true), i.e. it replaces its cross-chain
+	// validator set rather than accumulating a diff. Emitted only on snapshots,
+	// not on ordinary diffs.
+	EventTypeSnapshotResync = "vaas_snapshot_resync"
 
 	AttributeKeyAckSuccess            = "success"
 	AttributeKeyAck                   = "acknowledgement"
@@ -34,4 +39,5 @@ const (
 	AttributeValidatorAddress         = "validator_address"
 	AttributeInfractionType           = "infraction_type"
 	AttributeValSetUpdateID           = "valset_update_id"
+	AttributeNumValidators            = "num_validators"
 )

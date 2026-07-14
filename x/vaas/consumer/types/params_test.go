@@ -19,19 +19,23 @@ func TestValidateParams(t *testing.T) {
 		{"default params", vaastypes.DefaultConsumerParams(), true},
 		{
 			"custom valid params",
-			vaastypes.NewConsumerParams(true, vaastypes.DefaultVAASTimeoutPeriod, 1000, 24*21*time.Hour), true,
+			vaastypes.NewConsumerParams(true, vaastypes.DefaultVAASTimeoutPeriod, 1000, 24*21*time.Hour, vaastypes.DefaultSafeModeThreshold), true,
 		},
 		{
 			"custom invalid params, VAAS timeout",
-			vaastypes.NewConsumerParams(true, 0, 1000, 24*21*time.Hour), false,
+			vaastypes.NewConsumerParams(true, 0, 1000, 24*21*time.Hour, vaastypes.DefaultSafeModeThreshold), false,
 		},
 		{
 			"custom invalid params, negative num historical entries",
-			vaastypes.NewConsumerParams(true, vaastypes.DefaultVAASTimeoutPeriod, -100, 24*21*time.Hour), false,
+			vaastypes.NewConsumerParams(true, vaastypes.DefaultVAASTimeoutPeriod, -100, 24*21*time.Hour, vaastypes.DefaultSafeModeThreshold), false,
 		},
 		{
 			"custom invalid params, negative unbonding period",
-			vaastypes.NewConsumerParams(true, vaastypes.DefaultVAASTimeoutPeriod, 1000, -24*21*time.Hour), false,
+			vaastypes.NewConsumerParams(true, vaastypes.DefaultVAASTimeoutPeriod, 1000, -24*21*time.Hour, vaastypes.DefaultSafeModeThreshold), false,
+		},
+		{
+			"custom invalid params, zero safe mode threshold",
+			vaastypes.NewConsumerParams(true, vaastypes.DefaultVAASTimeoutPeriod, 1000, 24*21*time.Hour, 0), false,
 		},
 	}
 

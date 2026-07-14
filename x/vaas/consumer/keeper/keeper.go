@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"time"
 
 	"github.com/allinbits/vaas/x/vaas/consumer/types"
 	vaastypes "github.com/allinbits/vaas/x/vaas/types"
@@ -64,6 +65,7 @@ type Keeper struct {
 	HistoricalInfos        collections.Map[int64, stakingtypes.HistoricalInfo]
 	HighestValsetUpdateID  collections.Item[uint64]
 	PendingEvidencePackets collections.Map[[]byte, []byte]
+	LastVSCRecvTime        collections.Item[[]byte]
 }
 
 // NewKeeper creates a new Consumer Keeper instance
@@ -110,6 +112,7 @@ func NewKeeper(
 		HistoricalInfos:        collections.NewMap(sb, types.HistoricalInfoPrefix, "historical_infos", collections.Int64Key, codec.CollValue[stakingtypes.HistoricalInfo](cdc)),
 		HighestValsetUpdateID:  collections.NewItem(sb, types.HighestValsetUpdateIDPrefix, "highest_valset_update_id", collections.Uint64Value),
 		PendingEvidencePackets: collections.NewMap(sb, types.PendingEvidencePacketsPrefix, "pending_evidence_packets", collections.BytesKey, collections.BytesValue),
+		LastVSCRecvTime:        collections.NewItem(sb, types.LastVSCRecvTimePrefix, "last_vsc_recv_time", collections.BytesValue),
 	}
 
 	schema, err := sb.Build()
@@ -150,6 +153,7 @@ func NewNonZeroKeeper(cdc codec.BinaryCodec, storeService corestoretypes.KVStore
 		HistoricalInfos:        collections.NewMap(sb, types.HistoricalInfoPrefix, "historical_infos", collections.Int64Key, codec.CollValue[stakingtypes.HistoricalInfo](cdc)),
 		HighestValsetUpdateID:  collections.NewItem(sb, types.HighestValsetUpdateIDPrefix, "highest_valset_update_id", collections.Uint64Value),
 		PendingEvidencePackets: collections.NewMap(sb, types.PendingEvidencePacketsPrefix, "pending_evidence_packets", collections.BytesKey, collections.BytesValue),
+		LastVSCRecvTime:        collections.NewItem(sb, types.LastVSCRecvTimePrefix, "last_vsc_recv_time", collections.BytesValue),
 	}
 
 	schema, err := sb.Build()
@@ -450,4 +454,37 @@ func (k Keeper) GetHighestValsetUpdateID(ctx context.Context) (uint64, bool, err
 	}
 
 	return val, true, nil
+}
+
+// SetLastVSCRecvTime records the block time at which a VSC packet was last processed.
+func (k Keeper) SetLastVSCRecvTime(ctx context.Context, t time.Time) {
+	buf, err := t.MarshalBinary()
+	if err != nil {
+		panic(err)
+	}
+	if err := k.LastVSCRecvTime.Set(ctx, buf); err != nil {
+		panic(err)
+	}
+}
+
+// GetLastVSCRecvTime returns the block time of the last processed VSC packet.
+// Falls back to the current block time when no packet has been received yet,
+// so a freshly launched consumer is never considered stale.
+func (k Keeper) GetLastVSCRecvTime(ctx context.Context) time.Time {
+	buf, err := k.LastVSCRecvTime.Get(ctx)
+	if err != nil {
+		return sdk.UnwrapSDKContext(ctx).BlockTime()
+	}
+	var t time.Time
+	if err := t.UnmarshalBinary(buf); err != nil {
+		return sdk.UnwrapSDKContext(ctx).BlockTime()
+	}
+	return t
+}
+
+// IsVSCStale reports whether the consumer has not received a VSC packet within
+// the safe-mode threshold.
+func (k Keeper) IsVSCStale(ctx context.Context) bool {
+	sdkCtx := sdk.UnwrapSDKContext(ctx)
+	return sdkCtx.BlockTime().Sub(k.GetLastVSCRecvTime(ctx)) > k.GetConsumerParams(ctx).SafeModeThreshold
 }

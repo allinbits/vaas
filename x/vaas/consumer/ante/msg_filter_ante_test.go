@@ -20,6 +20,7 @@ import (
 type mockConsumerKeeper struct {
 	providerClientFound bool
 	inDebt              bool
+	vscStale            bool
 }
 
 func (m mockConsumerKeeper) GetProviderClientID(context.Context) (string, bool) {
@@ -28,6 +29,10 @@ func (m mockConsumerKeeper) GetProviderClientID(context.Context) (string, bool) 
 
 func (m mockConsumerKeeper) IsConsumerInDebt(context.Context) bool {
 	return m.inDebt
+}
+
+func (m mockConsumerKeeper) IsVSCStale(context.Context) bool {
+	return m.vscStale
 }
 
 type mockTx struct {
@@ -153,6 +158,56 @@ func TestMsgFilterDecoratorRejectsAuthzWrappedIBCCoreTxWhenInDebt(t *testing.T) 
 	require.False(t, nextCalled)
 }
 
+// Safe mode (stale VSC): non-IBC, non-gov msgs are rejected with ErrConsumerInDebt.
+func TestSafeModeRejectsAppMsgWhenStale(t *testing.T) {
+	// provider client established, not in debt, but VSC stale
+	nextCalled, err := runDecorator(t,
+		mockConsumerKeeper{providerClientFound: true, inDebt: false, vscStale: true},
+		[]sdk.Msg{bankSendMsg()},
+	)
+	require.Error(t, err)
+	require.True(t, errorsmod.IsOf(err, consumertypes.ErrConsumerInDebt))
+	require.False(t, nextCalled)
+
+	// /ibc.core.* message must pass (recovery path stays open)
+	nextCalled, err = runDecorator(t,
+		mockConsumerKeeper{providerClientFound: true, inDebt: false, vscStale: true},
+		[]sdk.Msg{&channeltypes.MsgRecvPacket{}},
+	)
+	require.NoError(t, err)
+	require.True(t, nextCalled)
+}
+
 func testAccAddress(seed byte) sdk.AccAddress {
 	return sdk.AccAddress(bytes.Repeat([]byte{seed}, 20))
+}
+
+// TestSafeModeAllowsGovWhenStale verifies that when the consumer has an
+// established provider client, is not in debt, but has a stale validator set,
+// governance messages still pass (restricted mode allows /cosmos.gov.*).
+func TestSafeModeAllowsGovWhenStale(t *testing.T) {
+	msg := &govtypes.MsgVote{
+		ProposalId: 1,
+		Voter:      testAccAddress(1).String(),
+		Option:     govtypes.OptionYes,
+	}
+	nextCalled, err := runDecorator(t,
+		mockConsumerKeeper{providerClientFound: true, inDebt: false, vscStale: true},
+		[]sdk.Msg{msg},
+	)
+	require.NoError(t, err)
+	require.True(t, nextCalled)
+}
+
+// TestRestrictedWhenBothDebtAndStale verifies that when the consumer is both
+// in debt and has a stale validator set, app messages (e.g. bank) are rejected.
+// The combined condition still routes to restricted mode.
+func TestRestrictedWhenBothDebtAndStale(t *testing.T) {
+	nextCalled, err := runDecorator(t,
+		mockConsumerKeeper{providerClientFound: true, inDebt: true, vscStale: true},
+		[]sdk.Msg{bankSendMsg()},
+	)
+	require.Error(t, err)
+	require.True(t, errorsmod.IsOf(err, consumertypes.ErrConsumerInDebt))
+	require.False(t, nextCalled)
 }

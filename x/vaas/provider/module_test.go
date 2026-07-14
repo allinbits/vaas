@@ -3,6 +3,7 @@ package provider
 import (
 	"bytes"
 	"testing"
+	"time"
 
 	"cosmossdk.io/math"
 	testkeeper "github.com/allinbits/vaas/testutil/keeper"
@@ -43,6 +44,7 @@ func TestBeginBlockCommitsDebtStateWhenDistributionFails(t *testing.T) {
 	// One bonded validator.
 	valAddrCodec := address.NewBech32Codec("cosmosvaloper")
 	mocks.MockStakingKeeper.EXPECT().ValidatorAddressCodec().Return(valAddrCodec).AnyTimes()
+	mocks.MockStakingKeeper.EXPECT().UnbondingTime(gomock.Any()).Return(21*24*time.Hour, nil).AnyTimes()
 	opBytes := bytes.Repeat([]byte{0xfe}, 20)
 	op, err := valAddrCodec.BytesToString(opBytes)
 	require.NoError(t, err)
@@ -57,7 +59,7 @@ func TestBeginBlockCommitsDebtStateWhenDistributionFails(t *testing.T) {
 		GetBondedValidatorsByPower(gomock.Any()).
 		Return([]stakingtypes.Validator{val}, nil)
 
-	// consumerInDebt: balance too low → in debt, no InputOutputCoins
+	// consumerInDebt: balance too low -> in debt, no InputOutputCoins
 	mocks.MockBankKeeper.EXPECT().
 		GetBalance(gomock.Any(), consumerInDebtPool, "uphoton").
 		Return(sdk.NewCoin("uphoton", feesPerEpoch.Amount.QuoRaw(2)))
@@ -84,7 +86,7 @@ func TestBeginBlockCommitsDebtStateWhenDistributionFails(t *testing.T) {
 // per-epoch fee distribution only runs at epoch boundaries.
 func TestBeginBlockSkipsFeeCollectionWhenNotAtEpochBoundary(t *testing.T) {
 	params := testkeeper.NewInMemKeeperParams(t)
-	k, ctx, ctrl, _ := testkeeper.GetProviderKeeperAndCtx(t, params)
+	k, ctx, ctrl, mocks := testkeeper.GetProviderKeeperAndCtx(t, params)
 	defer ctrl.Finish()
 
 	appModule := NewAppModule(&k)
@@ -100,7 +102,9 @@ func TestBeginBlockSkipsFeeCollectionWhenNotAtEpochBoundary(t *testing.T) {
 	// Height 100 is not an epoch boundary (blocks_per_epoch=600)
 	ctx = ctx.WithBlockHeight(100)
 
-	// No bank or staking mock expectations — nothing should be called.
+	// SweepUnresponsiveConsumers calls UnbondingTime on every block.
+	mocks.MockStakingKeeper.EXPECT().UnbondingTime(gomock.Any()).Return(21*24*time.Hour, nil).AnyTimes()
+
 	require.NoError(t, appModule.BeginBlock(sdk.WrapSDKContext(ctx)))
 }
 
@@ -129,6 +133,7 @@ func TestBeginBlockCollectsFeesAtEpochBoundary(t *testing.T) {
 
 	valAddrCodec := address.NewBech32Codec("cosmosvaloper")
 	mocks.MockStakingKeeper.EXPECT().ValidatorAddressCodec().Return(valAddrCodec).AnyTimes()
+	mocks.MockStakingKeeper.EXPECT().UnbondingTime(gomock.Any()).Return(21*24*time.Hour, nil).AnyTimes()
 	opBytes := bytes.Repeat([]byte{0xfe}, 20)
 	op, err := valAddrCodec.BytesToString(opBytes)
 	require.NoError(t, err)

@@ -21,12 +21,13 @@ func TestParams(t *testing.T) {
 		vaastypes.DefaultVAASTimeoutPeriod,
 		vaastypes.DefaultHistoricalEntries,
 		vaastypes.DefaultConsumerUnbondingPeriod,
+		vaastypes.DefaultSafeModeThreshold,
 	) // these are the default params, IBC suite independently sets enabled=true
 
 	params := consumerKeeper.GetConsumerParams(ctx)
 	require.Equal(t, expParams, params)
 
-	newParams := vaastypes.NewConsumerParams(false, 7*24*time.Hour, 500, 24*21*time.Hour)
+	newParams := vaastypes.NewConsumerParams(false, 7*24*time.Hour, 500, 24*21*time.Hour, vaastypes.DefaultSafeModeThreshold)
 	consumerKeeper.SetParams(ctx, newParams)
 	params = consumerKeeper.GetConsumerParams(ctx)
 	require.Equal(t, newParams, params)

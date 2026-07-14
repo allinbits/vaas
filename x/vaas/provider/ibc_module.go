@@ -173,7 +173,13 @@ func (im IBCModule) OnAcknowledgementPacket(
 		ackError = "error acknowledgement received"
 	}
 
-	if err := im.keeper.OnAcknowledgementPacketV2(ctx, sourceClient, ackError); err != nil {
+	ackVscId := uint64(0)
+	var vsc vaastypes.ValidatorSetChangePacketData
+	if err := vaastypes.ModuleCdc.UnmarshalJSON(payload.Value, &vsc); err == nil {
+		ackVscId = vsc.ValsetUpdateId
+	}
+
+	if err := im.keeper.OnAcknowledgementPacketV2(ctx, sourceClient, ackVscId, ackError); err != nil {
 		return err
 	}
 

@@ -2,6 +2,7 @@ package keeper
 
 import (
 	"context"
+	"fmt"
 	"time"
 
 	vaastypes "github.com/allinbits/vaas/x/vaas/types"
@@ -11,10 +12,15 @@ import (
 
 // GetConsumerParams returns the params for the consumer VAAS module
 // NOTE: it is different from the GetParams method which is required to implement StakingKeeper interface
+//
+// Params are set at InitGenesis and never removed, so a read error indicates
+// state corruption. Panic rather than return a zero-value ConsumerParams: a
+// zero SafeModeThreshold would make IsVSCStale trivially true and silently pin
+// the consumer in safe mode, hiding the corruption.
 func (k Keeper) GetConsumerParams(ctx context.Context) vaastypes.ConsumerParams {
 	params, err := k.Params.Get(ctx)
 	if err != nil {
-		return vaastypes.ConsumerParams{}
+		panic(fmt.Sprintf("error getting consumer module parameters: %v", err))
 	}
 	return params
 }

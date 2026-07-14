@@ -2,6 +2,8 @@
 
 This document describes the full lifecycle of a consumer chain in VAAS, from registration to deletion.
 
+For how an unresponsive or lagging launched consumer is handled -- the liveness grace period, removal sweep, snapshot resync, and consumer safe mode -- see [consumer-liveness.md](consumer-liveness.md).
+
 ## Phases
 
 ```
@@ -104,13 +106,17 @@ is stored and used for all subsequent VSC packet delivery.
 3. The relayer relays the packets to the consumer.
 4. The consumer applies the validator set changes on `EndBlock`.
 
+VSC packets are diffs by default. If a consumer falls behind on acknowledgements, the provider instead sends an absolute snapshot of the full validator set so the consumer resyncs in a single packet, and the consumer is removed only after a sustained liveness failure rather than on a single packet timeout. See [consumer-liveness.md](consumer-liveness.md).
+
 ---
 
 ## Phase 4: STOPPED
 
-**Trigger:** `MsgRemoveConsumer` submitted by the consumer owner.
+**Triggers:** either
+- `MsgRemoveConsumer` submitted by the governance authority (removing a consumer requires the gov authority), or
+- the automatic liveness sweep, when a launched consumer has produced no successful VSC acknowledgement for longer than the liveness grace period (see [consumer-liveness.md](consumer-liveness.md)).
 
-**Requirements:** consumer must be in `LAUNCHED` phase. Only the owner can submit.
+**Requirements:** consumer must be in `LAUNCHED` phase.
 
 **What happens on-chain:**
 1. Phase is set to `STOPPED`.
@@ -129,7 +135,8 @@ is stored and used for all subsequent VSC packet delivery.
 1. Up to 200 due consumers are dequeued per block.
 2. For each consumer, `DeleteConsumerChain` runs:
    - Deletes: IBC client ID mapping, consumer genesis, key assignments, equivocation
-     evidence minimum height, pending VSC packets, validator set, removal time.
+     evidence minimum height, pending VSC packets, validator set, removal time, and the
+     liveness state (last-ack time and the sent/acked VSC-id counters).
    - **Preserves** (for block explorer use): chain ID, phase, owner address, metadata,
      initialization parameters.
 3. Phase is set to `DELETED`.
@@ -143,5 +150,5 @@ is stored and used for all subsequent VSC packet delivery.
 | `REGISTERED` | `MsgCreateConsumer` | Any account | Consumer created, owner assigned |
 | `INITIALIZED` | `spawn_time` set | On-chain (automatic) | Queued for launch at spawn_time |
 | `LAUNCHED` | `spawn_time` elapsed | On-chain (BeginBlock) | Genesis built; operator starts consumer; relayer creates IBC path |
-| `STOPPED` | `MsgRemoveConsumer` | Owner | Queued for deletion after unbonding period |
+| `STOPPED` | `MsgRemoveConsumer` (gov) or liveness sweep | Governance / on-chain | Queued for deletion after unbonding period |
 | `DELETED` | Unbonding period elapsed | On-chain (BeginBlock) | State cleaned up |

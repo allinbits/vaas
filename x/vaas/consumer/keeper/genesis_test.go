@@ -193,6 +193,44 @@ func TestExportGenesis(t *testing.T) {
 	}
 }
 
+// TestGenesisRoundTripLastVSCRecvTime verifies the consumer's VSC-staleness
+// clock survives an export/import restart: ExportGenesis carries the recorded
+// last-VSC-recv time, and InitGenesis restores it on a fresh keeper (rather than
+// falling back to the current block time, which would reset the safe-mode clock).
+func TestGenesisRoundTripLastVSCRecvTime(t *testing.T) {
+	provClientID := "tendermint-07"
+	params := vaastypes.DefaultConsumerParams()
+	params.Enabled = true
+
+	pubKey := ed25519.GenPrivKey().PubKey()
+	tmPK, err := cryptocodec.ToCmtPubKeyInterface(pubKey)
+	require.NoError(t, err)
+	validator := tmtypes.NewValidator(tmPK, 1)
+
+	lastRecv := time.Unix(1_850_000_000, 0).UTC()
+
+	// Export half: a keeper with a recorded last-VSC-recv time exports it.
+	ck, ctx, ctrl, _ := testkeeper.GetConsumerKeeperAndCtx(t, testkeeper.NewInMemKeeperParams(t))
+	defer ctrl.Finish()
+	ck.SetParams(ctx, params)
+	ck.SetProviderClientID(ctx, provClientID)
+	cVal, err := consumertypes.NewCCValidator(validator.Address.Bytes(), 1, pubKey)
+	require.NoError(t, err)
+	ck.SetCCValidator(ctx, cVal)
+	ck.SetHeightValsetUpdateID(ctx, 0, 0)
+	ck.SetLastVSCRecvTime(ctx, lastRecv)
+
+	exported := ck.ExportGenesis(ctx)
+	require.NotNil(t, exported.LastVscRecvTime, "export must carry last_vsc_recv_time")
+	require.Equal(t, lastRecv, *exported.LastVscRecvTime)
+
+	// Import half: a fresh keeper restores the exact time, not the block-time fallback.
+	ck2, ctx2, ctrl2, _ := testkeeper.GetConsumerKeeperAndCtx(t, testkeeper.NewInMemKeeperParams(t))
+	defer ctrl2.Finish()
+	ck2.InitGenesis(ctx2, exported)
+	require.Equal(t, lastRecv, ck2.GetLastVSCRecvTime(ctx2))
+}
+
 func assertProviderClientID(t *testing.T, ctx sdk.Context, ck *consumerkeeper.Keeper, clientID string) {
 	t.Helper()
 	cid, ok := ck.GetProviderClientID(ctx)

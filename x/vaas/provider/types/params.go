@@ -7,6 +7,7 @@ import (
 	vaastypes "github.com/allinbits/vaas/x/vaas/types"
 
 	clienttypes "github.com/cosmos/ibc-go/v10/modules/core/02-client/types"
+	channeltypesv2 "github.com/cosmos/ibc-go/v10/modules/core/04-channel/v2/types"
 
 	"cosmossdk.io/math"
 )
@@ -19,6 +20,14 @@ const (
 	// DefaultTrustingPeriodFraction is the default fraction used to compute TrustingPeriod
 	// as UnbondingPeriod * TrustingPeriodFraction
 	DefaultTrustingPeriodFraction = "0.66"
+
+	// DefaultLivenessGraceFraction is the default value of the LivenessGraceFraction
+	// param, which sets the consumer liveness grace period as a fraction of the
+	// provider unbonding period (grace = unbonding * fraction). A consumer that
+	// produces no successful VSC ack for longer than the grace is removed. 0.66
+	// mirrors the trusting-period fraction: the grace ends around the client
+	// recovery horizon, leaving margin below the unbonding (slashable) window.
+	DefaultLivenessGraceFraction = "0.66"
 
 	// DefaultBlocksPerEpoch defines the default blocks that constitute an epoch. Assuming we need 6 seconds per block,
 	// an epoch corresponds to 1 hour (6 * 600 = 3600 seconds).
@@ -54,6 +63,7 @@ const (
 // NewParams creates new provider parameters with provided arguments
 func NewParams(
 	trustingPeriodFraction string,
+	livenessGraceFraction string,
 	vaasTimeoutPeriod time.Duration,
 	blocksPerEpoch int64,
 	feesPerBlockAmount math.Int,
@@ -61,6 +71,7 @@ func NewParams(
 ) Params {
 	return Params{
 		TrustingPeriodFraction: trustingPeriodFraction,
+		LivenessGraceFraction:  livenessGraceFraction,
 		VaasTimeoutPeriod:      vaasTimeoutPeriod,
 		BlocksPerEpoch:         blocksPerEpoch,
 		FeesPerBlockAmount:     feesPerBlockAmount,
@@ -71,6 +82,7 @@ func NewParams(
 func DefaultParams() Params {
 	return NewParams(
 		DefaultTrustingPeriodFraction,
+		DefaultLivenessGraceFraction,
 		vaastypes.DefaultVAASTimeoutPeriod,
 		DefaultBlocksPerEpoch,
 		math.NewInt(DefaultFeesPerBlockAmount),
@@ -109,6 +121,7 @@ func DefaultConsumerInitializationParameters() ConsumerInitializationParameters 
 		UnbondingPeriod:   vaastypes.DefaultConsumerUnbondingPeriod,
 		VaasTimeoutPeriod: vaastypes.DefaultVAASTimeoutPeriod,
 		HistoricalEntries: vaastypes.DefaultHistoricalEntries,
+		SafeModeThreshold: vaastypes.DefaultSafeModeThreshold,
 	}
 }
 
@@ -148,7 +161,7 @@ func (p Params) Validate() error {
 	if err := vaastypes.ValidateStringFractionNonZero(p.TrustingPeriodFraction); err != nil {
 		return fmt.Errorf("trusting period fraction is invalid: %s", err)
 	}
-	if err := vaastypes.ValidateDuration(p.VaasTimeoutPeriod); err != nil {
+	if err := vaastypes.ValidateVAASTimeoutPeriod(p.VaasTimeoutPeriod, channeltypesv2.MaxTimeoutDelta); err != nil {
 		return fmt.Errorf("VAAS timeout period is invalid: %s", err)
 	}
 	if err := vaastypes.ValidatePositiveInt64(p.BlocksPerEpoch); err != nil {
@@ -156,6 +169,9 @@ func (p Params) Validate() error {
 	}
 	if err := validateFeesPerBlockAmount(p.FeesPerBlockAmount); err != nil {
 		return err
+	}
+	if err := vaastypes.ValidateStringFractionNonZero(p.LivenessGraceFraction); err != nil {
+		return fmt.Errorf("liveness grace fraction is invalid: %s", err)
 	}
 
 	return nil

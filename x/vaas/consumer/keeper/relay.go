@@ -1,6 +1,8 @@
 package keeper
 
 import (
+	"strconv"
+
 	"github.com/allinbits/vaas/x/vaas/consumer/types"
 	vaastypes "github.com/allinbits/vaas/x/vaas/types"
 
@@ -30,6 +32,8 @@ func (k Keeper) OnRecvVSCPacketV2(ctx sdk.Context, sourceClientID string, newCha
 		return nil
 	}
 
+	k.SetLastVSCRecvTime(ctx, ctx.BlockTime())
+
 	_, found = k.GetProviderClientID(ctx)
 	if !found {
 		k.SetProviderClientID(ctx, sourceClientID)
@@ -46,13 +50,33 @@ func (k Keeper) OnRecvVSCPacketV2(ctx sdk.Context, sourceClientID string, newCha
 
 	k.SetConsumerInDebt(ctx, newChanges.ConsumerInDebt)
 
-	// Set pending changes by accumulating changes from this packet with all prior changes
-	currentValUpdates := []abci.ValidatorUpdate{}
-	currentChanges, exists := k.GetPendingChanges(ctx)
-	if exists {
-		currentValUpdates = currentChanges.ValidatorUpdates
+	// Set pending changes: snapshot packets replace the set; diff packets accumulate.
+	var pendingChanges []abci.ValidatorUpdate
+	if newChanges.IsSnapshot {
+		pendingChanges = k.computeReplaceUpdates(ctx, newChanges.ValidatorUpdates)
+		// Surface snapshot resyncs (not ordinary diffs) so operators -- and the
+		// e2e -- can observe that a behind consumer was healed by a full-set
+		// replacement rather than an accumulated diff. Emitted both as an event
+		// (structured/queryable) and a log line (the e2e asserts on the log).
+		ctx.EventManager().EmitEvent(
+			sdk.NewEvent(
+				vaastypes.EventTypeSnapshotResync,
+				sdk.NewAttribute(sdk.AttributeKeyModule, types.ModuleName),
+				sdk.NewAttribute(vaastypes.AttributeValSetUpdateID, strconv.FormatUint(newChanges.ValsetUpdateId, 10)),
+				sdk.NewAttribute(vaastypes.AttributeNumValidators, strconv.Itoa(len(newChanges.ValidatorUpdates))),
+			),
+		)
+		k.Logger(ctx).Info("applied snapshot resync",
+			"vscID", newChanges.ValsetUpdateId,
+			"numValidators", len(newChanges.ValidatorUpdates),
+		)
+	} else {
+		currentValUpdates := []abci.ValidatorUpdate{}
+		if currentChanges, exists := k.GetPendingChanges(ctx); exists {
+			currentValUpdates = currentChanges.ValidatorUpdates
+		}
+		pendingChanges = vaastypes.AccumulateChanges(currentValUpdates, newChanges.ValidatorUpdates)
 	}
-	pendingChanges := vaastypes.AccumulateChanges(currentValUpdates, newChanges.ValidatorUpdates)
 
 	k.SetPendingChanges(ctx, vaastypes.ValidatorSetChangePacketData{
 		ValidatorUpdates: pendingChanges,

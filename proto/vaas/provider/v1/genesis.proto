@@ -86,6 +86,17 @@ message ConsumerState {
   // absent otherwise. Used to re-derive the keeper's removal-time queue.
   google.protobuf.Timestamp removal_time = 12
       [ (gogoproto.stdtime) = true ];
+
+  // Liveness clock, present once a consumer has launched: LastAckTime is the
+  // block time of the consumer's most recent successful VSC acknowledgement
+  // (the provider's per-consumer grace clock), and HighestSentVscId /
+  // HighestAckedVscId are the resync counters that decide whether the consumer
+  // is behind. Round-tripped so a state-export restart preserves the grace
+  // window and resync state instead of resetting them.
+  google.protobuf.Timestamp last_ack_time = 13
+      [ (gogoproto.stdtime) = true ];
+  uint64 highest_sent_vsc_id = 14;
+  uint64 highest_acked_vsc_id = 15;
 }
 
 // ValsetUpdateIdToHeight defines the genesis information for the mapping

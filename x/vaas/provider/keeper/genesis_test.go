@@ -74,6 +74,7 @@ func TestExportGenesisIncludesNewFields(t *testing.T) {
 		HistoricalEntries: 10,
 	}
 	removalTime := time.Unix(1_800_000_000, 0).UTC()
+	lastAckTime := time.Unix(1_850_000_000, 0).UTC()
 	cg := *vaastypes.DefaultConsumerGenesisState()
 	cg.NewChain = true
 
@@ -105,6 +106,9 @@ func TestExportGenesisIncludesNewFields(t *testing.T) {
 	require.NoError(t, pk.SetConsumerInitializationParameters(ctx, 2, initParams))
 	pk.SetConsumerClientId(ctx, 2, "07-tendermint-0")
 	require.NoError(t, pk.SetConsumerGenesis(ctx, 2, cg))
+	require.NoError(t, pk.SetConsumerLastAckTime(ctx, 2, lastAckTime))
+	pk.SetConsumerHighestSentVscId(ctx, 2, 9)
+	pk.SetConsumerHighestAckedVscId(ctx, 2, 8)
 
 	// id 3 STOPPED.
 	pk.SetConsumerPhase(ctx, 3, providertypes.CONSUMER_PHASE_STOPPED)
@@ -147,6 +151,12 @@ func TestExportGenesisIncludesNewFields(t *testing.T) {
 	require.NotNil(t, byID["consumer-delta"].RemovalTime, "STOPPED must carry removal_time")
 	require.Equal(t, removalTime, *byID["consumer-delta"].RemovalTime)
 	require.Equal(t, providertypes.CONSUMER_PHASE_DELETED, byID["consumer-epsilon"].Phase)
+
+	// LAUNCHED consumer carries the liveness clock (last-ack + resync counters).
+	require.NotNil(t, byID["consumer-gamma"].LastAckTime, "LAUNCHED must carry last_ack_time")
+	require.Equal(t, lastAckTime, *byID["consumer-gamma"].LastAckTime)
+	require.Equal(t, uint64(9), byID["consumer-gamma"].HighestSentVscId)
+	require.Equal(t, uint64(8), byID["consumer-gamma"].HighestAckedVscId)
 }
 
 func TestInitGenesisRestoresPerConsumerStateAndDerivedQueues(t *testing.T) {
@@ -359,6 +369,12 @@ func TestGenesisRoundTrip(t *testing.T) {
 	pkA.SetValidatorConsumerPubKey(ctxA, keyedConsumerID, assignedProviderConsAddr, assignedConsumerKey)
 	pkA.SetValidatorByConsumerAddr(ctxA, keyedConsumerID, assignedConsumerConsAddr, assignedProviderConsAddr)
 	pkA.AppendConsumerAddrsToPrune(ctxA, keyedConsumerID, pruneTs, prunedAddr)
+
+	// Seed the liveness clock on the LAUNCHED consumer so the round-trip covers
+	// the last-ack time and the resync counters (highest sent / acked).
+	require.NoError(t, pkA.SetConsumerLastAckTime(ctxA, keyedConsumerID, time.Unix(1_850_000_000, 0).UTC()))
+	pkA.SetConsumerHighestSentVscId(ctxA, keyedConsumerID, 7)
+	pkA.SetConsumerHighestAckedVscId(ctxA, keyedConsumerID, 5)
 
 	pkA.SetParams(ctxA, providertypes.DefaultParams())
 	pkA.SetValidatorSetUpdateId(ctxA, 1)

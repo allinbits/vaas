@@ -6,6 +6,7 @@ option go_package = "github.com/allinbits/vaas/x/vaas/provider/types";
 import "google/api/annotations.proto";
 import "gogoproto/gogo.proto";
 import "google/protobuf/timestamp.proto";
+import "google/protobuf/duration.proto";
 import "vaas/provider/v1/genesis.proto";
 import "vaas/provider/v1/provider.proto";
 import "vaas/v1/shared_consumer.proto";
@@ -131,6 +132,13 @@ service Query {
   }
   rpc ConsumerFeePoolClaims(QueryConsumerFeePoolClaimsRequest) returns (QueryConsumerFeePoolClaimsResponse) {
     option (google.api.http).get = "/vaas/provider/v1/consumer_fee_pool_claims/{consumer_id}";
+  }
+
+  // QueryConsumerLiveness returns the liveness state of a launched consumer.
+  rpc QueryConsumerLiveness(QueryConsumerLivenessRequest)
+      returns (QueryConsumerLivenessResponse) {
+    option (google.api.http).get =
+        "/vaas/provider/consumer_liveness/{consumer_id}";
   }
 }
 
@@ -357,4 +365,12 @@ message QueryConsumerFeePoolClaimsRequest {
 message QueryConsumerFeePoolClaimsResponse {
   repeated DepositorClaim claims = 1 [(gogoproto.nullable) = false];
   cosmos.base.query.v1beta1.PageResponse pagination = 2;
+}
+
+message QueryConsumerLivenessRequest { uint64 consumer_id = 1; }
+message QueryConsumerLivenessResponse {
+  google.protobuf.Timestamp last_ack_time = 1 [(gogoproto.stdtime) = true, (gogoproto.nullable) = false];
+  google.protobuf.Duration grace_period = 2 [(gogoproto.stdduration) = true, (gogoproto.nullable) = false];
+  google.protobuf.Timestamp removal_eta = 3 [(gogoproto.stdtime) = true, (gogoproto.nullable) = false];
+  bool degraded = 4;
 }

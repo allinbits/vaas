@@ -115,5 +115,8 @@ var (
 	ConsumerFeePoolTotalSharesPrefix       = collections.NewPrefix(26)
 	FeePoolAddressToConsumerIdPrefix       = collections.NewPrefix(27)
 	EpochDowntimePrefix                    = collections.NewPrefix(28)
+	ConsumerIdToLastAckTimePrefix          = collections.NewPrefix(29)
+	ConsumerIdToHighestSentVscIdPrefix     = collections.NewPrefix(30)
+	ConsumerIdToHighestAckedVscIdPrefix    = collections.NewPrefix(31)
 	ParametersPrefix                       = collections.NewPrefix(0xFF)
 )
