@@ -54,6 +54,40 @@ func (k Keeper) SweepPendingDowntimeSlashes(ctx sdk.Context) {
 	}
 
 	k.PruneEpochShareRecords(ctx, ctx.BlockTime().Add(-(ip.DowntimeEvidenceMaxAge + ip.DowntimeChallengeWindow)))
+
+	k.sweepExpiredWithheldFeeRecords(ctx)
+}
+
+// sweepExpiredWithheldFeeRecords deletes withheld fee records whose challenge
+// window has elapsed without a successful challenge. Nothing is transferred:
+// the escrowed funds were never drawn from the consumer's fee pool in the
+// first place, so deleting the record simply lets them stay there for good.
+func (k Keeper) sweepExpiredWithheldFeeRecords(ctx sdk.Context) {
+	iter, err := k.WithheldFeeRecords.Iterate(ctx, nil)
+	if err != nil {
+		k.Logger(ctx).Error("failed to iterate withheld fee records", "error", err)
+		return
+	}
+
+	var expiredKeys []collections.Pair[uint64, []byte]
+	for ; iter.Valid(); iter.Next() {
+		kv, err := iter.KeyValue()
+		if err != nil {
+			k.Logger(ctx).Error("failed to read withheld fee record", "error", err)
+			continue
+		}
+		if kv.Value.ExpiresAt.After(ctx.BlockTime()) {
+			continue
+		}
+		expiredKeys = append(expiredKeys, kv.Key)
+	}
+	iter.Close()
+
+	for _, key := range expiredKeys {
+		if err := k.WithheldFeeRecords.Remove(ctx, key); err != nil {
+			k.Logger(ctx).Error("failed to delete expired withheld fee record", "error", err)
+		}
+	}
 }
 
 // executeDowntimeSlash executes a single matured downtime slash entry. It

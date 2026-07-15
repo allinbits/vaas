@@ -239,30 +239,36 @@ func (k Keeper) DistributeConsumerFees(ctx sdk.Context) error {
 		// ensures one record per consumer per run for later infraction-time share
 		// resolution.
 		consumerFeePerEpoch, share := k.epochShareForConsumer(ctx, consumerId, defaultFeePerEpoch, defaultFeePerBlock, numBonded)
+		shareCoin := sdk.NewCoin(consumerFeePerEpoch.Denom, share)
 
-		// Filter eligible validators for this consumer.
+		// Filter eligible validators for this consumer, keeping the
+		// consensus addresses of those excluded for downtime so their
+		// withheld share can be escrowed below once it's known that the
+		// share actually stayed in the pool (as opposed to a debt-skip or
+		// failed transfer, where nothing is distributed to anyone and there
+		// is nothing withheld to escrow).
 		var eligibleAddrs []sdk.AccAddress
+		var excludedConsAddrs []sdk.ConsAddress
 		for _, bv := range bondedVals {
 			if k.IsEpochDowntime(ctx, consumerId, bv.consAddr) {
+				excludedConsAddrs = append(excludedConsAddrs, bv.consAddr)
 				continue
 			}
 			eligibleAddrs = append(eligibleAddrs, bv.accAddr)
 		}
-		if len(eligibleAddrs) == 0 {
-			k.SetEpochShareRecord(ctx, consumerId, ctx.BlockTime(), share)
-			continue
-		}
-
 		if share.IsZero() {
 			k.SetEpochShareRecord(ctx, consumerId, ctx.BlockTime(), share)
 			continue
 		}
-		shareCoin := sdk.NewCoin(consumerFeePerEpoch.Denom, share)
-		shareCoins := sdk.NewCoins(shareCoin)
+
 		consumerFeePoolAddr := k.GetConsumerFeePoolAddress(consumerId)
 
 		// Check the pool can cover the full epoch fee before paying any
-		// validator. This avoids unfair partial distribution.
+		// validator or escrowing any withheld share. This avoids unfair
+		// partial distribution, and (when everyone is excluded) ensures a
+		// withheld-fee record is only ever written for funds the pool
+		// actually holds -- the record just leaves those funds in place, so
+		// a sufficient balance here is exactly what makes that valid.
 		balance := k.bankKeeper.GetBalance(ctx, consumerFeePoolAddr, consumerFeePerEpoch.Denom)
 		if balance.Amount.LT(consumerFeePerEpoch.Amount) {
 			k.UpdateConsumerDebtStatus(ctx, consumerId, true)
@@ -274,6 +280,17 @@ func (k Keeper) DistributeConsumerFees(ctx sdk.Context) error {
 			)
 			continue
 		}
+
+		if len(eligibleAddrs) == 0 {
+			k.UpdateConsumerDebtStatus(ctx, consumerId, false)
+			k.SetEpochShareRecord(ctx, consumerId, ctx.BlockTime(), share)
+			for _, consAddr := range excludedConsAddrs {
+				k.recordWithheldFee(ctx, consumerId, consAddr, shareCoin)
+			}
+			continue
+		}
+
+		shareCoins := sdk.NewCoins(shareCoin)
 
 		// Single InputOutputCoins: consumer pool → all eligible validators.
 		// Only share*num_eligible is drawn; excluded validators' shares stay
@@ -302,11 +319,134 @@ func (k Keeper) DistributeConsumerFees(ctx sdk.Context) error {
 		write()
 		k.UpdateConsumerDebtStatus(ctx, consumerId, false)
 		k.SetEpochShareRecord(ctx, consumerId, ctx.BlockTime(), share)
+		for _, consAddr := range excludedConsAddrs {
+			k.recordWithheldFee(ctx, consumerId, consAddr, shareCoin)
+		}
 		k.Logger(ctx).Debug("distributed consumer fees to validators",
 			"consumerId", consumerId,
 			"sharePerValidator", shareCoins.String(),
 			"totalDistributed", sdk.NewCoins(sdk.NewCoin(consumerFeePerEpoch.Denom, totalOut)).String(),
 		)
+	}
+
+	return nil
+}
+
+// recordWithheldFee escrows amount as owed to providerConsAddr for consumerId
+// following a downtime-driven fee exclusion, expiring DowntimeChallengeWindow
+// from now. At most one record exists per (consumer, validator): an
+// unexpired record is extended by summing amount into it and refreshing its
+// expiry; an expired-but-not-yet-swept record is replaced outright. The
+// escrowed funds are never moved -- they simply remain in the consumer's fee
+// pool, which is why "recording" is enough (see PayWithheldFees and the
+// expiry sweep in SweepPendingDowntimeSlashes).
+func (k Keeper) recordWithheldFee(ctx sdk.Context, consumerId uint64, providerConsAddr sdk.ConsAddress, amount sdk.Coin) {
+	key := collections.Join(consumerId, providerConsAddr.Bytes())
+	expiresAt := ctx.BlockTime().Add(k.GetInfractionParams(ctx).DowntimeChallengeWindow)
+
+	if existing, err := k.WithheldFeeRecords.Get(ctx, key); err == nil && existing.ExpiresAt.After(ctx.BlockTime()) {
+		amount = amount.Add(existing.Amount)
+	}
+
+	record := types.WithheldFeeRecord{
+		ConsumerId:       consumerId,
+		ProviderConsAddr: providerConsAddr.Bytes(),
+		Amount:           amount,
+		ExpiresAt:        expiresAt,
+	}
+	if err := k.WithheldFeeRecords.Set(ctx, key, record); err != nil {
+		panic(fmt.Errorf("failed to set withheld fee record for consumer %d, %x: %w", consumerId, providerConsAddr, err))
+	}
+}
+
+// withheldFeePayee resolves the account address a withheld fee record for
+// providerConsAddr should be paid to: the operator address of the validator
+// currently registered under that consensus address, mirroring the
+// consAddr-to-accAddr derivation DistributeConsumerFees uses for bonded
+// validators (an operator's address bytes double as its account address).
+func (k Keeper) withheldFeePayee(ctx sdk.Context, providerConsAddr sdk.ConsAddress) (sdk.AccAddress, error) {
+	val, err := k.stakingKeeper.GetValidatorByConsAddr(ctx, providerConsAddr)
+	if err != nil {
+		return nil, fmt.Errorf("resolving validator by consensus address: %w", err)
+	}
+	valAddr, err := k.stakingKeeper.ValidatorAddressCodec().StringToBytes(val.GetOperator())
+	if err != nil {
+		return nil, fmt.Errorf("parsing validator operator address %s: %w", val.GetOperator(), err)
+	}
+	return sdk.AccAddress(valAddr), nil
+}
+
+// PayWithheldFees retro-pays every withheld fee record for consumerId to its
+// validator's account, following a successful downtime challenge (see
+// MsgChallengeConsumerDowntime): the withheld shares that a false accusation
+// caused to be excluded from distribution are made whole. Payment is
+// best-effort against the consumer fee pool's current balance -- if the pool
+// cannot cover a record in full (e.g. the consumer was stopped through an
+// unrelated path while the record was pending), the available balance is
+// paid and the record is still deleted, since the pool no longer owes more
+// than it holds. Every record is deleted once processed, whether or not a
+// payment was made, so the escrow always clears after a successful
+// challenge.
+func (k Keeper) PayWithheldFees(ctx sdk.Context, consumerId uint64) error {
+	iter, err := k.WithheldFeeRecords.Iterate(ctx, collections.NewPrefixedPairRange[uint64, []byte](consumerId))
+	if err != nil {
+		return fmt.Errorf("failed to iterate withheld fee records for consumer %d: %w", consumerId, err)
+	}
+
+	var keys []collections.Pair[uint64, []byte]
+	var records []types.WithheldFeeRecord
+	for ; iter.Valid(); iter.Next() {
+		kv, err := iter.KeyValue()
+		if err != nil {
+			iter.Close()
+			return fmt.Errorf("failed to read withheld fee record for consumer %d: %w", consumerId, err)
+		}
+		keys = append(keys, kv.Key)
+		records = append(records, kv.Value)
+	}
+	iter.Close()
+
+	poolAddr := k.GetConsumerFeePoolAddress(consumerId)
+	for i, record := range records {
+		providerConsAddr := sdk.ConsAddress(record.ProviderConsAddr)
+
+		payable := record.Amount
+		balance := k.bankKeeper.GetBalance(ctx, poolAddr, record.Amount.Denom)
+		if balance.Amount.LT(payable.Amount) {
+			payable = balance
+		}
+
+		if payable.IsPositive() {
+			accAddr, err := k.withheldFeePayee(ctx, providerConsAddr)
+			if err != nil {
+				k.Logger(ctx).Error("failed to resolve payee for withheld fee record; leaving unpaid",
+					"consumerId", consumerId,
+					"providerConsAddr", providerConsAddr.String(),
+					"error", err,
+				)
+			} else {
+				input := banktypes.Input{Address: poolAddr.String(), Coins: sdk.NewCoins(payable)}
+				outputs := []banktypes.Output{{Address: accAddr.String(), Coins: sdk.NewCoins(payable)}}
+				if err := k.bankKeeper.InputOutputCoins(ctx, input, outputs); err != nil {
+					k.Logger(ctx).Error("failed to pay withheld fee record",
+						"consumerId", consumerId,
+						"providerConsAddr", providerConsAddr.String(),
+						"error", err,
+					)
+				} else {
+					ctx.EventManager().EmitEvent(sdk.NewEvent(
+						types.EventTypeWithheldFeePaid,
+						sdk.NewAttribute(types.AttributeConsumerId, fmt.Sprintf("%d", consumerId)),
+						sdk.NewAttribute(types.AttributeProviderValidatorAddress, providerConsAddr.String()),
+						sdk.NewAttribute(types.AttributeAmount, payable.String()),
+					))
+				}
+			}
+		}
+
+		if err := k.WithheldFeeRecords.Remove(ctx, keys[i]); err != nil {
+			k.Logger(ctx).Error("failed to delete paid withheld fee record", "error", err)
+		}
 	}
 
 	return nil

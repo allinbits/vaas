@@ -90,6 +90,8 @@ const (
 	PendingDowntimeSlashesKeyName = "PendingDowntimeSlashesKey"
 
 	LastPunishedWindowEndsKeyName = "LastPunishedWindowEndsKey"
+
+	WithheldFeeRecordsKeyName = "WithheldFeeRecordsKey"
 )
 
 // Collection key prefixes for use with cosmossdk.io/collections
@@ -130,6 +132,6 @@ var (
 	PendingDowntimeSlashesPrefix           = collections.NewPrefix(33)
 	PreviousDowntimeParamsPrefix           = collections.NewPrefix(34)
 	LastPunishedWindowEndsPrefix           = collections.NewPrefix(35)
-	// 36 is left free for a later task.
-	ParametersPrefix = collections.NewPrefix(0xFF)
+	WithheldFeeRecordsPrefix               = collections.NewPrefix(36)
+	ParametersPrefix                       = collections.NewPrefix(0xFF)
 )

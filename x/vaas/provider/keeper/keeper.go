@@ -137,6 +137,16 @@ type Keeper struct {
 	// PendingDowntimeSlashes.
 	LastPunishedWindowEnds collections.Map[collections.Pair[uint64, []byte], int64]
 
+	// WithheldFeeRecords holds fee shares withheld from a validator due to a
+	// downtime-driven epoch exclusion, keyed by (consumer_id, provider cons
+	// addr). At most one record exists per pair: a later exclusion within an
+	// unexpired record's window sums into it and refreshes the expiry (see
+	// recordWithheldFee); an expired-but-not-yet-swept record is replaced
+	// outright. Deleted at expiry (funds stay in the consumer pool, see the
+	// sweep alongside SweepPendingDowntimeSlashes), or paid out to the
+	// validator and deleted by PayWithheldFees on a successful challenge.
+	WithheldFeeRecords collections.Map[collections.Pair[uint64, []byte], types.WithheldFeeRecord]
+
 	// windowEndTimestampFn resolves the timestamp anchor for a downtime
 	// evidence window. Nil in production, where NewKeeper leaves it unset and
 	// windowEndTimestamp falls back to the real IBC-client-backed
@@ -296,6 +306,13 @@ func NewKeeper(
 		types.LastPunishedWindowEndsKeyName,
 		collections.PairKeyCodec(collections.Uint64Key, collections.BytesKey),
 		collections.Int64Value,
+	)
+
+	k.WithheldFeeRecords = collections.NewMap(
+		sb, types.WithheldFeeRecordsPrefix,
+		types.WithheldFeeRecordsKeyName,
+		collections.PairKeyCodec(collections.Uint64Key, collections.BytesKey),
+		codec.CollValue[types.WithheldFeeRecord](cdc),
 	)
 
 	schema, err := sb.Build()

@@ -771,9 +771,10 @@ func (k msgServer) WithdrawConsumerFeePool(
 
 	isGov := k.IsAuthority(msg.Signer)
 
-	if !isGov && k.GetConsumerPhase(ctx, msg.ConsumerId) == types.CONSUMER_PHASE_LAUNCHED {
+	if phase := k.GetConsumerPhase(ctx, msg.ConsumerId); !isGov &&
+		(phase == types.CONSUMER_PHASE_LAUNCHED || phase == types.CONSUMER_PHASE_PAUSED) {
 		return nil, errorsmod.Wrapf(types.ErrFeePoolLocked,
-			"withdraws are locked while consumer %d is launched; only the gov authority may withdraw at this stage",
+			"withdraws are locked while consumer %d is launched or paused; only the gov authority may withdraw at this stage",
 			msg.ConsumerId)
 	}
 

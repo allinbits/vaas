@@ -1219,6 +1219,37 @@ func TestWithdrawConsumerFeePool(t *testing.T) {
 			wantErr:  providertypes.ErrFeePoolLocked,
 		},
 		{
+			// A paused consumer (entered via a successful downtime challenge)
+			// locks withdrawals the same way a launched one does, so retro-paid
+			// withheld fees can't be raced out of the pool by a depositor.
+			name:     "locked during paused (non-gov)",
+			register: true,
+			phase:    providertypes.CONSUMER_PHASE_PAUSED,
+			amount:   sdk.NewCoins(sdk.NewInt64Coin("uphoton", 50)),
+			wantErr:  providertypes.ErrFeePoolLocked,
+		},
+		{
+			// The gov authority bypasses the lock while paused, same as while
+			// launched.
+			name:      "gov clawback during paused",
+			register:  true,
+			phase:     providertypes.CONSUMER_PHASE_PAUSED,
+			govSigner: true,
+			amount:    sdk.NewCoins(sdk.NewInt64Coin("uphoton", 1_000_000)),
+			setup: func(k providerkeeper.Keeper, ctx sdk.Context, mocks testkeeper.MockedKeepers, consumerId uint64, poolAddr sdk.AccAddress) {
+				require.NoError(t, k.ConsumerFeePoolShares.Set(ctx,
+					collections.Join3(consumerId, "uphoton", distrAddr), math.NewInt(100)))
+				require.NoError(t, k.ConsumerFeePoolTotalShares.Set(ctx,
+					collections.Join(consumerId, "uphoton"), math.NewInt(100)))
+				mocks.MockBankKeeper.EXPECT().GetBalance(ctx, poolAddr, "uphoton").
+					Return(sdk.NewInt64Coin("uphoton", 100))
+				mocks.MockBankKeeper.EXPECT().SendCoinsFromAccountToModule(
+					ctx, poolAddr, providertypes.ModuleName, sdk.NewCoins(sdk.NewInt64Coin("uphoton", 100))).Return(nil)
+				mocks.MockDistributionKeeper.EXPECT().FundCommunityPool(
+					ctx, sdk.NewCoins(sdk.NewInt64Coin("uphoton", 100)), providerAddr).Return(nil)
+			},
+		},
+		{
 			// alice sole depositor: 100 shares, balance 80.
 			// alice asks for 30, partial path: shares_to_burn = 30*100/80 = 37, tokens = 37*80/100 = 29.
 			name:     "regular partial withdraw during stopped",

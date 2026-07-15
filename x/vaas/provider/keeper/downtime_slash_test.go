@@ -293,3 +293,43 @@ func TestSweepPendingDowntimeSlashesDropsUnbondedValidator(t *testing.T) {
 	require.NoError(t, err)
 	require.False(t, has, "entry for an unbonded validator should be dropped")
 }
+
+// TestSweepPendingDowntimeSlashesDeletesExpiredWithheldFeeRecords asserts that
+// the sweep also deletes withheld fee records whose challenge window has
+// elapsed (ExpiresAt <= block time), leaving unexpired records untouched. The
+// escrowed funds are never moved by this sweep -- they simply stay in the
+// consumer's fee pool.
+func TestSweepPendingDowntimeSlashesDeletesExpiredWithheldFeeRecords(t *testing.T) {
+	infractionParams := types.InfractionParameters{
+		Downtime: &types.SlashJailParameters{
+			SlashFraction: math.LegacyNewDecWithPrec(5, 1),
+		},
+	}
+	k, ctx, ctrl, _, _, _ := setupSweepTest(t, infractionParams)
+	defer ctrl.Finish()
+
+	const consumerId uint64 = 0
+	expiredAddr := sdk.ConsAddress([]byte("expired_validator___"))
+	liveAddr := sdk.ConsAddress([]byte("live_validator______"))
+
+	require.NoError(t, k.WithheldFeeRecords.Set(ctx, collections.Join(consumerId, expiredAddr.Bytes()), types.WithheldFeeRecord{
+		ConsumerId:       consumerId,
+		ProviderConsAddr: expiredAddr.Bytes(),
+		Amount:           sdk.NewInt64Coin("uphoton", 100),
+		ExpiresAt:        ctx.BlockTime(), // ExpiresAt <= block time: expired
+	}))
+	require.NoError(t, k.WithheldFeeRecords.Set(ctx, collections.Join(consumerId, liveAddr.Bytes()), types.WithheldFeeRecord{
+		ConsumerId:       consumerId,
+		ProviderConsAddr: liveAddr.Bytes(),
+		Amount:           sdk.NewInt64Coin("uphoton", 100),
+		ExpiresAt:        ctx.BlockTime().Add(time.Hour),
+	}))
+
+	k.SweepPendingDowntimeSlashes(ctx)
+
+	_, err := k.WithheldFeeRecords.Get(ctx, collections.Join(consumerId, expiredAddr.Bytes()))
+	require.Error(t, err, "expired withheld fee record should be deleted")
+
+	_, err = k.WithheldFeeRecords.Get(ctx, collections.Join(consumerId, liveAddr.Bytes()))
+	require.NoError(t, err, "unexpired withheld fee record should survive the sweep")
+}
