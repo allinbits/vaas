@@ -5,8 +5,11 @@ import (
 	"testing"
 	"time"
 
+	tmproto "github.com/cometbft/cometbft/proto/tendermint/types"
+
 	clienttypes "github.com/cosmos/ibc-go/v10/modules/core/02-client/types"
 	channeltypesv2 "github.com/cosmos/ibc-go/v10/modules/core/04-channel/v2/types"
+	ibctmtypes "github.com/cosmos/ibc-go/v10/modules/light-clients/07-tendermint"
 	"github.com/stretchr/testify/require"
 
 	"cosmossdk.io/math"
@@ -830,6 +833,97 @@ func TestValidateInitParams_VaasTimeoutBounds(t *testing.T) {
 			if tc.wantErr {
 				require.Error(t, err)
 				require.ErrorIs(t, err, types.ErrInvalidConsumerInitializationParameters)
+			} else {
+				require.NoError(t, err)
+			}
+		})
+	}
+}
+
+func TestMsgChallengeConsumerDowntime_ValidateBasic(t *testing.T) {
+	validSigner := sdk.AccAddress([]byte("alice___________")).String()
+	validHeader := &ibctmtypes.Header{}
+	validCommit := &tmproto.Commit{}
+
+	base := func() types.MsgChallengeConsumerDowntime {
+		return types.MsgChallengeConsumerDowntime{
+			Signer:          validSigner,
+			ConsumerId:      1,
+			ValidatorAddr:   []byte{0x01},
+			ClaimedHeight:   10,
+			Header:          validHeader,
+			LastCommit:      validCommit,
+			ValidatorPubkey: []byte{0x02},
+		}
+	}
+
+	tests := []struct {
+		name    string
+		mutate  func(msg *types.MsgChallengeConsumerDowntime)
+		wantErr bool
+	}{
+		{"valid", func(msg *types.MsgChallengeConsumerDowntime) {}, false},
+		{"invalid signer", func(msg *types.MsgChallengeConsumerDowntime) {
+			msg.Signer = "not-bech32"
+		}, true},
+		{"empty validator_addr", func(msg *types.MsgChallengeConsumerDowntime) {
+			msg.ValidatorAddr = nil
+		}, true},
+		{"zero claimed_height", func(msg *types.MsgChallengeConsumerDowntime) {
+			msg.ClaimedHeight = 0
+		}, true},
+		{"negative claimed_height", func(msg *types.MsgChallengeConsumerDowntime) {
+			msg.ClaimedHeight = -1
+		}, true},
+		{"nil header", func(msg *types.MsgChallengeConsumerDowntime) {
+			msg.Header = nil
+		}, true},
+		{"nil last_commit", func(msg *types.MsgChallengeConsumerDowntime) {
+			msg.LastCommit = nil
+		}, true},
+		{"empty validator_pubkey", func(msg *types.MsgChallengeConsumerDowntime) {
+			msg.ValidatorPubkey = nil
+		}, true},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			msg := base()
+			tc.mutate(&msg)
+			err := msg.ValidateBasic()
+			if tc.wantErr {
+				require.Error(t, err)
+			} else {
+				require.NoError(t, err)
+			}
+		})
+	}
+}
+
+func TestMsgResumeConsumer_ValidateBasic(t *testing.T) {
+	validAuthority := authtypes.NewModuleAddress(govtypes.ModuleName).String()
+	tests := []struct {
+		name    string
+		msg     types.MsgResumeConsumer
+		wantErr bool
+	}{
+		{"valid", types.MsgResumeConsumer{
+			Authority:  validAuthority,
+			ConsumerId: 1,
+		}, false},
+		{"invalid authority", types.MsgResumeConsumer{
+			Authority:  "not-bech32",
+			ConsumerId: 1,
+		}, true},
+		{"empty authority", types.MsgResumeConsumer{
+			Authority:  "",
+			ConsumerId: 1,
+		}, true},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			err := tc.msg.ValidateBasic()
+			if tc.wantErr {
+				require.Error(t, err)
 			} else {
 				require.NoError(t, err)
 			}

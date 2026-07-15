@@ -9,6 +9,8 @@ import (
 
 	"github.com/allinbits/vaas/x/vaas/provider/types"
 	vaastypes "github.com/allinbits/vaas/x/vaas/types"
+	"google.golang.org/grpc/codes"
+	"google.golang.org/grpc/status"
 
 	tmtypes "github.com/cometbft/cometbft/types"
 
@@ -872,4 +874,19 @@ func (k msgServer) SweepConsumerFeePool(
 	// The sweep cannot fail under valid state; it panics on corruption.
 	k.Keeper.SweepConsumerFeePool(ctx, msg.ConsumerId, msg.Denoms)
 	return &types.MsgSweepConsumerFeePoolResponse{}, nil
+}
+
+// ChallengeConsumerDowntime is not yet implemented; the stub satisfies
+// types.MsgServer.
+func (k msgServer) ChallengeConsumerDowntime(
+	goCtx context.Context, msg *types.MsgChallengeConsumerDowntime,
+) (*types.MsgChallengeConsumerDowntimeResponse, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method ChallengeConsumerDowntime not implemented")
+}
+
+// ResumeConsumer is not yet implemented; the stub satisfies types.MsgServer.
+func (k msgServer) ResumeConsumer(
+	goCtx context.Context, msg *types.MsgResumeConsumer,
+) (*types.MsgResumeConsumerResponse, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method ResumeConsumer not implemented")
 }

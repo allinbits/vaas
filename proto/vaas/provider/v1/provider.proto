@@ -5,6 +5,7 @@ package vaas.provider.v1;
 import "amino/amino.proto";
 import "cosmos_proto/cosmos.proto";
 import "gogoproto/gogo.proto";
+import "cosmos/base/v1beta1/coin.proto";
 import "cosmos/evidence/v1beta1/evidence.proto";
 import "google/protobuf/duration.proto";
 import "google/protobuf/timestamp.proto";
@@ -206,6 +207,12 @@ enum ConsumerPhase {
   // DELETED defines the phase in which the state of a stopped chain has been
   // deleted.
   CONSUMER_PHASE_DELETED = 5;
+  // PAUSED defines the phase in which a launched consumer chain has been
+  // paused following a successful downtime challenge. A chain in this phase
+  // is only entered via a successful downtime challenge (see
+  // MsgChallengeConsumerDowntime) and only exits via governance-authorized
+  // resumption (MsgResumeConsumer) or removal.
+  CONSUMER_PHASE_PAUSED = 6;
 }
 
 //
@@ -262,6 +269,18 @@ message PendingDowntimeSlash {
 message PreviousDowntimeParams {
   vaas.v1.DowntimeParams params = 1 [ (gogoproto.nullable) = false ];
   google.protobuf.Timestamp changed_at = 2
+      [ (gogoproto.nullable) = false, (gogoproto.stdtime) = true ];
+}
+
+// WithheldFeeRecord tracks fee tokens withheld from a validator pending the
+// outcome of a downtime challenge window; a successful challenge refunds the
+// amount to the validator, while an unchallenged or unsuccessfully
+// challenged entry is swept back to the consumer fee pool once it expires.
+message WithheldFeeRecord {
+  uint64 consumer_id = 1;
+  bytes provider_cons_addr = 2;
+  cosmos.base.v1beta1.Coin amount = 3 [ (gogoproto.nullable) = false ];
+  google.protobuf.Timestamp expires_at = 4
       [ (gogoproto.nullable) = false, (gogoproto.stdtime) = true ];
 }
 

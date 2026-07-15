@@ -28,6 +28,8 @@ func RegisterInterfaces(registry codectypes.InterfaceRegistry) {
 		&MsgFundConsumerFeePool{},
 		&MsgWithdrawConsumerFeePool{},
 		&MsgSweepConsumerFeePool{},
+		&MsgChallengeConsumerDowntime{},
+		&MsgResumeConsumer{},
 	)
 	registry.RegisterImplementations(
 		(*exported.ClientMessage)(nil),

@@ -45,6 +45,8 @@ var (
 	_ sdk.Msg = (*MsgFundConsumerFeePool)(nil)
 	_ sdk.Msg = (*MsgWithdrawConsumerFeePool)(nil)
 	_ sdk.Msg = (*MsgSweepConsumerFeePool)(nil)
+	_ sdk.Msg = (*MsgChallengeConsumerDowntime)(nil)
+	_ sdk.Msg = (*MsgResumeConsumer)(nil)
 
 	_ sdk.HasValidateBasic = (*MsgAssignConsumerKey)(nil)
 	_ sdk.HasValidateBasic = (*MsgSubmitConsumerMisbehaviour)(nil)
@@ -56,6 +58,8 @@ var (
 	_ sdk.HasValidateBasic = (*MsgFundConsumerFeePool)(nil)
 	_ sdk.HasValidateBasic = (*MsgWithdrawConsumerFeePool)(nil)
 	_ sdk.HasValidateBasic = (*MsgSweepConsumerFeePool)(nil)
+	_ sdk.HasValidateBasic = (*MsgChallengeConsumerDowntime)(nil)
+	_ sdk.HasValidateBasic = (*MsgResumeConsumer)(nil)
 )
 
 // NewMsgAssignConsumerKey creates a new MsgAssignConsumerKey instance.
@@ -520,6 +524,37 @@ func (msg MsgSweepConsumerFeePool) ValidateBasic() error {
 			return errorsmod.Wrapf(ErrInvalidFundDenom, "duplicate denom %q", d)
 		}
 		seen[d] = struct{}{}
+	}
+	return nil
+}
+
+// ValidateBasic implements the sdk.HasValidateBasic interface.
+func (msg MsgChallengeConsumerDowntime) ValidateBasic() error {
+	if _, err := sdk.AccAddressFromBech32(msg.Signer); err != nil {
+		return errorsmod.Wrapf(sdkerrors.ErrInvalidAddress, "invalid signer: %s", err)
+	}
+	if len(msg.ValidatorAddr) == 0 {
+		return errorsmod.Wrap(sdkerrors.ErrInvalidRequest, "validator_addr cannot be empty")
+	}
+	if msg.ClaimedHeight <= 0 {
+		return errorsmod.Wrap(sdkerrors.ErrInvalidRequest, "claimed_height must be positive")
+	}
+	if msg.Header == nil {
+		return errorsmod.Wrap(sdkerrors.ErrInvalidRequest, "header cannot be nil")
+	}
+	if msg.LastCommit == nil {
+		return errorsmod.Wrap(sdkerrors.ErrInvalidRequest, "last_commit cannot be nil")
+	}
+	if len(msg.ValidatorPubkey) == 0 {
+		return errorsmod.Wrap(sdkerrors.ErrInvalidRequest, "validator_pubkey cannot be empty")
+	}
+	return nil
+}
+
+// ValidateBasic implements the sdk.HasValidateBasic interface.
+func (msg MsgResumeConsumer) ValidateBasic() error {
+	if _, err := sdk.AccAddressFromBech32(msg.Authority); err != nil {
+		return errorsmod.Wrapf(sdkerrors.ErrInvalidAddress, "invalid authority address: %s", err)
 	}
 	return nil
 }

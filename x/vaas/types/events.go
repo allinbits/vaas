@@ -27,6 +27,16 @@ const (
 	// unbonded, been tombstoned, or vanished, or the entry has a zero token
 	// amount. The entry is deleted either way; this event carries the reason.
 	EventTypeDowntimeSlashDropped = "vaas_downtime_slash_dropped"
+	// EventTypeDowntimeChallengeSucceeded is emitted by the provider when a
+	// MsgChallengeConsumerDowntime successfully proves the validator signed
+	// the claimed height, cancelling the pending downtime slash.
+	EventTypeDowntimeChallengeSucceeded = "vaas_downtime_challenge_succeeded"
+	// EventTypeConsumerPaused is emitted when a consumer chain transitions
+	// into CONSUMER_PHASE_PAUSED following a successful downtime challenge.
+	EventTypeConsumerPaused = "vaas_consumer_paused"
+	// EventTypeConsumerResumed is emitted when a paused consumer chain is
+	// resumed via MsgResumeConsumer.
+	EventTypeConsumerResumed = "vaas_consumer_resumed"
 
 	AttributeKeyAckSuccess            = "success"
 	AttributeKeyAck                   = "acknowledgement"
@@ -57,4 +67,6 @@ const (
 	AttributeSlashTokens              = "slash_tokens"
 	AttributeMaturesAt                = "matures_at"
 	AttributeDropReason               = "reason"
+	AttributeChallenger               = "challenger"
+	AttributeClaimedHeight            = "claimed_height"
 )
