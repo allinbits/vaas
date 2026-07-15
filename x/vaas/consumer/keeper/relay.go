@@ -13,7 +13,12 @@ import (
 	sdk "github.com/cosmos/cosmos-sdk/types"
 )
 
-func (k Keeper) OnRecvVSCPacketV2(ctx sdk.Context, sourceClientID string, newChanges vaastypes.ValidatorSetChangePacketData) error {
+// OnRecvVSCPacketV2 handles a validator-set-change packet from the provider.
+// consumerClientID is the consumer's own IBC v2 client that received this
+// packet (i.e. packet.DestinationClient, guaranteed by ibc-go's RecvPacket to
+// have a registered counterparty before our callback ever runs) -- the value
+// SendEvidencePackets later needs to address packets back to the provider.
+func (k Keeper) OnRecvVSCPacketV2(ctx sdk.Context, consumerClientID string, newChanges vaastypes.ValidatorSetChangePacketData) error {
 	if err := newChanges.Validate(); err != nil {
 		return errorsmod.Wrapf(err, "error validating VSCPacket data")
 	}
@@ -27,23 +32,27 @@ func (k Keeper) OnRecvVSCPacketV2(ctx sdk.Context, sourceClientID string, newCha
 		k.Logger(ctx).Info("skipping out-of-order VSCPacket",
 			"packetVscID", newChanges.ValsetUpdateId,
 			"highestVscID", highestID,
-			"sourceClientID", sourceClientID,
+			"consumerClientID", consumerClientID,
 		)
 		return nil
 	}
 
 	k.SetLastVSCRecvTime(ctx, ctx.BlockTime())
 
-	_, found = k.GetProviderClientID(ctx)
-	if !found {
-		k.SetProviderClientID(ctx, sourceClientID)
-		k.Logger(ctx).Info("Provider client established", "clientID", sourceClientID)
+	// Keep the stored client in sync with whichever client is actually
+	// delivering VSC packets, rather than latching onto the first value ever
+	// seen (which, at genesis, is a placeholder client the consumer created
+	// for itself before the relayer established the real, counterparty-linked
+	// client).
+	if current, found := k.GetProviderClientID(ctx); !found || current != consumerClientID {
+		k.SetProviderClientID(ctx, consumerClientID)
+		k.Logger(ctx).Info("Provider client established", "clientID", consumerClientID)
 
 		ctx.EventManager().EmitEvent(
 			sdk.NewEvent(
 				vaastypes.EventTypeChannelEstablished,
 				sdk.NewAttribute(sdk.AttributeKeyModule, types.ModuleName),
-				sdk.NewAttribute("client_id", sourceClientID),
+				sdk.NewAttribute("client_id", consumerClientID),
 			),
 		)
 	}
@@ -93,7 +102,7 @@ func (k Keeper) OnRecvVSCPacketV2(ctx sdk.Context, sourceClientID string, newCha
 	k.Logger(ctx).Info("finished receiving/handling VSCPacket",
 		"vscID", newChanges.ValsetUpdateId,
 		"len updates", len(newChanges.ValidatorUpdates),
-		"sourceClientID", sourceClientID,
+		"consumerClientID", consumerClientID,
 	)
 	return nil
 }

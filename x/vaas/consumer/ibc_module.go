@@ -90,7 +90,11 @@ func (im IBCModule) OnRecvPacket(
 		}
 	}
 
-	if err := im.keeper.OnRecvVSCPacketV2(ctx, sourceClient, data); err != nil {
+	// destinationClient is the consumer's own client that received this
+	// packet; ibc-go's RecvPacket handler already verified it has a
+	// registered counterparty before this callback runs, so it is the
+	// correct, currently-live client to address packets back to the provider.
+	if err := im.keeper.OnRecvVSCPacketV2(ctx, destinationClient, data); err != nil {
 		logger.Error(fmt.Sprintf("%s sequence %d", err.Error(), sequence))
 		return channeltypesv2.RecvPacketResult{
 			Status: channeltypesv2.PacketStatus_Failure,
