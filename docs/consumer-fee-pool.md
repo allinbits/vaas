@@ -63,14 +63,18 @@ to the same minimum as any other funder. The default is 14400 blocks
 ## Withdrawing
 
 `MsgWithdrawConsumerFeePool` is locked while the consumer is in
-`CONSUMER_PHASE_LAUNCHED`, with one exception: the gov authority may
-always withdraw, which under the existing alias-to-distribution
-semantics pulls only the community pool's own shares back to the
-community pool. This prevents non-gov depositors from rug-pulling an
-active consumer mid-flight while preserving a path for the community
-pool to withdraw subsidy support at any time.
+`CONSUMER_PHASE_LAUNCHED` or `CONSUMER_PHASE_PAUSED`, with one
+exception: the gov authority may always withdraw, which under the
+existing alias-to-distribution semantics pulls only the community
+pool's own shares back to the community pool. This prevents non-gov
+depositors from rug-pulling an active consumer mid-flight while
+preserving a path for the community pool to withdraw subsidy support
+at any time. Covering PAUSED keeps the escrow honest: withheld fee
+shares from downtime exclusions sit in the pool awaiting a possible
+challenge payout (see [consumer-downtime.md](consumer-downtime.md)),
+and a pause is exactly when that payout happens.
 
-Outside of LAUNCHED -- in REGISTERED, INITIALIZED, or STOPPED -- any
+Outside of LAUNCHED and PAUSED -- in REGISTERED, INITIALIZED, or STOPPED -- any
 depositor controls their own shares and can withdraw at any time. The
 message accepts multi-denom `Coins` and is atomic: if any denom in the
 request fails its share check, the whole transaction reverts.
@@ -91,14 +95,31 @@ This is the same accounting pattern used by ERC-4626 vaults and liquid
 staking modules: per-block fee consumption reduces share value, not share
 count, so consumption is borne pro-rata by current share-holders.
 
+### Withheld downtime shares
+
+When a validator is excluded from an epoch's distribution for downtime, its
+share is never drawn from the pool; a `WithheldFeeRecord` tracks the amount
+for the length of the downtime challenge window. If the exclusion goes
+unchallenged the record expires and the funds simply stay with the consumer.
+If a challenge proves the downtime evidence false, the recorded amounts are
+paid from the pool back to their validators before the consumer is paused.
+Records are only written when the pool actually held the epoch's fee, so a
+record is always backed by retained funds. See
+[consumer-downtime.md](consumer-downtime.md) for the full mechanism.
+
 ## Sweeping
 
 The consumer owner can trigger a full settlement via
 `MsgSweepConsumerFeePool` to distribute the pool pro-rata to all
-share-holders. Sweep is locked while the consumer is LAUNCHED; the
-owner must wait for the consumer to transition to STOPPED (or rely on
-the auto-sweep that runs on DELETED). The message takes an optional
-list of denoms; if empty, all denoms with shares or balance are swept.
+share-holders. Sweep is locked while the consumer is LAUNCHED or
+PAUSED -- depositor withdrawals and the owner sweep both freeze while
+governance deliberates a paused consumer, though the gov authority's
+withdraw-clawback exception (see [Withdrawing](#withdrawing)) remains
+available throughout. The owner must wait for the consumer to
+transition to STOPPED (or rely on the auto-sweep that runs on
+DELETED). Auto-stop bounds how long a pause can block the sweep. The
+message takes an optional list of denoms; if empty, all denoms with
+shares or balance are swept.
 Any truncation residue per denom is forwarded to the community pool.
 
 The same sweep runs automatically when a consumer is deleted (auto-sweep
