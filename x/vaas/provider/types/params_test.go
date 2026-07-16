@@ -65,9 +65,13 @@ func TestValidateInfractionParameters(t *testing.T) {
 			DowntimeGracePeriod: -1 * time.Second,
 		}, false},
 		{"zero grace period (disabled)", types.InfractionParameters{
-			DoubleSign:          types.DefaultInfractionParameters().DoubleSign,
-			Downtime:            types.DefaultInfractionParameters().Downtime,
-			DowntimeGracePeriod: 0,
+			DoubleSign:              types.DefaultInfractionParameters().DoubleSign,
+			Downtime:                types.DefaultInfractionParameters().Downtime,
+			DowntimeGracePeriod:     0,
+			SignedBlocksWindow:      types.DefaultInfractionParameters().SignedBlocksWindow,
+			MinSignedPerWindow:      types.DefaultInfractionParameters().MinSignedPerWindow,
+			DowntimeChallengeWindow: types.DefaultInfractionParameters().DowntimeChallengeWindow,
+			DowntimeEvidenceMaxAge:  types.DefaultInfractionParameters().DowntimeEvidenceMaxAge,
 		}, true},
 		{"nil double_sign", types.InfractionParameters{
 			Downtime: types.DefaultInfractionParameters().Downtime,
@@ -85,4 +89,26 @@ func TestValidateInfractionParameters(t *testing.T) {
 			require.NotNil(t, err, "expected error but got nil for testcase: %s", tc.name)
 		}
 	}
+}
+
+func TestInfractionParametersDowntimeWindowValidation(t *testing.T) {
+	ip := types.DefaultInfractionParameters()
+	require.NoError(t, ip.Validate())
+	require.Equal(t, math.LegacyMustNewDecFromStr("0.05"), ip.Downtime.SlashFraction)
+
+	// maxMissed = W - ceil(minSigned*W) = 600 - 300 = 300
+	require.Equal(t, int64(300), ip.MaxMissed())
+
+	bad := types.DefaultInfractionParameters()
+	bad.SignedBlocksWindow = 0
+	require.Error(t, bad.Validate())
+
+	bad = types.DefaultInfractionParameters()
+	bad.MinSignedPerWindow = math.LegacyNewDec(2)
+	require.Error(t, bad.Validate())
+
+	// challenge window + evidence max age must stay under the trusting period
+	bad = types.DefaultInfractionParameters()
+	bad.DowntimeChallengeWindow = 30 * 24 * time.Hour
+	require.Error(t, types.ValidateInfractionParamsAgainst(bad, types.DefaultTrustingPeriodFraction))
 }

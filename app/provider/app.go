@@ -29,6 +29,7 @@ import (
 	"cosmossdk.io/client/v2/autocli"
 	"cosmossdk.io/core/appmodule"
 	"cosmossdk.io/log"
+	"cosmossdk.io/math"
 	storetypes "cosmossdk.io/store/types"
 	"cosmossdk.io/x/tx/signing"
 	"cosmossdk.io/x/upgrade"
@@ -391,6 +392,7 @@ func New(
 		app.IBCKeeper.ChannelKeeperV2,
 		app.StakingKeeper,
 		app.SlashingKeeper,
+		fixedRatePhotonKeeper{rate: math.LegacyOneDec()},
 		app.AccountKeeper,
 		app.BankKeeper,
 		app.DistrKeeper,

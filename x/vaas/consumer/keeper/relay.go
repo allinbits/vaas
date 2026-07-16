@@ -39,6 +39,10 @@ func (k Keeper) OnRecvVSCPacketV2(ctx sdk.Context, consumerClientID string, newC
 
 	k.SetLastVSCRecvTime(ctx, ctx.BlockTime())
 
+	if newChanges.DowntimeParams != nil {
+		k.StageDowntimeParams(ctx, *newChanges.DowntimeParams)
+	}
+
 	// Keep the stored client in sync with whichever client is actually
 	// delivering VSC packets, rather than latching onto the first value ever
 	// seen (which, at genesis, is a placeholder client the consumer created

@@ -46,4 +46,22 @@ message ValidatorSetChangePacketData {
   // provider sends a snapshot while a consumer is behind on acks, so a
   // consumer that missed packets converges to the exact set in one packet.
   bool is_snapshot = 4;
+  // downtime_params is the provider's current downtime detection params.
+  // The consumer stages them on receipt (ordered by valset_update_id) and
+  // activates them at its next window boundary.
+  DowntimeParams downtime_params = 5;
+}
+
+// DowntimeParams carries the provider-owned downtime detection parameters.
+// Stamped on every VSC packet so consumers converge on the provider's
+// current values; also embedded in the consumer genesis at launch.
+message DowntimeParams {
+  // number of consumer blocks per tumbling detection window
+  int64 signed_blocks_window = 1;
+  // minimum fraction of the window a validator must sign
+  string min_signed_per_window = 2 [
+    (cosmos_proto.scalar) = "cosmos.Dec",
+    (gogoproto.customtype) = "cosmossdk.io/math.LegacyDec",
+    (gogoproto.nullable) = false
+  ];
 }

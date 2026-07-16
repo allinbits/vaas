@@ -160,6 +160,9 @@ func (am AppModule) BeginBlock(ctx context.Context) error {
 		return err
 	}
 
+	// Execute matured downtime slashes queued behind the challenge window.
+	am.keeper.SweepPendingDowntimeSlashes(sdkCtx)
+
 	// Collect and distribute fees once per epoch, not every block.
 	if am.keeper.BlocksUntilNextEpoch(sdkCtx) == 0 {
 		if err := am.keeper.DistributeConsumerFees(sdkCtx); err != nil {

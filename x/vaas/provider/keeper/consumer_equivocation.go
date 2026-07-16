@@ -2,8 +2,10 @@ package keeper
 
 import (
 	"bytes"
+	"encoding/hex"
 	"errors"
 	"fmt"
+	"time"
 
 	"github.com/allinbits/vaas/x/vaas/provider/types"
 	vaastypes "github.com/allinbits/vaas/x/vaas/types"
@@ -11,8 +13,10 @@ import (
 	tmtypes "github.com/cometbft/cometbft/types"
 
 	ibcclienttypes "github.com/cosmos/ibc-go/v10/modules/core/02-client/types"
+	ibcexported "github.com/cosmos/ibc-go/v10/modules/core/exported"
 	ibctmtypes "github.com/cosmos/ibc-go/v10/modules/light-clients/07-tendermint"
 
+	"cosmossdk.io/collections"
 	errorsmod "cosmossdk.io/errors"
 	"cosmossdk.io/math"
 
@@ -201,18 +205,56 @@ func (k Keeper) HandleConsumerEvidencePacket(ctx sdk.Context, consumerId uint64,
 	}
 }
 
-// HandleConsumerDowntime slashes a validator that was offline on a consumer chain.
-// The provider verifies the downtime claim by checking:
-//  1. The consumer chain is outside its downtime grace period (if configured).
-//  2. The infraction height is not older than the minimum evidence height for this consumer.
-//  3. The provider's IBC client for the consumer has a consensus state at the infraction height,
-//     proving the consumer chain actually reached that height.
-//  4. The validator was part of the consumer's validator set at the time of the infraction.
+// HandleConsumerDowntime validates a consumer's downtime evidence and, if
+// accepted, queues a slash behind the downtime challenge window instead of
+// executing it immediately. The provider verifies:
+//  1. The echoed downtime params (window, min-signed fraction) are acceptable
+//     -- they match the provider's current params, or a recently-superseded
+//     set (see AcceptableDowntimeParams).
+//  2. The reported missed-block count exceeds the infraction threshold
+//     computed from those echoed params (EvidencePacketData.MaxMissed).
+//  3. The infraction height is not older than the minimum evidence height for
+//     this consumer, and the validator was part of the consumer's validator
+//     set.
+//  4. The window-end time -- anchored to an IBC consensus state proving the
+//     consumer chain actually reached that height, see windowEndTimestamp --
+//     is past the consumer's downtime grace period and not older than
+//     DowntimeEvidenceMaxAge.
+//  5. No slash is already pending for this (consumer, validator) pair.
+//
+// On acceptance the slash amount is priced now, at receipt time (see
+// ResolveDowntimeSlashTokens), and stored as a PendingDowntimeSlash maturing
+// DowntimeChallengeWindow from now. Execution happens later, once matured, in
+// the epoch sweep: this handler never calls SlashValidator.
 //
 // CONTRACT: A downtime infraction must never jail a validator.
 func (k Keeper) HandleConsumerDowntime(ctx sdk.Context, consumerId uint64, evidencePacket vaastypes.EvidencePacketData) error {
-	consumerAddr := types.NewConsumerConsAddress(evidencePacket.ValidatorAddr)
+	echoedParams := vaastypes.DowntimeParams{
+		SignedBlocksWindow: evidencePacket.SignedBlocksWindow,
+		MinSignedPerWindow: evidencePacket.MinSignedPerWindow,
+	}
+	if !k.AcceptableDowntimeParams(ctx, echoedParams) {
+		return errorsmod.Wrapf(
+			vaastypes.ErrInvalidPacketData,
+			"downtime evidence for consumer chain %d echoes unacceptable downtime params (window %d, min signed %s)",
+			consumerId,
+			evidencePacket.SignedBlocksWindow,
+			evidencePacket.MinSignedPerWindow,
+		)
+	}
 
+	maxMissed := evidencePacket.MaxMissed()
+	if evidencePacket.MissedCount() <= maxMissed {
+		return errorsmod.Wrapf(
+			vaastypes.ErrInvalidPacketData,
+			"downtime evidence for consumer chain %d does not exceed the infraction threshold: missed %d, max %d",
+			consumerId,
+			evidencePacket.MissedCount(),
+			maxMissed,
+		)
+	}
+
+	consumerAddr := types.NewConsumerConsAddress(evidencePacket.ValidatorAddr)
 	providerAddr := k.GetProviderAddrFromConsumerAddr(ctx, consumerId, consumerAddr)
 
 	// Verify the infraction height is not too old.
@@ -227,8 +269,18 @@ func (k Keeper) HandleConsumerDowntime(ctx sdk.Context, consumerId uint64, evide
 		)
 	}
 
-	// Verify the provider's IBC client has a consensus state at the infraction height.
-	// This proves the consumer chain actually reached this height.
+	// Verify the validator was part of the consumer's validator set. Join-time
+	// trimming of the bitmap happens consumer-side, so there is no join-height
+	// comparison here.
+	if _, found := k.GetConsumerValidator(ctx, consumerId, providerAddr); !found {
+		return errorsmod.Wrapf(
+			vaastypes.ErrInvalidPacketData,
+			"validator %s is not in the validator set of consumer chain %d",
+			providerAddr.String(),
+			consumerId,
+		)
+	}
+
 	clientId, found := k.GetConsumerClientId(ctx, consumerId)
 	if !found {
 		return errorsmod.Wrapf(
@@ -238,14 +290,15 @@ func (k Keeper) HandleConsumerDowntime(ctx sdk.Context, consumerId uint64, evide
 		)
 	}
 
-	consensusHeight := ibcclienttypes.NewHeight(0, uint64(evidencePacket.InfractionHeight))
-	consensusState, ok := k.clientKeeper.GetClientConsensusState(ctx, clientId, consensusHeight)
-	if !ok {
+	// Anchor the window-end time to a real IBC consensus state so the grace
+	// and evidence-age checks below are judged against consumer chain time
+	// the provider can actually verify, not the packet's own unverified claim.
+	windowEndTime, err := k.windowEndTimestamp(ctx, clientId, evidencePacket.InfractionHeight)
+	if err != nil {
 		return errorsmod.Wrapf(
 			vaastypes.ErrInvalidPacketData,
-			"no consensus state for consumer chain %d at infraction height %d: cannot verify downtime",
-			consumerId,
-			evidencePacket.InfractionHeight,
+			"cannot anchor downtime evidence window for consumer chain %d: %s",
+			consumerId, err,
 		)
 	}
 
@@ -263,68 +316,142 @@ func (k Keeper) HandleConsumerDowntime(ctx sdk.Context, consumerId uint64, evide
 			)
 		}
 		gracePeriodEnd := initParams.SpawnTime.Add(infractionParams.DowntimeGracePeriod)
-		if consumerTime := consensusState.GetTimestamp(); consumerTime < uint64(gracePeriodEnd.UnixNano()) { //nolint:staticcheck
+		if windowEndTime.Before(gracePeriodEnd) {
 			return errorsmod.Wrapf(
 				vaastypes.ErrInvalidPacketData,
-				"consumer chain %d is still in downtime grace period (launched %d, grace ends %d, infraction time %d)",
+				"consumer chain %d is still in downtime grace period (launched %s, grace ends %s, window end %s)",
 				consumerId,
-				initParams.SpawnTime.UnixNano(),
-				gracePeriodEnd.UnixNano(),
-				consumerTime,
+				initParams.SpawnTime,
+				gracePeriodEnd,
+				windowEndTime,
 			)
 		}
 	}
 
-	// Verify the validator was part of the consumer's validator set.
-	validator, found := k.GetConsumerValidator(ctx, consumerId, providerAddr)
-	if !found {
+	// Verify the evidence isn't stale relative to when it was submitted.
+	if age := ctx.BlockTime().Sub(windowEndTime); age > infractionParams.DowntimeEvidenceMaxAge {
 		return errorsmod.Wrapf(
 			vaastypes.ErrInvalidPacketData,
-			"validator %s is not in the validator set of consumer chain %d",
+			"downtime evidence for consumer chain %d is too old: window ended %s ago, max age %s",
+			consumerId,
+			age,
+			infractionParams.DowntimeEvidenceMaxAge,
+		)
+	}
+
+	pendingKey := collections.Join(consumerId, providerAddr.ToSdkConsAddr().Bytes())
+	hasPending, err := k.PendingDowntimeSlashes.Has(ctx, pendingKey)
+	if err != nil {
+		return errorsmod.Wrapf(
+			vaastypes.ErrInvalidPacketData,
+			"checking pending downtime slash for consumer chain %d: %s",
+			consumerId, err,
+		)
+	}
+	if hasPending {
+		return errorsmod.Wrapf(
+			vaastypes.ErrInvalidPacketData,
+			"a downtime slash is already pending for validator %s on consumer chain %d",
 			providerAddr.String(),
 			consumerId,
 		)
 	}
 
-	// Check that the infraction occurred after the validator joined the consumer set.
-	if evidencePacket.InfractionHeight < validator.JoinHeight {
+	slashTokens, err := k.ResolveDowntimeSlashTokens(ctx, consumerId, evidencePacket, windowEndTime)
+	if err != nil {
 		return errorsmod.Wrapf(
 			vaastypes.ErrInvalidPacketData,
-			"downtime infraction height %d is before validator %s joined consumer chain %d at height %d",
-			evidencePacket.InfractionHeight,
-			providerAddr.String(),
-			consumerId,
-			validator.JoinHeight,
+			"pricing downtime slash for consumer chain %d: %s",
+			consumerId, err,
 		)
 	}
 
-	if err := k.SlashValidator(ctx, providerAddr, infractionParams.Downtime, stakingtypes.Infraction_INFRACTION_DOWNTIME); err != nil {
-		return err
-	}
-
-	// Record downtime for epoch reward exclusion
+	// Record downtime for epoch reward exclusion. This takes effect
+	// immediately, independent of the slash challenge window below.
 	k.MarkEpochDowntime(ctx, consumerId, providerAddr.ToSdkConsAddr())
 
+	maturesAt := ctx.BlockTime().Add(infractionParams.DowntimeChallengeWindow)
+	pending := types.PendingDowntimeSlash{
+		ConsumerId:         consumerId,
+		ProviderConsAddr:   providerAddr.ToSdkConsAddr().Bytes(),
+		WindowStartHeight:  evidencePacket.WindowStartHeight,
+		Span:               evidencePacket.Span(),
+		MissedCount:        evidencePacket.MissedCount(),
+		MissedBlocksBitmap: evidencePacket.MissedBlocksBitmap,
+		SlashTokens:        slashTokens,
+		MaturesAt:          maturesAt,
+	}
+	if err := k.PendingDowntimeSlashes.Set(ctx, pendingKey, pending); err != nil {
+		return errorsmod.Wrapf(
+			vaastypes.ErrInvalidPacketData,
+			"storing pending downtime slash for consumer chain %d: %s",
+			consumerId, err,
+		)
+	}
+
 	k.Logger(ctx).Info(
-		"handled consumer downtime",
+		"queued consumer downtime slash",
 		"consumerId", consumerId,
 		"consumerAddr", consumerAddr.String(),
 		"providerAddr", providerAddr.String(),
-		"infractionHeight", evidencePacket.InfractionHeight,
+		"windowStartHeight", evidencePacket.WindowStartHeight,
+		"windowEndHeight", evidencePacket.InfractionHeight,
+		"missedCount", evidencePacket.MissedCount(),
+		"slashTokens", slashTokens.String(),
+		"maturesAt", maturesAt,
 	)
 
 	ctx.EventManager().EmitEvent(
 		sdk.NewEvent(
-			vaastypes.EventTypeExecuteConsumerChainSlash,
+			vaastypes.EventTypePendingDowntimeSlash,
 			sdk.NewAttribute(sdk.AttributeKeyModule, types.ModuleName),
 			sdk.NewAttribute(types.AttributeConsumerId, fmt.Sprintf("%d", consumerId)),
 			sdk.NewAttribute(vaastypes.AttributeProviderValidatorAddress, providerAddr.String()),
+			sdk.NewAttribute(vaastypes.AttributeWindowStartHeight, fmt.Sprintf("%d", evidencePacket.WindowStartHeight)),
 			sdk.NewAttribute(vaastypes.AttributeInfractionHeight, fmt.Sprintf("%d", evidencePacket.InfractionHeight)),
-			sdk.NewAttribute(vaastypes.AttributeInfractionType, stakingtypes.Infraction_INFRACTION_DOWNTIME.String()),
+			sdk.NewAttribute(vaastypes.AttributeMissedCount, fmt.Sprintf("%d", evidencePacket.MissedCount())),
+			sdk.NewAttribute(vaastypes.AttributeMissedBlocksBitmap, hex.EncodeToString(evidencePacket.MissedBlocksBitmap)),
+			sdk.NewAttribute(vaastypes.AttributeSlashTokens, slashTokens.String()),
+			sdk.NewAttribute(vaastypes.AttributeMaturesAt, maturesAt.String()),
 		),
 	)
 
 	return nil
+}
+
+// windowEndTimestamp resolves the timestamp anchor for a downtime evidence
+// window: the timestamp of the smallest IBC consensus state stored for
+// clientId at a height >= windowEnd. This proves the consumer chain actually
+// reached at least that height, so the grace-period and evidence-age checks
+// in HandleConsumerDowntime are judged against verifiable consumer chain
+// time rather than the packet's own unverified claims. Returns an error if
+// no such consensus state is stored.
+func (k Keeper) windowEndTimestamp(ctx sdk.Context, clientId string, windowEnd int64) (time.Time, error) {
+	if k.windowEndTimestampFn != nil {
+		return k.windowEndTimestampFn(ctx, clientId, windowEnd)
+	}
+
+	clientStore := k.clientKeeper.GetStoreProvider().ClientStore(ctx, clientId)
+
+	var anchorHeight ibcexported.Height
+	found := false
+	ibctmtypes.IterateConsensusStateAscending(clientStore, func(height ibcexported.Height) bool {
+		if int64(height.GetRevisionHeight()) >= windowEnd {
+			anchorHeight = height
+			found = true
+			return true
+		}
+		return false
+	})
+	if !found {
+		return time.Time{}, fmt.Errorf("cannot anchor evidence window time")
+	}
+
+	consensusState, ok := k.clientKeeper.GetClientConsensusState(ctx, clientId, anchorHeight)
+	if !ok {
+		return time.Time{}, fmt.Errorf("cannot anchor evidence window time")
+	}
+	return time.Unix(0, int64(consensusState.GetTimestamp())), nil //nolint:staticcheck
 }
 
 //
@@ -664,49 +791,73 @@ func (k Keeper) ComputePowerToSlash(ctx sdk.Context, validator stakingtypes.Vali
 	return power + undelegationsAndRedelegationsInPower
 }
 
-// SlashValidator slashes validator with given provider Address
-func (k Keeper) SlashValidator(ctx sdk.Context, providerAddr types.ProviderConsAddress, slashingParams *types.SlashJailParameters, infraction stakingtypes.Infraction) error {
+// slashableStake looks up the validator behind providerAddr and computes the
+// consensus power -- and its token equivalent -- that would be slashed for
+// it, folding in the power currently tied up in non-matured undelegations
+// and redelegations (see ComputePowerToSlash). Returns
+// ErrNoValidatorForAddress / ErrBadValidatorAddr / ErrNoUnbondingDelegation /
+// ErrValidatorTombstoned under the same conditions SlashValidator has always
+// rejected under; callers that only care about rejecting those conditions
+// (rather than computing a fraction from tokens) can keep using
+// SlashValidator directly.
+func (k Keeper) slashableStake(ctx sdk.Context, providerAddr types.ProviderConsAddress) (
+	totalPower int64,
+	totalTokens math.Int,
+	consAddr sdk.ConsAddress,
+	err error,
+) {
 	validator, err := k.stakingKeeper.GetValidatorByConsAddr(ctx, providerAddr.ToSdkConsAddr())
 	if err != nil && errors.Is(err, stakingtypes.ErrNoValidatorFound) {
-		return errorsmod.Wrapf(slashingtypes.ErrNoValidatorForAddress, "provider consensus address: %s", providerAddr.String())
+		return 0, totalTokens, consAddr, errorsmod.Wrapf(slashingtypes.ErrNoValidatorForAddress, "provider consensus address: %s", providerAddr.String())
 	} else if err != nil {
-		return errorsmod.Wrapf(slashingtypes.ErrBadValidatorAddr, "unknown error looking for provider consensus address: %s", providerAddr.String())
+		return 0, totalTokens, consAddr, errorsmod.Wrapf(slashingtypes.ErrBadValidatorAddr, "unknown error looking for provider consensus address: %s", providerAddr.String())
 	}
 
 	if validator.IsUnbonded() {
-		return errorsmod.Wrapf(stakingtypes.ErrNoUnbondingDelegation, "validator is unbonded. provider consensus address: %s", providerAddr.String())
+		return 0, totalTokens, consAddr, errorsmod.Wrapf(stakingtypes.ErrNoUnbondingDelegation, "validator is unbonded. provider consensus address: %s", providerAddr.String())
 	}
 
 	if k.slashingKeeper.IsTombstoned(ctx, providerAddr.ToSdkConsAddr()) {
-		return errorsmod.Wrapf(slashingtypes.ErrValidatorTombstoned, "validator is tombstoned. provider consensus address: %s", providerAddr.String())
+		return 0, totalTokens, consAddr, errorsmod.Wrapf(slashingtypes.ErrValidatorTombstoned, "validator is tombstoned. provider consensus address: %s", providerAddr.String())
 	}
 
 	valAddr, err := k.ValidatorAddressCodec().StringToBytes(validator.GetOperator())
 	if err != nil {
-		return err
+		return 0, totalTokens, consAddr, err
 	}
 
 	undelegations, err := k.stakingKeeper.GetUnbondingDelegationsFromValidator(ctx, valAddr)
 	if err != nil {
-		return err
+		return 0, totalTokens, consAddr, err
 	}
 	redelegations, err := k.stakingKeeper.GetRedelegationsFromSrcValidator(ctx, valAddr)
 	if err != nil {
-		return err
+		return 0, totalTokens, consAddr, err
 	}
 	lastPower, err := k.stakingKeeper.GetLastValidatorPower(ctx, valAddr)
 	if err != nil {
-		return err
+		return 0, totalTokens, consAddr, err
 	}
 
 	powerReduction := k.stakingKeeper.PowerReduction(ctx)
-	totalPower := k.ComputePowerToSlash(ctx, validator, undelegations, redelegations, lastPower, powerReduction)
+	totalPower = k.ComputePowerToSlash(ctx, validator, undelegations, redelegations, lastPower, powerReduction)
+	totalTokens = sdk.TokensFromConsensusPower(totalPower, powerReduction)
 
-	consAdrr, err := validator.GetConsAddr()
+	consAddr, err = validator.GetConsAddr()
+	if err != nil {
+		return totalPower, totalTokens, consAddr, err
+	}
+
+	return totalPower, totalTokens, consAddr, nil
+}
+
+// SlashValidator slashes validator with given provider Address
+func (k Keeper) SlashValidator(ctx sdk.Context, providerAddr types.ProviderConsAddress, slashingParams *types.SlashJailParameters, infraction stakingtypes.Infraction) error {
+	totalPower, _, consAddr, err := k.slashableStake(ctx, providerAddr)
 	if err != nil {
 		return err
 	}
 
-	_, err = k.stakingKeeper.SlashWithInfractionReason(ctx, consAdrr, 0, totalPower, slashingParams.SlashFraction, infraction)
+	_, err = k.stakingKeeper.SlashWithInfractionReason(ctx, consAddr, 0, totalPower, slashingParams.SlashFraction, infraction)
 	return err
 }

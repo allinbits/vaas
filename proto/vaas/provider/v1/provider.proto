@@ -218,6 +218,51 @@ message InfractionParameters {
   // downtime. Set to 0 to disable the grace period.
   google.protobuf.Duration downtime_grace_period = 3
       [ (gogoproto.nullable) = false, (gogoproto.stdduration) = true ];
+  // signed_blocks_window / min_signed_per_window mirror what the provider
+  // writes into consumer genesis and VSC packets; used to validate
+  // incoming evidence bitmaps.
+  int64 signed_blocks_window = 4;
+  string min_signed_per_window = 5 [
+    (cosmos_proto.scalar) = "cosmos.Dec",
+    (gogoproto.customtype) = "cosmossdk.io/math.LegacyDec",
+    (gogoproto.nullable) = false
+  ];
+  // delay between accepting downtime evidence and executing its slash;
+  // the window during which a challenge can cancel it (PR 2)
+  google.protobuf.Duration downtime_challenge_window = 6
+      [ (gogoproto.nullable) = false, (gogoproto.stdduration) = true ];
+  // maximum age of an evidence window at receipt, judged against IBC
+  // client consensus-state timestamps
+  google.protobuf.Duration downtime_evidence_max_age = 7
+      [ (gogoproto.nullable) = false, (gogoproto.stdduration) = true ];
+}
+
+// PendingDowntimeSlash is a downtime slash accepted from a consumer but not
+// yet executed; it matures after the challenge window and can be cancelled
+// by a successful challenge (PR 2).
+message PendingDowntimeSlash {
+  uint64 consumer_id = 1;
+  bytes provider_cons_addr = 2;
+  int64 window_start_height = 3;
+  int64 span = 4;
+  int64 missed_count = 5;
+  bytes missed_blocks_bitmap = 6;
+  // slash amount in bond denom, resolved at receipt (P * M / C)
+  string slash_tokens = 7 [
+    (cosmos_proto.scalar) = "cosmos.Int",
+    (gogoproto.customtype) = "cosmossdk.io/math.Int",
+    (gogoproto.nullable) = false
+  ];
+  google.protobuf.Timestamp matures_at = 8
+      [ (gogoproto.nullable) = false, (gogoproto.stdtime) = true ];
+}
+
+// PreviousDowntimeParams retains the immediately-prior downtime params after
+// a change, so in-flight evidence computed under them is still accepted.
+message PreviousDowntimeParams {
+  vaas.v1.DowntimeParams params = 1 [ (gogoproto.nullable) = false ];
+  google.protobuf.Timestamp changed_at = 2
+      [ (gogoproto.nullable) = false, (gogoproto.stdtime) = true ];
 }
 
 //

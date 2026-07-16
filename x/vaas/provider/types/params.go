@@ -46,13 +46,25 @@ const (
 	// DefaultDoubleSignSlashFraction is the default slash fraction for double-sign infractions on consumer chains.
 	DefaultDoubleSignSlashFraction = "0.05"
 
-	// DefaultDowntimeSlashFraction is the default slash fraction for downtime infractions on consumer chains (0.05%).
-	DefaultDowntimeSlashFraction = "0.0005"
+	// DefaultDowntimeSlashFraction is the ceiling on any downtime slash,
+	// expressed as a fraction of stake. Downtime slashes are priced from
+	// foregone consumer fees (see docs/superpowers/specs/2026-07-14-downtime-evidence-verification-design.md,
+	// section 6); this fraction bounds the result.
+	DefaultDowntimeSlashFraction = "0.05"
 
 	// DefaultDowntimeGracePeriod is the default grace period after a consumer chain launches
 	// during which downtime slashing is suppressed. This gives validators time to spin up
 	// their consumer chain nodes without being penalized for early downtime.
 	DefaultDowntimeGracePeriod = 7 * 24 * time.Hour // 1 week
+
+	// DefaultDowntimeChallengeWindow is the default duration during which
+	// downtime evidence for a given header may still be challenged/disputed
+	// before it is considered final.
+	DefaultDowntimeChallengeWindow = 7 * 24 * time.Hour
+
+	// DefaultDowntimeEvidenceMaxAge is the default maximum age of a header
+	// that downtime evidence may reference.
+	DefaultDowntimeEvidenceMaxAge = 72 * time.Hour
 
 	// DefaultMinDepositBlocks is the default minimum-deposit floor expressed
 	// as a multiplier of FeesPerBlock.Amount. 14400 blocks is roughly one day
@@ -94,6 +106,7 @@ func DefaultParams() Params {
 func DefaultInfractionParameters() InfractionParameters {
 	doubleSignSlashFraction, _ := math.LegacyNewDecFromStr(DefaultDoubleSignSlashFraction)
 	downtimeSlashFraction, _ := math.LegacyNewDecFromStr(DefaultDowntimeSlashFraction)
+	minSignedPerWindow, _ := math.LegacyNewDecFromStr(vaastypes.DefaultMinSignedPerWindow)
 	return InfractionParameters{
 		DoubleSign: &SlashJailParameters{
 			JailDuration:  time.Duration(1<<63 - 1),
@@ -105,7 +118,11 @@ func DefaultInfractionParameters() InfractionParameters {
 			SlashFraction: downtimeSlashFraction,
 			Tombstone:     false,
 		},
-		DowntimeGracePeriod: DefaultDowntimeGracePeriod,
+		DowntimeGracePeriod:     DefaultDowntimeGracePeriod,
+		SignedBlocksWindow:      vaastypes.DefaultSignedBlocksWindow,
+		MinSignedPerWindow:      minSignedPerWindow,
+		DowntimeChallengeWindow: DefaultDowntimeChallengeWindow,
+		DowntimeEvidenceMaxAge:  DefaultDowntimeEvidenceMaxAge,
 	}
 }
 
@@ -141,6 +158,46 @@ func (ip InfractionParameters) Validate() error {
 	}
 	if ip.DowntimeGracePeriod < 0 {
 		return fmt.Errorf("downtime_grace_period must not be negative")
+	}
+	if err := vaastypes.ValidatePositiveInt64(ip.SignedBlocksWindow); err != nil {
+		return fmt.Errorf("signed_blocks_window: %s", err)
+	}
+	if ip.MinSignedPerWindow.IsNil() || !ip.MinSignedPerWindow.IsPositive() || !ip.MinSignedPerWindow.LT(math.LegacyOneDec()) {
+		return fmt.Errorf("min_signed_per_window must be in (0, 1), got %s", ip.MinSignedPerWindow)
+	}
+	if err := vaastypes.ValidateDuration(ip.DowntimeChallengeWindow); err != nil {
+		return fmt.Errorf("downtime_challenge_window: %s", err)
+	}
+	if err := vaastypes.ValidateDuration(ip.DowntimeEvidenceMaxAge); err != nil {
+		return fmt.Errorf("downtime_evidence_max_age: %s", err)
+	}
+	return nil
+}
+
+// MaxMissed returns the number of missed blocks in a full window that
+// qualifies as a downtime infraction: W - ceil(minSigned * W).
+func (ip InfractionParameters) MaxMissed() int64 {
+	w := math.LegacyNewDec(ip.SignedBlocksWindow)
+	return ip.SignedBlocksWindow - ip.MinSignedPerWindow.Mul(w).Ceil().TruncateInt64()
+}
+
+// ValidateInfractionParamsAgainst enforces the cross-param constraint that
+// the oldest challengeable header stays light-client verifiable through its
+// challenge window: evidenceMaxAge + challengeWindow < trustingFraction *
+// defaultConsumerUnbonding. Called wherever incoming infraction params are
+// validated together with Params, since InfractionParameters is stored
+// separately from Params.
+func ValidateInfractionParamsAgainst(ip InfractionParameters, trustingPeriodFraction string) error {
+	frac, err := math.LegacyNewDecFromStr(trustingPeriodFraction)
+	if err != nil {
+		return err
+	}
+	trusting := time.Duration(frac.MulInt64(int64(vaastypes.DefaultConsumerUnbondingPeriod)).TruncateInt64())
+	if ip.DowntimeEvidenceMaxAge+ip.DowntimeChallengeWindow >= trusting {
+		return fmt.Errorf(
+			"downtime_evidence_max_age + downtime_challenge_window (%s) must be below the default trusting period (%s)",
+			ip.DowntimeEvidenceMaxAge+ip.DowntimeChallengeWindow, trusting,
+		)
 	}
 	return nil
 }

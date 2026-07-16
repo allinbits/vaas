@@ -314,3 +314,68 @@ func TestQueryConsumerLiveness_UnknownConsumer(t *testing.T) {
 	require.Error(t, err)
 	require.Equal(t, codes.InvalidArgument, status.Code(err))
 }
+
+// TestQueryPendingDowntimeSlashes verifies that querying a consumer returns
+// exactly its own pending downtime slashes, with the bitmap and slash tokens
+// intact, and does not leak entries belonging to another consumer.
+func TestQueryPendingDowntimeSlashes(t *testing.T) {
+	k, ctx, ctrl, _ := testkeeper.GetProviderKeeperAndCtx(t, testkeeper.NewInMemKeeperParams(t))
+	defer ctrl.Finish()
+
+	const consumer1 = uint64(1)
+	const consumer2 = uint64(2)
+	k.SetConsumerPhase(ctx, consumer1, providertypes.CONSUMER_PHASE_LAUNCHED)
+	k.SetConsumerPhase(ctx, consumer2, providertypes.CONSUMER_PHASE_LAUNCHED)
+
+	maturesAt := ctx.BlockTime().Add(time.Hour).UTC()
+
+	entryA := providertypes.PendingDowntimeSlash{
+		ConsumerId:         consumer1,
+		ProviderConsAddr:   []byte("provider-addr-validator-a"),
+		WindowStartHeight:  100,
+		Span:               200,
+		MissedCount:        50,
+		MissedBlocksBitmap: []byte{0xff, 0x00, 0xab},
+		SlashTokens:        math.NewInt(1000),
+		MaturesAt:          maturesAt,
+	}
+	entryB := providertypes.PendingDowntimeSlash{
+		ConsumerId:         consumer1,
+		ProviderConsAddr:   []byte("provider-addr-validator-b"),
+		WindowStartHeight:  150,
+		Span:               200,
+		MissedCount:        75,
+		MissedBlocksBitmap: []byte{0x0f, 0xf0},
+		SlashTokens:        math.NewInt(2000),
+		MaturesAt:          maturesAt,
+	}
+	entryC := providertypes.PendingDowntimeSlash{
+		ConsumerId:         consumer2,
+		ProviderConsAddr:   []byte("provider-addr-validator-c"),
+		WindowStartHeight:  100,
+		Span:               200,
+		MissedCount:        50,
+		MissedBlocksBitmap: []byte{0x11},
+		SlashTokens:        math.NewInt(3000),
+		MaturesAt:          maturesAt,
+	}
+
+	require.NoError(t, k.PendingDowntimeSlashes.Set(ctx, collections.Join(consumer1, entryA.ProviderConsAddr), entryA))
+	require.NoError(t, k.PendingDowntimeSlashes.Set(ctx, collections.Join(consumer1, entryB.ProviderConsAddr), entryB))
+	require.NoError(t, k.PendingDowntimeSlashes.Set(ctx, collections.Join(consumer2, entryC.ProviderConsAddr), entryC))
+
+	resp, err := k.QueryPendingDowntimeSlashes(ctx, &providertypes.QueryPendingDowntimeSlashesRequest{ConsumerId: consumer1})
+	require.NoError(t, err)
+	require.ElementsMatch(t, []providertypes.PendingDowntimeSlash{entryA, entryB}, resp.Slashes)
+}
+
+// TestQueryPendingDowntimeSlashes_UnknownConsumer verifies that querying an
+// unregistered consumer id returns a codes.InvalidArgument gRPC error.
+func TestQueryPendingDowntimeSlashes_UnknownConsumer(t *testing.T) {
+	k, ctx, ctrl, _ := testkeeper.GetProviderKeeperAndCtx(t, testkeeper.NewInMemKeeperParams(t))
+	defer ctrl.Finish()
+
+	_, err := k.QueryPendingDowntimeSlashes(ctx, &providertypes.QueryPendingDowntimeSlashesRequest{ConsumerId: 999})
+	require.Error(t, err)
+	require.Equal(t, codes.InvalidArgument, status.Code(err))
+}

@@ -11,6 +11,10 @@ import (
 
 	tmtypes "github.com/cometbft/cometbft/types"
 
+	sdk "github.com/cosmos/cosmos-sdk/types"
+
+	"cosmossdk.io/math"
+
 	"github.com/allinbits/vaas/testutil/crypto"
 	"github.com/allinbits/vaas/x/vaas/consumer/types"
 	vaastypes "github.com/allinbits/vaas/x/vaas/types"
@@ -231,4 +235,82 @@ func TestValidateRestartConsumerGenesisState(t *testing.T) {
 			require.NoError(t, err, "%s returned unexpected error", c.name)
 		}
 	}
+}
+
+// TestValidatePendingEvidencePackets verifies that GenesisState.Validate
+// rejects a PendingEvidencePacketEntry whose bytes would not survive the
+// keeper: SendEvidencePackets silently drops any stored entry it cannot
+// unmarshal, and the queue is the only remaining copy of the evidence once
+// the source window closes.
+func TestValidatePendingEvidencePackets(t *testing.T) {
+	cId := crypto.NewCryptoIdentityFromIntSeed(238934)
+	pubKey := cId.TMCryptoPubKey()
+
+	validator := tmtypes.NewValidator(pubKey, 1)
+	valSet := tmtypes.NewValidatorSet([]*tmtypes.Validator{validator})
+	valHash := valSet.Hash()
+	valUpdates := tmtypes.TM2PB.ValidatorUpdates(valSet)
+
+	cs := ibctmtypes.NewClientState(chainID, ibctmtypes.DefaultTrustLevel, trustingPeriod, ubdPeriod, maxClockDrift, height, commitmenttypes.GetSDKSpecs(), upgradePath)
+	consensusState := ibctmtypes.NewConsensusState(time.Now(), commitmenttypes.NewMerkleRoot([]byte("apphash")), valHash)
+
+	params := vaastypes.DefaultConsumerParams()
+	params.Enabled = true
+
+	addr := sdk.ConsAddress("validator-addr-evidence-one")
+	packet := vaastypes.NewEvidencePacketData(addr, 1, []byte{0xFF, 0x03}, 10, 100, math.LegacyNewDecWithPrec(5, 1))
+
+	base := func() *types.GenesisState {
+		return types.NewInitialGenesisState(cs, consensusState, valUpdates, params)
+	}
+
+	t.Run("valid pending evidence packet", func(t *testing.T) {
+		gs := base()
+		gs.PendingEvidencePackets = []types.PendingEvidencePacketEntry{
+			{Addr: addr, Packet: packet.GetBytes()},
+		}
+		require.NoError(t, gs.Validate())
+	})
+
+	t.Run("empty addr is rejected", func(t *testing.T) {
+		gs := base()
+		gs.PendingEvidencePackets = []types.PendingEvidencePacketEntry{
+			{Addr: nil, Packet: packet.GetBytes()},
+		}
+		err := gs.Validate()
+		require.Error(t, err)
+		require.Contains(t, err.Error(), "pending evidence packet")
+	})
+
+	t.Run("non-JSON packet bytes are rejected", func(t *testing.T) {
+		gs := base()
+		gs.PendingEvidencePackets = []types.PendingEvidencePacketEntry{
+			{Addr: addr, Packet: []byte("{not json")},
+		}
+		err := gs.Validate()
+		require.Error(t, err)
+		require.Contains(t, err.Error(), "pending evidence packet")
+	})
+
+	t.Run("packet failing EvidencePacketData.Validate is rejected", func(t *testing.T) {
+		gs := base()
+		bad := packet
+		bad.WindowStartHeight = 0
+		gs.PendingEvidencePackets = []types.PendingEvidencePacketEntry{
+			{Addr: addr, Packet: bad.GetBytes()},
+		}
+		err := gs.Validate()
+		require.Error(t, err)
+		require.Contains(t, err.Error(), "pending evidence packet")
+	})
+
+	t.Run("addr mismatching the packet's validator addr is rejected", func(t *testing.T) {
+		gs := base()
+		gs.PendingEvidencePackets = []types.PendingEvidencePacketEntry{
+			{Addr: sdk.ConsAddress("validator-addr-evidence-two"), Packet: packet.GetBytes()},
+		}
+		err := gs.Validate()
+		require.Error(t, err)
+		require.Contains(t, err.Error(), "does not match packet validator addr")
+	})
 }

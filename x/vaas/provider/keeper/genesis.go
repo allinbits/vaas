@@ -235,7 +235,35 @@ func (k Keeper) InitGenesis(ctx sdk.Context, genState *types.GenesisState) []abc
 	}
 
 	k.SetParams(ctx, genState.Params)
-	k.SetInfractionParams(ctx, types.DefaultInfractionParameters())
+	infractionParams := types.DefaultInfractionParameters()
+	if genState.InfractionParameters != nil {
+		infractionParams = *genState.InfractionParameters
+	}
+	if err := types.ValidateInfractionParamsAgainst(infractionParams, genState.Params.TrustingPeriodFraction); err != nil {
+		panic(fmt.Errorf("infraction parameters incompatible with genesis trusting period fraction: %w", err))
+	}
+	k.SetInfractionParams(ctx, infractionParams)
+
+	// Import downtime-detection state: pending slashes, the previous downtime
+	// params (only when present -- absent means the params have never
+	// changed), and per-(consumer, distribution-time) epoch share records.
+	for _, pending := range genState.PendingDowntimeSlashes {
+		key := collections.Join(pending.ConsumerId, pending.ProviderConsAddr)
+		if err := k.PendingDowntimeSlashes.Set(ctx, key, pending); err != nil {
+			panic(fmt.Errorf("init: set pending downtime slash for consumer %d: %w", pending.ConsumerId, err))
+		}
+	}
+	if genState.PreviousDowntimeParams != nil {
+		if err := k.PreviousDowntimeParams.Set(ctx, *genState.PreviousDowntimeParams); err != nil {
+			panic(fmt.Errorf("init: set previous downtime params: %w", err))
+		}
+	}
+	for _, rec := range genState.EpochShareRecords {
+		key := collections.Join(rec.ConsumerId, rec.DistributedAtUnixNano)
+		if err := k.EpochShareRecords.Set(ctx, key, rec.Share); err != nil {
+			panic(fmt.Errorf("init: set epoch share record for consumer %d: %w", rec.ConsumerId, err))
+		}
+	}
 
 	return k.InitGenesisValUpdates(ctx)
 }
@@ -289,6 +317,12 @@ func (k Keeper) InitGenesisValUpdates(ctx sdk.Context) []abci.ValidatorUpdate {
 // ids) IS exported per consumer and restored at InitGenesis, so a state-export
 // restart preserves each consumer's grace window and resync counters rather
 // than resetting them.
+//
+// Downtime-detection state (PendingDowntimeSlashes, PreviousDowntimeParams,
+// EpochShareRecords) IS also exported so a state-export restart preserves
+// slashes awaiting their challenge window, the grace window for evidence
+// computed under superseded downtime params, and the fee-share history used
+// to price downtime slashes.
 func (k Keeper) ExportGenesis(ctx sdk.Context) *types.GenesisState {
 	allConsumerIds := k.GetAllConsumerIds(ctx)
 
@@ -389,8 +423,32 @@ func (k Keeper) ExportGenesis(ctx sdk.Context) *types.GenesisState {
 	// export/import").
 	k.checkFeePoolTotalsConsistency(ctx, recomputedTotals)
 
+	pendingDowntimeSlashes := k.exportPendingDowntimeSlashes(ctx)
+
+	var previousDowntimeParams *types.PreviousDowntimeParams
+	if p, err := k.PreviousDowntimeParams.Get(ctx); err == nil {
+		pCopy := p
+		previousDowntimeParams = &pCopy
+	} else if !errors.Is(err, collections.ErrNotFound) {
+		panic(fmt.Errorf("export: failed to read previous downtime params: %w", err))
+	}
+
+	epochShareRecords := k.exportEpochShareRecords(ctx)
+
+	// Only export infraction params if they have actually been set (e.g. a
+	// keeper built directly via setters in a test, without ever running
+	// InitGenesis, may never have called SetInfractionParams). A real chain
+	// always has them set by InitGenesis.
+	var infractionParams *types.InfractionParameters
+	if has, err := k.InfractionParams.Has(ctx); err == nil && has {
+		ip := k.GetInfractionParams(ctx)
+		infractionParams = &ip
+	} else if err != nil {
+		panic(fmt.Errorf("export: failed to check infraction params: %w", err))
+	}
+
 	// TODO (PERMISSIONLESS)
-	return types.NewGenesisState(
+	genState := types.NewGenesisState(
 		k.GetValidatorSetUpdateId(ctx),
 		k.GetAllValsetUpdateBlockHeights(ctx),
 		consumerStates,
@@ -401,6 +459,57 @@ func (k Keeper) ExportGenesis(ctx sdk.Context) *types.GenesisState {
 		overrides,
 		feePoolShares,
 	)
+	genState.PendingDowntimeSlashes = pendingDowntimeSlashes
+	genState.PreviousDowntimeParams = previousDowntimeParams
+	genState.EpochShareRecords = epochShareRecords
+	genState.InfractionParameters = infractionParams
+	return genState
+}
+
+// exportPendingDowntimeSlashes walks PendingDowntimeSlashes into the flat
+// list carried by genesis.
+func (k Keeper) exportPendingDowntimeSlashes(ctx sdk.Context) []types.PendingDowntimeSlash {
+	pending := []types.PendingDowntimeSlash{}
+	iter, err := k.PendingDowntimeSlashes.Iterate(ctx, nil)
+	if err != nil {
+		panic(fmt.Errorf("export: failed to iterate pending downtime slashes: %w", err))
+	}
+	defer iter.Close()
+	for ; iter.Valid(); iter.Next() {
+		val, err := iter.Value()
+		if err != nil {
+			panic(fmt.Errorf("export: failed to read pending downtime slash: %w", err))
+		}
+		pending = append(pending, val)
+	}
+	return pending
+}
+
+// exportEpochShareRecords walks EpochShareRecords into the flat list carried
+// by genesis.
+func (k Keeper) exportEpochShareRecords(ctx sdk.Context) []types.EpochShareRecord {
+	records := []types.EpochShareRecord{}
+	iter, err := k.EpochShareRecords.Iterate(ctx, nil)
+	if err != nil {
+		panic(fmt.Errorf("export: failed to iterate epoch share records: %w", err))
+	}
+	defer iter.Close()
+	for ; iter.Valid(); iter.Next() {
+		key, err := iter.Key()
+		if err != nil {
+			panic(fmt.Errorf("export: failed to read epoch share record key: %w", err))
+		}
+		val, err := iter.Value()
+		if err != nil {
+			panic(fmt.Errorf("export: failed to read epoch share record value: %w", err))
+		}
+		records = append(records, types.EpochShareRecord{
+			ConsumerId:            key.K1(),
+			DistributedAtUnixNano: key.K2(),
+			Share:                 val,
+		})
+	}
+	return records
 }
 
 // exportFeePoolShares walks ConsumerFeePoolShares once, emitting both the

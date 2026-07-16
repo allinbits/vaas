@@ -16,6 +16,17 @@ const (
 	// validator set rather than accumulating a diff. Emitted only on snapshots,
 	// not on ordinary diffs.
 	EventTypeSnapshotResync = "vaas_snapshot_resync"
+	// EventTypePendingDowntimeSlash is emitted by the provider when downtime
+	// evidence is accepted and queued behind the downtime challenge window
+	// (see HandleConsumerDowntime). It does not mean a slash executed --
+	// execution happens later, once the entry matures, in the epoch sweep.
+	EventTypePendingDowntimeSlash = "vaas_pending_downtime_slash"
+	// EventTypeDowntimeSlashDropped is emitted by the provider's epoch sweep
+	// (SweepPendingDowntimeSlashes) when a matured PendingDowntimeSlash entry
+	// is discarded instead of executed -- e.g. the validator has since
+	// unbonded, been tombstoned, or vanished, or the entry has a zero token
+	// amount. The entry is deleted either way; this event carries the reason.
+	EventTypeDowntimeSlashDropped = "vaas_downtime_slash_dropped"
 
 	AttributeKeyAckSuccess            = "success"
 	AttributeKeyAck                   = "acknowledgement"
@@ -40,4 +51,10 @@ const (
 	AttributeInfractionType           = "infraction_type"
 	AttributeValSetUpdateID           = "valset_update_id"
 	AttributeNumValidators            = "num_validators"
+	AttributeWindowStartHeight        = "window_start_height"
+	AttributeMissedCount              = "missed_count"
+	AttributeMissedBlocksBitmap       = "missed_blocks_bitmap"
+	AttributeSlashTokens              = "slash_tokens"
+	AttributeMaturesAt                = "matures_at"
+	AttributeDropReason               = "reason"
 )

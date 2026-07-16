@@ -1,11 +1,16 @@
 package keeper
 
 import (
+	"errors"
+	"fmt"
+
 	"github.com/allinbits/vaas/x/vaas/consumer/types"
 
 	abci "github.com/cometbft/cometbft/abci/types"
 
 	ibchost "github.com/cosmos/ibc-go/v10/modules/core/exported"
+
+	"cosmossdk.io/collections"
 
 	sdk "github.com/cosmos/cosmos-sdk/types"
 )
@@ -67,6 +72,33 @@ func (k Keeper) InitGenesis(ctx sdk.Context, state *types.GenesisState) []abci.V
 		k.SetLastVSCRecvTime(ctx, *state.LastVscRecvTime)
 	}
 
+	// Restore downtime-detection state for the window currently in progress
+	// (see ExportGenesis); empty for a new chain or right after a window
+	// closes.
+	for _, entry := range state.MissedBlockBitmaps {
+		if err := k.MissedBlockBitmaps.Set(ctx, entry.Addr, entry.Bitmap); err != nil {
+			panic(fmt.Errorf("init: set missed block bitmap for %x: %w", entry.Addr, err))
+		}
+	}
+	for _, entry := range state.FirstTrackedHeights {
+		if err := k.FirstTrackedHeights.Set(ctx, entry.Addr, entry.Height); err != nil {
+			panic(fmt.Errorf("init: set first tracked height for %x: %w", entry.Addr, err))
+		}
+	}
+	// Restore downtime evidence packets queued but not yet sent to the
+	// provider (see ExportGenesis); closing a window clears the source
+	// bitmaps, so the queue is the only remaining copy of the evidence.
+	for _, entry := range state.PendingEvidencePackets {
+		if err := k.PendingEvidencePackets.Set(ctx, entry.Addr, entry.Packet); err != nil {
+			panic(fmt.Errorf("init: set pending evidence packet for %x: %w", entry.Addr, err))
+		}
+	}
+	if state.StagedDowntimeParams != nil {
+		if err := k.StagedDowntimeParams.Set(ctx, *state.StagedDowntimeParams); err != nil {
+			panic(fmt.Errorf("init: set staged downtime params: %w", err))
+		}
+	}
+
 	// populate cross chain validators states with initial valset
 	k.ApplyCCValidatorChanges(ctx, state.Provider.InitialValSet)
 	return state.Provider.InitialValSet
@@ -106,5 +138,81 @@ func (k Keeper) ExportGenesis(ctx sdk.Context) (genesis *types.GenesisState) {
 		genesis.LastVscRecvTime = &t
 	}
 
+	// Preserve downtime-detection state for the window currently in progress
+	// across a restart: the missed-block bitmaps and first-tracked heights
+	// accumulated so far this window, and any downtime params staged to take
+	// effect at the next window boundary.
+	genesis.MissedBlockBitmaps = k.exportMissedBlockBitmaps(ctx)
+	genesis.FirstTrackedHeights = k.exportFirstTrackedHeights(ctx)
+
+	// Preserve downtime evidence packets queued but not yet sent to the
+	// provider: closing a window clears the source bitmaps, so the queue is
+	// the only remaining copy of the evidence.
+	genesis.PendingEvidencePackets = k.exportPendingEvidencePackets(ctx)
+	if staged, err := k.StagedDowntimeParams.Get(ctx); err == nil {
+		stagedCopy := staged
+		genesis.StagedDowntimeParams = &stagedCopy
+	} else if !errors.Is(err, collections.ErrNotFound) {
+		panic(fmt.Errorf("export: failed to read staged downtime params: %w", err))
+	}
+
 	return genesis
+}
+
+// exportMissedBlockBitmaps walks MissedBlockBitmaps into the flat list
+// carried by genesis.
+func (k Keeper) exportMissedBlockBitmaps(ctx sdk.Context) []types.MissedBlockBitmapEntry {
+	var entries []types.MissedBlockBitmapEntry
+	iter, err := k.MissedBlockBitmaps.Iterate(ctx, nil)
+	if err != nil {
+		panic(fmt.Errorf("export: failed to iterate missed block bitmaps: %w", err))
+	}
+	defer iter.Close()
+	for ; iter.Valid(); iter.Next() {
+		kv, err := iter.KeyValue()
+		if err != nil {
+			panic(fmt.Errorf("export: failed to read missed block bitmap: %w", err))
+		}
+		entries = append(entries, types.MissedBlockBitmapEntry{Addr: kv.Key, Bitmap: kv.Value})
+	}
+	return entries
+}
+
+// exportFirstTrackedHeights walks FirstTrackedHeights into the flat list
+// carried by genesis.
+func (k Keeper) exportFirstTrackedHeights(ctx sdk.Context) []types.FirstTrackedHeightEntry {
+	var entries []types.FirstTrackedHeightEntry
+	iter, err := k.FirstTrackedHeights.Iterate(ctx, nil)
+	if err != nil {
+		panic(fmt.Errorf("export: failed to iterate first tracked heights: %w", err))
+	}
+	defer iter.Close()
+	for ; iter.Valid(); iter.Next() {
+		kv, err := iter.KeyValue()
+		if err != nil {
+			panic(fmt.Errorf("export: failed to read first tracked height: %w", err))
+		}
+		entries = append(entries, types.FirstTrackedHeightEntry{Addr: kv.Key, Height: kv.Value})
+	}
+	return entries
+}
+
+// exportPendingEvidencePackets walks PendingEvidencePackets into the flat
+// list carried by genesis, each entry holding the store key (validator
+// consensus address) and the JSON-encoded packet value verbatim.
+func (k Keeper) exportPendingEvidencePackets(ctx sdk.Context) []types.PendingEvidencePacketEntry {
+	var entries []types.PendingEvidencePacketEntry
+	iter, err := k.PendingEvidencePackets.Iterate(ctx, nil)
+	if err != nil {
+		panic(fmt.Errorf("export: failed to iterate pending evidence packets: %w", err))
+	}
+	defer iter.Close()
+	for ; iter.Valid(); iter.Next() {
+		kv, err := iter.KeyValue()
+		if err != nil {
+			panic(fmt.Errorf("export: failed to read pending evidence packet: %w", err))
+		}
+		entries = append(entries, types.PendingEvidencePacketEntry{Addr: kv.Key, Packet: kv.Value})
+	}
+	return entries
 }

@@ -618,6 +618,39 @@ func (k Keeper) QueryConsumerLiveness(goCtx context.Context, req *types.QueryCon
 	}, nil
 }
 
+// QueryPendingDowntimeSlashes returns the pending downtime slashes queued for
+// a consumer, awaiting the challenge window before execution. There is at
+// most one entry per validator, so the result is unbounded but small enough
+// that no pagination is offered.
+func (k Keeper) QueryPendingDowntimeSlashes(goCtx context.Context, req *types.QueryPendingDowntimeSlashesRequest) (*types.QueryPendingDowntimeSlashesResponse, error) {
+	if req == nil {
+		return nil, status.Errorf(codes.InvalidArgument, "empty request")
+	}
+	ctx := sdk.UnwrapSDKContext(goCtx)
+
+	if k.GetConsumerPhase(ctx, req.ConsumerId) == types.CONSUMER_PHASE_UNSPECIFIED {
+		return nil, status.Errorf(codes.InvalidArgument, "unknown consumer: %d", req.ConsumerId)
+	}
+
+	prefix := collections.NewPrefixedPairRange[uint64, []byte](req.ConsumerId)
+	iter, err := k.PendingDowntimeSlashes.Iterate(ctx, prefix)
+	if err != nil {
+		return nil, status.Errorf(codes.Internal, "iterate pending downtime slashes: %s", err)
+	}
+	defer iter.Close()
+
+	slashes := []types.PendingDowntimeSlash{}
+	for ; iter.Valid(); iter.Next() {
+		entry, err := iter.Value()
+		if err != nil {
+			return nil, status.Errorf(codes.Internal, "pending downtime slash value: %s", err)
+		}
+		slashes = append(slashes, entry)
+	}
+
+	return &types.QueryPendingDowntimeSlashesResponse{Slashes: slashes}, nil
+}
+
 // QueryAllConsumerFeesPerBlockOverrides returns the full list of overrides,
 // paginated, ordered by consumer_id ascending.
 func (k Keeper) QueryAllConsumerFeesPerBlockOverrides(

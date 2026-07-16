@@ -10,6 +10,7 @@ import (
 	"github.com/stretchr/testify/require"
 	"go.uber.org/mock/gomock"
 
+	"cosmossdk.io/collections"
 	"cosmossdk.io/math"
 
 	cryptocodec "github.com/cosmos/cosmos-sdk/crypto/codec"
@@ -19,12 +20,9 @@ import (
 
 	tmtypes "github.com/cometbft/cometbft/types"
 
-	ibcclienttypes "github.com/cosmos/ibc-go/v10/modules/core/02-client/types"
-	ibcexported "github.com/cosmos/ibc-go/v10/modules/core/exported"
-	ibctmtypes "github.com/cosmos/ibc-go/v10/modules/light-clients/07-tendermint"
-
 	cryptotestutil "github.com/allinbits/vaas/testutil/crypto"
 	testkeeper "github.com/allinbits/vaas/testutil/keeper"
+	providerkeeper "github.com/allinbits/vaas/x/vaas/provider/keeper"
 	"github.com/allinbits/vaas/x/vaas/provider/types"
 	vaastypes "github.com/allinbits/vaas/x/vaas/types"
 )
@@ -827,79 +825,278 @@ func getTestInfractionParameters() *types.InfractionParameters {
 	}
 }
 
-func TestHandleConsumerEvidencePacket(t *testing.T) {
+// setupDowntimeTest builds a launched consumer with a registered client and
+// validator, wires infractionParams and spawnTime, and overrides
+// windowEndTimestamp resolution to return windowEndTime (see
+// Keeper.OverrideWindowEndTimestampForTest) -- so tests exercising the
+// grace-period and evidence-age checks don't need to fabricate real IBC
+// consensus states. Returns the keeper, context, mock controller, mocks, the
+// consumer id, and the validator's provider consensus address.
+func setupDowntimeTest(
+	t *testing.T,
+	infractionParams types.InfractionParameters,
+	spawnTime time.Time,
+	windowEndTime time.Time,
+) (providerkeeper.Keeper, sdk.Context, *gomock.Controller, testkeeper.MockedKeepers, uint64, types.ProviderConsAddress) {
+	t.Helper()
 	keeperParams := testkeeper.NewInMemKeeperParams(t)
 	providerKeeper, ctx, ctrl, mocks := testkeeper.GetProviderKeeperAndCtx(t, keeperParams)
-	defer ctrl.Finish()
 
 	consumerId := uint64(0)
 	providerKeeper.SetConsumerPhase(ctx, consumerId, types.CONSUMER_PHASE_LAUNCHED)
 	providerKeeper.SetConsumerChainId(ctx, consumerId, "consumer-chain")
 	providerKeeper.SetConsumerClientId(ctx, consumerId, "07-tendermint-0")
 	providerKeeper.SetEquivocationEvidenceMinHeight(ctx, consumerId, 1)
-	noGraceParams := types.DefaultInfractionParameters()
-	noGraceParams.DowntimeGracePeriod = 0
-	providerKeeper.SetInfractionParams(ctx, noGraceParams)
+	providerKeeper.SetInfractionParams(ctx, infractionParams)
+	require.NoError(t, providerKeeper.SetConsumerInitializationParameters(ctx, consumerId, types.ConsumerInitializationParameters{
+		SpawnTime: spawnTime,
+	}))
 
-	pubKey, _ := cryptocodec.FromCmtPubKeyInterface(tmtypes.NewMockPV().PrivKey.PubKey())
+	pubKey, err := cryptocodec.FromCmtPubKeyInterface(tmtypes.NewMockPV().PrivKey.PubKey())
+	require.NoError(t, err)
 	validator, err := stakingtypes.NewValidator(
 		sdk.ValAddress(pubKey.Address()).String(),
 		pubKey,
 		stakingtypes.NewDescription("", "", "", "", ""),
 	)
 	require.NoError(t, err)
-	validator.Status = stakingtypes.Bonded
-	consAddr, _ := validator.GetConsAddr()
-
-	// Add the validator to the consumer's validator set with a join height of 1
+	consAddr, err := validator.GetConsAddr()
+	require.NoError(t, err)
 	providerAddr := types.NewProviderConsAddress(consAddr)
-	cmtPubKey, _ := validator.CmtConsPublicKey()
-	err = providerKeeper.SetConsumerValidator(ctx, consumerId, types.ConsensusValidator{
+	cmtPubKey, err := validator.CmtConsPublicKey()
+	require.NoError(t, err)
+	require.NoError(t, providerKeeper.SetConsumerValidator(ctx, consumerId, types.ConsensusValidator{
 		ProviderConsAddr: consAddr,
 		Power:            1000,
 		PublicKey:        &cmtPubKey,
 		JoinHeight:       1,
-	})
-	require.NoError(t, err)
+	}))
 
+	providerKeeper.OverrideWindowEndTimestampForTest(func(_ sdk.Context, _ string, _ int64) (time.Time, error) {
+		return windowEndTime, nil
+	})
+
+	return providerKeeper, ctx, ctrl, mocks, consumerId, providerAddr
+}
+
+// downtimeParams returns InfractionParameters carrying only the fields
+// HandleConsumerDowntime reads; DoubleSign/Downtime slash-jail params are
+// left nil since the downtime path no longer slashes directly (it queues a
+// PendingDowntimeSlash instead).
+func downtimeParams(window int64, minSigned string, gracePeriod, challengeWindow, maxAge time.Duration) types.InfractionParameters {
+	return types.InfractionParameters{
+		SignedBlocksWindow:      window,
+		MinSignedPerWindow:      math.LegacyMustNewDecFromStr(minSigned),
+		DowntimeGracePeriod:     gracePeriod,
+		DowntimeChallengeWindow: challengeWindow,
+		DowntimeEvidenceMaxAge:  maxAge,
+	}
+}
+
+func TestHandleConsumerDowntimeAcceptsAndQueuesPricedSlash(t *testing.T) {
+	windowEndTime := time.Date(2025, 6, 1, 0, 0, 0, 0, time.UTC)
+	spawnTime := windowEndTime.Add(-30 * 24 * time.Hour)
+	infractionParams := downtimeParams(8, "0.5", 0, 7*24*time.Hour, 72*time.Hour)
+
+	providerKeeper, ctx, ctrl, mocks, consumerId, providerAddr := setupDowntimeTest(t, infractionParams, spawnTime, windowEndTime)
+	defer ctrl.Finish()
+	ctx = ctx.WithBlockTime(windowEndTime)
+
+	// P=1000uphoton, resolved from an epoch record covering this window; C=2.
+	providerKeeper.SetEpochShareRecord(ctx, consumerId, windowEndTime, math.NewInt(1000))
+	mocks.MockPhotonKeeper.EXPECT().ConversionRate(ctx).Return(math.LegacyNewDec(2), nil)
+
+	consAddr := providerAddr.ToSdkConsAddr()
 	evidencePacket := vaastypes.NewEvidencePacketData(
 		sdk.ConsAddress(consAddr),
-		100,
-		stakingtypes.Infraction_INFRACTION_DOWNTIME,
+		93,
+		[]byte{0x3F}, // 6 of 8 missed; maxMissed for window=8,minSigned=0.5 is 4
+		8,
+		8,
+		math.LegacyMustNewDecFromStr("0.5"),
 	)
 
-	valAddr, _ := providerKeeper.ValidatorAddressCodec().StringToBytes(validator.GetOperator())
+	err := providerKeeper.HandleConsumerEvidencePacket(ctx, consumerId, evidencePacket)
+	require.NoError(t, err)
 
-	expectedCalls := []any{
-		mocks.MockClientKeeper.EXPECT().
-			GetClientConsensusState(ctx, "07-tendermint-0", ibcclienttypes.NewHeight(0, 100)).
-			Return(ibcexported.ConsensusState(&ibctmtypes.ConsensusState{}), true),
-		mocks.MockStakingKeeper.EXPECT().
-			GetValidatorByConsAddr(ctx, providerAddr.ToSdkConsAddr()).
-			Return(validator, nil),
-		mocks.MockSlashingKeeper.EXPECT().
-			IsTombstoned(ctx, providerAddr.ToSdkConsAddr()).
-			Return(false),
-		mocks.MockStakingKeeper.EXPECT().
-			GetUnbondingDelegationsFromValidator(ctx, valAddr).
-			Return([]stakingtypes.UnbondingDelegation{}, nil),
-		mocks.MockStakingKeeper.EXPECT().
-			GetRedelegationsFromSrcValidator(ctx, valAddr).
-			Return([]stakingtypes.Redelegation{}, nil),
-		mocks.MockStakingKeeper.EXPECT().
-			GetLastValidatorPower(ctx, valAddr).
-			Return(int64(1000), nil),
-		mocks.MockStakingKeeper.EXPECT().
-			PowerReduction(ctx).
-			Return(math.NewInt(1000000)),
-		mocks.MockStakingKeeper.EXPECT().
-			SlashWithInfractionReason(ctx, providerAddr.ToSdkConsAddr(), int64(0), int64(1000), math.LegacyNewDecWithPrec(5, 4), stakingtypes.Infraction_INFRACTION_DOWNTIME).
-			Return(math.NewInt(0), nil),
+	require.True(t, providerKeeper.IsEpochDowntime(ctx, consumerId, consAddr))
+
+	pending, err := providerKeeper.PendingDowntimeSlashes.Get(ctx, collections.Join(consumerId, consAddr.Bytes()))
+	require.NoError(t, err)
+	require.Equal(t, int64(93), pending.WindowStartHeight)
+	require.Equal(t, int64(8), pending.Span)
+	require.Equal(t, int64(6), pending.MissedCount)
+	// M = 6/8 = 0.75; slashTokens = P*M/C = 1000*0.75/2 = 375
+	require.True(t, math.NewInt(375).Equal(pending.SlashTokens), "expected 375, got %s", pending.SlashTokens)
+	require.Equal(t, windowEndTime.Add(7*24*time.Hour), pending.MaturesAt)
+}
+
+func TestHandleConsumerDowntimeRejectsBelowThreshold(t *testing.T) {
+	windowEndTime := time.Date(2025, 6, 1, 0, 0, 0, 0, time.UTC)
+	spawnTime := windowEndTime.Add(-30 * 24 * time.Hour)
+	infractionParams := downtimeParams(8, "0.5", 0, 7*24*time.Hour, 72*time.Hour)
+
+	providerKeeper, ctx, ctrl, _, consumerId, providerAddr := setupDowntimeTest(t, infractionParams, spawnTime, windowEndTime)
+	defer ctrl.Finish()
+	ctx = ctx.WithBlockTime(windowEndTime)
+
+	evidencePacket := vaastypes.NewEvidencePacketData(
+		sdk.ConsAddress(providerAddr.ToSdkConsAddr()),
+		93,
+		[]byte{0x07}, // 3 of 8 missed; maxMissed is 4, so this does not qualify
+		8,
+		8,
+		math.LegacyMustNewDecFromStr("0.5"),
+	)
+
+	err := providerKeeper.HandleConsumerEvidencePacket(ctx, consumerId, evidencePacket)
+	require.Error(t, err)
+	require.Contains(t, err.Error(), "does not exceed the infraction threshold")
+}
+
+func TestHandleConsumerEvidencePacketRejectsSpanExceedingWindow(t *testing.T) {
+	keeperParams := testkeeper.NewInMemKeeperParams(t)
+	providerKeeper, ctx, ctrl, _ := testkeeper.GetProviderKeeperAndCtx(t, keeperParams)
+	defer ctrl.Finish()
+
+	consumerId := uint64(0)
+	providerKeeper.SetConsumerPhase(ctx, consumerId, types.CONSUMER_PHASE_LAUNCHED)
+
+	// Span (8) exceeds the echoed window (4); rejected by
+	// EvidencePacketData.Validate() before HandleConsumerDowntime ever runs.
+	evidencePacket := vaastypes.EvidencePacketData{
+		ValidatorAddr:      sdk.ConsAddress([]byte{0x01, 0x02, 0x03}),
+		InfractionHeight:   107,
+		Infraction:         stakingtypes.Infraction_INFRACTION_DOWNTIME,
+		WindowStartHeight:  100,
+		MissedBlocksBitmap: []byte{0xFF},
+		SignedBlocksWindow: 4,
+		MinSignedPerWindow: math.LegacyMustNewDecFromStr("0.5"),
 	}
 
-	gomock.InOrder(expectedCalls...)
-	err = providerKeeper.HandleConsumerEvidencePacket(ctx, consumerId, evidencePacket)
+	err := providerKeeper.HandleConsumerEvidencePacket(ctx, consumerId, evidencePacket)
+	require.Error(t, err)
+	require.Contains(t, err.Error(), "window span cannot exceed")
+}
+
+func TestHandleConsumerDowntimeRejectsUnacceptableParams(t *testing.T) {
+	windowEndTime := time.Date(2025, 6, 1, 0, 0, 0, 0, time.UTC)
+	spawnTime := windowEndTime.Add(-30 * 24 * time.Hour)
+	infractionParams := downtimeParams(8, "0.5", 0, 7*24*time.Hour, 72*time.Hour)
+
+	providerKeeper, ctx, ctrl, _, consumerId, providerAddr := setupDowntimeTest(t, infractionParams, spawnTime, windowEndTime)
+	defer ctrl.Finish()
+	ctx = ctx.WithBlockTime(windowEndTime)
+
+	// Echoes a window (10) that matches neither the current params (8) nor
+	// any recorded previous params.
+	evidencePacket := vaastypes.NewEvidencePacketData(
+		sdk.ConsAddress(providerAddr.ToSdkConsAddr()),
+		93,
+		[]byte{0x3F},
+		8,
+		10,
+		math.LegacyMustNewDecFromStr("0.5"),
+	)
+
+	err := providerKeeper.HandleConsumerEvidencePacket(ctx, consumerId, evidencePacket)
+	require.Error(t, err)
+	require.Contains(t, err.Error(), "unacceptable downtime params")
+}
+
+func TestHandleConsumerDowntimeRejectsDuplicatePending(t *testing.T) {
+	windowEndTime := time.Date(2025, 6, 1, 0, 0, 0, 0, time.UTC)
+	spawnTime := windowEndTime.Add(-30 * 24 * time.Hour)
+	infractionParams := downtimeParams(8, "0.5", 0, 7*24*time.Hour, 72*time.Hour)
+
+	providerKeeper, ctx, ctrl, mocks, consumerId, providerAddr := setupDowntimeTest(t, infractionParams, spawnTime, windowEndTime)
+	defer ctrl.Finish()
+	ctx = ctx.WithBlockTime(windowEndTime)
+
+	providerKeeper.SetEpochShareRecord(ctx, consumerId, windowEndTime, math.NewInt(1000))
+	mocks.MockPhotonKeeper.EXPECT().ConversionRate(ctx).Return(math.LegacyNewDec(2), nil)
+
+	consAddr := providerAddr.ToSdkConsAddr()
+	firstPacket := vaastypes.NewEvidencePacketData(sdk.ConsAddress(consAddr), 93, []byte{0x3F}, 8, 8, math.LegacyMustNewDecFromStr("0.5"))
+	require.NoError(t, providerKeeper.HandleConsumerEvidencePacket(ctx, consumerId, firstPacket))
+
+	// A second, distinct window for the same (consumer, validator) is
+	// rejected while the first slash is still pending; ConversionRate is not
+	// called again (verified by the single EXPECT() above and ctrl.Finish()).
+	secondPacket := vaastypes.NewEvidencePacketData(sdk.ConsAddress(consAddr), 101, []byte{0x3F}, 8, 8, math.LegacyMustNewDecFromStr("0.5"))
+	err := providerKeeper.HandleConsumerEvidencePacket(ctx, consumerId, secondPacket)
+	require.Error(t, err)
+	require.Contains(t, err.Error(), "already pending")
+}
+
+func TestHandleConsumerDowntimeRejectsStaleEvidence(t *testing.T) {
+	windowEndTime := time.Date(2025, 6, 1, 0, 0, 0, 0, time.UTC)
+	spawnTime := windowEndTime.Add(-30 * 24 * time.Hour)
+	infractionParams := downtimeParams(8, "0.5", 0, 7*24*time.Hour, time.Hour)
+
+	providerKeeper, ctx, ctrl, _, consumerId, providerAddr := setupDowntimeTest(t, infractionParams, spawnTime, windowEndTime)
+	defer ctrl.Finish()
+	// The evidence is submitted 2h after the window ended; max age is 1h.
+	ctx = ctx.WithBlockTime(windowEndTime.Add(2 * time.Hour))
+
+	evidencePacket := vaastypes.NewEvidencePacketData(sdk.ConsAddress(providerAddr.ToSdkConsAddr()), 93, []byte{0x3F}, 8, 8, math.LegacyMustNewDecFromStr("0.5"))
+
+	err := providerKeeper.HandleConsumerEvidencePacket(ctx, consumerId, evidencePacket)
+	require.Error(t, err)
+	require.Contains(t, err.Error(), "too old: window ended")
+}
+
+func TestHandleConsumerDowntimeRejectsDuringGracePeriod(t *testing.T) {
+	spawnTime := time.Date(2025, 1, 1, 0, 0, 0, 0, time.UTC)
+	gracePeriod := 24 * time.Hour
+	windowEndTime := spawnTime.Add(12 * time.Hour) // still within grace period
+	infractionParams := downtimeParams(8, "0.5", gracePeriod, 7*24*time.Hour, 72*time.Hour)
+
+	providerKeeper, ctx, ctrl, _, consumerId, providerAddr := setupDowntimeTest(t, infractionParams, spawnTime, windowEndTime)
+	defer ctrl.Finish()
+	ctx = ctx.WithBlockTime(windowEndTime)
+
+	evidencePacket := vaastypes.NewEvidencePacketData(sdk.ConsAddress(providerAddr.ToSdkConsAddr()), 93, []byte{0x3F}, 8, 8, math.LegacyMustNewDecFromStr("0.5"))
+
+	err := providerKeeper.HandleConsumerEvidencePacket(ctx, consumerId, evidencePacket)
+	require.Error(t, err)
+	require.Contains(t, err.Error(), "grace period")
+}
+
+func TestHandleConsumerDowntimeGracePeriodDisabledSkipsCheck(t *testing.T) {
+	spawnTime := time.Now()
+	windowEndTime := spawnTime // would still be "in grace period" if the check ran
+	infractionParams := downtimeParams(8, "0.5", 0, 7*24*time.Hour, 72*time.Hour)
+
+	providerKeeper, ctx, ctrl, mocks, consumerId, providerAddr := setupDowntimeTest(t, infractionParams, spawnTime, windowEndTime)
+	defer ctrl.Finish()
+	ctx = ctx.WithBlockTime(windowEndTime)
+
+	providerKeeper.SetEpochShareRecord(ctx, consumerId, windowEndTime, math.NewInt(1000))
+	mocks.MockPhotonKeeper.EXPECT().ConversionRate(ctx).Return(math.LegacyNewDec(2), nil)
+
+	evidencePacket := vaastypes.NewEvidencePacketData(sdk.ConsAddress(providerAddr.ToSdkConsAddr()), 93, []byte{0x3F}, 8, 8, math.LegacyMustNewDecFromStr("0.5"))
+
+	err := providerKeeper.HandleConsumerEvidencePacket(ctx, consumerId, evidencePacket)
 	require.NoError(t, err)
+}
+
+func TestHandleConsumerDowntimeRejectsUnanchorableWindow(t *testing.T) {
+	spawnTime := time.Date(2025, 1, 1, 0, 0, 0, 0, time.UTC)
+	infractionParams := downtimeParams(8, "0.5", 0, 7*24*time.Hour, 72*time.Hour)
+
+	providerKeeper, ctx, ctrl, _, consumerId, providerAddr := setupDowntimeTest(t, infractionParams, spawnTime, time.Time{})
+	defer ctrl.Finish()
+
+	providerKeeper.OverrideWindowEndTimestampForTest(func(_ sdk.Context, _ string, _ int64) (time.Time, error) {
+		return time.Time{}, fmt.Errorf("cannot anchor evidence window time")
+	})
+
+	evidencePacket := vaastypes.NewEvidencePacketData(sdk.ConsAddress(providerAddr.ToSdkConsAddr()), 93, []byte{0x3F}, 8, 8, math.LegacyMustNewDecFromStr("0.5"))
+
+	err := providerKeeper.HandleConsumerEvidencePacket(ctx, consumerId, evidencePacket)
+	require.Error(t, err)
+	require.Contains(t, err.Error(), "cannot anchor")
 }
 
 func TestHandleConsumerDowntimeRejectsTooOldEvidence(t *testing.T) {
@@ -911,14 +1108,15 @@ func TestHandleConsumerDowntimeRejectsTooOldEvidence(t *testing.T) {
 	providerKeeper.SetConsumerPhase(ctx, consumerId, types.CONSUMER_PHASE_LAUNCHED)
 	providerKeeper.SetConsumerChainId(ctx, consumerId, "consumer-chain")
 	providerKeeper.SetEquivocationEvidenceMinHeight(ctx, consumerId, 200)
-	noGraceParams := types.DefaultInfractionParameters()
-	noGraceParams.DowntimeGracePeriod = 0
-	providerKeeper.SetInfractionParams(ctx, noGraceParams)
+	providerKeeper.SetInfractionParams(ctx, downtimeParams(8, "0.5", 0, 7*24*time.Hour, 72*time.Hour))
 
 	evidencePacket := vaastypes.NewEvidencePacketData(
 		sdk.ConsAddress([]byte{0x01, 0x02, 0x03}),
-		100, // below min height of 200
-		stakingtypes.Infraction_INFRACTION_DOWNTIME,
+		93, // infraction height 100, below min height of 200
+		[]byte{0x3F},
+		8,
+		8,
+		math.LegacyMustNewDecFromStr("0.5"),
 	)
 
 	err := providerKeeper.HandleConsumerEvidencePacket(ctx, consumerId, evidencePacket)
@@ -935,56 +1133,31 @@ func TestHandleConsumerDowntimeRejectsNoClient(t *testing.T) {
 	providerKeeper.SetConsumerPhase(ctx, consumerId, types.CONSUMER_PHASE_LAUNCHED)
 	providerKeeper.SetConsumerChainId(ctx, consumerId, "consumer-chain")
 	providerKeeper.SetEquivocationEvidenceMinHeight(ctx, consumerId, 1)
-	noGraceParams := types.DefaultInfractionParameters()
-	noGraceParams.DowntimeGracePeriod = 0
-	providerKeeper.SetInfractionParams(ctx, noGraceParams)
+	providerKeeper.SetInfractionParams(ctx, downtimeParams(8, "0.5", 0, 7*24*time.Hour, 72*time.Hour))
 
-	evidencePacket := vaastypes.NewEvidencePacketData(
-		sdk.ConsAddress([]byte{0x01, 0x02, 0x03}),
-		100,
-		stakingtypes.Infraction_INFRACTION_DOWNTIME,
-	)
+	pubKey, _ := cryptocodec.FromCmtPubKeyInterface(tmtypes.NewMockPV().PrivKey.PubKey())
+	validator, err := stakingtypes.NewValidator(sdk.ValAddress(pubKey.Address()).String(), pubKey, stakingtypes.NewDescription("", "", "", "", ""))
+	require.NoError(t, err)
+	consAddr, _ := validator.GetConsAddr()
+	cmtPubKey, _ := validator.CmtConsPublicKey()
+	require.NoError(t, providerKeeper.SetConsumerValidator(ctx, consumerId, types.ConsensusValidator{
+		ProviderConsAddr: consAddr,
+		Power:            1000,
+		PublicKey:        &cmtPubKey,
+		JoinHeight:       1,
+	}))
 
-	err := providerKeeper.HandleConsumerEvidencePacket(ctx, consumerId, evidencePacket)
+	// No client id is registered for this consumer.
+	evidencePacket := vaastypes.NewEvidencePacketData(sdk.ConsAddress(consAddr), 93, []byte{0x3F}, 8, 8, math.LegacyMustNewDecFromStr("0.5"))
+
+	err = providerKeeper.HandleConsumerEvidencePacket(ctx, consumerId, evidencePacket)
 	require.Error(t, err)
 	require.Contains(t, err.Error(), "no IBC client found")
 }
 
-func TestHandleConsumerDowntimeRejectsNoConsensusState(t *testing.T) {
-	keeperParams := testkeeper.NewInMemKeeperParams(t)
-	providerKeeper, ctx, ctrl, mocks := testkeeper.GetProviderKeeperAndCtx(t, keeperParams)
-	defer ctrl.Finish()
-
-	consumerId := uint64(0)
-	providerKeeper.SetConsumerPhase(ctx, consumerId, types.CONSUMER_PHASE_LAUNCHED)
-	providerKeeper.SetConsumerChainId(ctx, consumerId, "consumer-chain")
-	providerKeeper.SetConsumerClientId(ctx, consumerId, "07-tendermint-0")
-	providerKeeper.SetEquivocationEvidenceMinHeight(ctx, consumerId, 1)
-	noGraceParams := types.DefaultInfractionParameters()
-	noGraceParams.DowntimeGracePeriod = 0
-	providerKeeper.SetInfractionParams(ctx, noGraceParams)
-
-	evidencePacket := vaastypes.NewEvidencePacketData(
-		sdk.ConsAddress([]byte{0x01, 0x02, 0x03}),
-		100,
-		stakingtypes.Infraction_INFRACTION_DOWNTIME,
-	)
-
-	expectedCalls := []any{
-		mocks.MockClientKeeper.EXPECT().
-			GetClientConsensusState(ctx, "07-tendermint-0", ibcclienttypes.NewHeight(0, 100)).
-			Return(ibcexported.ConsensusState(nil), false),
-	}
-
-	gomock.InOrder(expectedCalls...)
-	err := providerKeeper.HandleConsumerEvidencePacket(ctx, consumerId, evidencePacket)
-	require.Error(t, err)
-	require.Contains(t, err.Error(), "no consensus state")
-}
-
 func TestHandleConsumerDowntimeRejectsValidatorNotInSet(t *testing.T) {
 	keeperParams := testkeeper.NewInMemKeeperParams(t)
-	providerKeeper, ctx, ctrl, mocks := testkeeper.GetProviderKeeperAndCtx(t, keeperParams)
+	providerKeeper, ctx, ctrl, _ := testkeeper.GetProviderKeeperAndCtx(t, keeperParams)
 	defer ctrl.Finish()
 
 	consumerId := uint64(0)
@@ -992,79 +1165,15 @@ func TestHandleConsumerDowntimeRejectsValidatorNotInSet(t *testing.T) {
 	providerKeeper.SetConsumerChainId(ctx, consumerId, "consumer-chain")
 	providerKeeper.SetConsumerClientId(ctx, consumerId, "07-tendermint-0")
 	providerKeeper.SetEquivocationEvidenceMinHeight(ctx, consumerId, 1)
-	noGraceParams := types.DefaultInfractionParameters()
-	noGraceParams.DowntimeGracePeriod = 0
-	providerKeeper.SetInfractionParams(ctx, noGraceParams)
+	providerKeeper.SetInfractionParams(ctx, downtimeParams(8, "0.5", 0, 7*24*time.Hour, 72*time.Hour))
 
-	// Use a validator that is NOT in the consumer's validator set
-	evidencePacket := vaastypes.NewEvidencePacketData(
-		sdk.ConsAddress([]byte{0x01, 0x02, 0x03}),
-		100,
-		stakingtypes.Infraction_INFRACTION_DOWNTIME,
-	)
+	// The reporting validator is never registered in the consumer's
+	// validator set.
+	evidencePacket := vaastypes.NewEvidencePacketData(sdk.ConsAddress([]byte{0x01, 0x02, 0x03}), 93, []byte{0x3F}, 8, 8, math.LegacyMustNewDecFromStr("0.5"))
 
-	expectedCalls := []any{
-		mocks.MockClientKeeper.EXPECT().
-			GetClientConsensusState(ctx, "07-tendermint-0", ibcclienttypes.NewHeight(0, 100)).
-			Return(ibcexported.ConsensusState(&ibctmtypes.ConsensusState{}), true),
-	}
-
-	gomock.InOrder(expectedCalls...)
 	err := providerKeeper.HandleConsumerEvidencePacket(ctx, consumerId, evidencePacket)
 	require.Error(t, err)
 	require.Contains(t, err.Error(), "not in the validator set")
-}
-
-func TestHandleConsumerDowntimeRejectsInfractionBeforeJoin(t *testing.T) {
-	keeperParams := testkeeper.NewInMemKeeperParams(t)
-	providerKeeper, ctx, ctrl, mocks := testkeeper.GetProviderKeeperAndCtx(t, keeperParams)
-	defer ctrl.Finish()
-
-	consumerId := uint64(0)
-	providerKeeper.SetConsumerPhase(ctx, consumerId, types.CONSUMER_PHASE_LAUNCHED)
-	providerKeeper.SetConsumerChainId(ctx, consumerId, "consumer-chain")
-	providerKeeper.SetConsumerClientId(ctx, consumerId, "07-tendermint-0")
-	providerKeeper.SetEquivocationEvidenceMinHeight(ctx, consumerId, 1)
-	noGraceParams := types.DefaultInfractionParameters()
-	noGraceParams.DowntimeGracePeriod = 0
-	providerKeeper.SetInfractionParams(ctx, noGraceParams)
-
-	pubKey, _ := cryptocodec.FromCmtPubKeyInterface(tmtypes.NewMockPV().PrivKey.PubKey())
-	validator, err := stakingtypes.NewValidator(
-		sdk.ValAddress(pubKey.Address()).String(),
-		pubKey,
-		stakingtypes.NewDescription("", "", "", "", ""),
-	)
-	require.NoError(t, err)
-	consAddr, _ := validator.GetConsAddr()
-
-	cmtPubKey, _ := validator.CmtConsPublicKey()
-
-	// Add the validator with join height 200, but claim downtime at height 100
-	err = providerKeeper.SetConsumerValidator(ctx, consumerId, types.ConsensusValidator{
-		ProviderConsAddr: consAddr,
-		Power:            1000,
-		PublicKey:        &cmtPubKey,
-		JoinHeight:       200,
-	})
-	require.NoError(t, err)
-
-	evidencePacket := vaastypes.NewEvidencePacketData(
-		sdk.ConsAddress(consAddr),
-		100, // before join height of 200
-		stakingtypes.Infraction_INFRACTION_DOWNTIME,
-	)
-
-	expectedCalls := []any{
-		mocks.MockClientKeeper.EXPECT().
-			GetClientConsensusState(ctx, "07-tendermint-0", ibcclienttypes.NewHeight(0, 100)).
-			Return(ibcexported.ConsensusState(&ibctmtypes.ConsensusState{}), true),
-	}
-
-	gomock.InOrder(expectedCalls...)
-	err = providerKeeper.HandleConsumerEvidencePacket(ctx, consumerId, evidencePacket)
-	require.Error(t, err)
-	require.Contains(t, err.Error(), "before validator")
 }
 
 func TestHandleConsumerEvidencePacketRejectsDoubleSign(t *testing.T) {
@@ -1075,11 +1184,15 @@ func TestHandleConsumerEvidencePacketRejectsDoubleSign(t *testing.T) {
 	consumerId := uint64(0)
 	providerKeeper.SetConsumerPhase(ctx, consumerId, types.CONSUMER_PHASE_LAUNCHED)
 
-	evidencePacket := vaastypes.NewEvidencePacketData(
-		sdk.ConsAddress([]byte{0x01, 0x02, 0x03}),
-		100,
-		stakingtypes.Infraction_INFRACTION_DOUBLE_SIGN,
-	)
+	evidencePacket := vaastypes.EvidencePacketData{
+		ValidatorAddr:      sdk.ConsAddress([]byte{0x01, 0x02, 0x03}),
+		InfractionHeight:   100,
+		Infraction:         stakingtypes.Infraction_INFRACTION_DOUBLE_SIGN,
+		WindowStartHeight:  100,
+		MissedBlocksBitmap: []byte{0x01},
+		SignedBlocksWindow: 600,
+		MinSignedPerWindow: math.LegacyMustNewDecFromStr("0.5"),
+	}
 
 	err := providerKeeper.HandleConsumerEvidencePacket(ctx, consumerId, evidencePacket)
 	require.Error(t, err)
@@ -1096,7 +1209,10 @@ func TestHandleConsumerEvidencePacketRejectsNonLaunchedConsumer(t *testing.T) {
 	evidencePacket := vaastypes.NewEvidencePacketData(
 		sdk.ConsAddress([]byte{0x01, 0x02, 0x03}),
 		100,
-		stakingtypes.Infraction_INFRACTION_DOWNTIME,
+		[]byte{0x01},
+		1,
+		600,
+		math.LegacyMustNewDecFromStr("0.5"),
 	)
 
 	err := providerKeeper.HandleConsumerEvidencePacket(ctx, consumerId, evidencePacket)
@@ -1105,7 +1221,7 @@ func TestHandleConsumerEvidencePacketRejectsNonLaunchedConsumer(t *testing.T) {
 
 func TestEvidencePacketDataJSONRoundTrip(t *testing.T) {
 	addr := sdk.ConsAddress([]byte{0x01, 0x02, 0x03, 0x04, 0x05})
-	packet := vaastypes.NewEvidencePacketData(addr, 42, stakingtypes.Infraction_INFRACTION_DOWNTIME)
+	packet := vaastypes.NewEvidencePacketData(addr, 42, []byte{0x01}, 1, 600, math.LegacyMustNewDecFromStr("0.5"))
 
 	bz := packet.GetBytes()
 
@@ -1115,146 +1231,4 @@ func TestEvidencePacketDataJSONRoundTrip(t *testing.T) {
 	require.Equal(t, packet.ValidatorAddr, decoded.ValidatorAddr)
 	require.Equal(t, packet.InfractionHeight, decoded.InfractionHeight)
 	require.Equal(t, packet.Infraction, decoded.Infraction)
-}
-
-func TestHandleConsumerDowntimeRejectsDuringGracePeriod(t *testing.T) {
-	keeperParams := testkeeper.NewInMemKeeperParams(t)
-	providerKeeper, ctx, ctrl, mocks := testkeeper.GetProviderKeeperAndCtx(t, keeperParams)
-	defer ctrl.Finish()
-
-	consumerId := uint64(0)
-	providerKeeper.SetConsumerPhase(ctx, consumerId, types.CONSUMER_PHASE_LAUNCHED)
-	providerKeeper.SetConsumerChainId(ctx, consumerId, "consumer-chain")
-	providerKeeper.SetConsumerClientId(ctx, consumerId, "07-tendermint-0")
-	providerKeeper.SetEquivocationEvidenceMinHeight(ctx, consumerId, 1)
-
-	spawnTime := time.Date(2025, 1, 1, 0, 0, 0, 0, time.UTC)
-	gracePeriod := 24 * time.Hour
-	now := spawnTime.Add(12 * time.Hour) // still within grace period
-	ctx = ctx.WithBlockTime(now)
-
-	providerKeeper.SetConsumerInitializationParameters(ctx, consumerId, types.ConsumerInitializationParameters{
-		SpawnTime: spawnTime,
-	})
-
-	providerKeeper.SetInfractionParams(ctx, types.InfractionParameters{
-		DoubleSign: &types.SlashJailParameters{
-			SlashFraction: math.LegacyMustNewDecFromStr("0.05"),
-			JailDuration:  time.Duration(1<<63 - 1),
-			Tombstone:     true,
-		},
-		Downtime: &types.SlashJailParameters{
-			SlashFraction: math.LegacyMustNewDecFromStr("0.0005"),
-			JailDuration:  0,
-			Tombstone:     false,
-		},
-		DowntimeGracePeriod: gracePeriod,
-	})
-
-	evidencePacket := vaastypes.NewEvidencePacketData(
-		sdk.ConsAddress([]byte{0x01, 0x02, 0x03}),
-		100,
-		stakingtypes.Infraction_INFRACTION_DOWNTIME,
-	)
-
-	consensusStateTimestamp := spawnTime.Add(12 * time.Hour)
-	mocks.MockClientKeeper.EXPECT().
-		GetClientConsensusState(ctx, "07-tendermint-0", ibcclienttypes.NewHeight(0, 100)).
-		Return(ibcexported.ConsensusState(&ibctmtypes.ConsensusState{
-			Timestamp: consensusStateTimestamp,
-		}), true)
-
-	err := providerKeeper.HandleConsumerEvidencePacket(ctx, consumerId, evidencePacket)
-	require.Error(t, err)
-	require.Contains(t, err.Error(), "grace period")
-}
-
-func TestHandleConsumerDowntimePassesAfterGracePeriod(t *testing.T) {
-	keeperParams := testkeeper.NewInMemKeeperParams(t)
-	providerKeeper, ctx, ctrl, _ := testkeeper.GetProviderKeeperAndCtx(t, keeperParams)
-	defer ctrl.Finish()
-
-	consumerId := uint64(0)
-	providerKeeper.SetConsumerPhase(ctx, consumerId, types.CONSUMER_PHASE_LAUNCHED)
-	providerKeeper.SetConsumerChainId(ctx, consumerId, "consumer-chain")
-
-	spawnTime := time.Date(2025, 1, 1, 0, 0, 0, 0, time.UTC)
-	gracePeriod := 24 * time.Hour
-	now := spawnTime.Add(48 * time.Hour) // past grace period
-	ctx = ctx.WithBlockTime(now)
-
-	providerKeeper.SetConsumerInitializationParameters(ctx, consumerId, types.ConsumerInitializationParameters{
-		SpawnTime: spawnTime,
-	})
-
-	providerKeeper.SetInfractionParams(ctx, types.InfractionParameters{
-		DoubleSign: &types.SlashJailParameters{
-			SlashFraction: math.LegacyMustNewDecFromStr("0.05"),
-			JailDuration:  time.Duration(1<<63 - 1),
-			Tombstone:     true,
-		},
-		Downtime: &types.SlashJailParameters{
-			SlashFraction: math.LegacyMustNewDecFromStr("0.0005"),
-			JailDuration:  0,
-			Tombstone:     false,
-		},
-		DowntimeGracePeriod: gracePeriod,
-	})
-
-	evidencePacket := vaastypes.NewEvidencePacketData(
-		sdk.ConsAddress([]byte{0x01, 0x02, 0x03}),
-		100,
-		stakingtypes.Infraction_INFRACTION_DOWNTIME,
-	)
-
-	// Grace period check passes; the next validation (too-old evidence) should
-	// fail because no min-height is set (defaults to 0).
-	err := providerKeeper.HandleConsumerEvidencePacket(ctx, consumerId, evidencePacket)
-	require.Error(t, err)
-	require.NotContains(t, err.Error(), "grace period")
-}
-
-func TestHandleConsumerDowntimeNoGracePeriodSkipsCheck(t *testing.T) {
-	keeperParams := testkeeper.NewInMemKeeperParams(t)
-	providerKeeper, ctx, ctrl, _ := testkeeper.GetProviderKeeperAndCtx(t, keeperParams)
-	defer ctrl.Finish()
-
-	consumerId := uint64(0)
-	providerKeeper.SetConsumerPhase(ctx, consumerId, types.CONSUMER_PHASE_LAUNCHED)
-	providerKeeper.SetConsumerChainId(ctx, consumerId, "consumer-chain")
-
-	// spawn time is very recent but grace period is 0 (disabled)
-	spawnTime := time.Now()
-	ctx = ctx.WithBlockTime(spawnTime)
-
-	providerKeeper.SetConsumerInitializationParameters(ctx, consumerId, types.ConsumerInitializationParameters{
-		SpawnTime: spawnTime,
-	})
-
-	providerKeeper.SetInfractionParams(ctx, types.InfractionParameters{
-		DoubleSign: &types.SlashJailParameters{
-			SlashFraction: math.LegacyMustNewDecFromStr("0.05"),
-			JailDuration:  time.Duration(1<<63 - 1),
-			Tombstone:     true,
-		},
-		Downtime: &types.SlashJailParameters{
-			SlashFraction: math.LegacyMustNewDecFromStr("0.0005"),
-			JailDuration:  0,
-			Tombstone:     false,
-		},
-		DowntimeGracePeriod: 0, // grace period disabled
-	})
-
-	evidencePacket := vaastypes.NewEvidencePacketData(
-		sdk.ConsAddress([]byte{0x01, 0x02, 0x03}),
-		100,
-		stakingtypes.Infraction_INFRACTION_DOWNTIME,
-	)
-
-	// Grace period is 0, so the check is skipped; should fail on the next
-	// validation (no IBC client) rather than grace period.
-	err := providerKeeper.HandleConsumerEvidencePacket(ctx, consumerId, evidencePacket)
-	require.Error(t, err)
-	require.NotContains(t, err.Error(), "grace period")
-	require.Contains(t, err.Error(), "no IBC client")
 }

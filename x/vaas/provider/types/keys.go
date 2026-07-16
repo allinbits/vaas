@@ -82,6 +82,12 @@ const (
 	FeePoolAddressToConsumerIdKeyName = "FeePoolAddressToConsumerIdKey"
 
 	EpochDowntimeKeyName = "EpochDowntimeKey"
+
+	PreviousDowntimeParamsKeyName = "PreviousDowntimeParamsKey"
+
+	EpochShareRecordsKeyName = "EpochShareRecordsKey"
+
+	PendingDowntimeSlashesKeyName = "PendingDowntimeSlashesKey"
 )
 
 // Collection key prefixes for use with cosmossdk.io/collections
@@ -118,5 +124,8 @@ var (
 	ConsumerIdToLastAckTimePrefix          = collections.NewPrefix(29)
 	ConsumerIdToHighestSentVscIdPrefix     = collections.NewPrefix(30)
 	ConsumerIdToHighestAckedVscIdPrefix    = collections.NewPrefix(31)
+	EpochShareRecordsPrefix                = collections.NewPrefix(32)
+	PendingDowntimeSlashesPrefix           = collections.NewPrefix(33)
+	PreviousDowntimeParamsPrefix           = collections.NewPrefix(34)
 	ParametersPrefix                       = collections.NewPrefix(0xFF)
 )

@@ -75,6 +75,7 @@ type MockedKeepers struct {
 	*MockChannelV2Keeper
 	*MockStakingKeeper
 	*MockSlashingKeeper
+	*MockPhotonKeeper
 	*MockAccountKeeper
 	*MockBankKeeper
 	*MockDistributionKeeper
@@ -88,6 +89,7 @@ func NewMockedKeepers(ctrl *gomock.Controller) MockedKeepers {
 		MockChannelV2Keeper:    NewMockChannelV2Keeper(ctrl),
 		MockStakingKeeper:      NewMockStakingKeeper(ctrl),
 		MockSlashingKeeper:     NewMockSlashingKeeper(ctrl),
+		MockPhotonKeeper:       NewMockPhotonKeeper(ctrl),
 		MockAccountKeeper:      NewMockAccountKeeper(ctrl),
 		MockBankKeeper:         NewMockBankKeeper(ctrl),
 		MockDistributionKeeper: NewMockDistributionKeeper(ctrl),
@@ -108,6 +110,7 @@ func NewInMemProviderKeeper(params InMemKeeperParams, mocks MockedKeepers) provi
 		mocks.MockChannelV2Keeper,
 		mocks.MockStakingKeeper,
 		mocks.MockSlashingKeeper,
+		mocks.MockPhotonKeeper,
 		mocks.MockAccountKeeper,
 		mocks.MockBankKeeper,
 		mocks.MockDistributionKeeper,

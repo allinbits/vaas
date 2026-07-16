@@ -1,6 +1,9 @@
 package types
 
 import (
+	"bytes"
+	"encoding/json"
+
 	vaastypes "github.com/allinbits/vaas/x/vaas/types"
 
 	abci "github.com/cometbft/cometbft/abci/types"
@@ -91,5 +94,44 @@ func (gs GenesisState) Validate() error {
 			return errorsmod.Wrap(vaastypes.ErrInvalidGenesis, "provider client state and consensus state must be nil for a restarting genesis state")
 		}
 	}
+
+	for _, e := range gs.MissedBlockBitmaps {
+		if len(e.Addr) == 0 {
+			return errorsmod.Wrap(vaastypes.ErrInvalidGenesis, "missed block bitmap: addr cannot be empty")
+		}
+	}
+	for _, e := range gs.FirstTrackedHeights {
+		if len(e.Addr) == 0 {
+			return errorsmod.Wrap(vaastypes.ErrInvalidGenesis, "first tracked height: addr cannot be empty")
+		}
+		if e.Height <= 0 {
+			return errorsmod.Wrap(vaastypes.ErrInvalidGenesis, "first tracked height: height must be positive")
+		}
+	}
+
+	// A pending evidence packet is the only remaining copy of the downtime
+	// evidence once the window closes, and SendEvidencePackets
+	// (x/vaas/consumer/keeper/evidence_packet.go) silently drops any stored
+	// entry it cannot unmarshal, so a corrupt import would discard the
+	// evidence without a trace.
+	for _, e := range gs.PendingEvidencePackets {
+		if len(e.Addr) == 0 {
+			return errorsmod.Wrap(vaastypes.ErrInvalidGenesis, "pending evidence packet: addr cannot be empty")
+		}
+		var packet vaastypes.EvidencePacketData
+		if err := json.Unmarshal(e.Packet, &packet); err != nil {
+			return errorsmod.Wrapf(vaastypes.ErrInvalidGenesis,
+				"pending evidence packet for %x: cannot unmarshal packet: %s", e.Addr, err)
+		}
+		if err := packet.Validate(); err != nil {
+			return errorsmod.Wrapf(vaastypes.ErrInvalidGenesis,
+				"pending evidence packet for %x: %s", e.Addr, err)
+		}
+		if !bytes.Equal(e.Addr, packet.ValidatorAddr) {
+			return errorsmod.Wrapf(vaastypes.ErrInvalidGenesis,
+				"pending evidence packet: addr %x does not match packet validator addr %x", e.Addr, packet.ValidatorAddr)
+		}
+	}
+
 	return nil
 }

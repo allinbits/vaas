@@ -66,6 +66,9 @@ type Keeper struct {
 	HighestValsetUpdateID  collections.Item[uint64]
 	PendingEvidencePackets collections.Map[[]byte, []byte]
 	LastVSCRecvTime        collections.Item[[]byte]
+	MissedBlockBitmaps     collections.Map[[]byte, []byte]
+	FirstTrackedHeights    collections.Map[[]byte, int64]
+	StagedDowntimeParams   collections.Item[vaastypes.DowntimeParams]
 }
 
 // NewKeeper creates a new Consumer Keeper instance
@@ -113,6 +116,9 @@ func NewKeeper(
 		HighestValsetUpdateID:  collections.NewItem(sb, types.HighestValsetUpdateIDPrefix, "highest_valset_update_id", collections.Uint64Value),
 		PendingEvidencePackets: collections.NewMap(sb, types.PendingEvidencePacketsPrefix, "pending_evidence_packets", collections.BytesKey, collections.BytesValue),
 		LastVSCRecvTime:        collections.NewItem(sb, types.LastVSCRecvTimePrefix, "last_vsc_recv_time", collections.BytesValue),
+		MissedBlockBitmaps:     collections.NewMap(sb, types.MissedBlockBitmapsPrefix, "missed_block_bitmaps", collections.BytesKey, collections.BytesValue),
+		FirstTrackedHeights:    collections.NewMap(sb, types.FirstTrackedHeightsPrefix, "first_tracked_heights", collections.BytesKey, collections.Int64Value),
+		StagedDowntimeParams:   collections.NewItem(sb, types.StagedDowntimeParamsPrefix, "staged_downtime_params", codec.CollValue[vaastypes.DowntimeParams](cdc)),
 	}
 
 	schema, err := sb.Build()
@@ -154,6 +160,9 @@ func NewNonZeroKeeper(cdc codec.BinaryCodec, storeService corestoretypes.KVStore
 		HighestValsetUpdateID:  collections.NewItem(sb, types.HighestValsetUpdateIDPrefix, "highest_valset_update_id", collections.Uint64Value),
 		PendingEvidencePackets: collections.NewMap(sb, types.PendingEvidencePacketsPrefix, "pending_evidence_packets", collections.BytesKey, collections.BytesValue),
 		LastVSCRecvTime:        collections.NewItem(sb, types.LastVSCRecvTimePrefix, "last_vsc_recv_time", collections.BytesValue),
+		MissedBlockBitmaps:     collections.NewMap(sb, types.MissedBlockBitmapsPrefix, "missed_block_bitmaps", collections.BytesKey, collections.BytesValue),
+		FirstTrackedHeights:    collections.NewMap(sb, types.FirstTrackedHeightsPrefix, "first_tracked_heights", collections.BytesKey, collections.Int64Value),
+		StagedDowntimeParams:   collections.NewItem(sb, types.StagedDowntimeParamsPrefix, "staged_downtime_params", codec.CollValue[vaastypes.DowntimeParams](cdc)),
 	}
 
 	schema, err := sb.Build()

@@ -292,6 +292,8 @@ func (k Keeper) QueueVSCPackets(ctx sdk.Context) error {
 		packet := vaastypes.NewValidatorSetChangePacketData(valUpdates, valUpdateID)
 		packet.ConsumerInDebt = k.IsConsumerInDebt(ctx, consumerId)
 		packet.IsSnapshot = isSnapshot
+		dp := k.CurrentDowntimeParams(ctx)
+		packet.DowntimeParams = &dp
 		k.AppendPendingVSCPackets(ctx, consumerId, packet)
 		k.Logger(ctx).Info("VSCPacket enqueued:",
 			"consumerId", consumerId,

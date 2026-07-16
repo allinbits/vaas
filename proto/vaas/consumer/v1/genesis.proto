@@ -34,6 +34,28 @@ message GenesisState {
   // state-export upgrade preserves the staleness clock. Absent for a new chain
   // that has not received a VSC yet.
   google.protobuf.Timestamp last_vsc_recv_time = 7 [ (gogoproto.stdtime) = true ];
+
+  // Missed-block bitmaps for validators currently tracked within the open
+  // downtime window. Empty for a new chain or right after a window closes.
+  repeated MissedBlockBitmapEntry missed_block_bitmaps = 8
+      [ (gogoproto.nullable) = false ];
+
+  // First height at which each currently-tracked validator was observed
+  // within the open downtime window. Empty for a new chain or right after a
+  // window closes.
+  repeated FirstTrackedHeightEntry first_tracked_heights = 9
+      [ (gogoproto.nullable) = false ];
+
+  // Downtime params staged to take effect at the next window boundary.
+  // Absent means nothing is staged.
+  vaas.v1.DowntimeParams staged_downtime_params = 10;
+
+  // Downtime evidence packets queued for send to the provider. Round-tripped
+  // on restart because closing a window clears the source bitmaps, leaving
+  // the queue as the only remaining copy of the evidence. Empty for a new
+  // chain or when nothing is queued.
+  repeated PendingEvidencePacketEntry pending_evidence_packets = 12
+      [ (gogoproto.nullable) = false ];
 }
 
 // HeightValsetUpdateID represents a mapping internal to the consumer VAAS module
@@ -41,4 +63,27 @@ message GenesisState {
 message HeightToValsetUpdateID {
   uint64 height = 1;
   uint64 valset_update_id = 2;
+}
+
+// MissedBlockBitmapEntry is a single validator's missed-block bitmap for the
+// downtime window currently in progress.
+message MissedBlockBitmapEntry {
+  bytes addr = 1;
+  bytes bitmap = 2;
+}
+
+// FirstTrackedHeightEntry is the first height at which a validator was
+// observed within the downtime window currently in progress.
+message FirstTrackedHeightEntry {
+  bytes addr = 1;
+  int64 height = 2;
+}
+
+// PendingEvidencePacketEntry is a single validator's queued downtime evidence
+// packet: the validator's consensus address (the store key) and the
+// JSON-encoded EvidencePacketData exactly as held by the consumer keeper's
+// PendingEvidencePackets collection.
+message PendingEvidencePacketEntry {
+  bytes addr = 1;
+  bytes packet = 2;
 }

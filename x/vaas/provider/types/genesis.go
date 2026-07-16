@@ -106,6 +106,33 @@ func (gs GenesisState) Validate() error {
 		return errorsmod.Wrap(vaastypes.ErrInvalidGenesis, err.Error())
 	}
 
+	for _, p := range gs.PendingDowntimeSlashes {
+		if len(p.ProviderConsAddr) == 0 {
+			return errorsmod.Wrap(vaastypes.ErrInvalidGenesis,
+				"pending downtime slash: provider cons addr cannot be empty")
+		}
+		if p.SlashTokens.IsNil() || p.SlashTokens.IsNegative() {
+			return errorsmod.Wrap(vaastypes.ErrInvalidGenesis,
+				"pending downtime slash: slash tokens cannot be nil or negative")
+		}
+	}
+
+	for _, r := range gs.EpochShareRecords {
+		if r.Share.IsNil() || r.Share.IsNegative() {
+			return errorsmod.Wrap(vaastypes.ErrInvalidGenesis,
+				"epoch share record: share cannot be nil or negative")
+		}
+	}
+
+	if gs.InfractionParameters != nil {
+		if err := gs.InfractionParameters.Validate(); err != nil {
+			return errorsmod.Wrap(vaastypes.ErrInvalidGenesis, fmt.Sprintf("infraction_parameters: %s", err))
+		}
+		if err := ValidateInfractionParamsAgainst(*gs.InfractionParameters, gs.Params.TrustingPeriodFraction); err != nil {
+			return errorsmod.Wrap(vaastypes.ErrInvalidGenesis, err.Error())
+		}
+	}
+
 	return nil
 }
 

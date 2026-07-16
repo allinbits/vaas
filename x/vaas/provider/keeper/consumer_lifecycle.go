@@ -286,6 +286,12 @@ func (k Keeper) MakeConsumerGenesis(
 		initializationRecord.UnbondingPeriod,
 		initializationRecord.SafeModeThreshold,
 	)
+	// Downtime detection params are provider-owned: seed genesis with the
+	// current values so the consumer starts in sync; later changes are
+	// distributed via VSC packets.
+	downtimeParams := k.CurrentDowntimeParams(ctx)
+	consumerGenesisParams.SignedBlocksWindow = downtimeParams.SignedBlocksWindow
+	consumerGenesisParams.MinSignedPerWindow = downtimeParams.MinSignedPerWindow
 
 	providerUnbondingPeriod, err := k.stakingKeeper.UnbondingTime(ctx)
 	if err != nil {

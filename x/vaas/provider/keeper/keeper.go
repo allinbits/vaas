@@ -39,6 +39,7 @@ type Keeper struct {
 	clientV2Keeper     vaastypes.ClientV2Keeper
 	stakingKeeper      vaastypes.StakingKeeper
 	slashingKeeper     vaastypes.SlashingKeeper
+	photonKeeper       vaastypes.PhotonKeeper
 	bankKeeper         vaastypes.BankKeeper
 	distributionKeeper vaastypes.DistributionKeeper
 	govKeeper          govkeeper.Keeper
@@ -105,6 +106,35 @@ type Keeper struct {
 	// does not exclude a validator from rewards on another. Cleared at each
 	// epoch boundary.
 	EpochDowntime collections.Map[collections.Pair[uint64, []byte], bool]
+
+	// PreviousDowntimeParams retains the downtime-window params that were in
+	// effect immediately before the last change to InfractionParams, along
+	// with the time of that change, so evidence computed under the old
+	// params is still accepted for a bounded grace window.
+	PreviousDowntimeParams collections.Item[types.PreviousDowntimeParams]
+
+	// EpochShareRecords records, for each consumer, the per-validator fee
+	// share actually paid out by each fee distribution run. Keyed by
+	// (consumer_id, distributedAt.UnixNano()) so that the record covering a
+	// given downtime window's end time can be resolved by scanning the
+	// consumer's records ascending from that time. Used to price downtime
+	// slashes at the fee level that was in effect when the infraction
+	// occurred, for windows that ended in an already-distributed epoch.
+	EpochShareRecords collections.Map[collections.Pair[uint64, int64], math.Int]
+
+	// PendingDowntimeSlashes holds downtime slashes that have been validated
+	// and priced but not yet executed, keyed by (consumer_id, provider cons
+	// addr). Entries mature (become executable) DowntimeChallengeWindow after
+	// acceptance; see the epoch sweep that executes matured entries.
+	PendingDowntimeSlashes collections.Map[collections.Pair[uint64, []byte], types.PendingDowntimeSlash]
+
+	// windowEndTimestampFn resolves the timestamp anchor for a downtime
+	// evidence window. Nil in production, where NewKeeper leaves it unset and
+	// windowEndTimestamp falls back to the real IBC-client-backed
+	// implementation. Tests may override it via
+	// OverrideWindowEndTimestampForTest to supply an anchor timestamp without
+	// fabricating real IBC consensus states.
+	windowEndTimestampFn func(ctx sdk.Context, clientId string, windowEnd int64) (time.Time, error)
 }
 
 // NewKeeper creates a new provider Keeper instance
@@ -114,6 +144,7 @@ func NewKeeper(
 	clientV2Keeper vaastypes.ClientV2Keeper,
 	channelKeeperV2 vaastypes.ChannelV2Keeper,
 	stakingKeeper vaastypes.StakingKeeper, slashingKeeper vaastypes.SlashingKeeper,
+	photonKeeper vaastypes.PhotonKeeper,
 	accountKeeper vaastypes.AccountKeeper,
 	bankKeeper vaastypes.BankKeeper,
 	distributionKeeper vaastypes.DistributionKeeper,
@@ -140,6 +171,7 @@ func NewKeeper(
 		clientV2Keeper:        clientV2Keeper,
 		stakingKeeper:         stakingKeeper,
 		slashingKeeper:        slashingKeeper,
+		photonKeeper:          photonKeeper,
 		accountKeeper:         accountKeeper,
 		bankKeeper:            bankKeeper,
 		distributionKeeper:    distributionKeeper,
@@ -230,6 +262,26 @@ func NewKeeper(
 		collections.BoolValue,
 	)
 
+	k.PreviousDowntimeParams = collections.NewItem(
+		sb, types.PreviousDowntimeParamsPrefix,
+		types.PreviousDowntimeParamsKeyName,
+		codec.CollValue[types.PreviousDowntimeParams](cdc),
+	)
+
+	k.EpochShareRecords = collections.NewMap(
+		sb, types.EpochShareRecordsPrefix,
+		types.EpochShareRecordsKeyName,
+		collections.PairKeyCodec(collections.Uint64Key, collections.Int64Key),
+		sdk.IntValue,
+	)
+
+	k.PendingDowntimeSlashes = collections.NewMap(
+		sb, types.PendingDowntimeSlashesPrefix,
+		types.PendingDowntimeSlashesKeyName,
+		collections.PairKeyCodec(collections.Uint64Key, collections.BytesKey),
+		codec.CollValue[types.PendingDowntimeSlash](cdc),
+	)
+
 	schema, err := sb.Build()
 	if err != nil {
 		panic(err)
@@ -270,6 +322,15 @@ func (k Keeper) ConsensusAddressCodec() addresscodec.Codec {
 
 func (k *Keeper) SetGovKeeper(govKeeper govkeeper.Keeper) {
 	k.govKeeper = govKeeper
+}
+
+// OverrideWindowEndTimestampForTest replaces the downtime-evidence window-end
+// timestamp resolution with fn. Production code always uses the real
+// IBC-client-backed implementation wired by NewKeeper (see
+// Keeper.windowEndTimestamp); this exists solely so unit tests can supply an
+// anchor timestamp without fabricating real IBC consensus states.
+func (k *Keeper) OverrideWindowEndTimestampForTest(fn func(ctx sdk.Context, clientId string, windowEnd int64) (time.Time, error)) {
+	k.windowEndTimestampFn = fn
 }
 
 // Logger returns a module-specific logger.

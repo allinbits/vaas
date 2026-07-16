@@ -12,6 +12,8 @@ import (
 
 	abci "github.com/cometbft/cometbft/abci/types"
 
+	"cosmossdk.io/math"
+
 	testcrypto "github.com/allinbits/vaas/testutil/crypto"
 	testkeeper "github.com/allinbits/vaas/testutil/keeper"
 	"github.com/allinbits/vaas/x/vaas/types"
@@ -395,6 +397,55 @@ func TestRecvPacketAfterStalenessLiftsStale(t *testing.T) {
 
 	// After the resync, IsVSCStale should be false because lastVSCRecvTime was updated.
 	require.False(t, k.IsVSCStale(staleCtx), "resync must lift safe mode")
+}
+
+// TestOnRecvVSCPacketStagesDowntimeParams verifies that a VSC packet carrying
+// downtime params different from the consumer's current ones is staged (not
+// applied live), and that a stale (already-seen) vsc id does not stage
+// anything, even if it carries different downtime params.
+func TestOnRecvVSCPacketStagesDowntimeParams(t *testing.T) {
+	providerClientID := "07-tendermint-0"
+
+	k, ctx, ctrl, _ := testkeeper.GetConsumerKeeperAndCtx(t, testkeeper.NewInMemKeeperParams(t))
+	defer ctrl.Finish()
+
+	initialParams := types.DefaultConsumerParams()
+	k.SetParams(ctx, initialParams)
+
+	staged := types.DowntimeParams{
+		SignedBlocksWindow: initialParams.SignedBlocksWindow * 2,
+		MinSignedPerWindow: math.LegacyMustNewDecFromStr("0.75"),
+	}
+
+	pd := types.NewValidatorSetChangePacketData(nil, 1)
+	pd.DowntimeParams = &staged
+	require.NoError(t, k.OnRecvVSCPacketV2(ctx, providerClientID, pd))
+
+	// The staged value is recorded...
+	got, err := k.StagedDowntimeParams.Get(ctx)
+	require.NoError(t, err)
+	require.Equal(t, staged.SignedBlocksWindow, got.SignedBlocksWindow)
+	require.True(t, staged.MinSignedPerWindow.Equal(got.MinSignedPerWindow))
+
+	// ...but the live params are untouched until the next window boundary.
+	live := k.GetConsumerParams(ctx)
+	require.Equal(t, initialParams.SignedBlocksWindow, live.SignedBlocksWindow)
+	require.True(t, initialParams.MinSignedPerWindow.Equal(live.MinSignedPerWindow))
+
+	// Clear the staged value, then replay a stale (already-seen) vsc id
+	// carrying yet another set of downtime params: it must not be staged.
+	require.NoError(t, k.StagedDowntimeParams.Remove(ctx))
+
+	stale := types.DowntimeParams{
+		SignedBlocksWindow: initialParams.SignedBlocksWindow * 3,
+		MinSignedPerWindow: math.LegacyMustNewDecFromStr("0.9"),
+	}
+	pdStale := types.NewValidatorSetChangePacketData(nil, 1)
+	pdStale.DowntimeParams = &stale
+	require.NoError(t, k.OnRecvVSCPacketV2(ctx, providerClientID, pdStale))
+
+	_, err = k.StagedDowntimeParams.Get(ctx)
+	require.Error(t, err, "a stale vsc id must not stage downtime params")
 }
 
 // TestSnapshotResyncEmitsEvent verifies the consumer emits EventTypeSnapshotResync

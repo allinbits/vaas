@@ -36,4 +36,7 @@ var (
 	ConsumerDebtPrefix           = collections.NewPrefix(13)
 	PendingEvidencePacketsPrefix = collections.NewPrefix(14)
 	LastVSCRecvTimePrefix        = collections.NewPrefix(15)
+	MissedBlockBitmapsPrefix     = collections.NewPrefix(16)
+	FirstTrackedHeightsPrefix    = collections.NewPrefix(17)
+	StagedDowntimeParamsPrefix   = collections.NewPrefix(18)
 )

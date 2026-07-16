@@ -140,6 +140,14 @@ service Query {
     option (google.api.http).get =
         "/vaas/provider/consumer_liveness/{consumer_id}";
   }
+
+  // QueryPendingDowntimeSlashes returns the pending downtime slashes queued
+  // for a consumer, awaiting the challenge window before execution.
+  rpc QueryPendingDowntimeSlashes(QueryPendingDowntimeSlashesRequest)
+      returns (QueryPendingDowntimeSlashesResponse) {
+    option (google.api.http).get =
+        "/vaas/provider/v1/pending_downtime_slashes/{consumer_id}";
+  }
 }
 
 message QueryConsumerGenesisRequest {
@@ -373,4 +381,9 @@ message QueryConsumerLivenessResponse {
   google.protobuf.Duration grace_period = 2 [(gogoproto.stdduration) = true, (gogoproto.nullable) = false];
   google.protobuf.Timestamp removal_eta = 3 [(gogoproto.stdtime) = true, (gogoproto.nullable) = false];
   bool degraded = 4;
+}
+
+message QueryPendingDowntimeSlashesRequest { uint64 consumer_id = 1; }
+message QueryPendingDowntimeSlashesResponse {
+  repeated PendingDowntimeSlash slashes = 1 [(gogoproto.nullable) = false];
 }

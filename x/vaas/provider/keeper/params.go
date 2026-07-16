@@ -154,10 +154,64 @@ func (k Keeper) GetInfractionParams(ctx context.Context) types.InfractionParamet
 }
 
 // SetInfractionParams sets the infraction parameters for consumer chain slashing.
+// If the downtime-window fields (SignedBlocksWindow, MinSignedPerWindow) differ
+// from the currently stored params, the old values are recorded in
+// PreviousDowntimeParams so downtime evidence computed under them remains
+// acceptable for a bounded grace window; see AcceptableDowntimeParams.
 func (k Keeper) SetInfractionParams(ctx context.Context, params types.InfractionParameters) {
+	if has, err := k.InfractionParams.Has(ctx); err == nil && has {
+		old := k.GetInfractionParams(ctx)
+		if old.SignedBlocksWindow != params.SignedBlocksWindow || !old.MinSignedPerWindow.Equal(params.MinSignedPerWindow) {
+			previous := types.PreviousDowntimeParams{
+				Params: vaastypes.DowntimeParams{
+					SignedBlocksWindow: old.SignedBlocksWindow,
+					MinSignedPerWindow: old.MinSignedPerWindow,
+				},
+				ChangedAt: sdk.UnwrapSDKContext(ctx).BlockTime(),
+			}
+			if err := k.PreviousDowntimeParams.Set(ctx, previous); err != nil {
+				panic(fmt.Sprintf("error setting previous downtime params: %v", err))
+			}
+		}
+	}
 	if err := k.InfractionParams.Set(ctx, params); err != nil {
 		panic(fmt.Sprintf("error setting infraction parameters: %v", err))
 	}
+}
+
+// CurrentDowntimeParams returns the provider's current downtime detection
+// parameters, derived from InfractionParams, for distribution to consumers
+// via genesis and VSC packets.
+func (k Keeper) CurrentDowntimeParams(ctx sdk.Context) vaastypes.DowntimeParams {
+	ip := k.GetInfractionParams(ctx)
+	return vaastypes.DowntimeParams{
+		SignedBlocksWindow: ip.SignedBlocksWindow,
+		MinSignedPerWindow: ip.MinSignedPerWindow,
+	}
+}
+
+// AcceptableDowntimeParams reports whether echoed downtime params are
+// acceptable for verifying downtime evidence: either they match the
+// provider's current params, or they match the immediately-prior params
+// (PreviousDowntimeParams) and the change that superseded them happened no
+// longer ago than DowntimeEvidenceMaxAge + DowntimeChallengeWindow.
+func (k Keeper) AcceptableDowntimeParams(ctx sdk.Context, echoed vaastypes.DowntimeParams) bool {
+	current := k.CurrentDowntimeParams(ctx)
+	if echoed.SignedBlocksWindow == current.SignedBlocksWindow && echoed.MinSignedPerWindow.Equal(current.MinSignedPerWindow) {
+		return true
+	}
+
+	previous, err := k.PreviousDowntimeParams.Get(ctx)
+	if err != nil {
+		return false
+	}
+	if echoed.SignedBlocksWindow != previous.Params.SignedBlocksWindow || !echoed.MinSignedPerWindow.Equal(previous.Params.MinSignedPerWindow) {
+		return false
+	}
+
+	ip := k.GetInfractionParams(ctx)
+	horizon := ip.DowntimeEvidenceMaxAge + ip.DowntimeChallengeWindow
+	return ctx.BlockTime().Sub(previous.ChangedAt) <= horizon
 }
 
 // LivenessGracePeriod returns the maximum time a launched consumer may go

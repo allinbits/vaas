@@ -376,11 +376,54 @@ func TestGenesisRoundTrip(t *testing.T) {
 	pkA.SetConsumerHighestSentVscId(ctxA, keyedConsumerID, 7)
 	pkA.SetConsumerHighestAckedVscId(ctxA, keyedConsumerID, 5)
 
+	// Seed the downtime-detection state (pending slash, previous downtime
+	// params, epoch share records) so the round-trip covers it too.
+	downtimeProviderAddr := providertypes.NewProviderConsAddress([]byte("provider-addr-downtime-x1"))
+	pendingSlash := providertypes.PendingDowntimeSlash{
+		ConsumerId:         keyedConsumerID,
+		ProviderConsAddr:   downtimeProviderAddr.ToSdkConsAddr().Bytes(),
+		WindowStartHeight:  100,
+		Span:               50,
+		MissedCount:        30,
+		MissedBlocksBitmap: []byte{0xFF, 0x0F},
+		SlashTokens:        math.NewInt(12345),
+		MaturesAt:          time.Unix(1_950_000_000, 0).UTC(),
+	}
+	require.NoError(t, pkA.PendingDowntimeSlashes.Set(ctxA,
+		collections.Join(keyedConsumerID, downtimeProviderAddr.ToSdkConsAddr().Bytes()), pendingSlash))
+
+	previousDowntimeParams := providertypes.PreviousDowntimeParams{
+		Params: vaastypes.DowntimeParams{
+			SignedBlocksWindow: 100,
+			MinSignedPerWindow: math.LegacyNewDecWithPrec(5, 1),
+		},
+		ChangedAt: time.Unix(1_960_000_000, 0).UTC(),
+	}
+	require.NoError(t, pkA.PreviousDowntimeParams.Set(ctxA, previousDowntimeParams))
+
+	const otherConsumerID uint64 = 3 // consumer-delta
+	require.NoError(t, pkA.EpochShareRecords.Set(ctxA,
+		collections.Join(keyedConsumerID, time.Unix(1_700_000_001, 0).UTC().UnixNano()), math.NewInt(500)))
+	require.NoError(t, pkA.EpochShareRecords.Set(ctxA,
+		collections.Join(otherConsumerID, time.Unix(1_700_000_002, 0).UTC().UnixNano()), math.NewInt(700)))
+
 	pkA.SetParams(ctxA, providertypes.DefaultParams())
 	pkA.SetValidatorSetUpdateId(ctxA, 1)
 
+	// Seed a non-default InfractionParameters so the round-trip covers the
+	// optional genesis override (a real chain always has these set by
+	// InitGenesis; this asserts the values survive an export/import cycle).
+	customInfractionParams := providertypes.DefaultInfractionParameters()
+	customInfractionParams.DowntimeChallengeWindow = 1 * time.Hour
+	customInfractionParams.DowntimeEvidenceMaxAge = 1 * time.Hour
+	customInfractionParams.SignedBlocksWindow = 30
+	customInfractionParams.MinSignedPerWindow = math.LegacyNewDecWithPrec(5, 1)
+	pkA.SetInfractionParams(ctxA, customInfractionParams)
+
 	expA := pkA.ExportGenesis(ctxA)
 	require.NoError(t, expA.Validate(), "first export must validate")
+	require.NotNil(t, expA.InfractionParameters, "infraction params lost at export")
+	require.Equal(t, customInfractionParams, *expA.InfractionParameters)
 
 	// Sanity: the export must carry the key-assignment / prune entries
 	// keyed by the actual consumer id (matching the original alloc).
@@ -390,6 +433,13 @@ func TestGenesisRoundTrip(t *testing.T) {
 	require.Equal(t, keyedConsumerID, expA.ValidatorsByConsumerAddr[0].ConsumerId)
 	require.Len(t, expA.ConsumerAddrsToPrune, 1)
 	require.Equal(t, keyedConsumerID, expA.ConsumerAddrsToPrune[0].ConsumerId)
+
+	// Sanity: the export must carry the downtime-detection state.
+	require.Len(t, expA.PendingDowntimeSlashes, 1)
+	require.Equal(t, pendingSlash, expA.PendingDowntimeSlashes[0])
+	require.NotNil(t, expA.PreviousDowntimeParams)
+	require.Equal(t, previousDowntimeParams, *expA.PreviousDowntimeParams)
+	require.Len(t, expA.EpochShareRecords, 2)
 
 	// Fresh keeper B.
 	pkB, ctxB, ctrlB, stakingB := testkeeper.GetProviderKeeperAndCtx(t, testkeeper.NewInMemKeeperParams(t))
@@ -416,6 +466,18 @@ func TestGenesisRoundTrip(t *testing.T) {
 	require.Equal(t, assignedProviderConsAddr, gotProvider)
 	require.Len(t, pkB.GetAllConsumerAddrsToPrune(ctxB, keyedConsumerID), 1,
 		"ConsumerAddrsToPrune lost across round-trip")
+
+	// Downtime-detection state must also reconnect across the round-trip.
+	gotPending, err := pkB.PendingDowntimeSlashes.Get(ctxB,
+		collections.Join(keyedConsumerID, downtimeProviderAddr.ToSdkConsAddr().Bytes()))
+	require.NoError(t, err, "PendingDowntimeSlashes lost across round-trip")
+	require.Equal(t, pendingSlash, gotPending)
+	gotPrevious, err := pkB.PreviousDowntimeParams.Get(ctxB)
+	require.NoError(t, err, "PreviousDowntimeParams lost across round-trip")
+	require.Equal(t, previousDowntimeParams, gotPrevious)
+
+	require.Equal(t, customInfractionParams, pkB.GetInfractionParams(ctxB),
+		"InfractionParameters lost across round-trip")
 
 	expB := pkB.ExportGenesis(ctxB)
 

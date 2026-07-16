@@ -94,6 +94,45 @@ func (s *IntegrationTestSuite) SetupSuite() {
 					params["blocks_per_epoch"] = "5"
 					params["fees_per_block_amount"] = "1000"
 				}
+
+				// Shrink the downtime detection window and the challenge window so
+				// testDowntimeSlash's queue-then-execute flow (x/vaas-owned tumbling
+				// window bitmap tracking, then a challenge-window-gated slash) completes
+				// within the test run instead of the multi-day production defaults.
+				// downtime_evidence_max_age stays generous relative to the small
+				// challenge window so relayer/timing jitter can't age the evidence out.
+				// downtime_grace_period is left at its default: the fixed 2024 spawn_time
+				// in testdata/create_consumer.json is already years in the past by any
+				// real test run, so the grace period has already elapsed regardless.
+				provider["infraction_parameters"] = map[string]any{
+					"double_sign": map[string]any{
+						"slash_fraction": "0.050000000000000000",
+						"jail_duration":  "315360000s",
+						"tombstone":      true,
+					},
+					"downtime": map[string]any{
+						"slash_fraction": "0.050000000000000000",
+						"jail_duration":  "0s",
+						"tombstone":      false,
+					},
+					"downtime_grace_period":     "604800s",
+					"signed_blocks_window":      "30",
+					"min_signed_per_window":     "0.500000000000000000",
+					"downtime_challenge_window": "10s",
+					"downtime_evidence_max_age": "600s",
+				}
+			}
+
+			// Loosen the provider's own native x/slashing downtime window so the
+			// permanently-silent second validator created by testDowntimeSlash (which
+			// never runs a node, by design, to produce real missed-block evidence for
+			// the VAAS-owned downtime tracking above) is never natively jailed on the
+			// provider chain itself during the test run; that would remove it from the
+			// bonded set before it can accumulate consumer-side downtime evidence.
+			if slashing, ok := appState["slashing"].(map[string]any); ok {
+				if params, ok := slashing["params"].(map[string]any); ok {
+					params["signed_blocks_window"] = "100000"
+				}
 			}
 		},
 	}
