@@ -1263,6 +1263,31 @@ func TestHandleConsumerEvidencePacketRejectsNonLaunchedConsumer(t *testing.T) {
 	require.Error(t, err)
 }
 
+// TestHandleConsumerEvidencePacketRejectsPausedConsumer verifies that a paused
+// consumer's evidence packets are rejected just like any other non-launched
+// phase: while a consumer is paused there is no active downtime challenge
+// window to accept new evidence into.
+func TestHandleConsumerEvidencePacketRejectsPausedConsumer(t *testing.T) {
+	keeperParams := testkeeper.NewInMemKeeperParams(t)
+	providerKeeper, ctx, ctrl, _ := testkeeper.GetProviderKeeperAndCtx(t, keeperParams)
+	defer ctrl.Finish()
+
+	consumerId := uint64(0)
+	providerKeeper.SetConsumerPhase(ctx, consumerId, types.CONSUMER_PHASE_PAUSED)
+
+	evidencePacket := vaastypes.NewEvidencePacketData(
+		sdk.ConsAddress([]byte{0x01, 0x02, 0x03}),
+		100,
+		[]byte{0x01},
+		1,
+		600,
+		math.LegacyMustNewDecFromStr("0.5"),
+	)
+
+	err := providerKeeper.HandleConsumerEvidencePacket(ctx, consumerId, evidencePacket)
+	require.Error(t, err)
+}
+
 func TestEvidencePacketDataJSONRoundTrip(t *testing.T) {
 	addr := sdk.ConsAddress([]byte{0x01, 0x02, 0x03, 0x04, 0x05})
 	packet := vaastypes.NewEvidencePacketData(addr, 42, []byte{0x01}, 1, 600, math.LegacyMustNewDecFromStr("0.5"))

@@ -7,10 +7,11 @@ import (
 	"strings"
 	"time"
 
-	"github.com/allinbits/vaas/x/vaas/provider/types"
-	vaastypes "github.com/allinbits/vaas/x/vaas/types"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
+
+	"github.com/allinbits/vaas/x/vaas/provider/types"
+	vaastypes "github.com/allinbits/vaas/x/vaas/types"
 
 	tmtypes "github.com/cometbft/cometbft/types"
 
@@ -566,9 +567,9 @@ func (k msgServer) RemoveConsumer(goCtx context.Context, msg *types.MsgRemoveCon
 	}
 
 	phase := k.Keeper.GetConsumerPhase(ctx, consumerId)
-	if phase != types.CONSUMER_PHASE_LAUNCHED {
+	if phase != types.CONSUMER_PHASE_LAUNCHED && phase != types.CONSUMER_PHASE_PAUSED {
 		return &resp, errorsmod.Wrapf(types.ErrInvalidPhase,
-			"chain with consumer id: %d has to be in its launched phase", consumerId)
+			"chain with consumer id: %d has to be in its launched or paused phase", consumerId)
 	}
 
 	err = k.Keeper.StopAndPrepareForConsumerRemoval(ctx, consumerId)
@@ -856,9 +857,10 @@ func (k msgServer) SweepConsumerFeePool(
 		return nil, errorsmod.Wrapf(types.ErrInvalidPhase,
 			"consumer %d is deleted; pool already auto-swept on delete", msg.ConsumerId)
 	}
-	if phase == types.CONSUMER_PHASE_LAUNCHED {
+	if phase == types.CONSUMER_PHASE_LAUNCHED || phase == types.CONSUMER_PHASE_PAUSED {
 		return nil, errorsmod.Wrapf(types.ErrFeePoolLocked,
-			"sweep is locked while consumer %d is launched", msg.ConsumerId)
+			"sweep is locked while consumer %d is launched or paused; the owner may sweep once the consumer reaches stopped",
+			msg.ConsumerId)
 	}
 
 	ownerAddrString, err := k.GetConsumerOwnerAddress(ctx, msg.ConsumerId)
@@ -885,9 +887,21 @@ func (k msgServer) ChallengeConsumerDowntime(
 	return nil, status.Errorf(codes.Unimplemented, "method ChallengeConsumerDowntime not implemented")
 }
 
-// ResumeConsumer is not yet implemented; the stub satisfies types.MsgServer.
+// ResumeConsumer resumes a consumer chain from the PAUSED phase back to
+// LAUNCHED. Only the gov authority may call this; the resume logic itself
+// lives in ResumeConsumerChain (consumer_lifecycle.go), mirroring how
+// ChallengeConsumerDowntime delegates to HandleChallengeConsumerDowntime.
 func (k msgServer) ResumeConsumer(
 	goCtx context.Context, msg *types.MsgResumeConsumer,
 ) (*types.MsgResumeConsumerResponse, error) {
-	return nil, status.Errorf(codes.Unimplemented, "method ResumeConsumer not implemented")
+	if k.GetAuthority() != msg.Authority {
+		return nil, errorsmod.Wrapf(govtypes.ErrInvalidSigner, "invalid authority; expected %s, got %s", k.authority, msg.Authority)
+	}
+
+	ctx := sdk.UnwrapSDKContext(goCtx)
+	if err := k.Keeper.ResumeConsumerChain(ctx, msg.ConsumerId); err != nil {
+		return nil, err
+	}
+
+	return &types.MsgResumeConsumerResponse{}, nil
 }

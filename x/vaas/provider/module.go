@@ -160,6 +160,11 @@ func (am AppModule) BeginBlock(ctx context.Context) error {
 		return err
 	}
 
+	// Auto-stop any consumer whose pause has outlived MaxPauseDuration.
+	if err := am.keeper.BeginBlockAutoStopPausedConsumers(sdkCtx); err != nil {
+		return err
+	}
+
 	// Execute matured downtime slashes queued behind the challenge window.
 	am.keeper.SweepPendingDowntimeSlashes(sdkCtx)
 

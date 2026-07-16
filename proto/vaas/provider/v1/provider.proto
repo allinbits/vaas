@@ -55,6 +55,13 @@ message Params {
   // min_deposit_blocks). Zero disables the check. The floor applies to every
   // funder including the gov authority.
   uint64 min_deposit_blocks = 6;
+
+  // MaxPauseDuration bounds how long a consumer chain may remain in the
+  // PAUSED phase (see CONSUMER_PHASE_PAUSED) before the provider
+  // automatically stops it, guaranteeing an unresolved pause always resolves
+  // to STOPPED (and eventually DELETED) rather than hanging indefinitely.
+  google.protobuf.Duration max_pause_duration = 7
+      [ (gogoproto.nullable) = false, (gogoproto.stdduration) = true ];
 }
 
 // AddressList contains a list of consensus addresses

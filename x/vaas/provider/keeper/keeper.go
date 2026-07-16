@@ -81,6 +81,17 @@ type Keeper struct {
 	SpawnTimeToConsumerIds        collections.Map[[]byte, types.ConsumerIds]
 	RemovalTimeToConsumerIds      collections.Map[[]byte, types.ConsumerIds]
 
+	// ConsumerPauseExpirationTime and PauseExpirationTimeToConsumerIds queue a
+	// PAUSED consumer's auto-stop: PauseConsumerChain schedules a consumer here
+	// for now + MaxPauseDuration, and BeginBlockAutoStopPausedConsumers
+	// consumes the queue by calling StopAndPrepareForConsumerRemoval, the same
+	// path StopAndPrepareForConsumerRemoval/SweepUnresponsiveConsumers use --
+	// never the removal queue directly, since BeginBlockRemoveConsumers'
+	// DeleteConsumerChain requires phase STOPPED and would reject a still-PAUSED
+	// consumer.
+	ConsumerPauseExpirationTime      collections.Map[uint64, []byte]
+	PauseExpirationTimeToConsumerIds collections.Map[[]byte, types.ConsumerIds]
+
 	// Key assignment collections
 	ValidatorConsumerPubKey collections.Map[collections.Pair[uint64, []byte], []byte]
 	ValidatorByConsumerAddr collections.Map[collections.Pair[uint64, []byte], []byte]
@@ -225,24 +236,26 @@ func NewKeeper(
 				),
 			},
 		),
-		ConsumerGenesis:               collections.NewMap(sb, types.ConsumerGenesisPrefix, "consumer_genesis", collections.Uint64Key, codec.CollValue[vaastypes.ConsumerGenesisState](cdc)),
-		ValsetUpdateBlockHeight:       collections.NewMap(sb, types.ValsetUpdateBlockHeightPrefix, "valset_update_block_height", collections.Uint64Key, collections.Uint64Value),
-		InitChainHeight:               collections.NewMap(sb, types.InitChainHeightPrefix, "init_chain_height", collections.Uint64Key, collections.Uint64Value),
-		PendingVSCPackets:             collections.NewMap(sb, types.PendingVSCsPrefix, "pending_vsc_packets", collections.Uint64Key, codec.CollValue[types.ValidatorSetChangePackets](cdc)),
-		ConsumerChainId:               collections.NewMap(sb, types.ConsumerIdToChainIdPrefix, "consumer_chain_id", collections.Uint64Key, collections.StringValue),
-		ConsumerOwnerAddress:          collections.NewMap(sb, types.ConsumerIdToOwnerAddressPrefix, "consumer_owner_address", collections.Uint64Key, collections.StringValue),
-		ConsumerMetadata:              collections.NewMap(sb, types.ConsumerIdToMetadataPrefix, "consumer_metadata", collections.Uint64Key, codec.CollValue[types.ConsumerMetadata](cdc)),
-		ConsumerInitParams:            collections.NewMap(sb, types.ConsumerIdToInitializationParamsPrefix, "consumer_init_params", collections.Uint64Key, codec.CollValue[types.ConsumerInitializationParameters](cdc)),
-		ConsumerPhase:                 collections.NewMap(sb, types.ConsumerIdToPhasePrefix, "consumer_phase", collections.Uint64Key, collections.Uint32Value),
-		ConsumerDebt:                  collections.NewMap(sb, types.ConsumerIdToDebtPrefix, "consumer_debt", collections.Uint64Key, collections.BoolValue),
-		ConsumerFeesPerBlockOverride:  collections.NewMap(sb, types.ConsumerIdToFeesPerBlockOverridePrefix, types.ConsumerIdToFeesPerBlockOverrideKeyName, collections.Uint64Key, sdk.IntValue),
-		EquivocationEvidenceMinHeight: collections.NewMap(sb, types.EquivocationEvidenceMinHeightPrefix, "equivocation_evidence_min_height", collections.Uint64Key, collections.Uint64Value),
-		ConsumerRemovalTime:           collections.NewMap(sb, types.ConsumerIdToRemovalTimePrefix, "consumer_removal_time", collections.Uint64Key, collections.BytesValue),
-		ConsumerLastAckTime:           collections.NewMap(sb, types.ConsumerIdToLastAckTimePrefix, "consumer_last_ack_time", collections.Uint64Key, collections.BytesValue),
-		ConsumerHighestSentVscId:      collections.NewMap(sb, types.ConsumerIdToHighestSentVscIdPrefix, "consumer_highest_sent_vsc_id", collections.Uint64Key, collections.Uint64Value),
-		ConsumerHighestAckedVscId:     collections.NewMap(sb, types.ConsumerIdToHighestAckedVscIdPrefix, "consumer_highest_acked_vsc_id", collections.Uint64Key, collections.Uint64Value),
-		SpawnTimeToConsumerIds:        collections.NewMap(sb, types.SpawnTimeToConsumerIdsPrefix, "spawn_time_to_consumer_ids", collections.BytesKey, codec.CollValue[types.ConsumerIds](cdc)),
-		RemovalTimeToConsumerIds:      collections.NewMap(sb, types.RemovalTimeToConsumerIdsPrefix, "removal_time_to_consumer_ids", collections.BytesKey, codec.CollValue[types.ConsumerIds](cdc)),
+		ConsumerGenesis:                  collections.NewMap(sb, types.ConsumerGenesisPrefix, "consumer_genesis", collections.Uint64Key, codec.CollValue[vaastypes.ConsumerGenesisState](cdc)),
+		ValsetUpdateBlockHeight:          collections.NewMap(sb, types.ValsetUpdateBlockHeightPrefix, "valset_update_block_height", collections.Uint64Key, collections.Uint64Value),
+		InitChainHeight:                  collections.NewMap(sb, types.InitChainHeightPrefix, "init_chain_height", collections.Uint64Key, collections.Uint64Value),
+		PendingVSCPackets:                collections.NewMap(sb, types.PendingVSCsPrefix, "pending_vsc_packets", collections.Uint64Key, codec.CollValue[types.ValidatorSetChangePackets](cdc)),
+		ConsumerChainId:                  collections.NewMap(sb, types.ConsumerIdToChainIdPrefix, "consumer_chain_id", collections.Uint64Key, collections.StringValue),
+		ConsumerOwnerAddress:             collections.NewMap(sb, types.ConsumerIdToOwnerAddressPrefix, "consumer_owner_address", collections.Uint64Key, collections.StringValue),
+		ConsumerMetadata:                 collections.NewMap(sb, types.ConsumerIdToMetadataPrefix, "consumer_metadata", collections.Uint64Key, codec.CollValue[types.ConsumerMetadata](cdc)),
+		ConsumerInitParams:               collections.NewMap(sb, types.ConsumerIdToInitializationParamsPrefix, "consumer_init_params", collections.Uint64Key, codec.CollValue[types.ConsumerInitializationParameters](cdc)),
+		ConsumerPhase:                    collections.NewMap(sb, types.ConsumerIdToPhasePrefix, "consumer_phase", collections.Uint64Key, collections.Uint32Value),
+		ConsumerDebt:                     collections.NewMap(sb, types.ConsumerIdToDebtPrefix, "consumer_debt", collections.Uint64Key, collections.BoolValue),
+		ConsumerFeesPerBlockOverride:     collections.NewMap(sb, types.ConsumerIdToFeesPerBlockOverridePrefix, types.ConsumerIdToFeesPerBlockOverrideKeyName, collections.Uint64Key, sdk.IntValue),
+		EquivocationEvidenceMinHeight:    collections.NewMap(sb, types.EquivocationEvidenceMinHeightPrefix, "equivocation_evidence_min_height", collections.Uint64Key, collections.Uint64Value),
+		ConsumerRemovalTime:              collections.NewMap(sb, types.ConsumerIdToRemovalTimePrefix, "consumer_removal_time", collections.Uint64Key, collections.BytesValue),
+		ConsumerLastAckTime:              collections.NewMap(sb, types.ConsumerIdToLastAckTimePrefix, "consumer_last_ack_time", collections.Uint64Key, collections.BytesValue),
+		ConsumerHighestSentVscId:         collections.NewMap(sb, types.ConsumerIdToHighestSentVscIdPrefix, "consumer_highest_sent_vsc_id", collections.Uint64Key, collections.Uint64Value),
+		ConsumerHighestAckedVscId:        collections.NewMap(sb, types.ConsumerIdToHighestAckedVscIdPrefix, "consumer_highest_acked_vsc_id", collections.Uint64Key, collections.Uint64Value),
+		SpawnTimeToConsumerIds:           collections.NewMap(sb, types.SpawnTimeToConsumerIdsPrefix, "spawn_time_to_consumer_ids", collections.BytesKey, codec.CollValue[types.ConsumerIds](cdc)),
+		RemovalTimeToConsumerIds:         collections.NewMap(sb, types.RemovalTimeToConsumerIdsPrefix, "removal_time_to_consumer_ids", collections.BytesKey, codec.CollValue[types.ConsumerIds](cdc)),
+		ConsumerPauseExpirationTime:      collections.NewMap(sb, types.ConsumerIdToPauseExpirationTimePrefix, types.ConsumerIdToPauseExpirationTimeKeyName, collections.Uint64Key, collections.BytesValue),
+		PauseExpirationTimeToConsumerIds: collections.NewMap(sb, types.PauseExpirationTimeToConsumerIdsPrefix, types.PauseExpirationTimeToConsumerIdsKeyName, collections.BytesKey, codec.CollValue[types.ConsumerIds](cdc)),
 
 		// Key assignment collections
 		ValidatorConsumerPubKey: collections.NewMap(sb, types.ConsumerValidatorsPrefix, "validator_consumer_pub_key", collections.PairKeyCodec(collections.Uint64Key, collections.BytesKey), collections.BytesValue),
@@ -892,6 +905,151 @@ func (k Keeper) DeleteAllConsumersToBeRemoved(ctx context.Context, removalTime t
 	if err := k.RemovalTimeToConsumerIds.Remove(ctx, key); err != nil {
 		panic(fmt.Errorf("failed to delete consumers to be removed: %w", err))
 	}
+}
+
+// SetConsumerPauseExpirationTime sets the time at which a PAUSED consumer will be
+// auto-stopped if the pause has not otherwise been resolved by then.
+func (k Keeper) SetConsumerPauseExpirationTime(ctx context.Context, consumerId uint64, expirationTime time.Time) error {
+	buf, err := expirationTime.MarshalBinary()
+	if err != nil {
+		return fmt.Errorf("failed to marshal pause expiration time (%+v) for consumer id (%d): %w", expirationTime, consumerId, err)
+	}
+	if err := k.ConsumerPauseExpirationTime.Set(ctx, consumerId, buf); err != nil {
+		return fmt.Errorf("failed to set pause expiration time for consumer id (%d): %w", consumerId, err)
+	}
+	return nil
+}
+
+// GetConsumerPauseExpirationTime returns the auto-stop time scheduled for a paused consumer.
+func (k Keeper) GetConsumerPauseExpirationTime(ctx context.Context, consumerId uint64) (time.Time, error) {
+	buf, err := k.ConsumerPauseExpirationTime.Get(ctx, consumerId)
+	if err != nil {
+		return time.Time{}, fmt.Errorf("failed to retrieve pause expiration time for consumer id (%d): %w", consumerId, err)
+	}
+	var t time.Time
+	if err := t.UnmarshalBinary(buf); err != nil {
+		return time.Time{}, fmt.Errorf("failed to unmarshal pause expiration time for consumer id (%d): %w", consumerId, err)
+	}
+	return t, nil
+}
+
+// DeleteConsumerPauseExpirationTime deletes the scheduled auto-stop time for a consumer.
+func (k Keeper) DeleteConsumerPauseExpirationTime(ctx context.Context, consumerId uint64) {
+	if err := k.ConsumerPauseExpirationTime.Remove(ctx, consumerId); err != nil {
+		panic(fmt.Errorf("failed to delete pause expiration time for consumer id (%d): %w", consumerId, err))
+	}
+}
+
+// GetConsumersToBeAutoStopped returns all the consumer ids scheduled to be
+// auto-stopped (see BeginBlockAutoStopPausedConsumers) at this expiration time.
+func (k Keeper) GetConsumersToBeAutoStopped(ctx context.Context, expirationTime time.Time) (types.ConsumerIds, error) {
+	key := timeToBytes(expirationTime)
+	consumerIds, err := k.PauseExpirationTimeToConsumerIds.Get(ctx, key)
+	if err != nil {
+		return types.ConsumerIds{}, nil
+	}
+	return consumerIds, nil
+}
+
+// AppendConsumerToBeAutoStopped schedules consumerId to be auto-stopped at expirationTime.
+func (k Keeper) AppendConsumerToBeAutoStopped(ctx context.Context, consumerId uint64, expirationTime time.Time) error {
+	consumers, err := k.GetConsumersToBeAutoStopped(ctx, expirationTime)
+	if err != nil {
+		return err
+	}
+
+	consumersWithAppend := types.ConsumerIds{
+		Ids: append(consumers.Ids, consumerId),
+	}
+
+	key := timeToBytes(expirationTime)
+	return k.PauseExpirationTimeToConsumerIds.Set(ctx, key, consumersWithAppend)
+}
+
+// RemoveConsumerToBeAutoStopped removes consumerId from the pause-expiration
+// time bucket for expirationTime, mirroring RemoveConsumerToBeLaunched for the
+// spawn-time queue and RemoveConsumerToBeRemoved for the removal-time queue.
+func (k Keeper) RemoveConsumerToBeAutoStopped(ctx context.Context, consumerId uint64, expirationTime time.Time) error {
+	consumers, err := k.GetConsumersToBeAutoStopped(ctx, expirationTime)
+	if err != nil {
+		return err
+	}
+
+	if len(consumers.Ids) == 0 {
+		return fmt.Errorf("no consumer ids found for this time: %s", expirationTime.String())
+	}
+
+	// find the index of the consumer we want to remove
+	index := -1
+	for i := 0; i < len(consumers.Ids); i++ {
+		if consumers.Ids[i] == consumerId {
+			index = i
+			break
+		}
+	}
+
+	if index == -1 {
+		return fmt.Errorf("failed to find consumer id (%d)", consumerId)
+	}
+
+	key := timeToBytes(expirationTime)
+	if len(consumers.Ids) == 1 {
+		return k.PauseExpirationTimeToConsumerIds.Remove(ctx, key)
+	}
+
+	consumersWithRemoval := types.ConsumerIds{
+		Ids: append(consumers.Ids[:index], consumers.Ids[index+1:]...),
+	}
+
+	return k.PauseExpirationTimeToConsumerIds.Set(ctx, key, consumersWithRemoval)
+}
+
+// DeleteAllConsumersToBeAutoStopped deletes all consumers scheduled to be
+// auto-stopped at this specific expiration time.
+func (k Keeper) DeleteAllConsumersToBeAutoStopped(ctx context.Context, expirationTime time.Time) {
+	key := timeToBytes(expirationTime)
+	if err := k.PauseExpirationTimeToConsumerIds.Remove(ctx, key); err != nil {
+		panic(fmt.Errorf("failed to delete consumers to be auto-stopped: %w", err))
+	}
+}
+
+// CancelConsumerPauseExpiration clears any scheduled auto-stop for a
+// consumer: it removes both the per-consumer ConsumerPauseExpirationTime
+// entry and, if still present, the consumer's id from the
+// PauseExpirationTimeToConsumerIds time bucket for that expiration time. It
+// is a no-op when the consumer has no scheduled auto-stop, e.g. it was never
+// paused.
+//
+// Bucket membership is checked before removal rather than removed
+// unconditionally because the bucket entry is not always still there: the
+// auto-stop path (BeginBlockAutoStopPausedConsumers, via
+// StopAndPrepareForConsumerRemoval) calls this after already consuming and
+// deleting the whole bucket entry for the matured expiration time, so in
+// that path the id is legitimately already gone from the bucket. Skipping
+// the removal when the id is absent lets that call remain a clean no-op
+// instead of erroring on a bucket entry that was expected to be gone.
+func (k Keeper) CancelConsumerPauseExpiration(ctx context.Context, consumerId uint64) error {
+	expirationTime, err := k.GetConsumerPauseExpirationTime(ctx, consumerId)
+	if err != nil {
+		return nil
+	}
+
+	consumers, err := k.GetConsumersToBeAutoStopped(ctx, expirationTime)
+	if err != nil {
+		return fmt.Errorf("getting consumers scheduled to be auto-stopped at %s: %w", expirationTime.String(), err)
+	}
+	for _, id := range consumers.Ids {
+		if id == consumerId {
+			if err := k.RemoveConsumerToBeAutoStopped(ctx, consumerId, expirationTime); err != nil {
+				return fmt.Errorf("removing consumer %d from pause-expiration bucket: %w", consumerId, err)
+			}
+			break
+		}
+	}
+
+	k.DeleteConsumerPauseExpirationTime(ctx, consumerId)
+
+	return nil
 }
 
 // Key assignment methods using collections

@@ -54,6 +54,13 @@ func (k Keeper) GetBlocksPerEpoch(ctx context.Context) int64 {
 	return params.BlocksPerEpoch
 }
 
+// GetMaxPauseDuration returns the maximum time a consumer chain may remain in
+// the PAUSED phase before the provider automatically stops it.
+func (k Keeper) GetMaxPauseDuration(ctx context.Context) time.Duration {
+	params := k.GetParams(ctx)
+	return params.MaxPauseDuration
+}
+
 // GetFeesPerBlock returns the fees that each consumer chain must pay per block.
 // The amount is governed via Params.FeesPerBlockAmount while the denom is a
 // keeper-wired constant and cannot be changed without a binary upgrade.

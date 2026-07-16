@@ -92,6 +92,10 @@ const (
 	LastPunishedWindowEndsKeyName = "LastPunishedWindowEndsKey"
 
 	WithheldFeeRecordsKeyName = "WithheldFeeRecordsKey"
+
+	ConsumerIdToPauseExpirationTimeKeyName = "ConsumerIdToPauseExpirationTimeKey"
+
+	PauseExpirationTimeToConsumerIdsKeyName = "PauseExpirationTimeToConsumerIdsKey"
 )
 
 // Collection key prefixes for use with cosmossdk.io/collections
@@ -133,5 +137,7 @@ var (
 	PreviousDowntimeParamsPrefix           = collections.NewPrefix(34)
 	LastPunishedWindowEndsPrefix           = collections.NewPrefix(35)
 	WithheldFeeRecordsPrefix               = collections.NewPrefix(36)
+	ConsumerIdToPauseExpirationTimePrefix  = collections.NewPrefix(37)
+	PauseExpirationTimeToConsumerIdsPrefix = collections.NewPrefix(38)
 	ParametersPrefix                       = collections.NewPrefix(0xFF)
 )

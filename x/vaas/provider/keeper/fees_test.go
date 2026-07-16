@@ -302,6 +302,34 @@ func TestDistributeConsumerFeesSkipsNonLaunched(t *testing.T) {
 	require.NoError(t, k.DistributeConsumerFees(ctx))
 }
 
+// TestDistributeConsumerFeesSkipsPausedConsumer verifies that a paused
+// consumer is excluded from fee distribution just like any other non-launched
+// phase: distribution requires phase LAUNCHED.
+func TestDistributeConsumerFeesSkipsPausedConsumer(t *testing.T) {
+	params := testkeeper.NewInMemKeeperParams(t)
+	k, ctx, ctrl, mocks := testkeeper.GetProviderKeeperAndCtx(t, params)
+	defer ctrl.Finish()
+
+	valAddrCodec := address.NewBech32Codec("cosmosvaloper")
+	mocks.MockStakingKeeper.EXPECT().ValidatorAddressCodec().Return(valAddrCodec).AnyTimes()
+
+	val1, _ := newBondedValidator(t, valAddrCodec, 1)
+
+	consumer0 := k.FetchAndIncrementConsumerId(ctx)
+	k.SetConsumerPhase(ctx, consumer0, providertypes.CONSUMER_PHASE_PAUSED)
+
+	providerParams := providertypes.DefaultParams()
+	providerParams.FeesPerBlockAmount = math.NewInt(10)
+	k.SetParams(ctx, providerParams)
+
+	mocks.MockStakingKeeper.EXPECT().
+		GetBondedValidatorsByPower(gomock.Any()).
+		Return([]stakingtypes.Validator{val1}, nil)
+
+	// No GetBalance/InputOutputCoins expected — consumer0 is PAUSED.
+	require.NoError(t, k.DistributeConsumerFees(ctx))
+}
+
 // TestDistributeConsumerFeesExcludesDowntime: validators with epoch downtime
 // are excluded from outputs. Their share stays in the consumer pool, and a
 // WithheldFeeRecord is written for the excluded validator so a successful

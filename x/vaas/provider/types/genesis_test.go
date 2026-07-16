@@ -88,7 +88,7 @@ func TestValidateGenesisState(t *testing.T) {
 				nil,
 				[]types.ConsumerState{launchedCS(0, "chainid-1", "client-id", false)},
 				types.NewParams(
-					types.DefaultTrustingPeriodFraction, types.DefaultLivenessGraceFraction, time.Hour, 600, math.NewInt(42), types.DefaultMinDepositBlocks),
+					types.DefaultTrustingPeriodFraction, types.DefaultLivenessGraceFraction, time.Hour, 600, math.NewInt(42), types.DefaultMinDepositBlocks, types.DefaultMaxPauseDuration),
 				nil,
 				nil,
 				nil,
@@ -136,7 +136,7 @@ func TestValidateGenesisState(t *testing.T) {
 				types.NewParams(
 					"0.0", // 0 trusting period fraction here
 					types.DefaultLivenessGraceFraction,
-					vaastypes.DefaultVAASTimeoutPeriod, 600, math.NewInt(42), types.DefaultMinDepositBlocks),
+					vaastypes.DefaultVAASTimeoutPeriod, 600, math.NewInt(42), types.DefaultMinDepositBlocks, types.DefaultMaxPauseDuration),
 				nil,
 				nil,
 				nil,
@@ -155,7 +155,7 @@ func TestValidateGenesisState(t *testing.T) {
 					types.DefaultTrustingPeriodFraction,
 					types.DefaultLivenessGraceFraction,
 					0, // 0 ccv timeout here
-					600, math.NewInt(42), types.DefaultMinDepositBlocks),
+					600, math.NewInt(42), types.DefaultMinDepositBlocks, types.DefaultMaxPauseDuration),
 				nil,
 				nil,
 				nil,

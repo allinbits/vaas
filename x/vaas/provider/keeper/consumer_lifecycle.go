@@ -13,6 +13,7 @@ import (
 
 	clienttypes "github.com/cosmos/ibc-go/v10/modules/core/02-client/types"
 	commitmenttypes "github.com/cosmos/ibc-go/v10/modules/core/23-commitment/types"
+	ibcexported "github.com/cosmos/ibc-go/v10/modules/core/exported"
 	ibctmtypes "github.com/cosmos/ibc-go/v10/modules/light-clients/07-tendermint"
 
 	"cosmossdk.io/collections"
@@ -352,6 +353,23 @@ func (k Keeper) StopAndPrepareForConsumerRemoval(ctx sdk.Context, consumerId uin
 	// Setting the phase here helps in not considering this chain when we look at launched chains (e.g., in `QueueVSCPackets)
 	k.SetConsumerPhase(ctx, consumerId, types.CONSUMER_PHASE_STOPPED)
 
+	// A stopped chain generates no further evidence or epoch fee distributions
+	// to weigh pending downtime state against, so cancel it outright rather
+	// than leave it to expire on its own (phase-1 review finding 3).
+	if err := k.CancelConsumerDowntimeState(ctx, consumerId); err != nil {
+		return fmt.Errorf("cancelling downtime state for consumer %d: %w", consumerId, err)
+	}
+
+	// Clear any pending pause auto-stop schedule: this chain is stopping now,
+	// via this call, so there is nothing left to auto-stop later. A no-op
+	// when the chain was never paused, which is the common case (e.g. the
+	// liveness sweep stopping a launched consumer). CancelConsumerPauseExpiration
+	// removes both the per-consumer entry and its id from the
+	// pause-expiration time bucket, so no stale bucket entry survives removal.
+	if err := k.CancelConsumerPauseExpiration(ctx, consumerId); err != nil {
+		return fmt.Errorf("cancelling pause-expiration schedule for consumer %d: %w", consumerId, err)
+	}
+
 	// state of this chain is removed once UnbondingPeriod elapses
 	unbondingPeriod, err := k.stakingKeeper.UnbondingTime(ctx)
 	if err != nil {
@@ -366,6 +384,187 @@ func (k Keeper) StopAndPrepareForConsumerRemoval(ctx sdk.Context, consumerId uin
 		return errorsmod.Wrapf(vaastypes.ErrInvalidConsumerState, "cannot set consumer to be removed: %s", err.Error())
 	}
 
+	return nil
+}
+
+// PauseConsumerChain transitions a launched consumer chain into
+// CONSUMER_PHASE_PAUSED following a successful downtime challenge (see
+// MsgChallengeConsumerDowntime, wired into this path in a later task): the
+// challenge proved the validator was live, so its pending downtime slash and
+// this epoch's downtime marks for the consumer are cancelled via
+// CancelConsumerDowntimeState. A paused consumer is excluded from VSC packet
+// queuing (QueueVSCPackets iterates GetAllLaunchedConsumerIds), fee
+// distribution, and evidence handling -- all of which require phase LAUNCHED.
+//
+// The pause is not indefinite: an auto-stop is scheduled at
+// now + MaxPauseDuration via the pause-expiration queue consumed by
+// BeginBlockAutoStopPausedConsumers, which calls StopAndPrepareForConsumerRemoval
+// -- not DeleteConsumerChain -- since DeleteConsumerChain requires phase
+// STOPPED and would reject a still-PAUSED consumer. This guarantees an
+// unresolved pause deterministically becomes STOPPED-then-DELETED rather than
+// stranding the consumer in PAUSED forever.
+func (k Keeper) PauseConsumerChain(ctx sdk.Context, consumerId uint64) error {
+	phase := k.GetConsumerPhase(ctx, consumerId)
+	if phase != types.CONSUMER_PHASE_LAUNCHED {
+		return errorsmod.Wrapf(vaastypes.ErrInvalidConsumerState,
+			"cannot pause consumer %d: expected phase launched, got %s", consumerId, phase)
+	}
+
+	k.SetConsumerPhase(ctx, consumerId, types.CONSUMER_PHASE_PAUSED)
+
+	if err := k.CancelConsumerDowntimeState(ctx, consumerId); err != nil {
+		return fmt.Errorf("cancelling downtime state for consumer %d: %w", consumerId, err)
+	}
+
+	autoStopTime := ctx.BlockTime().Add(k.GetMaxPauseDuration(ctx))
+	if err := k.SetConsumerPauseExpirationTime(ctx, consumerId, autoStopTime); err != nil {
+		return fmt.Errorf("setting pause expiration time for consumer %d: %w", consumerId, err)
+	}
+	if err := k.AppendConsumerToBeAutoStopped(ctx, consumerId, autoStopTime); err != nil {
+		return errorsmod.Wrapf(vaastypes.ErrInvalidConsumerState,
+			"cannot schedule auto-stop for consumer %d: %s", consumerId, err.Error())
+	}
+
+	ctx.EventManager().EmitEvent(sdk.NewEvent(
+		vaastypes.EventTypeConsumerPaused,
+		sdk.NewAttribute(types.AttributeConsumerId, fmt.Sprintf("%d", consumerId)),
+	))
+
+	return nil
+}
+
+// ResumeConsumerChain resumes a PAUSED consumer chain via MsgResumeConsumer.
+//
+// It requires the provider's IBC client of the consumer to have status
+// Active: with defaults, MaxPauseDuration (30 days) exceeds the
+// consumer-client trusting period, so a long pause with idle relayers can
+// expire the client before a resume is proposed (see spec section 9,
+// "Client expiry during a pause"). Resuming onto an expired or frozen client
+// would strand the consumer LAUNCHED with no way to receive the resync
+// below, so this fails instead and directs the caller to bundle ibc-go's
+// MsgRecoverClient (client substitution, already governance-gated) into the
+// same governance proposal as the resume.
+//
+// On success: cancels the scheduled auto-stop (CancelConsumerPauseExpiration),
+// restores phase LAUNCHED, reseeds the liveness clock (so the liveness sweep
+// does not immediately re-flag the consumer for the pause duration it was
+// rightfully silent), and forces an immediate snapshot VSC packet -- queued
+// and sent right away rather than left for the next epoch boundary, which
+// could be up to BlocksPerEpoch blocks away -- so the consumer's cross-chain
+// validator set is not stale for however long the pause lasted.
+//
+// The send is enforced, not best-effort: unlike the EndBlock path (which
+// swallows send errors so a relayer hiccup never fails a block), this calls
+// sendVSCPacketsToChainStrict and returns its error if the snapshot cannot
+// actually be handed to IBC. Reporting success while the snapshot silently
+// stayed queued would let the next epoch enqueue a diff on top of a
+// consumer that never received the snapshot it was diffed against; under
+// out-of-order IBC v2 delivery that diff can permanently corrupt the
+// consumer's validator set. Failing here instead means the whole message
+// execution rolls back (standard cosmos-sdk cache-context semantics): phase
+// stays PAUSED and the auto-stop schedule is untouched, so governance can
+// simply retry the resume once the underlying client/relayer issue is
+// fixed, with no partial state left behind.
+func (k Keeper) ResumeConsumerChain(ctx sdk.Context, consumerId uint64) error {
+	phase := k.GetConsumerPhase(ctx, consumerId)
+	if phase != types.CONSUMER_PHASE_PAUSED {
+		return errorsmod.Wrapf(types.ErrInvalidPhase,
+			"cannot resume consumer %d: expected phase paused, got %s", consumerId, phase)
+	}
+
+	clientId, found := k.GetConsumerClientId(ctx, consumerId)
+	if !found {
+		return errorsmod.Wrapf(types.ErrInvalidConsumerClient, "no client discovered for consumer %d", consumerId)
+	}
+	if status := k.clientKeeper.GetClientStatus(ctx, clientId); status != ibcexported.Active {
+		return errorsmod.Wrapf(types.ErrConsumerClientNotActive,
+			"consumer %d client %s has status %q; if expired or frozen, bundle ibc-go's MsgRecoverClient for this client in the same governance proposal as this resume",
+			consumerId, clientId, status)
+	}
+
+	if err := k.CancelConsumerPauseExpiration(ctx, consumerId); err != nil {
+		return fmt.Errorf("cancelling pause-expiration schedule for consumer %d: %w", consumerId, err)
+	}
+
+	k.SetConsumerPhase(ctx, consumerId, types.CONSUMER_PHASE_LAUNCHED)
+
+	if err := k.SetConsumerLastAckTime(ctx, consumerId, ctx.BlockTime()); err != nil {
+		return fmt.Errorf("reseeding liveness clock for consumer %d: %w", consumerId, err)
+	}
+
+	if err := k.QueueImmediateSnapshotVSCPacket(ctx, consumerId); err != nil {
+		return fmt.Errorf("queueing resume snapshot for consumer %d: %w", consumerId, err)
+	}
+	if err := k.sendVSCPacketsToChainStrict(ctx, consumerId, clientId); err != nil {
+		return fmt.Errorf("sending resume snapshot for consumer %d: %w", consumerId, err)
+	}
+
+	ctx.EventManager().EmitEvent(sdk.NewEvent(
+		vaastypes.EventTypeConsumerResumed,
+		sdk.NewAttribute(sdk.AttributeKeyModule, types.ModuleName),
+		sdk.NewAttribute(types.AttributeConsumerId, fmt.Sprintf("%d", consumerId)),
+	))
+
+	return nil
+}
+
+// CancelConsumerDowntimeState clears all in-flight downtime-detection state
+// for a consumer: downtime slashes accepted but not yet executed
+// (PendingDowntimeSlashes), and the current epoch's downtime marks used to
+// exclude validators from fee distribution (EpochDowntime). It is the shared
+// primitive behind PauseConsumerChain, StopAndPrepareForConsumerRemoval, and
+// DeleteConsumerChain (phase-1 review finding 3): once a consumer pauses,
+// stops, or is deleted, there is no further epoch or challenge window to
+// resolve this state against, so it is cancelled outright instead of left to
+// expire on its own.
+//
+// LastPunishedWindowEnds and WithheldFeeRecords are deliberately left alone
+// here -- they are only erased as part of full consumer removal, in
+// DeleteConsumerChain.
+func (k Keeper) CancelConsumerDowntimeState(ctx sdk.Context, consumerId uint64) error {
+	if err := k.PendingDowntimeSlashes.Clear(ctx, collections.NewPrefixedPairRange[uint64, []byte](consumerId)); err != nil {
+		return fmt.Errorf("clearing pending downtime slashes for consumer %d: %w", consumerId, err)
+	}
+	if err := k.EpochDowntime.Clear(ctx, collections.NewPrefixedPairRange[uint64, []byte](consumerId)); err != nil {
+		return fmt.Errorf("clearing epoch downtime marks for consumer %d: %w", consumerId, err)
+	}
+	return nil
+}
+
+// BeginBlockAutoStopPausedConsumers stops any consumer whose pause
+// (CONSUMER_PHASE_PAUSED) has outlived MaxPauseDuration, via the same
+// StopAndPrepareForConsumerRemoval path SweepUnresponsiveConsumers uses. This
+// guarantees a paused consumer never remains paused indefinitely: an
+// unresolved pause always resolves to STOPPED (and, after the unbonding
+// period, DELETED).
+func (k Keeper) BeginBlockAutoStopPausedConsumers(ctx sdk.Context) error {
+	consumerIds, err := k.ConsumeIdsFromTimeQueue(
+		ctx,
+		k.PauseExpirationTimeToConsumerIds,
+		k.GetConsumersToBeAutoStopped,
+		k.DeleteAllConsumersToBeAutoStopped,
+		k.AppendConsumerToBeAutoStopped,
+		200,
+	)
+	if err != nil {
+		return errorsmod.Wrapf(vaastypes.ErrInvalidConsumerState, "getting consumers whose pause has expired: %s", err.Error())
+	}
+	for _, consumerId := range consumerIds {
+		// Only still-paused consumers are stopped here: nothing in this task
+		// resumes a paused consumer, but this guard keeps the sweep correct if
+		// a future path (e.g. a resume message) does.
+		if k.GetConsumerPhase(ctx, consumerId) != types.CONSUMER_PHASE_PAUSED {
+			continue
+		}
+
+		cachedCtx, writeFn := ctx.CacheContext()
+		if err := k.StopAndPrepareForConsumerRemoval(cachedCtx, consumerId); err != nil {
+			k.Logger(ctx).Error("failed to auto-stop paused consumer whose pause expired",
+				"consumerId", consumerId, "error", err.Error())
+			continue
+		}
+		writeFn()
+	}
 	return nil
 }
 
@@ -439,7 +638,26 @@ func (k Keeper) DeleteConsumerChain(ctx sdk.Context, consumerId uint64) (err err
 		panic(fmt.Sprintf("delete consumer %d: remove fee-pool reverse lookup: %s", consumerId, err))
 	}
 
-	// TODO (PERMISSIONLESS) add newly-added state to be deleted
+	// Cancel any downtime state left over for this consumer. In the normal
+	// path this is already a no-op: both StopAndPrepareForConsumerRemoval and
+	// PauseConsumerChain (via BeginBlockAutoStopPausedConsumers) cancel it
+	// before this chain ever reaches STOPPED. Calling it again here is cheap
+	// and keeps deletion correct even if a future path reaches STOPPED some
+	// other way.
+	if err := k.CancelConsumerDowntimeState(ctx, consumerId); err != nil {
+		return fmt.Errorf("cancelling downtime state for consumer %d: %w", consumerId, err)
+	}
+
+	// Unlike CancelConsumerDowntimeState's callers, deletion is the consumer's
+	// full erasure: withheld fee escrow and infraction-window bookkeeping are
+	// no longer meaningful once the consumer is gone, so they are wiped too
+	// (phase-1 review finding 3).
+	if err := k.WithheldFeeRecords.Clear(ctx, collections.NewPrefixedPairRange[uint64, []byte](consumerId)); err != nil {
+		return fmt.Errorf("clearing withheld fee records for consumer %d: %w", consumerId, err)
+	}
+	if err := k.LastPunishedWindowEnds.Clear(ctx, collections.NewPrefixedPairRange[uint64, []byte](consumerId)); err != nil {
+		return fmt.Errorf("clearing last punished window ends for consumer %d: %w", consumerId, err)
+	}
 
 	// Note that we do not delete ConsumerIdToChainIdKey and ConsumerIdToPhase, as well
 	// as consumer metadata and initialization parameters.

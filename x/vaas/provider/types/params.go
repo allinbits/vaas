@@ -70,6 +70,13 @@ const (
 	// as a multiplier of FeesPerBlock.Amount. 14400 blocks is roughly one day
 	// at a 6s block time, so the default floor is "one day's worth of fees."
 	DefaultMinDepositBlocks = uint64(14400)
+
+	// DefaultMaxPauseDuration is the default maximum time a consumer chain may
+	// remain in the PAUSED phase before the provider automatically stops it
+	// (see PauseConsumerChain). 720h (30 days) gives governance ample time to
+	// resolve whatever triggered the pause without leaving the consumer
+	// paused indefinitely.
+	DefaultMaxPauseDuration = 720 * time.Hour
 )
 
 // NewParams creates new provider parameters with provided arguments
@@ -80,6 +87,7 @@ func NewParams(
 	blocksPerEpoch int64,
 	feesPerBlockAmount math.Int,
 	minDepositBlocks uint64,
+	maxPauseDuration time.Duration,
 ) Params {
 	return Params{
 		TrustingPeriodFraction: trustingPeriodFraction,
@@ -88,6 +96,7 @@ func NewParams(
 		BlocksPerEpoch:         blocksPerEpoch,
 		FeesPerBlockAmount:     feesPerBlockAmount,
 		MinDepositBlocks:       minDepositBlocks,
+		MaxPauseDuration:       maxPauseDuration,
 	}
 }
 
@@ -99,6 +108,7 @@ func DefaultParams() Params {
 		DefaultBlocksPerEpoch,
 		math.NewInt(DefaultFeesPerBlockAmount),
 		DefaultMinDepositBlocks,
+		DefaultMaxPauseDuration,
 	)
 }
 
@@ -235,6 +245,9 @@ func (p Params) Validate() error {
 	}
 	if err := vaastypes.ValidateStringFractionNonZero(p.LivenessGraceFraction); err != nil {
 		return fmt.Errorf("liveness grace fraction is invalid: %s", err)
+	}
+	if err := vaastypes.ValidateDuration(p.MaxPauseDuration); err != nil {
+		return fmt.Errorf("max pause duration is invalid: %s", err)
 	}
 
 	return nil

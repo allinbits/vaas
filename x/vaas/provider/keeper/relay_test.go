@@ -306,3 +306,24 @@ func TestQueueVSCPacketsStampsDowntimeParams(t *testing.T) {
 	require.NotNil(t, pending[0].DowntimeParams)
 	require.Equal(t, int64(600), pending[0].DowntimeParams.SignedBlocksWindow)
 }
+
+// TestQueueVSCPacketsSkipsPausedConsumer verifies that a paused consumer gets
+// no VSC packet queued: QueueVSCPackets only iterates
+// GetAllLaunchedConsumerIds, which excludes PAUSED (and every other
+// non-LAUNCHED phase).
+func TestQueueVSCPacketsSkipsPausedConsumer(t *testing.T) {
+	k, ctx, ctrl, mocks := testkeeper.GetProviderKeeperAndCtx(t, testkeeper.NewInMemKeeperParams(t))
+	defer ctrl.Finish()
+
+	k.SetInfractionParams(ctx, providertypes.DefaultInfractionParameters())
+
+	cid := k.FetchAndIncrementConsumerId(ctx)
+	k.SetConsumerPhase(ctx, cid, providertypes.CONSUMER_PHASE_PAUSED)
+
+	mocks.MockStakingKeeper.EXPECT().MaxValidators(gomock.Any()).Return(uint32(100), nil).AnyTimes()
+	mocks.MockStakingKeeper.EXPECT().GetBondedValidatorsByPower(gomock.Any()).Return([]stakingtypes.Validator{}, nil).AnyTimes()
+
+	require.NoError(t, k.QueueVSCPackets(ctx))
+
+	require.Empty(t, k.GetPendingVSCPackets(ctx, cid))
+}

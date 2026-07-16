@@ -20,14 +20,18 @@ func TestValidateParams(t *testing.T) {
 		expPass bool
 	}{
 		{"default params", types.DefaultParams(), true},
-		{"custom valid params", types.NewParams("0.33", "0.5", time.Hour, 1000, math.NewInt(42), types.DefaultMinDepositBlocks), true},
-		{"zero fees per block", types.NewParams("0.33", "0.5", time.Hour, 1000, math.NewInt(0), types.DefaultMinDepositBlocks), false},
+		{"custom valid params", types.NewParams("0.33", "0.5", time.Hour, 1000, math.NewInt(42), types.DefaultMinDepositBlocks, types.DefaultMaxPauseDuration), true},
+		{"zero fees per block", types.NewParams("0.33", "0.5", time.Hour, 1000, math.NewInt(0), types.DefaultMinDepositBlocks, types.DefaultMaxPauseDuration), false},
 		{"0 trusting period fraction", types.NewParams(
-			"0.00", "0.5", time.Hour, 1000, math.NewInt(1), types.DefaultMinDepositBlocks), false},
+			"0.00", "0.5", time.Hour, 1000, math.NewInt(1), types.DefaultMinDepositBlocks, types.DefaultMaxPauseDuration), false},
 		{"0 liveness grace fraction", types.NewParams(
-			"0.33", "0.00", time.Hour, 1000, math.NewInt(1), types.DefaultMinDepositBlocks), false},
+			"0.33", "0.00", time.Hour, 1000, math.NewInt(1), types.DefaultMinDepositBlocks, types.DefaultMaxPauseDuration), false},
 		{"0 ccv timeout period", types.NewParams(
-			"0.33", "0.5", 0, 1000, math.NewInt(1), types.DefaultMinDepositBlocks), false},
+			"0.33", "0.5", 0, 1000, math.NewInt(1), types.DefaultMinDepositBlocks, types.DefaultMaxPauseDuration), false},
+		{"0 max pause duration", types.NewParams(
+			"0.33", "0.5", time.Hour, 1000, math.NewInt(1), types.DefaultMinDepositBlocks, 0), false},
+		{"negative max pause duration", types.NewParams(
+			"0.33", "0.5", time.Hour, 1000, math.NewInt(1), types.DefaultMinDepositBlocks, -time.Hour), false},
 	}
 
 	for _, tc := range testCases {

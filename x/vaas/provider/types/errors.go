@@ -35,4 +35,5 @@ var (
 	ErrNoSharesForDepositor                    = errorsmod.Register(ModuleName, 27, "depositor has no shares in the consumer fee pool for the requested denom")
 	ErrDepositBelowMinimum                     = errorsmod.Register(ModuleName, 28, "deposit is below the min-deposit floor")
 	ErrFeePoolLocked                           = errorsmod.Register(ModuleName, 29, "consumer fee pool is locked while consumer is launched")
+	ErrConsumerClientNotActive                 = errorsmod.Register(ModuleName, 31, "consumer client is not active")
 )
