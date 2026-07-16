@@ -91,15 +91,15 @@ func (s *IntegrationTestSuite) testDowntimeSlashQueueThenExecute() {
 		const consumerID = "0"
 
 		// Fund generously so the epoch fee distribution this test asserts on
-		// (val's balance growing, val2 excluded) has a pool to draw from
-		// regardless of whatever testConsumerDebtFlow already deposited and
-		// regardless of subtest filtering (e.g. running only this subtest via
+		// (val2's share withheld) has a pool to draw from regardless of
+		// whatever testConsumerDebtFlow already deposited and regardless of
+		// subtest filtering (e.g. running only this subtest via
 		// `go test -run .../queue-then-execute`, which skips the sibling debt
 		// test that would otherwise have funded it).
 		s.providerFundConsumerFeePool(consumerID, "20000000"+feeDenom)
 
 		s.T().Log("bonding a second, permanently-silent validator on the provider...")
-		val2Acc, val2Valoper := s.createSilentValidator("val2", "5000000"+bondDenom)
+		_, val2Valoper := s.createSilentValidator("val2", "5000000"+bondDenom)
 
 		s.T().Log("waiting for the silent validator to sync into the consumer's validator set...")
 		s.Require().Eventuallyf(func() bool {
@@ -112,24 +112,11 @@ func (s *IntegrationTestSuite) testDowntimeSlashQueueThenExecute() {
 		s.Require().NoError(err, "failed to read val2 tokens before downtime evidence")
 		s.Require().True(tokensBefore.IsPositive(), "val2 should have a positive stake before downtime evidence")
 
-		valAddr := s.providerKeyAddress("val")
-
 		s.T().Log("waiting for the provider to queue a pending downtime slash for the silent validator...")
 		s.Require().Eventuallyf(func() bool {
 			return len(s.queryPendingDowntimeSlashes(consumerID)) > 0
 		}, 6*time.Minute, 5*time.Second,
 			"provider never queued a pending downtime slash for consumer %s", consumerID)
-
-		// Downtime exclusion is only in effect for the epoch immediately
-		// following evidence acceptance (the exclusion flag is cleared every
-		// epoch boundary); the downtime detection window (30 blocks) spans
-		// several fee epochs (5 blocks each), so val2 legitimately earns a
-		// normal share in every epoch before its downtime was ever detected.
-		// The fee-share baseline must therefore be taken now, once evidence
-		// is confirmed pending, not before -- an earlier snapshot would
-		// already be stale by several ordinary epoch payouts.
-		valFeeBefore := s.providerQueryBalance(valAddr, feeDenom)
-		val2FeeBefore := s.providerQueryBalance(val2Acc, feeDenom)
 
 		s.T().Log("verifying the pending slash has not yet touched val2's stake...")
 		tokensPending, err := s.getProviderValidatorTokensByAddr(val2Valoper)
@@ -138,19 +125,22 @@ func (s *IntegrationTestSuite) testDowntimeSlashQueueThenExecute() {
 			"val2 stake must be unchanged while the downtime slash is only pending (before=%s, pending=%s)",
 			tokensBefore, tokensPending)
 
-		s.T().Log("verifying val2 is excluded from this epoch's fee distribution while val keeps earning...")
-		var val2FeeAtEpoch int64
+		// Downtime exclusion is only in effect for the single epoch
+		// distribution immediately following evidence acceptance: the
+		// exclusion flag is cleared at every epoch boundary, and evidence
+		// re-submissions are rejected while a slash is pending. Epochs are 5
+		// blocks (~5s) while the pending-slash poll above ticks every 5s, so
+		// balance snapshots race the one excluded distribution -- a snapshot
+		// taken just after it would observe val2 legitimately earning again
+		// in the next epoch. Assert the exclusion through its persistent
+		// artifact instead: the withheld-fee record written when the excluded
+		// share stays in the consumer's pool, which lives for the full
+		// downtime challenge window (30s) before being swept.
+		s.T().Log("verifying val2's fee share was withheld for the epoch with pending downtime evidence...")
 		s.Require().Eventuallyf(func() bool {
-			if s.providerQueryBalance(valAddr, feeDenom) <= valFeeBefore {
-				return false
-			}
-			val2FeeAtEpoch = s.providerQueryBalance(val2Acc, feeDenom)
-			return true
+			return len(s.queryWithheldFeeRecords(consumerID)) > 0
 		}, 90*time.Second, 3*time.Second,
-			"val's fee balance never grew; could not observe an epoch distribution to check val2's exclusion against")
-		s.Require().Equalf(val2FeeBefore, val2FeeAtEpoch,
-			"val2 must not receive a fee share for an epoch in which it had pending downtime evidence (before=%d, after=%d)",
-			val2FeeBefore, val2FeeAtEpoch)
+			"no withheld fee record appeared for consumer %s; val2 was never excluded from an epoch fee distribution", consumerID)
 
 		s.T().Log("waiting for the downtime challenge window to mature and the sweep to execute the slash...")
 		s.Require().Eventuallyf(func() bool {
@@ -295,6 +285,35 @@ func (s *IntegrationTestSuite) queryPendingDowntimeSlashes(consumerID string) []
 		return nil
 	}
 	return res.Slashes
+}
+
+// withheldFeeRecordJSON mirrors the fields this test needs from the
+// `withheld-fee-records` CLI query's JSON output.
+type withheldFeeRecordJSON struct {
+	ConsumerId       string `json:"consumer_id"`
+	ProviderConsAddr string `json:"provider_cons_addr"`
+}
+
+// queryWithheldFeeRecords returns the fee shares currently withheld from
+// validators for a consumer following a downtime-driven fee exclusion.
+// Returns nil on any query/decode error so callers can poll it directly
+// inside Eventually.
+func (s *IntegrationTestSuite) queryWithheldFeeRecords(consumerID string) []withheldFeeRecordJSON {
+	stdout, _, err := s.dockerExec(s.providerValRes[0].Container.ID, []string{
+		providerBinary, "query", "provider", "withheld-fee-records", consumerID,
+		"--home", providerHomePath,
+		"--output", "json",
+	})
+	if err != nil {
+		return nil
+	}
+	var res struct {
+		Records []withheldFeeRecordJSON `json:"records"`
+	}
+	if err := json.Unmarshal(stdout.Bytes(), &res); err != nil {
+		return nil
+	}
+	return res.Records
 }
 
 func (s *baseTestSuite) patchConsumerSlashingParams() {

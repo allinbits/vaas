@@ -232,6 +232,65 @@ func TestStageDowntimeParamsRejectsInvalid(t *testing.T) {
 	}
 }
 
+// TestTrackMissedBlocksHandlesMismatchedStoredBitmapLength proves that
+// TrackMissedBlocks cannot panic when a validator's stored bitmap is shorter
+// or longer than the current window requires -- the shape genesis
+// validation now rejects for MissedBlockBitmaps at import
+// (x/vaas/consumer/types/genesis.go), but the same mismatch can also arise
+// from a stale bitmap left over from a since-shrunk window. TrackMissedBlocks
+// (x/vaas/consumer/keeper/downtime.go:44) resizes the bitmap up front so the
+// subsequent index can never run past the end of the slice.
+func TestTrackMissedBlocksHandlesMismatchedStoredBitmapLength(t *testing.T) {
+	// window 16 requires a 2-byte bitmap.
+	const window = 16
+
+	t.Run("undersized stored bitmap is grown, not indexed out of bounds", func(t *testing.T) {
+		consumerKeeper, ctx, ctrl, _ := testkeeper.GetConsumerKeeperAndCtx(t, testkeeper.NewInMemKeeperParams(t))
+		defer ctrl.Finish()
+		setDowntimeParams(ctx, consumerKeeper, window, "0.5")
+
+		addr := []byte{0x0E}
+		require.NoError(t, consumerKeeper.MissedBlockBitmaps.Set(ctx, addr, []byte{0x00})) // 1 byte, want 2
+
+		votes := []abci.VoteInfo{
+			{Validator: abci.Validator{Address: addr, Power: 1}, BlockIdFlag: cmtproto.BlockIDFlagAbsent},
+		}
+		// voteHeight = 10 -> windowStart = 0, idx = 10, byte index 1: only
+		// reachable if the 1-byte stored bitmap gets grown first.
+		require.NotPanics(t, func() {
+			ctx = ctx.WithBlockHeight(11).WithVoteInfos(votes)
+			consumerKeeper.TrackMissedBlocks(ctx)
+		})
+
+		bitmap, err := consumerKeeper.MissedBlockBitmaps.Get(ctx, addr)
+		require.NoError(t, err)
+		require.Len(t, bitmap, 2)
+		require.NotZero(t, bitmap[1]&(1<<(10%8)))
+	})
+
+	t.Run("oversized stored bitmap is left as-is and not indexed out of bounds", func(t *testing.T) {
+		consumerKeeper, ctx, ctrl, _ := testkeeper.GetConsumerKeeperAndCtx(t, testkeeper.NewInMemKeeperParams(t))
+		defer ctrl.Finish()
+		setDowntimeParams(ctx, consumerKeeper, window, "0.5")
+
+		addr := []byte{0x0F}
+		require.NoError(t, consumerKeeper.MissedBlockBitmaps.Set(ctx, addr, []byte{0x00, 0x00, 0x00})) // 3 bytes, want 2
+
+		votes := []abci.VoteInfo{
+			{Validator: abci.Validator{Address: addr, Power: 1}, BlockIdFlag: cmtproto.BlockIDFlagAbsent},
+		}
+		require.NotPanics(t, func() {
+			ctx = ctx.WithBlockHeight(11).WithVoteInfos(votes)
+			consumerKeeper.TrackMissedBlocks(ctx)
+		})
+
+		bitmap, err := consumerKeeper.MissedBlockBitmaps.Get(ctx, addr)
+		require.NoError(t, err)
+		require.Len(t, bitmap, 3)
+		require.NotZero(t, bitmap[1]&(1<<(10%8)))
+	})
+}
+
 func mustHasPendingPacket(t *testing.T, ctx sdk.Context, k keeper.Keeper, addr []byte) bool {
 	t.Helper()
 	has, err := k.PendingEvidencePackets.Has(ctx, addr)

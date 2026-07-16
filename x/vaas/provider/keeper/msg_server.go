@@ -7,9 +7,6 @@ import (
 	"strings"
 	"time"
 
-	"google.golang.org/grpc/codes"
-	"google.golang.org/grpc/status"
-
 	"github.com/allinbits/vaas/x/vaas/provider/types"
 	vaastypes "github.com/allinbits/vaas/x/vaas/types"
 
@@ -879,12 +876,19 @@ func (k msgServer) SweepConsumerFeePool(
 	return &types.MsgSweepConsumerFeePoolResponse{}, nil
 }
 
-// ChallengeConsumerDowntime is not yet implemented; the stub satisfies
-// types.MsgServer.
+// ChallengeConsumerDowntime lets anyone contest a pending downtime slash by
+// proving the accused validator actually signed the claimed height; see
+// Keeper.HandleChallengeConsumerDowntime for the verification sequence.
 func (k msgServer) ChallengeConsumerDowntime(
 	goCtx context.Context, msg *types.MsgChallengeConsumerDowntime,
 ) (*types.MsgChallengeConsumerDowntimeResponse, error) {
-	return nil, status.Errorf(codes.Unimplemented, "method ChallengeConsumerDowntime not implemented")
+	ctx := sdk.UnwrapSDKContext(goCtx)
+
+	if err := k.Keeper.HandleChallengeConsumerDowntime(ctx, msg); err != nil {
+		return nil, err
+	}
+
+	return &types.MsgChallengeConsumerDowntimeResponse{}, nil
 }
 
 // ResumeConsumer resumes a consumer chain from the PAUSED phase back to

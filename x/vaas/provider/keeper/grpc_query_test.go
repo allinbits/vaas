@@ -379,3 +379,56 @@ func TestQueryPendingDowntimeSlashes_UnknownConsumer(t *testing.T) {
 	require.Error(t, err)
 	require.Equal(t, codes.InvalidArgument, status.Code(err))
 }
+
+// TestQueryWithheldFeeRecords verifies that querying a consumer returns
+// exactly its own withheld fee records and does not leak entries belonging
+// to another consumer.
+func TestQueryWithheldFeeRecords(t *testing.T) {
+	k, ctx, ctrl, _ := testkeeper.GetProviderKeeperAndCtx(t, testkeeper.NewInMemKeeperParams(t))
+	defer ctrl.Finish()
+
+	const consumer1 = uint64(1)
+	const consumer2 = uint64(2)
+	k.SetConsumerPhase(ctx, consumer1, providertypes.CONSUMER_PHASE_LAUNCHED)
+	k.SetConsumerPhase(ctx, consumer2, providertypes.CONSUMER_PHASE_LAUNCHED)
+
+	expiresAt := ctx.BlockTime().Add(time.Hour).UTC()
+
+	recordA := providertypes.WithheldFeeRecord{
+		ConsumerId:       consumer1,
+		ProviderConsAddr: []byte("provider-addr-validator-a"),
+		Amount:           sdk.NewInt64Coin("uphoton", 50),
+		ExpiresAt:        expiresAt,
+	}
+	recordB := providertypes.WithheldFeeRecord{
+		ConsumerId:       consumer1,
+		ProviderConsAddr: []byte("provider-addr-validator-b"),
+		Amount:           sdk.NewInt64Coin("uphoton", 75),
+		ExpiresAt:        expiresAt,
+	}
+	recordC := providertypes.WithheldFeeRecord{
+		ConsumerId:       consumer2,
+		ProviderConsAddr: []byte("provider-addr-validator-c"),
+		Amount:           sdk.NewInt64Coin("uphoton", 100),
+		ExpiresAt:        expiresAt,
+	}
+
+	require.NoError(t, k.WithheldFeeRecords.Set(ctx, collections.Join(consumer1, recordA.ProviderConsAddr), recordA))
+	require.NoError(t, k.WithheldFeeRecords.Set(ctx, collections.Join(consumer1, recordB.ProviderConsAddr), recordB))
+	require.NoError(t, k.WithheldFeeRecords.Set(ctx, collections.Join(consumer2, recordC.ProviderConsAddr), recordC))
+
+	resp, err := k.QueryWithheldFeeRecords(ctx, &providertypes.QueryWithheldFeeRecordsRequest{ConsumerId: consumer1})
+	require.NoError(t, err)
+	require.ElementsMatch(t, []providertypes.WithheldFeeRecord{recordA, recordB}, resp.Records)
+}
+
+// TestQueryWithheldFeeRecords_UnknownConsumer verifies that querying an
+// unregistered consumer id returns a codes.InvalidArgument gRPC error.
+func TestQueryWithheldFeeRecords_UnknownConsumer(t *testing.T) {
+	k, ctx, ctrl, _ := testkeeper.GetProviderKeeperAndCtx(t, testkeeper.NewInMemKeeperParams(t))
+	defer ctrl.Finish()
+
+	_, err := k.QueryWithheldFeeRecords(ctx, &providertypes.QueryWithheldFeeRecordsRequest{ConsumerId: 999})
+	require.Error(t, err)
+	require.Equal(t, codes.InvalidArgument, status.Code(err))
+}

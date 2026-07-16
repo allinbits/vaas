@@ -280,9 +280,11 @@ message PreviousDowntimeParams {
 }
 
 // WithheldFeeRecord tracks fee tokens withheld from a validator pending the
-// outcome of a downtime challenge window; a successful challenge refunds the
+// outcome of a downtime challenge window; a successful challenge pays the
 // amount to the validator, while an unchallenged or unsuccessfully
-// challenged entry is swept back to the consumer fee pool once it expires.
+// challenged entry simply has its record deleted once it expires -- the
+// funds themselves never leave the consumer fee pool, and a failed challenge
+// changes nothing.
 message WithheldFeeRecord {
   uint64 consumer_id = 1;
   bytes provider_cons_addr = 2;

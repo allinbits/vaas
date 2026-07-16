@@ -326,6 +326,166 @@ func TestValidateGenesisState_FeePoolShares(t *testing.T) {
 	})
 }
 
+// TestValidateGenesisState_DowntimeLists covers sanity checks: duplicate
+// (consumer, validator) entries, bitmap-length / span inconsistencies, and
+// orphan-consumer checks in the pending-downtime-slash list, plus duplicate
+// and orphan-consumer checks on the withheld-fee-record,
+// last-punished-window-end, and epoch-downtime-entry lists.
+func TestValidateGenesisState_DowntimeLists(t *testing.T) {
+	owner := sdk.AccAddress([]byte("vaas-test-owner-1234")).String()
+	cs := types.ConsumerState{
+		ConsumerId:   0,
+		ChainId:      "chain-1",
+		Phase:        types.CONSUMER_PHASE_REGISTERED,
+		OwnerAddress: owner,
+	}
+	addr1 := []byte("provider-cons-addr-one11")
+	addr2 := []byte("provider-cons-addr-two22")
+
+	build := func() *types.GenesisState {
+		return types.NewGenesisState(
+			types.DefaultValsetUpdateID, nil,
+			[]types.ConsumerState{cs},
+			types.DefaultParams(),
+			nil, nil, nil, nil, nil,
+		)
+	}
+
+	validSlash := func(addr []byte) types.PendingDowntimeSlash {
+		return types.PendingDowntimeSlash{
+			ConsumerId:         0,
+			ProviderConsAddr:   addr,
+			WindowStartHeight:  100,
+			Span:               16,
+			MissedCount:        1,
+			MissedBlocksBitmap: []byte{0x00, 0x00}, // ceil(16/8) = 2 bytes
+			SlashTokens:        math.NewInt(1),
+			MaturesAt:          time.Unix(200, 0).UTC(),
+		}
+	}
+
+	t.Run("valid pending downtime slash", func(t *testing.T) {
+		gs := build()
+		gs.PendingDowntimeSlashes = []types.PendingDowntimeSlash{validSlash(addr1)}
+		require.NoError(t, gs.Validate())
+	})
+
+	t.Run("bitmap length does not match span", func(t *testing.T) {
+		gs := build()
+		bad := validSlash(addr1)
+		bad.MissedBlocksBitmap = []byte{0x00} // want 2 bytes for span 16
+		gs.PendingDowntimeSlashes = []types.PendingDowntimeSlash{bad}
+		err := gs.Validate()
+		require.Error(t, err)
+		require.Contains(t, err.Error(), "missed blocks bitmap length")
+	})
+
+	t.Run("non-positive span", func(t *testing.T) {
+		gs := build()
+		bad := validSlash(addr1)
+		bad.Span = 0
+		gs.PendingDowntimeSlashes = []types.PendingDowntimeSlash{bad}
+		err := gs.Validate()
+		require.Error(t, err)
+		require.Contains(t, err.Error(), "span must be positive")
+	})
+
+	t.Run("duplicate pending downtime slash", func(t *testing.T) {
+		gs := build()
+		gs.PendingDowntimeSlashes = []types.PendingDowntimeSlash{validSlash(addr1), validSlash(addr1)}
+		err := gs.Validate()
+		require.Error(t, err)
+		require.Contains(t, err.Error(), "duplicate pending downtime slash")
+	})
+
+	t.Run("two validators is allowed", func(t *testing.T) {
+		gs := build()
+		gs.PendingDowntimeSlashes = []types.PendingDowntimeSlash{validSlash(addr1), validSlash(addr2)}
+		require.NoError(t, gs.Validate())
+	})
+
+	t.Run("orphan pending downtime slash", func(t *testing.T) {
+		gs := build()
+		orphan := validSlash(addr1)
+		orphan.ConsumerId = 99
+		gs.PendingDowntimeSlashes = []types.PendingDowntimeSlash{orphan}
+		err := gs.Validate()
+		require.Error(t, err)
+		require.Contains(t, err.Error(), "unknown consumer")
+	})
+
+	validWithheld := func(addr []byte) types.WithheldFeeRecord {
+		return types.WithheldFeeRecord{
+			ConsumerId:       0,
+			ProviderConsAddr: addr,
+			Amount:           sdk.NewInt64Coin("uphoton", 10),
+			ExpiresAt:        time.Unix(200, 0).UTC(),
+		}
+	}
+
+	t.Run("valid withheld fee record", func(t *testing.T) {
+		gs := build()
+		gs.WithheldFeeRecords = []types.WithheldFeeRecord{validWithheld(addr1)}
+		require.NoError(t, gs.Validate())
+	})
+
+	t.Run("duplicate withheld fee record", func(t *testing.T) {
+		gs := build()
+		gs.WithheldFeeRecords = []types.WithheldFeeRecord{validWithheld(addr1), validWithheld(addr1)}
+		err := gs.Validate()
+		require.Error(t, err)
+		require.Contains(t, err.Error(), "duplicate withheld fee record")
+	})
+
+	t.Run("orphan withheld fee record", func(t *testing.T) {
+		gs := build()
+		orphan := validWithheld(addr1)
+		orphan.ConsumerId = 99
+		gs.WithheldFeeRecords = []types.WithheldFeeRecord{orphan}
+		err := gs.Validate()
+		require.Error(t, err)
+		require.Contains(t, err.Error(), "unknown consumer")
+	})
+
+	t.Run("duplicate last punished window end", func(t *testing.T) {
+		gs := build()
+		gs.LastPunishedWindowEnds = []types.LastPunishedWindowEnd{
+			{ConsumerId: 0, ProviderConsAddr: addr1, WindowEndHeight: 10},
+			{ConsumerId: 0, ProviderConsAddr: addr1, WindowEndHeight: 20},
+		}
+		err := gs.Validate()
+		require.Error(t, err)
+		require.Contains(t, err.Error(), "duplicate last punished window end")
+	})
+
+	t.Run("valid last punished window end", func(t *testing.T) {
+		gs := build()
+		gs.LastPunishedWindowEnds = []types.LastPunishedWindowEnd{
+			{ConsumerId: 0, ProviderConsAddr: addr1, WindowEndHeight: 10},
+		}
+		require.NoError(t, gs.Validate())
+	})
+
+	t.Run("duplicate epoch downtime entry", func(t *testing.T) {
+		gs := build()
+		gs.EpochDowntimeEntries = []types.EpochDowntimeEntry{
+			{ConsumerId: 0, ProviderConsAddr: addr1},
+			{ConsumerId: 0, ProviderConsAddr: addr1},
+		}
+		err := gs.Validate()
+		require.Error(t, err)
+		require.Contains(t, err.Error(), "duplicate epoch downtime entry")
+	})
+
+	t.Run("valid epoch downtime entry", func(t *testing.T) {
+		gs := build()
+		gs.EpochDowntimeEntries = []types.EpochDowntimeEntry{
+			{ConsumerId: 0, ProviderConsAddr: addr1},
+		}
+		require.NoError(t, gs.Validate())
+	})
+}
+
 func TestConsumerStateValidatePerPhase(t *testing.T) {
 	validMetadata := types.ConsumerMetadata{Name: "n", Description: "d", Metadata: "m"}
 	validInit := &types.ConsumerInitializationParameters{
@@ -405,6 +565,29 @@ func TestConsumerStateValidatePerPhase(t *testing.T) {
 			cs.ClientId = "07-tendermint-0"
 			cs.ConsumerGenesis = nonDefaultConsumerGenesis()
 		}, "removal time"},
+
+		// PAUSED: LAUNCHED requirements + pause_expiration_time; no removal_time.
+		{"PAUSED valid", func(cs *types.ConsumerState) {
+			*cs = base(types.CONSUMER_PHASE_PAUSED)
+			cs.InitParams = validInit
+			cs.ClientId = "07-tendermint-0"
+			cs.ConsumerGenesis = nonDefaultConsumerGenesis()
+			cs.PauseExpirationTime = &rt
+		}, ""},
+		{"PAUSED missing pause_expiration_time", func(cs *types.ConsumerState) {
+			*cs = base(types.CONSUMER_PHASE_PAUSED)
+			cs.InitParams = validInit
+			cs.ClientId = "07-tendermint-0"
+			cs.ConsumerGenesis = nonDefaultConsumerGenesis()
+		}, "pause expiration time"},
+		{"PAUSED with stray removal_time", func(cs *types.ConsumerState) {
+			*cs = base(types.CONSUMER_PHASE_PAUSED)
+			cs.InitParams = validInit
+			cs.ClientId = "07-tendermint-0"
+			cs.ConsumerGenesis = nonDefaultConsumerGenesis()
+			cs.PauseExpirationTime = &rt
+			cs.RemovalTime = &rt
+		}, "removal time must be empty"},
 
 		// DELETED: chain_id + owner + init_params + metadata preserved; everything else cleared.
 		{"DELETED valid", func(cs *types.ConsumerState) {

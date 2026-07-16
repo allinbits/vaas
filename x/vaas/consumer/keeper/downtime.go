@@ -38,8 +38,13 @@ func (k Keeper) TrackMissedBlocks(ctx sdk.Context) {
 		}
 		if vote.BlockIdFlag == cmtproto.BlockIDFlagAbsent {
 			bitmap, err := k.MissedBlockBitmaps.Get(ctx, addr)
-			if err != nil {
-				bitmap = make([]byte, (window+7)/8)
+			// A bitmap shorter than the current window (freshly created, or
+			// imported from genesis at a stale length) is padded up front so
+			// the index below can never run past the end of the slice.
+			if wantLen := int((window + 7) / 8); err != nil || len(bitmap) < wantLen {
+				resized := make([]byte, wantLen)
+				copy(resized, bitmap)
+				bitmap = resized
 			}
 			bitmap[idx/8] |= 1 << (idx % 8)
 			if err := k.MissedBlockBitmaps.Set(ctx, addr, bitmap); err != nil {

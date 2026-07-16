@@ -64,6 +64,40 @@ message GenesisState {
   // downtime challenge window / evidence max age). Absent means
   // DefaultInfractionParameters().
   InfractionParameters infraction_parameters = 13;
+
+  // Fee shares withheld from validators pending a downtime challenge window,
+  // or already forfeited. Empty for a new chain.
+  repeated WithheldFeeRecord withheld_fee_records = 14
+      [ (gogoproto.nullable) = false ];
+
+  // Per-(consumer, validator) downtime-detection windows already punished,
+  // preventing double-punishment of overlapping evidence. Empty for a new
+  // chain.
+  repeated LastPunishedWindowEnd last_punished_window_ends = 15
+      [ (gogoproto.nullable) = false ];
+
+  // Per-(consumer, validator) downtime marks for the epoch fee distribution
+  // currently in progress. Empty for a new chain.
+  repeated EpochDowntimeEntry epoch_downtime_entries = 16
+      [ (gogoproto.nullable) = false ];
+}
+
+// LastPunishedWindowEnd is a single (consumer_id, provider_cons_addr) ->
+// window-end-height record from the keeper's LastPunishedWindowEnds
+// collection: the downtime-detection window boundary through which a
+// validator has already been punished, used to reject overlapping evidence.
+message LastPunishedWindowEnd {
+  uint64 consumer_id = 1;
+  bytes provider_cons_addr = 2;
+  int64 window_end_height = 3;
+}
+
+// EpochDowntimeEntry is a single (consumer_id, provider_cons_addr) entry from
+// the keeper's EpochDowntime collection, marking a validator as down for the
+// consumer's current epoch fee distribution.
+message EpochDowntimeEntry {
+  uint64 consumer_id = 1;
+  bytes provider_cons_addr = 2;
 }
 
 // EpochShareRecord is a single per-validator fee-share record produced by a
@@ -130,6 +164,13 @@ message ConsumerState {
       [ (gogoproto.stdtime) = true ];
   uint64 highest_sent_vsc_id = 14;
   uint64 highest_acked_vsc_id = 15;
+
+  // PauseExpirationTime is the wall-clock time at which a PAUSED consumer is
+  // scheduled to be auto-stopped if the pause has not otherwise been
+  // resolved. Set only when phase == PAUSED; absent otherwise. Used to
+  // re-derive the keeper's pause-expiration queue.
+  google.protobuf.Timestamp pause_expiration_time = 16
+      [ (gogoproto.stdtime) = true ];
 }
 
 // ValsetUpdateIdToHeight defines the genesis information for the mapping

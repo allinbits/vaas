@@ -66,6 +66,16 @@ func (k Keeper) InitGenesis(ctx sdk.Context, state *types.GenesisState) []abci.V
 			k.SetHeightValsetUpdateID(ctx, h2v.Height, h2v.ValsetUpdateId)
 		}
 		k.SetProviderClientID(ctx, state.ProviderClientId)
+
+		// Restore the pinned provider chain id on restart (see ExportGenesis):
+		// without this, a state-export restart drops the pin entirely until
+		// the next VSC packet lazily re-establishes it (see
+		// authenticateProviderChainID in relay.go), leaving a window with no
+		// pin and no re-validation of the client that was actually trusted
+		// before the restart.
+		if state.ProviderChainId != "" {
+			k.SetProviderChainId(ctx, state.ProviderChainId)
+		}
 	}
 
 	if state.PreVAAS {
@@ -131,6 +141,13 @@ func (k Keeper) ExportGenesis(ctx sdk.Context) (genesis *types.GenesisState) {
 		k.GetAllHeightToValsetUpdateIDs(ctx),
 		params,
 	)
+
+	// Preserve the pinned provider chain id across a restart (see
+	// InitGenesis); absent when no pin has ever been established (e.g. a
+	// PreVAAS chain that has not launched yet).
+	if chainId, ok := k.GetProviderChainId(ctx); ok {
+		genesis.ProviderChainId = chainId
+	}
 
 	// Preserve the VSC staleness clock across a restart (see IsVSCStale): export
 	// the last-VSC-recv time only when actually recorded, so a consumer that has

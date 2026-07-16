@@ -8,6 +8,7 @@ import (
 
 	vaastypes "github.com/allinbits/vaas/x/vaas/types"
 
+	"github.com/cometbft/cometbft/crypto/ed25519"
 	tmtypes "github.com/cometbft/cometbft/proto/tendermint/types"
 	cmttypes "github.com/cometbft/cometbft/types"
 
@@ -542,11 +543,20 @@ func (msg MsgChallengeConsumerDowntime) ValidateBasic() error {
 	if msg.Header == nil {
 		return errorsmod.Wrap(sdkerrors.ErrInvalidRequest, "header cannot be nil")
 	}
+	if msg.Header.SignedHeader == nil {
+		return errorsmod.Wrap(sdkerrors.ErrInvalidRequest, "header.signed_header cannot be nil")
+	}
+	if msg.Header.SignedHeader.Header == nil {
+		return errorsmod.Wrap(sdkerrors.ErrInvalidRequest, "header.signed_header.header cannot be nil")
+	}
 	if msg.LastCommit == nil {
 		return errorsmod.Wrap(sdkerrors.ErrInvalidRequest, "last_commit cannot be nil")
 	}
-	if len(msg.ValidatorPubkey) == 0 {
-		return errorsmod.Wrap(sdkerrors.ErrInvalidRequest, "validator_pubkey cannot be empty")
+	// The handler feeds these bytes straight into ed25519.PubKey.Address(),
+	// which panics on any length other than ed25519.PubKeySize.
+	if len(msg.ValidatorPubkey) != ed25519.PubKeySize {
+		return errorsmod.Wrapf(sdkerrors.ErrInvalidRequest,
+			"validator_pubkey must be %d bytes, got %d", ed25519.PubKeySize, len(msg.ValidatorPubkey))
 	}
 	return nil
 }

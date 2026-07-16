@@ -48,8 +48,8 @@ const (
 
 	// DefaultDowntimeSlashFraction is the ceiling on any downtime slash,
 	// expressed as a fraction of stake. Downtime slashes are priced from
-	// foregone consumer fees (see docs/superpowers/specs/2026-07-14-downtime-evidence-verification-design.md,
-	// section 6); this fraction bounds the result.
+	// foregone consumer fees (see docs/consumer-downtime.md, "Pricing and
+	// execution"); this fraction bounds the result.
 	DefaultDowntimeSlashFraction = "0.05"
 
 	// DefaultDowntimeGracePeriod is the default grace period after a consumer chain launches

@@ -873,8 +873,8 @@ func TestResumeConsumerNonPausedRejected(t *testing.T) {
 
 // TestResumeConsumerRejectsInactiveClient verifies MsgResumeConsumer's
 // client pre-flight rejects an expired/frozen client with guidance to bundle
-// ibc-go's MsgRecoverClient into the same governance proposal (spec section
-// 9, "Client expiry during a pause").
+// ibc-go's MsgRecoverClient into the same governance proposal (see
+// docs/consumer-downtime.md, "The PAUSED phase").
 func TestResumeConsumerRejectsInactiveClient(t *testing.T) {
 	providerKeeper, ctx, ctrl, mocks := testkeeper.GetProviderKeeperAndCtx(t, testkeeper.NewInMemKeeperParams(t))
 	defer ctrl.Finish()

@@ -332,6 +332,49 @@ func TestGenesisRoundTripDowntimeState(t *testing.T) {
 	require.NoError(t, corrupt.Validate())
 }
 
+// TestGenesisRoundTripProviderChainId verifies the consumer's pinned
+// provider chain id survives an export/import restart: ExportGenesis
+// carries the pinned chain id, and InitGenesis's restart branch restores it
+// on a fresh keeper rather than leaving it unset until the next VSC packet
+// lazily re-establishes it via authenticateProviderChainID.
+func TestGenesisRoundTripProviderChainId(t *testing.T) {
+	provClientID := "tendermint-07"
+	params := vaastypes.DefaultConsumerParams()
+	params.Enabled = true
+
+	pubKey := ed25519.GenPrivKey().PubKey()
+	tmPK, err := cryptocodec.ToCmtPubKeyInterface(pubKey)
+	require.NoError(t, err)
+	validator := tmtypes.NewValidator(tmPK, 1)
+
+	providerChainId := "cosmoshub-4"
+
+	ck, ctx, ctrl, _ := testkeeper.GetConsumerKeeperAndCtx(t, testkeeper.NewInMemKeeperParams(t))
+	defer ctrl.Finish()
+	ck.SetParams(ctx, params)
+	ck.SetProviderClientID(ctx, provClientID)
+	cVal, err := consumertypes.NewCCValidator(validator.Address.Bytes(), 1, pubKey)
+	require.NoError(t, err)
+	ck.SetCCValidator(ctx, cVal)
+	ck.SetHeightValsetUpdateID(ctx, 0, 0)
+	ck.SetProviderChainId(ctx, providerChainId)
+
+	exported := ck.ExportGenesis(ctx)
+	require.Equal(t, providerChainId, exported.ProviderChainId, "export must carry provider_chain_id")
+	require.False(t, exported.NewChain, "restart export must not be a new-chain genesis")
+
+	ck2, ctx2, ctrl2, _ := testkeeper.GetConsumerKeeperAndCtx(t, testkeeper.NewInMemKeeperParams(t))
+	defer ctrl2.Finish()
+	ck2.InitGenesis(ctx2, exported)
+
+	gotChainId, ok := ck2.GetProviderChainId(ctx2)
+	require.True(t, ok, "ProviderChainId lost across round-trip")
+	require.Equal(t, providerChainId, gotChainId)
+
+	reExported := ck2.ExportGenesis(ctx2)
+	require.Equal(t, exported, reExported, "round-trip must be a fixed point")
+}
+
 func assertProviderClientID(t *testing.T, ctx sdk.Context, ck *consumerkeeper.Keeper, clientID string) {
 	t.Helper()
 	cid, ok := ck.GetProviderClientID(ctx)

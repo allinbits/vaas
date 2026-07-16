@@ -50,6 +50,13 @@ message GenesisState {
   // Absent means nothing is staged.
   vaas.v1.DowntimeParams staged_downtime_params = 10;
 
+  // ProviderChainId is the chain id the consumer has pinned as belonging to
+  // the provider (see ProviderChainId in x/vaas/consumer/keeper/keeper.go).
+  // Round-tripped on restart so a state-export restart preserves the pin
+  // instead of leaving a window with no pin until the next VSC packet
+  // re-establishes it. Empty for a new chain that has not launched yet.
+  string provider_chain_id = 11;
+
   // Downtime evidence packets queued for send to the provider. Round-tripped
   // on restart because closing a window clears the source bitmaps, leaving
   // the queue as the only remaining copy of the evidence. Empty for a new

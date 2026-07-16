@@ -651,6 +651,39 @@ func (k Keeper) QueryPendingDowntimeSlashes(goCtx context.Context, req *types.Qu
 	return &types.QueryPendingDowntimeSlashesResponse{Slashes: slashes}, nil
 }
 
+// QueryWithheldFeeRecords returns the fee shares currently withheld from
+// validators for a consumer due to a pending or executed downtime slash.
+// There is at most one entry per validator, so the result is unbounded but
+// small enough that no pagination is offered.
+func (k Keeper) QueryWithheldFeeRecords(goCtx context.Context, req *types.QueryWithheldFeeRecordsRequest) (*types.QueryWithheldFeeRecordsResponse, error) {
+	if req == nil {
+		return nil, status.Errorf(codes.InvalidArgument, "empty request")
+	}
+	ctx := sdk.UnwrapSDKContext(goCtx)
+
+	if k.GetConsumerPhase(ctx, req.ConsumerId) == types.CONSUMER_PHASE_UNSPECIFIED {
+		return nil, status.Errorf(codes.InvalidArgument, "unknown consumer: %d", req.ConsumerId)
+	}
+
+	prefix := collections.NewPrefixedPairRange[uint64, []byte](req.ConsumerId)
+	iter, err := k.WithheldFeeRecords.Iterate(ctx, prefix)
+	if err != nil {
+		return nil, status.Errorf(codes.Internal, "iterate withheld fee records: %s", err)
+	}
+	defer iter.Close()
+
+	records := []types.WithheldFeeRecord{}
+	for ; iter.Valid(); iter.Next() {
+		entry, err := iter.Value()
+		if err != nil {
+			return nil, status.Errorf(codes.Internal, "withheld fee record value: %s", err)
+		}
+		records = append(records, entry)
+	}
+
+	return &types.QueryWithheldFeeRecordsResponse{Records: records}, nil
+}
+
 // QueryAllConsumerFeesPerBlockOverrides returns the full list of overrides,
 // paginated, ordered by consumer_id ascending.
 func (k Keeper) QueryAllConsumerFeesPerBlockOverrides(

@@ -1,0 +1,214 @@
+package keeper
+
+import (
+	"bytes"
+	"fmt"
+
+	"github.com/allinbits/vaas/x/vaas/provider/types"
+	vaastypes "github.com/allinbits/vaas/x/vaas/types"
+
+	"github.com/cometbft/cometbft/crypto/ed25519"
+	tmtypes "github.com/cometbft/cometbft/types"
+
+	ibctmtypes "github.com/cosmos/ibc-go/v10/modules/light-clients/07-tendermint"
+
+	"cosmossdk.io/collections"
+	errorsmod "cosmossdk.io/errors"
+
+	sdk "github.com/cosmos/cosmos-sdk/types"
+)
+
+// HandleChallengeConsumerDowntime verifies a MsgChallengeConsumerDowntime and,
+// on success, cancels the pending downtime slash it disproves. Downtime
+// (absence of signatures) can never be proven, but a specific claimed-missed
+// height can be disproven by exhibiting the validator's signature sealed
+// into the chain at that height -- see docs/consumer-downtime.md, "The
+// challenge". Verification runs, in order, and returns a typed error with no
+// state change on the first failure:
+//
+//  1. a PendingDowntimeSlash exists for the accused validator on this
+//     consumer, and its missed-blocks bitmap marks ClaimedHeight as missed;
+//  2. the supplied header is for ClaimedHeight+1 on the consumer's registered
+//     chain id;
+//  3. the header verifies against the consumer's IBC client through the
+//     07-tendermint light client module, exactly as CheckMisbehaviour
+//     verifies misbehaviour headers;
+//  4. the supplied commit is canonically sealed into that header (its hash
+//     equals the header's LastCommitHash) and is for ClaimedHeight;
+//  5. the supplied pubkey self-authenticates as the accused validator, and
+//     that validator's CommitSig in the commit -- Commit or Nil, never
+//     Absent -- carries a valid signature over the canonical vote bytes.
+//
+// On success, in order: PayWithheldFees (before the phase flip -- the
+// consumer's withdraw-lock only opens once it leaves LAUNCHED, so retro-pay
+// must land before PauseConsumerChain moves it to PAUSED), then
+// PauseConsumerChain, which itself calls CancelConsumerDowntimeState to clear
+// every pending downtime slash and epoch downtime mark for the consumer (one
+// proven-false bit indicts the reporting source as a whole). Calling
+// CancelConsumerDowntimeState again here would be redundant:
+// PauseConsumerChain already does it, and neither function touches
+// WithheldFeeRecords (only DeleteConsumerChain does), so the pay-then-pause
+// order is safe regardless.
+func (k Keeper) HandleChallengeConsumerDowntime(ctx sdk.Context, msg *types.MsgChallengeConsumerDowntime) error {
+	// Defensive: ValidateBasic already rejects a nil header or a nil/absent
+	// inner SignedHeader.Header, but this is a permissionless entry point, so
+	// guard the dereference below (msg.Header.Header.ChainID) again here in
+	// case ValidateBasic is ever bypassed or this handler is invoked directly.
+	if msg.Header == nil || msg.Header.SignedHeader == nil || msg.Header.SignedHeader.Header == nil {
+		return errorsmod.Wrap(types.ErrDowntimeChallengeFailed, "header is malformed: signed_header or its inner header is nil")
+	}
+
+	consumerAddr := types.NewConsumerConsAddress(sdk.ConsAddress(msg.ValidatorAddr))
+	providerAddr := k.GetProviderAddrFromConsumerAddr(ctx, msg.ConsumerId, consumerAddr)
+	pendingKey := collections.Join(msg.ConsumerId, providerAddr.ToSdkConsAddr().Bytes())
+
+	// 1. a pending slash exists and its bitmap marks claimed_height missed.
+	pending, err := k.PendingDowntimeSlashes.Get(ctx, pendingKey)
+	if err != nil {
+		return errorsmod.Wrapf(types.ErrDowntimeChallengeFailed,
+			"no pending downtime slash for validator %s on consumer chain %d: %s",
+			providerAddr.String(), msg.ConsumerId, err)
+	}
+
+	index := msg.ClaimedHeight - pending.WindowStartHeight
+	if index < 0 || index >= pending.Span {
+		return errorsmod.Wrapf(types.ErrDowntimeChallengeFailed,
+			"claimed height %d is outside the pending slash window [%d, %d) for validator %s on consumer chain %d",
+			msg.ClaimedHeight, pending.WindowStartHeight, pending.WindowStartHeight+pending.Span,
+			providerAddr.String(), msg.ConsumerId)
+	}
+	byteIdx := index / 8
+	bitMask := byte(1) << uint(index%8)
+	if byteIdx >= int64(len(pending.MissedBlocksBitmap)) || pending.MissedBlocksBitmap[byteIdx]&bitMask == 0 {
+		return errorsmod.Wrapf(types.ErrDowntimeChallengeFailed,
+			"claimed height %d is not marked missed in the pending downtime slash for validator %s on consumer chain %d",
+			msg.ClaimedHeight, providerAddr.String(), msg.ConsumerId)
+	}
+
+	// 2. the header is for claimed_height+1 on the consumer's own chain id.
+	consumerChainId, err := k.GetConsumerChainId(ctx, msg.ConsumerId)
+	if err != nil {
+		return errorsmod.Wrapf(types.ErrDowntimeChallengeFailed,
+			"no registered chain id for consumer %d: %s", msg.ConsumerId, err)
+	}
+	if msg.Header.Header.ChainID != consumerChainId {
+		return errorsmod.Wrapf(types.ErrDowntimeChallengeFailed,
+			"header chain id (%s) does not match consumer chain id (%s) (consumerId: %d)",
+			msg.Header.Header.ChainID, consumerChainId, msg.ConsumerId)
+	}
+	if msg.Header.Header.Height != msg.ClaimedHeight+1 {
+		return errorsmod.Wrapf(types.ErrDowntimeChallengeFailed,
+			"header height (%d) is not claimed_height+1 (%d)", msg.Header.Header.Height, msg.ClaimedHeight+1)
+	}
+
+	// 3. the header verifies against the consumer's IBC client.
+	clientId, found := k.GetConsumerClientId(ctx, msg.ConsumerId)
+	if !found {
+		return errorsmod.Wrapf(types.ErrDowntimeChallengeFailed,
+			"no IBC client found for consumer chain %d", msg.ConsumerId)
+	}
+	if err := k.verifyDowntimeChallengeHeader(ctx, clientId, msg.Header); err != nil {
+		return errorsmod.Wrapf(types.ErrDowntimeChallengeFailed,
+			"header for consumer chain %d failed light client verification: %s", msg.ConsumerId, err)
+	}
+
+	// 4. the commit is canonically sealed into the header and is for
+	// claimed_height. A SignedHeader's own Commit is malleable (a retro-
+	// signed vote can be spliced into any valid +2/3 subset), but
+	// LastCommitHash is sealed by the chain at claimed_height+1 and cannot
+	// include a vote that was not part of the canonical commit.
+	commit, err := tmtypes.CommitFromProto(msg.LastCommit)
+	if err != nil {
+		return errorsmod.Wrapf(types.ErrDowntimeChallengeFailed, "invalid last_commit: %s", err)
+	}
+	if commit.Height != msg.ClaimedHeight {
+		return errorsmod.Wrapf(types.ErrDowntimeChallengeFailed,
+			"last_commit height (%d) does not match claimed_height (%d)", commit.Height, msg.ClaimedHeight)
+	}
+	if !bytes.Equal(commit.Hash(), msg.Header.Header.LastCommitHash) {
+		return errorsmod.Wrap(types.ErrDowntimeChallengeFailed,
+			"last_commit hash does not match header LastCommitHash")
+	}
+
+	// 5. the pubkey self-authenticates as the accused validator, and that
+	// validator has a genuine Commit-or-Nil signature in the commit. This is
+	// self-authenticating: it does not rely on current key-assignment state,
+	// so key rotation after the window cannot break verification.
+	pubKey := ed25519.PubKey(msg.ValidatorPubkey)
+	if !bytes.Equal(pubKey.Address(), msg.ValidatorAddr) {
+		return errorsmod.Wrap(types.ErrDowntimeChallengeFailed,
+			"validator_pubkey does not derive validator_addr")
+	}
+
+	sigIdx := -1
+	for i, sig := range commit.Signatures {
+		if bytes.Equal(sig.ValidatorAddress, msg.ValidatorAddr) {
+			sigIdx = i
+			break
+		}
+	}
+	if sigIdx == -1 {
+		return errorsmod.Wrap(types.ErrDowntimeChallengeFailed,
+			"last_commit carries no signature for validator_addr")
+	}
+	sig := commit.Signatures[sigIdx]
+	if sig.BlockIDFlag != tmtypes.BlockIDFlagCommit && sig.BlockIDFlag != tmtypes.BlockIDFlagNil {
+		return errorsmod.Wrapf(types.ErrDowntimeChallengeFailed,
+			"validator_addr's commit signature has flag %d, want Commit(%d) or Nil(%d)",
+			sig.BlockIDFlag, tmtypes.BlockIDFlagCommit, tmtypes.BlockIDFlagNil)
+	}
+	signBytes := commit.VoteSignBytes(consumerChainId, int32(sigIdx))
+	if !pubKey.VerifySignature(signBytes, sig.Signature) {
+		return errorsmod.Wrap(types.ErrDowntimeChallengeFailed,
+			"validator_addr's commit signature does not verify against validator_pubkey")
+	}
+
+	// The challenge is proven: retro-pay withheld fees before the phase
+	// flip, then pause the consumer (which cancels every pending downtime
+	// slash and epoch downtime mark for it -- see the doc comment above).
+	if err := k.PayWithheldFees(ctx, msg.ConsumerId); err != nil {
+		return fmt.Errorf("paying withheld fees for consumer %d: %w", msg.ConsumerId, err)
+	}
+	if err := k.PauseConsumerChain(ctx, msg.ConsumerId); err != nil {
+		return fmt.Errorf("pausing consumer %d after successful downtime challenge: %w", msg.ConsumerId, err)
+	}
+
+	ctx.EventManager().EmitEvent(sdk.NewEvent(
+		vaastypes.EventTypeDowntimeChallengeSucceeded,
+		sdk.NewAttribute(sdk.AttributeKeyModule, types.ModuleName),
+		sdk.NewAttribute(types.AttributeConsumerId, fmt.Sprintf("%d", msg.ConsumerId)),
+		sdk.NewAttribute(vaastypes.AttributeChallenger, msg.Signer),
+		sdk.NewAttribute(vaastypes.AttributeProviderValidatorAddress, providerAddr.String()),
+		sdk.NewAttribute(vaastypes.AttributeClaimedHeight, fmt.Sprintf("%d", msg.ClaimedHeight)),
+	))
+
+	return nil
+}
+
+// verifyDowntimeChallengeHeader verifies header against the consumer IBC
+// client identified by clientId, using the same 07-tendermint light client
+// module path CheckMisbehaviour uses for misbehaviour headers: a single
+// ibctmtypes.Header is itself a valid exported.ClientMessage, and
+// VerifyClientMessage dispatches it to the client state's header-update
+// verification (trusted-state lookup, trust-level check, trusting period).
+// Tests may override this via OverrideVerifyDowntimeChallengeHeaderForTest
+// when fabricating a real client store is impractical; production always
+// takes this path.
+func (k Keeper) verifyDowntimeChallengeHeader(ctx sdk.Context, clientId string, header *ibctmtypes.Header) error {
+	if k.verifyDowntimeChallengeHeaderFn != nil {
+		return k.verifyDowntimeChallengeHeaderFn(ctx, clientId, header)
+	}
+
+	lightClientModule := ibctmtypes.NewLightClientModule(k.cdc, k.clientKeeper.GetStoreProvider())
+	return lightClientModule.VerifyClientMessage(ctx, clientId, header)
+}
+
+// VerifyDowntimeChallengeHeaderForTest exposes verifyDowntimeChallengeHeader
+// for tests exercising the real light-client-backed verification path -- i.e.
+// with verifyDowntimeChallengeHeaderFn left unset, unlike
+// OverrideVerifyDowntimeChallengeHeaderForTest. Production code never calls
+// this directly; HandleChallengeConsumerDowntime always goes through
+// verifyDowntimeChallengeHeader itself.
+func (k Keeper) VerifyDowntimeChallengeHeaderForTest(ctx sdk.Context, clientId string, header *ibctmtypes.Header) error {
+	return k.verifyDowntimeChallengeHeader(ctx, clientId, header)
+}

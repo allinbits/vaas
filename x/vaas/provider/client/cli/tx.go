@@ -1,16 +1,25 @@
 package cli
 
 import (
+	"bytes"
+	"context"
 	"encoding/json"
 	"fmt"
 	"os"
+	"strconv"
 	"strings"
 
 	"github.com/allinbits/vaas/x/vaas/provider/types"
 	"github.com/spf13/cobra"
 
+	"github.com/cometbft/cometbft/crypto"
+	"github.com/cometbft/cometbft/crypto/ed25519"
 	tmproto "github.com/cometbft/cometbft/proto/tendermint/types"
+	rpchttp "github.com/cometbft/cometbft/rpc/client/http"
+	tmtypes "github.com/cometbft/cometbft/types"
 
+	clienttypes "github.com/cosmos/ibc-go/v10/modules/core/02-client/types"
+	ibcexported "github.com/cosmos/ibc-go/v10/modules/core/exported"
 	ibctmtypes "github.com/cosmos/ibc-go/v10/modules/light-clients/07-tendermint"
 
 	"github.com/cosmos/cosmos-sdk/client"
@@ -19,6 +28,14 @@ import (
 	"github.com/cosmos/cosmos-sdk/codec"
 	sdk "github.com/cosmos/cosmos-sdk/types"
 	"github.com/cosmos/cosmos-sdk/version"
+)
+
+// FlagConsumerRPC and FlagTrustedHeight configure
+// NewChallengeConsumerDowntimeCmd's assembly of a MsgChallengeConsumerDowntime
+// from a live consumer chain RPC endpoint.
+const (
+	FlagConsumerRPC   = "consumer-rpc"
+	FlagTrustedHeight = "trusted-height"
 )
 
 // GetTxCmd returns the transaction commands for this module
@@ -39,6 +56,7 @@ func GetTxCmd() *cobra.Command {
 	cmd.AddCommand(NewFundConsumerFeePoolCmd())
 	cmd.AddCommand(NewWithdrawConsumerFeePoolCmd())
 	cmd.AddCommand(NewSweepConsumerFeePoolCmd())
+	cmd.AddCommand(NewChallengeConsumerDowntimeCmd())
 
 	return cmd
 }
@@ -486,4 +504,208 @@ func NewSweepConsumerFeePoolCmd() *cobra.Command {
 	flags.AddTxFlagsToCmd(cmd)
 	_ = cmd.MarkFlagRequired(flags.FlagFrom)
 	return cmd
+}
+
+// NewChallengeConsumerDowntimeCmd builds and broadcasts a
+// MsgChallengeConsumerDowntime by fetching, from the consumer chain's own
+// CometBFT RPC endpoint, everything HandleChallengeConsumerDowntime needs to
+// verify a challenge (see docs/consumer-downtime.md, "The challenge"): the
+// canonical commit for the claimed height H (/commit?height=H), the signed
+// header for H+1 (/commit?height=H+1), the validator set matching that header
+// (/validators?height=H+1), and the accused validator's self-authenticating
+// pubkey (/validators?height=H). This is client-side tooling: it trusts the
+// consumer RPC endpoint to answer honestly, exactly as any light client or
+// relayer does -- the assembled message is still independently verified
+// on-chain by HandleChallengeConsumerDowntime, so a dishonest RPC endpoint
+// can at worst waste the challenger's gas, never forge a false challenge.
+func NewChallengeConsumerDowntimeCmd() *cobra.Command {
+	cmd := &cobra.Command{
+		Use:   "challenge-consumer-downtime [consumer-id] [validator-cons-addr] [claimed-height]",
+		Short: "Challenge a pending downtime slash by proving the validator signed the claimed height",
+		Long: strings.TrimSpace(fmt.Sprintf(`Challenge a pending downtime slash by proving the accused validator
+signed the claimed height H: this command fetches the canonical commit for
+H, the light-client header for H+1, and the relevant validator sets from
+the consumer chain's own RPC endpoint (--%s), then assembles and broadcasts
+MsgChallengeConsumerDowntime.
+
+The H+1 header's trusted height defaults to the provider's currently
+tracked latest height for this consumer's IBC client (queried on-chain);
+pass --%s to override it, e.g. if that client's light-client module trails
+behind the consumer chain tip.
+
+Example:
+%s tx provider challenge-consumer-downtime 0 cosmosvalcons1... 12345 --%s http://consumer-rpc:26657
+`, FlagConsumerRPC, FlagTrustedHeight, version.AppName, FlagConsumerRPC)),
+		Args: cobra.ExactArgs(3),
+		RunE: func(cmd *cobra.Command, args []string) error {
+			clientCtx, err := client.GetClientTxContext(cmd)
+			if err != nil {
+				return err
+			}
+
+			consumerId, err := parseConsumerIdArg(args[0])
+			if err != nil {
+				return err
+			}
+			consAddr, err := sdk.ConsAddressFromBech32(args[1])
+			if err != nil {
+				return fmt.Errorf("invalid validator-cons-addr %q: %w", args[1], err)
+			}
+			claimedHeight, err := strconv.ParseInt(args[2], 10, 64)
+			if err != nil {
+				return fmt.Errorf("invalid claimed-height %q: %w", args[2], err)
+			}
+
+			consumerRPC, err := cmd.Flags().GetString(FlagConsumerRPC)
+			if err != nil {
+				return err
+			}
+			if consumerRPC == "" {
+				return fmt.Errorf("--%s is required", FlagConsumerRPC)
+			}
+
+			rpcClient, err := rpchttp.New(consumerRPC, "/websocket")
+			if err != nil {
+				return fmt.Errorf("connecting to consumer rpc %s: %w", consumerRPC, err)
+			}
+
+			ctx := cmd.Context()
+			nextHeight := claimedHeight + 1
+
+			// The canonical commit for H: /commit?height=H's SignedHeader.Commit
+			// -- this is the commit sealed into H+1's header, not H's own
+			// self-reported, malleable SignedHeader.Commit.
+			commitH, err := rpcClient.Commit(ctx, &claimedHeight)
+			if err != nil {
+				return fmt.Errorf("fetching commit at height %d: %w", claimedHeight, err)
+			}
+
+			// The signed header for H+1, becoming the light-client header's
+			// SignedHeader.
+			commitH1, err := rpcClient.Commit(ctx, &nextHeight)
+			if err != nil {
+				return fmt.Errorf("fetching commit at height %d: %w", nextHeight, err)
+			}
+
+			// The validator set at H+1, matching the header being submitted.
+			valsH1, err := fetchAllValidators(ctx, rpcClient, nextHeight)
+			if err != nil {
+				return fmt.Errorf("fetching validators at height %d: %w", nextHeight, err)
+			}
+			valSetH1, err := tmtypes.NewValidatorSet(valsH1).ToProto()
+			if err != nil {
+				return fmt.Errorf("converting validator set at height %d: %w", nextHeight, err)
+			}
+
+			// The accused validator's self-authenticating pubkey, read from the
+			// validator set at H (matching consAddr).
+			valsH, err := fetchAllValidators(ctx, rpcClient, claimedHeight)
+			if err != nil {
+				return fmt.Errorf("fetching validators at height %d: %w", claimedHeight, err)
+			}
+			var validatorPubKey crypto.PubKey
+			for _, v := range valsH {
+				if bytes.Equal(v.Address, consAddr.Bytes()) {
+					validatorPubKey = v.PubKey
+					break
+				}
+			}
+			if validatorPubKey == nil {
+				return fmt.Errorf("validator %s not found in the validator set at height %d", consAddr, claimedHeight)
+			}
+			if _, ok := validatorPubKey.(ed25519.PubKey); !ok {
+				return fmt.Errorf("validator %s's pubkey is not ed25519, the only key type HandleChallengeConsumerDowntime accepts", consAddr)
+			}
+
+			// The trusted height for the H+1 header: --trusted-height if given,
+			// else the provider's currently tracked latest height for this
+			// consumer's IBC client. The client state is queried regardless, to
+			// source the revision number for the trusted height.
+			chainResp, err := types.NewQueryClient(clientCtx).QueryConsumerChain(ctx, &types.QueryConsumerChainRequest{ConsumerId: consumerId})
+			if err != nil {
+				return fmt.Errorf("looking up client id for consumer %d: %w", consumerId, err)
+			}
+			if chainResp.ClientId == "" {
+				return fmt.Errorf("consumer %d has no registered IBC client", consumerId)
+			}
+			clientStateResp, err := clienttypes.NewQueryClient(clientCtx).ClientState(ctx, &clienttypes.QueryClientStateRequest{ClientId: chainResp.ClientId})
+			if err != nil {
+				return fmt.Errorf("querying client state for client %s: %w", chainResp.ClientId, err)
+			}
+			var clientStateI ibcexported.ClientState
+			if err := clientCtx.InterfaceRegistry.UnpackAny(clientStateResp.ClientState, &clientStateI); err != nil {
+				return fmt.Errorf("unpacking client state for client %s: %w", chainResp.ClientId, err)
+			}
+			tmClientState, ok := clientStateI.(*ibctmtypes.ClientState)
+			if !ok {
+				return fmt.Errorf("client %s is not a tendermint client", chainResp.ClientId)
+			}
+
+			trustedHeight := tmClientState.LatestHeight
+			if h, err := cmd.Flags().GetUint64(FlagTrustedHeight); err == nil && h != 0 {
+				trustedHeight = clienttypes.NewHeight(tmClientState.LatestHeight.RevisionNumber, h)
+			}
+
+			trustedVals, err := fetchAllValidators(ctx, rpcClient, int64(trustedHeight.RevisionHeight))
+			if err != nil {
+				return fmt.Errorf("fetching validators at trusted height %d: %w", trustedHeight.RevisionHeight, err)
+			}
+			trustedValSet, err := tmtypes.NewValidatorSet(trustedVals).ToProto()
+			if err != nil {
+				return fmt.Errorf("converting validator set at trusted height %d: %w", trustedHeight.RevisionHeight, err)
+			}
+
+			header := &ibctmtypes.Header{
+				SignedHeader:      commitH1.SignedHeader.ToProto(),
+				ValidatorSet:      valSetH1,
+				TrustedHeight:     trustedHeight,
+				TrustedValidators: trustedValSet,
+			}
+
+			msg := &types.MsgChallengeConsumerDowntime{
+				Signer:          clientCtx.GetFromAddress().String(),
+				ConsumerId:      consumerId,
+				ValidatorAddr:   consAddr.Bytes(),
+				ClaimedHeight:   claimedHeight,
+				Header:          header,
+				LastCommit:      commitH.Commit.ToProto(),
+				ValidatorPubkey: validatorPubKey.Bytes(),
+			}
+			if err := msg.ValidateBasic(); err != nil {
+				return err
+			}
+
+			return tx.GenerateOrBroadcastTxCLI(clientCtx, cmd.Flags(), msg)
+		},
+	}
+
+	cmd.Flags().String(FlagConsumerRPC, "", "CometBFT RPC endpoint of the consumer chain (required)")
+	cmd.Flags().Uint64(FlagTrustedHeight, 0,
+		"trusted height for the H+1 light-client header (default: the provider's tracked latest height for this consumer's client)")
+	flags.AddTxFlagsToCmd(cmd)
+	_ = cmd.MarkFlagRequired(flags.FlagFrom)
+	_ = cmd.MarkFlagRequired(FlagConsumerRPC)
+
+	return cmd
+}
+
+// fetchAllValidators pages through the consumer RPC's /validators endpoint
+// to return the full validator set at height, rather than just its first
+// (bounded-size) page.
+func fetchAllValidators(ctx context.Context, rpcClient *rpchttp.HTTP, height int64) ([]*tmtypes.Validator, error) {
+	var vals []*tmtypes.Validator
+	page := 1
+	const perPage = 100
+	for {
+		p, pp := page, perPage
+		res, err := rpcClient.Validators(ctx, &height, &p, &pp)
+		if err != nil {
+			return nil, err
+		}
+		vals = append(vals, res.Validators...)
+		if len(vals) >= res.Total {
+			return vals, nil
+		}
+		page++
+	}
 }

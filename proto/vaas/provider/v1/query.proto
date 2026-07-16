@@ -148,6 +148,14 @@ service Query {
     option (google.api.http).get =
         "/vaas/provider/v1/pending_downtime_slashes/{consumer_id}";
   }
+
+  // QueryWithheldFeeRecords returns the fee shares currently withheld from
+  // validators for a consumer due to a pending or executed downtime slash.
+  rpc QueryWithheldFeeRecords(QueryWithheldFeeRecordsRequest)
+      returns (QueryWithheldFeeRecordsResponse) {
+    option (google.api.http).get =
+        "/vaas/provider/v1/withheld_fee_records/{consumer_id}";
+  }
 }
 
 message QueryConsumerGenesisRequest {
@@ -386,4 +394,9 @@ message QueryConsumerLivenessResponse {
 message QueryPendingDowntimeSlashesRequest { uint64 consumer_id = 1; }
 message QueryPendingDowntimeSlashesResponse {
   repeated PendingDowntimeSlash slashes = 1 [(gogoproto.nullable) = false];
+}
+
+message QueryWithheldFeeRecordsRequest { uint64 consumer_id = 1; }
+message QueryWithheldFeeRecordsResponse {
+  repeated WithheldFeeRecord records = 1 [(gogoproto.nullable) = false];
 }

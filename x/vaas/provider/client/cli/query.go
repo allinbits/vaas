@@ -49,6 +49,7 @@ func NewQueryCmd() *cobra.Command {
 	cmd.AddCommand(CmdConsumerFeePoolClaim())
 	cmd.AddCommand(CmdConsumerFeePoolClaims())
 	cmd.AddCommand(CmdPendingDowntimeSlashes())
+	cmd.AddCommand(CmdWithheldFeeRecords())
 	return cmd
 }
 
@@ -610,6 +611,39 @@ func CmdPendingDowntimeSlashes() *cobra.Command {
 			}
 			req := &types.QueryPendingDowntimeSlashesRequest{ConsumerId: cid}
 			res, err := queryClient.QueryPendingDowntimeSlashes(cmd.Context(), req)
+			if err != nil {
+				return err
+			}
+
+			return clientCtx.PrintProto(res)
+		},
+	}
+
+	flags.AddQueryFlagsToCmd(cmd)
+
+	return cmd
+}
+
+// CmdWithheldFeeRecords queries the fee shares currently withheld from
+// validators for a consumer due to a pending or executed downtime slash.
+func CmdWithheldFeeRecords() *cobra.Command {
+	cmd := &cobra.Command{
+		Use:   "withheld-fee-records [consumer-id]",
+		Short: "Query the fee shares withheld from validators for a consumer",
+		Args:  cobra.ExactArgs(1),
+		RunE: func(cmd *cobra.Command, args []string) error {
+			clientCtx, err := client.GetClientQueryContext(cmd)
+			if err != nil {
+				return err
+			}
+			queryClient := types.NewQueryClient(clientCtx)
+
+			cid, err := parseConsumerIdArg(args[0])
+			if err != nil {
+				return err
+			}
+			req := &types.QueryWithheldFeeRecordsRequest{ConsumerId: cid}
+			res, err := queryClient.QueryWithheldFeeRecords(cmd.Context(), req)
 			if err != nil {
 				return err
 			}

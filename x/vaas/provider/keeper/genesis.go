@@ -81,6 +81,11 @@ func (k Keeper) InitGenesis(ctx sdk.Context, genState *types.GenesisState) []abc
 				panic(fmt.Errorf("init: set removal time for %d: %w", consumerId, err))
 			}
 		}
+		if cs.PauseExpirationTime != nil {
+			if err := k.SetConsumerPauseExpirationTime(ctx, consumerId, *cs.PauseExpirationTime); err != nil {
+				panic(fmt.Errorf("init: set pause expiration time for %d: %w", consumerId, err))
+			}
+		}
 		// Restore the liveness clock (see ExportGenesis): only when present, so
 		// a consumer that never launched keeps the absent-defaults.
 		if cs.LastAckTime != nil {
@@ -123,6 +128,15 @@ func (k Keeper) InitGenesis(ctx sdk.Context, genState *types.GenesisState) []abc
 			if cs.RemovalTime != nil {
 				if err := k.AppendConsumerToBeRemoved(ctx, consumerId, *cs.RemovalTime); err != nil {
 					panic(fmt.Errorf("init: enqueue removal for %d: %w", consumerId, err))
+				}
+			}
+		case types.CONSUMER_PHASE_PAUSED:
+			if cs.InitParams != nil {
+				k.SetEquivocationEvidenceMinHeight(ctx, consumerId, cs.InitParams.InitialHeight.RevisionHeight)
+			}
+			if cs.PauseExpirationTime != nil {
+				if err := k.AppendConsumerToBeAutoStopped(ctx, consumerId, *cs.PauseExpirationTime); err != nil {
+					panic(fmt.Errorf("init: enqueue auto-stop for %d: %w", consumerId, err))
 				}
 			}
 		}
@@ -265,6 +279,28 @@ func (k Keeper) InitGenesis(ctx sdk.Context, genState *types.GenesisState) []abc
 		}
 	}
 
+	// Import withheld-fee escrow, the last-punished-window bookkeeping, and
+	// this epoch's downtime marks, so a state-export restart preserves them
+	// exactly as the other downtime-detection state above is preserved.
+	for _, rec := range genState.WithheldFeeRecords {
+		key := collections.Join(rec.ConsumerId, rec.ProviderConsAddr)
+		if err := k.WithheldFeeRecords.Set(ctx, key, rec); err != nil {
+			panic(fmt.Errorf("init: set withheld fee record for consumer %d: %w", rec.ConsumerId, err))
+		}
+	}
+	for _, e := range genState.LastPunishedWindowEnds {
+		key := collections.Join(e.ConsumerId, e.ProviderConsAddr)
+		if err := k.LastPunishedWindowEnds.Set(ctx, key, e.WindowEndHeight); err != nil {
+			panic(fmt.Errorf("init: set last punished window end for consumer %d: %w", e.ConsumerId, err))
+		}
+	}
+	for _, e := range genState.EpochDowntimeEntries {
+		key := collections.Join(e.ConsumerId, e.ProviderConsAddr)
+		if err := k.EpochDowntime.Set(ctx, key, true); err != nil {
+			panic(fmt.Errorf("init: set epoch downtime mark for consumer %d: %w", e.ConsumerId, err))
+		}
+	}
+
 	return k.InitGenesisValUpdates(ctx)
 }
 
@@ -319,10 +355,20 @@ func (k Keeper) InitGenesisValUpdates(ctx sdk.Context) []abci.ValidatorUpdate {
 // than resetting them.
 //
 // Downtime-detection state (PendingDowntimeSlashes, PreviousDowntimeParams,
-// EpochShareRecords) IS also exported so a state-export restart preserves
+// EpochShareRecords, WithheldFeeRecords, LastPunishedWindowEnds,
+// EpochDowntimeEntries) IS also exported so a state-export restart preserves
 // slashes awaiting their challenge window, the grace window for evidence
-// computed under superseded downtime params, and the fee-share history used
-// to price downtime slashes.
+// computed under superseded downtime params, the fee-share history used to
+// price downtime slashes, fee escrow pending a challenge window, the
+// last-punished-window bookkeeping that rejects overlapping evidence, and
+// this epoch's downtime marks.
+//
+// The pause-expiration queue (ConsumerPauseExpirationTime /
+// PauseExpirationTimeToConsumerIds) is NOT exported directly, following the
+// same pattern as the spawn-time and removal-time queues: each PAUSED
+// consumer's pause_expiration_time is carried on its ConsumerState and the
+// queue bucket is re-derived from it at InitGenesis (see the PAUSED case
+// there).
 func (k Keeper) ExportGenesis(ctx sdk.Context) *types.GenesisState {
 	allConsumerIds := k.GetAllConsumerIds(ctx)
 
@@ -374,6 +420,13 @@ func (k Keeper) ExportGenesis(ctx sdk.Context) *types.GenesisState {
 			panic(fmt.Errorf("export: failed to read removal time for consumer %d: %w", consumerId, err))
 		}
 
+		if pet, err := k.GetConsumerPauseExpirationTime(ctx, consumerId); err == nil {
+			petCopy := pet // copy to avoid aliasing the loop-local variable
+			cs.PauseExpirationTime = &petCopy
+		} else if !errors.Is(err, collections.ErrNotFound) {
+			panic(fmt.Errorf("export: failed to read pause expiration time for consumer %d: %w", consumerId, err))
+		}
+
 		// Liveness clock: export the last-ack time only when actually recorded
 		// (GetConsumerLastAckTime falls back to block time when absent, which we
 		// must not persist), and the resync counters only when non-zero (zero is
@@ -419,8 +472,7 @@ func (k Keeper) ExportGenesis(ctx sdk.Context) *types.GenesisState {
 
 	// Sanity check: compare stored ConsumerFeePoolTotalShares against the
 	// totals we just recomputed. Divergence is logged but not blocking —
-	// export should never fail on a sanity check (spec section "Genesis
-	// export/import").
+	// export should never fail on a sanity check.
 	k.checkFeePoolTotalsConsistency(ctx, recomputedTotals)
 
 	pendingDowntimeSlashes := k.exportPendingDowntimeSlashes(ctx)
@@ -434,6 +486,10 @@ func (k Keeper) ExportGenesis(ctx sdk.Context) *types.GenesisState {
 	}
 
 	epochShareRecords := k.exportEpochShareRecords(ctx)
+
+	withheldFeeRecords := k.exportWithheldFeeRecords(ctx)
+	lastPunishedWindowEnds := k.exportLastPunishedWindowEnds(ctx)
+	epochDowntimeEntries := k.exportEpochDowntimeEntries(ctx)
 
 	// Only export infraction params if they have actually been set (e.g. a
 	// keeper built directly via setters in a test, without ever running
@@ -463,7 +519,80 @@ func (k Keeper) ExportGenesis(ctx sdk.Context) *types.GenesisState {
 	genState.PreviousDowntimeParams = previousDowntimeParams
 	genState.EpochShareRecords = epochShareRecords
 	genState.InfractionParameters = infractionParams
+	genState.WithheldFeeRecords = withheldFeeRecords
+	genState.LastPunishedWindowEnds = lastPunishedWindowEnds
+	genState.EpochDowntimeEntries = epochDowntimeEntries
 	return genState
+}
+
+// exportWithheldFeeRecords walks WithheldFeeRecords into the flat list
+// carried by genesis.
+func (k Keeper) exportWithheldFeeRecords(ctx sdk.Context) []types.WithheldFeeRecord {
+	records := []types.WithheldFeeRecord{}
+	iter, err := k.WithheldFeeRecords.Iterate(ctx, nil)
+	if err != nil {
+		panic(fmt.Errorf("export: failed to iterate withheld fee records: %w", err))
+	}
+	defer iter.Close()
+	for ; iter.Valid(); iter.Next() {
+		val, err := iter.Value()
+		if err != nil {
+			panic(fmt.Errorf("export: failed to read withheld fee record: %w", err))
+		}
+		records = append(records, val)
+	}
+	return records
+}
+
+// exportLastPunishedWindowEnds walks LastPunishedWindowEnds into the flat
+// list carried by genesis.
+func (k Keeper) exportLastPunishedWindowEnds(ctx sdk.Context) []types.LastPunishedWindowEnd {
+	entries := []types.LastPunishedWindowEnd{}
+	iter, err := k.LastPunishedWindowEnds.Iterate(ctx, nil)
+	if err != nil {
+		panic(fmt.Errorf("export: failed to iterate last punished window ends: %w", err))
+	}
+	defer iter.Close()
+	for ; iter.Valid(); iter.Next() {
+		key, err := iter.Key()
+		if err != nil {
+			panic(fmt.Errorf("export: failed to read last punished window end key: %w", err))
+		}
+		val, err := iter.Value()
+		if err != nil {
+			panic(fmt.Errorf("export: failed to read last punished window end value: %w", err))
+		}
+		entries = append(entries, types.LastPunishedWindowEnd{
+			ConsumerId:       key.K1(),
+			ProviderConsAddr: key.K2(),
+			WindowEndHeight:  val,
+		})
+	}
+	return entries
+}
+
+// exportEpochDowntimeEntries walks EpochDowntime into the flat list carried
+// by genesis. Presence in the collection always means "down" (the keeper
+// only ever calls Set(ctx, key, true)), so the bool value itself is not
+// carried.
+func (k Keeper) exportEpochDowntimeEntries(ctx sdk.Context) []types.EpochDowntimeEntry {
+	entries := []types.EpochDowntimeEntry{}
+	iter, err := k.EpochDowntime.Iterate(ctx, nil)
+	if err != nil {
+		panic(fmt.Errorf("export: failed to iterate epoch downtime marks: %w", err))
+	}
+	defer iter.Close()
+	for ; iter.Valid(); iter.Next() {
+		key, err := iter.Key()
+		if err != nil {
+			panic(fmt.Errorf("export: failed to read epoch downtime key: %w", err))
+		}
+		entries = append(entries, types.EpochDowntimeEntry{
+			ConsumerId:       key.K1(),
+			ProviderConsAddr: key.K2(),
+		})
+	}
+	return entries
 }
 
 // exportPendingDowntimeSlashes walks PendingDowntimeSlashes into the flat

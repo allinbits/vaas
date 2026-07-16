@@ -355,7 +355,7 @@ func (k Keeper) StopAndPrepareForConsumerRemoval(ctx sdk.Context, consumerId uin
 
 	// A stopped chain generates no further evidence or epoch fee distributions
 	// to weigh pending downtime state against, so cancel it outright rather
-	// than leave it to expire on its own (phase-1 review finding 3).
+	// than leave it to expire on its own.
 	if err := k.CancelConsumerDowntimeState(ctx, consumerId); err != nil {
 		return fmt.Errorf("cancelling downtime state for consumer %d: %w", consumerId, err)
 	}
@@ -389,9 +389,9 @@ func (k Keeper) StopAndPrepareForConsumerRemoval(ctx sdk.Context, consumerId uin
 
 // PauseConsumerChain transitions a launched consumer chain into
 // CONSUMER_PHASE_PAUSED following a successful downtime challenge (see
-// MsgChallengeConsumerDowntime, wired into this path in a later task): the
-// challenge proved the validator was live, so its pending downtime slash and
-// this epoch's downtime marks for the consumer are cancelled via
+// HandleChallengeConsumerDowntime, which calls this after paying withheld
+// fees): the challenge proved the validator was live, so its pending downtime
+// slash and this epoch's downtime marks for the consumer are cancelled via
 // CancelConsumerDowntimeState. A paused consumer is excluded from VSC packet
 // queuing (QueueVSCPackets iterates GetAllLaunchedConsumerIds), fee
 // distribution, and evidence handling -- all of which require phase LAUNCHED.
@@ -438,8 +438,8 @@ func (k Keeper) PauseConsumerChain(ctx sdk.Context, consumerId uint64) error {
 // It requires the provider's IBC client of the consumer to have status
 // Active: with defaults, MaxPauseDuration (30 days) exceeds the
 // consumer-client trusting period, so a long pause with idle relayers can
-// expire the client before a resume is proposed (see spec section 9,
-// "Client expiry during a pause"). Resuming onto an expired or frozen client
+// expire the client before a resume is proposed (see docs/consumer-downtime.md,
+// "The PAUSED phase"). Resuming onto an expired or frozen client
 // would strand the consumer LAUNCHED with no way to receive the resync
 // below, so this fails instead and directs the caller to bundle ibc-go's
 // MsgRecoverClient (client substitution, already governance-gated) into the
@@ -513,10 +513,9 @@ func (k Keeper) ResumeConsumerChain(ctx sdk.Context, consumerId uint64) error {
 // (PendingDowntimeSlashes), and the current epoch's downtime marks used to
 // exclude validators from fee distribution (EpochDowntime). It is the shared
 // primitive behind PauseConsumerChain, StopAndPrepareForConsumerRemoval, and
-// DeleteConsumerChain (phase-1 review finding 3): once a consumer pauses,
-// stops, or is deleted, there is no further epoch or challenge window to
-// resolve this state against, so it is cancelled outright instead of left to
-// expire on its own.
+// DeleteConsumerChain: once a consumer pauses, stops, or is deleted, there is
+// no further epoch or challenge window to resolve this state against, so it
+// is cancelled outright instead of left to expire on its own.
 //
 // LastPunishedWindowEnds and WithheldFeeRecords are deliberately left alone
 // here -- they are only erased as part of full consumer removal, in
@@ -550,9 +549,9 @@ func (k Keeper) BeginBlockAutoStopPausedConsumers(ctx sdk.Context) error {
 		return errorsmod.Wrapf(vaastypes.ErrInvalidConsumerState, "getting consumers whose pause has expired: %s", err.Error())
 	}
 	for _, consumerId := range consumerIds {
-		// Only still-paused consumers are stopped here: nothing in this task
-		// resumes a paused consumer, but this guard keeps the sweep correct if
-		// a future path (e.g. a resume message) does.
+		// Only still-paused consumers are stopped here: a resume cancels its
+		// queue entry (CancelConsumerPauseExpiration), so this guard only
+		// fires on a stale entry, which it skips.
 		if k.GetConsumerPhase(ctx, consumerId) != types.CONSUMER_PHASE_PAUSED {
 			continue
 		}
@@ -650,8 +649,7 @@ func (k Keeper) DeleteConsumerChain(ctx sdk.Context, consumerId uint64) (err err
 
 	// Unlike CancelConsumerDowntimeState's callers, deletion is the consumer's
 	// full erasure: withheld fee escrow and infraction-window bookkeeping are
-	// no longer meaningful once the consumer is gone, so they are wiped too
-	// (phase-1 review finding 3).
+	// no longer meaningful once the consumer is gone, so they are wiped too.
 	if err := k.WithheldFeeRecords.Clear(ctx, collections.NewPrefixedPairRange[uint64, []byte](consumerId)); err != nil {
 		return fmt.Errorf("clearing withheld fee records for consumer %d: %w", consumerId, err)
 	}

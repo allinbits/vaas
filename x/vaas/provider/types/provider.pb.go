@@ -1097,9 +1097,11 @@ func (m *PreviousDowntimeParams) GetChangedAt() time.Time {
 }
 
 // WithheldFeeRecord tracks fee tokens withheld from a validator pending the
-// outcome of a downtime challenge window; a successful challenge refunds the
+// outcome of a downtime challenge window; a successful challenge pays the
 // amount to the validator, while an unchallenged or unsuccessfully
-// challenged entry is swept back to the consumer fee pool once it expires.
+// challenged entry simply has its record deleted once it expires -- the
+// funds themselves never leave the consumer fee pool, and a failed challenge
+// changes nothing.
 type WithheldFeeRecord struct {
 	ConsumerId       uint64      `protobuf:"varint,1,opt,name=consumer_id,json=consumerId,proto3" json:"consumer_id,omitempty"`
 	ProviderConsAddr []byte      `protobuf:"bytes,2,opt,name=provider_cons_addr,json=providerConsAddr,proto3" json:"provider_cons_addr,omitempty"`

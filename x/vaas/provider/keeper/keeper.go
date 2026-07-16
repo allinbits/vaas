@@ -12,6 +12,7 @@ import (
 	tmprotocrypto "github.com/cometbft/cometbft/proto/tendermint/crypto"
 
 	ibchost "github.com/cosmos/ibc-go/v10/modules/core/exported"
+	ibctmtypes "github.com/cosmos/ibc-go/v10/modules/light-clients/07-tendermint"
 
 	"cosmossdk.io/collections"
 	"cosmossdk.io/collections/indexes"
@@ -165,6 +166,15 @@ type Keeper struct {
 	// OverrideWindowEndTimestampForTest to supply an anchor timestamp without
 	// fabricating real IBC consensus states.
 	windowEndTimestampFn func(ctx sdk.Context, clientId string, windowEnd int64) (time.Time, error)
+
+	// verifyDowntimeChallengeHeaderFn verifies a MsgChallengeConsumerDowntime
+	// header against the consumer's IBC client. Nil in production, where
+	// verifyDowntimeChallengeHeader falls back to the real 07-tendermint
+	// light client module (the same verification CheckMisbehaviour uses).
+	// Tests may override it via OverrideVerifyDowntimeChallengeHeaderForTest
+	// to bypass the real light-client call when a real client store proves
+	// impractical to fabricate.
+	verifyDowntimeChallengeHeaderFn func(ctx sdk.Context, clientId string, header *ibctmtypes.Header) error
 }
 
 // NewKeeper creates a new provider Keeper instance
@@ -377,6 +387,15 @@ func (k *Keeper) SetGovKeeper(govKeeper govkeeper.Keeper) {
 // anchor timestamp without fabricating real IBC consensus states.
 func (k *Keeper) OverrideWindowEndTimestampForTest(fn func(ctx sdk.Context, clientId string, windowEnd int64) (time.Time, error)) {
 	k.windowEndTimestampFn = fn
+}
+
+// OverrideVerifyDowntimeChallengeHeaderForTest replaces the downtime
+// challenge header light-client verification with fn. Production code always
+// uses the real 07-tendermint light client module (see
+// Keeper.verifyDowntimeChallengeHeader); this exists solely so unit tests can
+// bypass fabricating a real IBC client store.
+func (k *Keeper) OverrideVerifyDowntimeChallengeHeaderForTest(fn func(ctx sdk.Context, clientId string, header *ibctmtypes.Header) error) {
+	k.verifyDowntimeChallengeHeaderFn = fn
 }
 
 // Logger returns a module-specific logger.

@@ -201,7 +201,7 @@ func TestBeginBlockAutoStopPausedConsumers_SkipsNoLongerPaused(t *testing.T) {
 
 // TestStopAndPrepareForConsumerRemoval_CancelsDowntimeState verifies that
 // stopping a consumer (whether from the liveness sweep or elsewhere) cancels
-// any pending downtime state, per phase-1 review finding 3.
+// any pending downtime state.
 func TestStopAndPrepareForConsumerRemoval_CancelsDowntimeState(t *testing.T) {
 	k, ctx, ctrl, mocks := testkeeper.GetProviderKeeperAndCtx(t, testkeeper.NewInMemKeeperParams(t))
 	defer ctrl.Finish()
@@ -225,7 +225,9 @@ func TestStopAndPrepareForConsumerRemoval_CancelsDowntimeState(t *testing.T) {
 // TestDeleteConsumerChain_ClearsDowntimeAndWithheldState verifies that
 // deleting a consumer erases every downtime-related record for it: pending
 // downtime slashes, epoch downtime marks, withheld fee records, and
-// last-punished-window bookkeeping (phase-1 review finding 3).
+// last-punished-window bookkeeping -- and that the WithheldFeeRecords /
+// LastPunishedWindowEnds range-deletes are scoped to the deleted consumer id
+// only, leaving another consumer's records untouched.
 func TestDeleteConsumerChain_ClearsDowntimeAndWithheldState(t *testing.T) {
 	k, ctx, ctrl, mocks := testkeeper.GetProviderKeeperAndCtx(t, testkeeper.NewInMemKeeperParams(t))
 	defer ctrl.Finish()
@@ -251,6 +253,22 @@ func TestDeleteConsumerChain_ClearsDowntimeAndWithheldState(t *testing.T) {
 	}))
 	require.NoError(t, k.LastPunishedWindowEnds.Set(ctx, pairKey, 100))
 
+	// A second, untouched consumer with its own withheld-fee record and
+	// last-punished-window entry, kept in a phase that DeleteConsumerChain
+	// would reject (only STOPPED can be deleted), so it is never itself
+	// deleted here -- it exists purely to prove the range-delete on cid does
+	// not bleed into other consumer ids.
+	otherCid := k.FetchAndIncrementConsumerId(ctx)
+	k.SetConsumerPhase(ctx, otherCid, providertypes.CONSUMER_PHASE_LAUNCHED)
+	otherPairKey := collections.Join(otherCid, providerAddr.ToSdkConsAddr().Bytes())
+	require.NoError(t, k.WithheldFeeRecords.Set(ctx, otherPairKey, providertypes.WithheldFeeRecord{
+		ConsumerId:       otherCid,
+		ProviderConsAddr: providerAddr.ToSdkConsAddr().Bytes(),
+		Amount:           sdk.NewInt64Coin("uphoton", 75),
+		ExpiresAt:        ctx.BlockTime().Add(time.Hour),
+	}))
+	require.NoError(t, k.LastPunishedWindowEnds.Set(ctx, otherPairKey, 200))
+
 	require.NoError(t, k.DeleteConsumerChain(ctx, cid))
 
 	_, err := k.PendingDowntimeSlashes.Get(ctx, pairKey)
@@ -260,6 +278,14 @@ func TestDeleteConsumerChain_ClearsDowntimeAndWithheldState(t *testing.T) {
 	require.ErrorIs(t, err, collections.ErrNotFound)
 	_, err = k.LastPunishedWindowEnds.Get(ctx, pairKey)
 	require.ErrorIs(t, err, collections.ErrNotFound)
+
+	// The other consumer's records must survive untouched.
+	otherWithheld, err := k.WithheldFeeRecords.Get(ctx, otherPairKey)
+	require.NoError(t, err, "unrelated consumer's withheld fee record must not be deleted")
+	require.Equal(t, sdk.NewInt64Coin("uphoton", 75), otherWithheld.Amount)
+	otherWindowEnd, err := k.LastPunishedWindowEnds.Get(ctx, otherPairKey)
+	require.NoError(t, err, "unrelated consumer's last-punished-window end must not be deleted")
+	require.Equal(t, int64(200), otherWindowEnd)
 }
 
 // TestCancelConsumerPauseExpiration_RemovesBucketEntryWithoutAffectingOthers
@@ -420,11 +446,12 @@ func TestResumeConsumerChain_SendFailureFailsResume(t *testing.T) {
 	require.Equal(t, []uint64{cid}, queued.Ids)
 }
 
-// TestResumeConsumerChain_RejectsInactiveClient verifies the pre-flight from
-// spec section 9 ("Client expiry during a pause"): if the provider's client
-// of the consumer is not Active, resume fails with guidance to bundle
-// ibc-go's MsgRecoverClient into the same governance proposal, and no state
-// changes (phase stays PAUSED, the auto-stop schedule survives).
+// TestResumeConsumerChain_RejectsInactiveClient verifies the pre-flight
+// described in docs/consumer-downtime.md ("The PAUSED phase"): if the
+// provider's client of the consumer is not Active, resume fails with
+// guidance to bundle ibc-go's MsgRecoverClient into the same governance
+// proposal, and no state changes (phase stays PAUSED, the auto-stop
+// schedule survives).
 func TestResumeConsumerChain_RejectsInactiveClient(t *testing.T) {
 	for _, status := range []ibcexported.Status{ibcexported.Expired, ibcexported.Frozen} {
 		t.Run(string(status), func(t *testing.T) {
