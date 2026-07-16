@@ -1029,6 +1029,50 @@ func TestHandleConsumerDowntimeRejectsDuplicatePending(t *testing.T) {
 	require.Contains(t, err.Error(), "already pending")
 }
 
+func TestHandleConsumerDowntimeRejectsOverlappingPunishedWindow(t *testing.T) {
+	windowEndTime := time.Date(2025, 6, 1, 0, 0, 0, 0, time.UTC)
+	spawnTime := windowEndTime.Add(-30 * 24 * time.Hour)
+	infractionParams := downtimeParams(8, "0.5", 0, 7*24*time.Hour, 72*time.Hour)
+
+	providerKeeper, ctx, ctrl, mocks, consumerId, providerAddr := setupDowntimeTest(t, infractionParams, spawnTime, windowEndTime)
+	defer ctrl.Finish()
+	ctx = ctx.WithBlockTime(windowEndTime)
+
+	providerKeeper.SetEpochShareRecord(ctx, consumerId, windowEndTime, math.NewInt(1000))
+	mocks.MockPhotonKeeper.EXPECT().ConversionRate(ctx).Return(math.LegacyNewDec(2), nil).Times(2)
+
+	consAddr := providerAddr.ToSdkConsAddr()
+	pendingKey := collections.Join(consumerId, consAddr.Bytes())
+
+	// windowStart 93, span 8 => InfractionHeight (window end) 100.
+	firstPacket := vaastypes.NewEvidencePacketData(sdk.ConsAddress(consAddr), 93, []byte{0x3F}, 8, 8, math.LegacyMustNewDecFromStr("0.5"))
+	require.NoError(t, providerKeeper.HandleConsumerEvidencePacket(ctx, consumerId, firstPacket))
+
+	// Simulate the pending slash maturing and executing: the epoch sweep
+	// removes the PendingDowntimeSlashes entry (see SweepPendingDowntimeSlashes),
+	// but LastPunishedWindowEnds must retain the window-end height so a
+	// re-submission for the same or an overlapping window is still caught.
+	require.NoError(t, providerKeeper.PendingDowntimeSlashes.Remove(ctx, pendingKey))
+
+	// An exact duplicate of the punished window (start 93 <= last punished
+	// end 100) is rejected even though nothing is pending anymore.
+	duplicate := vaastypes.NewEvidencePacketData(sdk.ConsAddress(consAddr), 93, []byte{0x3F}, 8, 8, math.LegacyMustNewDecFromStr("0.5"))
+	err := providerKeeper.HandleConsumerEvidencePacket(ctx, consumerId, duplicate)
+	require.Error(t, err)
+	require.Contains(t, err.Error(), "already punished")
+
+	// A window overlapping the punished one (start 95 <= 100) is likewise
+	// rejected.
+	overlapping := vaastypes.NewEvidencePacketData(sdk.ConsAddress(consAddr), 95, []byte{0x3F}, 8, 8, math.LegacyMustNewDecFromStr("0.5"))
+	err = providerKeeper.HandleConsumerEvidencePacket(ctx, consumerId, overlapping)
+	require.Error(t, err)
+	require.Contains(t, err.Error(), "already punished")
+
+	// A later, disjoint window (start 101 > 100) is accepted.
+	later := vaastypes.NewEvidencePacketData(sdk.ConsAddress(consAddr), 101, []byte{0x3F}, 8, 8, math.LegacyMustNewDecFromStr("0.5"))
+	require.NoError(t, providerKeeper.HandleConsumerEvidencePacket(ctx, consumerId, later))
+}
+
 func TestHandleConsumerDowntimeRejectsStaleEvidence(t *testing.T) {
 	windowEndTime := time.Date(2025, 6, 1, 0, 0, 0, 0, time.UTC)
 	spawnTime := windowEndTime.Add(-30 * 24 * time.Hour)

@@ -39,4 +39,5 @@ var (
 	MissedBlockBitmapsPrefix     = collections.NewPrefix(16)
 	FirstTrackedHeightsPrefix    = collections.NewPrefix(17)
 	StagedDowntimeParamsPrefix   = collections.NewPrefix(18)
+	ProviderChainIdPrefix        = collections.NewPrefix(19)
 )

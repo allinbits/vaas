@@ -8,6 +8,8 @@ import (
 
 	abci "github.com/cometbft/cometbft/abci/types"
 
+	ibctmtypes "github.com/cosmos/ibc-go/v10/modules/light-clients/07-tendermint"
+
 	errorsmod "cosmossdk.io/errors"
 
 	sdk "github.com/cosmos/cosmos-sdk/types"
@@ -21,6 +23,17 @@ import (
 func (k Keeper) OnRecvVSCPacketV2(ctx sdk.Context, consumerClientID string, newChanges vaastypes.ValidatorSetChangePacketData) error {
 	if err := newChanges.Validate(); err != nil {
 		return errorsmod.Wrapf(err, "error validating VSCPacket data")
+	}
+
+	// Authenticate the packet's source before touching any state: a client
+	// tracking an unexpected chain id is rejected outright, before the
+	// dedup check below and every state mutation that follows it
+	// (SetLastVSCRecvTime, the ProviderClientID heal, param staging, valset
+	// apply). Anyone can permissionlessly create an IBC v2 client, so
+	// DestinationClient alone does not prove the packet came from the
+	// provider; pinning the chain id closes that gap.
+	if err := k.authenticateProviderChainID(ctx, consumerClientID); err != nil {
+		return err
 	}
 
 	highestID, found, err := k.GetHighestValsetUpdateID(ctx)
@@ -108,5 +121,50 @@ func (k Keeper) OnRecvVSCPacketV2(ctx sdk.Context, consumerClientID string, newC
 		"len updates", len(newChanges.ValidatorUpdates),
 		"consumerClientID", consumerClientID,
 	)
+	return nil
+}
+
+// authenticateProviderChainID pins the consumer's inbound VSC traffic to a
+// single provider chain id. Anyone can permissionlessly create an IBC v2
+// client and get a relayer to route packets through it, so the fact that
+// consumerClientID is a registered, counterparty-linked client is not by
+// itself proof the packets originate from the real provider chain -- it only
+// proves *some* chain is on the other end. The first VSC packet ever
+// accepted teaches the consumer the provider's chain id from that packet's
+// destination client; every packet after that must arrive over a client
+// tracking the same chain id, or it is rejected before any state changes
+// (see the call site in OnRecvVSCPacketV2). A same-chain-id client
+// replacement -- e.g. swapping an expired/frozen client for a fresh one --
+// remains allowed, since the ProviderClientID heal logic below is unaffected
+// by this gate as long as the chain id matches.
+//
+// Residual trust boundary: this only pins the chain-id *string*. A chain
+// that reuses the same chain-id (a fork, or a chain deliberately renamed to
+// collide) still has to produce a light-client history that convinces the
+// consumer's tendermint light client of that chain id; forging that history
+// is the job of the misbehaviour/light-client-fraud machinery, not this
+// check.
+func (k Keeper) authenticateProviderChainID(ctx sdk.Context, consumerClientID string) error {
+	clientState, found := k.clientKeeper.GetClientState(ctx, consumerClientID)
+	if !found {
+		return errorsmod.Wrapf(types.ErrInvalidProviderClient, "no client state found for client %s", consumerClientID)
+	}
+	tmClientState, ok := clientState.(*ibctmtypes.ClientState)
+	if !ok {
+		return errorsmod.Wrapf(types.ErrInvalidProviderClient, "client %s is not a tendermint client", consumerClientID)
+	}
+
+	pinned, found := k.GetProviderChainId(ctx)
+	if !found {
+		k.SetProviderChainId(ctx, tmClientState.ChainId)
+		return nil
+	}
+
+	if pinned != tmClientState.ChainId {
+		return errorsmod.Wrapf(types.ErrInvalidProviderClient,
+			"client %s tracks chain id %s, expected pinned provider chain id %s",
+			consumerClientID, tmClientState.ChainId, pinned)
+	}
+
 	return nil
 }

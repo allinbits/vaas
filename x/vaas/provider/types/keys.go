@@ -88,6 +88,8 @@ const (
 	EpochShareRecordsKeyName = "EpochShareRecordsKey"
 
 	PendingDowntimeSlashesKeyName = "PendingDowntimeSlashesKey"
+
+	LastPunishedWindowEndsKeyName = "LastPunishedWindowEndsKey"
 )
 
 // Collection key prefixes for use with cosmossdk.io/collections
@@ -127,5 +129,7 @@ var (
 	EpochShareRecordsPrefix                = collections.NewPrefix(32)
 	PendingDowntimeSlashesPrefix           = collections.NewPrefix(33)
 	PreviousDowntimeParamsPrefix           = collections.NewPrefix(34)
-	ParametersPrefix                       = collections.NewPrefix(0xFF)
+	LastPunishedWindowEndsPrefix           = collections.NewPrefix(35)
+	// 36 is left free for a later task.
+	ParametersPrefix = collections.NewPrefix(0xFF)
 )

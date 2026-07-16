@@ -81,6 +81,16 @@ func (im IBCModule) OnRecvPacket(
 		}
 	}
 
+	if payload.SourcePort != vaastypes.ProviderAppID {
+		logger.Error("invalid source port",
+			"expected", vaastypes.ProviderAppID,
+			"got", payload.SourcePort,
+		)
+		return channeltypesv2.RecvPacketResult{
+			Status: channeltypesv2.PacketStatus_Failure,
+		}
+	}
+
 	var data vaastypes.ValidatorSetChangePacketData
 	if err := vaastypes.ModuleCdc.UnmarshalJSON(payload.Value, &data); err != nil {
 		ackErr := errorsmod.Wrapf(sdkerrors.ErrInvalidType, "cannot unmarshal VSCPacket data")

@@ -112,3 +112,19 @@ func TestInfractionParametersDowntimeWindowValidation(t *testing.T) {
 	bad.DowntimeChallengeWindow = 30 * 24 * time.Hour
 	require.Error(t, types.ValidateInfractionParamsAgainst(bad, types.DefaultTrustingPeriodFraction))
 }
+
+// TestInfractionParametersRejectsEvidenceMaxAgeAboveChallengeWindow verifies
+// that downtime_evidence_max_age can never exceed downtime_challenge_window:
+// otherwise, once a pending slash matures and executes, evidence for the
+// same (now-closed) window could still be re-accepted -- since the evidence
+// is only judged too stale relative to DowntimeEvidenceMaxAge -- and queue a
+// second slash for an infraction already punished.
+func TestInfractionParametersRejectsEvidenceMaxAgeAboveChallengeWindow(t *testing.T) {
+	ip := types.DefaultInfractionParameters()
+	ip.DowntimeChallengeWindow = 10 * time.Second
+	ip.DowntimeEvidenceMaxAge = 10 * time.Second
+	require.NoError(t, ip.Validate(), "equal challenge window and evidence max age must be accepted")
+
+	ip.DowntimeEvidenceMaxAge = 10*time.Second + time.Nanosecond
+	require.Error(t, ip.Validate(), "evidence max age above challenge window must be rejected")
+}

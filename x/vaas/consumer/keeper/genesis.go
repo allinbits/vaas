@@ -52,6 +52,12 @@ func (k Keeper) InitGenesis(ctx sdk.Context, state *types.GenesisState) []abci.V
 		k.SetProviderClientID(ctx, cid)
 		k.SetHeightValsetUpdateID(ctx, uint64(ctx.BlockHeight()), uint64(0))
 
+		// Pre-pin the provider chain id from the client state we were just
+		// handed at genesis, rather than waiting for the first VSC packet to
+		// establish it (see authenticateProviderChainID in relay.go). This
+		// narrows the window during which no pin exists at all.
+		k.SetProviderChainId(ctx, state.Provider.ClientState.ChainId)
+
 		k.Logger(ctx).Info("create new provider chain client",
 			"client id", cid,
 		)

@@ -69,6 +69,11 @@ type Keeper struct {
 	MissedBlockBitmaps     collections.Map[[]byte, []byte]
 	FirstTrackedHeights    collections.Map[[]byte, int64]
 	StagedDowntimeParams   collections.Item[vaastypes.DowntimeParams]
+	// ProviderChainId is the chain id the consumer has pinned as belonging to
+	// the provider. Set from the destination client's tendermint chain id the
+	// first time a VSC packet is accepted; see authenticateProviderChainID in
+	// relay.go for how it is used and its residual trust boundary.
+	ProviderChainId collections.Item[string]
 }
 
 // NewKeeper creates a new Consumer Keeper instance
@@ -119,6 +124,7 @@ func NewKeeper(
 		MissedBlockBitmaps:     collections.NewMap(sb, types.MissedBlockBitmapsPrefix, "missed_block_bitmaps", collections.BytesKey, collections.BytesValue),
 		FirstTrackedHeights:    collections.NewMap(sb, types.FirstTrackedHeightsPrefix, "first_tracked_heights", collections.BytesKey, collections.Int64Value),
 		StagedDowntimeParams:   collections.NewItem(sb, types.StagedDowntimeParamsPrefix, "staged_downtime_params", codec.CollValue[vaastypes.DowntimeParams](cdc)),
+		ProviderChainId:        collections.NewItem(sb, types.ProviderChainIdPrefix, "provider_chain_id", collections.StringValue),
 	}
 
 	schema, err := sb.Build()
@@ -163,6 +169,7 @@ func NewNonZeroKeeper(cdc codec.BinaryCodec, storeService corestoretypes.KVStore
 		MissedBlockBitmaps:     collections.NewMap(sb, types.MissedBlockBitmapsPrefix, "missed_block_bitmaps", collections.BytesKey, collections.BytesValue),
 		FirstTrackedHeights:    collections.NewMap(sb, types.FirstTrackedHeightsPrefix, "first_tracked_heights", collections.BytesKey, collections.Int64Value),
 		StagedDowntimeParams:   collections.NewItem(sb, types.StagedDowntimeParamsPrefix, "staged_downtime_params", codec.CollValue[vaastypes.DowntimeParams](cdc)),
+		ProviderChainId:        collections.NewItem(sb, types.ProviderChainIdPrefix, "provider_chain_id", collections.StringValue),
 	}
 
 	schema, err := sb.Build()
@@ -238,6 +245,23 @@ func (k Keeper) GetProviderClientID(ctx context.Context) (string, bool) {
 		return "", false
 	}
 	return clientID, true
+}
+
+// SetProviderChainId pins the chain id the consumer treats as belonging to
+// the provider. See authenticateProviderChainID in relay.go.
+func (k Keeper) SetProviderChainId(ctx context.Context, chainID string) {
+	if err := k.ProviderChainId.Set(ctx, chainID); err != nil {
+		panic(fmt.Errorf("failed to set provider chain id: %w", err))
+	}
+}
+
+// GetProviderChainId gets the pinned provider chain id, if one has been set.
+func (k Keeper) GetProviderChainId(ctx context.Context) (string, bool) {
+	chainID, err := k.ProviderChainId.Get(ctx)
+	if err != nil {
+		return "", false
+	}
+	return chainID, true
 }
 
 // SetPendingChanges sets the pending validator set change packet that haven't been flushed to ABCI

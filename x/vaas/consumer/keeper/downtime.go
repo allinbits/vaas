@@ -164,8 +164,20 @@ func (k Keeper) GetDowntimeParams(ctx sdk.Context) (window int64, minSigned math
 // StageDowntimeParams stages new downtime parameters to take effect at the
 // next window boundary, so a parameter change never applies to a window
 // that is already in progress. A no-op if p already matches the current
-// parameters.
+// parameters. Rejects (logs and skips staging) params that fail
+// validDowntimeParams, e.g. a VSC packet carrying an empty
+// `"downtime_params": {}` (SignedBlocksWindow 0, nil-backed
+// MinSignedPerWindow).
 func (k Keeper) StageDowntimeParams(ctx sdk.Context, p vaastypes.DowntimeParams) {
+	if !validDowntimeParams(p) {
+		k.Logger(ctx).Error(
+			"rejected invalid downtime params echoed on VSC packet",
+			"signed_blocks_window", p.SignedBlocksWindow,
+			"min_signed_per_window", p.MinSignedPerWindow,
+		)
+		return
+	}
+
 	current := k.GetConsumerParams(ctx)
 	if current.SignedBlocksWindow == p.SignedBlocksWindow && current.MinSignedPerWindow.Equal(p.MinSignedPerWindow) {
 		return
@@ -173,6 +185,19 @@ func (k Keeper) StageDowntimeParams(ctx sdk.Context, p vaastypes.DowntimeParams)
 	if err := k.StagedDowntimeParams.Set(ctx, p); err != nil {
 		panic(err)
 	}
+}
+
+// validDowntimeParams reports whether p carries a usable tumbling window
+// size and minimum-signed fraction: a positive SignedBlocksWindow and a
+// non-nil MinSignedPerWindow strictly between 0 and 1.
+func validDowntimeParams(p vaastypes.DowntimeParams) bool {
+	if p.SignedBlocksWindow <= 0 {
+		return false
+	}
+	if p.MinSignedPerWindow.IsNil() || !p.MinSignedPerWindow.IsPositive() || !p.MinSignedPerWindow.LT(math.LegacyOneDec()) {
+		return false
+	}
+	return true
 }
 
 // applyStagedDowntimeParams pops any staged downtime parameters into the

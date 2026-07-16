@@ -170,6 +170,68 @@ func TestStagedDowntimeParamsActivateAtWindowBoundary(t *testing.T) {
 	require.True(t, math.LegacyMustNewDecFromStr("0.5").Equal(minSigned))
 }
 
+func TestStageDowntimeParamsRejectsInvalid(t *testing.T) {
+	consumerKeeper, ctx, ctrl, _ := testkeeper.GetConsumerKeeperAndCtx(t, testkeeper.NewInMemKeeperParams(t))
+	defer ctrl.Finish()
+
+	setDowntimeParams(ctx, consumerKeeper, 4, "0.5")
+
+	testCases := []struct {
+		name string
+		p    vaastypes.DowntimeParams
+	}{
+		{
+			// what a VSC packet carrying `"downtime_params": {}` decodes to:
+			// zero SignedBlocksWindow and a nil-backed MinSignedPerWindow.
+			name: "zero value",
+			p:    vaastypes.DowntimeParams{},
+		},
+		{
+			name: "non-positive window",
+			p: vaastypes.DowntimeParams{
+				SignedBlocksWindow: 0,
+				MinSignedPerWindow: math.LegacyMustNewDecFromStr("0.5"),
+			},
+		},
+		{
+			name: "nil min signed",
+			p: vaastypes.DowntimeParams{
+				SignedBlocksWindow: 4,
+			},
+		},
+		{
+			name: "min signed not positive",
+			p: vaastypes.DowntimeParams{
+				SignedBlocksWindow: 4,
+				MinSignedPerWindow: math.LegacyZeroDec(),
+			},
+		},
+		{
+			name: "min signed at or above one",
+			p: vaastypes.DowntimeParams{
+				SignedBlocksWindow: 4,
+				MinSignedPerWindow: math.LegacyOneDec(),
+			},
+		},
+	}
+
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			require.NotPanics(t, func() {
+				consumerKeeper.StageDowntimeParams(ctx, tc.p)
+			})
+
+			_, err := consumerKeeper.StagedDowntimeParams.Get(ctx)
+			require.Error(t, err, "invalid params must not be staged")
+
+			// current params are untouched
+			window, minSigned := consumerKeeper.GetDowntimeParams(ctx)
+			require.Equal(t, int64(4), window)
+			require.True(t, math.LegacyMustNewDecFromStr("0.5").Equal(minSigned))
+		})
+	}
+}
+
 func mustHasPendingPacket(t *testing.T, ctx sdk.Context, k keeper.Keeper, addr []byte) bool {
 	t.Helper()
 	has, err := k.PendingEvidencePackets.Has(ctx, addr)

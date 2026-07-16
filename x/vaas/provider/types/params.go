@@ -171,6 +171,12 @@ func (ip InfractionParameters) Validate() error {
 	if err := vaastypes.ValidateDuration(ip.DowntimeEvidenceMaxAge); err != nil {
 		return fmt.Errorf("downtime_evidence_max_age: %s", err)
 	}
+	if ip.DowntimeEvidenceMaxAge > ip.DowntimeChallengeWindow {
+		return fmt.Errorf(
+			"downtime_evidence_max_age (%s) must not exceed downtime_challenge_window (%s)",
+			ip.DowntimeEvidenceMaxAge, ip.DowntimeChallengeWindow,
+		)
+	}
 	return nil
 }
 

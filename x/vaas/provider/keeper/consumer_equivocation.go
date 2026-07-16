@@ -340,6 +340,33 @@ func (k Keeper) HandleConsumerDowntime(ctx sdk.Context, consumerId uint64, evide
 	}
 
 	pendingKey := collections.Join(consumerId, providerAddr.ToSdkConsAddr().Bytes())
+
+	// Reject evidence for a window that overlaps or predates one already
+	// punished for this (consumer, validator) pair, even after the earlier
+	// pending slash has matured, executed, and been removed from
+	// PendingDowntimeSlashes -- otherwise the same infraction could be
+	// re-submitted and slashed a second time once its original pending
+	// entry is gone.
+	lastPunishedWindowEnd, err := k.LastPunishedWindowEnds.Get(ctx, pendingKey)
+	if err == nil {
+		if evidencePacket.WindowStartHeight <= lastPunishedWindowEnd {
+			return errorsmod.Wrapf(
+				vaastypes.ErrInvalidPacketData,
+				"downtime evidence for consumer chain %d overlaps a window already punished for validator %s: window start height %d, last punished window end %d",
+				consumerId,
+				providerAddr.String(),
+				evidencePacket.WindowStartHeight,
+				lastPunishedWindowEnd,
+			)
+		}
+	} else if !errors.Is(err, collections.ErrNotFound) {
+		return errorsmod.Wrapf(
+			vaastypes.ErrInvalidPacketData,
+			"checking last punished window for consumer chain %d: %s",
+			consumerId, err,
+		)
+	}
+
 	hasPending, err := k.PendingDowntimeSlashes.Has(ctx, pendingKey)
 	if err != nil {
 		return errorsmod.Wrapf(
@@ -385,6 +412,13 @@ func (k Keeper) HandleConsumerDowntime(ctx sdk.Context, consumerId uint64, evide
 		return errorsmod.Wrapf(
 			vaastypes.ErrInvalidPacketData,
 			"storing pending downtime slash for consumer chain %d: %s",
+			consumerId, err,
+		)
+	}
+	if err := k.LastPunishedWindowEnds.Set(ctx, pendingKey, evidencePacket.InfractionHeight); err != nil {
+		return errorsmod.Wrapf(
+			vaastypes.ErrInvalidPacketData,
+			"storing last punished window for consumer chain %d: %s",
 			consumerId, err,
 		)
 	}
@@ -452,6 +486,15 @@ func (k Keeper) windowEndTimestamp(ctx sdk.Context, clientId string, windowEnd i
 		return time.Time{}, fmt.Errorf("cannot anchor evidence window time")
 	}
 	return time.Unix(0, int64(consensusState.GetTimestamp())), nil //nolint:staticcheck
+}
+
+// WindowEndTimestampForTest exposes windowEndTimestamp for tests exercising
+// the real IBC-client-backed anchor resolution -- i.e. with
+// windowEndTimestampFn left unset, unlike OverrideWindowEndTimestampForTest.
+// Production code never calls this directly; HandleConsumerDowntime always
+// goes through windowEndTimestamp itself.
+func (k Keeper) WindowEndTimestampForTest(ctx sdk.Context, clientId string, windowEnd int64) (time.Time, error) {
+	return k.windowEndTimestamp(ctx, clientId, windowEnd)
 }
 
 //

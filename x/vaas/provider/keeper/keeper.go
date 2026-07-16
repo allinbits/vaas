@@ -128,6 +128,15 @@ type Keeper struct {
 	// acceptance; see the epoch sweep that executes matured entries.
 	PendingDowntimeSlashes collections.Map[collections.Pair[uint64, []byte], types.PendingDowntimeSlash]
 
+	// LastPunishedWindowEnds records, per (consumer_id, provider cons addr),
+	// the InfractionHeight (window-end height) of the last downtime evidence
+	// that was accepted and queued as a pending slash for that pair. Checked
+	// in HandleConsumerDowntime to reject evidence for a window that
+	// overlaps or predates one already punished, even after the earlier
+	// pending slash has matured, executed, and been removed from
+	// PendingDowntimeSlashes.
+	LastPunishedWindowEnds collections.Map[collections.Pair[uint64, []byte], int64]
+
 	// windowEndTimestampFn resolves the timestamp anchor for a downtime
 	// evidence window. Nil in production, where NewKeeper leaves it unset and
 	// windowEndTimestamp falls back to the real IBC-client-backed
@@ -280,6 +289,13 @@ func NewKeeper(
 		types.PendingDowntimeSlashesKeyName,
 		collections.PairKeyCodec(collections.Uint64Key, collections.BytesKey),
 		codec.CollValue[types.PendingDowntimeSlash](cdc),
+	)
+
+	k.LastPunishedWindowEnds = collections.NewMap(
+		sb, types.LastPunishedWindowEndsPrefix,
+		types.LastPunishedWindowEndsKeyName,
+		collections.PairKeyCodec(collections.Uint64Key, collections.BytesKey),
+		collections.Int64Value,
 	)
 
 	schema, err := sb.Build()

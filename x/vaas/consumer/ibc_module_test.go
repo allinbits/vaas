@@ -24,8 +24,9 @@ import (
 // handler has already verified carries a registered counterparty, and which
 // SendEvidencePackets later needs to address packets back to the provider.
 func TestIBCModuleOnRecvPacketStoresDestinationClientAsProviderClient(t *testing.T) {
-	consumerKeeper, ctx, ctrl, _ := testkeeper.GetConsumerKeeperAndCtx(t, testkeeper.NewInMemKeeperParams(t))
+	consumerKeeper, ctx, ctrl, mocks := testkeeper.GetConsumerKeeperAndCtx(t, testkeeper.NewInMemKeeperParams(t))
 	defer ctrl.Finish()
+	testkeeper.StubClientState(mocks, "provider-0")
 
 	module := consumer.NewIBCModule(&consumerKeeper)
 
@@ -58,8 +59,9 @@ func TestIBCModuleOnRecvPacketStoresDestinationClientAsProviderClient(t *testing
 // never correcting it: every accepted VSC packet must resync ProviderClientID
 // to whichever client actually delivered it.
 func TestIBCModuleOnRecvPacketHealsStaleProviderClient(t *testing.T) {
-	consumerKeeper, ctx, ctrl, _ := testkeeper.GetConsumerKeeperAndCtx(t, testkeeper.NewInMemKeeperParams(t))
+	consumerKeeper, ctx, ctrl, mocks := testkeeper.GetConsumerKeeperAndCtx(t, testkeeper.NewInMemKeeperParams(t))
 	defer ctrl.Finish()
+	testkeeper.StubClientState(mocks, "provider-0")
 
 	staleGenesisClientID := "07-tendermint-0"
 	consumerKeeper.SetProviderClientID(ctx, staleGenesisClientID)
@@ -85,4 +87,34 @@ func TestIBCModuleOnRecvPacketHealsStaleProviderClient(t *testing.T) {
 	require.True(t, found)
 	require.Equal(t, liveClientID, clientID,
 		"ProviderClientID must heal to the client actually delivering VSC packets, not stay stuck on the stale genesis client")
+}
+
+// TestIBCModuleOnRecvPacketRejectsWrongSourcePort guards against accepting a
+// VSC-shaped packet whose SourcePort isn't the provider's app ID. Without
+// this check, a payload merely matching the consumer's own DestinationPort
+// would be handled as if it came from the provider, no matter which module
+// on the counterparty chain actually sent it.
+func TestIBCModuleOnRecvPacketRejectsWrongSourcePort(t *testing.T) {
+	consumerKeeper, ctx, ctrl, _ := testkeeper.GetConsumerKeeperAndCtx(t, testkeeper.NewInMemKeeperParams(t))
+	defer ctrl.Finish()
+
+	module := consumer.NewIBCModule(&consumerKeeper)
+
+	pk, err := cryptocodec.ToCmtProtoPublicKey(ed25519.GenPrivKey().PubKey())
+	require.NoError(t, err)
+	valUpdates := []abci.ValidatorUpdate{{PubKey: pk, Power: 100}}
+	vsc := vaastypes.NewValidatorSetChangePacketData(valUpdates, 1)
+
+	payload := channeltypesv2.Payload{
+		SourcePort:      "not-" + vaastypes.ProviderAppID,
+		DestinationPort: vaastypes.ConsumerAppID,
+		Value:           vsc.GetBytes(),
+	}
+
+	result := module.OnRecvPacket(ctx, "07-tendermint-0", "07-tendermint-1", 1, payload, sdk.AccAddress{})
+	require.Equal(t, channeltypesv2.PacketStatus_Failure, result.Status,
+		"a packet whose SourcePort isn't the provider's app ID must be rejected")
+
+	_, found := consumerKeeper.GetProviderClientID(ctx)
+	require.False(t, found, "a rejected packet must not establish the provider client")
 }
