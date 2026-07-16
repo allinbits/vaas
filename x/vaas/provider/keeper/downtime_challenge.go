@@ -19,15 +19,18 @@ import (
 )
 
 // HandleChallengeConsumerDowntime verifies a MsgChallengeConsumerDowntime and,
-// on success, cancels the pending downtime slash it disproves. Downtime
-// (absence of signatures) can never be proven, but a specific claimed-missed
-// height can be disproven by exhibiting the validator's signature sealed
-// into the chain at that height -- see docs/consumer-downtime.md, "The
-// challenge". Verification runs, in order, and returns a typed error with no
-// state change on the first failure:
+// on success, cancels every pending downtime slash for the consumer (not just
+// the one disproven -- see step below). Downtime (absence of signatures) can
+// never be proven, but a specific claimed-missed height can be disproven by
+// exhibiting the validator's signature sealed into the chain at that height
+// -- see docs/consumer-downtime.md, "The challenge". Verification runs, in
+// order, and returns a typed error with no state change on the first
+// failure:
 //
-//  1. a PendingDowntimeSlash exists for the accused validator on this
-//     consumer, and its missed-blocks bitmap marks ClaimedHeight as missed;
+//  1. among the (possibly several) pending downtime slashes for the accused
+//     validator on this consumer -- one per disjoint window -- the one whose
+//     window contains ClaimedHeight exists, and its missed-blocks bitmap
+//     marks ClaimedHeight as missed;
 //  2. the supplied header is for ClaimedHeight+1 on the consumer's registered
 //     chain id;
 //  3. the header verifies against the consumer's IBC client through the
@@ -60,23 +63,23 @@ func (k Keeper) HandleChallengeConsumerDowntime(ctx sdk.Context, msg *types.MsgC
 
 	consumerAddr := types.NewConsumerConsAddress(sdk.ConsAddress(msg.ValidatorAddr))
 	providerAddr := k.GetProviderAddrFromConsumerAddr(ctx, msg.ConsumerId, consumerAddr)
-	pendingKey := collections.Join(msg.ConsumerId, providerAddr.ToSdkConsAddr().Bytes())
 
-	// 1. a pending slash exists and its bitmap marks claimed_height missed.
-	pending, err := k.PendingDowntimeSlashes.Get(ctx, pendingKey)
+	// 1. among the (possibly several) pending slashes for this validator on
+	// this consumer, find the one whose window contains claimed_height, and
+	// check that its bitmap marks it missed.
+	pending, found, err := k.findPendingDowntimeSlashContaining(ctx, msg.ConsumerId, providerAddr.ToSdkConsAddr().Bytes(), msg.ClaimedHeight)
 	if err != nil {
 		return errorsmod.Wrapf(types.ErrDowntimeChallengeFailed,
-			"no pending downtime slash for validator %s on consumer chain %d: %s",
+			"looking up pending downtime slash for validator %s on consumer chain %d: %s",
 			providerAddr.String(), msg.ConsumerId, err)
+	}
+	if !found {
+		return errorsmod.Wrapf(types.ErrDowntimeChallengeFailed,
+			"no pending downtime slash for validator %s on consumer chain %d claims height %d missed",
+			providerAddr.String(), msg.ConsumerId, msg.ClaimedHeight)
 	}
 
 	index := msg.ClaimedHeight - pending.WindowStartHeight
-	if index < 0 || index >= pending.Span {
-		return errorsmod.Wrapf(types.ErrDowntimeChallengeFailed,
-			"claimed height %d is outside the pending slash window [%d, %d) for validator %s on consumer chain %d",
-			msg.ClaimedHeight, pending.WindowStartHeight, pending.WindowStartHeight+pending.Span,
-			providerAddr.String(), msg.ConsumerId)
-	}
 	byteIdx := index / 8
 	bitMask := byte(1) << uint(index%8)
 	if byteIdx >= int64(len(pending.MissedBlocksBitmap)) || pending.MissedBlocksBitmap[byteIdx]&bitMask == 0 {
@@ -183,6 +186,36 @@ func (k Keeper) HandleChallengeConsumerDowntime(ctx sdk.Context, msg *types.MsgC
 	))
 
 	return nil
+}
+
+// findPendingDowntimeSlashContaining searches the (possibly several) pending
+// downtime slashes for (consumerId, providerConsAddr) -- one per accepted
+// disjoint window -- for the one whose [WindowStartHeight,
+// WindowStartHeight+Span) range contains claimedHeight. Windows for a pair
+// are enforced disjoint at acceptance (see the AcceptedDowntimeWindows
+// intersection check in HandleConsumerDowntime), so at
+// most one match is expected; the sub-range is bounded by however many
+// windows are currently pending for this single validator on this single
+// consumer.
+func (k Keeper) findPendingDowntimeSlashContaining(ctx sdk.Context, consumerId uint64, providerConsAddr []byte, claimedHeight int64) (types.PendingDowntimeSlash, bool, error) {
+	iter, err := k.PendingDowntimeSlashes.Iterate(
+		ctx, collections.NewSuperPrefixedTripleRange[uint64, []byte, int64](consumerId, providerConsAddr),
+	)
+	if err != nil {
+		return types.PendingDowntimeSlash{}, false, err
+	}
+	defer iter.Close()
+
+	for ; iter.Valid(); iter.Next() {
+		val, err := iter.Value()
+		if err != nil {
+			return types.PendingDowntimeSlash{}, false, err
+		}
+		if claimedHeight >= val.WindowStartHeight && claimedHeight < val.WindowStartHeight+val.Span {
+			return val, true, nil
+		}
+	}
+	return types.PendingDowntimeSlash{}, false, nil
 }
 
 // verifyDowntimeChallengeHeader verifies header against the consumer IBC

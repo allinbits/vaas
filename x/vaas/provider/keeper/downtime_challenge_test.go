@@ -42,13 +42,14 @@ const challengeTestChainID = "consumer-chain-0"
 // style as windowEndTimestamp. Every other verification step (1, 2, 4, 5)
 // runs against real data.
 type challengeFixture struct {
-	k             providerkeeper.Keeper
-	ctx           sdk.Context
-	mocks         testkeeper.MockedKeepers
-	cid           uint64
-	providerAddr  types.ProviderConsAddress
-	claimedHeight int64
-	msg           *types.MsgChallengeConsumerDowntime
+	k               providerkeeper.Keeper
+	ctx             sdk.Context
+	mocks           testkeeper.MockedKeepers
+	cid             uint64
+	providerAddr    types.ProviderConsAddress
+	claimedHeight   int64
+	windowEndHeight int64
+	msg             *types.MsgChallengeConsumerDowntime
 }
 
 func newChallengeFixture(t *testing.T) *challengeFixture {
@@ -87,7 +88,8 @@ func newChallengeFixture(t *testing.T) *challengeFixture {
 		SlashTokens:        math.NewInt(1000),
 		MaturesAt:          ctx.BlockTime().Add(time.Hour),
 	}
-	require.NoError(t, k.PendingDowntimeSlashes.Set(ctx, collections.Join(cid, providerAddr.ToSdkConsAddr().Bytes()), pending))
+	windowEndHeight := windowStart + span - 1
+	require.NoError(t, k.PendingDowntimeSlashes.Set(ctx, collections.Join3(cid, providerAddr.ToSdkConsAddr().Bytes(), windowEndHeight), pending))
 
 	amount := sdk.NewInt64Coin("uphoton", 500)
 	require.NoError(t, k.WithheldFeeRecords.Set(ctx, collections.Join(cid, providerAddr.ToSdkConsAddr().Bytes()), types.WithheldFeeRecord{
@@ -133,17 +135,27 @@ func newChallengeFixture(t *testing.T) *challengeFixture {
 	}
 
 	return &challengeFixture{
-		k:             k,
-		ctx:           ctx,
-		mocks:         mocks,
-		cid:           cid,
-		providerAddr:  providerAddr,
-		claimedHeight: claimedHeight,
-		msg:           msg,
+		k:               k,
+		ctx:             ctx,
+		mocks:           mocks,
+		cid:             cid,
+		providerAddr:    providerAddr,
+		claimedHeight:   claimedHeight,
+		windowEndHeight: windowEndHeight,
+		msg:             msg,
 	}
 }
 
-func (f *challengeFixture) pendingSlashKey() collections.Pair[uint64, []byte] {
+// pendingSlashKey returns the PendingDowntimeSlashes key (consumer,
+// validator, window-end height) for the fixture's single seeded window.
+func (f *challengeFixture) pendingSlashKey() collections.Triple[uint64, []byte, int64] {
+	return collections.Join3(f.cid, f.providerAddr.ToSdkConsAddr().Bytes(), f.windowEndHeight)
+}
+
+// pairKey returns the (consumer, validator) key used by WithheldFeeRecords
+// and DowntimeWindowFloors, which remain keyed per pair rather than per
+// window.
+func (f *challengeFixture) pairKey() collections.Pair[uint64, []byte] {
 	return collections.Join(f.cid, f.providerAddr.ToSdkConsAddr().Bytes())
 }
 
@@ -158,7 +170,7 @@ func (f *challengeFixture) requireNoStateChange(t *testing.T) {
 
 	require.Equal(t, types.CONSUMER_PHASE_LAUNCHED, f.k.GetConsumerPhase(f.ctx, f.cid))
 
-	has, err := f.k.WithheldFeeRecords.Has(f.ctx, f.pendingSlashKey())
+	has, err := f.k.WithheldFeeRecords.Has(f.ctx, f.pairKey())
 	require.NoError(t, err)
 	require.True(t, has, "withheld fee record must survive a failed challenge")
 }
@@ -196,7 +208,7 @@ func TestHandleChallengeConsumerDowntime_Success(t *testing.T) {
 
 	require.Equal(t, types.CONSUMER_PHASE_PAUSED, f.k.GetConsumerPhase(f.ctx, f.cid))
 
-	has, err := f.k.WithheldFeeRecords.Has(f.ctx, f.pendingSlashKey())
+	has, err := f.k.WithheldFeeRecords.Has(f.ctx, f.pairKey())
 	require.NoError(t, err)
 	require.False(t, has, "withheld fee record must be paid out and deleted")
 
@@ -218,6 +230,99 @@ func TestHandleChallengeConsumerDowntime_Success(t *testing.T) {
 	}
 	require.True(t, sawChallenge, "challenge-succeeded event not emitted")
 	require.True(t, sawPause, "consumer-paused event not emitted")
+}
+
+// TestHandleChallengeConsumerDowntime_FindsContainingWindowAmongSeveral
+// verifies step 1's new lookup: with two disjoint windows pending for the
+// same (consumer, validator) pair, a challenge naming a height in the
+// *second* window is matched against that window (not the first, and not
+// rejected as "no pending slash"), and succeeds -- cancelling every pending
+// slash for the consumer, including the untouched first window.
+func TestHandleChallengeConsumerDowntime_FindsContainingWindowAmongSeveral(t *testing.T) {
+	k, ctx, ctrl, _ := testkeeper.GetProviderKeeperAndCtx(t, testkeeper.NewInMemKeeperParams(t))
+	defer ctrl.Finish()
+
+	k.OverrideVerifyDowntimeChallengeHeaderForTest(func(sdk.Context, string, *ibctmtypes.Header) error {
+		return nil
+	})
+
+	cid := k.FetchAndIncrementConsumerId(ctx)
+	k.SetConsumerPhase(ctx, cid, types.CONSUMER_PHASE_LAUNCHED)
+	k.SetConsumerChainId(ctx, cid, challengeTestChainID)
+	k.SetConsumerClientId(ctx, cid, "07-tendermint-0")
+
+	signer := tmtypes.NewMockPV()
+	pubKey, err := signer.GetPubKey()
+	require.NoError(t, err)
+	addr := pubKey.Address()
+	providerAddr := types.NewProviderConsAddress(sdk.ConsAddress(addr))
+
+	// window 1: [100, 105), bit 0 (height 100) marked missed.
+	window1 := types.PendingDowntimeSlash{
+		ConsumerId:         cid,
+		ProviderConsAddr:   providerAddr.ToSdkConsAddr().Bytes(),
+		WindowStartHeight:  100,
+		Span:               5,
+		MissedCount:        1,
+		MissedBlocksBitmap: []byte{0x01},
+		SlashTokens:        math.NewInt(1000),
+		MaturesAt:          ctx.BlockTime().Add(time.Hour),
+	}
+	require.NoError(t, k.PendingDowntimeSlashes.Set(ctx, collections.Join3(cid, providerAddr.ToSdkConsAddr().Bytes(), int64(104)), window1))
+
+	// window 2: [110, 115), bit 2 (height 112) marked missed -- disjoint from
+	// window 1.
+	window2 := types.PendingDowntimeSlash{
+		ConsumerId:         cid,
+		ProviderConsAddr:   providerAddr.ToSdkConsAddr().Bytes(),
+		WindowStartHeight:  110,
+		Span:               5,
+		MissedCount:        1,
+		MissedBlocksBitmap: []byte{0x04},
+		SlashTokens:        math.NewInt(1000),
+		MaturesAt:          ctx.BlockTime().Add(time.Hour),
+	}
+	require.NoError(t, k.PendingDowntimeSlashes.Set(ctx, collections.Join3(cid, providerAddr.ToSdkConsAddr().Bytes(), int64(114)), window2))
+
+	const claimedHeight = int64(112)
+	blockID := cryptotestutil.MakeBlockID([]byte("blockhash"), 1, []byte("partshash"))
+	vote, err := tmtypes.MakeVote(signer, challengeTestChainID, 0, claimedHeight, 0, tmproto.PrecommitType, blockID, ctx.BlockTime())
+	require.NoError(t, err)
+	commit := &tmtypes.Commit{
+		Height:     claimedHeight,
+		Round:      0,
+		BlockID:    blockID,
+		Signatures: []tmtypes.CommitSig{vote.CommitSig()},
+	}
+	header := &ibctmtypes.Header{
+		SignedHeader: &tmproto.SignedHeader{
+			Header: &tmproto.Header{
+				ChainID:        challengeTestChainID,
+				Height:         claimedHeight + 1,
+				LastCommitHash: commit.Hash(),
+			},
+			Commit: &tmproto.Commit{},
+		},
+	}
+	msg := &types.MsgChallengeConsumerDowntime{
+		Signer:          "cosmos1qypqxpq9qcrsszgse4wwrq4vt3s2r0y8ryqhx7",
+		ConsumerId:      cid,
+		ValidatorAddr:   addr,
+		ClaimedHeight:   claimedHeight,
+		Header:          header,
+		LastCommit:      commit.ToProto(),
+		ValidatorPubkey: pubKey.Bytes(),
+	}
+
+	// No withheld fee record is seeded, so PayWithheldFees has nothing to
+	// iterate and this test needs no bank/staking mocks.
+	require.NoError(t, k.HandleChallengeConsumerDowntime(ctx, msg))
+
+	require.Equal(t, types.CONSUMER_PHASE_PAUSED, k.GetConsumerPhase(ctx, cid))
+	_, err = k.PendingDowntimeSlashes.Get(ctx, collections.Join3(cid, providerAddr.ToSdkConsAddr().Bytes(), int64(104)))
+	require.ErrorIs(t, err, collections.ErrNotFound, "the untouched first window must also be cancelled by the success path")
+	_, err = k.PendingDowntimeSlashes.Get(ctx, collections.Join3(cid, providerAddr.ToSdkConsAddr().Bytes(), int64(114)))
+	require.ErrorIs(t, err, collections.ErrNotFound)
 }
 
 // TestHandleChallengeConsumerDowntime_SuccessIsolatesOtherConsumer extends the
@@ -251,9 +356,10 @@ func TestHandleChallengeConsumerDowntime_SuccessIsolatesOtherConsumer(t *testing
 
 	cidB := f.k.FetchAndIncrementConsumerId(f.ctx)
 	f.k.SetConsumerPhase(f.ctx, cidB, types.CONSUMER_PHASE_LAUNCHED)
-	pendingKeyB := collections.Join(cidB, f.providerAddr.ToSdkConsAddr().Bytes())
-	putPendingDowntimeSlash(t, f.k, f.ctx, cidB, f.providerAddr, math.NewInt(200), f.ctx.BlockTime().Add(time.Hour))
-	require.NoError(t, f.k.WithheldFeeRecords.Set(f.ctx, pendingKeyB, types.WithheldFeeRecord{
+	pairKeyB := collections.Join(cidB, f.providerAddr.ToSdkConsAddr().Bytes())
+	pendingKeyB := collections.Join3(cidB, f.providerAddr.ToSdkConsAddr().Bytes(), int64(100))
+	putPendingDowntimeSlash(t, f.k, f.ctx, cidB, f.providerAddr, math.NewInt(200), f.ctx.BlockTime().Add(time.Hour), 100)
+	require.NoError(t, f.k.WithheldFeeRecords.Set(f.ctx, pairKeyB, types.WithheldFeeRecord{
 		ConsumerId:       cidB,
 		ProviderConsAddr: f.providerAddr.ToSdkConsAddr().Bytes(),
 		Amount:           sdk.NewInt64Coin("uphoton", 999),
@@ -272,7 +378,7 @@ func TestHandleChallengeConsumerDowntime_SuccessIsolatesOtherConsumer(t *testing
 	pendingB, err := f.k.PendingDowntimeSlashes.Get(f.ctx, pendingKeyB)
 	require.NoError(t, err, "consumer B's pending downtime slash must survive consumer A's successful challenge")
 	require.True(t, math.NewInt(200).Equal(pendingB.SlashTokens))
-	hasB, err := f.k.WithheldFeeRecords.Has(f.ctx, pendingKeyB)
+	hasB, err := f.k.WithheldFeeRecords.Has(f.ctx, pairKeyB)
 	require.NoError(t, err)
 	require.True(t, hasB, "consumer B's withheld fee record must survive consumer A's successful challenge")
 }

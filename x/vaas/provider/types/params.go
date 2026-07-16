@@ -46,11 +46,19 @@ const (
 	// DefaultDoubleSignSlashFraction is the default slash fraction for double-sign infractions on consumer chains.
 	DefaultDoubleSignSlashFraction = "0.05"
 
-	// DefaultDowntimeSlashFraction is the ceiling on any downtime slash,
-	// expressed as a fraction of stake. Downtime slashes are priced from
-	// foregone consumer fees (see docs/consumer-downtime.md, "Pricing and
-	// execution"); this fraction bounds the result.
-	DefaultDowntimeSlashFraction = "0.05"
+	// DefaultDowntimeSlashFraction is the per-window ceiling on the
+	// fee-derived downtime slash, expressed as a fraction of stake -- never
+	// the slash itself. The slash is priced from foregone consumer fees
+	// (P*M/C, see docs/consumer-downtime.md, "Pricing and execution"),
+	// which under honest pricing sits far below this ceiling; the ceiling
+	// only bites when fee overrides or conversion-rate anomalies would
+	// otherwise turn a fee-sized number into a stake-threatening one.
+	// 0.0001 (0.01%) matches the cosmos-sdk downtime slash default, so the
+	// worst case for a single mispriced window stays at liveness-fault
+	// scale, far below the double-sign fraction. Repeated windows compound
+	// with no aggregate bound: each pending slash is capped independently,
+	// but nothing limits how many windows a validator can accumulate.
+	DefaultDowntimeSlashFraction = "0.0001"
 
 	// DefaultDowntimeGracePeriod is the default grace period after a consumer chain launches
 	// during which downtime slashing is suppressed. This gives validators time to spin up

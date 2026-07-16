@@ -220,12 +220,19 @@ func (k Keeper) HandleConsumerEvidencePacket(ctx sdk.Context, consumerId uint64,
 //     consumer chain actually reached that height, see windowEndTimestamp --
 //     is past the consumer's downtime grace period and not older than
 //     DowntimeEvidenceMaxAge.
-//  5. No slash is already pending for this (consumer, validator) pair.
+//  5. The window starts above the pair's pruned acceptance floor
+//     (DowntimeWindowFloors) and does not intersect any window already
+//     accepted for this (consumer, validator) pair
+//     (AcceptedDowntimeWindows). Multiple disjoint windows may be pending
+//     for the same pair at once, and acceptance is order-independent: the
+//     delivery order of disjoint windows never affects which are accepted.
 //
 // On acceptance the slash amount is priced now, at receipt time (see
 // ResolveDowntimeSlashTokens), and stored as a PendingDowntimeSlash maturing
-// DowntimeChallengeWindow from now. Execution happens later, once matured, in
-// the epoch sweep: this handler never calls SlashValidator.
+// DowntimeChallengeWindow from now, keyed by (consumer, validator, window-end
+// height) so it coexists with any other window still pending for the same
+// pair. Execution happens later, once matured, in the epoch sweep: this
+// handler never calls SlashValidator.
 //
 // CONTRACT: A downtime infraction must never jail a validator.
 func (k Keeper) HandleConsumerDowntime(ctx sdk.Context, consumerId uint64, evidencePacket vaastypes.EvidencePacketData) error {
@@ -339,49 +346,47 @@ func (k Keeper) HandleConsumerDowntime(ctx sdk.Context, consumerId uint64, evide
 		)
 	}
 
-	pendingKey := collections.Join(consumerId, providerAddr.ToSdkConsAddr().Bytes())
+	pairKey := collections.Join(consumerId, providerAddr.ToSdkConsAddr().Bytes())
 
-	// Reject evidence for a window that overlaps or predates one already
-	// punished for this (consumer, validator) pair, even after the earlier
-	// pending slash has matured, executed, and been removed from
-	// PendingDowntimeSlashes -- otherwise the same infraction could be
-	// re-submitted and slashed a second time once its original pending
-	// entry is gone.
-	lastPunishedWindowEnd, err := k.LastPunishedWindowEnds.Get(ctx, pendingKey)
+	// Reject evidence at or below the pair's pruned acceptance floor: the
+	// AcceptedDowntimeWindows records covering those heights have been
+	// pruned, so the intersection check below cannot vouch for them
+	// (see pruneAcceptedDowntimeWindows for why nothing acceptable can sit
+	// down there).
+	floor, err := k.DowntimeWindowFloors.Get(ctx, pairKey)
 	if err == nil {
-		if evidencePacket.WindowStartHeight <= lastPunishedWindowEnd {
+		if evidencePacket.WindowStartHeight <= floor {
 			return errorsmod.Wrapf(
 				vaastypes.ErrInvalidPacketData,
-				"downtime evidence for consumer chain %d overlaps a window already punished for validator %s: window start height %d, last punished window end %d",
+				"downtime evidence for consumer chain %d is at or below the pruned acceptance floor for validator %s: window start height %d, floor %d",
 				consumerId,
 				providerAddr.String(),
 				evidencePacket.WindowStartHeight,
-				lastPunishedWindowEnd,
+				floor,
 			)
 		}
 	} else if !errors.Is(err, collections.ErrNotFound) {
 		return errorsmod.Wrapf(
 			vaastypes.ErrInvalidPacketData,
-			"checking last punished window for consumer chain %d: %s",
+			"checking downtime window floor for consumer chain %d: %s",
 			consumerId, err,
 		)
 	}
 
-	hasPending, err := k.PendingDowntimeSlashes.Has(ctx, pendingKey)
-	if err != nil {
-		return errorsmod.Wrapf(
-			vaastypes.ErrInvalidPacketData,
-			"checking pending downtime slash for consumer chain %d: %s",
-			consumerId, err,
-		)
-	}
-	if hasPending {
-		return errorsmod.Wrapf(
-			vaastypes.ErrInvalidPacketData,
-			"a downtime slash is already pending for validator %s on consumer chain %d",
-			providerAddr.String(),
-			consumerId,
-		)
+	// Reject evidence whose window intersects one already accepted for this
+	// (consumer, validator) pair, even after the earlier pending slash has
+	// matured, executed, and been removed from PendingDowntimeSlashes --
+	// otherwise the same infraction could be re-submitted and slashed a
+	// second time once its original pending entry is gone. Checking
+	// intersection against every retained record, rather than against a
+	// single boundary, keeps acceptance order-independent: IBC v2 delivery
+	// is out of order and relaying is permissionless, so accepting a later
+	// window first must not void earlier windows still in flight. Accepted
+	// windows for a pair are pairwise disjoint as a consequence.
+	if err := k.checkAcceptedDowntimeWindowIntersection(
+		ctx, consumerId, providerAddr, evidencePacket.WindowStartHeight, evidencePacket.InfractionHeight,
+	); err != nil {
+		return err
 	}
 
 	slashTokens, err := k.ResolveDowntimeSlashTokens(ctx, consumerId, evidencePacket, windowEndTime)
@@ -408,6 +413,9 @@ func (k Keeper) HandleConsumerDowntime(ctx sdk.Context, consumerId uint64, evide
 		SlashTokens:        slashTokens,
 		MaturesAt:          maturesAt,
 	}
+	// Keyed by (consumer, validator, window-end height) so this window's
+	// entry coexists with any other window still pending for the same pair.
+	pendingKey := collections.Join3(consumerId, providerAddr.ToSdkConsAddr().Bytes(), evidencePacket.InfractionHeight)
 	if err := k.PendingDowntimeSlashes.Set(ctx, pendingKey, pending); err != nil {
 		return errorsmod.Wrapf(
 			vaastypes.ErrInvalidPacketData,
@@ -415,10 +423,13 @@ func (k Keeper) HandleConsumerDowntime(ctx sdk.Context, consumerId uint64, evide
 			consumerId, err,
 		)
 	}
-	if err := k.LastPunishedWindowEnds.Set(ctx, pendingKey, evidencePacket.InfractionHeight); err != nil {
+	if err := k.AcceptedDowntimeWindows.Set(ctx, pendingKey, types.AcceptedDowntimeWindow{
+		WindowStart: evidencePacket.WindowStartHeight,
+		AcceptedAt:  ctx.BlockTime(),
+	}); err != nil {
 		return errorsmod.Wrapf(
 			vaastypes.ErrInvalidPacketData,
-			"storing last punished window for consumer chain %d: %s",
+			"storing accepted downtime window for consumer chain %d: %s",
 			consumerId, err,
 		)
 	}
@@ -450,6 +461,53 @@ func (k Keeper) HandleConsumerDowntime(ctx sdk.Context, consumerId uint64, evide
 		),
 	)
 
+	return nil
+}
+
+// checkAcceptedDowntimeWindowIntersection rejects a downtime evidence window
+// [newStart, newEnd] that intersects any AcceptedDowntimeWindows record
+// retained for (consumerId, providerAddr). Two closed height ranges
+// intersect iff newStart <= retainedEnd && retainedStart <= newEnd. The
+// sub-range scanned is bounded by however many accepted windows are
+// currently retained for this single validator on this single consumer.
+func (k Keeper) checkAcceptedDowntimeWindowIntersection(
+	ctx sdk.Context, consumerId uint64, providerAddr types.ProviderConsAddress, newStart, newEnd int64,
+) error {
+	iter, err := k.AcceptedDowntimeWindows.Iterate(
+		ctx, collections.NewSuperPrefixedTripleRange[uint64, []byte, int64](consumerId, providerAddr.ToSdkConsAddr().Bytes()),
+	)
+	if err != nil {
+		return errorsmod.Wrapf(
+			vaastypes.ErrInvalidPacketData,
+			"checking accepted downtime windows for consumer chain %d: %s",
+			consumerId, err,
+		)
+	}
+	defer iter.Close()
+
+	for ; iter.Valid(); iter.Next() {
+		kv, err := iter.KeyValue()
+		if err != nil {
+			return errorsmod.Wrapf(
+				vaastypes.ErrInvalidPacketData,
+				"reading accepted downtime window for consumer chain %d: %s",
+				consumerId, err,
+			)
+		}
+		retainedStart, retainedEnd := kv.Value.WindowStart, kv.Key.K3()
+		if newStart <= retainedEnd && retainedStart <= newEnd {
+			return errorsmod.Wrapf(
+				vaastypes.ErrInvalidPacketData,
+				"downtime evidence for consumer chain %d intersects a window already accepted for validator %s: window [%d, %d], accepted window [%d, %d]",
+				consumerId,
+				providerAddr.String(),
+				newStart,
+				newEnd,
+				retainedStart,
+				retainedEnd,
+			)
+		}
+	}
 	return nil
 }
 

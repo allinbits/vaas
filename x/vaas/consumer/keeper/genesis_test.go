@@ -1,6 +1,7 @@
 package keeper_test
 
 import (
+	"fmt"
 	"testing"
 	"time"
 
@@ -419,4 +420,48 @@ func TestHighestValsetUpdateID(t *testing.T) {
 	require.NoError(t, err)
 	require.True(t, found)
 	require.Equal(t, uint64(3), highestID)
+}
+
+// TestInitGenesisPanicsOnInvalidStagedDowntimeParams verifies that InitGenesis
+// halts on staged downtime params carrying a nil MinSignedPerWindow -- the
+// value a genesis JSON that omits the min_signed_per_window key deserializes
+// to -- instead of storing them for applyStagedDowntimeParams to copy into
+// the consumer params at the next window close.
+func TestInitGenesisPanicsOnInvalidStagedDowntimeParams(t *testing.T) {
+	consumerKeeper, ctx, ctrl, _ := testkeeper.GetConsumerKeeperAndCtx(t, testkeeper.NewInMemKeeperParams(t))
+	defer ctrl.Finish()
+
+	cId := crypto.NewCryptoIdentityFromIntSeed(738294)
+	validator := tmtypes.NewValidator(cId.TMCryptoPubKey(), 1)
+	valset := []abci.ValidatorUpdate{tmtypes.TM2PB.ValidatorUpdate(validator)}
+
+	params := vaastypes.DefaultConsumerParams()
+	params.Enabled = true
+	genesis := consumertypes.NewRestartGenesisState(
+		"07-tendermint-0",
+		valset,
+		[]consumertypes.HeightToValsetUpdateID{{ValsetUpdateId: 1, Height: 1}},
+		params,
+	)
+	genesis.StagedDowntimeParams = &vaastypes.DowntimeParams{
+		SignedBlocksWindow: params.SignedBlocksWindow,
+		MinSignedPerWindow: math.LegacyDec{},
+	}
+
+	var recovered any
+	func() {
+		defer func() { recovered = recover() }()
+		consumerKeeper.InitGenesis(ctx, genesis)
+	}()
+	require.NotNil(t, recovered)
+	require.Contains(t, fmt.Sprint(recovered), "min_signed_per_window")
+}
+
+// TestInitGenesisAcceptsDefaultGenesis verifies that InitGenesis accepts the
+// module's own default genesis state.
+func TestInitGenesisAcceptsDefaultGenesis(t *testing.T) {
+	consumerKeeper, ctx, ctrl, _ := testkeeper.GetConsumerKeeperAndCtx(t, testkeeper.NewInMemKeeperParams(t))
+	defer ctrl.Finish()
+
+	require.NotPanics(t, func() { consumerKeeper.InitGenesis(ctx, consumertypes.DefaultGenesisState()) })
 }

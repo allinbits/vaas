@@ -32,19 +32,19 @@ func TestCancelConsumerDowntimeState_ClearsPendingSlashesAndEpochMarks(t *testin
 	const consumerA, consumerB = uint64(1), uint64(2)
 	providerAddr := providertypes.NewProviderConsAddress(sdk.ConsAddress([]byte("validator-address-1")))
 
-	putPendingDowntimeSlash(t, k, ctx, consumerA, providerAddr, math.NewInt(100), ctx.BlockTime().Add(time.Hour))
-	putPendingDowntimeSlash(t, k, ctx, consumerB, providerAddr, math.NewInt(200), ctx.BlockTime().Add(time.Hour))
+	putPendingDowntimeSlash(t, k, ctx, consumerA, providerAddr, math.NewInt(100), ctx.BlockTime().Add(time.Hour), 100)
+	putPendingDowntimeSlash(t, k, ctx, consumerB, providerAddr, math.NewInt(200), ctx.BlockTime().Add(time.Hour), 100)
 	k.MarkEpochDowntime(ctx, consumerA, providerAddr.ToSdkConsAddr())
 	k.MarkEpochDowntime(ctx, consumerB, providerAddr.ToSdkConsAddr())
 
 	require.NoError(t, k.CancelConsumerDowntimeState(ctx, consumerA))
 
-	_, err := k.PendingDowntimeSlashes.Get(ctx, collections.Join(consumerA, providerAddr.ToSdkConsAddr().Bytes()))
+	_, err := k.PendingDowntimeSlashes.Get(ctx, collections.Join3(consumerA, providerAddr.ToSdkConsAddr().Bytes(), int64(100)))
 	require.ErrorIs(t, err, collections.ErrNotFound)
 	require.False(t, k.IsEpochDowntime(ctx, consumerA, providerAddr.ToSdkConsAddr()))
 
 	// consumerB's state is untouched.
-	_, err = k.PendingDowntimeSlashes.Get(ctx, collections.Join(consumerB, providerAddr.ToSdkConsAddr().Bytes()))
+	_, err = k.PendingDowntimeSlashes.Get(ctx, collections.Join3(consumerB, providerAddr.ToSdkConsAddr().Bytes(), int64(100)))
 	require.NoError(t, err)
 	require.True(t, k.IsEpochDowntime(ctx, consumerB, providerAddr.ToSdkConsAddr()))
 }
@@ -84,7 +84,7 @@ func TestPauseConsumerChain_Success(t *testing.T) {
 	k.SetConsumerPhase(ctx, cid, providertypes.CONSUMER_PHASE_LAUNCHED)
 
 	providerAddr := providertypes.NewProviderConsAddress(sdk.ConsAddress([]byte("validator-address-1")))
-	putPendingDowntimeSlash(t, k, ctx, cid, providerAddr, math.NewInt(100), ctx.BlockTime().Add(time.Hour))
+	putPendingDowntimeSlash(t, k, ctx, cid, providerAddr, math.NewInt(100), ctx.BlockTime().Add(time.Hour), 100)
 	k.MarkEpochDowntime(ctx, cid, providerAddr.ToSdkConsAddr())
 
 	maxPause := k.GetMaxPauseDuration(ctx)
@@ -93,7 +93,7 @@ func TestPauseConsumerChain_Success(t *testing.T) {
 	require.Equal(t, providertypes.CONSUMER_PHASE_PAUSED, k.GetConsumerPhase(ctx, cid))
 
 	// downtime state cancelled
-	_, err := k.PendingDowntimeSlashes.Get(ctx, collections.Join(cid, providerAddr.ToSdkConsAddr().Bytes()))
+	_, err := k.PendingDowntimeSlashes.Get(ctx, collections.Join3(cid, providerAddr.ToSdkConsAddr().Bytes(), int64(100)))
 	require.ErrorIs(t, err, collections.ErrNotFound)
 	require.False(t, k.IsEpochDowntime(ctx, cid, providerAddr.ToSdkConsAddr()))
 
@@ -201,7 +201,9 @@ func TestBeginBlockAutoStopPausedConsumers_SkipsNoLongerPaused(t *testing.T) {
 
 // TestStopAndPrepareForConsumerRemoval_CancelsDowntimeState verifies that
 // stopping a consumer (whether from the liveness sweep or elsewhere) cancels
-// any pending downtime state.
+// any pending downtime state, while the accepted-window records and the
+// pruned floor deliberately survive: a cancelled window must not become
+// re-submittable, so only DeleteConsumerChain erases them.
 func TestStopAndPrepareForConsumerRemoval_CancelsDowntimeState(t *testing.T) {
 	k, ctx, ctrl, mocks := testkeeper.GetProviderKeeperAndCtx(t, testkeeper.NewInMemKeeperParams(t))
 	defer ctrl.Finish()
@@ -212,22 +214,36 @@ func TestStopAndPrepareForConsumerRemoval_CancelsDowntimeState(t *testing.T) {
 	k.SetConsumerPhase(ctx, cid, providertypes.CONSUMER_PHASE_LAUNCHED)
 
 	providerAddr := providertypes.NewProviderConsAddress(sdk.ConsAddress([]byte("validator-address-1")))
-	putPendingDowntimeSlash(t, k, ctx, cid, providerAddr, math.NewInt(100), ctx.BlockTime().Add(time.Hour))
+	pairKey := collections.Join(cid, providerAddr.ToSdkConsAddr().Bytes())
+	acceptedKey := collections.Join3(cid, providerAddr.ToSdkConsAddr().Bytes(), int64(100))
+	putPendingDowntimeSlash(t, k, ctx, cid, providerAddr, math.NewInt(100), ctx.BlockTime().Add(time.Hour), 100)
 	k.MarkEpochDowntime(ctx, cid, providerAddr.ToSdkConsAddr())
+	require.NoError(t, k.AcceptedDowntimeWindows.Set(ctx, acceptedKey, providertypes.AcceptedDowntimeWindow{
+		WindowStart: 93,
+		AcceptedAt:  ctx.BlockTime(),
+	}))
+	require.NoError(t, k.DowntimeWindowFloors.Set(ctx, pairKey, 50))
 
 	require.NoError(t, k.StopAndPrepareForConsumerRemoval(ctx, cid))
 
-	_, err := k.PendingDowntimeSlashes.Get(ctx, collections.Join(cid, providerAddr.ToSdkConsAddr().Bytes()))
+	_, err := k.PendingDowntimeSlashes.Get(ctx, collections.Join3(cid, providerAddr.ToSdkConsAddr().Bytes(), int64(100)))
 	require.ErrorIs(t, err, collections.ErrNotFound)
 	require.False(t, k.IsEpochDowntime(ctx, cid, providerAddr.ToSdkConsAddr()))
+
+	accepted, err := k.AcceptedDowntimeWindows.Get(ctx, acceptedKey)
+	require.NoError(t, err, "accepted downtime window must survive the stop")
+	require.Equal(t, int64(93), accepted.WindowStart)
+	floor, err := k.DowntimeWindowFloors.Get(ctx, pairKey)
+	require.NoError(t, err, "downtime window floor must survive the stop")
+	require.Equal(t, int64(50), floor)
 }
 
 // TestDeleteConsumerChain_ClearsDowntimeAndWithheldState verifies that
 // deleting a consumer erases every downtime-related record for it: pending
-// downtime slashes, epoch downtime marks, withheld fee records, and
-// last-punished-window bookkeeping -- and that the WithheldFeeRecords /
-// LastPunishedWindowEnds range-deletes are scoped to the deleted consumer id
-// only, leaving another consumer's records untouched.
+// downtime slashes, epoch downtime marks, withheld fee records, accepted
+// downtime windows, and downtime window floors -- and that the range-deletes
+// are scoped to the deleted consumer id only, leaving another consumer's
+// records untouched.
 func TestDeleteConsumerChain_ClearsDowntimeAndWithheldState(t *testing.T) {
 	k, ctx, ctrl, mocks := testkeeper.GetProviderKeeperAndCtx(t, testkeeper.NewInMemKeeperParams(t))
 	defer ctrl.Finish()
@@ -243,7 +259,7 @@ func TestDeleteConsumerChain_ClearsDowntimeAndWithheldState(t *testing.T) {
 	providerAddr := providertypes.NewProviderConsAddress(sdk.ConsAddress([]byte("validator-address-1")))
 	pairKey := collections.Join(cid, providerAddr.ToSdkConsAddr().Bytes())
 
-	putPendingDowntimeSlash(t, k, ctx, cid, providerAddr, math.NewInt(100), ctx.BlockTime().Add(time.Hour))
+	putPendingDowntimeSlash(t, k, ctx, cid, providerAddr, math.NewInt(100), ctx.BlockTime().Add(time.Hour), 100)
 	k.MarkEpochDowntime(ctx, cid, providerAddr.ToSdkConsAddr())
 	require.NoError(t, k.WithheldFeeRecords.Set(ctx, pairKey, providertypes.WithheldFeeRecord{
 		ConsumerId:       cid,
@@ -251,13 +267,18 @@ func TestDeleteConsumerChain_ClearsDowntimeAndWithheldState(t *testing.T) {
 		Amount:           sdk.NewInt64Coin("uphoton", 50),
 		ExpiresAt:        ctx.BlockTime().Add(time.Hour),
 	}))
-	require.NoError(t, k.LastPunishedWindowEnds.Set(ctx, pairKey, 100))
+	acceptedKey := collections.Join3(cid, providerAddr.ToSdkConsAddr().Bytes(), int64(100))
+	require.NoError(t, k.AcceptedDowntimeWindows.Set(ctx, acceptedKey, providertypes.AcceptedDowntimeWindow{
+		WindowStart: 93,
+		AcceptedAt:  ctx.BlockTime(),
+	}))
+	require.NoError(t, k.DowntimeWindowFloors.Set(ctx, pairKey, 50))
 
-	// A second, untouched consumer with its own withheld-fee record and
-	// last-punished-window entry, kept in a phase that DeleteConsumerChain
-	// would reject (only STOPPED can be deleted), so it is never itself
-	// deleted here -- it exists purely to prove the range-delete on cid does
-	// not bleed into other consumer ids.
+	// A second, untouched consumer with its own withheld-fee record,
+	// accepted-window entry, and floor, kept in a phase that
+	// DeleteConsumerChain would reject (only STOPPED can be deleted), so it
+	// is never itself deleted here -- it exists purely to prove the
+	// range-delete on cid does not bleed into other consumer ids.
 	otherCid := k.FetchAndIncrementConsumerId(ctx)
 	k.SetConsumerPhase(ctx, otherCid, providertypes.CONSUMER_PHASE_LAUNCHED)
 	otherPairKey := collections.Join(otherCid, providerAddr.ToSdkConsAddr().Bytes())
@@ -267,25 +288,35 @@ func TestDeleteConsumerChain_ClearsDowntimeAndWithheldState(t *testing.T) {
 		Amount:           sdk.NewInt64Coin("uphoton", 75),
 		ExpiresAt:        ctx.BlockTime().Add(time.Hour),
 	}))
-	require.NoError(t, k.LastPunishedWindowEnds.Set(ctx, otherPairKey, 200))
+	otherAcceptedKey := collections.Join3(otherCid, providerAddr.ToSdkConsAddr().Bytes(), int64(200))
+	require.NoError(t, k.AcceptedDowntimeWindows.Set(ctx, otherAcceptedKey, providertypes.AcceptedDowntimeWindow{
+		WindowStart: 193,
+		AcceptedAt:  ctx.BlockTime(),
+	}))
+	require.NoError(t, k.DowntimeWindowFloors.Set(ctx, otherPairKey, 150))
 
 	require.NoError(t, k.DeleteConsumerChain(ctx, cid))
 
-	_, err := k.PendingDowntimeSlashes.Get(ctx, pairKey)
+	_, err := k.PendingDowntimeSlashes.Get(ctx, collections.Join3(cid, providerAddr.ToSdkConsAddr().Bytes(), int64(100)))
 	require.ErrorIs(t, err, collections.ErrNotFound)
 	require.False(t, k.IsEpochDowntime(ctx, cid, providerAddr.ToSdkConsAddr()))
 	_, err = k.WithheldFeeRecords.Get(ctx, pairKey)
 	require.ErrorIs(t, err, collections.ErrNotFound)
-	_, err = k.LastPunishedWindowEnds.Get(ctx, pairKey)
+	_, err = k.AcceptedDowntimeWindows.Get(ctx, acceptedKey)
+	require.ErrorIs(t, err, collections.ErrNotFound)
+	_, err = k.DowntimeWindowFloors.Get(ctx, pairKey)
 	require.ErrorIs(t, err, collections.ErrNotFound)
 
 	// The other consumer's records must survive untouched.
 	otherWithheld, err := k.WithheldFeeRecords.Get(ctx, otherPairKey)
 	require.NoError(t, err, "unrelated consumer's withheld fee record must not be deleted")
 	require.Equal(t, sdk.NewInt64Coin("uphoton", 75), otherWithheld.Amount)
-	otherWindowEnd, err := k.LastPunishedWindowEnds.Get(ctx, otherPairKey)
-	require.NoError(t, err, "unrelated consumer's last-punished-window end must not be deleted")
-	require.Equal(t, int64(200), otherWindowEnd)
+	otherAccepted, err := k.AcceptedDowntimeWindows.Get(ctx, otherAcceptedKey)
+	require.NoError(t, err, "unrelated consumer's accepted downtime window must not be deleted")
+	require.Equal(t, int64(193), otherAccepted.WindowStart)
+	otherFloor, err := k.DowntimeWindowFloors.Get(ctx, otherPairKey)
+	require.NoError(t, err, "unrelated consumer's downtime window floor must not be deleted")
+	require.Equal(t, int64(150), otherFloor)
 }
 
 // TestCancelConsumerPauseExpiration_RemovesBucketEntryWithoutAffectingOthers

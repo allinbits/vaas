@@ -3,6 +3,7 @@ package types
 import (
 	"errors"
 	"fmt"
+	"sort"
 
 	vaastypes "github.com/allinbits/vaas/x/vaas/types"
 
@@ -110,6 +111,10 @@ func (gs GenesisState) Validate() error {
 		return errorsmod.Wrap(vaastypes.ErrInvalidGenesis, err.Error())
 	}
 
+	if err := validatePendingDowntimeSlashesAgainstAcceptedWindows(gs.PendingDowntimeSlashes, gs.AcceptedDowntimeWindows); err != nil {
+		return errorsmod.Wrap(vaastypes.ErrInvalidGenesis, err.Error())
+	}
+
 	for _, r := range gs.EpochShareRecords {
 		if r.Share.IsNil() || r.Share.IsNegative() {
 			return errorsmod.Wrap(vaastypes.ErrInvalidGenesis,
@@ -120,7 +125,10 @@ func (gs GenesisState) Validate() error {
 	if err := validateWithheldFeeRecords(gs.WithheldFeeRecords, known); err != nil {
 		return errorsmod.Wrap(vaastypes.ErrInvalidGenesis, err.Error())
 	}
-	if err := validateLastPunishedWindowEnds(gs.LastPunishedWindowEnds, known); err != nil {
+	if err := validateAcceptedDowntimeWindows(gs.AcceptedDowntimeWindows, gs.DowntimeWindowFloors, known); err != nil {
+		return errorsmod.Wrap(vaastypes.ErrInvalidGenesis, err.Error())
+	}
+	if err := validateDowntimeWindowFloors(gs.DowntimeWindowFloors, known); err != nil {
 		return errorsmod.Wrap(vaastypes.ErrInvalidGenesis, err.Error())
 	}
 	if err := validateEpochDowntimeEntries(gs.EpochDowntimeEntries, known); err != nil {
@@ -185,15 +193,24 @@ func validateConsumerFeePoolShares(
 // validatePendingDowntimeSlashes rejects malformed pending downtime slash
 // entries: empty provider cons addr, nil/negative slash tokens, a
 // missed-blocks bitmap whose length does not match ceil(span/8), orphan
-// consumer references, and duplicate (consumer_id, provider_cons_addr)
-// entries, which the keeper's collection key cannot represent (the second
-// entry would silently overwrite the first at InitGenesis).
+// consumer references, duplicate (consumer_id, provider_cons_addr,
+// window_end_height) entries -- which the keeper's collection key cannot
+// represent (the second entry would silently overwrite the first at
+// InitGenesis) -- and, per (consumer_id, provider_cons_addr) pair, windows
+// that overlap each other (the keeper enforces this at acceptance via the
+// AcceptedDowntimeWindows intersection check, so genesis must not import a
+// state that could never have been reached at runtime).
 func validatePendingDowntimeSlashes(slashes []PendingDowntimeSlash, knownConsumerIds map[uint64]struct{}) error {
-	type key struct {
+	type pairKey struct {
 		consumerId uint64
 		addr       string
 	}
-	seen := map[key]bool{}
+	type entryKey struct {
+		pairKey
+		windowEnd int64
+	}
+	seen := map[entryKey]bool{}
+	byPair := map[pairKey][]PendingDowntimeSlash{}
 	for _, p := range slashes {
 		if len(p.ProviderConsAddr) == 0 {
 			return fmt.Errorf("pending downtime slash: provider cons addr cannot be empty")
@@ -212,11 +229,66 @@ func validatePendingDowntimeSlashes(slashes []PendingDowntimeSlash, knownConsume
 		if _, ok := knownConsumerIds[p.ConsumerId]; !ok {
 			return fmt.Errorf("pending downtime slash references unknown consumer %d", p.ConsumerId)
 		}
-		k := key{p.ConsumerId, string(p.ProviderConsAddr)}
-		if seen[k] {
-			return fmt.Errorf("duplicate pending downtime slash for consumer %d validator %x", p.ConsumerId, p.ProviderConsAddr)
+		pk := pairKey{p.ConsumerId, string(p.ProviderConsAddr)}
+		windowEnd := p.WindowStartHeight + p.Span - 1
+		ek := entryKey{pk, windowEnd}
+		if seen[ek] {
+			return fmt.Errorf("duplicate pending downtime slash for consumer %d validator %x window end %d", p.ConsumerId, p.ProviderConsAddr, windowEnd)
 		}
-		seen[k] = true
+		seen[ek] = true
+		byPair[pk] = append(byPair[pk], p)
+	}
+
+	for pk, windows := range byPair {
+		sort.Slice(windows, func(i, j int) bool {
+			return windows[i].WindowStartHeight < windows[j].WindowStartHeight
+		})
+		for i := 1; i < len(windows); i++ {
+			prevEnd := windows[i-1].WindowStartHeight + windows[i-1].Span - 1
+			if windows[i].WindowStartHeight <= prevEnd {
+				return fmt.Errorf(
+					"pending downtime slash: overlapping windows for consumer %d validator %x: [%d, %d] and [%d, %d]",
+					pk.consumerId, []byte(pk.addr),
+					windows[i-1].WindowStartHeight, prevEnd,
+					windows[i].WindowStartHeight, windows[i].WindowStartHeight+windows[i].Span-1,
+				)
+			}
+		}
+	}
+	return nil
+}
+
+// validatePendingDowntimeSlashesAgainstAcceptedWindows rejects a pending
+// downtime slash without a matching AcceptedDowntimeWindowRecord (same
+// consumer, validator, and window end) covering the same window start. At
+// runtime the accepted record is written by the very acceptance that queues
+// the pending entry (see HandleConsumerDowntime), so a live chain can never
+// produce a pending entry without one; only a hand-crafted genesis could.
+func validatePendingDowntimeSlashesAgainstAcceptedWindows(
+	slashes []PendingDowntimeSlash, accepted []AcceptedDowntimeWindowRecord,
+) error {
+	type entryKey struct {
+		consumerId uint64
+		addr       string
+		windowEnd  int64
+	}
+	startByEntry := make(map[entryKey]int64, len(accepted))
+	for _, a := range accepted {
+		startByEntry[entryKey{a.ConsumerId, string(a.ProviderConsAddr), a.WindowEndHeight}] = a.WindowStartHeight
+	}
+	for _, p := range slashes {
+		windowEnd := p.WindowStartHeight + p.Span - 1
+		start, ok := startByEntry[entryKey{p.ConsumerId, string(p.ProviderConsAddr), windowEnd}]
+		if !ok {
+			return fmt.Errorf(
+				"pending downtime slash for consumer %d validator %x window end %d has no matching accepted downtime window",
+				p.ConsumerId, p.ProviderConsAddr, windowEnd)
+		}
+		if start != p.WindowStartHeight {
+			return fmt.Errorf(
+				"pending downtime slash for consumer %d validator %x window [%d, %d] does not match its accepted downtime window start %d",
+				p.ConsumerId, p.ProviderConsAddr, p.WindowStartHeight, windowEnd, start)
+		}
 	}
 	return nil
 }
@@ -247,24 +319,100 @@ func validateWithheldFeeRecords(records []WithheldFeeRecord, knownConsumerIds ma
 	return nil
 }
 
-// validateLastPunishedWindowEnds rejects duplicate (consumer_id,
+// validateAcceptedDowntimeWindows rejects malformed accepted-window records:
+// empty provider cons addr, orphan consumer references, an inverted window,
+// a zero accepted_at, duplicate (consumer_id, provider_cons_addr,
+// window_end_height) entries -- which the keeper's collection key cannot
+// represent -- and, per (consumer_id, provider_cons_addr) pair, records that
+// intersect each other or start at or below the pair's pruned floor (the
+// keeper enforces both at acceptance, so genesis must not import a state
+// that could never have been reached at runtime).
+func validateAcceptedDowntimeWindows(
+	entries []AcceptedDowntimeWindowRecord, floors []DowntimeWindowFloor, knownConsumerIds map[uint64]struct{},
+) error {
+	type pairKey struct {
+		consumerId uint64
+		addr       string
+	}
+	type entryKey struct {
+		pairKey
+		windowEnd int64
+	}
+	floorByPair := make(map[pairKey]int64, len(floors))
+	for _, f := range floors {
+		floorByPair[pairKey{f.ConsumerId, string(f.ProviderConsAddr)}] = f.WindowEndHeight
+	}
+	seen := map[entryKey]bool{}
+	byPair := map[pairKey][]AcceptedDowntimeWindowRecord{}
+	for _, e := range entries {
+		if len(e.ProviderConsAddr) == 0 {
+			return fmt.Errorf("accepted downtime window: provider cons addr cannot be empty")
+		}
+		if _, ok := knownConsumerIds[e.ConsumerId]; !ok {
+			return fmt.Errorf("accepted downtime window references unknown consumer %d", e.ConsumerId)
+		}
+		if e.WindowStartHeight > e.WindowEndHeight {
+			return fmt.Errorf(
+				"accepted downtime window for consumer %d validator %x is inverted: start %d, end %d",
+				e.ConsumerId, e.ProviderConsAddr, e.WindowStartHeight, e.WindowEndHeight)
+		}
+		if e.AcceptedAt.IsZero() {
+			return fmt.Errorf(
+				"accepted downtime window for consumer %d validator %x window end %d: accepted_at cannot be zero",
+				e.ConsumerId, e.ProviderConsAddr, e.WindowEndHeight)
+		}
+		pk := pairKey{e.ConsumerId, string(e.ProviderConsAddr)}
+		if floor, ok := floorByPair[pk]; ok && e.WindowStartHeight <= floor {
+			return fmt.Errorf(
+				"accepted downtime window for consumer %d validator %x starts at or below the pair's pruned floor: start %d, floor %d",
+				e.ConsumerId, e.ProviderConsAddr, e.WindowStartHeight, floor)
+		}
+		ek := entryKey{pk, e.WindowEndHeight}
+		if seen[ek] {
+			return fmt.Errorf(
+				"duplicate accepted downtime window for consumer %d validator %x window end %d",
+				e.ConsumerId, e.ProviderConsAddr, e.WindowEndHeight)
+		}
+		seen[ek] = true
+		byPair[pk] = append(byPair[pk], e)
+	}
+
+	for pk, windows := range byPair {
+		sort.Slice(windows, func(i, j int) bool {
+			return windows[i].WindowStartHeight < windows[j].WindowStartHeight
+		})
+		for i := 1; i < len(windows); i++ {
+			if windows[i].WindowStartHeight <= windows[i-1].WindowEndHeight {
+				return fmt.Errorf(
+					"accepted downtime windows for consumer %d validator %x intersect: [%d, %d] and [%d, %d]",
+					pk.consumerId, []byte(pk.addr),
+					windows[i-1].WindowStartHeight, windows[i-1].WindowEndHeight,
+					windows[i].WindowStartHeight, windows[i].WindowEndHeight,
+				)
+			}
+		}
+	}
+	return nil
+}
+
+// validateDowntimeWindowFloors rejects duplicate (consumer_id,
 // provider_cons_addr) entries and orphan consumer references.
-func validateLastPunishedWindowEnds(entries []LastPunishedWindowEnd, knownConsumerIds map[uint64]struct{}) error {
+func validateDowntimeWindowFloors(floors []DowntimeWindowFloor, knownConsumerIds map[uint64]struct{}) error {
 	type key struct {
 		consumerId uint64
 		addr       string
 	}
 	seen := map[key]bool{}
-	for _, e := range entries {
-		if len(e.ProviderConsAddr) == 0 {
-			return fmt.Errorf("last punished window end: provider cons addr cannot be empty")
+	for _, f := range floors {
+		if len(f.ProviderConsAddr) == 0 {
+			return fmt.Errorf("downtime window floor: provider cons addr cannot be empty")
 		}
-		if _, ok := knownConsumerIds[e.ConsumerId]; !ok {
-			return fmt.Errorf("last punished window end references unknown consumer %d", e.ConsumerId)
+		if _, ok := knownConsumerIds[f.ConsumerId]; !ok {
+			return fmt.Errorf("downtime window floor references unknown consumer %d", f.ConsumerId)
 		}
-		k := key{e.ConsumerId, string(e.ProviderConsAddr)}
+		k := key{f.ConsumerId, string(f.ProviderConsAddr)}
 		if seen[k] {
-			return fmt.Errorf("duplicate last punished window end for consumer %d validator %x", e.ConsumerId, e.ProviderConsAddr)
+			return fmt.Errorf("duplicate downtime window floor for consumer %d validator %x", f.ConsumerId, f.ProviderConsAddr)
 		}
 		seen[k] = true
 	}

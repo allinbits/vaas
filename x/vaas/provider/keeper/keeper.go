@@ -136,18 +136,32 @@ type Keeper struct {
 
 	// PendingDowntimeSlashes holds downtime slashes that have been validated
 	// and priced but not yet executed, keyed by (consumer_id, provider cons
-	// addr). Entries mature (become executable) DowntimeChallengeWindow after
-	// acceptance; see the epoch sweep that executes matured entries.
-	PendingDowntimeSlashes collections.Map[collections.Pair[uint64, []byte], types.PendingDowntimeSlash]
+	// addr, window_end_height): every disjoint missed-block window accepted
+	// for a (consumer, validator) pair gets its own entry, so more than one
+	// can be pending at once. Entries mature (become executable)
+	// DowntimeChallengeWindow after acceptance; see the epoch sweep that
+	// executes matured entries.
+	PendingDowntimeSlashes collections.Map[collections.Triple[uint64, []byte, int64], types.PendingDowntimeSlash]
 
-	// LastPunishedWindowEnds records, per (consumer_id, provider cons addr),
-	// the InfractionHeight (window-end height) of the last downtime evidence
-	// that was accepted and queued as a pending slash for that pair. Checked
-	// in HandleConsumerDowntime to reject evidence for a window that
-	// overlaps or predates one already punished, even after the earlier
-	// pending slash has matured, executed, and been removed from
-	// PendingDowntimeSlashes.
-	LastPunishedWindowEnds collections.Map[collections.Pair[uint64, []byte], int64]
+	// AcceptedDowntimeWindows records, per (consumer_id, provider cons addr,
+	// window-end height), each downtime-detection window whose evidence has
+	// been accepted for that pair, whether or not the resulting slash has
+	// since executed. The value carries the window's start height and the
+	// acceptance time. Checked in HandleConsumerDowntime to reject evidence
+	// whose window intersects any retained record -- an intersection check
+	// against every record keeps acceptance order-independent, so the
+	// delivery order of disjoint windows never affects which are accepted.
+	// Records old enough that no acceptable evidence can still intersect
+	// them are pruned per block (see pruneAcceptedDowntimeWindows), which
+	// advances the pair's DowntimeWindowFloors entry in their stead.
+	AcceptedDowntimeWindows collections.Map[collections.Triple[uint64, []byte, int64], types.AcceptedDowntimeWindow]
+
+	// DowntimeWindowFloors records, per (consumer_id, provider cons addr),
+	// the window-end height at or below which downtime evidence is rejected
+	// outright: the AcceptedDowntimeWindows records covering those heights
+	// have been pruned, so intersection cannot be checked against them.
+	// Advanced only by pruning, never by acceptance.
+	DowntimeWindowFloors collections.Map[collections.Pair[uint64, []byte], int64]
 
 	// WithheldFeeRecords holds fee shares withheld from a validator due to a
 	// downtime-driven epoch exclusion, keyed by (consumer_id, provider cons
@@ -320,13 +334,20 @@ func NewKeeper(
 	k.PendingDowntimeSlashes = collections.NewMap(
 		sb, types.PendingDowntimeSlashesPrefix,
 		types.PendingDowntimeSlashesKeyName,
-		collections.PairKeyCodec(collections.Uint64Key, collections.BytesKey),
+		collections.TripleKeyCodec(collections.Uint64Key, collections.BytesKey, collections.Int64Key),
 		codec.CollValue[types.PendingDowntimeSlash](cdc),
 	)
 
-	k.LastPunishedWindowEnds = collections.NewMap(
-		sb, types.LastPunishedWindowEndsPrefix,
-		types.LastPunishedWindowEndsKeyName,
+	k.AcceptedDowntimeWindows = collections.NewMap(
+		sb, types.AcceptedDowntimeWindowsPrefix,
+		types.AcceptedDowntimeWindowsKeyName,
+		collections.TripleKeyCodec(collections.Uint64Key, collections.BytesKey, collections.Int64Key),
+		codec.CollValue[types.AcceptedDowntimeWindow](cdc),
+	)
+
+	k.DowntimeWindowFloors = collections.NewMap(
+		sb, types.DowntimeWindowFloorsPrefix,
+		types.DowntimeWindowFloorsKeyName,
 		collections.PairKeyCodec(collections.Uint64Key, collections.BytesKey),
 		collections.Int64Value,
 	)

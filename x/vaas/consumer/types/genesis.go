@@ -145,10 +145,11 @@ func (gs GenesisState) Validate() error {
 	}
 
 	// StagedDowntimeParams bypasses the keeper's validDowntimeParams filter on
-	// import (InitGenesis sets it directly into the collection), so an
-	// invalid entry (e.g. nil MinSignedPerWindow) must be rejected here:
-	// applyStagedDowntimeParams would otherwise apply it at the next window
-	// close and panic in closeWindow's minSigned.MulInt64 call.
+	// import, so an invalid entry (e.g. nil MinSignedPerWindow) must be
+	// rejected here: applyStagedDowntimeParams copies whatever is staged into
+	// the consumer params at the next window close, where the store
+	// round-trip turns a nil dec into an explicit zero and silently disables
+	// downtime detection.
 	if p := gs.StagedDowntimeParams; p != nil {
 		if p.SignedBlocksWindow <= 0 {
 			return errorsmod.Wrap(vaastypes.ErrInvalidGenesis,

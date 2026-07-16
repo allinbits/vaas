@@ -328,9 +328,11 @@ func TestValidateGenesisState_FeePoolShares(t *testing.T) {
 
 // TestValidateGenesisState_DowntimeLists covers sanity checks: duplicate
 // (consumer, validator) entries, bitmap-length / span inconsistencies, and
-// orphan-consumer checks in the pending-downtime-slash list, plus duplicate
-// and orphan-consumer checks on the withheld-fee-record,
-// last-punished-window-end, and epoch-downtime-entry lists.
+// orphan-consumer checks in the pending-downtime-slash list, the
+// accepted-window cross-check on pending slashes, the intersection / floor /
+// accepted_at checks on the accepted-window list, plus duplicate and
+// orphan-consumer checks on the withheld-fee-record, accepted-window,
+// downtime-window-floor, and epoch-downtime-entry lists.
 func TestValidateGenesisState_DowntimeLists(t *testing.T) {
 	owner := sdk.AccAddress([]byte("vaas-test-owner-1234")).String()
 	cs := types.ConsumerState{
@@ -364,9 +366,24 @@ func TestValidateGenesisState_DowntimeLists(t *testing.T) {
 		}
 	}
 
+	// acceptedFor builds the AcceptedDowntimeWindowRecord that a live chain
+	// would have written at acceptance time for the given window; genesis
+	// validation requires one to exist for every pending entry's window on
+	// the same (consumer, validator) pair.
+	acceptedFor := func(addr []byte, start, end int64) types.AcceptedDowntimeWindowRecord {
+		return types.AcceptedDowntimeWindowRecord{
+			ConsumerId:        0,
+			ProviderConsAddr:  addr,
+			WindowStartHeight: start,
+			WindowEndHeight:   end,
+			AcceptedAt:        time.Unix(150, 0).UTC(),
+		}
+	}
+
 	t.Run("valid pending downtime slash", func(t *testing.T) {
 		gs := build()
 		gs.PendingDowntimeSlashes = []types.PendingDowntimeSlash{validSlash(addr1)}
+		gs.AcceptedDowntimeWindows = []types.AcceptedDowntimeWindowRecord{acceptedFor(addr1, 100, 115)}
 		require.NoError(t, gs.Validate())
 	})
 
@@ -401,6 +418,9 @@ func TestValidateGenesisState_DowntimeLists(t *testing.T) {
 	t.Run("two validators is allowed", func(t *testing.T) {
 		gs := build()
 		gs.PendingDowntimeSlashes = []types.PendingDowntimeSlash{validSlash(addr1), validSlash(addr2)}
+		gs.AcceptedDowntimeWindows = []types.AcceptedDowntimeWindowRecord{
+			acceptedFor(addr1, 100, 115), acceptedFor(addr2, 100, 115),
+		}
 		require.NoError(t, gs.Validate())
 	})
 
@@ -412,6 +432,69 @@ func TestValidateGenesisState_DowntimeLists(t *testing.T) {
 		err := gs.Validate()
 		require.Error(t, err)
 		require.Contains(t, err.Error(), "unknown consumer")
+	})
+
+	t.Run("two disjoint windows for the same validator is allowed", func(t *testing.T) {
+		gs := build()
+		first := validSlash(addr1) // [100, 115]
+		second := validSlash(addr1)
+		second.WindowStartHeight = 116 // starts right after first's window end
+		gs.PendingDowntimeSlashes = []types.PendingDowntimeSlash{first, second}
+		// Each accepted window keeps its own record; at runtime one is
+		// written per acceptance.
+		gs.AcceptedDowntimeWindows = []types.AcceptedDowntimeWindowRecord{
+			acceptedFor(addr1, 100, 115), acceptedFor(addr1, 116, 131),
+		}
+		require.NoError(t, gs.Validate())
+	})
+
+	t.Run("overlapping windows for the same validator rejected", func(t *testing.T) {
+		gs := build()
+		first := validSlash(addr1) // [100, 115]
+		second := validSlash(addr1)
+		second.WindowStartHeight = 110 // overlaps first's window end (115)
+		gs.PendingDowntimeSlashes = []types.PendingDowntimeSlash{first, second}
+		err := gs.Validate()
+		require.Error(t, err)
+		require.Contains(t, err.Error(), "overlapping windows")
+	})
+
+	t.Run("pending slash with no accepted downtime window rejected", func(t *testing.T) {
+		gs := build()
+		gs.PendingDowntimeSlashes = []types.PendingDowntimeSlash{validSlash(addr1)}
+		err := gs.Validate()
+		require.Error(t, err)
+		require.Contains(t, err.Error(), "no matching accepted downtime window")
+	})
+
+	t.Run("pending slash with accepted window for a different validator rejected", func(t *testing.T) {
+		gs := build()
+		gs.PendingDowntimeSlashes = []types.PendingDowntimeSlash{validSlash(addr1)}
+		gs.AcceptedDowntimeWindows = []types.AcceptedDowntimeWindowRecord{acceptedFor(addr2, 100, 115)}
+		err := gs.Validate()
+		require.Error(t, err)
+		require.Contains(t, err.Error(), "no matching accepted downtime window")
+	})
+
+	t.Run("pending slash whose accepted window start differs rejected", func(t *testing.T) {
+		gs := build()
+		gs.PendingDowntimeSlashes = []types.PendingDowntimeSlash{validSlash(addr1)} // [100, 115]
+		gs.AcceptedDowntimeWindows = []types.AcceptedDowntimeWindowRecord{acceptedFor(addr1, 99, 115)}
+		err := gs.Validate()
+		require.Error(t, err)
+		require.Contains(t, err.Error(), "does not match its accepted downtime window start")
+	})
+
+	t.Run("accepted window without a pending slash is allowed", func(t *testing.T) {
+		gs := build()
+		gs.PendingDowntimeSlashes = []types.PendingDowntimeSlash{validSlash(addr1)} // [100, 115]
+		// A later window may have been accepted, matured, and executed while
+		// this one is still pending: its accepted record outlives the
+		// pending entry.
+		gs.AcceptedDowntimeWindows = []types.AcceptedDowntimeWindowRecord{
+			acceptedFor(addr1, 100, 115), acceptedFor(addr1, 116, 131),
+		}
+		require.NoError(t, gs.Validate())
 	})
 
 	validWithheld := func(addr []byte) types.WithheldFeeRecord {
@@ -447,20 +530,104 @@ func TestValidateGenesisState_DowntimeLists(t *testing.T) {
 		require.Contains(t, err.Error(), "unknown consumer")
 	})
 
-	t.Run("duplicate last punished window end", func(t *testing.T) {
+	t.Run("duplicate accepted downtime window", func(t *testing.T) {
 		gs := build()
-		gs.LastPunishedWindowEnds = []types.LastPunishedWindowEnd{
+		gs.AcceptedDowntimeWindows = []types.AcceptedDowntimeWindowRecord{
+			acceptedFor(addr1, 100, 115), acceptedFor(addr1, 100, 115),
+		}
+		err := gs.Validate()
+		require.Error(t, err)
+		require.Contains(t, err.Error(), "duplicate accepted downtime window")
+	})
+
+	t.Run("valid accepted downtime window", func(t *testing.T) {
+		gs := build()
+		gs.AcceptedDowntimeWindows = []types.AcceptedDowntimeWindowRecord{acceptedFor(addr1, 100, 115)}
+		require.NoError(t, gs.Validate())
+	})
+
+	t.Run("orphan accepted downtime window", func(t *testing.T) {
+		gs := build()
+		orphan := acceptedFor(addr1, 100, 115)
+		orphan.ConsumerId = 99
+		gs.AcceptedDowntimeWindows = []types.AcceptedDowntimeWindowRecord{orphan}
+		err := gs.Validate()
+		require.Error(t, err)
+		require.Contains(t, err.Error(), "unknown consumer")
+	})
+
+	t.Run("intersecting accepted downtime windows rejected", func(t *testing.T) {
+		gs := build()
+		gs.AcceptedDowntimeWindows = []types.AcceptedDowntimeWindowRecord{
+			acceptedFor(addr1, 100, 115), acceptedFor(addr1, 110, 125),
+		}
+		err := gs.Validate()
+		require.Error(t, err)
+		require.Contains(t, err.Error(), "intersect")
+	})
+
+	t.Run("inverted accepted downtime window rejected", func(t *testing.T) {
+		gs := build()
+		gs.AcceptedDowntimeWindows = []types.AcceptedDowntimeWindowRecord{acceptedFor(addr1, 116, 115)}
+		err := gs.Validate()
+		require.Error(t, err)
+		require.Contains(t, err.Error(), "inverted")
+	})
+
+	t.Run("zero accepted_at rejected", func(t *testing.T) {
+		gs := build()
+		zeroAt := acceptedFor(addr1, 100, 115)
+		zeroAt.AcceptedAt = time.Time{}
+		gs.AcceptedDowntimeWindows = []types.AcceptedDowntimeWindowRecord{zeroAt}
+		err := gs.Validate()
+		require.Error(t, err)
+		require.Contains(t, err.Error(), "accepted_at cannot be zero")
+	})
+
+	t.Run("accepted window at or below the floor rejected", func(t *testing.T) {
+		gs := build()
+		gs.AcceptedDowntimeWindows = []types.AcceptedDowntimeWindowRecord{acceptedFor(addr1, 100, 115)}
+		gs.DowntimeWindowFloors = []types.DowntimeWindowFloor{
+			{ConsumerId: 0, ProviderConsAddr: addr1, WindowEndHeight: 100},
+		}
+		err := gs.Validate()
+		require.Error(t, err)
+		require.Contains(t, err.Error(), "at or below the pair's pruned floor")
+	})
+
+	t.Run("accepted window above the floor is allowed", func(t *testing.T) {
+		gs := build()
+		gs.AcceptedDowntimeWindows = []types.AcceptedDowntimeWindowRecord{acceptedFor(addr1, 100, 115)}
+		gs.DowntimeWindowFloors = []types.DowntimeWindowFloor{
+			{ConsumerId: 0, ProviderConsAddr: addr1, WindowEndHeight: 99},
+		}
+		require.NoError(t, gs.Validate())
+	})
+
+	t.Run("duplicate downtime window floor", func(t *testing.T) {
+		gs := build()
+		gs.DowntimeWindowFloors = []types.DowntimeWindowFloor{
 			{ConsumerId: 0, ProviderConsAddr: addr1, WindowEndHeight: 10},
 			{ConsumerId: 0, ProviderConsAddr: addr1, WindowEndHeight: 20},
 		}
 		err := gs.Validate()
 		require.Error(t, err)
-		require.Contains(t, err.Error(), "duplicate last punished window end")
+		require.Contains(t, err.Error(), "duplicate downtime window floor")
 	})
 
-	t.Run("valid last punished window end", func(t *testing.T) {
+	t.Run("orphan downtime window floor", func(t *testing.T) {
 		gs := build()
-		gs.LastPunishedWindowEnds = []types.LastPunishedWindowEnd{
+		gs.DowntimeWindowFloors = []types.DowntimeWindowFloor{
+			{ConsumerId: 99, ProviderConsAddr: addr1, WindowEndHeight: 10},
+		}
+		err := gs.Validate()
+		require.Error(t, err)
+		require.Contains(t, err.Error(), "unknown consumer")
+	})
+
+	t.Run("valid downtime window floor", func(t *testing.T) {
+		gs := build()
+		gs.DowntimeWindowFloors = []types.DowntimeWindowFloor{
 			{ConsumerId: 0, ProviderConsAddr: addr1, WindowEndHeight: 10},
 		}
 		require.NoError(t, gs.Validate())

@@ -296,8 +296,15 @@ func (k Keeper) QueueVSCPackets(ctx sdk.Context) error {
 		}
 
 		// Send a full snapshot when the consumer is behind (i.e. it has
-		// unacknowledged packets), otherwise send a diff.
-		isSnapshot := k.GetConsumerHighestAckedVscId(ctx, consumerId) < k.GetConsumerHighestSentVscId(ctx, consumerId)
+		// unacknowledged packets) or still has a packet stuck in the local
+		// send queue (e.g. a client that hasn't been discovered yet, or a
+		// prior send that failed and left highestSent unadvanced). Invariant:
+		// never stack a diff behind an undelivered packet -- a diff assumes
+		// the consumer already applied everything before it, which may never
+		// hold once packets can be dropped or reordered; a snapshot converges
+		// regardless of arrival order.
+		isSnapshot := k.GetConsumerHighestAckedVscId(ctx, consumerId) < k.GetConsumerHighestSentVscId(ctx, consumerId) ||
+			len(k.GetPendingVSCPackets(ctx, consumerId)) > 0
 
 		valUpdates, err := k.ComputeConsumerNextValSet(ctx, bondedValidators, consumerId, currentValSet, isSnapshot)
 		if err != nil {

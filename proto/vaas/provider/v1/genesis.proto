@@ -70,23 +70,47 @@ message GenesisState {
   repeated WithheldFeeRecord withheld_fee_records = 14
       [ (gogoproto.nullable) = false ];
 
-  // Per-(consumer, validator) downtime-detection windows already punished,
-  // preventing double-punishment of overlapping evidence. Empty for a new
-  // chain.
-  repeated LastPunishedWindowEnd last_punished_window_ends = 15
+  // Per-(consumer, validator) downtime-detection windows already accepted,
+  // one record per window, preventing re-acceptance of intersecting
+  // evidence. Empty for a new chain.
+  repeated AcceptedDowntimeWindowRecord accepted_downtime_windows = 15
       [ (gogoproto.nullable) = false ];
 
   // Per-(consumer, validator) downtime marks for the epoch fee distribution
   // currently in progress. Empty for a new chain.
   repeated EpochDowntimeEntry epoch_downtime_entries = 16
       [ (gogoproto.nullable) = false ];
+
+  // Per-(consumer, validator) pruned acceptance floors: the window-end
+  // height at or below which downtime evidence is rejected outright because
+  // the accepted-window records covering it have been pruned. Empty for a
+  // new chain.
+  repeated DowntimeWindowFloor downtime_window_floors = 17
+      [ (gogoproto.nullable) = false ];
 }
 
-// LastPunishedWindowEnd is a single (consumer_id, provider_cons_addr) ->
-// window-end-height record from the keeper's LastPunishedWindowEnds
-// collection: the downtime-detection window boundary through which a
-// validator has already been punished, used to reject overlapping evidence.
-message LastPunishedWindowEnd {
+// AcceptedDowntimeWindowRecord is a single (consumer_id, provider_cons_addr,
+// window_end_height) entry from the keeper's AcceptedDowntimeWindows
+// collection: one downtime-detection window whose evidence has already been
+// accepted for that validator, used to reject intersecting or re-submitted
+// evidence. Recording happens at acceptance, independent of whether the
+// resulting slash ever executes.
+message AcceptedDowntimeWindowRecord {
+  uint64 consumer_id = 1;
+  bytes provider_cons_addr = 2;
+  int64 window_end_height = 3;
+  int64 window_start_height = 4;
+  google.protobuf.Timestamp accepted_at = 5
+      [ (gogoproto.nullable) = false, (gogoproto.stdtime) = true ];
+}
+
+// DowntimeWindowFloor is a single (consumer_id, provider_cons_addr) entry
+// from the keeper's DowntimeWindowFloors collection: the window-end height
+// at or below which downtime evidence for that validator is rejected
+// outright, because the accepted-window records covering those heights have
+// been pruned and intersection cannot be checked against them.
+// Advanced only by pruning, never by acceptance.
+message DowntimeWindowFloor {
   uint64 consumer_id = 1;
   bytes provider_cons_addr = 2;
   int64 window_end_height = 3;

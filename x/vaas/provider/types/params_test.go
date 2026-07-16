@@ -1,6 +1,7 @@
 package types_test
 
 import (
+	"encoding/json"
 	"testing"
 	"time"
 
@@ -9,6 +10,9 @@ import (
 	channeltypesv2 "github.com/cosmos/ibc-go/v10/modules/core/04-channel/v2/types"
 
 	"cosmossdk.io/math"
+
+	"github.com/cosmos/cosmos-sdk/codec"
+	codectypes "github.com/cosmos/cosmos-sdk/codec/types"
 
 	"github.com/allinbits/vaas/x/vaas/provider/types"
 )
@@ -98,7 +102,7 @@ func TestValidateInfractionParameters(t *testing.T) {
 func TestInfractionParametersDowntimeWindowValidation(t *testing.T) {
 	ip := types.DefaultInfractionParameters()
 	require.NoError(t, ip.Validate())
-	require.Equal(t, math.LegacyMustNewDecFromStr("0.05"), ip.Downtime.SlashFraction)
+	require.Equal(t, math.LegacyMustNewDecFromStr("0.0001"), ip.Downtime.SlashFraction)
 
 	// maxMissed = W - ceil(minSigned*W) = 600 - 300 = 300
 	require.Equal(t, int64(300), ip.MaxMissed())
@@ -117,12 +121,44 @@ func TestInfractionParametersDowntimeWindowValidation(t *testing.T) {
 	require.Error(t, types.ValidateInfractionParamsAgainst(bad, types.DefaultTrustingPeriodFraction))
 }
 
+// TestInfractionParametersRejectsOmittedSlashFraction verifies that an
+// InfractionParameters JSON payload whose downtime object omits the
+// slash_fraction key -- which deserializes to a nil LegacyDec, since the
+// JSON unmarshal does no defaulting -- fails validation with an error
+// instead of booting a chain whose downtime slashes are capped at zero.
+func TestInfractionParametersRejectsOmittedSlashFraction(t *testing.T) {
+	cdc := codec.NewProtoCodec(codectypes.NewInterfaceRegistry())
+
+	def := types.DefaultInfractionParameters()
+	bz, err := cdc.MarshalJSON(&def)
+	require.NoError(t, err)
+
+	var fields map[string]json.RawMessage
+	require.NoError(t, json.Unmarshal(bz, &fields))
+	var downtime map[string]json.RawMessage
+	require.NoError(t, json.Unmarshal(fields["downtime"], &downtime))
+	delete(downtime, "slash_fraction")
+	fields["downtime"], err = json.Marshal(downtime)
+	require.NoError(t, err)
+	bz, err = json.Marshal(fields)
+	require.NoError(t, err)
+
+	var ip types.InfractionParameters
+	require.NoError(t, cdc.UnmarshalJSON(bz, &ip))
+	require.True(t, ip.Downtime.SlashFraction.IsNil())
+
+	var vErr error
+	require.NotPanics(t, func() { vErr = ip.Validate() })
+	require.Error(t, vErr)
+	require.Contains(t, vErr.Error(), "slash_fraction")
+}
+
 // TestInfractionParametersRejectsEvidenceMaxAgeAboveChallengeWindow verifies
 // that downtime_evidence_max_age can never exceed downtime_challenge_window:
 // otherwise, once a pending slash matures and executes, evidence for the
 // same (now-closed) window could still be re-accepted -- since the evidence
 // is only judged too stale relative to DowntimeEvidenceMaxAge -- and queue a
-// second slash for an infraction already punished.
+// second slash for a window already accepted.
 func TestInfractionParametersRejectsEvidenceMaxAgeAboveChallengeWindow(t *testing.T) {
 	ip := types.DefaultInfractionParameters()
 	ip.DowntimeChallengeWindow = 10 * time.Second

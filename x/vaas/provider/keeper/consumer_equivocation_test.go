@@ -921,7 +921,8 @@ func TestHandleConsumerDowntimeAcceptsAndQueuesPricedSlash(t *testing.T) {
 
 	require.True(t, providerKeeper.IsEpochDowntime(ctx, consumerId, consAddr))
 
-	pending, err := providerKeeper.PendingDowntimeSlashes.Get(ctx, collections.Join(consumerId, consAddr.Bytes()))
+	// windowStart 93, span 8 => window end (InfractionHeight) 100.
+	pending, err := providerKeeper.PendingDowntimeSlashes.Get(ctx, collections.Join3(consumerId, consAddr.Bytes(), int64(100)))
 	require.NoError(t, err)
 	require.Equal(t, int64(93), pending.WindowStartHeight)
 	require.Equal(t, int64(8), pending.Span)
@@ -1004,7 +1005,103 @@ func TestHandleConsumerDowntimeRejectsUnacceptableParams(t *testing.T) {
 	require.Contains(t, err.Error(), "unacceptable downtime params")
 }
 
-func TestHandleConsumerDowntimeRejectsDuplicatePending(t *testing.T) {
+// TestHandleConsumerDowntimeAcceptsMultipleDisjointPendingWindows asserts the
+// core multi-window behavior: a second, disjoint window for the same
+// (consumer, validator) pair is accepted -- and priced independently -- while
+// the first slash is still pending. Both entries coexist in
+// PendingDowntimeSlashes, keyed by their own window-end height.
+func TestHandleConsumerDowntimeAcceptsMultipleDisjointPendingWindows(t *testing.T) {
+	windowEndTime := time.Date(2025, 6, 1, 0, 0, 0, 0, time.UTC)
+	spawnTime := windowEndTime.Add(-30 * 24 * time.Hour)
+	infractionParams := downtimeParams(8, "0.5", 0, 7*24*time.Hour, 72*time.Hour)
+
+	providerKeeper, ctx, ctrl, mocks, consumerId, providerAddr := setupDowntimeTest(t, infractionParams, spawnTime, windowEndTime)
+	defer ctrl.Finish()
+	ctx = ctx.WithBlockTime(windowEndTime)
+
+	providerKeeper.SetEpochShareRecord(ctx, consumerId, windowEndTime, math.NewInt(1000))
+	mocks.MockPhotonKeeper.EXPECT().ConversionRate(ctx).Return(math.LegacyNewDec(2), nil).Times(2)
+
+	consAddr := providerAddr.ToSdkConsAddr()
+	// windowStart 93, span 8 => window end 100.
+	firstPacket := vaastypes.NewEvidencePacketData(sdk.ConsAddress(consAddr), 93, []byte{0x3F}, 8, 8, math.LegacyMustNewDecFromStr("0.5"))
+	require.NoError(t, providerKeeper.HandleConsumerEvidencePacket(ctx, consumerId, firstPacket))
+
+	// windowStart 101 > 100: disjoint from the first, accepted while it is
+	// still pending.
+	secondPacket := vaastypes.NewEvidencePacketData(sdk.ConsAddress(consAddr), 101, []byte{0x3F}, 8, 8, math.LegacyMustNewDecFromStr("0.5"))
+	require.NoError(t, providerKeeper.HandleConsumerEvidencePacket(ctx, consumerId, secondPacket))
+
+	first, err := providerKeeper.PendingDowntimeSlashes.Get(ctx, collections.Join3(consumerId, consAddr.Bytes(), int64(100)))
+	require.NoError(t, err, "first window must still be pending")
+	require.Equal(t, int64(93), first.WindowStartHeight)
+
+	second, err := providerKeeper.PendingDowntimeSlashes.Get(ctx, collections.Join3(consumerId, consAddr.Bytes(), int64(108)))
+	require.NoError(t, err, "second, disjoint window must also be pending")
+	require.Equal(t, int64(101), second.WindowStartHeight)
+}
+
+// TestHandleConsumerDowntimeAcceptsDisjointWindowsOutOfOrder asserts that
+// acceptance is order-independent: the later window [101, 108] arriving
+// before the earlier window [93, 100] does not void it -- both are accepted,
+// each queues its own priced pending slash. In between, a window
+// intersecting the already-accepted later window from below ([95, 102]) is
+// rejected, covering the direction where the accepted record sits above the
+// incoming window.
+func TestHandleConsumerDowntimeAcceptsDisjointWindowsOutOfOrder(t *testing.T) {
+	windowEndTime := time.Date(2025, 6, 1, 0, 0, 0, 0, time.UTC)
+	spawnTime := windowEndTime.Add(-30 * 24 * time.Hour)
+	infractionParams := downtimeParams(8, "0.5", 0, 7*24*time.Hour, 72*time.Hour)
+
+	providerKeeper, ctx, ctrl, mocks, consumerId, providerAddr := setupDowntimeTest(t, infractionParams, spawnTime, windowEndTime)
+	defer ctrl.Finish()
+	ctx = ctx.WithBlockTime(windowEndTime)
+
+	providerKeeper.SetEpochShareRecord(ctx, consumerId, windowEndTime, math.NewInt(1000))
+	mocks.MockPhotonKeeper.EXPECT().ConversionRate(ctx).Return(math.LegacyNewDec(2), nil).Times(2)
+
+	consAddr := providerAddr.ToSdkConsAddr()
+	// The later window [101, 108] arrives first.
+	laterPacket := vaastypes.NewEvidencePacketData(sdk.ConsAddress(consAddr), 101, []byte{0x3F}, 8, 8, math.LegacyMustNewDecFromStr("0.5"))
+	require.NoError(t, providerKeeper.HandleConsumerEvidencePacket(ctx, consumerId, laterPacket))
+
+	// A window [95, 102] intersecting the accepted [101, 108] from below is
+	// rejected.
+	intersecting := vaastypes.NewEvidencePacketData(sdk.ConsAddress(consAddr), 95, []byte{0x3F}, 8, 8, math.LegacyMustNewDecFromStr("0.5"))
+	err := providerKeeper.HandleConsumerEvidencePacket(ctx, consumerId, intersecting)
+	require.Error(t, err)
+	require.Contains(t, err.Error(), "already accepted")
+
+	// The earlier, disjoint window [93, 100] is still accepted after the
+	// later one.
+	earlierPacket := vaastypes.NewEvidencePacketData(sdk.ConsAddress(consAddr), 93, []byte{0x3F}, 8, 8, math.LegacyMustNewDecFromStr("0.5"))
+	require.NoError(t, providerKeeper.HandleConsumerEvidencePacket(ctx, consumerId, earlierPacket))
+
+	later, err := providerKeeper.PendingDowntimeSlashes.Get(ctx, collections.Join3(consumerId, consAddr.Bytes(), int64(108)))
+	require.NoError(t, err, "later window must be pending")
+	require.Equal(t, int64(101), later.WindowStartHeight)
+	require.True(t, later.SlashTokens.IsPositive(), "later window must be priced")
+
+	earlier, err := providerKeeper.PendingDowntimeSlashes.Get(ctx, collections.Join3(consumerId, consAddr.Bytes(), int64(100)))
+	require.NoError(t, err, "earlier window accepted after the later one must be pending")
+	require.Equal(t, int64(93), earlier.WindowStartHeight)
+	require.True(t, earlier.SlashTokens.IsPositive(), "earlier window must be priced")
+
+	// Both accepted records are retained, each carrying its own window start.
+	laterAccepted, err := providerKeeper.AcceptedDowntimeWindows.Get(ctx, collections.Join3(consumerId, consAddr.Bytes(), int64(108)))
+	require.NoError(t, err)
+	require.Equal(t, int64(101), laterAccepted.WindowStart)
+	earlierAccepted, err := providerKeeper.AcceptedDowntimeWindows.Get(ctx, collections.Join3(consumerId, consAddr.Bytes(), int64(100)))
+	require.NoError(t, err)
+	require.Equal(t, int64(93), earlierAccepted.WindowStart)
+}
+
+// TestHandleConsumerDowntimeRejectsOverlappingWhilePending asserts that a
+// window intersecting one still pending for the same (consumer, validator)
+// pair is rejected via the AcceptedDowntimeWindows intersection check, the
+// same guard that rejects intersection after the earlier slash has matured
+// and executed.
+func TestHandleConsumerDowntimeRejectsOverlappingWhilePending(t *testing.T) {
 	windowEndTime := time.Date(2025, 6, 1, 0, 0, 0, 0, time.UTC)
 	spawnTime := windowEndTime.Add(-30 * 24 * time.Hour)
 	infractionParams := downtimeParams(8, "0.5", 0, 7*24*time.Hour, 72*time.Hour)
@@ -1020,16 +1117,16 @@ func TestHandleConsumerDowntimeRejectsDuplicatePending(t *testing.T) {
 	firstPacket := vaastypes.NewEvidencePacketData(sdk.ConsAddress(consAddr), 93, []byte{0x3F}, 8, 8, math.LegacyMustNewDecFromStr("0.5"))
 	require.NoError(t, providerKeeper.HandleConsumerEvidencePacket(ctx, consumerId, firstPacket))
 
-	// A second, distinct window for the same (consumer, validator) is
+	// A second window overlapping the first (start 95 <= window end 100) is
 	// rejected while the first slash is still pending; ConversionRate is not
 	// called again (verified by the single EXPECT() above and ctrl.Finish()).
-	secondPacket := vaastypes.NewEvidencePacketData(sdk.ConsAddress(consAddr), 101, []byte{0x3F}, 8, 8, math.LegacyMustNewDecFromStr("0.5"))
+	secondPacket := vaastypes.NewEvidencePacketData(sdk.ConsAddress(consAddr), 95, []byte{0x3F}, 8, 8, math.LegacyMustNewDecFromStr("0.5"))
 	err := providerKeeper.HandleConsumerEvidencePacket(ctx, consumerId, secondPacket)
 	require.Error(t, err)
-	require.Contains(t, err.Error(), "already pending")
+	require.Contains(t, err.Error(), "already accepted")
 }
 
-func TestHandleConsumerDowntimeRejectsOverlappingPunishedWindow(t *testing.T) {
+func TestHandleConsumerDowntimeRejectsOverlappingAcceptedWindow(t *testing.T) {
 	windowEndTime := time.Date(2025, 6, 1, 0, 0, 0, 0, time.UTC)
 	spawnTime := windowEndTime.Add(-30 * 24 * time.Hour)
 	infractionParams := downtimeParams(8, "0.5", 0, 7*24*time.Hour, 72*time.Hour)
@@ -1042,35 +1139,91 @@ func TestHandleConsumerDowntimeRejectsOverlappingPunishedWindow(t *testing.T) {
 	mocks.MockPhotonKeeper.EXPECT().ConversionRate(ctx).Return(math.LegacyNewDec(2), nil).Times(2)
 
 	consAddr := providerAddr.ToSdkConsAddr()
-	pendingKey := collections.Join(consumerId, consAddr.Bytes())
-
 	// windowStart 93, span 8 => InfractionHeight (window end) 100.
+	pendingKey := collections.Join3(consumerId, consAddr.Bytes(), int64(100))
+
 	firstPacket := vaastypes.NewEvidencePacketData(sdk.ConsAddress(consAddr), 93, []byte{0x3F}, 8, 8, math.LegacyMustNewDecFromStr("0.5"))
 	require.NoError(t, providerKeeper.HandleConsumerEvidencePacket(ctx, consumerId, firstPacket))
 
 	// Simulate the pending slash maturing and executing: the epoch sweep
 	// removes the PendingDowntimeSlashes entry (see SweepPendingDowntimeSlashes),
-	// but LastPunishedWindowEnds must retain the window-end height so a
-	// re-submission for the same or an overlapping window is still caught.
+	// but the AcceptedDowntimeWindows record must be retained so a
+	// re-submission for the same or an intersecting window is still caught.
 	require.NoError(t, providerKeeper.PendingDowntimeSlashes.Remove(ctx, pendingKey))
 
-	// An exact duplicate of the punished window (start 93 <= last punished
-	// end 100) is rejected even though nothing is pending anymore.
+	// An exact duplicate of the accepted window (same window end 100) is
+	// rejected even though nothing is pending anymore.
 	duplicate := vaastypes.NewEvidencePacketData(sdk.ConsAddress(consAddr), 93, []byte{0x3F}, 8, 8, math.LegacyMustNewDecFromStr("0.5"))
 	err := providerKeeper.HandleConsumerEvidencePacket(ctx, consumerId, duplicate)
 	require.Error(t, err)
-	require.Contains(t, err.Error(), "already punished")
+	require.Contains(t, err.Error(), "already accepted")
 
-	// A window overlapping the punished one (start 95 <= 100) is likewise
-	// rejected.
+	// A window [95, 102] starting inside the accepted [93, 100] and ending
+	// beyond it is likewise rejected.
 	overlapping := vaastypes.NewEvidencePacketData(sdk.ConsAddress(consAddr), 95, []byte{0x3F}, 8, 8, math.LegacyMustNewDecFromStr("0.5"))
 	err = providerKeeper.HandleConsumerEvidencePacket(ctx, consumerId, overlapping)
 	require.Error(t, err)
-	require.Contains(t, err.Error(), "already punished")
+	require.Contains(t, err.Error(), "already accepted")
 
 	// A later, disjoint window (start 101 > 100) is accepted.
 	later := vaastypes.NewEvidencePacketData(sdk.ConsAddress(consAddr), 101, []byte{0x3F}, 8, 8, math.LegacyMustNewDecFromStr("0.5"))
 	require.NoError(t, providerKeeper.HandleConsumerEvidencePacket(ctx, consumerId, later))
+}
+
+// TestHandleConsumerDowntimeRejectsWindowStartingAtAcceptedEnd pins the
+// closed-interval boundary of the intersection check from below: with
+// [93, 100] accepted, new evidence [100, 107] shares exactly the boundary
+// height 100 (newStart == retainedEnd) and is rejected.
+func TestHandleConsumerDowntimeRejectsWindowStartingAtAcceptedEnd(t *testing.T) {
+	windowEndTime := time.Date(2025, 6, 1, 0, 0, 0, 0, time.UTC)
+	spawnTime := windowEndTime.Add(-30 * 24 * time.Hour)
+	infractionParams := downtimeParams(8, "0.5", 0, 7*24*time.Hour, 72*time.Hour)
+
+	providerKeeper, ctx, ctrl, mocks, consumerId, providerAddr := setupDowntimeTest(t, infractionParams, spawnTime, windowEndTime)
+	defer ctrl.Finish()
+	ctx = ctx.WithBlockTime(windowEndTime)
+
+	providerKeeper.SetEpochShareRecord(ctx, consumerId, windowEndTime, math.NewInt(1000))
+	mocks.MockPhotonKeeper.EXPECT().ConversionRate(ctx).Return(math.LegacyNewDec(2), nil)
+
+	consAddr := providerAddr.ToSdkConsAddr()
+	// windowStart 93, span 8 => window end 100.
+	accepted := vaastypes.NewEvidencePacketData(sdk.ConsAddress(consAddr), 93, []byte{0x3F}, 8, 8, math.LegacyMustNewDecFromStr("0.5"))
+	require.NoError(t, providerKeeper.HandleConsumerEvidencePacket(ctx, consumerId, accepted))
+
+	// [100, 107] intersects the accepted [93, 100] only at height 100.
+	touching := vaastypes.NewEvidencePacketData(sdk.ConsAddress(consAddr), 100, []byte{0x3F}, 8, 8, math.LegacyMustNewDecFromStr("0.5"))
+	err := providerKeeper.HandleConsumerEvidencePacket(ctx, consumerId, touching)
+	require.Error(t, err)
+	require.Contains(t, err.Error(), "already accepted")
+}
+
+// TestHandleConsumerDowntimeRejectsWindowEndingAtAcceptedStart pins the
+// closed-interval boundary of the intersection check from above: with
+// [101, 108] accepted, new evidence [94, 101] shares exactly the boundary
+// height 101 (retainedStart == newEnd) and is rejected.
+func TestHandleConsumerDowntimeRejectsWindowEndingAtAcceptedStart(t *testing.T) {
+	windowEndTime := time.Date(2025, 6, 1, 0, 0, 0, 0, time.UTC)
+	spawnTime := windowEndTime.Add(-30 * 24 * time.Hour)
+	infractionParams := downtimeParams(8, "0.5", 0, 7*24*time.Hour, 72*time.Hour)
+
+	providerKeeper, ctx, ctrl, mocks, consumerId, providerAddr := setupDowntimeTest(t, infractionParams, spawnTime, windowEndTime)
+	defer ctrl.Finish()
+	ctx = ctx.WithBlockTime(windowEndTime)
+
+	providerKeeper.SetEpochShareRecord(ctx, consumerId, windowEndTime, math.NewInt(1000))
+	mocks.MockPhotonKeeper.EXPECT().ConversionRate(ctx).Return(math.LegacyNewDec(2), nil)
+
+	consAddr := providerAddr.ToSdkConsAddr()
+	// windowStart 101, span 8 => window end 108.
+	accepted := vaastypes.NewEvidencePacketData(sdk.ConsAddress(consAddr), 101, []byte{0x3F}, 8, 8, math.LegacyMustNewDecFromStr("0.5"))
+	require.NoError(t, providerKeeper.HandleConsumerEvidencePacket(ctx, consumerId, accepted))
+
+	// [94, 101] intersects the accepted [101, 108] only at height 101.
+	touching := vaastypes.NewEvidencePacketData(sdk.ConsAddress(consAddr), 94, []byte{0x3F}, 8, 8, math.LegacyMustNewDecFromStr("0.5"))
+	err := providerKeeper.HandleConsumerEvidencePacket(ctx, consumerId, touching)
+	require.Error(t, err)
+	require.Contains(t, err.Error(), "already accepted")
 }
 
 func TestHandleConsumerDowntimeRejectsStaleEvidence(t *testing.T) {

@@ -360,9 +360,9 @@ func TestQueryPendingDowntimeSlashes(t *testing.T) {
 		MaturesAt:          maturesAt,
 	}
 
-	require.NoError(t, k.PendingDowntimeSlashes.Set(ctx, collections.Join(consumer1, entryA.ProviderConsAddr), entryA))
-	require.NoError(t, k.PendingDowntimeSlashes.Set(ctx, collections.Join(consumer1, entryB.ProviderConsAddr), entryB))
-	require.NoError(t, k.PendingDowntimeSlashes.Set(ctx, collections.Join(consumer2, entryC.ProviderConsAddr), entryC))
+	require.NoError(t, k.PendingDowntimeSlashes.Set(ctx, collections.Join3(consumer1, entryA.ProviderConsAddr, entryA.WindowStartHeight+entryA.Span-1), entryA))
+	require.NoError(t, k.PendingDowntimeSlashes.Set(ctx, collections.Join3(consumer1, entryB.ProviderConsAddr, entryB.WindowStartHeight+entryB.Span-1), entryB))
+	require.NoError(t, k.PendingDowntimeSlashes.Set(ctx, collections.Join3(consumer2, entryC.ProviderConsAddr, entryC.WindowStartHeight+entryC.Span-1), entryC))
 
 	resp, err := k.QueryPendingDowntimeSlashes(ctx, &providertypes.QueryPendingDowntimeSlashesRequest{ConsumerId: consumer1})
 	require.NoError(t, err)

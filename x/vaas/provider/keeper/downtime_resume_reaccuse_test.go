@@ -29,15 +29,16 @@ import (
 
 const reaccuseTestChainID = "consumer-chain-reaccuse"
 
-// TestResumeThenReaccuse_SameWindowRejectedLaterWindowChallengeable encodes
-// Mandate A(2) of the final whole-branch review end to end: LastPunishedWindowEnds
-// is written at evidence acceptance (HandleConsumerDowntime) and deliberately
-// survives PauseConsumerChain's CancelConsumerDowntimeState, which clears only
-// PendingDowntimeSlashes and EpochDowntime, and a subsequent resume. So:
+// TestResumeThenReaccuse_SameWindowRejectedLaterWindowChallengeable covers
+// the pause/resume survivability of the acceptance bookkeeping end to end:
+// AcceptedDowntimeWindows records are written at evidence acceptance
+// (HandleConsumerDowntime) and deliberately survive PauseConsumerChain's
+// CancelConsumerDowntimeState, which clears only PendingDowntimeSlashes and
+// EpochDowntime, and a subsequent resume. So:
 //
 //  1. downtime evidence for the window a successful challenge just disproved
 //     cannot be resubmitted after the consumer resumes, even though nothing
-//     is pending for it anymore;
+//     is pending for it anymore -- its accepted record survives;
 //  2. evidence for a later, disjoint window is still accepted after resume,
 //     and is itself challengeable -- proven here with a second genuine
 //     challenge, not just acceptance into PendingDowntimeSlashes.
@@ -94,19 +95,19 @@ func TestResumeThenReaccuse_SameWindowRejectedLaterWindowChallengeable(t *testin
 	k.SetEpochShareRecord(ctx, cid, windowEndTime, math.NewInt(1000))
 	mocks.MockPhotonKeeper.EXPECT().ConversionRate(gomock.Any()).Return(math.LegacyNewDec(2), nil).AnyTimes()
 
-	pendingKey := collections.Join(cid, consAddr.Bytes())
+	firstWindowKey := collections.Join3(cid, consAddr.Bytes(), int64(100))
 
 	// --- accept evidence for window [93, 100] (span 8), 6 of 8 missed ---
 	firstEvidence := vaastypes.NewEvidencePacketData(sdk.ConsAddress(consAddr), 93, []byte{0x3F}, 8, 8, math.LegacyMustNewDecFromStr("0.5"))
 	require.NoError(t, k.HandleConsumerEvidencePacket(ctx, cid, firstEvidence))
 
-	pending, err := k.PendingDowntimeSlashes.Get(ctx, pendingKey)
+	pending, err := k.PendingDowntimeSlashes.Get(ctx, firstWindowKey)
 	require.NoError(t, err)
 	require.Equal(t, int64(93), pending.WindowStartHeight)
 
-	lastPunished, err := k.LastPunishedWindowEnds.Get(ctx, pendingKey)
+	firstAccepted, err := k.AcceptedDowntimeWindows.Get(ctx, firstWindowKey)
 	require.NoError(t, err)
-	require.Equal(t, int64(100), lastPunished)
+	require.Equal(t, int64(93), firstAccepted.WindowStart)
 
 	// challenge disproves claimedHeight within [windowStart, windowStart+8):
 	// bit (claimedHeight-windowStart) must be set in the 0x3F bitmap, i.e.
@@ -148,13 +149,13 @@ func TestResumeThenReaccuse_SameWindowRejectedLaterWindowChallengeable(t *testin
 
 	require.NoError(t, challenge(95))
 	require.Equal(t, types.CONSUMER_PHASE_PAUSED, k.GetConsumerPhase(ctx, cid))
-	_, err = k.PendingDowntimeSlashes.Get(ctx, pendingKey)
+	_, err = k.PendingDowntimeSlashes.Get(ctx, firstWindowKey)
 	require.ErrorIs(t, err, collections.ErrNotFound)
-	// LastPunishedWindowEnds survives the pause -- only DeleteConsumerChain
-	// erases it.
-	lastPunished, err = k.LastPunishedWindowEnds.Get(ctx, pendingKey)
+	// The accepted-window record survives the pause -- only
+	// DeleteConsumerChain erases it.
+	firstAccepted, err = k.AcceptedDowntimeWindows.Get(ctx, firstWindowKey)
 	require.NoError(t, err)
-	require.Equal(t, int64(100), lastPunished)
+	require.Equal(t, int64(93), firstAccepted.WindowStart)
 
 	// --- resume ---
 	// The forced resume snapshot recomputes the consumer's validator set from
@@ -173,31 +174,33 @@ func TestResumeThenReaccuse_SameWindowRejectedLaterWindowChallengeable(t *testin
 	require.NoError(t, k.ResumeConsumerChain(ctx, cid))
 	require.Equal(t, types.CONSUMER_PHASE_LAUNCHED, k.GetConsumerPhase(ctx, cid))
 
-	// (1) the disproven window, and anything overlapping it, is rejected
+	// (1) the disproven window, and anything intersecting it, is rejected
 	// post-resume even though PendingDowntimeSlashes for it is long gone.
 	duplicate := vaastypes.NewEvidencePacketData(sdk.ConsAddress(consAddr), 93, []byte{0x3F}, 8, 8, math.LegacyMustNewDecFromStr("0.5"))
 	err = k.HandleConsumerEvidencePacket(ctx, cid, duplicate)
 	require.Error(t, err)
-	require.Contains(t, err.Error(), "already punished")
+	require.Contains(t, err.Error(), "already accepted")
 
 	overlapping := vaastypes.NewEvidencePacketData(sdk.ConsAddress(consAddr), 95, []byte{0x3F}, 8, 8, math.LegacyMustNewDecFromStr("0.5"))
 	err = k.HandleConsumerEvidencePacket(ctx, cid, overlapping)
 	require.Error(t, err)
-	require.Contains(t, err.Error(), "already punished")
+	require.Contains(t, err.Error(), "already accepted")
 
 	// (2) a later, disjoint window (start 101 > 100) is accepted...
 	laterEvidence := vaastypes.NewEvidencePacketData(sdk.ConsAddress(consAddr), 101, []byte{0x3F}, 8, 8, math.LegacyMustNewDecFromStr("0.5"))
 	require.NoError(t, k.HandleConsumerEvidencePacket(ctx, cid, laterEvidence))
 
-	lastPunished, err = k.LastPunishedWindowEnds.Get(ctx, pendingKey)
+	// windowEnd = windowStart(101) + span(8) - 1 = 108.
+	secondWindowKey := collections.Join3(cid, consAddr.Bytes(), int64(108))
+	laterAccepted, err := k.AcceptedDowntimeWindows.Get(ctx, secondWindowKey)
 	require.NoError(t, err)
-	require.Equal(t, int64(108), lastPunished) // windowStart(101) + span(8) - 1
+	require.Equal(t, int64(101), laterAccepted.WindowStart)
 
 	// ...and is itself challengeable: a second genuine challenge against the
 	// new window (claimed height 103, same bit-2-of-0x3F offset as before)
 	// succeeds too.
 	require.NoError(t, challenge(103))
 	require.Equal(t, types.CONSUMER_PHASE_PAUSED, k.GetConsumerPhase(ctx, cid))
-	_, err = k.PendingDowntimeSlashes.Get(ctx, pendingKey)
+	_, err = k.PendingDowntimeSlashes.Get(ctx, secondWindowKey)
 	require.ErrorIs(t, err, collections.ErrNotFound)
 }

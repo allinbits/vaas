@@ -253,6 +253,13 @@ func (k Keeper) InitGenesis(ctx sdk.Context, genState *types.GenesisState) []abc
 	if genState.InfractionParameters != nil {
 		infractionParams = *genState.InfractionParameters
 	}
+	// Halt InitChain on malformed infraction parameters rather than store
+	// them: a genesis JSON whose downtime object omits slash_fraction
+	// deserializes to a nil LegacyDec, which the store round-trip would turn
+	// into an explicit zero, silently capping every downtime slash at zero.
+	if err := infractionParams.Validate(); err != nil {
+		panic(fmt.Errorf("invalid infraction parameters in genesis: %w", err))
+	}
 	if err := types.ValidateInfractionParamsAgainst(infractionParams, genState.Params.TrustingPeriodFraction); err != nil {
 		panic(fmt.Errorf("infraction parameters incompatible with genesis trusting period fraction: %w", err))
 	}
@@ -262,7 +269,8 @@ func (k Keeper) InitGenesis(ctx sdk.Context, genState *types.GenesisState) []abc
 	// params (only when present -- absent means the params have never
 	// changed), and per-(consumer, distribution-time) epoch share records.
 	for _, pending := range genState.PendingDowntimeSlashes {
-		key := collections.Join(pending.ConsumerId, pending.ProviderConsAddr)
+		windowEndHeight := pending.WindowStartHeight + pending.Span - 1
+		key := collections.Join3(pending.ConsumerId, pending.ProviderConsAddr, windowEndHeight)
 		if err := k.PendingDowntimeSlashes.Set(ctx, key, pending); err != nil {
 			panic(fmt.Errorf("init: set pending downtime slash for consumer %d: %w", pending.ConsumerId, err))
 		}
@@ -279,19 +287,29 @@ func (k Keeper) InitGenesis(ctx sdk.Context, genState *types.GenesisState) []abc
 		}
 	}
 
-	// Import withheld-fee escrow, the last-punished-window bookkeeping, and
-	// this epoch's downtime marks, so a state-export restart preserves them
-	// exactly as the other downtime-detection state above is preserved.
+	// Import withheld-fee escrow, the accepted-window bookkeeping and its
+	// pruned floors, and this epoch's downtime marks, so a state-export
+	// restart preserves them exactly as the other downtime-detection state
+	// above is preserved.
 	for _, rec := range genState.WithheldFeeRecords {
 		key := collections.Join(rec.ConsumerId, rec.ProviderConsAddr)
 		if err := k.WithheldFeeRecords.Set(ctx, key, rec); err != nil {
 			panic(fmt.Errorf("init: set withheld fee record for consumer %d: %w", rec.ConsumerId, err))
 		}
 	}
-	for _, e := range genState.LastPunishedWindowEnds {
+	for _, e := range genState.AcceptedDowntimeWindows {
+		key := collections.Join3(e.ConsumerId, e.ProviderConsAddr, e.WindowEndHeight)
+		if err := k.AcceptedDowntimeWindows.Set(ctx, key, types.AcceptedDowntimeWindow{
+			WindowStart: e.WindowStartHeight,
+			AcceptedAt:  e.AcceptedAt,
+		}); err != nil {
+			panic(fmt.Errorf("init: set accepted downtime window for consumer %d: %w", e.ConsumerId, err))
+		}
+	}
+	for _, e := range genState.DowntimeWindowFloors {
 		key := collections.Join(e.ConsumerId, e.ProviderConsAddr)
-		if err := k.LastPunishedWindowEnds.Set(ctx, key, e.WindowEndHeight); err != nil {
-			panic(fmt.Errorf("init: set last punished window end for consumer %d: %w", e.ConsumerId, err))
+		if err := k.DowntimeWindowFloors.Set(ctx, key, e.WindowEndHeight); err != nil {
+			panic(fmt.Errorf("init: set downtime window floor for consumer %d: %w", e.ConsumerId, err))
 		}
 	}
 	for _, e := range genState.EpochDowntimeEntries {
@@ -355,13 +373,14 @@ func (k Keeper) InitGenesisValUpdates(ctx sdk.Context) []abci.ValidatorUpdate {
 // than resetting them.
 //
 // Downtime-detection state (PendingDowntimeSlashes, PreviousDowntimeParams,
-// EpochShareRecords, WithheldFeeRecords, LastPunishedWindowEnds,
-// EpochDowntimeEntries) IS also exported so a state-export restart preserves
-// slashes awaiting their challenge window, the grace window for evidence
-// computed under superseded downtime params, the fee-share history used to
-// price downtime slashes, fee escrow pending a challenge window, the
-// last-punished-window bookkeeping that rejects overlapping evidence, and
-// this epoch's downtime marks.
+// EpochShareRecords, WithheldFeeRecords, AcceptedDowntimeWindows,
+// DowntimeWindowFloors, EpochDowntimeEntries) IS also exported so a
+// state-export restart preserves slashes awaiting their challenge window,
+// the grace window for evidence computed under superseded downtime params,
+// the fee-share history used to price downtime slashes, fee escrow pending a
+// challenge window, the accepted-window records and pruned floors that
+// reject intersecting or re-submitted evidence, and this epoch's downtime
+// marks.
 //
 // The pause-expiration queue (ConsumerPauseExpirationTime /
 // PauseExpirationTimeToConsumerIds) is NOT exported directly, following the
@@ -488,7 +507,8 @@ func (k Keeper) ExportGenesis(ctx sdk.Context) *types.GenesisState {
 	epochShareRecords := k.exportEpochShareRecords(ctx)
 
 	withheldFeeRecords := k.exportWithheldFeeRecords(ctx)
-	lastPunishedWindowEnds := k.exportLastPunishedWindowEnds(ctx)
+	acceptedDowntimeWindows := k.exportAcceptedDowntimeWindows(ctx)
+	downtimeWindowFloors := k.exportDowntimeWindowFloors(ctx)
 	epochDowntimeEntries := k.exportEpochDowntimeEntries(ctx)
 
 	// Only export infraction params if they have actually been set (e.g. a
@@ -520,7 +540,8 @@ func (k Keeper) ExportGenesis(ctx sdk.Context) *types.GenesisState {
 	genState.EpochShareRecords = epochShareRecords
 	genState.InfractionParameters = infractionParams
 	genState.WithheldFeeRecords = withheldFeeRecords
-	genState.LastPunishedWindowEnds = lastPunishedWindowEnds
+	genState.AcceptedDowntimeWindows = acceptedDowntimeWindows
+	genState.DowntimeWindowFloors = downtimeWindowFloors
 	genState.EpochDowntimeEntries = epochDowntimeEntries
 	return genState
 }
@@ -544,25 +565,54 @@ func (k Keeper) exportWithheldFeeRecords(ctx sdk.Context) []types.WithheldFeeRec
 	return records
 }
 
-// exportLastPunishedWindowEnds walks LastPunishedWindowEnds into the flat
+// exportAcceptedDowntimeWindows walks AcceptedDowntimeWindows into the flat
 // list carried by genesis.
-func (k Keeper) exportLastPunishedWindowEnds(ctx sdk.Context) []types.LastPunishedWindowEnd {
-	entries := []types.LastPunishedWindowEnd{}
-	iter, err := k.LastPunishedWindowEnds.Iterate(ctx, nil)
+func (k Keeper) exportAcceptedDowntimeWindows(ctx sdk.Context) []types.AcceptedDowntimeWindowRecord {
+	entries := []types.AcceptedDowntimeWindowRecord{}
+	iter, err := k.AcceptedDowntimeWindows.Iterate(ctx, nil)
 	if err != nil {
-		panic(fmt.Errorf("export: failed to iterate last punished window ends: %w", err))
+		panic(fmt.Errorf("export: failed to iterate accepted downtime windows: %w", err))
 	}
 	defer iter.Close()
 	for ; iter.Valid(); iter.Next() {
 		key, err := iter.Key()
 		if err != nil {
-			panic(fmt.Errorf("export: failed to read last punished window end key: %w", err))
+			panic(fmt.Errorf("export: failed to read accepted downtime window key: %w", err))
 		}
 		val, err := iter.Value()
 		if err != nil {
-			panic(fmt.Errorf("export: failed to read last punished window end value: %w", err))
+			panic(fmt.Errorf("export: failed to read accepted downtime window value: %w", err))
 		}
-		entries = append(entries, types.LastPunishedWindowEnd{
+		entries = append(entries, types.AcceptedDowntimeWindowRecord{
+			ConsumerId:        key.K1(),
+			ProviderConsAddr:  key.K2(),
+			WindowEndHeight:   key.K3(),
+			WindowStartHeight: val.WindowStart,
+			AcceptedAt:        val.AcceptedAt,
+		})
+	}
+	return entries
+}
+
+// exportDowntimeWindowFloors walks DowntimeWindowFloors into the flat list
+// carried by genesis.
+func (k Keeper) exportDowntimeWindowFloors(ctx sdk.Context) []types.DowntimeWindowFloor {
+	entries := []types.DowntimeWindowFloor{}
+	iter, err := k.DowntimeWindowFloors.Iterate(ctx, nil)
+	if err != nil {
+		panic(fmt.Errorf("export: failed to iterate downtime window floors: %w", err))
+	}
+	defer iter.Close()
+	for ; iter.Valid(); iter.Next() {
+		key, err := iter.Key()
+		if err != nil {
+			panic(fmt.Errorf("export: failed to read downtime window floor key: %w", err))
+		}
+		val, err := iter.Value()
+		if err != nil {
+			panic(fmt.Errorf("export: failed to read downtime window floor value: %w", err))
+		}
+		entries = append(entries, types.DowntimeWindowFloor{
 			ConsumerId:       key.K1(),
 			ProviderConsAddr: key.K2(),
 			WindowEndHeight:  val,

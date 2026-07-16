@@ -397,8 +397,9 @@ func TestGenesisRoundTrip(t *testing.T) {
 		SlashTokens:        math.NewInt(12345),
 		MaturesAt:          time.Unix(1_950_000_000, 0).UTC(),
 	}
+	// windowEnd = WindowStartHeight(100) + Span(50) - 1 = 149.
 	require.NoError(t, pkA.PendingDowntimeSlashes.Set(ctxA,
-		collections.Join(keyedConsumerID, downtimeProviderAddr.ToSdkConsAddr().Bytes()), pendingSlash))
+		collections.Join3(keyedConsumerID, downtimeProviderAddr.ToSdkConsAddr().Bytes(), int64(149)), pendingSlash))
 
 	previousDowntimeParams := providertypes.PreviousDowntimeParams{
 		Params: vaastypes.DowntimeParams{
@@ -415,8 +416,10 @@ func TestGenesisRoundTrip(t *testing.T) {
 	require.NoError(t, pkA.EpochShareRecords.Set(ctxA,
 		collections.Join(otherConsumerID, time.Unix(1_700_000_002, 0).UTC().UnixNano()), math.NewInt(700)))
 
-	// Seed one WithheldFeeRecords / LastPunishedWindowEnds / EpochDowntime
-	// entry so the round-trip covers those three collections too.
+	// Seed one WithheldFeeRecords / EpochDowntime entry, two
+	// AcceptedDowntimeWindows records for the same pair, and one
+	// DowntimeWindowFloors entry so the round-trip covers those collections
+	// too, including more than one accepted window per pair.
 	withheldFeeRecord := providertypes.WithheldFeeRecord{
 		ConsumerId:       keyedConsumerID,
 		ProviderConsAddr: downtimeProviderAddr.ToSdkConsAddr().Bytes(),
@@ -426,8 +429,18 @@ func TestGenesisRoundTrip(t *testing.T) {
 	require.NoError(t, pkA.WithheldFeeRecords.Set(ctxA,
 		collections.Join(keyedConsumerID, downtimeProviderAddr.ToSdkConsAddr().Bytes()), withheldFeeRecord))
 
-	require.NoError(t, pkA.LastPunishedWindowEnds.Set(ctxA,
-		collections.Join(keyedConsumerID, downtimeProviderAddr.ToSdkConsAddr().Bytes()), int64(150)))
+	// The pending slash seeded above covers window [100, 149]; its accepted
+	// record must exist with the same boundaries for the export to validate.
+	acceptedAt := time.Unix(1_940_000_000, 0).UTC()
+	require.NoError(t, pkA.AcceptedDowntimeWindows.Set(ctxA,
+		collections.Join3(keyedConsumerID, downtimeProviderAddr.ToSdkConsAddr().Bytes(), int64(149)),
+		providertypes.AcceptedDowntimeWindow{WindowStart: 100, AcceptedAt: acceptedAt}))
+	require.NoError(t, pkA.AcceptedDowntimeWindows.Set(ctxA,
+		collections.Join3(keyedConsumerID, downtimeProviderAddr.ToSdkConsAddr().Bytes(), int64(199)),
+		providertypes.AcceptedDowntimeWindow{WindowStart: 150, AcceptedAt: acceptedAt}))
+
+	require.NoError(t, pkA.DowntimeWindowFloors.Set(ctxA,
+		collections.Join(keyedConsumerID, downtimeProviderAddr.ToSdkConsAddr().Bytes()), int64(99)))
 
 	require.NoError(t, pkA.EpochDowntime.Set(ctxA,
 		collections.Join(keyedConsumerID, downtimeProviderAddr.ToSdkConsAddr().Bytes()), true))
@@ -467,12 +480,27 @@ func TestGenesisRoundTrip(t *testing.T) {
 	require.Len(t, expA.EpochShareRecords, 2)
 	require.Len(t, expA.WithheldFeeRecords, 1)
 	require.Equal(t, withheldFeeRecord, expA.WithheldFeeRecords[0])
-	require.Len(t, expA.LastPunishedWindowEnds, 1)
-	require.Equal(t, providertypes.LastPunishedWindowEnd{
+	require.ElementsMatch(t, []providertypes.AcceptedDowntimeWindowRecord{
+		{
+			ConsumerId:        keyedConsumerID,
+			ProviderConsAddr:  downtimeProviderAddr.ToSdkConsAddr().Bytes(),
+			WindowEndHeight:   149,
+			WindowStartHeight: 100,
+			AcceptedAt:        acceptedAt,
+		},
+		{
+			ConsumerId:        keyedConsumerID,
+			ProviderConsAddr:  downtimeProviderAddr.ToSdkConsAddr().Bytes(),
+			WindowEndHeight:   199,
+			WindowStartHeight: 150,
+			AcceptedAt:        acceptedAt,
+		},
+	}, expA.AcceptedDowntimeWindows)
+	require.Equal(t, []providertypes.DowntimeWindowFloor{{
 		ConsumerId:       keyedConsumerID,
 		ProviderConsAddr: downtimeProviderAddr.ToSdkConsAddr().Bytes(),
-		WindowEndHeight:  150,
-	}, expA.LastPunishedWindowEnds[0])
+		WindowEndHeight:  99,
+	}}, expA.DowntimeWindowFloors)
 	require.Len(t, expA.EpochDowntimeEntries, 1)
 	require.Equal(t, providertypes.EpochDowntimeEntry{
 		ConsumerId:       keyedConsumerID,
@@ -518,7 +546,7 @@ func TestGenesisRoundTrip(t *testing.T) {
 
 	// Downtime-detection state must also reconnect across the round-trip.
 	gotPending, err := pkB.PendingDowntimeSlashes.Get(ctxB,
-		collections.Join(keyedConsumerID, downtimeProviderAddr.ToSdkConsAddr().Bytes()))
+		collections.Join3(keyedConsumerID, downtimeProviderAddr.ToSdkConsAddr().Bytes(), int64(149)))
 	require.NoError(t, err, "PendingDowntimeSlashes lost across round-trip")
 	require.Equal(t, pendingSlash, gotPending)
 	gotPrevious, err := pkB.PreviousDowntimeParams.Get(ctxB)
@@ -528,17 +556,26 @@ func TestGenesisRoundTrip(t *testing.T) {
 	require.Equal(t, customInfractionParams, pkB.GetInfractionParams(ctxB),
 		"InfractionParameters lost across round-trip")
 
-	// WithheldFeeRecords, LastPunishedWindowEnds, and EpochDowntime must also
-	// reconnect across the round-trip.
+	// WithheldFeeRecords, AcceptedDowntimeWindows, DowntimeWindowFloors, and
+	// EpochDowntime must also reconnect across the round-trip.
 	gotWithheld, err := pkB.WithheldFeeRecords.Get(ctxB,
 		collections.Join(keyedConsumerID, downtimeProviderAddr.ToSdkConsAddr().Bytes()))
 	require.NoError(t, err, "WithheldFeeRecords lost across round-trip")
 	require.Equal(t, withheldFeeRecord, gotWithheld)
 
-	gotWindowEnd, err := pkB.LastPunishedWindowEnds.Get(ctxB,
+	gotFirstAccepted, err := pkB.AcceptedDowntimeWindows.Get(ctxB,
+		collections.Join3(keyedConsumerID, downtimeProviderAddr.ToSdkConsAddr().Bytes(), int64(149)))
+	require.NoError(t, err, "AcceptedDowntimeWindows lost across round-trip")
+	require.Equal(t, providertypes.AcceptedDowntimeWindow{WindowStart: 100, AcceptedAt: acceptedAt}, gotFirstAccepted)
+	gotSecondAccepted, err := pkB.AcceptedDowntimeWindows.Get(ctxB,
+		collections.Join3(keyedConsumerID, downtimeProviderAddr.ToSdkConsAddr().Bytes(), int64(199)))
+	require.NoError(t, err, "second AcceptedDowntimeWindows record lost across round-trip")
+	require.Equal(t, providertypes.AcceptedDowntimeWindow{WindowStart: 150, AcceptedAt: acceptedAt}, gotSecondAccepted)
+
+	gotFloor, err := pkB.DowntimeWindowFloors.Get(ctxB,
 		collections.Join(keyedConsumerID, downtimeProviderAddr.ToSdkConsAddr().Bytes()))
-	require.NoError(t, err, "LastPunishedWindowEnds lost across round-trip")
-	require.Equal(t, int64(150), gotWindowEnd)
+	require.NoError(t, err, "DowntimeWindowFloors lost across round-trip")
+	require.Equal(t, int64(99), gotFloor)
 
 	require.True(t, pkB.IsEpochDowntime(ctxB, keyedConsumerID, downtimeProviderAddr.ToSdkConsAddr()),
 		"EpochDowntime lost across round-trip")
@@ -788,4 +825,38 @@ func TestInitGenesis_RebuildsDerivedCollections(t *testing.T) {
 
 	_, err = k.FeePoolAddressToConsumerId.Get(ctx, k.GetConsumerFeePoolAddress(1))
 	require.ErrorIs(t, err, collections.ErrNotFound)
+}
+
+// TestInitGenesisPanicsOnNilDowntimeSlashFraction verifies that InitGenesis
+// halts on infraction parameters whose downtime SlashFraction is a nil
+// LegacyDec -- the value a genesis JSON that omits the slash_fraction key
+// deserializes to -- instead of storing a zero slash ceiling.
+func TestInitGenesisPanicsOnNilDowntimeSlashFraction(t *testing.T) {
+	k, ctx, ctrl, _ := testkeeper.GetProviderKeeperAndCtx(t, testkeeper.NewInMemKeeperParams(t))
+	defer ctrl.Finish()
+
+	gs := providertypes.DefaultGenesisState()
+	ip := providertypes.DefaultInfractionParameters()
+	ip.Downtime.SlashFraction = math.LegacyDec{}
+	gs.InfractionParameters = &ip
+
+	var recovered any
+	func() {
+		defer func() { recovered = recover() }()
+		k.InitGenesis(ctx, gs)
+	}()
+	require.NotNil(t, recovered)
+	require.Contains(t, fmt.Sprint(recovered), "slash_fraction")
+}
+
+// TestInitGenesisAcceptsDefaultGenesis verifies that the infraction-parameter
+// check in InitGenesis accepts the module's own default genesis state.
+func TestInitGenesisAcceptsDefaultGenesis(t *testing.T) {
+	k, ctx, ctrl, mocks := testkeeper.GetProviderKeeperAndCtx(t, testkeeper.NewInMemKeeperParams(t))
+	defer ctrl.Finish()
+
+	// InitGenesisValUpdates queries the staking keeper for the validator set.
+	mocks.MockStakingKeeper.EXPECT().GetBondedValidatorsByPower(gomock.Any()).Return(nil, nil).Times(1)
+
+	require.NotPanics(t, func() { k.InitGenesis(ctx, providertypes.DefaultGenesisState()) })
 }

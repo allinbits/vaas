@@ -89,13 +89,15 @@ const (
 
 	PendingDowntimeSlashesKeyName = "PendingDowntimeSlashesKey"
 
-	LastPunishedWindowEndsKeyName = "LastPunishedWindowEndsKey"
+	AcceptedDowntimeWindowsKeyName = "AcceptedDowntimeWindowsKey"
 
 	WithheldFeeRecordsKeyName = "WithheldFeeRecordsKey"
 
 	ConsumerIdToPauseExpirationTimeKeyName = "ConsumerIdToPauseExpirationTimeKey"
 
 	PauseExpirationTimeToConsumerIdsKeyName = "PauseExpirationTimeToConsumerIdsKey"
+
+	DowntimeWindowFloorsKeyName = "DowntimeWindowFloorsKey"
 )
 
 // Collection key prefixes for use with cosmossdk.io/collections
@@ -135,9 +137,10 @@ var (
 	EpochShareRecordsPrefix                = collections.NewPrefix(32)
 	PendingDowntimeSlashesPrefix           = collections.NewPrefix(33)
 	PreviousDowntimeParamsPrefix           = collections.NewPrefix(34)
-	LastPunishedWindowEndsPrefix           = collections.NewPrefix(35)
+	AcceptedDowntimeWindowsPrefix          = collections.NewPrefix(35)
 	WithheldFeeRecordsPrefix               = collections.NewPrefix(36)
 	ConsumerIdToPauseExpirationTimePrefix  = collections.NewPrefix(37)
 	PauseExpirationTimeToConsumerIdsPrefix = collections.NewPrefix(38)
+	DowntimeWindowFloorsPrefix             = collections.NewPrefix(39)
 	ParametersPrefix                       = collections.NewPrefix(0xFF)
 )

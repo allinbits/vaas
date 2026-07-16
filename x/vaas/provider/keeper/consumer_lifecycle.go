@@ -390,9 +390,9 @@ func (k Keeper) StopAndPrepareForConsumerRemoval(ctx sdk.Context, consumerId uin
 // PauseConsumerChain transitions a launched consumer chain into
 // CONSUMER_PHASE_PAUSED following a successful downtime challenge (see
 // HandleChallengeConsumerDowntime, which calls this after paying withheld
-// fees): the challenge proved the validator was live, so its pending downtime
-// slash and this epoch's downtime marks for the consumer are cancelled via
-// CancelConsumerDowntimeState. A paused consumer is excluded from VSC packet
+// fees): the challenge proved the validator was live, so every pending
+// downtime slash and this epoch's downtime marks for the consumer are
+// cancelled via CancelConsumerDowntimeState. A paused consumer is excluded from VSC packet
 // queuing (QueueVSCPackets iterates GetAllLaunchedConsumerIds), fee
 // distribution, and evidence handling -- all of which require phase LAUNCHED.
 //
@@ -517,11 +517,13 @@ func (k Keeper) ResumeConsumerChain(ctx sdk.Context, consumerId uint64) error {
 // no further epoch or challenge window to resolve this state against, so it
 // is cancelled outright instead of left to expire on its own.
 //
-// LastPunishedWindowEnds and WithheldFeeRecords are deliberately left alone
-// here -- they are only erased as part of full consumer removal, in
-// DeleteConsumerChain.
+// AcceptedDowntimeWindows, DowntimeWindowFloors, and WithheldFeeRecords are
+// deliberately left alone here: a window whose accusation was disproven or
+// pause-cancelled must not become re-submittable, so the acceptance
+// bookkeeping survives cancellation. All three are only erased as part of
+// full consumer removal, in DeleteConsumerChain.
 func (k Keeper) CancelConsumerDowntimeState(ctx sdk.Context, consumerId uint64) error {
-	if err := k.PendingDowntimeSlashes.Clear(ctx, collections.NewPrefixedPairRange[uint64, []byte](consumerId)); err != nil {
+	if err := k.PendingDowntimeSlashes.Clear(ctx, collections.NewPrefixedTripleRange[uint64, []byte, int64](consumerId)); err != nil {
 		return fmt.Errorf("clearing pending downtime slashes for consumer %d: %w", consumerId, err)
 	}
 	if err := k.EpochDowntime.Clear(ctx, collections.NewPrefixedPairRange[uint64, []byte](consumerId)); err != nil {
@@ -653,8 +655,11 @@ func (k Keeper) DeleteConsumerChain(ctx sdk.Context, consumerId uint64) (err err
 	if err := k.WithheldFeeRecords.Clear(ctx, collections.NewPrefixedPairRange[uint64, []byte](consumerId)); err != nil {
 		return fmt.Errorf("clearing withheld fee records for consumer %d: %w", consumerId, err)
 	}
-	if err := k.LastPunishedWindowEnds.Clear(ctx, collections.NewPrefixedPairRange[uint64, []byte](consumerId)); err != nil {
-		return fmt.Errorf("clearing last punished window ends for consumer %d: %w", consumerId, err)
+	if err := k.AcceptedDowntimeWindows.Clear(ctx, collections.NewPrefixedTripleRange[uint64, []byte, int64](consumerId)); err != nil {
+		return fmt.Errorf("clearing accepted downtime windows for consumer %d: %w", consumerId, err)
+	}
+	if err := k.DowntimeWindowFloors.Clear(ctx, collections.NewPrefixedPairRange[uint64, []byte](consumerId)); err != nil {
+		return fmt.Errorf("clearing downtime window floors for consumer %d: %w", consumerId, err)
 	}
 
 	// Note that we do not delete ConsumerIdToChainIdKey and ConsumerIdToPhase, as well

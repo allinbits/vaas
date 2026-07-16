@@ -271,6 +271,19 @@ message PendingDowntimeSlash {
       [ (gogoproto.nullable) = false, (gogoproto.stdtime) = true ];
 }
 
+// AcceptedDowntimeWindow records one downtime-detection window whose evidence
+// has been accepted for a (consumer, validator) pair; the keeper keys it by
+// (consumer_id, provider_cons_addr, window_end_height), so only the window's
+// start height and the acceptance time are carried here. Incoming evidence
+// intersecting any retained record is rejected; accepted_at drives pruning
+// once the record is too old to matter for any evidence still fresh enough
+// to accept.
+message AcceptedDowntimeWindow {
+  int64 window_start = 1;
+  google.protobuf.Timestamp accepted_at = 2
+      [ (gogoproto.nullable) = false, (gogoproto.stdtime) = true ];
+}
+
 // PreviousDowntimeParams retains the immediately-prior downtime params after
 // a change, so in-flight evidence computed under them is still accepted.
 message PreviousDowntimeParams {

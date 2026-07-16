@@ -105,6 +105,16 @@ func (s *IntegrationTestSuite) SetupSuite() {
 				// downtime_grace_period is left at its default: the fixed 2024 spawn_time
 				// in testdata/create_consumer.json is already years in the past by any
 				// real test run, so the grace period has already elapsed regardless.
+				// downtime.slash_fraction must be set explicitly: the genesis JSON
+				// is unmarshaled directly into InfractionParameters with no
+				// defaulting pass, so an absent key deserializes to a nil
+				// LegacyDec that the keeper's store round-trip turns into zero --
+				// not DefaultDowntimeSlashFraction -- silently capping every
+				// downtime slash at zero. It is pinned to a deliberately
+				// test-sized value (like window/challenge/max-age above) rather
+				// than the shipped default so the fee-priced slash this test
+				// observes (~2500 tokens on a 5,000,000-token self-bond, a
+				// 0.0005 fraction) executes uncapped and clearly visible.
 				provider["infraction_parameters"] = map[string]any{
 					"double_sign": map[string]any{
 						"slash_fraction": "0.050000000000000000",
@@ -112,7 +122,7 @@ func (s *IntegrationTestSuite) SetupSuite() {
 						"tombstone":      true,
 					},
 					"downtime": map[string]any{
-						"slash_fraction": "0.050000000000000000",
+						"slash_fraction": "0.010000000000000000",
 						"jail_duration":  "0s",
 						"tombstone":      false,
 					},

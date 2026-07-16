@@ -619,9 +619,9 @@ func (k Keeper) QueryConsumerLiveness(goCtx context.Context, req *types.QueryCon
 }
 
 // QueryPendingDowntimeSlashes returns the pending downtime slashes queued for
-// a consumer, awaiting the challenge window before execution. There is at
-// most one entry per validator, so the result is unbounded but small enough
-// that no pagination is offered.
+// a consumer, awaiting the challenge window before execution. A validator can
+// have more than one entry, one per accepted disjoint window; the result is
+// unbounded but small enough that no pagination is offered.
 func (k Keeper) QueryPendingDowntimeSlashes(goCtx context.Context, req *types.QueryPendingDowntimeSlashesRequest) (*types.QueryPendingDowntimeSlashesResponse, error) {
 	if req == nil {
 		return nil, status.Errorf(codes.InvalidArgument, "empty request")
@@ -632,7 +632,7 @@ func (k Keeper) QueryPendingDowntimeSlashes(goCtx context.Context, req *types.Qu
 		return nil, status.Errorf(codes.InvalidArgument, "unknown consumer: %d", req.ConsumerId)
 	}
 
-	prefix := collections.NewPrefixedPairRange[uint64, []byte](req.ConsumerId)
+	prefix := collections.NewPrefixedTripleRange[uint64, []byte, int64](req.ConsumerId)
 	iter, err := k.PendingDowntimeSlashes.Iterate(ctx, prefix)
 	if err != nil {
 		return nil, status.Errorf(codes.Internal, "iterate pending downtime slashes: %s", err)

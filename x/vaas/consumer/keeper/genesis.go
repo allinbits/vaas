@@ -110,6 +110,18 @@ func (k Keeper) InitGenesis(ctx sdk.Context, state *types.GenesisState) []abci.V
 		}
 	}
 	if state.StagedDowntimeParams != nil {
+		// Halt InitChain on unusable staged params rather than store them:
+		// this write bypasses StageDowntimeParams' validDowntimeParams
+		// filter, and applyStagedDowntimeParams copies whatever is staged
+		// into the consumer params at the next window close, where the store
+		// round-trip turns a nil MinSignedPerWindow into an explicit zero
+		// and silently disables downtime detection.
+		if !validDowntimeParams(*state.StagedDowntimeParams) {
+			panic(fmt.Errorf(
+				"init: invalid staged downtime params: signed_blocks_window %d, min_signed_per_window %s (want positive window and fraction in (0, 1))",
+				state.StagedDowntimeParams.SignedBlocksWindow, state.StagedDowntimeParams.MinSignedPerWindow,
+			))
+		}
 		if err := k.StagedDowntimeParams.Set(ctx, *state.StagedDowntimeParams); err != nil {
 			panic(fmt.Errorf("init: set staged downtime params: %w", err))
 		}

@@ -49,7 +49,7 @@ func TestBeginBlockOrdering_UnresponsiveStopCancelsPendingSlashBeforeSweep(t *te
 
 	providerAddr := types.NewProviderConsAddress(sdk.ConsAddress([]byte("validator-address-1")))
 	maturesAt := ctx.BlockTime().Add(-time.Minute) // already matured, ready to execute
-	putPendingDowntimeSlash(t, k, ctx, cid, providerAddr, math.NewInt(100), maturesAt)
+	putPendingDowntimeSlash(t, k, ctx, cid, providerAddr, math.NewInt(100), maturesAt, 100)
 
 	// Mirrors module.go's BeginBlock ordering: liveness sweep and the
 	// pause-auto-stop sweep both run before SweepPendingDowntimeSlashes.
@@ -58,7 +58,7 @@ func TestBeginBlockOrdering_UnresponsiveStopCancelsPendingSlashBeforeSweep(t *te
 
 	require.Equal(t, types.CONSUMER_PHASE_STOPPED, k.GetConsumerPhase(ctx, cid))
 
-	pendingKey := collections.Join(cid, providerAddr.ToSdkConsAddr().Bytes())
+	pendingKey := collections.Join3(cid, providerAddr.ToSdkConsAddr().Bytes(), int64(100))
 	has, err := k.PendingDowntimeSlashes.Has(ctx, pendingKey)
 	require.NoError(t, err)
 	require.False(t, has, "the matured pending slash must already be cancelled once the consumer auto-stops")
