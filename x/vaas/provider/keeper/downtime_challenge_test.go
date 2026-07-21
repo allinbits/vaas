@@ -153,8 +153,7 @@ func (f *challengeFixture) pendingSlashKey() collections.Triple[uint64, []byte, 
 }
 
 // pairKey returns the (consumer, validator) key used by WithheldFeeRecords
-// and DowntimeWindowFloors, which remain keyed per pair rather than per
-// window.
+// and DowntimeWindowFloors, which are keyed per pair, not per window.
 func (f *challengeFixture) pairKey() collections.Pair[uint64, []byte] {
 	return collections.Join(f.cid, f.providerAddr.ToSdkConsAddr().Bytes())
 }
@@ -233,7 +232,7 @@ func TestHandleChallengeConsumerDowntime_Success(t *testing.T) {
 }
 
 // TestHandleChallengeConsumerDowntime_FindsContainingWindowAmongSeveral
-// verifies step 1's new lookup: with two disjoint windows pending for the
+// verifies step 1's lookup: with two disjoint windows pending for the
 // same (consumer, validator) pair, a challenge naming a height in the
 // *second* window is matched against that window (not the first, and not
 // rejected as "no pending slash"), and succeeds -- cancelling every pending

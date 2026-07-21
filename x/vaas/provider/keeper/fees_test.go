@@ -111,7 +111,7 @@ func TestDistributeConsumerFees(t *testing.T) {
 	require.False(t, k.IsConsumerInDebt(ctx, consumer1))
 }
 
-// TestDistributeConsumerFeesSkipsUnderfunded: insufficient balance → all
+// TestDistributeConsumerFeesSkipsUnderfunded: insufficient balance -> all
 // validators skipped, consumer marked in debt.
 func TestDistributeConsumerFeesSkipsUnderfunded(t *testing.T) {
 	params := testkeeper.NewInMemKeeperParams(t)
@@ -140,7 +140,7 @@ func TestDistributeConsumerFeesSkipsUnderfunded(t *testing.T) {
 		GetBondedValidatorsByPower(gomock.Any()).
 		Return([]stakingtypes.Validator{val1, val2}, nil)
 
-	// Balance too low → in debt, no InputOutputCoins
+	// Balance too low -> in debt, no InputOutputCoins
 	mocks.MockBankKeeper.EXPECT().
 		GetBalance(gomock.Any(), consumer0Pool, "uphoton").
 		Return(sdk.NewCoin("uphoton", feesPerEpoch.Amount.QuoRaw(2)))
@@ -197,7 +197,7 @@ func TestDistributeConsumerFeesClearsDebtWhenRecovered(t *testing.T) {
 }
 
 // TestDistributeConsumerFeesContinuesOnGenericError: InputOutputCoins fails
-// with a non-insufficient-funds error on one consumer — logged, debt flag
+// with a non-insufficient-funds error on one consumer -- logged, debt flag
 // unchanged. A second consumer in the same call distributes normally,
 // proving one consumer's error does not block the others.
 func TestDistributeConsumerFeesContinuesOnGenericError(t *testing.T) {
@@ -263,7 +263,7 @@ func TestDistributeConsumerFeesContinuesOnGenericError(t *testing.T) {
 	require.False(t, k.IsConsumerInDebt(ctx, consumer1))
 }
 
-// TestDistributeConsumerFeesNoBondedValidators: no bonded validators → nothing sent.
+// TestDistributeConsumerFeesNoBondedValidators: no bonded validators -> nothing sent.
 func TestDistributeConsumerFeesNoBondedValidators(t *testing.T) {
 	params := testkeeper.NewInMemKeeperParams(t)
 	k, ctx, ctrl, mocks := testkeeper.GetProviderKeeperAndCtx(t, params)
@@ -298,7 +298,7 @@ func TestDistributeConsumerFeesSkipsNonLaunched(t *testing.T) {
 		GetBondedValidatorsByPower(gomock.Any()).
 		Return([]stakingtypes.Validator{val1}, nil)
 
-	// No GetBalance/InputOutputCoins expected — consumer0 is REGISTERED.
+	// No GetBalance/InputOutputCoins expected -- consumer0 is REGISTERED.
 	require.NoError(t, k.DistributeConsumerFees(ctx))
 }
 
@@ -326,14 +326,15 @@ func TestDistributeConsumerFeesSkipsPausedConsumer(t *testing.T) {
 		GetBondedValidatorsByPower(gomock.Any()).
 		Return([]stakingtypes.Validator{val1}, nil)
 
-	// No GetBalance/InputOutputCoins expected — consumer0 is PAUSED.
+	// No GetBalance/InputOutputCoins expected -- consumer0 is PAUSED.
 	require.NoError(t, k.DistributeConsumerFees(ctx))
 }
 
 // TestDistributeConsumerFeesExcludesDowntime: validators with epoch downtime
 // are excluded from outputs. Their share stays in the consumer pool, and a
 // WithheldFeeRecord is written for the excluded validator so a successful
-// downtime challenge can retro-pay it (section 8 of the design doc).
+// downtime challenge can retro-pay it (see docs/consumer-downtime.md,
+// "Fee exclusion and the pool as escrow").
 func TestDistributeConsumerFeesExcludesDowntime(t *testing.T) {
 	params := testkeeper.NewInMemKeeperParams(t)
 	k, ctx, ctrl, mocks := testkeeper.GetProviderKeeperAndCtx(t, params)
@@ -561,7 +562,7 @@ func TestDistributeConsumerFeesAllDowntime(t *testing.T) {
 		GetBalance(gomock.Any(), consumer0Pool, "uphoton").
 		Return(feesPerEpoch)
 
-	// No InputOutputCoins — all validators excluded.
+	// No InputOutputCoins -- all validators excluded.
 	require.NoError(t, k.DistributeConsumerFees(ctx))
 	require.False(t, k.IsConsumerInDebt(ctx, consumer0))
 
@@ -677,11 +678,11 @@ func TestDistributeConsumerFeesShareTooSmall(t *testing.T) {
 		GetBondedValidatorsByPower(gomock.Any()).
 		Return([]stakingtypes.Validator{val1, val2}, nil)
 
-	// share = 1 / 2 = 0 → nothing sent
+	// share = 1 / 2 = 0 -> nothing sent
 	require.NoError(t, k.DistributeConsumerFees(ctx))
 }
 
-// TestDistributeConsumerFeesZeroBalance: empty pool → in debt, no bank send.
+// TestDistributeConsumerFeesZeroBalance: empty pool -> in debt, no bank send.
 func TestDistributeConsumerFeesZeroBalance(t *testing.T) {
 	params := testkeeper.NewInMemKeeperParams(t)
 	k, ctx, ctrl, mocks := testkeeper.GetProviderKeeperAndCtx(t, params)
@@ -1099,7 +1100,7 @@ func TestPayWithheldFeesMultipleRecordsUnderfundedPool(t *testing.T) {
 	consumer0Pool := k.GetConsumerFeePoolAddress(consumer0)
 
 	gomock.InOrder(
-		// First record: pool holds 900, record wants 600 → paid in full.
+		// First record: pool holds 900, record wants 600 -> paid in full.
 		mocks.MockBankKeeper.EXPECT().
 			GetBalance(gomock.Any(), consumer0Pool, "uphoton").
 			Return(sdk.NewInt64Coin("uphoton", 900)),
@@ -1111,7 +1112,7 @@ func TestPayWithheldFeesMultipleRecordsUnderfundedPool(t *testing.T) {
 				banktypes.Input{Address: consumer0Pool.String(), Coins: sdk.NewCoins(recordAmount)},
 				[]banktypes.Output{{Address: accAddr(val1Bytes), Coins: sdk.NewCoins(recordAmount)}},
 			).Return(nil),
-		// Second record: pool now holds only 300 → best-effort partial payment.
+		// Second record: pool now holds only 300 -> best-effort partial payment.
 		mocks.MockBankKeeper.EXPECT().
 			GetBalance(gomock.Any(), consumer0Pool, "uphoton").
 			Return(sdk.NewInt64Coin("uphoton", 300)),

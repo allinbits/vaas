@@ -733,9 +733,8 @@ func TestOnRecvVSCPacketV2PinsProviderChainIdOnFirstPacket(t *testing.T) {
 // chain id is pinned, a VSC packet delivered over a client tracking a
 // different chain id is rejected wholesale: the valset, ProviderClientID and
 // LastVSCRecvTime are all left exactly as they were, and nothing is staged.
-// This is the core of the fix -- without it, anyone able to stand up their
-// own IBC v2 client and get it routed to the consumer could impersonate the
-// provider.
+// Without this check, anyone able to stand up their own IBC v2 client and
+// get it routed to the consumer could impersonate the provider.
 func TestOnRecvVSCPacketV2RejectsDifferentChainId(t *testing.T) {
 	k, ctx, ctrl, mocks := testkeeper.GetConsumerKeeperAndCtx(t, testkeeper.NewInMemKeeperParams(t))
 	defer ctrl.Finish()

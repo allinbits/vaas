@@ -302,12 +302,12 @@ func TestSweepPendingDowntimeSlashesDropsUnbondedValidator(t *testing.T) {
 	require.False(t, has, "entry for an unbonded validator should be dropped")
 }
 
-// TestSweepPendingDowntimeSlashesDeletesExpiredWithheldFeeRecords asserts that
-// the sweep also deletes withheld fee records whose challenge window has
-// elapsed (ExpiresAt <= block time), leaving unexpired records untouched. The
+// TestSweepExpiredWithheldFeeRecordsDeletesExpiredRecords asserts that the
+// sweep deletes withheld fee records whose challenge window has elapsed
+// (ExpiresAt <= block time), leaving unexpired records untouched. The
 // escrowed funds are never moved by this sweep -- they simply stay in the
 // consumer's fee pool.
-func TestSweepPendingDowntimeSlashesDeletesExpiredWithheldFeeRecords(t *testing.T) {
+func TestSweepExpiredWithheldFeeRecordsDeletesExpiredRecords(t *testing.T) {
 	infractionParams := types.InfractionParameters{
 		Downtime: &types.SlashJailParameters{
 			SlashFraction: math.LegacyNewDecWithPrec(5, 1),
@@ -333,7 +333,7 @@ func TestSweepPendingDowntimeSlashesDeletesExpiredWithheldFeeRecords(t *testing.
 		ExpiresAt:        ctx.BlockTime().Add(time.Hour),
 	}))
 
-	k.SweepPendingDowntimeSlashes(ctx)
+	k.SweepExpiredWithheldFeeRecords(ctx)
 
 	_, err := k.WithheldFeeRecords.Get(ctx, collections.Join(consumerId, expiredAddr.Bytes()))
 	require.Error(t, err, "expired withheld fee record should be deleted")
@@ -541,9 +541,9 @@ func TestPruneAcceptedDowntimeWindowsSetsFloorAndRejectsBelowIt(t *testing.T) {
 	acceptedKey := collections.Join3(consumerId, consAddr.Bytes(), int64(100))
 	require.NoError(t, k.PendingDowntimeSlashes.Remove(ctx, acceptedKey))
 
-	// One block inside the retention horizon the record survives a sweep.
+	// One block inside the retention horizon the record survives pruning.
 	almostCtx := ctx.WithBlockTime(windowEndTime.Add(horizon))
-	k.SweepPendingDowntimeSlashes(almostCtx)
+	k.PruneAcceptedDowntimeWindows(almostCtx, infractionParams)
 	has, err := k.AcceptedDowntimeWindows.Has(almostCtx, acceptedKey)
 	require.NoError(t, err)
 	require.True(t, has, "record inside the retention horizon must not be pruned")
@@ -551,7 +551,7 @@ func TestPruneAcceptedDowntimeWindowsSetsFloorAndRejectsBelowIt(t *testing.T) {
 	// Past the horizon the record is pruned and the floor advances to the
 	// pruned window end.
 	prunedCtx := ctx.WithBlockTime(windowEndTime.Add(horizon + time.Minute))
-	k.SweepPendingDowntimeSlashes(prunedCtx)
+	k.PruneAcceptedDowntimeWindows(prunedCtx, infractionParams)
 	has, err = k.AcceptedDowntimeWindows.Has(prunedCtx, acceptedKey)
 	require.NoError(t, err)
 	require.False(t, has, "record past the retention horizon must be pruned")
@@ -621,7 +621,7 @@ func TestPruneAcceptedDowntimeWindowsScopedToExpiredRecords(t *testing.T) {
 	require.NoError(t, k.AcceptedDowntimeWindows.Set(ctx, collections.Join3(uint64(1), addrA, int64(300)),
 		types.AcceptedDowntimeWindow{WindowStart: 293, AcceptedAt: oldAcceptedAt}))
 
-	k.SweepPendingDowntimeSlashes(ctx)
+	k.PruneAcceptedDowntimeWindows(ctx, infractionParams)
 
 	for _, end := range []int64{50, 100} {
 		has, err := k.AcceptedDowntimeWindows.Has(ctx, collections.Join3(uint64(0), addrA, end))
@@ -704,6 +704,7 @@ func TestPruneAcceptedDowntimeWindowsKeepsRecordWhilePendingSlashMatures(t *test
 	// record and the floor stay untouched and the exported genesis validates.
 	shrunkCtx := ctx.WithBlockTime(windowEndTime.Add(3 * time.Hour))
 	k.SweepPendingDowntimeSlashes(shrunkCtx)
+	k.PruneAcceptedDowntimeWindows(shrunkCtx, shrunk)
 	has, err := k.AcceptedDowntimeWindows.Has(shrunkCtx, key)
 	require.NoError(t, err)
 	require.True(t, has, "record with a still-pending slash must not be pruned")
@@ -714,8 +715,9 @@ func TestPruneAcceptedDowntimeWindowsKeepsRecordWhilePendingSlashMatures(t *test
 	require.True(t, hasPending, "pending slash must still be maturing")
 	require.NoError(t, k.ExportGenesis(shrunkCtx).Validate())
 
-	// Once the slash matures and executes, the same sweep prunes the record
-	// and advances the floor; the exported genesis still validates.
+	// Once the slash matures and executes, the prune that follows the sweep
+	// (mirroring module.go's BeginBlock sequence) removes the record and
+	// advances the floor; the exported genesis still validates.
 	maturedCtx := ctx.WithBlockTime(windowEndTime.Add(7*24*time.Hour + time.Minute))
 	pubKey, err := cryptocodec.FromCmtPubKeyInterface(tmtypes.NewMockPV().PrivKey.PubKey())
 	require.NoError(t, err)
@@ -734,6 +736,7 @@ func TestPruneAcceptedDowntimeWindowsKeepsRecordWhilePendingSlashMatures(t *test
 		SlashWithInfractionReason(maturedCtx, sdk.ConsAddress(valConsAddr), int64(0), int64(1000), math.LegacyNewDecWithPrec(375, 3), stakingtypes.Infraction_INFRACTION_DOWNTIME).
 		Return(math.NewInt(375), nil)
 	k.SweepPendingDowntimeSlashes(maturedCtx)
+	k.PruneAcceptedDowntimeWindows(maturedCtx, shrunk)
 
 	has, err = k.AcceptedDowntimeWindows.Has(maturedCtx, key)
 	require.NoError(t, err)

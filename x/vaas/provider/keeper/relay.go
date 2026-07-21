@@ -277,6 +277,18 @@ func (k Keeper) sendVSCPacketsToChainStrict(ctx sdk.Context, consumerId uint64, 
 	return nil
 }
 
+// buildVSCPacket assembles a VSC packet for a consumer, stamping the
+// consumer's current debt flag, the snapshot flag, and the provider's
+// current downtime params in one place for every queueing path.
+func (k Keeper) buildVSCPacket(ctx sdk.Context, consumerId uint64, valUpdates []abci.ValidatorUpdate, valUpdateID uint64, isSnapshot bool) vaastypes.ValidatorSetChangePacketData {
+	packet := vaastypes.NewValidatorSetChangePacketData(valUpdates, valUpdateID)
+	packet.ConsumerInDebt = k.IsConsumerInDebt(ctx, consumerId)
+	packet.IsSnapshot = isSnapshot
+	dp := k.CurrentDowntimeParams(ctx)
+	packet.DowntimeParams = &dp
+	return packet
+}
+
 // QueueVSCPackets queues latest validator updates for every consumer chain
 // with the IBC client created.
 func (k Keeper) QueueVSCPackets(ctx sdk.Context) error {
@@ -318,11 +330,7 @@ func (k Keeper) QueueVSCPackets(ctx sdk.Context) error {
 		// transitions propagate at epoch boundaries without needing a
 		// separate mid-epoch notification mechanism. The extra traffic is
 		// bounded: at most one packet per consumer per epoch.
-		packet := vaastypes.NewValidatorSetChangePacketData(valUpdates, valUpdateID)
-		packet.ConsumerInDebt = k.IsConsumerInDebt(ctx, consumerId)
-		packet.IsSnapshot = isSnapshot
-		dp := k.CurrentDowntimeParams(ctx)
-		packet.DowntimeParams = &dp
+		packet := k.buildVSCPacket(ctx, consumerId, valUpdates, valUpdateID, isSnapshot)
 		k.AppendPendingVSCPackets(ctx, consumerId, packet)
 		k.Logger(ctx).Info("VSCPacket enqueued:",
 			"consumerId", consumerId,
@@ -362,11 +370,7 @@ func (k Keeper) QueueImmediateSnapshotVSCPacket(ctx sdk.Context, consumerId uint
 		return fmt.Errorf("computing consumer next validator set, consumerId(%d): %w", consumerId, err)
 	}
 
-	packet := vaastypes.NewValidatorSetChangePacketData(valUpdates, valUpdateID)
-	packet.ConsumerInDebt = k.IsConsumerInDebt(ctx, consumerId)
-	packet.IsSnapshot = true
-	dp := k.CurrentDowntimeParams(ctx)
-	packet.DowntimeParams = &dp
+	packet := k.buildVSCPacket(ctx, consumerId, valUpdates, valUpdateID, true)
 	k.AppendPendingVSCPackets(ctx, consumerId, packet)
 	k.Logger(ctx).Info("immediate snapshot VSCPacket enqueued:",
 		"consumerId", consumerId,

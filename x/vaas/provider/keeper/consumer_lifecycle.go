@@ -406,7 +406,7 @@ func (k Keeper) StopAndPrepareForConsumerRemoval(ctx sdk.Context, consumerId uin
 func (k Keeper) PauseConsumerChain(ctx sdk.Context, consumerId uint64) error {
 	phase := k.GetConsumerPhase(ctx, consumerId)
 	if phase != types.CONSUMER_PHASE_LAUNCHED {
-		return errorsmod.Wrapf(vaastypes.ErrInvalidConsumerState,
+		return errorsmod.Wrapf(types.ErrInvalidPhase,
 			"cannot pause consumer %d: expected phase launched, got %s", consumerId, phase)
 	}
 
@@ -427,6 +427,7 @@ func (k Keeper) PauseConsumerChain(ctx sdk.Context, consumerId uint64) error {
 
 	ctx.EventManager().EmitEvent(sdk.NewEvent(
 		vaastypes.EventTypeConsumerPaused,
+		sdk.NewAttribute(sdk.AttributeKeyModule, types.ModuleName),
 		sdk.NewAttribute(types.AttributeConsumerId, fmt.Sprintf("%d", consumerId)),
 	))
 

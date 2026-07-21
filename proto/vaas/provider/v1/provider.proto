@@ -214,11 +214,10 @@ enum ConsumerPhase {
   // DELETED defines the phase in which the state of a stopped chain has been
   // deleted.
   CONSUMER_PHASE_DELETED = 5;
-  // PAUSED defines the phase in which a launched consumer chain has been
-  // paused following a successful downtime challenge. A chain in this phase
-  // is only entered via a successful downtime challenge (see
-  // MsgChallengeConsumerDowntime) and only exits via governance-authorized
-  // resumption (MsgResumeConsumer) or removal.
+  // PAUSED defines the phase of a launched consumer chain suspended by a
+  // successful downtime challenge (MsgChallengeConsumerDowntime). It exits
+  // via governance-authorized resumption (MsgResumeConsumer), removal, or
+  // the pause auto-stop after max_pause_duration.
   CONSUMER_PHASE_PAUSED = 6;
 }
 
@@ -232,9 +231,9 @@ message InfractionParameters {
   // downtime. Set to 0 to disable the grace period.
   google.protobuf.Duration downtime_grace_period = 3
       [ (gogoproto.nullable) = false, (gogoproto.stdduration) = true ];
-  // signed_blocks_window / min_signed_per_window mirror what the provider
-  // writes into consumer genesis and VSC packets; used to validate
-  // incoming evidence bitmaps.
+  // signed_blocks_window / min_signed_per_window are the provider-owned
+  // source of the values it writes into consumer genesis and VSC packets;
+  // used to validate incoming evidence bitmaps.
   int64 signed_blocks_window = 4;
   string min_signed_per_window = 5 [
     (cosmos_proto.scalar) = "cosmos.Dec",
@@ -242,7 +241,7 @@ message InfractionParameters {
     (gogoproto.nullable) = false
   ];
   // delay between accepting downtime evidence and executing its slash;
-  // the window during which a challenge can cancel it (PR 2)
+  // the window during which a challenge can cancel it
   google.protobuf.Duration downtime_challenge_window = 6
       [ (gogoproto.nullable) = false, (gogoproto.stdduration) = true ];
   // maximum age of an evidence window at receipt, judged against IBC
@@ -253,7 +252,7 @@ message InfractionParameters {
 
 // PendingDowntimeSlash is a downtime slash accepted from a consumer but not
 // yet executed; it matures after the challenge window and can be cancelled
-// by a successful challenge (PR 2).
+// by a successful challenge.
 message PendingDowntimeSlash {
   uint64 consumer_id = 1;
   bytes provider_cons_addr = 2;

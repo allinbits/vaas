@@ -8,6 +8,7 @@ import (
 	vaastypes "github.com/allinbits/vaas/x/vaas/types"
 
 	"github.com/cometbft/cometbft/crypto/ed25519"
+	cmtproto "github.com/cometbft/cometbft/proto/tendermint/types"
 	tmtypes "github.com/cometbft/cometbft/types"
 
 	ibctmtypes "github.com/cosmos/ibc-go/v10/modules/light-clients/07-tendermint"
@@ -19,9 +20,10 @@ import (
 )
 
 // HandleChallengeConsumerDowntime verifies a MsgChallengeConsumerDowntime and,
-// on success, cancels every pending downtime slash for the consumer (not just
-// the one disproven -- see step below). Downtime (absence of signatures) can
-// never be proven, but a specific claimed-missed height can be disproven by
+// on success, cancels every pending downtime slash for the consumer (not
+// just the one disproven -- see the success path below). Downtime (absence
+// of signatures) can never be proven, but a specific claimed-missed height
+// can be disproven by
 // exhibiting the validator's signature sealed into the chain at that height
 // -- see docs/consumer-downtime.md, "The challenge". Verification runs, in
 // order, and returns a typed error with no state change on the first
@@ -80,9 +82,7 @@ func (k Keeper) HandleChallengeConsumerDowntime(ctx sdk.Context, msg *types.MsgC
 	}
 
 	index := msg.ClaimedHeight - pending.WindowStartHeight
-	byteIdx := index / 8
-	bitMask := byte(1) << uint(index%8)
-	if byteIdx >= int64(len(pending.MissedBlocksBitmap)) || pending.MissedBlocksBitmap[byteIdx]&bitMask == 0 {
+	if !vaastypes.BitmapIsSet(pending.MissedBlocksBitmap, index) {
 		return errorsmod.Wrapf(types.ErrDowntimeChallengeFailed,
 			"claimed height %d is not marked missed in the pending downtime slash for validator %s on consumer chain %d",
 			msg.ClaimedHeight, providerAddr.String(), msg.ConsumerId)
@@ -115,55 +115,11 @@ func (k Keeper) HandleChallengeConsumerDowntime(ctx sdk.Context, msg *types.MsgC
 			"header for consumer chain %d failed light client verification: %s", msg.ConsumerId, err)
 	}
 
-	// 4. the commit is canonically sealed into the header and is for
-	// claimed_height. A SignedHeader's own Commit is malleable (a retro-
-	// signed vote can be spliced into any valid +2/3 subset), but
-	// LastCommitHash is sealed by the chain at claimed_height+1 and cannot
-	// include a vote that was not part of the canonical commit.
-	commit, err := tmtypes.CommitFromProto(msg.LastCommit)
-	if err != nil {
-		return errorsmod.Wrapf(types.ErrDowntimeChallengeFailed, "invalid last_commit: %s", err)
-	}
-	if commit.Height != msg.ClaimedHeight {
-		return errorsmod.Wrapf(types.ErrDowntimeChallengeFailed,
-			"last_commit height (%d) does not match claimed_height (%d)", commit.Height, msg.ClaimedHeight)
-	}
-	if !bytes.Equal(commit.Hash(), msg.Header.Header.LastCommitHash) {
-		return errorsmod.Wrap(types.ErrDowntimeChallengeFailed,
-			"last_commit hash does not match header LastCommitHash")
-	}
-
-	// 5. the pubkey self-authenticates as the accused validator, and that
-	// validator has a genuine Commit-or-Nil signature in the commit. This is
-	// self-authenticating: it does not rely on current key-assignment state,
-	// so key rotation after the window cannot break verification.
-	pubKey := ed25519.PubKey(msg.ValidatorPubkey)
-	if !bytes.Equal(pubKey.Address(), msg.ValidatorAddr) {
-		return errorsmod.Wrap(types.ErrDowntimeChallengeFailed,
-			"validator_pubkey does not derive validator_addr")
-	}
-
-	sigIdx := -1
-	for i, sig := range commit.Signatures {
-		if bytes.Equal(sig.ValidatorAddress, msg.ValidatorAddr) {
-			sigIdx = i
-			break
-		}
-	}
-	if sigIdx == -1 {
-		return errorsmod.Wrap(types.ErrDowntimeChallengeFailed,
-			"last_commit carries no signature for validator_addr")
-	}
-	sig := commit.Signatures[sigIdx]
-	if sig.BlockIDFlag != tmtypes.BlockIDFlagCommit && sig.BlockIDFlag != tmtypes.BlockIDFlagNil {
-		return errorsmod.Wrapf(types.ErrDowntimeChallengeFailed,
-			"validator_addr's commit signature has flag %d, want Commit(%d) or Nil(%d)",
-			sig.BlockIDFlag, tmtypes.BlockIDFlagCommit, tmtypes.BlockIDFlagNil)
-	}
-	signBytes := commit.VoteSignBytes(consumerChainId, int32(sigIdx))
-	if !pubKey.VerifySignature(signBytes, sig.Signature) {
-		return errorsmod.Wrap(types.ErrDowntimeChallengeFailed,
-			"validator_addr's commit signature does not verify against validator_pubkey")
+	// 4.-5. the commit is canonically sealed into the header and is for
+	// claimed_height, and it carries the accused validator's genuine
+	// Commit-or-Nil signature (see verifySealedCommitSignature).
+	if err := verifySealedCommitSignature(msg.LastCommit, msg.Header, consumerChainId, msg.ValidatorAddr, msg.ValidatorPubkey); err != nil {
+		return err
 	}
 
 	// The challenge is proven: retro-pay withheld fees before the phase
@@ -218,6 +174,71 @@ func (k Keeper) findPendingDowntimeSlashContaining(ctx sdk.Context, consumerId u
 	return types.PendingDowntimeSlash{}, false, nil
 }
 
+// verifySealedCommitSignature verifies that lastCommit is canonically sealed
+// into header and carries a genuine signature by the accused validator:
+//
+// The commit's hash must equal the header's LastCommitHash, and its height
+// must be the height immediately below the header's -- the claimed height,
+// which HandleChallengeConsumerDowntime has already checked the header sits
+// one above. A SignedHeader's own Commit is malleable (a retro-signed vote
+// can be spliced into any valid +2/3 subset), but LastCommitHash is sealed
+// by the chain at claimed_height+1 and cannot include a vote that was not
+// part of the canonical commit.
+//
+// pubKeyBytes must self-authenticate as the accused validator (derive
+// valAddr), and that validator's CommitSig in the commit -- Commit or Nil,
+// never Absent -- must carry a valid signature over the canonical vote bytes
+// for chainID. Because it is self-authenticating, this does not rely on
+// current key-assignment state, so key rotation after the window cannot
+// break verification.
+func verifySealedCommitSignature(lastCommit *cmtproto.Commit, header *ibctmtypes.Header, chainID string, valAddr, pubKeyBytes []byte) error {
+	claimedHeight := header.Header.Height - 1
+
+	commit, err := tmtypes.CommitFromProto(lastCommit)
+	if err != nil {
+		return errorsmod.Wrapf(types.ErrDowntimeChallengeFailed, "invalid last_commit: %s", err)
+	}
+	if commit.Height != claimedHeight {
+		return errorsmod.Wrapf(types.ErrDowntimeChallengeFailed,
+			"last_commit height (%d) does not match claimed_height (%d)", commit.Height, claimedHeight)
+	}
+	if !bytes.Equal(commit.Hash(), header.Header.LastCommitHash) {
+		return errorsmod.Wrap(types.ErrDowntimeChallengeFailed,
+			"last_commit hash does not match header LastCommitHash")
+	}
+
+	pubKey := ed25519.PubKey(pubKeyBytes)
+	if !bytes.Equal(pubKey.Address(), valAddr) {
+		return errorsmod.Wrap(types.ErrDowntimeChallengeFailed,
+			"validator_pubkey does not derive validator_addr")
+	}
+
+	sigIdx := -1
+	for i, sig := range commit.Signatures {
+		if bytes.Equal(sig.ValidatorAddress, valAddr) {
+			sigIdx = i
+			break
+		}
+	}
+	if sigIdx == -1 {
+		return errorsmod.Wrap(types.ErrDowntimeChallengeFailed,
+			"last_commit carries no signature for validator_addr")
+	}
+	sig := commit.Signatures[sigIdx]
+	if sig.BlockIDFlag != tmtypes.BlockIDFlagCommit && sig.BlockIDFlag != tmtypes.BlockIDFlagNil {
+		return errorsmod.Wrapf(types.ErrDowntimeChallengeFailed,
+			"validator_addr's commit signature has flag %d, want Commit(%d) or Nil(%d)",
+			sig.BlockIDFlag, tmtypes.BlockIDFlagCommit, tmtypes.BlockIDFlagNil)
+	}
+	signBytes := commit.VoteSignBytes(chainID, int32(sigIdx))
+	if !pubKey.VerifySignature(signBytes, sig.Signature) {
+		return errorsmod.Wrap(types.ErrDowntimeChallengeFailed,
+			"validator_addr's commit signature does not verify against validator_pubkey")
+	}
+
+	return nil
+}
+
 // verifyDowntimeChallengeHeader verifies header against the consumer IBC
 // client identified by clientId, using the same 07-tendermint light client
 // module path CheckMisbehaviour uses for misbehaviour headers: a single
@@ -234,14 +255,4 @@ func (k Keeper) verifyDowntimeChallengeHeader(ctx sdk.Context, clientId string, 
 
 	lightClientModule := ibctmtypes.NewLightClientModule(k.cdc, k.clientKeeper.GetStoreProvider())
 	return lightClientModule.VerifyClientMessage(ctx, clientId, header)
-}
-
-// VerifyDowntimeChallengeHeaderForTest exposes verifyDowntimeChallengeHeader
-// for tests exercising the real light-client-backed verification path -- i.e.
-// with verifyDowntimeChallengeHeaderFn left unset, unlike
-// OverrideVerifyDowntimeChallengeHeaderForTest. Production code never calls
-// this directly; HandleChallengeConsumerDowntime always goes through
-// verifyDowntimeChallengeHeader itself.
-func (k Keeper) VerifyDowntimeChallengeHeaderForTest(ctx sdk.Context, clientId string, header *ibctmtypes.Header) error {
-	return k.verifyDowntimeChallengeHeader(ctx, clientId, header)
 }

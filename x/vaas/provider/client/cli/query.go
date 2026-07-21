@@ -605,11 +605,11 @@ func CmdPendingDowntimeSlashes() *cobra.Command {
 			}
 			queryClient := types.NewQueryClient(clientCtx)
 
-			cid, err := parseConsumerIdArg(args[0])
+			consumerId, err := parseConsumerIdArg(args[0])
 			if err != nil {
 				return err
 			}
-			req := &types.QueryPendingDowntimeSlashesRequest{ConsumerId: cid}
+			req := &types.QueryPendingDowntimeSlashesRequest{ConsumerId: consumerId}
 			res, err := queryClient.QueryPendingDowntimeSlashes(cmd.Context(), req)
 			if err != nil {
 				return err
@@ -638,11 +638,11 @@ func CmdWithheldFeeRecords() *cobra.Command {
 			}
 			queryClient := types.NewQueryClient(clientCtx)
 
-			cid, err := parseConsumerIdArg(args[0])
+			consumerId, err := parseConsumerIdArg(args[0])
 			if err != nil {
 				return err
 			}
-			req := &types.QueryWithheldFeeRecordsRequest{ConsumerId: cid}
+			req := &types.QueryWithheldFeeRecordsRequest{ConsumerId: consumerId}
 			res, err := queryClient.QueryWithheldFeeRecords(cmd.Context(), req)
 			if err != nil {
 				return err

@@ -58,11 +58,10 @@ const (
 	// DELETED defines the phase in which the state of a stopped chain has been
 	// deleted.
 	CONSUMER_PHASE_DELETED ConsumerPhase = 5
-	// PAUSED defines the phase in which a launched consumer chain has been
-	// paused following a successful downtime challenge. A chain in this phase
-	// is only entered via a successful downtime challenge (see
-	// MsgChallengeConsumerDowntime) and only exits via governance-authorized
-	// resumption (MsgResumeConsumer) or removal.
+	// PAUSED defines the phase of a launched consumer chain suspended by a
+	// successful downtime challenge (MsgChallengeConsumerDowntime). It exits
+	// via governance-authorized resumption (MsgResumeConsumer), removal, or
+	// the pause auto-stop after max_pause_duration.
 	CONSUMER_PHASE_PAUSED ConsumerPhase = 6
 )
 
@@ -857,13 +856,13 @@ type InfractionParameters struct {
 	// to spin up their consumer chain nodes without being penalized for early
 	// downtime. Set to 0 to disable the grace period.
 	DowntimeGracePeriod time.Duration `protobuf:"bytes,3,opt,name=downtime_grace_period,json=downtimeGracePeriod,proto3,stdduration" json:"downtime_grace_period"`
-	// signed_blocks_window / min_signed_per_window mirror what the provider
-	// writes into consumer genesis and VSC packets; used to validate
-	// incoming evidence bitmaps.
+	// signed_blocks_window / min_signed_per_window are the provider-owned
+	// source of the values it writes into consumer genesis and VSC packets;
+	// used to validate incoming evidence bitmaps.
 	SignedBlocksWindow int64                       `protobuf:"varint,4,opt,name=signed_blocks_window,json=signedBlocksWindow,proto3" json:"signed_blocks_window,omitempty"`
 	MinSignedPerWindow cosmossdk_io_math.LegacyDec `protobuf:"bytes,5,opt,name=min_signed_per_window,json=minSignedPerWindow,proto3,customtype=cosmossdk.io/math.LegacyDec" json:"min_signed_per_window"`
 	// delay between accepting downtime evidence and executing its slash;
-	// the window during which a challenge can cancel it (PR 2)
+	// the window during which a challenge can cancel it
 	DowntimeChallengeWindow time.Duration `protobuf:"bytes,6,opt,name=downtime_challenge_window,json=downtimeChallengeWindow,proto3,stdduration" json:"downtime_challenge_window"`
 	// maximum age of an evidence window at receipt, judged against IBC
 	// client consensus-state timestamps
@@ -947,7 +946,7 @@ func (m *InfractionParameters) GetDowntimeEvidenceMaxAge() time.Duration {
 
 // PendingDowntimeSlash is a downtime slash accepted from a consumer but not
 // yet executed; it matures after the challenge window and can be cancelled
-// by a successful challenge (PR 2).
+// by a successful challenge.
 type PendingDowntimeSlash struct {
 	ConsumerId         uint64 `protobuf:"varint,1,opt,name=consumer_id,json=consumerId,proto3" json:"consumer_id,omitempty"`
 	ProviderConsAddr   []byte `protobuf:"bytes,2,opt,name=provider_cons_addr,json=providerConsAddr,proto3" json:"provider_cons_addr,omitempty"`

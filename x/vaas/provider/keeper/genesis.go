@@ -440,8 +440,7 @@ func (k Keeper) ExportGenesis(ctx sdk.Context) *types.GenesisState {
 		}
 
 		if pet, err := k.GetConsumerPauseExpirationTime(ctx, consumerId); err == nil {
-			petCopy := pet // copy to avoid aliasing the loop-local variable
-			cs.PauseExpirationTime = &petCopy
+			cs.PauseExpirationTime = &pet
 		} else if !errors.Is(err, collections.ErrNotFound) {
 			panic(fmt.Errorf("export: failed to read pause expiration time for consumer %d: %w", consumerId, err))
 		}
@@ -498,8 +497,7 @@ func (k Keeper) ExportGenesis(ctx sdk.Context) *types.GenesisState {
 
 	var previousDowntimeParams *types.PreviousDowntimeParams
 	if p, err := k.PreviousDowntimeParams.Get(ctx); err == nil {
-		pCopy := p
-		previousDowntimeParams = &pCopy
+		previousDowntimeParams = &p
 	} else if !errors.Is(err, collections.ErrNotFound) {
 		panic(fmt.Errorf("export: failed to read previous downtime params: %w", err))
 	}

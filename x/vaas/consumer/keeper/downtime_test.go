@@ -125,7 +125,7 @@ func TestTrackMissedBlocksTrimsToFirstTrackedHeight(t *testing.T) {
 	// packet WindowStartHeight must be 6, span 2
 	require.Equal(t, int64(6), packet.WindowStartHeight)
 	require.Equal(t, int64(2), packet.Span())
-	require.Equal(t, int64(7), packet.InfractionHeight)
+	require.Equal(t, int64(7), packet.WindowEndHeight)
 	require.Equal(t, int64(2), packet.MissedCount())
 }
 
@@ -234,12 +234,11 @@ func TestStageDowntimeParamsRejectsInvalid(t *testing.T) {
 
 // TestTrackMissedBlocksHandlesMismatchedStoredBitmapLength proves that
 // TrackMissedBlocks cannot panic when a validator's stored bitmap is shorter
-// or longer than the current window requires -- the shape genesis
-// validation now rejects for MissedBlockBitmaps at import
-// (x/vaas/consumer/types/genesis.go), but the same mismatch can also arise
-// from a stale bitmap left over from a since-shrunk window. TrackMissedBlocks
-// (x/vaas/consumer/keeper/downtime.go:44) resizes the bitmap up front so the
-// subsequent index can never run past the end of the slice.
+// or longer than the current window requires -- the shape GenesisState.Validate
+// rejects for MissedBlockBitmaps at import, but the same mismatch can also
+// arise from a stale bitmap left over from a since-shrunk window.
+// TrackMissedBlocks resizes the bitmap up front so the subsequent index can
+// never run past the end of the slice.
 func TestTrackMissedBlocksHandlesMismatchedStoredBitmapLength(t *testing.T) {
 	// window 16 requires a 2-byte bitmap.
 	const window = 16

@@ -68,6 +68,7 @@ func TestPauseConsumerChain_RequiresLaunched(t *testing.T) {
 
 			err := k.PauseConsumerChain(ctx, cid)
 			require.Error(t, err)
+			require.ErrorIs(t, err, providertypes.ErrInvalidPhase)
 			require.Equal(t, phase, k.GetConsumerPhase(ctx, cid))
 		})
 	}
@@ -320,11 +321,12 @@ func TestDeleteConsumerChain_ClearsDowntimeAndWithheldState(t *testing.T) {
 }
 
 // TestCancelConsumerPauseExpiration_RemovesBucketEntryWithoutAffectingOthers
-// verifies the fix for the gap left by DeleteConsumerPauseExpirationTime
-// alone: cancelling one consumer's scheduled auto-stop removes its id from
-// the shared PauseExpirationTimeToConsumerIds time bucket (mirroring
+// verifies that cancelling one consumer's scheduled auto-stop removes its id
+// from the shared PauseExpirationTimeToConsumerIds time bucket (mirroring
 // RemoveConsumerToBeLaunched for the spawn-time queue) without disturbing
-// another consumer sharing the same expiration time.
+// another consumer sharing the same expiration time -- deleting only the
+// consumer's own PauseExpirationTime entry would leave its id behind in the
+// bucket.
 func TestCancelConsumerPauseExpiration_RemovesBucketEntryWithoutAffectingOthers(t *testing.T) {
 	k, ctx, ctrl, _ := testkeeper.GetProviderKeeperAndCtx(t, testkeeper.NewInMemKeeperParams(t))
 	defer ctrl.Finish()
@@ -424,10 +426,10 @@ func TestResumeConsumerChain_RequiresDiscoveredClient(t *testing.T) {
 	require.Equal(t, expirationTime, stillThere)
 }
 
-// TestResumeConsumerChain_SendFailureFailsResume verifies the fix for the
-// silent-failure gap: if the forced resync snapshot cannot actually be sent
-// (the IBC v2 channel keeper returns an error), ResumeConsumerChain returns
-// an error instead of reporting success with the snapshot left queued.
+// TestResumeConsumerChain_SendFailureFailsResume verifies that if the forced
+// resync snapshot cannot actually be sent (the IBC v2 channel keeper returns
+// an error), ResumeConsumerChain returns an error instead of reporting
+// success with the snapshot left queued.
 //
 // The keeper call is exercised inside a cache context that is only written
 // back on success, mirroring how cosmos-sdk's message routing wraps every

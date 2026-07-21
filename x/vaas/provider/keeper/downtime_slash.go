@@ -29,7 +29,7 @@ import (
 // PayWithheldFees for the challenge-side counterpart, which instead pays the
 // record out). A pair whose remaining entries were only dropped (never
 // executed) does not trigger this; its withheld record still ages out on its
-// own expiry via sweepExpiredWithheldFeeRecords below.
+// own expiry via SweepExpiredWithheldFeeRecords (fees.go).
 func (k Keeper) SweepPendingDowntimeSlashes(ctx sdk.Context) {
 	ip := k.GetInfractionParams(ctx)
 
@@ -88,27 +88,21 @@ func (k Keeper) SweepPendingDowntimeSlashes(ctx sdk.Context) {
 			continue
 		}
 		addrBytes := []byte(pk.addr)
-		drained, err := k.pairHasNoPendingDowntimeSlash(ctx, pk.consumerId, addrBytes)
+		hasPending, err := k.hasPendingDowntimeSlash(ctx, pk.consumerId, addrBytes)
 		if err != nil {
 			k.Logger(ctx).Error("failed to check remaining pending downtime slashes for pair", "error", err)
 			continue
 		}
-		if !drained {
+		if hasPending {
 			continue
 		}
 		if err := k.WithheldFeeRecords.Remove(ctx, collections.Join(pk.consumerId, addrBytes)); err != nil && !errors.Is(err, collections.ErrNotFound) {
 			k.Logger(ctx).Error("failed to delete withheld fee record after last pending downtime slash executed", "error", err)
 		}
 	}
-
-	k.PruneEpochShareRecords(ctx, ctx.BlockTime().Add(-(ip.DowntimeEvidenceMaxAge + ip.DowntimeChallengeWindow)))
-
-	k.sweepExpiredWithheldFeeRecords(ctx)
-
-	k.pruneAcceptedDowntimeWindows(ctx, ip)
 }
 
-// pruneAcceptedDowntimeWindows deletes AcceptedDowntimeWindows records whose
+// PruneAcceptedDowntimeWindows deletes AcceptedDowntimeWindows records whose
 // acceptance is older than DowntimeChallengeWindow + DowntimeEvidenceMaxAge
 // and whose pending slash, if one is still queued, has resolved, then
 // advances each affected pair's DowntimeWindowFloors entry to the highest
@@ -120,7 +114,7 @@ func (k Keeper) SweepPendingDowntimeSlashes(ctx sdk.Context) {
 // floor check rejects it outright, regardless of timestamps or parameter
 // configuration. Ancient windows hit the floor, live windows hit the
 // retained records; no window is ever accepted twice.
-func (k Keeper) pruneAcceptedDowntimeWindows(ctx sdk.Context, ip types.InfractionParameters) {
+func (k Keeper) PruneAcceptedDowntimeWindows(ctx sdk.Context, ip types.InfractionParameters) {
 	horizon := ip.DowntimeChallengeWindow + ip.DowntimeEvidenceMaxAge
 
 	iter, err := k.AcceptedDowntimeWindows.Iterate(ctx, nil)
@@ -177,10 +171,10 @@ func (k Keeper) pruneAcceptedDowntimeWindows(ctx sdk.Context, ip types.Infractio
 	}
 }
 
-// pairHasNoPendingDowntimeSlash reports whether (consumerId,
-// providerConsAddr) has zero remaining entries in PendingDowntimeSlashes,
-// across every window-end height.
-func (k Keeper) pairHasNoPendingDowntimeSlash(ctx sdk.Context, consumerId uint64, providerConsAddr []byte) (bool, error) {
+// hasPendingDowntimeSlash reports whether (consumerId, providerConsAddr) has
+// any remaining entry in PendingDowntimeSlashes, across every window-end
+// height.
+func (k Keeper) hasPendingDowntimeSlash(ctx sdk.Context, consumerId uint64, providerConsAddr []byte) (bool, error) {
 	iter, err := k.PendingDowntimeSlashes.Iterate(
 		ctx, collections.NewSuperPrefixedTripleRange[uint64, []byte, int64](consumerId, providerConsAddr),
 	)
@@ -188,39 +182,7 @@ func (k Keeper) pairHasNoPendingDowntimeSlash(ctx sdk.Context, consumerId uint64
 		return false, err
 	}
 	defer iter.Close()
-	return !iter.Valid(), nil
-}
-
-// sweepExpiredWithheldFeeRecords deletes withheld fee records whose challenge
-// window has elapsed without a successful challenge. Nothing is transferred:
-// the escrowed funds were never drawn from the consumer's fee pool in the
-// first place, so deleting the record simply lets them stay there for good.
-func (k Keeper) sweepExpiredWithheldFeeRecords(ctx sdk.Context) {
-	iter, err := k.WithheldFeeRecords.Iterate(ctx, nil)
-	if err != nil {
-		k.Logger(ctx).Error("failed to iterate withheld fee records", "error", err)
-		return
-	}
-
-	var expiredKeys []collections.Pair[uint64, []byte]
-	for ; iter.Valid(); iter.Next() {
-		kv, err := iter.KeyValue()
-		if err != nil {
-			k.Logger(ctx).Error("failed to read withheld fee record", "error", err)
-			continue
-		}
-		if kv.Value.ExpiresAt.After(ctx.BlockTime()) {
-			continue
-		}
-		expiredKeys = append(expiredKeys, kv.Key)
-	}
-	iter.Close()
-
-	for _, key := range expiredKeys {
-		if err := k.WithheldFeeRecords.Remove(ctx, key); err != nil {
-			k.Logger(ctx).Error("failed to delete expired withheld fee record", "error", err)
-		}
-	}
+	return iter.Valid(), nil
 }
 
 // executeDowntimeSlash executes a single matured downtime slash entry,

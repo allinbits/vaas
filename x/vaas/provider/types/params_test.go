@@ -104,9 +104,6 @@ func TestInfractionParametersDowntimeWindowValidation(t *testing.T) {
 	require.NoError(t, ip.Validate())
 	require.Equal(t, math.LegacyMustNewDecFromStr("0.0001"), ip.Downtime.SlashFraction)
 
-	// maxMissed = W - ceil(minSigned*W) = 600 - 300 = 300
-	require.Equal(t, int64(300), ip.MaxMissed())
-
 	bad := types.DefaultInfractionParameters()
 	bad.SignedBlocksWindow = 0
 	require.Error(t, bad.Validate())

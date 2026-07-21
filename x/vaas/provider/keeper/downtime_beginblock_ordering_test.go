@@ -18,7 +18,10 @@ import (
 
 // TestBeginBlockOrdering_UnresponsiveStopCancelsPendingSlashBeforeSweep encodes
 // the module.go BeginBlock call-order contract: SweepUnresponsiveConsumers
-// and BeginBlockAutoStopPausedConsumers both run before SweepPendingDowntimeSlashes.
+// and BeginBlockAutoStopPausedConsumers both run before
+// SweepPendingDowntimeSlashes and the explicit prune/sweep calls that follow
+// it (PruneEpochShareRecords, SweepExpiredWithheldFeeRecords,
+// PruneAcceptedDowntimeWindows).
 // A launched consumer that goes unresponsive with a matured (but not yet
 // executed) pending downtime slash gets stopped by the liveness sweep first;
 // StopAndPrepareForConsumerRemoval's CancelConsumerDowntimeState clears that
@@ -65,8 +68,13 @@ func TestBeginBlockOrdering_UnresponsiveStopCancelsPendingSlashBeforeSweep(t *te
 
 	// No staking mocks are set beyond UnbondingTime: if SweepPendingDowntimeSlashes
 	// tried to execute a slash for this (now-cancelled) entry, the unexpected
-	// staking call would fail this test.
+	// staking call would fail this test. The calls below mirror module.go's
+	// BeginBlock sequence after the two sweeps above.
 	require.NotPanics(t, func() {
 		k.SweepPendingDowntimeSlashes(ctx)
+		ip := k.GetInfractionParams(ctx)
+		k.PruneEpochShareRecords(ctx, ctx.BlockTime().Add(-(ip.DowntimeEvidenceMaxAge + ip.DowntimeChallengeWindow)))
+		k.SweepExpiredWithheldFeeRecords(ctx)
+		k.PruneAcceptedDowntimeWindows(ctx, ip)
 	})
 }

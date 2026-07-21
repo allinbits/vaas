@@ -55,7 +55,7 @@ trimmed to that start -- the full-window `maxMissed` still applies, which only m
 threshold more lenient for partial windows.
 
 The evidence packet carries the bitmap itself (`bit i` = height `window_start + i`), the
-window's last height as `infraction_height`, and echoes the `SignedBlocksWindow` /
+window's last height as `window_end_height`, and echoes the `SignedBlocksWindow` /
 `MinSignedPerWindow` values the bitmap was computed under. The bitmap is what makes the
 evidence challengeable: each set bit is an individually falsifiable claim.
 

@@ -86,10 +86,9 @@ type Keeper struct {
 	// PAUSED consumer's auto-stop: PauseConsumerChain schedules a consumer here
 	// for now + MaxPauseDuration, and BeginBlockAutoStopPausedConsumers
 	// consumes the queue by calling StopAndPrepareForConsumerRemoval, the same
-	// path StopAndPrepareForConsumerRemoval/SweepUnresponsiveConsumers use --
-	// never the removal queue directly, since BeginBlockRemoveConsumers'
-	// DeleteConsumerChain requires phase STOPPED and would reject a still-PAUSED
-	// consumer.
+	// path RemoveConsumer/SweepUnresponsiveConsumers use -- never the removal
+	// queue directly, since BeginBlockRemoveConsumers' DeleteConsumerChain
+	// requires phase STOPPED and would reject a still-PAUSED consumer.
 	ConsumerPauseExpirationTime      collections.Map[uint64, []byte]
 	PauseExpirationTimeToConsumerIds collections.Map[[]byte, types.ConsumerIds]
 
@@ -139,8 +138,8 @@ type Keeper struct {
 	// addr, window_end_height): every disjoint missed-block window accepted
 	// for a (consumer, validator) pair gets its own entry, so more than one
 	// can be pending at once. Entries mature (become executable)
-	// DowntimeChallengeWindow after acceptance; see the epoch sweep that
-	// executes matured entries.
+	// DowntimeChallengeWindow after acceptance; SweepPendingDowntimeSlashes
+	// executes matured entries each BeginBlock.
 	PendingDowntimeSlashes collections.Map[collections.Triple[uint64, []byte, int64], types.PendingDowntimeSlash]
 
 	// AcceptedDowntimeWindows records, per (consumer_id, provider cons addr,
@@ -152,7 +151,7 @@ type Keeper struct {
 	// against every record keeps acceptance order-independent, so the
 	// delivery order of disjoint windows never affects which are accepted.
 	// Records old enough that no acceptable evidence can still intersect
-	// them are pruned per block (see pruneAcceptedDowntimeWindows), which
+	// them are pruned per block (see PruneAcceptedDowntimeWindows), which
 	// advances the pair's DowntimeWindowFloors entry in their stead.
 	AcceptedDowntimeWindows collections.Map[collections.Triple[uint64, []byte, int64], types.AcceptedDowntimeWindow]
 
@@ -168,9 +167,9 @@ type Keeper struct {
 	// addr). At most one record exists per pair: a later exclusion within an
 	// unexpired record's window sums into it and refreshes the expiry (see
 	// recordWithheldFee); an expired-but-not-yet-swept record is replaced
-	// outright. Deleted at expiry (funds stay in the consumer pool, see the
-	// sweep alongside SweepPendingDowntimeSlashes), or paid out to the
-	// validator and deleted by PayWithheldFees on a successful challenge.
+	// outright. Deleted at expiry (funds stay in the consumer pool, see
+	// SweepExpiredWithheldFeeRecords), or paid out to the validator and
+	// deleted by PayWithheldFees on a successful challenge.
 	WithheldFeeRecords collections.Map[collections.Pair[uint64, []byte], types.WithheldFeeRecord]
 
 	// windowEndTimestampFn resolves the timestamp anchor for a downtime
@@ -399,24 +398,6 @@ func (k Keeper) ConsensusAddressCodec() addresscodec.Codec {
 
 func (k *Keeper) SetGovKeeper(govKeeper govkeeper.Keeper) {
 	k.govKeeper = govKeeper
-}
-
-// OverrideWindowEndTimestampForTest replaces the downtime-evidence window-end
-// timestamp resolution with fn. Production code always uses the real
-// IBC-client-backed implementation wired by NewKeeper (see
-// Keeper.windowEndTimestamp); this exists solely so unit tests can supply an
-// anchor timestamp without fabricating real IBC consensus states.
-func (k *Keeper) OverrideWindowEndTimestampForTest(fn func(ctx sdk.Context, clientId string, windowEnd int64) (time.Time, error)) {
-	k.windowEndTimestampFn = fn
-}
-
-// OverrideVerifyDowntimeChallengeHeaderForTest replaces the downtime
-// challenge header light-client verification with fn. Production code always
-// uses the real 07-tendermint light client module (see
-// Keeper.verifyDowntimeChallengeHeader); this exists solely so unit tests can
-// bypass fabricating a real IBC client store.
-func (k *Keeper) OverrideVerifyDowntimeChallengeHeaderForTest(fn func(ctx sdk.Context, clientId string, header *ibctmtypes.Header) error) {
-	k.verifyDowntimeChallengeHeaderFn = fn
 }
 
 // Logger returns a module-specific logger.
@@ -809,6 +790,42 @@ func bytesToTime(bz []byte) (time.Time, error) {
 	return t, nil
 }
 
+// removeConsumerFromTimeQueue removes consumerId from the ConsumerIds bucket
+// stored under ts in queue, deleting the bucket once it empties. Errors if
+// the bucket does not contain consumerId.
+func removeConsumerFromTimeQueue(ctx context.Context, queue collections.Map[[]byte, types.ConsumerIds], consumerId uint64, ts time.Time) error {
+	key := timeToBytes(ts)
+	consumers, err := queue.Get(ctx, key)
+	if err != nil {
+		consumers = types.ConsumerIds{}
+	}
+
+	if len(consumers.Ids) == 0 {
+		return fmt.Errorf("no consumer ids found for this time: %s", ts.String())
+	}
+
+	// find the index of the consumer we want to remove
+	index := -1
+	for i := 0; i < len(consumers.Ids); i++ {
+		if consumers.Ids[i] == consumerId {
+			index = i
+			break
+		}
+	}
+
+	if index == -1 {
+		return fmt.Errorf("failed to find consumer id (%d)", consumerId)
+	}
+
+	if len(consumers.Ids) == 1 {
+		return queue.Remove(ctx, key)
+	}
+
+	return queue.Set(ctx, key, types.ConsumerIds{
+		Ids: append(consumers.Ids[:index], consumers.Ids[index+1:]...),
+	})
+}
+
 // GetConsumersToBeLaunched returns all the consumer ids of chains stored under this spawn time
 func (k Keeper) GetConsumersToBeLaunched(ctx context.Context, spawnTime time.Time) (types.ConsumerIds, error) {
 	key := timeToBytes(spawnTime)
@@ -836,38 +853,7 @@ func (k Keeper) AppendConsumerToBeLaunched(ctx context.Context, consumerId uint6
 
 // RemoveConsumerToBeLaunched removes consumer id from if stored for this specific spawn time
 func (k Keeper) RemoveConsumerToBeLaunched(ctx context.Context, consumerId uint64, spawnTime time.Time) error {
-	consumers, err := k.GetConsumersToBeLaunched(ctx, spawnTime)
-	if err != nil {
-		return err
-	}
-
-	if len(consumers.Ids) == 0 {
-		return fmt.Errorf("no consumer ids found for this time: %s", spawnTime.String())
-	}
-
-	// find the index of the consumer we want to remove
-	index := -1
-	for i := 0; i < len(consumers.Ids); i++ {
-		if consumers.Ids[i] == consumerId {
-			index = i
-			break
-		}
-	}
-
-	if index == -1 {
-		return fmt.Errorf("failed to find consumer id (%d)", consumerId)
-	}
-
-	key := timeToBytes(spawnTime)
-	if len(consumers.Ids) == 1 {
-		return k.SpawnTimeToConsumerIds.Remove(ctx, key)
-	}
-
-	consumersWithRemoval := types.ConsumerIds{
-		Ids: append(consumers.Ids[:index], consumers.Ids[index+1:]...),
-	}
-
-	return k.SpawnTimeToConsumerIds.Set(ctx, key, consumersWithRemoval)
+	return removeConsumerFromTimeQueue(ctx, k.SpawnTimeToConsumerIds, consumerId, spawnTime)
 }
 
 // DeleteAllConsumersToBeLaunched deletes all consumer to be launched at this specific spawn time
@@ -905,38 +891,7 @@ func (k Keeper) AppendConsumerToBeRemoved(ctx context.Context, consumerId uint64
 
 // RemoveConsumerToBeRemoved removes consumer id from the given removal time
 func (k Keeper) RemoveConsumerToBeRemoved(ctx context.Context, consumerId uint64, removalTime time.Time) error {
-	consumers, err := k.GetConsumersToBeRemoved(ctx, removalTime)
-	if err != nil {
-		return err
-	}
-
-	if len(consumers.Ids) == 0 {
-		return fmt.Errorf("no consumer ids found for this time: %s", removalTime.String())
-	}
-
-	// find the index of the consumer we want to remove
-	index := -1
-	for i := 0; i < len(consumers.Ids); i++ {
-		if consumers.Ids[i] == consumerId {
-			index = i
-			break
-		}
-	}
-
-	if index == -1 {
-		return fmt.Errorf("failed to find consumer id (%d)", consumerId)
-	}
-
-	key := timeToBytes(removalTime)
-	if len(consumers.Ids) == 1 {
-		return k.RemovalTimeToConsumerIds.Remove(ctx, key)
-	}
-
-	consumersWithRemoval := types.ConsumerIds{
-		Ids: append(consumers.Ids[:index], consumers.Ids[index+1:]...),
-	}
-
-	return k.RemovalTimeToConsumerIds.Set(ctx, key, consumersWithRemoval)
+	return removeConsumerFromTimeQueue(ctx, k.RemovalTimeToConsumerIds, consumerId, removalTime)
 }
 
 // DeleteAllConsumersToBeRemoved deletes all consumer to be removed at this specific removal time
@@ -1010,38 +965,7 @@ func (k Keeper) AppendConsumerToBeAutoStopped(ctx context.Context, consumerId ui
 // time bucket for expirationTime, mirroring RemoveConsumerToBeLaunched for the
 // spawn-time queue and RemoveConsumerToBeRemoved for the removal-time queue.
 func (k Keeper) RemoveConsumerToBeAutoStopped(ctx context.Context, consumerId uint64, expirationTime time.Time) error {
-	consumers, err := k.GetConsumersToBeAutoStopped(ctx, expirationTime)
-	if err != nil {
-		return err
-	}
-
-	if len(consumers.Ids) == 0 {
-		return fmt.Errorf("no consumer ids found for this time: %s", expirationTime.String())
-	}
-
-	// find the index of the consumer we want to remove
-	index := -1
-	for i := 0; i < len(consumers.Ids); i++ {
-		if consumers.Ids[i] == consumerId {
-			index = i
-			break
-		}
-	}
-
-	if index == -1 {
-		return fmt.Errorf("failed to find consumer id (%d)", consumerId)
-	}
-
-	key := timeToBytes(expirationTime)
-	if len(consumers.Ids) == 1 {
-		return k.PauseExpirationTimeToConsumerIds.Remove(ctx, key)
-	}
-
-	consumersWithRemoval := types.ConsumerIds{
-		Ids: append(consumers.Ids[:index], consumers.Ids[index+1:]...),
-	}
-
-	return k.PauseExpirationTimeToConsumerIds.Set(ctx, key, consumersWithRemoval)
+	return removeConsumerFromTimeQueue(ctx, k.PauseExpirationTimeToConsumerIds, consumerId, expirationTime)
 }
 
 // DeleteAllConsumersToBeAutoStopped deletes all consumers scheduled to be

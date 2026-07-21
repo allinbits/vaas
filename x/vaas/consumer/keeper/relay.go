@@ -56,11 +56,10 @@ func (k Keeper) OnRecvVSCPacketV2(ctx sdk.Context, consumerClientID string, newC
 		k.StageDowntimeParams(ctx, *newChanges.DowntimeParams)
 	}
 
-	// Keep the stored client in sync with whichever client is actually
-	// delivering VSC packets, rather than latching onto the first value ever
-	// seen (which, at genesis, is a placeholder client the consumer created
-	// for itself before the relayer established the real, counterparty-linked
-	// client).
+	// The stored client follows whichever client is actually delivering VSC
+	// packets: the first value ever seen is not authoritative, because at
+	// genesis it is a placeholder client the consumer creates for itself
+	// before the relayer establishes the real, counterparty-linked client.
 	if current, found := k.GetProviderClientID(ctx); !found || current != consumerClientID {
 		k.SetProviderClientID(ctx, consumerClientID)
 		k.Logger(ctx).Info("Provider client established", "clientID", consumerClientID)
@@ -135,8 +134,8 @@ func (k Keeper) OnRecvVSCPacketV2(ctx sdk.Context, consumerClientID string, newC
 // tracking the same chain id, or it is rejected before any state changes
 // (see the call site in OnRecvVSCPacketV2). A same-chain-id client
 // replacement -- e.g. swapping an expired/frozen client for a fresh one --
-// remains allowed, since the ProviderClientID heal logic below is unaffected
-// by this gate as long as the chain id matches.
+// remains allowed, since the ProviderClientID heal logic in OnRecvVSCPacketV2
+// is unaffected by this gate as long as the chain id matches.
 //
 // Residual trust boundary: this only pins the chain-id *string*. A chain
 // that reuses the same chain-id (a fork, or a chain deliberately renamed to

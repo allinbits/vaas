@@ -20,7 +20,7 @@ import (
 // NewLightClientModule + GetStoreProvider + VerifyClientMessage dispatch
 // otherwise has zero test execution. A full happy-path light-client
 // verification would require fabricating a real trusted validator set and
-// consensus states (disproportionate here, per the final-review triage);
+// consensus states (disproportionate here);
 // instead this proves the wiring reaches the light client module by
 // dispatching against a client id with no stored client state, which must
 // fail cleanly with a typed "client not found" error rather than panicking.
@@ -30,7 +30,7 @@ func TestVerifyDowntimeChallengeHeaderDispatchesToLightClientModule(t *testing.T
 	defer ctrl.Finish()
 
 	// Real store provider over the test keeper's in-memory KVStoreService
-	// (same Task-1 pattern as window_end_timestamp_test.go), but nothing is
+	// (same pattern as window_end_timestamp_test.go), but nothing is
 	// ever written to it: the client id below is never registered.
 	storeProvider := newFakeClientStoreProvider(keeperParams)
 	mocks.MockClientKeeper.EXPECT().GetStoreProvider().Return(storeProvider).AnyTimes()

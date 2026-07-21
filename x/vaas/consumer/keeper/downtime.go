@@ -46,7 +46,7 @@ func (k Keeper) TrackMissedBlocks(ctx sdk.Context) {
 				copy(resized, bitmap)
 				bitmap = resized
 			}
-			bitmap[idx/8] |= 1 << (idx % 8)
+			vaastypes.BitmapSet(bitmap, idx)
 			if err := k.MissedBlockBitmaps.Set(ctx, addr, bitmap); err != nil {
 				panic(err)
 			}
@@ -62,28 +62,28 @@ func (k Keeper) TrackMissedBlocks(ctx sdk.Context) {
 // closed, queues one evidence packet per offender, and resets all
 // missed-block tracking state ahead of the next window.
 func (k Keeper) closeWindow(ctx sdk.Context, windowStart, window int64, minSigned math.LegacyDec) {
-	maxMissed := window - minSigned.MulInt64(window).Ceil().TruncateInt64()
+	maxMissed := vaastypes.DowntimeParams{SignedBlocksWindow: window, MinSignedPerWindow: minSigned}.MaxMissed()
 
 	iter, err := k.MissedBlockBitmaps.Iterate(ctx, nil)
 	if err != nil {
 		panic(err)
 	}
-	type tracked struct {
+	type trackedVal struct {
 		addr   []byte
 		bitmap []byte
 	}
-	var offenders []tracked
+	var trackedVals []trackedVal
 	for ; iter.Valid(); iter.Next() {
 		kv, err := iter.KeyValue()
 		if err != nil {
 			panic(err)
 		}
-		offenders = append(offenders, tracked{addr: kv.Key, bitmap: kv.Value})
+		trackedVals = append(trackedVals, trackedVal{addr: kv.Key, bitmap: kv.Value})
 	}
 	iter.Close()
 
-	for _, o := range offenders {
-		firstTracked, err := k.FirstTrackedHeights.Get(ctx, o.addr)
+	for _, tv := range trackedVals {
+		firstTracked, err := k.FirstTrackedHeights.Get(ctx, tv.addr)
 		if err != nil {
 			firstTracked = windowStart
 		}
@@ -94,12 +94,12 @@ func (k Keeper) closeWindow(ctx sdk.Context, windowStart, window int64, minSigne
 		span := windowStart + window - first
 		offset := first - windowStart
 
-		missed := countMissedBits(o.bitmap, offset, window)
+		missed := countMissedBits(tv.bitmap, offset, window)
 		if missed <= maxMissed {
 			continue
 		}
 
-		has, err := k.PendingEvidencePackets.Has(ctx, o.addr)
+		has, err := k.PendingEvidencePackets.Has(ctx, tv.addr)
 		if err != nil {
 			panic(err)
 		}
@@ -107,8 +107,8 @@ func (k Keeper) closeWindow(ctx sdk.Context, windowStart, window int64, minSigne
 			continue
 		}
 
-		rebased := rebaseBitmap(o.bitmap, offset, span)
-		packet := vaastypes.NewEvidencePacketData(sdk.ConsAddress(o.addr), first, rebased, span, window, minSigned)
+		rebased := rebaseBitmap(tv.bitmap, offset, span)
+		packet := vaastypes.NewEvidencePacketData(sdk.ConsAddress(tv.addr), first, rebased, span, window, minSigned)
 		if err := k.QueueEvidencePacket(ctx, packet); err != nil {
 			panic(err)
 		}
@@ -129,11 +129,7 @@ func (k Keeper) closeWindow(ctx sdk.Context, windowStart, window int64, minSigne
 func countMissedBits(bitmap []byte, from, to int64) int64 {
 	var count int64
 	for i := from; i < to; i++ {
-		byteIdx := i / 8
-		if int(byteIdx) >= len(bitmap) {
-			continue
-		}
-		if bitmap[byteIdx]&(1<<(i%8)) != 0 {
+		if vaastypes.BitmapIsSet(bitmap, i) {
 			count++
 		}
 	}
@@ -146,13 +142,8 @@ func countMissedBits(bitmap []byte, from, to int64) int64 {
 func rebaseBitmap(bitmap []byte, offset, span int64) []byte {
 	out := make([]byte, (span+7)/8)
 	for i := int64(0); i < span; i++ {
-		srcIdx := offset + i
-		byteIdx := srcIdx / 8
-		if int(byteIdx) >= len(bitmap) {
-			continue
-		}
-		if bitmap[byteIdx]&(1<<(srcIdx%8)) != 0 {
-			out[i/8] |= 1 << (i % 8)
+		if vaastypes.BitmapIsSet(bitmap, offset+i) {
+			vaastypes.BitmapSet(out, i)
 		}
 	}
 	return out

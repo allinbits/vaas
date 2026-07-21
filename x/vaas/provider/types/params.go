@@ -53,7 +53,7 @@ const (
 	// which under honest pricing sits far below this ceiling; the ceiling
 	// only bites when fee overrides or conversion-rate anomalies would
 	// otherwise turn a fee-sized number into a stake-threatening one.
-	// 0.0001 (0.01%) matches the cosmos-sdk downtime slash default, so the
+	// 0.0001 (0.01%) matches the Cosmos Hub's slash_fraction_downtime, so the
 	// worst case for a single mispriced window stays at liveness-fault
 	// scale, far below the double-sign fraction. Repeated windows compound
 	// with no aggregate bound: each pending slash is capped independently,
@@ -196,13 +196,6 @@ func (ip InfractionParameters) Validate() error {
 		)
 	}
 	return nil
-}
-
-// MaxMissed returns the number of missed blocks in a full window that
-// qualifies as a downtime infraction: W - ceil(minSigned * W).
-func (ip InfractionParameters) MaxMissed() int64 {
-	w := math.LegacyNewDec(ip.SignedBlocksWindow)
-	return ip.SignedBlocksWindow - ip.MinSignedPerWindow.Mul(w).Ceil().TruncateInt64()
 }
 
 // ValidateInfractionParamsAgainst enforces the cross-param constraint that

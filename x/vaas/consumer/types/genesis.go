@@ -122,9 +122,9 @@ func (gs GenesisState) Validate() error {
 
 	// A pending evidence packet is the only remaining copy of the downtime
 	// evidence once the window closes, and SendEvidencePackets
-	// (x/vaas/consumer/keeper/evidence_packet.go) silently drops any stored
-	// entry it cannot unmarshal, so a corrupt import would discard the
-	// evidence without a trace.
+	// (x/vaas/consumer/keeper/evidence_packet.go) deletes any stored entry it
+	// cannot unmarshal (leaving only an operator log line), so a corrupt
+	// import would discard the evidence with no on-chain trace.
 	for _, e := range gs.PendingEvidencePackets {
 		if len(e.Addr) == 0 {
 			return errorsmod.Wrap(vaastypes.ErrInvalidGenesis, "pending evidence packet: addr cannot be empty")

@@ -19,9 +19,9 @@ const (
 	// EventTypePendingDowntimeSlash is emitted by the provider when downtime
 	// evidence is accepted and queued behind the downtime challenge window
 	// (see HandleConsumerDowntime). It does not mean a slash executed --
-	// execution happens later, once the entry matures, in the epoch sweep.
+	// execution happens later, once the entry matures, in the BeginBlock sweep.
 	EventTypePendingDowntimeSlash = "vaas_pending_downtime_slash"
-	// EventTypeDowntimeSlashDropped is emitted by the provider's epoch sweep
+	// EventTypeDowntimeSlashDropped is emitted by the provider's BeginBlock sweep
 	// (SweepPendingDowntimeSlashes) when a matured PendingDowntimeSlash entry
 	// is discarded instead of executed -- e.g. the validator has since
 	// unbonded, been tombstoned, or vanished, or the entry has a zero token
@@ -29,7 +29,8 @@ const (
 	EventTypeDowntimeSlashDropped = "vaas_downtime_slash_dropped"
 	// EventTypeDowntimeChallengeSucceeded is emitted by the provider when a
 	// MsgChallengeConsumerDowntime successfully proves the validator signed
-	// the claimed height, cancelling the pending downtime slash.
+	// the claimed height, cancelling every pending downtime slash for the
+	// consumer and pausing it.
 	EventTypeDowntimeChallengeSucceeded = "vaas_downtime_challenge_succeeded"
 	// EventTypeConsumerPaused is emitted when a consumer chain transitions
 	// into CONSUMER_PHASE_PAUSED following a successful downtime challenge.
@@ -37,11 +38,15 @@ const (
 	// EventTypeConsumerResumed is emitted when a paused consumer chain is
 	// resumed via MsgResumeConsumer.
 	EventTypeConsumerResumed = "vaas_consumer_resumed"
+	// EventTypeWithheldFeePaid is emitted by the provider when a withheld fee
+	// record is retro-paid to its validator following a successful downtime
+	// challenge (see PayWithheldFees).
+	EventTypeWithheldFeePaid = "vaas_withheld_fee_paid"
 
 	AttributeKeyAckSuccess            = "success"
 	AttributeKeyAck                   = "acknowledgement"
 	AttributeKeyAckError              = "error"
-	AttributeInfractionHeight         = "infraction_height"
+	AttributeWindowEndHeight          = "window_end_height"
 	AttributeConsumerHeight           = "consumer_height"
 	AttributeTimestamp                = "timestamp"
 	AttributeInitialHeight            = "initial_height"

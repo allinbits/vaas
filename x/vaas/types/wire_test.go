@@ -31,7 +31,7 @@ func TestEvidencePacketDataBitmapValidation(t *testing.T) {
 	bitmap := []byte{0b00011111}
 	p := types.NewEvidencePacketData(addr, 100, bitmap, 8, 600, minSigned)
 	require.NoError(t, p.Validate())
-	require.Equal(t, int64(107), p.InfractionHeight)
+	require.Equal(t, int64(107), p.WindowEndHeight)
 	require.Equal(t, int64(8), p.Span())
 	require.Equal(t, int64(5), p.MissedCount())
 
@@ -59,4 +59,29 @@ func TestEvidencePacketDataMaxMissed(t *testing.T) {
 	// maxMissed = 600 - ceil(0.5*600) = 600 - 300 = 300
 	p2 := types.NewEvidencePacketData(addr, 100, []byte{0xFF}, 8, 600, math.LegacyMustNewDecFromStr("0.5"))
 	require.Equal(t, int64(300), p2.MaxMissed())
+}
+
+// TestEvidencePacketDataValidateNilMinSignedPerWindow pins that a JSON
+// payload omitting min_signed_per_window fails Validate with an error rather
+// than nil-panicking on the nil-backed dec.
+func TestEvidencePacketDataValidateNilMinSignedPerWindow(t *testing.T) {
+	packet := types.NewEvidencePacketData(
+		sdk.ConsAddress([]byte{0x01, 0x02, 0x03, 0x04, 0x05}), 93, []byte{0x3F}, 8, 8, math.LegacyMustNewDecFromStr("0.5"),
+	)
+
+	var fields map[string]json.RawMessage
+	require.NoError(t, json.Unmarshal(packet.GetBytes(), &fields))
+	delete(fields, "min_signed_per_window")
+	bz, err := json.Marshal(fields)
+	require.NoError(t, err)
+
+	var decoded types.EvidencePacketData
+	require.NoError(t, json.Unmarshal(bz, &decoded))
+	require.True(t, decoded.MinSignedPerWindow.IsNil())
+
+	require.NotPanics(t, func() {
+		err := decoded.Validate()
+		require.Error(t, err)
+		require.Contains(t, err.Error(), "min signed per window cannot be nil")
+	})
 }

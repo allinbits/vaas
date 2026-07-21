@@ -185,7 +185,7 @@ func (k Keeper) ResolveDowntimeSlashTokens(ctx sdk.Context, consumerId uint64, p
 // InputOutputCoins call per consumer. The bonded validator set is queried once;
 // each consumer pays fees_per_epoch (fees_per_block * blocks_per_epoch), split
 // equally as share = fees_per_epoch / num_bonded. Validators flagged with
-// downtime are excluded from the outputs — only the eligible validators'
+// downtime are excluded from the outputs -- only the eligible validators'
 // shares (share * num_eligible) are drawn from the consumer pool, so the
 // withheld shares remain available for the consumer. This ensures the
 // consumer never pays for validation work that did not happen, and avoids
@@ -281,52 +281,46 @@ func (k Keeper) DistributeConsumerFees(ctx sdk.Context) error {
 			continue
 		}
 
-		if len(eligibleAddrs) == 0 {
-			k.UpdateConsumerDebtStatus(ctx, consumerId, false)
-			k.SetEpochShareRecord(ctx, consumerId, ctx.BlockTime(), share)
-			for _, consAddr := range excludedConsAddrs {
-				k.recordWithheldFee(ctx, consumerId, consAddr, shareCoin)
+		if len(eligibleAddrs) > 0 {
+			shareCoins := sdk.NewCoins(shareCoin)
+
+			// Single InputOutputCoins: consumer pool -> all eligible validators.
+			// Only share*num_eligible is drawn; excluded validators' shares stay
+			// in the consumer pool.
+			totalOut := share.MulRaw(int64(len(eligibleAddrs)))
+			outputs := make([]banktypes.Output, len(eligibleAddrs))
+			for i, addr := range eligibleAddrs {
+				outputs[i] = banktypes.Output{Address: addr.String(), Coins: shareCoins}
 			}
-			continue
-		}
-
-		shareCoins := sdk.NewCoins(shareCoin)
-
-		// Single InputOutputCoins: consumer pool → all eligible validators.
-		// Only share*num_eligible is drawn; excluded validators' shares stay
-		// in the consumer pool.
-		totalOut := share.MulRaw(int64(len(eligibleAddrs)))
-		outputs := make([]banktypes.Output, len(eligibleAddrs))
-		for i, addr := range eligibleAddrs {
-			outputs[i] = banktypes.Output{Address: addr.String(), Coins: shareCoins}
-		}
-		input := banktypes.Input{
-			Address: consumerFeePoolAddr.String(),
-			Coins:   sdk.NewCoins(sdk.NewCoin(consumerFeePerEpoch.Denom, totalOut)),
-		}
-		// Run in a cached context so a mid-distribution error (e.g. a send
-		// restriction on one output) rolls back the entire operation instead
-		// of leaving some validators paid and others not.
-		cachedCtx, write := ctx.CacheContext()
-		if err := k.bankKeeper.InputOutputCoins(cachedCtx, input, outputs); err != nil {
-			k.Logger(ctx).Error("failed to distribute consumer fees",
+			input := banktypes.Input{
+				Address: consumerFeePoolAddr.String(),
+				Coins:   sdk.NewCoins(sdk.NewCoin(consumerFeePerEpoch.Denom, totalOut)),
+			}
+			// Run in a cached context so a mid-distribution error (e.g. a send
+			// restriction on one output) rolls back the entire operation instead
+			// of leaving some validators paid and others not.
+			cachedCtx, write := ctx.CacheContext()
+			if err := k.bankKeeper.InputOutputCoins(cachedCtx, input, outputs); err != nil {
+				k.Logger(ctx).Error("failed to distribute consumer fees",
+					"consumerId", consumerId,
+					"err", err,
+				)
+				k.SetEpochShareRecord(ctx, consumerId, ctx.BlockTime(), math.ZeroInt())
+				continue
+			}
+			write()
+			k.Logger(ctx).Debug("distributed consumer fees to validators",
 				"consumerId", consumerId,
-				"err", err,
+				"sharePerValidator", shareCoins.String(),
+				"totalDistributed", sdk.NewCoins(sdk.NewCoin(consumerFeePerEpoch.Denom, totalOut)).String(),
 			)
-			k.SetEpochShareRecord(ctx, consumerId, ctx.BlockTime(), math.ZeroInt())
-			continue
 		}
-		write()
+
 		k.UpdateConsumerDebtStatus(ctx, consumerId, false)
 		k.SetEpochShareRecord(ctx, consumerId, ctx.BlockTime(), share)
 		for _, consAddr := range excludedConsAddrs {
 			k.recordWithheldFee(ctx, consumerId, consAddr, shareCoin)
 		}
-		k.Logger(ctx).Debug("distributed consumer fees to validators",
-			"consumerId", consumerId,
-			"sharePerValidator", shareCoins.String(),
-			"totalDistributed", sdk.NewCoins(sdk.NewCoin(consumerFeePerEpoch.Denom, totalOut)).String(),
-		)
 	}
 
 	return nil
@@ -338,8 +332,8 @@ func (k Keeper) DistributeConsumerFees(ctx sdk.Context) error {
 // unexpired record is extended by summing amount into it and refreshing its
 // expiry; an expired-but-not-yet-swept record is replaced outright. The
 // escrowed funds are never moved -- they simply remain in the consumer's fee
-// pool, which is why "recording" is enough (see PayWithheldFees and the
-// expiry sweep in SweepPendingDowntimeSlashes).
+// pool, which is why "recording" is enough (see PayWithheldFees and
+// SweepExpiredWithheldFeeRecords).
 func (k Keeper) recordWithheldFee(ctx sdk.Context, consumerId uint64, providerConsAddr sdk.ConsAddress, amount sdk.Coin) {
 	key := collections.Join(consumerId, providerConsAddr.Bytes())
 	expiresAt := ctx.BlockTime().Add(k.GetInfractionParams(ctx).DowntimeChallengeWindow)
@@ -410,44 +404,83 @@ func (k Keeper) PayWithheldFees(ctx sdk.Context, consumerId uint64) error {
 	for i, record := range records {
 		providerConsAddr := sdk.ConsAddress(record.ProviderConsAddr)
 
+		// Deleted before the payment attempt: every record clears exactly
+		// once regardless of the outcome below, and the payment path never
+		// reads the record store.
+		if err := k.WithheldFeeRecords.Remove(ctx, keys[i]); err != nil {
+			k.Logger(ctx).Error("failed to delete paid withheld fee record", "error", err)
+		}
+
 		payable := record.Amount
 		balance := k.bankKeeper.GetBalance(ctx, poolAddr, record.Amount.Denom)
 		if balance.Amount.LT(payable.Amount) {
 			payable = balance
 		}
-
-		if payable.IsPositive() {
-			accAddr, err := k.withheldFeePayee(ctx, providerConsAddr)
-			if err != nil {
-				k.Logger(ctx).Error("failed to resolve payee for withheld fee record; leaving unpaid",
-					"consumerId", consumerId,
-					"providerConsAddr", providerConsAddr.String(),
-					"error", err,
-				)
-			} else {
-				input := banktypes.Input{Address: poolAddr.String(), Coins: sdk.NewCoins(payable)}
-				outputs := []banktypes.Output{{Address: accAddr.String(), Coins: sdk.NewCoins(payable)}}
-				if err := k.bankKeeper.InputOutputCoins(ctx, input, outputs); err != nil {
-					k.Logger(ctx).Error("failed to pay withheld fee record",
-						"consumerId", consumerId,
-						"providerConsAddr", providerConsAddr.String(),
-						"error", err,
-					)
-				} else {
-					ctx.EventManager().EmitEvent(sdk.NewEvent(
-						types.EventTypeWithheldFeePaid,
-						sdk.NewAttribute(types.AttributeConsumerId, fmt.Sprintf("%d", consumerId)),
-						sdk.NewAttribute(types.AttributeProviderValidatorAddress, providerConsAddr.String()),
-						sdk.NewAttribute(types.AttributeAmount, payable.String()),
-					))
-				}
-			}
+		if !payable.IsPositive() {
+			continue
 		}
 
-		if err := k.WithheldFeeRecords.Remove(ctx, keys[i]); err != nil {
-			k.Logger(ctx).Error("failed to delete paid withheld fee record", "error", err)
+		accAddr, err := k.withheldFeePayee(ctx, providerConsAddr)
+		if err != nil {
+			k.Logger(ctx).Error("failed to resolve payee for withheld fee record; leaving unpaid",
+				"consumerId", consumerId,
+				"providerConsAddr", providerConsAddr.String(),
+				"error", err,
+			)
+			continue
 		}
+
+		input := banktypes.Input{Address: poolAddr.String(), Coins: sdk.NewCoins(payable)}
+		outputs := []banktypes.Output{{Address: accAddr.String(), Coins: sdk.NewCoins(payable)}}
+		if err := k.bankKeeper.InputOutputCoins(ctx, input, outputs); err != nil {
+			k.Logger(ctx).Error("failed to pay withheld fee record",
+				"consumerId", consumerId,
+				"providerConsAddr", providerConsAddr.String(),
+				"error", err,
+			)
+			continue
+		}
+
+		ctx.EventManager().EmitEvent(sdk.NewEvent(
+			vaastypes.EventTypeWithheldFeePaid,
+			sdk.NewAttribute(sdk.AttributeKeyModule, types.ModuleName),
+			sdk.NewAttribute(types.AttributeConsumerId, fmt.Sprintf("%d", consumerId)),
+			sdk.NewAttribute(types.AttributeProviderValidatorAddress, providerConsAddr.String()),
+			sdk.NewAttribute(types.AttributeAmount, payable.String()),
+		))
 	}
 
 	return nil
+}
+
+// SweepExpiredWithheldFeeRecords deletes withheld fee records whose challenge
+// window has elapsed without a successful challenge. Nothing is transferred:
+// the escrowed funds were never drawn from the consumer's fee pool in the
+// first place, so deleting the record simply lets them stay there for good.
+func (k Keeper) SweepExpiredWithheldFeeRecords(ctx sdk.Context) {
+	iter, err := k.WithheldFeeRecords.Iterate(ctx, nil)
+	if err != nil {
+		k.Logger(ctx).Error("failed to iterate withheld fee records", "error", err)
+		return
+	}
+
+	var expiredKeys []collections.Pair[uint64, []byte]
+	for ; iter.Valid(); iter.Next() {
+		kv, err := iter.KeyValue()
+		if err != nil {
+			k.Logger(ctx).Error("failed to read withheld fee record", "error", err)
+			continue
+		}
+		if kv.Value.ExpiresAt.After(ctx.BlockTime()) {
+			continue
+		}
+		expiredKeys = append(expiredKeys, kv.Key)
+	}
+	iter.Close()
+
+	for _, key := range expiredKeys {
+		if err := k.WithheldFeeRecords.Remove(ctx, key); err != nil {
+			k.Logger(ctx).Error("failed to delete expired withheld fee record", "error", err)
+		}
+	}
 }

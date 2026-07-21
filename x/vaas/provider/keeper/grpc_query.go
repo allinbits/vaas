@@ -621,7 +621,8 @@ func (k Keeper) QueryConsumerLiveness(goCtx context.Context, req *types.QueryCon
 // QueryPendingDowntimeSlashes returns the pending downtime slashes queued for
 // a consumer, awaiting the challenge window before execution. A validator can
 // have more than one entry, one per accepted disjoint window; the result is
-// unbounded but small enough that no pagination is offered.
+// bounded by the validator set size times the windows pending per validator,
+// so no pagination is offered.
 func (k Keeper) QueryPendingDowntimeSlashes(goCtx context.Context, req *types.QueryPendingDowntimeSlashesRequest) (*types.QueryPendingDowntimeSlashesResponse, error) {
 	if req == nil {
 		return nil, status.Errorf(codes.InvalidArgument, "empty request")
@@ -653,8 +654,8 @@ func (k Keeper) QueryPendingDowntimeSlashes(goCtx context.Context, req *types.Qu
 
 // QueryWithheldFeeRecords returns the fee shares currently withheld from
 // validators for a consumer due to a pending or executed downtime slash.
-// There is at most one entry per validator, so the result is unbounded but
-// small enough that no pagination is offered.
+// There is at most one entry per validator, so the result is bounded by the
+// validator set size and no pagination is offered.
 func (k Keeper) QueryWithheldFeeRecords(goCtx context.Context, req *types.QueryWithheldFeeRecordsRequest) (*types.QueryWithheldFeeRecordsResponse, error) {
 	if req == nil {
 		return nil, status.Errorf(codes.InvalidArgument, "empty request")
