@@ -158,6 +158,33 @@ func TestBeginBlockAutoStopPausedConsumers_StopsMaturedPause(t *testing.T) {
 	require.Error(t, err)
 }
 
+// TestBeginBlockAutoStopPausedConsumers_StopsAtExactExpirationTime pins the
+// boundary semantics of the shared time queue: ConsumeIdsFromTimeQueue skips
+// only entries whose time is strictly after the block time, so a pause whose
+// expiration equals the block time exactly is already matured and the
+// auto-stop fires at equality, not one nanosecond later.
+func TestBeginBlockAutoStopPausedConsumers_StopsAtExactExpirationTime(t *testing.T) {
+	k, ctx, ctrl, mocks := testkeeper.GetProviderKeeperAndCtx(t, testkeeper.NewInMemKeeperParams(t))
+	defer ctrl.Finish()
+
+	unbonding := 21 * 24 * time.Hour
+	mocks.MockStakingKeeper.EXPECT().UnbondingTime(gomock.Any()).Return(unbonding, nil).AnyTimes()
+
+	cid := k.FetchAndIncrementConsumerId(ctx)
+	k.SetConsumerPhase(ctx, cid, providertypes.CONSUMER_PHASE_LAUNCHED)
+	require.NoError(t, k.PauseConsumerChain(ctx, cid))
+
+	expiration, err := k.GetConsumerPauseExpirationTime(ctx, cid)
+	require.NoError(t, err)
+	ctx = ctx.WithBlockTime(expiration)
+
+	require.NoError(t, k.BeginBlockAutoStopPausedConsumers(ctx))
+
+	require.Equal(t, providertypes.CONSUMER_PHASE_STOPPED, k.GetConsumerPhase(ctx, cid))
+	_, err = k.GetConsumerPauseExpirationTime(ctx, cid)
+	require.Error(t, err, "the pause-expiration bookkeeping must be cleared by the boundary stop")
+}
+
 // TestBeginBlockAutoStopPausedConsumers_SkipsUnexpiredPause verifies that a
 // pause whose auto-stop time has not yet arrived is left untouched.
 func TestBeginBlockAutoStopPausedConsumers_SkipsUnexpiredPause(t *testing.T) {

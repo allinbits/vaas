@@ -54,11 +54,15 @@ func TestTrackMissedBlocksQueuesEvidenceAtWindowClose(t *testing.T) {
 
 	addrA := []byte{0x0A}
 	addrB := []byte{0x0B}
+	addrC := []byte{0x0C}
 
 	// validator A misses heights 4,5,6 (3 > 2): evidence queued at close
 	missedA := map[int64]bool{4: true, 5: true, 6: true}
 	// validator B misses only height 4: no evidence
 	missedB := map[int64]bool{4: true}
+	// validator C misses heights 4,5 -- exactly maxMissed (2 <= 2): the
+	// threshold is strict, so no evidence either
+	missedC := map[int64]bool{4: true, 5: true}
 
 	votesForHeight := func(h int64) []abci.VoteInfo {
 		flag := func(missed map[int64]bool) cmtproto.BlockIDFlag {
@@ -70,6 +74,7 @@ func TestTrackMissedBlocksQueuesEvidenceAtWindowClose(t *testing.T) {
 		return []abci.VoteInfo{
 			{Validator: abci.Validator{Address: addrA, Power: 1}, BlockIdFlag: flag(missedA)},
 			{Validator: abci.Validator{Address: addrB, Power: 1}, BlockIdFlag: flag(missedB)},
+			{Validator: abci.Validator{Address: addrC, Power: 1}, BlockIdFlag: flag(missedC)},
 		}
 	}
 
@@ -83,9 +88,59 @@ func TestTrackMissedBlocksQueuesEvidenceAtWindowClose(t *testing.T) {
 	// bitmap resets after close
 	require.Equal(t, 0, countBitmaps(ctx, consumerKeeper))
 
-	// the packet was queued for the offender, not the well-behaved validator
+	// the packet was queued for the offender only: not for the well-behaved
+	// validator, and not for the one sitting exactly at the threshold
 	require.True(t, mustHasPendingPacket(t, ctx, consumerKeeper, addrA))
 	require.False(t, mustHasPendingPacket(t, ctx, consumerKeeper, addrB))
+	require.False(t, mustHasPendingPacket(t, ctx, consumerKeeper, addrC))
+}
+
+// TestTrackMissedBlocksQueuesOnePacketPerOffenderAtWindowClose verifies a
+// single window close with more than one offender: each offender gets exactly
+// one evidence packet covering the full window, the non-offender gets none,
+// and all tracking state resets.
+func TestTrackMissedBlocksQueuesOnePacketPerOffenderAtWindowClose(t *testing.T) {
+	consumerKeeper, ctx, ctrl, _ := testkeeper.GetConsumerKeeperAndCtx(t, testkeeper.NewInMemKeeperParams(t))
+	defer ctrl.Finish()
+
+	// params: window 4, minSigned 0.5 => maxMissed = 4 - 2 = 2
+	setDowntimeParams(ctx, consumerKeeper, 4, "0.5")
+
+	addrA := []byte{0x0A}
+	addrB := []byte{0x0B}
+	addrC := []byte{0x0C}
+
+	// validators A and B both miss heights 4,5,6 (3 > 2); C signs everything.
+	missed := map[int64]bool{4: true, 5: true, 6: true}
+	votesForHeight := func(h int64) []abci.VoteInfo {
+		offenderFlag := cmtproto.BlockIDFlagCommit
+		if missed[h] {
+			offenderFlag = cmtproto.BlockIDFlagAbsent
+		}
+		return []abci.VoteInfo{
+			{Validator: abci.Validator{Address: addrA, Power: 1}, BlockIdFlag: offenderFlag},
+			{Validator: abci.Validator{Address: addrB, Power: 1}, BlockIdFlag: offenderFlag},
+			{Validator: abci.Validator{Address: addrC, Power: 1}, BlockIdFlag: cmtproto.BlockIDFlagCommit},
+		}
+	}
+
+	// window [4,7]: vote for height h arrives in block h+1
+	for h := int64(5); h <= 8; h++ {
+		ctx = ctx.WithBlockHeight(h).WithVoteInfos(votesForHeight(h - 1))
+		consumerKeeper.TrackMissedBlocks(ctx)
+	}
+
+	require.Equal(t, 2, consumerKeeper.GetPendingEvidencePacketCount(ctx))
+	require.False(t, mustHasPendingPacket(t, ctx, consumerKeeper, addrC))
+	require.Equal(t, 0, countBitmaps(ctx, consumerKeeper))
+
+	// each offender's packet covers the full window with its own miss count
+	for _, addr := range [][]byte{addrA, addrB} {
+		packet := getPendingPacket(t, ctx, consumerKeeper, addr)
+		require.Equal(t, int64(4), packet.WindowStartHeight)
+		require.Equal(t, int64(7), packet.WindowEndHeight)
+		require.Equal(t, int64(3), packet.MissedCount())
+	}
 }
 
 func TestTrackMissedBlocksTrimsToFirstTrackedHeight(t *testing.T) {

@@ -154,6 +154,33 @@ func TestHandleConsumerDowntimeRejectsBelowThreshold(t *testing.T) {
 	require.Contains(t, err.Error(), "does not exceed the infraction threshold")
 }
 
+// TestHandleConsumerDowntimeRejectsExactlyAtThreshold pins the strictness of
+// the infraction threshold comparison: a window missing exactly MaxMissed()
+// blocks (4 of 8 with min-signed 0.5) does not qualify as downtime -- only
+// exceeding the threshold does.
+func TestHandleConsumerDowntimeRejectsExactlyAtThreshold(t *testing.T) {
+	windowEndTime := time.Date(2025, 6, 1, 0, 0, 0, 0, time.UTC)
+	spawnTime := windowEndTime.Add(-30 * 24 * time.Hour)
+	infractionParams := downtimeParams(8, "0.5", 0, 7*24*time.Hour, 72*time.Hour)
+
+	providerKeeper, ctx, ctrl, _, consumerId, providerAddr := setupDowntimeTest(t, infractionParams, spawnTime, windowEndTime)
+	defer ctrl.Finish()
+	ctx = ctx.WithBlockTime(windowEndTime)
+
+	evidencePacket := vaastypes.NewEvidencePacketData(
+		sdk.ConsAddress(providerAddr.ToSdkConsAddr()),
+		93,
+		[]byte{0x0F}, // exactly 4 of 8 missed == maxMissed: at the threshold, not past it
+		8,
+		8,
+		math.LegacyMustNewDecFromStr("0.5"),
+	)
+
+	err := providerKeeper.HandleConsumerEvidencePacket(ctx, consumerId, evidencePacket)
+	require.Error(t, err)
+	require.Contains(t, err.Error(), "does not exceed the infraction threshold")
+}
+
 func TestHandleConsumerEvidencePacketRejectsSpanExceedingWindow(t *testing.T) {
 	keeperParams := testkeeper.NewInMemKeeperParams(t)
 	providerKeeper, ctx, ctrl, _ := testkeeper.GetProviderKeeperAndCtx(t, keeperParams)
@@ -460,7 +487,7 @@ func TestHandleConsumerDowntimeRejectsDuringGracePeriod(t *testing.T) {
 }
 
 func TestHandleConsumerDowntimeGracePeriodDisabledSkipsCheck(t *testing.T) {
-	spawnTime := time.Now()
+	spawnTime := time.Date(2025, 6, 1, 0, 0, 0, 0, time.UTC)
 	windowEndTime := spawnTime // would still be "in grace period" if the check ran
 	infractionParams := downtimeParams(8, "0.5", 0, 7*24*time.Hour, 72*time.Hour)
 

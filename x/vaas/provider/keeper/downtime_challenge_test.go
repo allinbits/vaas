@@ -324,6 +324,89 @@ func TestHandleChallengeConsumerDowntime_FindsContainingWindowAmongSeveral(t *te
 	require.ErrorIs(t, err, collections.ErrNotFound)
 }
 
+// TestHandleChallengeConsumerDowntime_SuccessAtLastWindowHeight exercises the
+// window-containment upper bound and the byte/bit indexing together: the
+// claimed height is the LAST height of the pending window, and the window's
+// span (12) pushes that height's missed bit into the SECOND bitmap byte
+// (bit 11). The challenge succeeds down the full path: the pending slash is
+// cancelled and the consumer is paused.
+func TestHandleChallengeConsumerDowntime_SuccessAtLastWindowHeight(t *testing.T) {
+	k, ctx, ctrl, _ := testkeeper.GetProviderKeeperAndCtx(t, testkeeper.NewInMemKeeperParams(t))
+	defer ctrl.Finish()
+
+	k.OverrideVerifyDowntimeChallengeHeaderForTest(func(sdk.Context, string, *ibctmtypes.Header) error {
+		return nil
+	})
+
+	cid := k.FetchAndIncrementConsumerId(ctx)
+	k.SetConsumerPhase(ctx, cid, types.CONSUMER_PHASE_LAUNCHED)
+	k.SetConsumerChainId(ctx, cid, challengeTestChainID)
+	k.SetConsumerClientId(ctx, cid, "07-tendermint-0")
+
+	signer := tmtypes.NewMockPV()
+	pubKey, err := signer.GetPubKey()
+	require.NoError(t, err)
+	addr := pubKey.Address()
+	providerAddr := types.NewProviderConsAddress(sdk.ConsAddress(addr))
+
+	// window [100, 111]: span 12, claimed height 111 is the last in-window
+	// height and maps to bit 11 -- bit 3 of the second bitmap byte.
+	const (
+		windowStart   = int64(100)
+		span          = int64(12)
+		claimedHeight = windowStart + span - 1
+	)
+	pending := types.PendingDowntimeSlash{
+		ConsumerId:         cid,
+		ProviderConsAddr:   providerAddr.ToSdkConsAddr().Bytes(),
+		WindowStartHeight:  windowStart,
+		Span:               span,
+		MissedCount:        1,
+		MissedBlocksBitmap: []byte{0x00, 0x08}, // only bit 11 (claimedHeight - windowStart) set
+		SlashTokens:        math.NewInt(1000),
+		MaturesAt:          ctx.BlockTime().Add(time.Hour),
+	}
+	pendingKey := collections.Join3(cid, providerAddr.ToSdkConsAddr().Bytes(), claimedHeight)
+	require.NoError(t, k.PendingDowntimeSlashes.Set(ctx, pendingKey, pending))
+
+	blockID := cryptotestutil.MakeBlockID([]byte("blockhash"), 1, []byte("partshash"))
+	vote, err := tmtypes.MakeVote(signer, challengeTestChainID, 0, claimedHeight, 0, tmproto.PrecommitType, blockID, ctx.BlockTime())
+	require.NoError(t, err)
+	commit := &tmtypes.Commit{
+		Height:     claimedHeight,
+		Round:      0,
+		BlockID:    blockID,
+		Signatures: []tmtypes.CommitSig{vote.CommitSig()},
+	}
+	header := &ibctmtypes.Header{
+		SignedHeader: &tmproto.SignedHeader{
+			Header: &tmproto.Header{
+				ChainID:        challengeTestChainID,
+				Height:         claimedHeight + 1,
+				LastCommitHash: commit.Hash(),
+			},
+			Commit: &tmproto.Commit{},
+		},
+	}
+	msg := &types.MsgChallengeConsumerDowntime{
+		Signer:          "cosmos1qypqxpq9qcrsszgse4wwrq4vt3s2r0y8ryqhx7",
+		ConsumerId:      cid,
+		ValidatorAddr:   addr,
+		ClaimedHeight:   claimedHeight,
+		Header:          header,
+		LastCommit:      commit.ToProto(),
+		ValidatorPubkey: pubKey.Bytes(),
+	}
+
+	// No withheld fee record is seeded, so PayWithheldFees has nothing to
+	// iterate and this test needs no bank/staking mocks.
+	require.NoError(t, k.HandleChallengeConsumerDowntime(ctx, msg))
+
+	require.Equal(t, types.CONSUMER_PHASE_PAUSED, k.GetConsumerPhase(ctx, cid))
+	_, err = k.PendingDowntimeSlashes.Get(ctx, pendingKey)
+	require.ErrorIs(t, err, collections.ErrNotFound, "pending slash must be cancelled")
+}
+
 // TestHandleChallengeConsumerDowntime_SuccessIsolatesOtherConsumer extends the
 // happy path with a second, independent consumer B that carries its own
 // pending downtime slash and withheld fee record for the *same* validator
@@ -391,6 +474,7 @@ func TestHandleChallengeConsumerDowntime_NoPendingSlash(t *testing.T) {
 
 	err := f.k.HandleChallengeConsumerDowntime(f.ctx, f.msg)
 	require.ErrorIs(t, err, types.ErrDowntimeChallengeFailed)
+	require.ErrorContains(t, err, "no pending downtime slash")
 	require.Equal(t, types.CONSUMER_PHASE_LAUNCHED, f.k.GetConsumerPhase(f.ctx, f.cid))
 }
 
@@ -412,6 +496,9 @@ func TestHandleChallengeConsumerDowntime_ClaimedHeightOutsideWindow(t *testing.T
 
 			err := f.k.HandleChallengeConsumerDowntime(f.ctx, f.msg)
 			require.ErrorIs(t, err, types.ErrDowntimeChallengeFailed)
+			// A height outside every pending window rejects at the
+			// window-lookup step, not the bitmap check.
+			require.ErrorContains(t, err, "no pending downtime slash")
 			f.requireNoStateChange(t)
 		})
 	}
@@ -430,6 +517,7 @@ func TestHandleChallengeConsumerDowntime_BitmapDoesNotClaimHeight(t *testing.T) 
 
 	err = f.k.HandleChallengeConsumerDowntime(f.ctx, f.msg)
 	require.ErrorIs(t, err, types.ErrDowntimeChallengeFailed)
+	require.ErrorContains(t, err, "is not marked missed")
 	f.requireNoStateChange(t)
 }
 
@@ -441,6 +529,7 @@ func TestHandleChallengeConsumerDowntime_WrongHeaderHeight(t *testing.T) {
 
 	err := f.k.HandleChallengeConsumerDowntime(f.ctx, f.msg)
 	require.ErrorIs(t, err, types.ErrDowntimeChallengeFailed)
+	require.ErrorContains(t, err, "is not claimed_height+1")
 	f.requireNoStateChange(t)
 }
 
@@ -452,6 +541,7 @@ func TestHandleChallengeConsumerDowntime_WrongHeaderChainID(t *testing.T) {
 
 	err := f.k.HandleChallengeConsumerDowntime(f.ctx, f.msg)
 	require.ErrorIs(t, err, types.ErrDowntimeChallengeFailed)
+	require.ErrorContains(t, err, "does not match consumer chain id")
 	f.requireNoStateChange(t)
 }
 
@@ -469,6 +559,7 @@ func TestHandleChallengeConsumerDowntime_MalformedHeaderNoPanic(t *testing.T) {
 	require.NotPanics(t, func() {
 		err := f.k.HandleChallengeConsumerDowntime(f.ctx, f.msg)
 		require.ErrorIs(t, err, types.ErrDowntimeChallengeFailed)
+		require.ErrorContains(t, err, "header is malformed")
 	})
 	f.requireNoStateChange(t)
 }
@@ -482,6 +573,7 @@ func TestHandleChallengeConsumerDowntime_LastCommitHashMismatch(t *testing.T) {
 
 	err := f.k.HandleChallengeConsumerDowntime(f.ctx, f.msg)
 	require.ErrorIs(t, err, types.ErrDowntimeChallengeFailed)
+	require.ErrorContains(t, err, "last_commit hash does not match header LastCommitHash")
 	f.requireNoStateChange(t)
 }
 
@@ -493,6 +585,7 @@ func TestHandleChallengeConsumerDowntime_LastCommitWrongHeight(t *testing.T) {
 
 	err := f.k.HandleChallengeConsumerDowntime(f.ctx, f.msg)
 	require.ErrorIs(t, err, types.ErrDowntimeChallengeFailed)
+	require.ErrorContains(t, err, "does not match claimed_height")
 	f.requireNoStateChange(t)
 }
 
@@ -508,6 +601,7 @@ func TestHandleChallengeConsumerDowntime_PubkeyAddressMismatch(t *testing.T) {
 
 	err = f.k.HandleChallengeConsumerDowntime(f.ctx, f.msg)
 	require.ErrorIs(t, err, types.ErrDowntimeChallengeFailed)
+	require.ErrorContains(t, err, "validator_pubkey does not derive validator_addr")
 	f.requireNoStateChange(t)
 }
 
@@ -532,6 +626,7 @@ func TestHandleChallengeConsumerDowntime_Absent(t *testing.T) {
 
 	err := f.k.HandleChallengeConsumerDowntime(f.ctx, f.msg)
 	require.ErrorIs(t, err, types.ErrDowntimeChallengeFailed)
+	require.ErrorContains(t, err, "carries no signature for validator_addr")
 	f.requireNoStateChange(t)
 }
 
@@ -553,5 +648,6 @@ func TestHandleChallengeConsumerDowntime_ForgedSignature(t *testing.T) {
 
 	err = f.k.HandleChallengeConsumerDowntime(f.ctx, f.msg)
 	require.ErrorIs(t, err, types.ErrDowntimeChallengeFailed)
+	require.ErrorContains(t, err, "does not verify against validator_pubkey")
 	f.requireNoStateChange(t)
 }

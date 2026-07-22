@@ -38,6 +38,15 @@ func setupSweepTest(t *testing.T, infractionParams types.InfractionParameters) (
 	ctx = ctx.WithBlockTime(time.Date(2025, 6, 1, 0, 0, 0, 0, time.UTC))
 	providerKeeper.SetInfractionParams(ctx, infractionParams)
 
+	validator, providerAddr := newSweepValidator(t)
+
+	return providerKeeper, ctx, ctrl, mocks, validator, providerAddr
+}
+
+// newSweepValidator builds a bonded validator with a fresh consensus key and
+// returns it together with its provider consensus address.
+func newSweepValidator(t *testing.T) (stakingtypes.Validator, types.ProviderConsAddress) {
+	t.Helper()
 	pubKey, err := cryptocodec.FromCmtPubKeyInterface(tmtypes.NewMockPV().PrivKey.PubKey())
 	require.NoError(t, err)
 	validator, err := stakingtypes.NewValidator(
@@ -50,9 +59,8 @@ func setupSweepTest(t *testing.T, infractionParams types.InfractionParameters) (
 
 	consAddr, err := validator.GetConsAddr()
 	require.NoError(t, err)
-	providerAddr := types.NewProviderConsAddress(consAddr)
 
-	return providerKeeper, ctx, ctrl, mocks, validator, providerAddr
+	return validator, types.NewProviderConsAddress(consAddr)
 }
 
 // putPendingDowntimeSlash seeds a PendingDowntimeSlash entry for (consumerId,
@@ -83,12 +91,16 @@ func putPendingDowntimeSlash(
 	}))
 }
 
+// expectSlashableStakeLookup wires the mock call chain slashableStake makes
+// for one pending entry. Every matcher is keyed on consAddr (the address the
+// entry is keyed under), so multiple validators' lookups can be expected in
+// the same test without depending on sweep iteration order.
 func expectSlashableStakeLookup(t *testing.T, k providerkeeper.Keeper, mocks testkeeper.MockedKeepers, ctx sdk.Context, validator stakingtypes.Validator, consAddr sdk.ConsAddress, lastPower int64, powerReduction math.Int) {
 	t.Helper()
 	valAddr, err := k.ValidatorAddressCodec().StringToBytes(validator.GetOperator())
 	require.NoError(t, err)
 	mocks.MockStakingKeeper.EXPECT().
-		GetValidatorByConsAddr(ctx, gomock.Any()).
+		GetValidatorByConsAddr(ctx, consAddr).
 		Return(validator, nil)
 	mocks.MockSlashingKeeper.EXPECT().
 		IsTombstoned(ctx, consAddr).
@@ -382,6 +394,88 @@ func TestSweepPendingDowntimeSlashesExecutesEachDisjointWindowIndependently(t *t
 	has, err = k.PendingDowntimeSlashes.Has(ctx, collections.Join3(consumerId, consAddr.Bytes(), int64(200)))
 	require.NoError(t, err)
 	require.False(t, has, "second window's entry should be executed and deleted")
+}
+
+// TestSweepPendingDowntimeSlashesExecutesTwoValidatorsInSameBlock asserts
+// per-pair independence when entries for TWO different validators of the same
+// consumer mature in the same sweep: both execute, each at its own priced
+// amount, and the withheld-record bookkeeping stays scoped to its own
+// (consumer, validator) pair -- the drained pair's record is deleted while
+// the pair still holding an unmatured window keeps its record. Accepted
+// window records are not touched by the sweep for either pair.
+func TestSweepPendingDowntimeSlashesExecutesTwoValidatorsInSameBlock(t *testing.T) {
+	infractionParams := types.InfractionParameters{
+		Downtime: &types.SlashJailParameters{
+			SlashFraction: math.LegacyNewDecWithPrec(5, 1), // 0.5 cap, does not bind here
+		},
+	}
+	k, ctx, ctrl, mocks, validatorA, providerAddrA := setupSweepTest(t, infractionParams)
+	defer ctrl.Finish()
+	validatorB, providerAddrB := newSweepValidator(t)
+
+	consAddrA := providerAddrA.ToSdkConsAddr()
+	consAddrB := providerAddrB.ToSdkConsAddr()
+	consumerId := uint64(0)
+	maturesAt := ctx.BlockTime().Add(-time.Minute)
+
+	putPendingDowntimeSlash(t, k, ctx, consumerId, providerAddrA, math.NewInt(100), maturesAt, 100)
+	putPendingDowntimeSlash(t, k, ctx, consumerId, providerAddrB, math.NewInt(300), maturesAt, 100)
+	// validator B keeps a second, unmatured window pending.
+	putPendingDowntimeSlash(t, k, ctx, consumerId, providerAddrB, math.NewInt(100), ctx.BlockTime().Add(time.Hour), 200)
+
+	// One withheld record and one accepted-window record per pair.
+	for _, addr := range []sdk.ConsAddress{consAddrA, consAddrB} {
+		require.NoError(t, k.WithheldFeeRecords.Set(ctx, collections.Join(consumerId, addr.Bytes()), types.WithheldFeeRecord{
+			ConsumerId:       consumerId,
+			ProviderConsAddr: addr.Bytes(),
+			Amount:           sdk.NewInt64Coin("uphoton", 50),
+			ExpiresAt:        ctx.BlockTime().Add(time.Hour),
+		}))
+		require.NoError(t, k.AcceptedDowntimeWindows.Set(ctx, collections.Join3(consumerId, addr.Bytes(), int64(100)), types.AcceptedDowntimeWindow{
+			WindowStart: 1,
+			AcceptedAt:  ctx.BlockTime(),
+		}))
+	}
+
+	powerReduction := math.NewInt(1)
+	expectSlashableStakeLookup(t, k, mocks, ctx, validatorA, consAddrA, 1000, powerReduction)
+	expectSlashableStakeLookup(t, k, mocks, ctx, validatorB, consAddrB, 1000, powerReduction)
+	mocks.MockStakingKeeper.EXPECT().
+		SlashWithInfractionReason(ctx, consAddrA, int64(0), int64(1000), math.LegacyNewDecWithPrec(1, 1), stakingtypes.Infraction_INFRACTION_DOWNTIME).
+		Return(math.NewInt(100), nil)
+	mocks.MockStakingKeeper.EXPECT().
+		SlashWithInfractionReason(ctx, consAddrB, int64(0), int64(1000), math.LegacyNewDecWithPrec(3, 1), stakingtypes.Infraction_INFRACTION_DOWNTIME).
+		Return(math.NewInt(300), nil)
+
+	k.SweepPendingDowntimeSlashes(ctx)
+
+	// Both matured entries executed and removed; B's unmatured window survives.
+	has, err := k.PendingDowntimeSlashes.Has(ctx, collections.Join3(consumerId, consAddrA.Bytes(), int64(100)))
+	require.NoError(t, err)
+	require.False(t, has, "validator A's matured entry must be executed and deleted")
+	has, err = k.PendingDowntimeSlashes.Has(ctx, collections.Join3(consumerId, consAddrB.Bytes(), int64(100)))
+	require.NoError(t, err)
+	require.False(t, has, "validator B's matured entry must be executed and deleted")
+	has, err = k.PendingDowntimeSlashes.Has(ctx, collections.Join3(consumerId, consAddrB.Bytes(), int64(200)))
+	require.NoError(t, err)
+	require.True(t, has, "validator B's unmatured window must survive the sweep")
+
+	// Withheld records resolve per pair: A drained, so its record is deleted;
+	// B still has a pending window, so its record survives.
+	hasWithheld, err := k.WithheldFeeRecords.Has(ctx, collections.Join(consumerId, consAddrA.Bytes()))
+	require.NoError(t, err)
+	require.False(t, hasWithheld, "drained pair A's withheld record must be deleted")
+	hasWithheld, err = k.WithheldFeeRecords.Has(ctx, collections.Join(consumerId, consAddrB.Bytes()))
+	require.NoError(t, err)
+	require.True(t, hasWithheld, "pair B's withheld record must survive while its second window pends")
+
+	// Accepted-window records are the acceptance guard, not the sweep's: both
+	// pairs' records survive execution untouched.
+	for _, addr := range []sdk.ConsAddress{consAddrA, consAddrB} {
+		hasAccepted, err := k.AcceptedDowntimeWindows.Has(ctx, collections.Join3(consumerId, addr.Bytes(), int64(100)))
+		require.NoError(t, err)
+		require.True(t, hasAccepted, "accepted-window records must survive the sweep")
+	}
 }
 
 // TestSweepPendingDowntimeSlashesKeepsWithheldRecordWhilePairStillPending

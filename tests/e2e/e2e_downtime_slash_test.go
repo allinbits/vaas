@@ -37,8 +37,29 @@ import (
 	stakingtypes "github.com/cosmos/cosmos-sdk/x/staking/types"
 )
 
+// Downtime parameters this suite's provider genesis patches in
+// patchProviderGenesis (e2e_setup_test.go); the negative control below
+// derives its provable waits from them instead of guessing at wall-clock
+// durations.
+const (
+	// downtimeSignedBlocksWindow is the consumer's tumbling-window size in
+	// consumer blocks (provider genesis signed_blocks_window, echoed into the
+	// consumer genesis at launch).
+	downtimeSignedBlocksWindow = 30
+	// downtimeChallengeWindow mirrors the provider genesis
+	// downtime_challenge_window: how long an accepted downtime slash stays
+	// pending (and challengeable) before the BeginBlock sweep executes it.
+	downtimeChallengeWindow = 30 * time.Second
+	// downtimeEvidenceRelaySlack is the allowance for a window-close evidence
+	// packet to be relayed to and accepted by the provider, on top of the
+	// challenge window, when proving that no evidence ever arrived.
+	downtimeEvidenceRelaySlack = 30 * time.Second
+)
+
 func (s *IntegrationTestSuite) testDowntimeSlash() {
 	s.Run("no downtime slash, consumer down", func() {
+		const consumerID = "0"
+
 		valoperAddr, tokensBefore := s.getProviderValidatorTokens()
 		s.Require().False(tokensBefore.IsZero(), "validator should have tokens before downtime test")
 
@@ -55,23 +76,60 @@ func (s *IntegrationTestSuite) testDowntimeSlash() {
 		err = s.dkrPool.Client.UnpauseContainer(s.consumerValRes[0].Container.ID)
 		s.Require().NoError(err, "failed to unpause consumer container")
 
-		s.T().Log("waiting for provider to process downtime evidence from consumer...")
+		var heightAfterUnpause int64
 		s.Require().Eventuallyf(func() bool {
-			tokensAfter, err := s.getProviderValidatorTokensByAddr(valoperAddr)
-			if err != nil {
+			h, err := s.queryConsumerBlockHeight()
+			if err != nil || h <= 0 {
 				return false
 			}
-			return tokensAfter.Equal(tokensBefore)
-		},
-			3*time.Minute,
-			5*time.Second,
-			"validator tokens were incorrectly slashed during whole consumer chain downtime (before: %s, valoper: %s)",
-			tokensBefore.String(), valoperAddr,
-		)
+			heightAfterUnpause = h
+			return true
+		}, time.Minute, 2*time.Second,
+			"consumer RPC never came back after unpausing the container")
 
-		s.T().Log("verifying validator was not jailed after downtime evidence...")
+		// The accusation window is provably closed once the consumer commits
+		// past the boundary of the tumbling window containing every height the
+		// outage could have touched: heights are contiguous across the pause,
+		// so they all sit at or below heightAfterUnpause, whose window
+		// [S, S+W-1] is evaluated while block S+W executes (the vote for
+		// height h is delivered in block h+1); every earlier window closed at
+		// an earlier height still. Any evidence the outage could ever produce
+		// is queued consumer-side by that block.
+		windowCloseHeight := (heightAfterUnpause/downtimeSignedBlocksWindow + 1) * downtimeSignedBlocksWindow
+		s.T().Logf("waiting for the consumer to provably close the accusation window (height %d, closes at %d)...",
+			heightAfterUnpause, windowCloseHeight)
+		// Up to a full window of consumer blocks may need to be produced
+		// first, so the cap is sized for the suite's ~5s consumer blocks.
+		s.Require().Eventuallyf(func() bool {
+			h, err := s.queryConsumerBlockHeight()
+			return err == nil && h > windowCloseHeight
+		}, 5*time.Minute, 5*time.Second,
+			"consumer never closed the accusation window covering the outage (unpause height %d, close height %d)",
+			heightAfterUnpause, windowCloseHeight)
+
+		// Whole-chain downtime halts block production entirely, so nobody's
+		// vote is individually recorded as missing and no evidence may reach
+		// the provider: the pending-downtime-slashes queue must stay empty for
+		// the entire challenge window plus relay slack after the window close.
+		// That is long enough that wrongly queued evidence would have been
+		// relayed, accepted, and still be sitting out its challenge window --
+		// pending and visible -- while this watch runs.
+		s.T().Log("verifying no pending downtime slash is ever queued while the challenge window matures...")
+		s.Require().Neverf(func() bool {
+			return len(s.queryPendingDowntimeSlashes(consumerID)) > 0
+		}, downtimeChallengeWindow+downtimeEvidenceRelaySlack, 3*time.Second,
+			"a pending downtime slash was queued for consumer %s during whole-chain downtime", consumerID)
+
+		s.T().Log("verifying validator tokens are unchanged now that the challenge window has matured...")
+		tokensAfter, err := s.getProviderValidatorTokensByAddr(valoperAddr)
+		s.Require().NoError(err, "failed to read validator tokens after the challenge window")
+		s.Require().Truef(tokensAfter.Equal(tokensBefore),
+			"validator tokens changed during whole consumer chain downtime (before: %s, after: %s, valoper: %s)",
+			tokensBefore, tokensAfter, valoperAddr)
+
+		s.T().Log("verifying validator was not jailed after the downtime window...")
 		jailed = s.isProviderValidatorJailed()
-		s.Require().False(jailed, "validator should not be jailed after downtime evidence")
+		s.Require().False(jailed, "validator should not be jailed after whole-chain downtime")
 	})
 
 	s.testDowntimeSlashQueueThenExecute()
