@@ -55,6 +55,11 @@ When the grace period is exceeded, the consumer is moved to `STOPPED` (then `DEL
 the unbonding period) exactly as a governance removal would do. See
 [consumer-lifecycle.md](consumer-lifecycle.md) for the `STOPPED -> DELETED` mechanics.
 
+The sweep only considers `LAUNCHED` consumers. A consumer paused by a successful downtime
+challenge is deliberately silent, so the sweep skips it; its pause has its own deadline
+(`MaxPauseDuration`), and a governance resume reseeds `lastAck` so the grace budget restarts
+fresh. See [consumer-downtime.md](consumer-downtime.md).
+
 **Guarantee:** a launched-but-unresponsive consumer is removed within the grace period,
 which is strictly less than the provider's unbonding period. So every validator that was in
 the consumer's set as of its last successful sync is still slashable on the provider at the

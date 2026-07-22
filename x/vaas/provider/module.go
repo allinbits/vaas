@@ -160,6 +160,29 @@ func (am AppModule) BeginBlock(ctx context.Context) error {
 		return err
 	}
 
+	// Auto-stop any consumer whose pause has outlived MaxPauseDuration.
+	if err := am.keeper.BeginBlockAutoStopPausedConsumers(sdkCtx); err != nil {
+		return err
+	}
+
+	// Execute matured downtime slashes queued behind the challenge window.
+	// The liveness sweep and the pause auto-stop above must run before this
+	// slash sweep so same-block cancellations win.
+	am.keeper.SweepPendingDowntimeSlashes(sdkCtx)
+
+	ip := am.keeper.GetInfractionParams(sdkCtx)
+
+	// Prune epoch share records too old for any acceptable downtime evidence
+	// (plus its challenge window) to still reference.
+	am.keeper.PruneEpochShareRecords(sdkCtx, sdkCtx.BlockTime().Add(-(ip.DowntimeEvidenceMaxAge + ip.DowntimeChallengeWindow)))
+
+	// Delete withheld fee records whose challenge window expired unchallenged.
+	am.keeper.SweepExpiredWithheldFeeRecords(sdkCtx)
+
+	// Prune accepted downtime windows that no acceptable evidence can still
+	// intersect, advancing the per-pair floors in their stead.
+	am.keeper.PruneAcceptedDowntimeWindows(sdkCtx, ip)
+
 	// Collect and distribute fees once per epoch, not every block.
 	if am.keeper.BlocksUntilNextEpoch(sdkCtx) == 0 {
 		if err := am.keeper.DistributeConsumerFees(sdkCtx); err != nil {

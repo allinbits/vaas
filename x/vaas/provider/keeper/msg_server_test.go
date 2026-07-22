@@ -24,6 +24,8 @@ import (
 	disttypes "github.com/cosmos/cosmos-sdk/x/distribution/types"
 	stakingtypes "github.com/cosmos/cosmos-sdk/x/staking/types"
 	clienttypes "github.com/cosmos/ibc-go/v10/modules/core/02-client/types"
+	channeltypesv2 "github.com/cosmos/ibc-go/v10/modules/core/04-channel/v2/types"
+	ibcexported "github.com/cosmos/ibc-go/v10/modules/core/exported"
 
 	cryptoutil "github.com/allinbits/vaas/testutil/crypto"
 	testkeeper "github.com/allinbits/vaas/testutil/keeper"
@@ -730,6 +732,188 @@ func TestRemoveConsumerNonLaunchedRejected(t *testing.T) {
 	require.ErrorIs(t, err, providertypes.ErrInvalidPhase)
 }
 
+// TestRemoveConsumerFromPaused verifies that MsgRemoveConsumer accepts a
+// PAUSED consumer (not just LAUNCHED), routes into
+// StopAndPrepareForConsumerRemoval, and clears the pause auto-stop schedule
+// so a stale entry does not later fire against the now-STOPPED consumer.
+func TestRemoveConsumerFromPaused(t *testing.T) {
+	providerKeeper, ctx, ctrl, mocks := testkeeper.GetProviderKeeperAndCtx(t, testkeeper.NewInMemKeeperParams(t))
+	defer ctrl.Finish()
+
+	mocks.MockStakingKeeper.EXPECT().UnbondingTime(gomock.Any()).Return(21*24*time.Hour, nil).Times(2)
+
+	msgServer := providerkeeper.NewMsgServerImpl(&providerKeeper)
+
+	createResp, err := msgServer.CreateConsumer(ctx,
+		&providertypes.MsgCreateConsumer{
+			Submitter: "submitter", ChainId: "chainId",
+			Metadata: providertypes.ConsumerMetadata{
+				Name:        "name",
+				Description: "description",
+			},
+			InitializationParameters: &providertypes.ConsumerInitializationParameters{
+				UnbondingPeriod: 21 * 24 * time.Hour,
+			},
+		})
+	require.NoError(t, err)
+	consumerId := createResp.ConsumerId
+
+	providerKeeper.SetConsumerPhase(ctx, consumerId, providertypes.CONSUMER_PHASE_LAUNCHED)
+	require.NoError(t, providerKeeper.PauseConsumerChain(ctx, consumerId))
+	expirationTime, err := providerKeeper.GetConsumerPauseExpirationTime(ctx, consumerId)
+	require.NoError(t, err)
+
+	_, err = msgServer.RemoveConsumer(ctx,
+		&providertypes.MsgRemoveConsumer{
+			Authority:  providerKeeper.GetAuthority(),
+			ConsumerId: consumerId,
+		})
+	require.NoError(t, err)
+
+	require.Equal(t, providertypes.CONSUMER_PHASE_STOPPED, providerKeeper.GetConsumerPhase(ctx, consumerId))
+
+	_, err = providerKeeper.GetConsumerPauseExpirationTime(ctx, consumerId)
+	require.Error(t, err)
+	queued, err := providerKeeper.GetConsumersToBeAutoStopped(ctx, expirationTime)
+	require.NoError(t, err)
+	require.Empty(t, queued.Ids)
+}
+
+// TestResumeConsumerGovAuth verifies MsgResumeConsumer's authority gate and,
+// on success, that it delegates to ResumeConsumerChain: the paused consumer
+// flips back to LAUNCHED with an active client.
+func TestResumeConsumerGovAuth(t *testing.T) {
+	providerKeeper, ctx, ctrl, mocks := testkeeper.GetProviderKeeperAndCtx(t, testkeeper.NewInMemKeeperParams(t))
+	defer ctrl.Finish()
+
+	providerKeeper.SetInfractionParams(ctx, providertypes.DefaultInfractionParameters())
+
+	mocks.MockStakingKeeper.EXPECT().UnbondingTime(gomock.Any()).Return(21*24*time.Hour, nil).Times(1)
+
+	msgServer := providerkeeper.NewMsgServerImpl(&providerKeeper)
+
+	createResp, err := msgServer.CreateConsumer(ctx,
+		&providertypes.MsgCreateConsumer{
+			Submitter: "submitter", ChainId: "chainId",
+			Metadata: providertypes.ConsumerMetadata{
+				Name:        "name",
+				Description: "description",
+			},
+			InitializationParameters: &providertypes.ConsumerInitializationParameters{
+				UnbondingPeriod: 21 * 24 * time.Hour,
+			},
+		})
+	require.NoError(t, err)
+	consumerId := createResp.ConsumerId
+
+	providerKeeper.SetConsumerClientId(ctx, consumerId, "07-tendermint-0")
+	providerKeeper.SetConsumerPhase(ctx, consumerId, providertypes.CONSUMER_PHASE_LAUNCHED)
+	require.NoError(t, providerKeeper.PauseConsumerChain(ctx, consumerId))
+
+	// non-authority is rejected
+	_, err = msgServer.ResumeConsumer(ctx,
+		&providertypes.MsgResumeConsumer{
+			Authority:  "cosmos1notthegovauth000000000000000000000000",
+			ConsumerId: consumerId,
+		})
+	require.Error(t, err)
+	require.Contains(t, err.Error(), "invalid authority")
+	require.Equal(t, providertypes.CONSUMER_PHASE_PAUSED, providerKeeper.GetConsumerPhase(ctx, consumerId))
+
+	// correct authority succeeds
+	mocks.MockClientKeeper.EXPECT().GetClientStatus(gomock.Any(), "07-tendermint-0").Return(ibcexported.Active)
+	mocks.MockStakingKeeper.EXPECT().MaxValidators(gomock.Any()).Return(uint32(100), nil).AnyTimes()
+	mocks.MockStakingKeeper.EXPECT().GetBondedValidatorsByPower(gomock.Any()).Return([]stakingtypes.Validator{}, nil).AnyTimes()
+	mocks.MockChannelV2Keeper.EXPECT().
+		SendPacket(gomock.Any(), gomock.Any()).
+		Return(&channeltypesv2.MsgSendPacketResponse{Sequence: 1}, nil).Times(1)
+
+	_, err = msgServer.ResumeConsumer(ctx,
+		&providertypes.MsgResumeConsumer{
+			Authority:  providerKeeper.GetAuthority(),
+			ConsumerId: consumerId,
+		})
+	require.NoError(t, err)
+
+	require.Equal(t, providertypes.CONSUMER_PHASE_LAUNCHED, providerKeeper.GetConsumerPhase(ctx, consumerId))
+}
+
+// TestResumeConsumerNonPausedRejected verifies MsgResumeConsumer rejects a
+// consumer that is not in the PAUSED phase.
+func TestResumeConsumerNonPausedRejected(t *testing.T) {
+	providerKeeper, ctx, ctrl, mocks := testkeeper.GetProviderKeeperAndCtx(t, testkeeper.NewInMemKeeperParams(t))
+	defer ctrl.Finish()
+
+	mocks.MockStakingKeeper.EXPECT().UnbondingTime(gomock.Any()).Return(21*24*time.Hour, nil).Times(1)
+
+	msgServer := providerkeeper.NewMsgServerImpl(&providerKeeper)
+
+	createResp, err := msgServer.CreateConsumer(ctx,
+		&providertypes.MsgCreateConsumer{
+			Submitter: "submitter", ChainId: "chainId",
+			Metadata: providertypes.ConsumerMetadata{
+				Name:        "name",
+				Description: "description",
+			},
+			InitializationParameters: &providertypes.ConsumerInitializationParameters{
+				UnbondingPeriod: 21 * 24 * time.Hour,
+			},
+		})
+	require.NoError(t, err)
+	providerKeeper.SetConsumerPhase(ctx, createResp.ConsumerId, providertypes.CONSUMER_PHASE_LAUNCHED)
+
+	_, err = msgServer.ResumeConsumer(ctx,
+		&providertypes.MsgResumeConsumer{
+			Authority:  providerKeeper.GetAuthority(),
+			ConsumerId: createResp.ConsumerId,
+		})
+	require.Error(t, err)
+	require.ErrorIs(t, err, providertypes.ErrInvalidPhase)
+}
+
+// TestResumeConsumerRejectsInactiveClient verifies MsgResumeConsumer's
+// client pre-flight rejects an expired/frozen client with guidance to bundle
+// ibc-go's MsgRecoverClient into the same governance proposal (see
+// docs/consumer-downtime.md, "The PAUSED phase").
+func TestResumeConsumerRejectsInactiveClient(t *testing.T) {
+	providerKeeper, ctx, ctrl, mocks := testkeeper.GetProviderKeeperAndCtx(t, testkeeper.NewInMemKeeperParams(t))
+	defer ctrl.Finish()
+
+	mocks.MockStakingKeeper.EXPECT().UnbondingTime(gomock.Any()).Return(21*24*time.Hour, nil).Times(1)
+
+	msgServer := providerkeeper.NewMsgServerImpl(&providerKeeper)
+
+	createResp, err := msgServer.CreateConsumer(ctx,
+		&providertypes.MsgCreateConsumer{
+			Submitter: "submitter", ChainId: "chainId",
+			Metadata: providertypes.ConsumerMetadata{
+				Name:        "name",
+				Description: "description",
+			},
+			InitializationParameters: &providertypes.ConsumerInitializationParameters{
+				UnbondingPeriod: 21 * 24 * time.Hour,
+			},
+		})
+	require.NoError(t, err)
+	consumerId := createResp.ConsumerId
+
+	providerKeeper.SetConsumerClientId(ctx, consumerId, "07-tendermint-0")
+	providerKeeper.SetConsumerPhase(ctx, consumerId, providertypes.CONSUMER_PHASE_LAUNCHED)
+	require.NoError(t, providerKeeper.PauseConsumerChain(ctx, consumerId))
+
+	mocks.MockClientKeeper.EXPECT().GetClientStatus(gomock.Any(), "07-tendermint-0").Return(ibcexported.Expired)
+
+	_, err = msgServer.ResumeConsumer(ctx,
+		&providertypes.MsgResumeConsumer{
+			Authority:  providerKeeper.GetAuthority(),
+			ConsumerId: consumerId,
+		})
+	require.Error(t, err)
+	require.ErrorIs(t, err, providertypes.ErrConsumerClientNotActive)
+	require.Contains(t, err.Error(), "MsgRecoverClient")
+	require.Equal(t, providertypes.CONSUMER_PHASE_PAUSED, providerKeeper.GetConsumerPhase(ctx, consumerId))
+}
+
 func TestUpdateConsumerLaunchedOnlyMetadata(t *testing.T) {
 	providerKeeper, ctx, ctrl, mocks := testkeeper.GetProviderKeeperAndCtx(t, testkeeper.NewInMemKeeperParams(t))
 	defer ctrl.Finish()
@@ -1219,6 +1403,37 @@ func TestWithdrawConsumerFeePool(t *testing.T) {
 			wantErr:  providertypes.ErrFeePoolLocked,
 		},
 		{
+			// A paused consumer (entered via a successful downtime challenge)
+			// locks withdrawals the same way a launched one does, so retro-paid
+			// withheld fees can't be raced out of the pool by a depositor.
+			name:     "locked during paused (non-gov)",
+			register: true,
+			phase:    providertypes.CONSUMER_PHASE_PAUSED,
+			amount:   sdk.NewCoins(sdk.NewInt64Coin("uphoton", 50)),
+			wantErr:  providertypes.ErrFeePoolLocked,
+		},
+		{
+			// The gov authority bypasses the lock while paused, same as while
+			// launched.
+			name:      "gov clawback during paused",
+			register:  true,
+			phase:     providertypes.CONSUMER_PHASE_PAUSED,
+			govSigner: true,
+			amount:    sdk.NewCoins(sdk.NewInt64Coin("uphoton", 1_000_000)),
+			setup: func(k providerkeeper.Keeper, ctx sdk.Context, mocks testkeeper.MockedKeepers, consumerId uint64, poolAddr sdk.AccAddress) {
+				require.NoError(t, k.ConsumerFeePoolShares.Set(ctx,
+					collections.Join3(consumerId, "uphoton", distrAddr), math.NewInt(100)))
+				require.NoError(t, k.ConsumerFeePoolTotalShares.Set(ctx,
+					collections.Join(consumerId, "uphoton"), math.NewInt(100)))
+				mocks.MockBankKeeper.EXPECT().GetBalance(ctx, poolAddr, "uphoton").
+					Return(sdk.NewInt64Coin("uphoton", 100))
+				mocks.MockBankKeeper.EXPECT().SendCoinsFromAccountToModule(
+					ctx, poolAddr, providertypes.ModuleName, sdk.NewCoins(sdk.NewInt64Coin("uphoton", 100))).Return(nil)
+				mocks.MockDistributionKeeper.EXPECT().FundCommunityPool(
+					ctx, sdk.NewCoins(sdk.NewInt64Coin("uphoton", 100)), providerAddr).Return(nil)
+			},
+		},
+		{
 			// alice sole depositor: 100 shares, balance 80.
 			// alice asks for 30, partial path: shares_to_burn = 30*100/80 = 37, tokens = 37*80/100 = 29.
 			name:     "regular partial withdraw during stopped",
@@ -1456,6 +1671,14 @@ func TestSweepConsumerFeePool(t *testing.T) {
 			name:     "locked during launched",
 			register: true,
 			phase:    providertypes.CONSUMER_PHASE_LAUNCHED,
+			setOwner: true,
+			signer:   owner,
+			wantErr:  providertypes.ErrFeePoolLocked,
+		},
+		{
+			name:     "locked during paused",
+			register: true,
+			phase:    providertypes.CONSUMER_PHASE_PAUSED,
 			setOwner: true,
 			signer:   owner,
 			wantErr:  providertypes.ErrFeePoolLocked,

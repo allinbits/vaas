@@ -5,6 +5,7 @@ package vaas.provider.v1;
 import "amino/amino.proto";
 import "cosmos_proto/cosmos.proto";
 import "gogoproto/gogo.proto";
+import "cosmos/base/v1beta1/coin.proto";
 import "cosmos/evidence/v1beta1/evidence.proto";
 import "google/protobuf/duration.proto";
 import "google/protobuf/timestamp.proto";
@@ -54,6 +55,13 @@ message Params {
   // min_deposit_blocks). Zero disables the check. The floor applies to every
   // funder including the gov authority.
   uint64 min_deposit_blocks = 6;
+
+  // MaxPauseDuration bounds how long a consumer chain may remain in the
+  // PAUSED phase (see CONSUMER_PHASE_PAUSED) before the provider
+  // automatically stops it, guaranteeing an unresolved pause always resolves
+  // to STOPPED (and eventually DELETED) rather than hanging indefinitely.
+  google.protobuf.Duration max_pause_duration = 7
+      [ (gogoproto.nullable) = false, (gogoproto.stdduration) = true ];
 }
 
 // AddressList contains a list of consensus addresses
@@ -206,6 +214,11 @@ enum ConsumerPhase {
   // DELETED defines the phase in which the state of a stopped chain has been
   // deleted.
   CONSUMER_PHASE_DELETED = 5;
+  // PAUSED defines the phase of a launched consumer chain suspended by a
+  // successful downtime challenge (MsgChallengeConsumerDowntime). It exits
+  // via governance-authorized resumption (MsgResumeConsumer), removal, or
+  // the pause auto-stop after max_pause_duration.
+  CONSUMER_PHASE_PAUSED = 6;
 }
 
 //
@@ -218,6 +231,78 @@ message InfractionParameters {
   // downtime. Set to 0 to disable the grace period.
   google.protobuf.Duration downtime_grace_period = 3
       [ (gogoproto.nullable) = false, (gogoproto.stdduration) = true ];
+  // signed_blocks_window / min_signed_per_window are the provider-owned
+  // source of the values it writes into consumer genesis and VSC packets;
+  // used to validate incoming evidence bitmaps.
+  int64 signed_blocks_window = 4;
+  string min_signed_per_window = 5 [
+    (cosmos_proto.scalar) = "cosmos.Dec",
+    (gogoproto.customtype) = "cosmossdk.io/math.LegacyDec",
+    (gogoproto.nullable) = false
+  ];
+  // delay between accepting downtime evidence and executing its slash;
+  // the window during which a challenge can cancel it
+  google.protobuf.Duration downtime_challenge_window = 6
+      [ (gogoproto.nullable) = false, (gogoproto.stdduration) = true ];
+  // maximum age of an evidence window at receipt, judged against IBC
+  // client consensus-state timestamps
+  google.protobuf.Duration downtime_evidence_max_age = 7
+      [ (gogoproto.nullable) = false, (gogoproto.stdduration) = true ];
+}
+
+// PendingDowntimeSlash is a downtime slash accepted from a consumer but not
+// yet executed; it matures after the challenge window and can be cancelled
+// by a successful challenge.
+message PendingDowntimeSlash {
+  uint64 consumer_id = 1;
+  bytes provider_cons_addr = 2;
+  int64 window_start_height = 3;
+  int64 span = 4;
+  int64 missed_count = 5;
+  bytes missed_blocks_bitmap = 6;
+  // slash amount in bond denom, resolved at receipt (P * M / C)
+  string slash_tokens = 7 [
+    (cosmos_proto.scalar) = "cosmos.Int",
+    (gogoproto.customtype) = "cosmossdk.io/math.Int",
+    (gogoproto.nullable) = false
+  ];
+  google.protobuf.Timestamp matures_at = 8
+      [ (gogoproto.nullable) = false, (gogoproto.stdtime) = true ];
+}
+
+// AcceptedDowntimeWindow records one downtime-detection window whose evidence
+// has been accepted for a (consumer, validator) pair; the keeper keys it by
+// (consumer_id, provider_cons_addr, window_end_height), so only the window's
+// start height and the acceptance time are carried here. Incoming evidence
+// intersecting any retained record is rejected; accepted_at drives pruning
+// once the record is too old to matter for any evidence still fresh enough
+// to accept.
+message AcceptedDowntimeWindow {
+  int64 window_start = 1;
+  google.protobuf.Timestamp accepted_at = 2
+      [ (gogoproto.nullable) = false, (gogoproto.stdtime) = true ];
+}
+
+// PreviousDowntimeParams retains the immediately-prior downtime params after
+// a change, so in-flight evidence computed under them is still accepted.
+message PreviousDowntimeParams {
+  vaas.v1.DowntimeParams params = 1 [ (gogoproto.nullable) = false ];
+  google.protobuf.Timestamp changed_at = 2
+      [ (gogoproto.nullable) = false, (gogoproto.stdtime) = true ];
+}
+
+// WithheldFeeRecord tracks fee tokens withheld from a validator pending the
+// outcome of a downtime challenge window; a successful challenge pays the
+// amount to the validator, while an unchallenged or unsuccessfully
+// challenged entry simply has its record deleted once it expires -- the
+// funds themselves never leave the consumer fee pool, and a failed challenge
+// changes nothing.
+message WithheldFeeRecord {
+  uint64 consumer_id = 1;
+  bytes provider_cons_addr = 2;
+  cosmos.base.v1beta1.Coin amount = 3 [ (gogoproto.nullable) = false ];
+  google.protobuf.Timestamp expires_at = 4
+      [ (gogoproto.nullable) = false, (gogoproto.stdtime) = true ];
 }
 
 //

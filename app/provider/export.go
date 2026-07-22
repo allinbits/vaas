@@ -4,6 +4,8 @@ import (
 	"encoding/json"
 	"log"
 
+	cmtproto "github.com/cometbft/cometbft/proto/tendermint/types"
+
 	servertypes "github.com/cosmos/cosmos-sdk/server/types"
 	sdk "github.com/cosmos/cosmos-sdk/types"
 	slashingtypes "github.com/cosmos/cosmos-sdk/x/slashing/types"
@@ -16,8 +18,13 @@ import (
 func (app *App) ExportAppStateAndValidators(
 	forZeroHeight bool, jailAllowedAddrs, modulesToExport []string,
 ) (servertypes.ExportedApp, error) {
-	// as if they could withdraw from the start of the next block
-	ctx := app.NewContext(true)
+	// As if they could withdraw from the start of the next block.
+	// The context must carry the last committed height: distribution's
+	// delegation-reward recalculation replays validator slash events between
+	// the delegation's creation height and ctx.BlockHeight(), so a zero
+	// height skips every slash event and panics on any validator slashed
+	// after the delegation was created.
+	ctx := app.NewContextLegacy(true, cmtproto.Header{Height: app.LastBlockHeight()})
 
 	// We export at last height + 1, because that's the height at which
 	// Tendermint will start InitChain.

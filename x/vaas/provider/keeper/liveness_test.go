@@ -111,6 +111,28 @@ func TestSweepRemovesStaleConsumer(t *testing.T) {
 	require.Equal(t, ctx.BlockTime().Add(unbonding), removalTime)
 }
 
+// TestSweepSkipsPausedConsumer verifies that SweepUnresponsiveConsumers never
+// touches a paused consumer: it iterates GetAllLaunchedConsumerIds, which
+// excludes PAUSED, so a stale lastAck on a paused consumer is not grounds for
+// the liveness sweep to stop it (auto-stop for pauses is
+// BeginBlockAutoStopPausedConsumers' job, on MaxPauseDuration, not liveness).
+func TestSweepSkipsPausedConsumer(t *testing.T) {
+	k, ctx, ctrl, mocks := testkeeper.GetProviderKeeperAndCtx(t, testkeeper.NewInMemKeeperParams(t))
+	defer ctrl.Finish()
+
+	cid := k.FetchAndIncrementConsumerId(ctx)
+	k.SetConsumerPhase(ctx, cid, providertypes.CONSUMER_PHASE_PAUSED)
+
+	unbonding := 21 * 24 * time.Hour
+	mocks.MockStakingKeeper.EXPECT().UnbondingTime(gomock.Any()).Return(unbonding, nil).AnyTimes()
+
+	// Last ack far in the past would trip the sweep for a launched consumer.
+	require.NoError(t, k.SetConsumerLastAckTime(ctx, cid, ctx.BlockTime().Add(-30*24*time.Hour)))
+
+	require.NoError(t, k.SweepUnresponsiveConsumers(ctx))
+	require.Equal(t, providertypes.CONSUMER_PHASE_PAUSED, k.GetConsumerPhase(ctx, cid))
+}
+
 func TestSweepSparesLiveConsumer(t *testing.T) {
 	k, ctx, ctrl, mocks := testkeeper.GetProviderKeeperAndCtx(t, testkeeper.NewInMemKeeperParams(t))
 	defer ctrl.Finish()

@@ -50,6 +50,36 @@ type GenesisState struct {
 	ConsumerFeesPerBlockOverrides []ConsumerFeesPerBlockOverride `protobuf:"bytes,8,rep,name=consumer_fees_per_block_overrides,json=consumerFeesPerBlockOverrides,proto3" json:"consumer_fees_per_block_overrides"`
 	// empty for a new chain
 	ConsumerFeePoolShares []ConsumerFeePoolShare `protobuf:"bytes,9,rep,name=consumer_fee_pool_shares,json=consumerFeePoolShares,proto3" json:"consumer_fee_pool_shares"`
+	// Downtime slashes accepted from consumers but not yet executed. Empty for
+	// a new chain.
+	PendingDowntimeSlashes []PendingDowntimeSlash `protobuf:"bytes,10,rep,name=pending_downtime_slashes,json=pendingDowntimeSlashes,proto3" json:"pending_downtime_slashes"`
+	// The downtime params in effect immediately before the last change to
+	// InfractionParams, if any. Absent means the downtime params have never
+	// changed.
+	PreviousDowntimeParams *PreviousDowntimeParams `protobuf:"bytes,11,opt,name=previous_downtime_params,json=previousDowntimeParams,proto3" json:"previous_downtime_params,omitempty"`
+	// Per-validator fee-share records from each consumer's fee distribution
+	// runs. Empty for a new chain.
+	EpochShareRecords []EpochShareRecord `protobuf:"bytes,12,rep,name=epoch_share_records,json=epochShareRecords,proto3" json:"epoch_share_records"`
+	// Optional override for the module's infraction parameters (double-sign /
+	// downtime slash+jail settings, the downtime detection window, and the
+	// downtime challenge window / evidence max age). Absent means
+	// DefaultInfractionParameters().
+	InfractionParameters *InfractionParameters `protobuf:"bytes,13,opt,name=infraction_parameters,json=infractionParameters,proto3" json:"infraction_parameters,omitempty"`
+	// Fee shares withheld from validators pending a downtime challenge window,
+	// or already forfeited. Empty for a new chain.
+	WithheldFeeRecords []WithheldFeeRecord `protobuf:"bytes,14,rep,name=withheld_fee_records,json=withheldFeeRecords,proto3" json:"withheld_fee_records"`
+	// Per-(consumer, validator) downtime-detection windows already accepted,
+	// one record per window, preventing re-acceptance of intersecting
+	// evidence. Empty for a new chain.
+	AcceptedDowntimeWindows []AcceptedDowntimeWindowRecord `protobuf:"bytes,15,rep,name=accepted_downtime_windows,json=acceptedDowntimeWindows,proto3" json:"accepted_downtime_windows"`
+	// Per-(consumer, validator) downtime marks for the epoch fee distribution
+	// currently in progress. Empty for a new chain.
+	EpochDowntimeEntries []EpochDowntimeEntry `protobuf:"bytes,16,rep,name=epoch_downtime_entries,json=epochDowntimeEntries,proto3" json:"epoch_downtime_entries"`
+	// Per-(consumer, validator) pruned acceptance floors: the window-end
+	// height at or below which downtime evidence is rejected outright because
+	// the accepted-window records covering it have been pruned. Empty for a
+	// new chain.
+	DowntimeWindowFloors []DowntimeWindowFloor `protobuf:"bytes,17,rep,name=downtime_window_floors,json=downtimeWindowFloors,proto3" json:"downtime_window_floors"`
 }
 
 func (m *GenesisState) Reset()         { *m = GenesisState{} }
@@ -148,6 +178,320 @@ func (m *GenesisState) GetConsumerFeePoolShares() []ConsumerFeePoolShare {
 	return nil
 }
 
+func (m *GenesisState) GetPendingDowntimeSlashes() []PendingDowntimeSlash {
+	if m != nil {
+		return m.PendingDowntimeSlashes
+	}
+	return nil
+}
+
+func (m *GenesisState) GetPreviousDowntimeParams() *PreviousDowntimeParams {
+	if m != nil {
+		return m.PreviousDowntimeParams
+	}
+	return nil
+}
+
+func (m *GenesisState) GetEpochShareRecords() []EpochShareRecord {
+	if m != nil {
+		return m.EpochShareRecords
+	}
+	return nil
+}
+
+func (m *GenesisState) GetInfractionParameters() *InfractionParameters {
+	if m != nil {
+		return m.InfractionParameters
+	}
+	return nil
+}
+
+func (m *GenesisState) GetWithheldFeeRecords() []WithheldFeeRecord {
+	if m != nil {
+		return m.WithheldFeeRecords
+	}
+	return nil
+}
+
+func (m *GenesisState) GetAcceptedDowntimeWindows() []AcceptedDowntimeWindowRecord {
+	if m != nil {
+		return m.AcceptedDowntimeWindows
+	}
+	return nil
+}
+
+func (m *GenesisState) GetEpochDowntimeEntries() []EpochDowntimeEntry {
+	if m != nil {
+		return m.EpochDowntimeEntries
+	}
+	return nil
+}
+
+func (m *GenesisState) GetDowntimeWindowFloors() []DowntimeWindowFloor {
+	if m != nil {
+		return m.DowntimeWindowFloors
+	}
+	return nil
+}
+
+// AcceptedDowntimeWindowRecord is a single (consumer_id, provider_cons_addr,
+// window_end_height) entry from the keeper's AcceptedDowntimeWindows
+// collection: one downtime-detection window whose evidence has already been
+// accepted for that validator, used to reject intersecting or re-submitted
+// evidence. Recording happens at acceptance, independent of whether the
+// resulting slash ever executes.
+type AcceptedDowntimeWindowRecord struct {
+	ConsumerId        uint64    `protobuf:"varint,1,opt,name=consumer_id,json=consumerId,proto3" json:"consumer_id,omitempty"`
+	ProviderConsAddr  []byte    `protobuf:"bytes,2,opt,name=provider_cons_addr,json=providerConsAddr,proto3" json:"provider_cons_addr,omitempty"`
+	WindowEndHeight   int64     `protobuf:"varint,3,opt,name=window_end_height,json=windowEndHeight,proto3" json:"window_end_height,omitempty"`
+	WindowStartHeight int64     `protobuf:"varint,4,opt,name=window_start_height,json=windowStartHeight,proto3" json:"window_start_height,omitempty"`
+	AcceptedAt        time.Time `protobuf:"bytes,5,opt,name=accepted_at,json=acceptedAt,proto3,stdtime" json:"accepted_at"`
+}
+
+func (m *AcceptedDowntimeWindowRecord) Reset()         { *m = AcceptedDowntimeWindowRecord{} }
+func (m *AcceptedDowntimeWindowRecord) String() string { return proto.CompactTextString(m) }
+func (*AcceptedDowntimeWindowRecord) ProtoMessage()    {}
+func (*AcceptedDowntimeWindowRecord) Descriptor() ([]byte, []int) {
+	return fileDescriptor_c9071b84cde652f9, []int{1}
+}
+func (m *AcceptedDowntimeWindowRecord) XXX_Unmarshal(b []byte) error {
+	return m.Unmarshal(b)
+}
+func (m *AcceptedDowntimeWindowRecord) XXX_Marshal(b []byte, deterministic bool) ([]byte, error) {
+	if deterministic {
+		return xxx_messageInfo_AcceptedDowntimeWindowRecord.Marshal(b, m, deterministic)
+	} else {
+		b = b[:cap(b)]
+		n, err := m.MarshalToSizedBuffer(b)
+		if err != nil {
+			return nil, err
+		}
+		return b[:n], nil
+	}
+}
+func (m *AcceptedDowntimeWindowRecord) XXX_Merge(src proto.Message) {
+	xxx_messageInfo_AcceptedDowntimeWindowRecord.Merge(m, src)
+}
+func (m *AcceptedDowntimeWindowRecord) XXX_Size() int {
+	return m.Size()
+}
+func (m *AcceptedDowntimeWindowRecord) XXX_DiscardUnknown() {
+	xxx_messageInfo_AcceptedDowntimeWindowRecord.DiscardUnknown(m)
+}
+
+var xxx_messageInfo_AcceptedDowntimeWindowRecord proto.InternalMessageInfo
+
+func (m *AcceptedDowntimeWindowRecord) GetConsumerId() uint64 {
+	if m != nil {
+		return m.ConsumerId
+	}
+	return 0
+}
+
+func (m *AcceptedDowntimeWindowRecord) GetProviderConsAddr() []byte {
+	if m != nil {
+		return m.ProviderConsAddr
+	}
+	return nil
+}
+
+func (m *AcceptedDowntimeWindowRecord) GetWindowEndHeight() int64 {
+	if m != nil {
+		return m.WindowEndHeight
+	}
+	return 0
+}
+
+func (m *AcceptedDowntimeWindowRecord) GetWindowStartHeight() int64 {
+	if m != nil {
+		return m.WindowStartHeight
+	}
+	return 0
+}
+
+func (m *AcceptedDowntimeWindowRecord) GetAcceptedAt() time.Time {
+	if m != nil {
+		return m.AcceptedAt
+	}
+	return time.Time{}
+}
+
+// DowntimeWindowFloor is a single (consumer_id, provider_cons_addr) entry
+// from the keeper's DowntimeWindowFloors collection: the window-end height
+// at or below which downtime evidence for that validator is rejected
+// outright, because the accepted-window records covering those heights have
+// been pruned and intersection cannot be checked against them.
+// Advanced only by pruning, never by acceptance.
+type DowntimeWindowFloor struct {
+	ConsumerId       uint64 `protobuf:"varint,1,opt,name=consumer_id,json=consumerId,proto3" json:"consumer_id,omitempty"`
+	ProviderConsAddr []byte `protobuf:"bytes,2,opt,name=provider_cons_addr,json=providerConsAddr,proto3" json:"provider_cons_addr,omitempty"`
+	WindowEndHeight  int64  `protobuf:"varint,3,opt,name=window_end_height,json=windowEndHeight,proto3" json:"window_end_height,omitempty"`
+}
+
+func (m *DowntimeWindowFloor) Reset()         { *m = DowntimeWindowFloor{} }
+func (m *DowntimeWindowFloor) String() string { return proto.CompactTextString(m) }
+func (*DowntimeWindowFloor) ProtoMessage()    {}
+func (*DowntimeWindowFloor) Descriptor() ([]byte, []int) {
+	return fileDescriptor_c9071b84cde652f9, []int{2}
+}
+func (m *DowntimeWindowFloor) XXX_Unmarshal(b []byte) error {
+	return m.Unmarshal(b)
+}
+func (m *DowntimeWindowFloor) XXX_Marshal(b []byte, deterministic bool) ([]byte, error) {
+	if deterministic {
+		return xxx_messageInfo_DowntimeWindowFloor.Marshal(b, m, deterministic)
+	} else {
+		b = b[:cap(b)]
+		n, err := m.MarshalToSizedBuffer(b)
+		if err != nil {
+			return nil, err
+		}
+		return b[:n], nil
+	}
+}
+func (m *DowntimeWindowFloor) XXX_Merge(src proto.Message) {
+	xxx_messageInfo_DowntimeWindowFloor.Merge(m, src)
+}
+func (m *DowntimeWindowFloor) XXX_Size() int {
+	return m.Size()
+}
+func (m *DowntimeWindowFloor) XXX_DiscardUnknown() {
+	xxx_messageInfo_DowntimeWindowFloor.DiscardUnknown(m)
+}
+
+var xxx_messageInfo_DowntimeWindowFloor proto.InternalMessageInfo
+
+func (m *DowntimeWindowFloor) GetConsumerId() uint64 {
+	if m != nil {
+		return m.ConsumerId
+	}
+	return 0
+}
+
+func (m *DowntimeWindowFloor) GetProviderConsAddr() []byte {
+	if m != nil {
+		return m.ProviderConsAddr
+	}
+	return nil
+}
+
+func (m *DowntimeWindowFloor) GetWindowEndHeight() int64 {
+	if m != nil {
+		return m.WindowEndHeight
+	}
+	return 0
+}
+
+// EpochDowntimeEntry is a single (consumer_id, provider_cons_addr) entry from
+// the keeper's EpochDowntime collection, marking a validator as down for the
+// consumer's current epoch fee distribution.
+type EpochDowntimeEntry struct {
+	ConsumerId       uint64 `protobuf:"varint,1,opt,name=consumer_id,json=consumerId,proto3" json:"consumer_id,omitempty"`
+	ProviderConsAddr []byte `protobuf:"bytes,2,opt,name=provider_cons_addr,json=providerConsAddr,proto3" json:"provider_cons_addr,omitempty"`
+}
+
+func (m *EpochDowntimeEntry) Reset()         { *m = EpochDowntimeEntry{} }
+func (m *EpochDowntimeEntry) String() string { return proto.CompactTextString(m) }
+func (*EpochDowntimeEntry) ProtoMessage()    {}
+func (*EpochDowntimeEntry) Descriptor() ([]byte, []int) {
+	return fileDescriptor_c9071b84cde652f9, []int{3}
+}
+func (m *EpochDowntimeEntry) XXX_Unmarshal(b []byte) error {
+	return m.Unmarshal(b)
+}
+func (m *EpochDowntimeEntry) XXX_Marshal(b []byte, deterministic bool) ([]byte, error) {
+	if deterministic {
+		return xxx_messageInfo_EpochDowntimeEntry.Marshal(b, m, deterministic)
+	} else {
+		b = b[:cap(b)]
+		n, err := m.MarshalToSizedBuffer(b)
+		if err != nil {
+			return nil, err
+		}
+		return b[:n], nil
+	}
+}
+func (m *EpochDowntimeEntry) XXX_Merge(src proto.Message) {
+	xxx_messageInfo_EpochDowntimeEntry.Merge(m, src)
+}
+func (m *EpochDowntimeEntry) XXX_Size() int {
+	return m.Size()
+}
+func (m *EpochDowntimeEntry) XXX_DiscardUnknown() {
+	xxx_messageInfo_EpochDowntimeEntry.DiscardUnknown(m)
+}
+
+var xxx_messageInfo_EpochDowntimeEntry proto.InternalMessageInfo
+
+func (m *EpochDowntimeEntry) GetConsumerId() uint64 {
+	if m != nil {
+		return m.ConsumerId
+	}
+	return 0
+}
+
+func (m *EpochDowntimeEntry) GetProviderConsAddr() []byte {
+	if m != nil {
+		return m.ProviderConsAddr
+	}
+	return nil
+}
+
+// EpochShareRecord is a single per-validator fee-share record produced by a
+// consumer's fee distribution run, keyed by (consumer_id, distributed_at).
+type EpochShareRecord struct {
+	ConsumerId            uint64                `protobuf:"varint,1,opt,name=consumer_id,json=consumerId,proto3" json:"consumer_id,omitempty"`
+	DistributedAtUnixNano int64                 `protobuf:"varint,2,opt,name=distributed_at_unix_nano,json=distributedAtUnixNano,proto3" json:"distributed_at_unix_nano,omitempty"`
+	Share                 cosmossdk_io_math.Int `protobuf:"bytes,3,opt,name=share,proto3,customtype=cosmossdk.io/math.Int" json:"share"`
+}
+
+func (m *EpochShareRecord) Reset()         { *m = EpochShareRecord{} }
+func (m *EpochShareRecord) String() string { return proto.CompactTextString(m) }
+func (*EpochShareRecord) ProtoMessage()    {}
+func (*EpochShareRecord) Descriptor() ([]byte, []int) {
+	return fileDescriptor_c9071b84cde652f9, []int{4}
+}
+func (m *EpochShareRecord) XXX_Unmarshal(b []byte) error {
+	return m.Unmarshal(b)
+}
+func (m *EpochShareRecord) XXX_Marshal(b []byte, deterministic bool) ([]byte, error) {
+	if deterministic {
+		return xxx_messageInfo_EpochShareRecord.Marshal(b, m, deterministic)
+	} else {
+		b = b[:cap(b)]
+		n, err := m.MarshalToSizedBuffer(b)
+		if err != nil {
+			return nil, err
+		}
+		return b[:n], nil
+	}
+}
+func (m *EpochShareRecord) XXX_Merge(src proto.Message) {
+	xxx_messageInfo_EpochShareRecord.Merge(m, src)
+}
+func (m *EpochShareRecord) XXX_Size() int {
+	return m.Size()
+}
+func (m *EpochShareRecord) XXX_DiscardUnknown() {
+	xxx_messageInfo_EpochShareRecord.DiscardUnknown(m)
+}
+
+var xxx_messageInfo_EpochShareRecord proto.InternalMessageInfo
+
+func (m *EpochShareRecord) GetConsumerId() uint64 {
+	if m != nil {
+		return m.ConsumerId
+	}
+	return 0
+}
+
+func (m *EpochShareRecord) GetDistributedAtUnixNano() int64 {
+	if m != nil {
+		return m.DistributedAtUnixNano
+	}
+	return 0
+}
+
 // The provider VAAS module's knowledge of consumer state.
 //
 // Note this type is only used internally to the provider VAAS module.
@@ -196,13 +540,18 @@ type ConsumerState struct {
 	LastAckTime       *time.Time `protobuf:"bytes,13,opt,name=last_ack_time,json=lastAckTime,proto3,stdtime" json:"last_ack_time,omitempty"`
 	HighestSentVscId  uint64     `protobuf:"varint,14,opt,name=highest_sent_vsc_id,json=highestSentVscId,proto3" json:"highest_sent_vsc_id,omitempty"`
 	HighestAckedVscId uint64     `protobuf:"varint,15,opt,name=highest_acked_vsc_id,json=highestAckedVscId,proto3" json:"highest_acked_vsc_id,omitempty"`
+	// PauseExpirationTime is the wall-clock time at which a PAUSED consumer is
+	// scheduled to be auto-stopped if the pause has not otherwise been
+	// resolved. Set only when phase == PAUSED; absent otherwise. Used to
+	// re-derive the keeper's pause-expiration queue.
+	PauseExpirationTime *time.Time `protobuf:"bytes,16,opt,name=pause_expiration_time,json=pauseExpirationTime,proto3,stdtime" json:"pause_expiration_time,omitempty"`
 }
 
 func (m *ConsumerState) Reset()         { *m = ConsumerState{} }
 func (m *ConsumerState) String() string { return proto.CompactTextString(m) }
 func (*ConsumerState) ProtoMessage()    {}
 func (*ConsumerState) Descriptor() ([]byte, []int) {
-	return fileDescriptor_c9071b84cde652f9, []int{1}
+	return fileDescriptor_c9071b84cde652f9, []int{5}
 }
 func (m *ConsumerState) XXX_Unmarshal(b []byte) error {
 	return m.Unmarshal(b)
@@ -336,6 +685,13 @@ func (m *ConsumerState) GetHighestAckedVscId() uint64 {
 	return 0
 }
 
+func (m *ConsumerState) GetPauseExpirationTime() *time.Time {
+	if m != nil {
+		return m.PauseExpirationTime
+	}
+	return nil
+}
+
 // ValsetUpdateIdToHeight defines the genesis information for the mapping
 // of each valset update id to a block height
 type ValsetUpdateIdToHeight struct {
@@ -347,7 +703,7 @@ func (m *ValsetUpdateIdToHeight) Reset()         { *m = ValsetUpdateIdToHeight{}
 func (m *ValsetUpdateIdToHeight) String() string { return proto.CompactTextString(m) }
 func (*ValsetUpdateIdToHeight) ProtoMessage()    {}
 func (*ValsetUpdateIdToHeight) Descriptor() ([]byte, []int) {
-	return fileDescriptor_c9071b84cde652f9, []int{2}
+	return fileDescriptor_c9071b84cde652f9, []int{6}
 }
 func (m *ValsetUpdateIdToHeight) XXX_Unmarshal(b []byte) error {
 	return m.Unmarshal(b)
@@ -402,7 +758,7 @@ func (m *ConsumerFeesPerBlockOverride) Reset()         { *m = ConsumerFeesPerBlo
 func (m *ConsumerFeesPerBlockOverride) String() string { return proto.CompactTextString(m) }
 func (*ConsumerFeesPerBlockOverride) ProtoMessage()    {}
 func (*ConsumerFeesPerBlockOverride) Descriptor() ([]byte, []int) {
-	return fileDescriptor_c9071b84cde652f9, []int{3}
+	return fileDescriptor_c9071b84cde652f9, []int{7}
 }
 func (m *ConsumerFeesPerBlockOverride) XXX_Unmarshal(b []byte) error {
 	return m.Unmarshal(b)
@@ -459,7 +815,7 @@ func (m *ConsumerFeePoolShare) Reset()         { *m = ConsumerFeePoolShare{} }
 func (m *ConsumerFeePoolShare) String() string { return proto.CompactTextString(m) }
 func (*ConsumerFeePoolShare) ProtoMessage()    {}
 func (*ConsumerFeePoolShare) Descriptor() ([]byte, []int) {
-	return fileDescriptor_c9071b84cde652f9, []int{4}
+	return fileDescriptor_c9071b84cde652f9, []int{8}
 }
 func (m *ConsumerFeePoolShare) XXX_Unmarshal(b []byte) error {
 	return m.Unmarshal(b)
@@ -511,6 +867,10 @@ func (m *ConsumerFeePoolShare) GetDenom() string {
 
 func init() {
 	proto.RegisterType((*GenesisState)(nil), "vaas.provider.v1.GenesisState")
+	proto.RegisterType((*AcceptedDowntimeWindowRecord)(nil), "vaas.provider.v1.AcceptedDowntimeWindowRecord")
+	proto.RegisterType((*DowntimeWindowFloor)(nil), "vaas.provider.v1.DowntimeWindowFloor")
+	proto.RegisterType((*EpochDowntimeEntry)(nil), "vaas.provider.v1.EpochDowntimeEntry")
+	proto.RegisterType((*EpochShareRecord)(nil), "vaas.provider.v1.EpochShareRecord")
 	proto.RegisterType((*ConsumerState)(nil), "vaas.provider.v1.ConsumerState")
 	proto.RegisterType((*ValsetUpdateIdToHeight)(nil), "vaas.provider.v1.ValsetUpdateIdToHeight")
 	proto.RegisterType((*ConsumerFeesPerBlockOverride)(nil), "vaas.provider.v1.ConsumerFeesPerBlockOverride")
@@ -520,74 +880,102 @@ func init() {
 func init() { proto.RegisterFile("vaas/provider/v1/genesis.proto", fileDescriptor_c9071b84cde652f9) }
 
 var fileDescriptor_c9071b84cde652f9 = []byte{
-	// 1069 bytes of a gzipped FileDescriptorProto
-	0x1f, 0x8b, 0x08, 0x00, 0x00, 0x00, 0x00, 0x00, 0x02, 0xff, 0x94, 0x56, 0xdd, 0x6e, 0x1b, 0x45,
-	0x14, 0x8e, 0x13, 0xc7, 0x8d, 0xc7, 0x89, 0x1b, 0x06, 0x37, 0x6c, 0x53, 0x62, 0x07, 0xa3, 0x56,
-	0x46, 0x10, 0xaf, 0x12, 0x44, 0x2f, 0xb8, 0x40, 0x8a, 0x13, 0x15, 0x2c, 0x04, 0x58, 0x76, 0xe8,
-	0x45, 0x6f, 0x56, 0xe3, 0x9d, 0xd3, 0xdd, 0xc1, 0xbb, 0x3b, 0xab, 0x9d, 0xf1, 0x06, 0x73, 0xc1,
-	0x33, 0xf4, 0x61, 0xfa, 0x10, 0x15, 0xe2, 0xa2, 0xea, 0x15, 0xe2, 0x22, 0xa0, 0xe4, 0x09, 0xe0,
-	0x09, 0xd0, 0xcc, 0xce, 0x6e, 0xf3, 0xe3, 0x24, 0xf4, 0xce, 0x73, 0xbe, 0x6f, 0xbe, 0xef, 0xcc,
-	0xcc, 0x39, 0x67, 0x8d, 0x9a, 0x29, 0x21, 0xc2, 0x8e, 0x13, 0x9e, 0x32, 0x0a, 0x89, 0x9d, 0xee,
-	0xda, 0x1e, 0x44, 0x20, 0x98, 0xe8, 0xc6, 0x09, 0x97, 0x1c, 0xaf, 0x2b, 0xbc, 0x9b, 0xe3, 0xdd,
-	0x74, 0x77, 0xf3, 0xbe, 0xcb, 0x45, 0xc8, 0x85, 0xa3, 0x71, 0x3b, 0x5b, 0x64, 0xe4, 0xcd, 0x86,
-	0xc7, 0x3d, 0x9e, 0xc5, 0xd5, 0x2f, 0x13, 0x6d, 0x79, 0x9c, 0x7b, 0x01, 0xd8, 0x7a, 0x35, 0x9e,
-	0x3e, 0xb7, 0x25, 0x0b, 0x41, 0x48, 0x12, 0xc6, 0x86, 0xb0, 0xa5, 0x73, 0x48, 0x77, 0x6d, 0xe1,
-	0x93, 0x04, 0xa8, 0xe3, 0xf2, 0x48, 0x4c, 0x43, 0x48, 0x0c, 0x8c, 0x73, 0xf8, 0x98, 0x25, 0x90,
-	0x6b, 0x5e, 0x49, 0xbb, 0x48, 0x51, 0x13, 0xda, 0xff, 0x54, 0xd0, 0xea, 0xd7, 0xd9, 0x49, 0x46,
-	0x92, 0x48, 0xc0, 0x1d, 0xb4, 0x9e, 0x92, 0x40, 0x80, 0x74, 0xa6, 0x31, 0x25, 0x12, 0x1c, 0x46,
-	0xad, 0xd2, 0x76, 0xa9, 0x53, 0x1e, 0xd6, 0xb3, 0xf8, 0x8f, 0x3a, 0xdc, 0xa7, 0xd8, 0x47, 0x77,
-	0xf3, 0x0c, 0x1c, 0xa1, 0xf6, 0x0a, 0x6b, 0x71, 0x7b, 0xa9, 0x53, 0xdb, 0x6b, 0x75, 0x2f, 0x5f,
-	0x46, 0xf7, 0xc0, 0x10, 0xb5, 0x47, 0xaf, 0xf9, 0xea, 0xa4, 0xb5, 0xf0, 0xef, 0x49, 0x6b, 0x63,
-	0x46, 0xc2, 0xe0, 0xcb, 0xf6, 0x25, 0x95, 0xf6, 0xb0, 0xee, 0x9e, 0xa7, 0x0b, 0xfc, 0x13, 0xda,
-	0xbc, 0x9c, 0x93, 0x23, 0xb9, 0xe3, 0x03, 0xf3, 0x7c, 0x69, 0x2d, 0x69, 0xd3, 0xce, 0x55, 0xd3,
-	0xa7, 0x17, 0xf2, 0x3d, 0xe2, 0xdf, 0x68, 0x7e, 0xaf, 0xac, 0xdc, 0x87, 0x1b, 0xe9, 0x5c, 0x14,
-	0x3f, 0x46, 0x95, 0x98, 0x24, 0x24, 0x14, 0x56, 0x79, 0xbb, 0xd4, 0xa9, 0xed, 0x59, 0x57, 0x75,
-	0x07, 0x1a, 0x37, 0x3a, 0x86, 0x8d, 0x43, 0x9d, 0x23, 0xa3, 0x44, 0xf2, 0xa4, 0x78, 0x19, 0x27,
-	0x9e, 0x8e, 0x27, 0x30, 0x13, 0xd6, 0xb2, 0xce, 0xf1, 0x93, 0xb9, 0x39, 0x66, 0x7b, 0xf2, 0x1b,
-	0x1a, 0x4c, 0xc7, 0xdf, 0xc2, 0xcc, 0x88, 0x5b, 0xe9, 0x1c, 0x58, 0x09, 0xe2, 0x08, 0x3d, 0x28,
-	0x30, 0xe1, 0x8c, 0x67, 0x6f, 0x2d, 0x09, 0xa5, 0x89, 0x55, 0xb9, 0xd5, 0xaf, 0x37, 0xcb, 0x25,
-	0xf7, 0x29, 0x4d, 0xae, 0xf8, 0x89, 0x8b, 0x38, 0x76, 0xd1, 0x07, 0x17, 0x1c, 0x84, 0x7a, 0x80,
-	0x38, 0x99, 0x46, 0x60, 0xdd, 0xd1, 0x5e, 0x8f, 0xae, 0x7f, 0x74, 0x25, 0x20, 0x8e, 0xf8, 0x40,
-	0xb1, 0x8d, 0x51, 0xc3, 0x9d, 0x83, 0xe1, 0x5f, 0xd1, 0x47, 0x85, 0xc9, 0x73, 0x00, 0xe1, 0xc4,
-	0x90, 0x38, 0xe3, 0x80, 0xbb, 0x13, 0x87, 0xa7, 0x90, 0x24, 0x8c, 0x82, 0xb0, 0x56, 0xb4, 0x5d,
-	0xf7, 0x7a, 0xbb, 0x27, 0x00, 0x62, 0x00, 0x49, 0x4f, 0xed, 0xfb, 0xc1, 0x6c, 0x33, 0xb6, 0x5b,
-	0xee, 0x0d, 0x1c, 0x81, 0x01, 0x59, 0xe7, 0xfd, 0x9d, 0x98, 0xf3, 0xc0, 0xd1, 0xcd, 0x26, 0xac,
-	0xea, 0x6d, 0xa7, 0x7c, 0x02, 0x30, 0xe0, 0x3c, 0x18, 0x29, 0xba, 0xb1, 0xbb, 0xe7, 0xce, 0xc1,
-	0x44, 0xfb, 0xf7, 0x0a, 0x5a, 0xbb, 0xd0, 0x10, 0xb8, 0x85, 0x6a, 0x85, 0x71, 0xd1, 0x6f, 0x28,
-	0x0f, 0xf5, 0x29, 0xbe, 0x8f, 0x56, 0x5c, 0x9f, 0xb0, 0x48, 0xa1, 0x8b, 0xdb, 0xa5, 0x4e, 0x75,
-	0x78, 0x47, 0xaf, 0xfb, 0x14, 0x3f, 0x40, 0x55, 0x37, 0x60, 0x10, 0x49, 0x85, 0x2d, 0x69, 0x6c,
-	0x25, 0x0b, 0xf4, 0x29, 0x7e, 0x88, 0xea, 0x2c, 0x62, 0x92, 0x91, 0x20, 0xef, 0x96, 0xb2, 0xd6,
-	0x5e, 0x33, 0x51, 0x53, 0xf4, 0xdf, 0xa3, 0xf5, 0xc2, 0xdf, 0xcc, 0x35, 0x6b, 0x59, 0x97, 0xff,
-	0x56, 0x76, 0xe0, 0x73, 0xe7, 0x3c, 0x3f, 0x2d, 0xcc, 0x39, 0x8b, 0x39, 0x60, 0x30, 0x4c, 0xd0,
-	0x46, 0x0c, 0x11, 0x65, 0x91, 0xe7, 0x98, 0xc6, 0x75, 0x7d, 0x12, 0x79, 0x20, 0x4c, 0x61, 0x3e,
-	0x2c, 0x54, 0x8b, 0x7a, 0x1c, 0x81, 0x3c, 0xd0, 0x9c, 0x01, 0x71, 0x27, 0x20, 0x0f, 0x89, 0x24,
-	0x79, 0xad, 0x18, 0xa9, 0xac, 0x9d, 0x33, 0x92, 0xc0, 0x9f, 0x21, 0x2c, 0x02, 0x22, 0x7c, 0x87,
-	0xf2, 0xe3, 0x48, 0x4d, 0x4a, 0x87, 0xb8, 0x13, 0x5d, 0x8b, 0xd5, 0xe1, 0xba, 0x46, 0x0e, 0x0d,
-	0xb0, 0xef, 0x4e, 0xf0, 0x17, 0x68, 0x39, 0xf6, 0x89, 0x00, 0x6b, 0x65, 0xbb, 0xd4, 0xa9, 0xdf,
-	0x34, 0xa1, 0x06, 0x8a, 0x36, 0xcc, 0xd8, 0xf8, 0x63, 0xb4, 0xc6, 0x8f, 0x23, 0x53, 0xf2, 0x20,
-	0x54, 0x15, 0xa8, 0xfb, 0x5d, 0xd5, 0xc1, 0xfd, 0x2c, 0x86, 0xbf, 0x42, 0x2b, 0x21, 0x48, 0x42,
-	0x89, 0x24, 0x16, 0xd2, 0x97, 0xd6, 0xbe, 0x5e, 0xfe, 0x3b, 0xc3, 0x1c, 0x16, 0x7b, 0xf0, 0x08,
-	0xd5, 0xd4, 0x6b, 0x38, 0x66, 0xec, 0xd4, 0xb4, 0xc4, 0xde, 0xf5, 0x12, 0xfd, 0xec, 0xe9, 0xd8,
-	0x2f, 0x44, 0x32, 0x1e, 0xe9, 0x61, 0x04, 0x12, 0x12, 0x31, 0x44, 0x4a, 0x26, 0x1b, 0x4e, 0xf8,
-	0x00, 0xad, 0x26, 0x10, 0xf2, 0x94, 0x04, 0x8e, 0xba, 0x03, 0x6b, 0x55, 0xab, 0x6e, 0x76, 0xb3,
-	0x6f, 0x4c, 0x37, 0xff, 0xc6, 0x74, 0x8f, 0xf2, 0x6f, 0x4c, 0xaf, 0xfc, 0xe2, 0xaf, 0x56, 0x69,
-	0x58, 0x33, 0xbb, 0x54, 0x1c, 0x1f, 0xa2, 0xb5, 0x80, 0x08, 0xa9, 0x6e, 0x36, 0x53, 0x59, 0xfb,
-	0xbf, 0x2a, 0x6a, 0xdb, 0xbe, 0x3b, 0xd1, 0x2a, 0x3b, 0xe8, 0x7d, 0x9f, 0x79, 0x3e, 0x08, 0xe9,
-	0x08, 0x55, 0xa6, 0xa9, 0x70, 0x55, 0xa9, 0xd6, 0x75, 0x21, 0xae, 0x1b, 0x68, 0x04, 0x91, 0x7c,
-	0x2a, 0xdc, 0x3e, 0xc5, 0x36, 0x6a, 0xe4, 0x74, 0x55, 0x09, 0x34, 0xe7, 0xdf, 0xd5, 0xfc, 0xf7,
-	0x0c, 0xb6, 0xaf, 0x20, 0xbd, 0xa1, 0xfd, 0x0c, 0x6d, 0xcc, 0x9f, 0xf4, 0xef, 0xf0, 0x2d, 0xdb,
-	0x40, 0x15, 0xd3, 0x1f, 0x8b, 0x1a, 0x37, 0xab, 0xb6, 0x87, 0x3e, 0xbc, 0x69, 0xac, 0xdc, 0xde,
-	0xb8, 0x8f, 0x50, 0x85, 0x84, 0x7c, 0x1a, 0x65, 0xc2, 0xd5, 0x5e, 0xfd, 0xcd, 0xcb, 0x1d, 0x64,
-	0xfe, 0x0c, 0xf4, 0x23, 0x39, 0x34, 0x68, 0xfb, 0xb7, 0x12, 0x6a, 0xcc, 0x9b, 0x24, 0xb7, 0x3b,
-	0x3c, 0x46, 0x55, 0x0a, 0x31, 0x17, 0x4c, 0xf2, 0xc4, 0x98, 0x58, 0x6f, 0x5e, 0xee, 0x34, 0x8c,
-	0x89, 0xa9, 0xd2, 0x91, 0x4c, 0x58, 0xe4, 0x0d, 0xdf, 0x52, 0x71, 0x03, 0x2d, 0x53, 0x88, 0x78,
-	0x68, 0x66, 0x46, 0xb6, 0xc0, 0x07, 0xa8, 0x62, 0x06, 0x5e, 0x59, 0x4b, 0x7d, 0xaa, 0x5a, 0xf0,
-	0xcf, 0x93, 0xd6, 0xbd, 0x4c, 0x4e, 0xd0, 0x49, 0x97, 0x71, 0x3b, 0x24, 0xd2, 0x57, 0xe9, 0x5f,
-	0x3e, 0x4c, 0xb6, 0xb5, 0xd7, 0x7f, 0x75, 0xda, 0x2c, 0xbd, 0x3e, 0x6d, 0x96, 0xfe, 0x3e, 0x6d,
-	0x96, 0x5e, 0x9c, 0x35, 0x17, 0x5e, 0x9f, 0x35, 0x17, 0xfe, 0x38, 0x6b, 0x2e, 0x3c, 0xb3, 0x3d,
-	0x26, 0xfd, 0xe9, 0xb8, 0xeb, 0xf2, 0xd0, 0x26, 0x41, 0xc0, 0xa2, 0x31, 0x93, 0xc2, 0xd6, 0x7f,
-	0x52, 0x7e, 0xb6, 0x2f, 0xfe, 0x57, 0x91, 0xb3, 0x18, 0xc4, 0xb8, 0xa2, 0x6b, 0xec, 0xf3, 0xff,
-	0x02, 0x00, 0x00, 0xff, 0xff, 0xc1, 0x70, 0xc0, 0x2f, 0x80, 0x09, 0x00, 0x00,
+	// 1508 bytes of a gzipped FileDescriptorProto
+	0x1f, 0x8b, 0x08, 0x00, 0x00, 0x00, 0x00, 0x00, 0x02, 0xff, 0xc4, 0x57, 0xcd, 0x6e, 0x1b, 0x47,
+	0x12, 0x16, 0xf5, 0x67, 0xa9, 0xf5, 0x47, 0xb5, 0x28, 0x79, 0x2c, 0xdb, 0x94, 0x96, 0x5e, 0x1b,
+	0xdc, 0x1f, 0x93, 0xb0, 0x17, 0xeb, 0x05, 0xf6, 0xb0, 0x00, 0x29, 0x4b, 0xbb, 0xc4, 0x22, 0x0e,
+	0x31, 0x94, 0xed, 0xc0, 0x3e, 0x4c, 0x9a, 0xd3, 0x25, 0x4e, 0x47, 0xc3, 0xee, 0xc1, 0x74, 0x93,
+	0x92, 0x72, 0xc8, 0x39, 0x47, 0x3d, 0x43, 0x5e, 0x20, 0x17, 0x3f, 0x84, 0x91, 0x93, 0xe1, 0x53,
+	0x90, 0x83, 0x13, 0xd8, 0x6f, 0x90, 0x27, 0x08, 0xba, 0xa7, 0x67, 0x24, 0xfe, 0x48, 0xb2, 0x81,
+	0x00, 0xb9, 0x71, 0xfa, 0xfb, 0xaa, 0xbe, 0xea, 0xea, 0xea, 0xea, 0x22, 0x2a, 0xf6, 0x09, 0x91,
+	0xd5, 0x28, 0x16, 0x7d, 0x46, 0x21, 0xae, 0xf6, 0x1f, 0x54, 0x3b, 0xc0, 0x41, 0x32, 0x59, 0x89,
+	0x62, 0xa1, 0x04, 0xce, 0x6b, 0xbc, 0x92, 0xe2, 0x95, 0xfe, 0x83, 0xcd, 0x1b, 0xbe, 0x90, 0x5d,
+	0x21, 0x3d, 0x83, 0x57, 0x93, 0x8f, 0x84, 0xbc, 0x59, 0xe8, 0x88, 0x8e, 0x48, 0xd6, 0xf5, 0x2f,
+	0xbb, 0xba, 0xd5, 0x11, 0xa2, 0x13, 0x42, 0xd5, 0x7c, 0xb5, 0x7b, 0x07, 0x55, 0xc5, 0xba, 0x20,
+	0x15, 0xe9, 0x46, 0x96, 0x70, 0xdb, 0xc4, 0xd0, 0x7f, 0x50, 0x95, 0x01, 0x89, 0x81, 0x7a, 0xbe,
+	0xe0, 0xb2, 0xd7, 0x85, 0xd8, 0xc2, 0x38, 0x85, 0x8f, 0x58, 0x0c, 0xa9, 0xcf, 0x91, 0xb0, 0xb3,
+	0x10, 0x0d, 0xa1, 0xf4, 0xed, 0x12, 0x5a, 0xfc, 0x6f, 0xb2, 0x93, 0x96, 0x22, 0x0a, 0x70, 0x19,
+	0xe5, 0xfb, 0x24, 0x94, 0xa0, 0xbc, 0x5e, 0x44, 0x89, 0x02, 0x8f, 0x51, 0x27, 0xb7, 0x9d, 0x2b,
+	0x4f, 0xbb, 0xcb, 0xc9, 0xfa, 0x53, 0xb3, 0xdc, 0xa0, 0x38, 0x40, 0x2b, 0x69, 0x04, 0x9e, 0xd4,
+	0xb6, 0xd2, 0x99, 0xdc, 0x9e, 0x2a, 0x2f, 0x3c, 0xdc, 0xaa, 0x0c, 0x27, 0xa3, 0xb2, 0x63, 0x89,
+	0x46, 0xa3, 0x5e, 0x7c, 0xfd, 0x6e, 0x6b, 0xe2, 0xd7, 0x77, 0x5b, 0x1b, 0x27, 0xa4, 0x1b, 0xfe,
+	0xbb, 0x34, 0xe4, 0xa5, 0xe4, 0x2e, 0xfb, 0xe7, 0xe9, 0x12, 0x7f, 0x85, 0x36, 0x87, 0x63, 0xf2,
+	0x94, 0xf0, 0x02, 0x60, 0x9d, 0x40, 0x39, 0x53, 0x46, 0xb4, 0x3c, 0x2a, 0xfa, 0x6c, 0x20, 0xde,
+	0x7d, 0xf1, 0x3f, 0xc3, 0xaf, 0x4f, 0x6b, 0x75, 0x77, 0xa3, 0x3f, 0x16, 0xc5, 0x8f, 0xd0, 0x6c,
+	0x44, 0x62, 0xd2, 0x95, 0xce, 0xf4, 0x76, 0xae, 0xbc, 0xf0, 0xd0, 0x19, 0xf5, 0xdb, 0x34, 0xb8,
+	0xf5, 0x63, 0xd9, 0xb8, 0x6b, 0x62, 0x64, 0x94, 0x28, 0x11, 0x67, 0x27, 0xe3, 0x45, 0xbd, 0xf6,
+	0x21, 0x9c, 0x48, 0x67, 0xc6, 0xc4, 0xf8, 0x97, 0xb1, 0x31, 0x26, 0x36, 0x69, 0x86, 0x9a, 0xbd,
+	0xf6, 0xff, 0xe1, 0xc4, 0x3a, 0x77, 0xfa, 0x63, 0x60, 0xed, 0x10, 0x73, 0x74, 0x33, 0xc3, 0xa4,
+	0xd7, 0x3e, 0x39, 0x93, 0x24, 0x94, 0xc6, 0xce, 0xec, 0x95, 0x7a, 0xf5, 0x93, 0xd4, 0x65, 0x8d,
+	0xd2, 0x78, 0x44, 0x4f, 0x0e, 0xe2, 0xd8, 0x47, 0xd7, 0x07, 0x14, 0xa4, 0x3e, 0x80, 0x28, 0xee,
+	0x71, 0x70, 0xae, 0x19, 0xad, 0x7b, 0x17, 0x1f, 0xba, 0x76, 0x20, 0xf7, 0x45, 0x53, 0xb3, 0xad,
+	0x50, 0xc1, 0x1f, 0x83, 0xe1, 0x6f, 0xd0, 0x9f, 0x32, 0x91, 0x03, 0x00, 0xe9, 0x45, 0x10, 0x7b,
+	0xed, 0x50, 0xf8, 0x87, 0x9e, 0xe8, 0x43, 0x1c, 0x33, 0x0a, 0xd2, 0x99, 0x33, 0x72, 0x95, 0x8b,
+	0xe5, 0xf6, 0x00, 0x64, 0x13, 0xe2, 0xba, 0xb6, 0xfb, 0xdc, 0x9a, 0x59, 0xd9, 0xdb, 0xfe, 0x25,
+	0x1c, 0x89, 0x01, 0x39, 0xe7, 0xf5, 0xbd, 0x48, 0x88, 0xd0, 0x33, 0x97, 0x4d, 0x3a, 0xf3, 0x57,
+	0xed, 0x72, 0x0f, 0xa0, 0x29, 0x44, 0xd8, 0xd2, 0x74, 0x2b, 0xb7, 0xee, 0x8f, 0xc1, 0x24, 0x3e,
+	0x40, 0x4e, 0x04, 0x9c, 0x32, 0xde, 0xf1, 0xa8, 0x38, 0xe2, 0xfa, 0x9a, 0x7b, 0x32, 0x24, 0x32,
+	0x00, 0xe9, 0xa0, 0x8b, 0x64, 0x9a, 0x89, 0xc5, 0x63, 0x6b, 0xd0, 0xd2, 0xfc, 0xb4, 0x94, 0xa3,
+	0x31, 0x18, 0x48, 0xdc, 0x46, 0x4e, 0x14, 0x43, 0x9f, 0x89, 0x9e, 0x3c, 0x13, 0xb2, 0xc5, 0xbd,
+	0x60, 0x8a, 0x7b, 0xcc, 0xa5, 0x69, 0x5a, 0x8b, 0xd4, 0x59, 0x52, 0xec, 0xee, 0x46, 0x34, 0x76,
+	0x1d, 0x7f, 0x81, 0xd6, 0x20, 0x12, 0x7e, 0x90, 0xa4, 0xc9, 0x8b, 0xc1, 0x17, 0x31, 0x95, 0xce,
+	0xa2, 0xd9, 0x46, 0x69, 0xd4, 0xfd, 0xae, 0x26, 0x9b, 0x3c, 0xb8, 0x86, 0x6a, 0xb7, 0xb0, 0x0a,
+	0x43, 0xeb, 0x12, 0xbf, 0x44, 0xeb, 0x8c, 0x1f, 0xc4, 0xc4, 0x57, 0x4c, 0xf0, 0x24, 0x6c, 0x50,
+	0x10, 0x4b, 0x67, 0xc9, 0x84, 0x3e, 0x26, 0x45, 0x8d, 0x8c, 0xde, 0xcc, 0xd8, 0x6e, 0x81, 0x8d,
+	0x59, 0xc5, 0x2f, 0x51, 0xe1, 0x88, 0xa9, 0x20, 0x80, 0x90, 0x9a, 0x93, 0x4e, 0xe3, 0x5e, 0x36,
+	0x71, 0xdf, 0x19, 0xf5, 0xfd, 0xdc, 0xb2, 0xf7, 0x60, 0x30, 0x70, 0x7c, 0x34, 0x0c, 0x48, 0x1c,
+	0xa1, 0x1b, 0xc4, 0xf7, 0x21, 0x52, 0x40, 0xcf, 0xf2, 0x7e, 0xc4, 0x38, 0x15, 0x47, 0xd2, 0x59,
+	0xb9, 0xa8, 0x7c, 0x6b, 0xd6, 0x24, 0x4d, 0xf0, 0x73, 0x63, 0x30, 0x20, 0x76, 0x9d, 0x8c, 0xe5,
+	0x48, 0xfc, 0x25, 0xda, 0x48, 0x4e, 0x21, 0x93, 0x03, 0xae, 0x62, 0x06, 0xd2, 0xc9, 0x1b, 0xb9,
+	0x3f, 0x5f, 0x70, 0x10, 0xa9, 0x9f, 0x5d, 0xae, 0xe2, 0xb4, 0xe7, 0x14, 0x60, 0x18, 0x61, 0x20,
+	0x31, 0x41, 0x1b, 0x43, 0x5b, 0xf1, 0x0e, 0x42, 0x21, 0x62, 0xe9, 0xac, 0x1a, 0x85, 0xbb, 0xa3,
+	0x0a, 0x83, 0x41, 0xee, 0x69, 0x76, 0x2a, 0x41, 0x47, 0x21, 0x59, 0x3a, 0x9d, 0x44, 0xb7, 0x2e,
+	0x4b, 0x02, 0xde, 0x42, 0x0b, 0xd9, 0xf5, 0xcc, 0x5e, 0x25, 0x94, 0x2e, 0x35, 0x28, 0xfe, 0x3b,
+	0xc2, 0x69, 0x00, 0xa6, 0x1f, 0x26, 0xbd, 0x70, 0x72, 0x3b, 0x57, 0x5e, 0x74, 0xf3, 0x29, 0xa2,
+	0xef, 0xab, 0x69, 0x69, 0x7f, 0x45, 0xab, 0x76, 0x27, 0xc0, 0xe9, 0xd9, 0x63, 0x92, 0x2b, 0x4f,
+	0xb9, 0x2b, 0x09, 0xb0, 0xcb, 0xa9, 0x7d, 0x15, 0x2a, 0x68, 0xcd, 0x72, 0xa5, 0x22, 0xb1, 0x4a,
+	0xd9, 0xd3, 0x86, 0x6d, 0xdd, 0xb4, 0x34, 0x62, 0xf9, 0xbb, 0x68, 0x21, 0x2b, 0x01, 0xa2, 0x9c,
+	0x19, 0x53, 0xb2, 0x9b, 0x95, 0xe4, 0x85, 0xaf, 0xa4, 0x2f, 0x7c, 0x65, 0x3f, 0x7d, 0xe1, 0xeb,
+	0x73, 0x3a, 0x31, 0xa7, 0x3f, 0x6f, 0xe5, 0x5c, 0x94, 0x1a, 0xd6, 0x54, 0xe9, 0x34, 0x87, 0xd6,
+	0xc6, 0xa4, 0xf1, 0x0f, 0xcc, 0x44, 0xc9, 0x47, 0x78, 0xb4, 0x74, 0x7e, 0xe7, 0x80, 0x4a, 0xdf,
+	0xe7, 0x50, 0x7e, 0xb8, 0x53, 0x5c, 0xad, 0xf1, 0x2f, 0xe4, 0x50, 0x26, 0x55, 0xcc, 0xda, 0xbd,
+	0x24, 0xef, 0x5e, 0x8f, 0xb3, 0x63, 0x8f, 0x13, 0x2e, 0x8c, 0xd2, 0x94, 0xbb, 0x7e, 0x0e, 0xaf,
+	0xa9, 0xa7, 0x9c, 0x1d, 0x3f, 0x21, 0x5c, 0xe0, 0x1a, 0x9a, 0x31, 0xed, 0xcb, 0xec, 0x79, 0xbe,
+	0xfe, 0x37, 0x7d, 0x16, 0x3f, 0xbd, 0xdb, 0x5a, 0x4f, 0x86, 0x36, 0x49, 0x0f, 0x2b, 0x4c, 0x54,
+	0xbb, 0x44, 0x05, 0x95, 0x06, 0x57, 0x6f, 0x5f, 0xdd, 0x47, 0x76, 0x9a, 0x6b, 0x70, 0xe5, 0x26,
+	0x96, 0xa5, 0xef, 0xae, 0xa1, 0xa5, 0x81, 0x21, 0xe7, 0xea, 0x70, 0x6f, 0xa0, 0x39, 0x3f, 0x20,
+	0x8c, 0x6b, 0x54, 0x87, 0x37, 0xef, 0x5e, 0x33, 0xdf, 0x0d, 0x8a, 0x6f, 0xa2, 0x79, 0x3f, 0x64,
+	0xc0, 0x95, 0xc6, 0x4c, 0x50, 0xee, 0x5c, 0xb2, 0xd0, 0xa0, 0xf8, 0x2e, 0x5a, 0x66, 0x9c, 0x29,
+	0x46, 0xc2, 0xf3, 0x65, 0x38, 0xed, 0x2e, 0xd9, 0x55, 0x5b, 0x82, 0x4f, 0x50, 0x3e, 0xd3, 0xb7,
+	0xb3, 0xaa, 0xad, 0xc3, 0xdb, 0xc9, 0x5d, 0x3d, 0xf7, 0x76, 0x9d, 0x9f, 0x00, 0xed, 0x1d, 0xcd,
+	0x66, 0x3b, 0x8b, 0xe9, 0x0e, 0x90, 0xbe, 0x5a, 0x76, 0x18, 0xf3, 0x03, 0xc2, 0x3b, 0x20, 0xed,
+	0xb0, 0x71, 0x37, 0xf3, 0x9a, 0xcd, 0x18, 0x2d, 0x50, 0x3b, 0x86, 0xd3, 0x24, 0xfe, 0x21, 0xa8,
+	0xc7, 0x44, 0x91, 0xb4, 0x03, 0x58, 0x57, 0xc9, 0x88, 0x96, 0x90, 0xa4, 0x2e, 0x12, 0xf3, 0x0e,
+	0x9e, 0xb5, 0x31, 0xe2, 0x1f, 0x9a, 0xf9, 0x62, 0xde, 0xcd, 0x1b, 0x24, 0xad, 0xba, 0x9a, 0x7f,
+	0x88, 0xff, 0x89, 0x66, 0xa2, 0x80, 0x48, 0x70, 0xe6, 0xb6, 0x73, 0xe5, 0xe5, 0xcb, 0xa6, 0xce,
+	0xa6, 0xa6, 0xb9, 0x09, 0x1b, 0xdf, 0x41, 0x4b, 0xe2, 0x88, 0xdb, 0x31, 0x06, 0xa4, 0x7e, 0xd9,
+	0x75, 0x7e, 0x17, 0xcd, 0x62, 0x2d, 0x59, 0xc3, 0xff, 0x41, 0x73, 0x5d, 0x50, 0x84, 0x12, 0x45,
+	0x1c, 0x64, 0x92, 0x56, 0xba, 0xd8, 0xfd, 0x67, 0x96, 0xe9, 0x66, 0x36, 0xb8, 0x85, 0x16, 0xf4,
+	0x69, 0x0c, 0xbe, 0xb6, 0x0f, 0x2f, 0x76, 0xd1, 0x48, 0x8e, 0x8e, 0x7d, 0x4d, 0x86, 0x9e, 0x2f,
+	0xa4, 0xdd, 0xd8, 0xb7, 0x76, 0x07, 0x2d, 0xc6, 0xd0, 0x15, 0x7d, 0x12, 0x7a, 0x3a, 0x07, 0xce,
+	0xe2, 0x95, 0x5d, 0x65, 0xda, 0x74, 0x94, 0x05, 0x6b, 0xa5, 0xd7, 0xf1, 0x63, 0xb4, 0x14, 0x12,
+	0xa9, 0x74, 0x66, 0x13, 0x2f, 0x4b, 0x1f, 0xeb, 0x45, 0x9b, 0xd5, 0xfc, 0x43, 0xe3, 0xe5, 0x3e,
+	0x5a, 0x0b, 0x58, 0x27, 0x00, 0xa9, 0x3c, 0xa9, 0xcb, 0xb4, 0x2f, 0x7d, 0x5d, 0xaa, 0xcb, 0xa6,
+	0x10, 0xf3, 0x16, 0x6a, 0x01, 0x57, 0xcf, 0xa4, 0xdf, 0xa0, 0xb8, 0x8a, 0x0a, 0x29, 0x5d, 0x57,
+	0x02, 0x4d, 0xf9, 0x2b, 0x86, 0xbf, 0x6a, 0xb1, 0x9a, 0x86, 0x12, 0x83, 0x7d, 0xb4, 0x1e, 0x91,
+	0x9e, 0x04, 0x0f, 0x8e, 0x23, 0x16, 0x9b, 0xa4, 0x24, 0xd1, 0xe6, 0x3f, 0x32, 0xda, 0x35, 0x63,
+	0xbe, 0x9b, 0x59, 0x6b, 0xbc, 0xf4, 0x02, 0x6d, 0x8c, 0xff, 0x4f, 0xf0, 0x09, 0xff, 0x7a, 0x36,
+	0xd0, 0xac, 0xbd, 0x75, 0x93, 0x06, 0xb7, 0x5f, 0xa5, 0x0e, 0xba, 0x75, 0xd9, 0x00, 0x7a, 0x75,
+	0x3b, 0xb8, 0x87, 0x66, 0x49, 0x57, 0xf4, 0x78, 0xe2, 0x78, 0xbe, 0xbe, 0x3c, 0xd4, 0x68, 0x2c,
+	0x5a, 0xfa, 0x21, 0x87, 0x0a, 0xe3, 0x66, 0xce, 0xab, 0x15, 0x1e, 0xa1, 0x79, 0x0a, 0x91, 0x90,
+	0x4c, 0x89, 0xd8, 0x8a, 0x38, 0x6f, 0x5f, 0xdd, 0x2f, 0x58, 0x11, 0x5b, 0xfb, 0x2d, 0x15, 0x33,
+	0xde, 0x71, 0xcf, 0xa8, 0xb8, 0x80, 0x66, 0x28, 0x70, 0xd1, 0xb5, 0x9d, 0x28, 0xf9, 0xc0, 0x3b,
+	0x68, 0xd6, 0x8e, 0xc6, 0xd3, 0x9f, 0xde, 0x35, 0xad, 0x69, 0xbd, 0xf1, 0xfa, 0x7d, 0x31, 0xf7,
+	0xe6, 0x7d, 0x31, 0xf7, 0xcb, 0xfb, 0x62, 0xee, 0xf4, 0x43, 0x71, 0xe2, 0xcd, 0x87, 0xe2, 0xc4,
+	0x8f, 0x1f, 0x8a, 0x13, 0x2f, 0xaa, 0x1d, 0xa6, 0x82, 0x5e, 0xbb, 0xe2, 0x8b, 0x6e, 0x95, 0x84,
+	0x21, 0xe3, 0x6d, 0xa6, 0x64, 0xd5, 0xfc, 0x9d, 0x3d, 0xae, 0x0e, 0xfe, 0xab, 0x55, 0x27, 0x11,
+	0xc8, 0xf6, 0xac, 0xa9, 0x85, 0x7f, 0xfc, 0x16, 0x00, 0x00, 0xff, 0xff, 0x80, 0x94, 0xb2, 0xe3,
+	0xaa, 0x0f, 0x00, 0x00,
 }
 
 func (m *GenesisState) Marshal() (dAtA []byte, err error) {
@@ -610,6 +998,118 @@ func (m *GenesisState) MarshalToSizedBuffer(dAtA []byte) (int, error) {
 	_ = i
 	var l int
 	_ = l
+	if len(m.DowntimeWindowFloors) > 0 {
+		for iNdEx := len(m.DowntimeWindowFloors) - 1; iNdEx >= 0; iNdEx-- {
+			{
+				size, err := m.DowntimeWindowFloors[iNdEx].MarshalToSizedBuffer(dAtA[:i])
+				if err != nil {
+					return 0, err
+				}
+				i -= size
+				i = encodeVarintGenesis(dAtA, i, uint64(size))
+			}
+			i--
+			dAtA[i] = 0x1
+			i--
+			dAtA[i] = 0x8a
+		}
+	}
+	if len(m.EpochDowntimeEntries) > 0 {
+		for iNdEx := len(m.EpochDowntimeEntries) - 1; iNdEx >= 0; iNdEx-- {
+			{
+				size, err := m.EpochDowntimeEntries[iNdEx].MarshalToSizedBuffer(dAtA[:i])
+				if err != nil {
+					return 0, err
+				}
+				i -= size
+				i = encodeVarintGenesis(dAtA, i, uint64(size))
+			}
+			i--
+			dAtA[i] = 0x1
+			i--
+			dAtA[i] = 0x82
+		}
+	}
+	if len(m.AcceptedDowntimeWindows) > 0 {
+		for iNdEx := len(m.AcceptedDowntimeWindows) - 1; iNdEx >= 0; iNdEx-- {
+			{
+				size, err := m.AcceptedDowntimeWindows[iNdEx].MarshalToSizedBuffer(dAtA[:i])
+				if err != nil {
+					return 0, err
+				}
+				i -= size
+				i = encodeVarintGenesis(dAtA, i, uint64(size))
+			}
+			i--
+			dAtA[i] = 0x7a
+		}
+	}
+	if len(m.WithheldFeeRecords) > 0 {
+		for iNdEx := len(m.WithheldFeeRecords) - 1; iNdEx >= 0; iNdEx-- {
+			{
+				size, err := m.WithheldFeeRecords[iNdEx].MarshalToSizedBuffer(dAtA[:i])
+				if err != nil {
+					return 0, err
+				}
+				i -= size
+				i = encodeVarintGenesis(dAtA, i, uint64(size))
+			}
+			i--
+			dAtA[i] = 0x72
+		}
+	}
+	if m.InfractionParameters != nil {
+		{
+			size, err := m.InfractionParameters.MarshalToSizedBuffer(dAtA[:i])
+			if err != nil {
+				return 0, err
+			}
+			i -= size
+			i = encodeVarintGenesis(dAtA, i, uint64(size))
+		}
+		i--
+		dAtA[i] = 0x6a
+	}
+	if len(m.EpochShareRecords) > 0 {
+		for iNdEx := len(m.EpochShareRecords) - 1; iNdEx >= 0; iNdEx-- {
+			{
+				size, err := m.EpochShareRecords[iNdEx].MarshalToSizedBuffer(dAtA[:i])
+				if err != nil {
+					return 0, err
+				}
+				i -= size
+				i = encodeVarintGenesis(dAtA, i, uint64(size))
+			}
+			i--
+			dAtA[i] = 0x62
+		}
+	}
+	if m.PreviousDowntimeParams != nil {
+		{
+			size, err := m.PreviousDowntimeParams.MarshalToSizedBuffer(dAtA[:i])
+			if err != nil {
+				return 0, err
+			}
+			i -= size
+			i = encodeVarintGenesis(dAtA, i, uint64(size))
+		}
+		i--
+		dAtA[i] = 0x5a
+	}
+	if len(m.PendingDowntimeSlashes) > 0 {
+		for iNdEx := len(m.PendingDowntimeSlashes) - 1; iNdEx >= 0; iNdEx-- {
+			{
+				size, err := m.PendingDowntimeSlashes[iNdEx].MarshalToSizedBuffer(dAtA[:i])
+				if err != nil {
+					return 0, err
+				}
+				i -= size
+				i = encodeVarintGenesis(dAtA, i, uint64(size))
+			}
+			i--
+			dAtA[i] = 0x52
+		}
+	}
 	if len(m.ConsumerFeePoolShares) > 0 {
 		for iNdEx := len(m.ConsumerFeePoolShares) - 1; iNdEx >= 0; iNdEx-- {
 			{
@@ -726,6 +1226,177 @@ func (m *GenesisState) MarshalToSizedBuffer(dAtA []byte) (int, error) {
 	return len(dAtA) - i, nil
 }
 
+func (m *AcceptedDowntimeWindowRecord) Marshal() (dAtA []byte, err error) {
+	size := m.Size()
+	dAtA = make([]byte, size)
+	n, err := m.MarshalToSizedBuffer(dAtA[:size])
+	if err != nil {
+		return nil, err
+	}
+	return dAtA[:n], nil
+}
+
+func (m *AcceptedDowntimeWindowRecord) MarshalTo(dAtA []byte) (int, error) {
+	size := m.Size()
+	return m.MarshalToSizedBuffer(dAtA[:size])
+}
+
+func (m *AcceptedDowntimeWindowRecord) MarshalToSizedBuffer(dAtA []byte) (int, error) {
+	i := len(dAtA)
+	_ = i
+	var l int
+	_ = l
+	n4, err4 := github_com_cosmos_gogoproto_types.StdTimeMarshalTo(m.AcceptedAt, dAtA[i-github_com_cosmos_gogoproto_types.SizeOfStdTime(m.AcceptedAt):])
+	if err4 != nil {
+		return 0, err4
+	}
+	i -= n4
+	i = encodeVarintGenesis(dAtA, i, uint64(n4))
+	i--
+	dAtA[i] = 0x2a
+	if m.WindowStartHeight != 0 {
+		i = encodeVarintGenesis(dAtA, i, uint64(m.WindowStartHeight))
+		i--
+		dAtA[i] = 0x20
+	}
+	if m.WindowEndHeight != 0 {
+		i = encodeVarintGenesis(dAtA, i, uint64(m.WindowEndHeight))
+		i--
+		dAtA[i] = 0x18
+	}
+	if len(m.ProviderConsAddr) > 0 {
+		i -= len(m.ProviderConsAddr)
+		copy(dAtA[i:], m.ProviderConsAddr)
+		i = encodeVarintGenesis(dAtA, i, uint64(len(m.ProviderConsAddr)))
+		i--
+		dAtA[i] = 0x12
+	}
+	if m.ConsumerId != 0 {
+		i = encodeVarintGenesis(dAtA, i, uint64(m.ConsumerId))
+		i--
+		dAtA[i] = 0x8
+	}
+	return len(dAtA) - i, nil
+}
+
+func (m *DowntimeWindowFloor) Marshal() (dAtA []byte, err error) {
+	size := m.Size()
+	dAtA = make([]byte, size)
+	n, err := m.MarshalToSizedBuffer(dAtA[:size])
+	if err != nil {
+		return nil, err
+	}
+	return dAtA[:n], nil
+}
+
+func (m *DowntimeWindowFloor) MarshalTo(dAtA []byte) (int, error) {
+	size := m.Size()
+	return m.MarshalToSizedBuffer(dAtA[:size])
+}
+
+func (m *DowntimeWindowFloor) MarshalToSizedBuffer(dAtA []byte) (int, error) {
+	i := len(dAtA)
+	_ = i
+	var l int
+	_ = l
+	if m.WindowEndHeight != 0 {
+		i = encodeVarintGenesis(dAtA, i, uint64(m.WindowEndHeight))
+		i--
+		dAtA[i] = 0x18
+	}
+	if len(m.ProviderConsAddr) > 0 {
+		i -= len(m.ProviderConsAddr)
+		copy(dAtA[i:], m.ProviderConsAddr)
+		i = encodeVarintGenesis(dAtA, i, uint64(len(m.ProviderConsAddr)))
+		i--
+		dAtA[i] = 0x12
+	}
+	if m.ConsumerId != 0 {
+		i = encodeVarintGenesis(dAtA, i, uint64(m.ConsumerId))
+		i--
+		dAtA[i] = 0x8
+	}
+	return len(dAtA) - i, nil
+}
+
+func (m *EpochDowntimeEntry) Marshal() (dAtA []byte, err error) {
+	size := m.Size()
+	dAtA = make([]byte, size)
+	n, err := m.MarshalToSizedBuffer(dAtA[:size])
+	if err != nil {
+		return nil, err
+	}
+	return dAtA[:n], nil
+}
+
+func (m *EpochDowntimeEntry) MarshalTo(dAtA []byte) (int, error) {
+	size := m.Size()
+	return m.MarshalToSizedBuffer(dAtA[:size])
+}
+
+func (m *EpochDowntimeEntry) MarshalToSizedBuffer(dAtA []byte) (int, error) {
+	i := len(dAtA)
+	_ = i
+	var l int
+	_ = l
+	if len(m.ProviderConsAddr) > 0 {
+		i -= len(m.ProviderConsAddr)
+		copy(dAtA[i:], m.ProviderConsAddr)
+		i = encodeVarintGenesis(dAtA, i, uint64(len(m.ProviderConsAddr)))
+		i--
+		dAtA[i] = 0x12
+	}
+	if m.ConsumerId != 0 {
+		i = encodeVarintGenesis(dAtA, i, uint64(m.ConsumerId))
+		i--
+		dAtA[i] = 0x8
+	}
+	return len(dAtA) - i, nil
+}
+
+func (m *EpochShareRecord) Marshal() (dAtA []byte, err error) {
+	size := m.Size()
+	dAtA = make([]byte, size)
+	n, err := m.MarshalToSizedBuffer(dAtA[:size])
+	if err != nil {
+		return nil, err
+	}
+	return dAtA[:n], nil
+}
+
+func (m *EpochShareRecord) MarshalTo(dAtA []byte) (int, error) {
+	size := m.Size()
+	return m.MarshalToSizedBuffer(dAtA[:size])
+}
+
+func (m *EpochShareRecord) MarshalToSizedBuffer(dAtA []byte) (int, error) {
+	i := len(dAtA)
+	_ = i
+	var l int
+	_ = l
+	{
+		size := m.Share.Size()
+		i -= size
+		if _, err := m.Share.MarshalTo(dAtA[i:]); err != nil {
+			return 0, err
+		}
+		i = encodeVarintGenesis(dAtA, i, uint64(size))
+	}
+	i--
+	dAtA[i] = 0x1a
+	if m.DistributedAtUnixNano != 0 {
+		i = encodeVarintGenesis(dAtA, i, uint64(m.DistributedAtUnixNano))
+		i--
+		dAtA[i] = 0x10
+	}
+	if m.ConsumerId != 0 {
+		i = encodeVarintGenesis(dAtA, i, uint64(m.ConsumerId))
+		i--
+		dAtA[i] = 0x8
+	}
+	return len(dAtA) - i, nil
+}
+
 func (m *ConsumerState) Marshal() (dAtA []byte, err error) {
 	size := m.Size()
 	dAtA = make([]byte, size)
@@ -746,6 +1417,18 @@ func (m *ConsumerState) MarshalToSizedBuffer(dAtA []byte) (int, error) {
 	_ = i
 	var l int
 	_ = l
+	if m.PauseExpirationTime != nil {
+		n5, err5 := github_com_cosmos_gogoproto_types.StdTimeMarshalTo(*m.PauseExpirationTime, dAtA[i-github_com_cosmos_gogoproto_types.SizeOfStdTime(*m.PauseExpirationTime):])
+		if err5 != nil {
+			return 0, err5
+		}
+		i -= n5
+		i = encodeVarintGenesis(dAtA, i, uint64(n5))
+		i--
+		dAtA[i] = 0x1
+		i--
+		dAtA[i] = 0x82
+	}
 	if m.HighestAckedVscId != 0 {
 		i = encodeVarintGenesis(dAtA, i, uint64(m.HighestAckedVscId))
 		i--
@@ -757,22 +1440,22 @@ func (m *ConsumerState) MarshalToSizedBuffer(dAtA []byte) (int, error) {
 		dAtA[i] = 0x70
 	}
 	if m.LastAckTime != nil {
-		n2, err2 := github_com_cosmos_gogoproto_types.StdTimeMarshalTo(*m.LastAckTime, dAtA[i-github_com_cosmos_gogoproto_types.SizeOfStdTime(*m.LastAckTime):])
-		if err2 != nil {
-			return 0, err2
+		n6, err6 := github_com_cosmos_gogoproto_types.StdTimeMarshalTo(*m.LastAckTime, dAtA[i-github_com_cosmos_gogoproto_types.SizeOfStdTime(*m.LastAckTime):])
+		if err6 != nil {
+			return 0, err6
 		}
-		i -= n2
-		i = encodeVarintGenesis(dAtA, i, uint64(n2))
+		i -= n6
+		i = encodeVarintGenesis(dAtA, i, uint64(n6))
 		i--
 		dAtA[i] = 0x6a
 	}
 	if m.RemovalTime != nil {
-		n3, err3 := github_com_cosmos_gogoproto_types.StdTimeMarshalTo(*m.RemovalTime, dAtA[i-github_com_cosmos_gogoproto_types.SizeOfStdTime(*m.RemovalTime):])
-		if err3 != nil {
-			return 0, err3
+		n7, err7 := github_com_cosmos_gogoproto_types.StdTimeMarshalTo(*m.RemovalTime, dAtA[i-github_com_cosmos_gogoproto_types.SizeOfStdTime(*m.RemovalTime):])
+		if err7 != nil {
+			return 0, err7
 		}
-		i -= n3
-		i = encodeVarintGenesis(dAtA, i, uint64(n3))
+		i -= n7
+		i = encodeVarintGenesis(dAtA, i, uint64(n7))
 		i--
 		dAtA[i] = 0x62
 	}
@@ -1056,6 +1739,126 @@ func (m *GenesisState) Size() (n int) {
 			n += 1 + l + sovGenesis(uint64(l))
 		}
 	}
+	if len(m.PendingDowntimeSlashes) > 0 {
+		for _, e := range m.PendingDowntimeSlashes {
+			l = e.Size()
+			n += 1 + l + sovGenesis(uint64(l))
+		}
+	}
+	if m.PreviousDowntimeParams != nil {
+		l = m.PreviousDowntimeParams.Size()
+		n += 1 + l + sovGenesis(uint64(l))
+	}
+	if len(m.EpochShareRecords) > 0 {
+		for _, e := range m.EpochShareRecords {
+			l = e.Size()
+			n += 1 + l + sovGenesis(uint64(l))
+		}
+	}
+	if m.InfractionParameters != nil {
+		l = m.InfractionParameters.Size()
+		n += 1 + l + sovGenesis(uint64(l))
+	}
+	if len(m.WithheldFeeRecords) > 0 {
+		for _, e := range m.WithheldFeeRecords {
+			l = e.Size()
+			n += 1 + l + sovGenesis(uint64(l))
+		}
+	}
+	if len(m.AcceptedDowntimeWindows) > 0 {
+		for _, e := range m.AcceptedDowntimeWindows {
+			l = e.Size()
+			n += 1 + l + sovGenesis(uint64(l))
+		}
+	}
+	if len(m.EpochDowntimeEntries) > 0 {
+		for _, e := range m.EpochDowntimeEntries {
+			l = e.Size()
+			n += 2 + l + sovGenesis(uint64(l))
+		}
+	}
+	if len(m.DowntimeWindowFloors) > 0 {
+		for _, e := range m.DowntimeWindowFloors {
+			l = e.Size()
+			n += 2 + l + sovGenesis(uint64(l))
+		}
+	}
+	return n
+}
+
+func (m *AcceptedDowntimeWindowRecord) Size() (n int) {
+	if m == nil {
+		return 0
+	}
+	var l int
+	_ = l
+	if m.ConsumerId != 0 {
+		n += 1 + sovGenesis(uint64(m.ConsumerId))
+	}
+	l = len(m.ProviderConsAddr)
+	if l > 0 {
+		n += 1 + l + sovGenesis(uint64(l))
+	}
+	if m.WindowEndHeight != 0 {
+		n += 1 + sovGenesis(uint64(m.WindowEndHeight))
+	}
+	if m.WindowStartHeight != 0 {
+		n += 1 + sovGenesis(uint64(m.WindowStartHeight))
+	}
+	l = github_com_cosmos_gogoproto_types.SizeOfStdTime(m.AcceptedAt)
+	n += 1 + l + sovGenesis(uint64(l))
+	return n
+}
+
+func (m *DowntimeWindowFloor) Size() (n int) {
+	if m == nil {
+		return 0
+	}
+	var l int
+	_ = l
+	if m.ConsumerId != 0 {
+		n += 1 + sovGenesis(uint64(m.ConsumerId))
+	}
+	l = len(m.ProviderConsAddr)
+	if l > 0 {
+		n += 1 + l + sovGenesis(uint64(l))
+	}
+	if m.WindowEndHeight != 0 {
+		n += 1 + sovGenesis(uint64(m.WindowEndHeight))
+	}
+	return n
+}
+
+func (m *EpochDowntimeEntry) Size() (n int) {
+	if m == nil {
+		return 0
+	}
+	var l int
+	_ = l
+	if m.ConsumerId != 0 {
+		n += 1 + sovGenesis(uint64(m.ConsumerId))
+	}
+	l = len(m.ProviderConsAddr)
+	if l > 0 {
+		n += 1 + l + sovGenesis(uint64(l))
+	}
+	return n
+}
+
+func (m *EpochShareRecord) Size() (n int) {
+	if m == nil {
+		return 0
+	}
+	var l int
+	_ = l
+	if m.ConsumerId != 0 {
+		n += 1 + sovGenesis(uint64(m.ConsumerId))
+	}
+	if m.DistributedAtUnixNano != 0 {
+		n += 1 + sovGenesis(uint64(m.DistributedAtUnixNano))
+	}
+	l = m.Share.Size()
+	n += 1 + l + sovGenesis(uint64(l))
 	return n
 }
 
@@ -1121,6 +1924,10 @@ func (m *ConsumerState) Size() (n int) {
 	}
 	if m.HighestAckedVscId != 0 {
 		n += 1 + sovGenesis(uint64(m.HighestAckedVscId))
+	}
+	if m.PauseExpirationTime != nil {
+		l = github_com_cosmos_gogoproto_types.SizeOfStdTime(*m.PauseExpirationTime)
+		n += 2 + l + sovGenesis(uint64(l))
 	}
 	return n
 }
@@ -1500,6 +2307,803 @@ func (m *GenesisState) Unmarshal(dAtA []byte) error {
 			}
 			m.ConsumerFeePoolShares = append(m.ConsumerFeePoolShares, ConsumerFeePoolShare{})
 			if err := m.ConsumerFeePoolShares[len(m.ConsumerFeePoolShares)-1].Unmarshal(dAtA[iNdEx:postIndex]); err != nil {
+				return err
+			}
+			iNdEx = postIndex
+		case 10:
+			if wireType != 2 {
+				return fmt.Errorf("proto: wrong wireType = %d for field PendingDowntimeSlashes", wireType)
+			}
+			var msglen int
+			for shift := uint(0); ; shift += 7 {
+				if shift >= 64 {
+					return ErrIntOverflowGenesis
+				}
+				if iNdEx >= l {
+					return io.ErrUnexpectedEOF
+				}
+				b := dAtA[iNdEx]
+				iNdEx++
+				msglen |= int(b&0x7F) << shift
+				if b < 0x80 {
+					break
+				}
+			}
+			if msglen < 0 {
+				return ErrInvalidLengthGenesis
+			}
+			postIndex := iNdEx + msglen
+			if postIndex < 0 {
+				return ErrInvalidLengthGenesis
+			}
+			if postIndex > l {
+				return io.ErrUnexpectedEOF
+			}
+			m.PendingDowntimeSlashes = append(m.PendingDowntimeSlashes, PendingDowntimeSlash{})
+			if err := m.PendingDowntimeSlashes[len(m.PendingDowntimeSlashes)-1].Unmarshal(dAtA[iNdEx:postIndex]); err != nil {
+				return err
+			}
+			iNdEx = postIndex
+		case 11:
+			if wireType != 2 {
+				return fmt.Errorf("proto: wrong wireType = %d for field PreviousDowntimeParams", wireType)
+			}
+			var msglen int
+			for shift := uint(0); ; shift += 7 {
+				if shift >= 64 {
+					return ErrIntOverflowGenesis
+				}
+				if iNdEx >= l {
+					return io.ErrUnexpectedEOF
+				}
+				b := dAtA[iNdEx]
+				iNdEx++
+				msglen |= int(b&0x7F) << shift
+				if b < 0x80 {
+					break
+				}
+			}
+			if msglen < 0 {
+				return ErrInvalidLengthGenesis
+			}
+			postIndex := iNdEx + msglen
+			if postIndex < 0 {
+				return ErrInvalidLengthGenesis
+			}
+			if postIndex > l {
+				return io.ErrUnexpectedEOF
+			}
+			if m.PreviousDowntimeParams == nil {
+				m.PreviousDowntimeParams = &PreviousDowntimeParams{}
+			}
+			if err := m.PreviousDowntimeParams.Unmarshal(dAtA[iNdEx:postIndex]); err != nil {
+				return err
+			}
+			iNdEx = postIndex
+		case 12:
+			if wireType != 2 {
+				return fmt.Errorf("proto: wrong wireType = %d for field EpochShareRecords", wireType)
+			}
+			var msglen int
+			for shift := uint(0); ; shift += 7 {
+				if shift >= 64 {
+					return ErrIntOverflowGenesis
+				}
+				if iNdEx >= l {
+					return io.ErrUnexpectedEOF
+				}
+				b := dAtA[iNdEx]
+				iNdEx++
+				msglen |= int(b&0x7F) << shift
+				if b < 0x80 {
+					break
+				}
+			}
+			if msglen < 0 {
+				return ErrInvalidLengthGenesis
+			}
+			postIndex := iNdEx + msglen
+			if postIndex < 0 {
+				return ErrInvalidLengthGenesis
+			}
+			if postIndex > l {
+				return io.ErrUnexpectedEOF
+			}
+			m.EpochShareRecords = append(m.EpochShareRecords, EpochShareRecord{})
+			if err := m.EpochShareRecords[len(m.EpochShareRecords)-1].Unmarshal(dAtA[iNdEx:postIndex]); err != nil {
+				return err
+			}
+			iNdEx = postIndex
+		case 13:
+			if wireType != 2 {
+				return fmt.Errorf("proto: wrong wireType = %d for field InfractionParameters", wireType)
+			}
+			var msglen int
+			for shift := uint(0); ; shift += 7 {
+				if shift >= 64 {
+					return ErrIntOverflowGenesis
+				}
+				if iNdEx >= l {
+					return io.ErrUnexpectedEOF
+				}
+				b := dAtA[iNdEx]
+				iNdEx++
+				msglen |= int(b&0x7F) << shift
+				if b < 0x80 {
+					break
+				}
+			}
+			if msglen < 0 {
+				return ErrInvalidLengthGenesis
+			}
+			postIndex := iNdEx + msglen
+			if postIndex < 0 {
+				return ErrInvalidLengthGenesis
+			}
+			if postIndex > l {
+				return io.ErrUnexpectedEOF
+			}
+			if m.InfractionParameters == nil {
+				m.InfractionParameters = &InfractionParameters{}
+			}
+			if err := m.InfractionParameters.Unmarshal(dAtA[iNdEx:postIndex]); err != nil {
+				return err
+			}
+			iNdEx = postIndex
+		case 14:
+			if wireType != 2 {
+				return fmt.Errorf("proto: wrong wireType = %d for field WithheldFeeRecords", wireType)
+			}
+			var msglen int
+			for shift := uint(0); ; shift += 7 {
+				if shift >= 64 {
+					return ErrIntOverflowGenesis
+				}
+				if iNdEx >= l {
+					return io.ErrUnexpectedEOF
+				}
+				b := dAtA[iNdEx]
+				iNdEx++
+				msglen |= int(b&0x7F) << shift
+				if b < 0x80 {
+					break
+				}
+			}
+			if msglen < 0 {
+				return ErrInvalidLengthGenesis
+			}
+			postIndex := iNdEx + msglen
+			if postIndex < 0 {
+				return ErrInvalidLengthGenesis
+			}
+			if postIndex > l {
+				return io.ErrUnexpectedEOF
+			}
+			m.WithheldFeeRecords = append(m.WithheldFeeRecords, WithheldFeeRecord{})
+			if err := m.WithheldFeeRecords[len(m.WithheldFeeRecords)-1].Unmarshal(dAtA[iNdEx:postIndex]); err != nil {
+				return err
+			}
+			iNdEx = postIndex
+		case 15:
+			if wireType != 2 {
+				return fmt.Errorf("proto: wrong wireType = %d for field AcceptedDowntimeWindows", wireType)
+			}
+			var msglen int
+			for shift := uint(0); ; shift += 7 {
+				if shift >= 64 {
+					return ErrIntOverflowGenesis
+				}
+				if iNdEx >= l {
+					return io.ErrUnexpectedEOF
+				}
+				b := dAtA[iNdEx]
+				iNdEx++
+				msglen |= int(b&0x7F) << shift
+				if b < 0x80 {
+					break
+				}
+			}
+			if msglen < 0 {
+				return ErrInvalidLengthGenesis
+			}
+			postIndex := iNdEx + msglen
+			if postIndex < 0 {
+				return ErrInvalidLengthGenesis
+			}
+			if postIndex > l {
+				return io.ErrUnexpectedEOF
+			}
+			m.AcceptedDowntimeWindows = append(m.AcceptedDowntimeWindows, AcceptedDowntimeWindowRecord{})
+			if err := m.AcceptedDowntimeWindows[len(m.AcceptedDowntimeWindows)-1].Unmarshal(dAtA[iNdEx:postIndex]); err != nil {
+				return err
+			}
+			iNdEx = postIndex
+		case 16:
+			if wireType != 2 {
+				return fmt.Errorf("proto: wrong wireType = %d for field EpochDowntimeEntries", wireType)
+			}
+			var msglen int
+			for shift := uint(0); ; shift += 7 {
+				if shift >= 64 {
+					return ErrIntOverflowGenesis
+				}
+				if iNdEx >= l {
+					return io.ErrUnexpectedEOF
+				}
+				b := dAtA[iNdEx]
+				iNdEx++
+				msglen |= int(b&0x7F) << shift
+				if b < 0x80 {
+					break
+				}
+			}
+			if msglen < 0 {
+				return ErrInvalidLengthGenesis
+			}
+			postIndex := iNdEx + msglen
+			if postIndex < 0 {
+				return ErrInvalidLengthGenesis
+			}
+			if postIndex > l {
+				return io.ErrUnexpectedEOF
+			}
+			m.EpochDowntimeEntries = append(m.EpochDowntimeEntries, EpochDowntimeEntry{})
+			if err := m.EpochDowntimeEntries[len(m.EpochDowntimeEntries)-1].Unmarshal(dAtA[iNdEx:postIndex]); err != nil {
+				return err
+			}
+			iNdEx = postIndex
+		case 17:
+			if wireType != 2 {
+				return fmt.Errorf("proto: wrong wireType = %d for field DowntimeWindowFloors", wireType)
+			}
+			var msglen int
+			for shift := uint(0); ; shift += 7 {
+				if shift >= 64 {
+					return ErrIntOverflowGenesis
+				}
+				if iNdEx >= l {
+					return io.ErrUnexpectedEOF
+				}
+				b := dAtA[iNdEx]
+				iNdEx++
+				msglen |= int(b&0x7F) << shift
+				if b < 0x80 {
+					break
+				}
+			}
+			if msglen < 0 {
+				return ErrInvalidLengthGenesis
+			}
+			postIndex := iNdEx + msglen
+			if postIndex < 0 {
+				return ErrInvalidLengthGenesis
+			}
+			if postIndex > l {
+				return io.ErrUnexpectedEOF
+			}
+			m.DowntimeWindowFloors = append(m.DowntimeWindowFloors, DowntimeWindowFloor{})
+			if err := m.DowntimeWindowFloors[len(m.DowntimeWindowFloors)-1].Unmarshal(dAtA[iNdEx:postIndex]); err != nil {
+				return err
+			}
+			iNdEx = postIndex
+		default:
+			iNdEx = preIndex
+			skippy, err := skipGenesis(dAtA[iNdEx:])
+			if err != nil {
+				return err
+			}
+			if (skippy < 0) || (iNdEx+skippy) < 0 {
+				return ErrInvalidLengthGenesis
+			}
+			if (iNdEx + skippy) > l {
+				return io.ErrUnexpectedEOF
+			}
+			iNdEx += skippy
+		}
+	}
+
+	if iNdEx > l {
+		return io.ErrUnexpectedEOF
+	}
+	return nil
+}
+func (m *AcceptedDowntimeWindowRecord) Unmarshal(dAtA []byte) error {
+	l := len(dAtA)
+	iNdEx := 0
+	for iNdEx < l {
+		preIndex := iNdEx
+		var wire uint64
+		for shift := uint(0); ; shift += 7 {
+			if shift >= 64 {
+				return ErrIntOverflowGenesis
+			}
+			if iNdEx >= l {
+				return io.ErrUnexpectedEOF
+			}
+			b := dAtA[iNdEx]
+			iNdEx++
+			wire |= uint64(b&0x7F) << shift
+			if b < 0x80 {
+				break
+			}
+		}
+		fieldNum := int32(wire >> 3)
+		wireType := int(wire & 0x7)
+		if wireType == 4 {
+			return fmt.Errorf("proto: AcceptedDowntimeWindowRecord: wiretype end group for non-group")
+		}
+		if fieldNum <= 0 {
+			return fmt.Errorf("proto: AcceptedDowntimeWindowRecord: illegal tag %d (wire type %d)", fieldNum, wire)
+		}
+		switch fieldNum {
+		case 1:
+			if wireType != 0 {
+				return fmt.Errorf("proto: wrong wireType = %d for field ConsumerId", wireType)
+			}
+			m.ConsumerId = 0
+			for shift := uint(0); ; shift += 7 {
+				if shift >= 64 {
+					return ErrIntOverflowGenesis
+				}
+				if iNdEx >= l {
+					return io.ErrUnexpectedEOF
+				}
+				b := dAtA[iNdEx]
+				iNdEx++
+				m.ConsumerId |= uint64(b&0x7F) << shift
+				if b < 0x80 {
+					break
+				}
+			}
+		case 2:
+			if wireType != 2 {
+				return fmt.Errorf("proto: wrong wireType = %d for field ProviderConsAddr", wireType)
+			}
+			var byteLen int
+			for shift := uint(0); ; shift += 7 {
+				if shift >= 64 {
+					return ErrIntOverflowGenesis
+				}
+				if iNdEx >= l {
+					return io.ErrUnexpectedEOF
+				}
+				b := dAtA[iNdEx]
+				iNdEx++
+				byteLen |= int(b&0x7F) << shift
+				if b < 0x80 {
+					break
+				}
+			}
+			if byteLen < 0 {
+				return ErrInvalidLengthGenesis
+			}
+			postIndex := iNdEx + byteLen
+			if postIndex < 0 {
+				return ErrInvalidLengthGenesis
+			}
+			if postIndex > l {
+				return io.ErrUnexpectedEOF
+			}
+			m.ProviderConsAddr = append(m.ProviderConsAddr[:0], dAtA[iNdEx:postIndex]...)
+			if m.ProviderConsAddr == nil {
+				m.ProviderConsAddr = []byte{}
+			}
+			iNdEx = postIndex
+		case 3:
+			if wireType != 0 {
+				return fmt.Errorf("proto: wrong wireType = %d for field WindowEndHeight", wireType)
+			}
+			m.WindowEndHeight = 0
+			for shift := uint(0); ; shift += 7 {
+				if shift >= 64 {
+					return ErrIntOverflowGenesis
+				}
+				if iNdEx >= l {
+					return io.ErrUnexpectedEOF
+				}
+				b := dAtA[iNdEx]
+				iNdEx++
+				m.WindowEndHeight |= int64(b&0x7F) << shift
+				if b < 0x80 {
+					break
+				}
+			}
+		case 4:
+			if wireType != 0 {
+				return fmt.Errorf("proto: wrong wireType = %d for field WindowStartHeight", wireType)
+			}
+			m.WindowStartHeight = 0
+			for shift := uint(0); ; shift += 7 {
+				if shift >= 64 {
+					return ErrIntOverflowGenesis
+				}
+				if iNdEx >= l {
+					return io.ErrUnexpectedEOF
+				}
+				b := dAtA[iNdEx]
+				iNdEx++
+				m.WindowStartHeight |= int64(b&0x7F) << shift
+				if b < 0x80 {
+					break
+				}
+			}
+		case 5:
+			if wireType != 2 {
+				return fmt.Errorf("proto: wrong wireType = %d for field AcceptedAt", wireType)
+			}
+			var msglen int
+			for shift := uint(0); ; shift += 7 {
+				if shift >= 64 {
+					return ErrIntOverflowGenesis
+				}
+				if iNdEx >= l {
+					return io.ErrUnexpectedEOF
+				}
+				b := dAtA[iNdEx]
+				iNdEx++
+				msglen |= int(b&0x7F) << shift
+				if b < 0x80 {
+					break
+				}
+			}
+			if msglen < 0 {
+				return ErrInvalidLengthGenesis
+			}
+			postIndex := iNdEx + msglen
+			if postIndex < 0 {
+				return ErrInvalidLengthGenesis
+			}
+			if postIndex > l {
+				return io.ErrUnexpectedEOF
+			}
+			if err := github_com_cosmos_gogoproto_types.StdTimeUnmarshal(&m.AcceptedAt, dAtA[iNdEx:postIndex]); err != nil {
+				return err
+			}
+			iNdEx = postIndex
+		default:
+			iNdEx = preIndex
+			skippy, err := skipGenesis(dAtA[iNdEx:])
+			if err != nil {
+				return err
+			}
+			if (skippy < 0) || (iNdEx+skippy) < 0 {
+				return ErrInvalidLengthGenesis
+			}
+			if (iNdEx + skippy) > l {
+				return io.ErrUnexpectedEOF
+			}
+			iNdEx += skippy
+		}
+	}
+
+	if iNdEx > l {
+		return io.ErrUnexpectedEOF
+	}
+	return nil
+}
+func (m *DowntimeWindowFloor) Unmarshal(dAtA []byte) error {
+	l := len(dAtA)
+	iNdEx := 0
+	for iNdEx < l {
+		preIndex := iNdEx
+		var wire uint64
+		for shift := uint(0); ; shift += 7 {
+			if shift >= 64 {
+				return ErrIntOverflowGenesis
+			}
+			if iNdEx >= l {
+				return io.ErrUnexpectedEOF
+			}
+			b := dAtA[iNdEx]
+			iNdEx++
+			wire |= uint64(b&0x7F) << shift
+			if b < 0x80 {
+				break
+			}
+		}
+		fieldNum := int32(wire >> 3)
+		wireType := int(wire & 0x7)
+		if wireType == 4 {
+			return fmt.Errorf("proto: DowntimeWindowFloor: wiretype end group for non-group")
+		}
+		if fieldNum <= 0 {
+			return fmt.Errorf("proto: DowntimeWindowFloor: illegal tag %d (wire type %d)", fieldNum, wire)
+		}
+		switch fieldNum {
+		case 1:
+			if wireType != 0 {
+				return fmt.Errorf("proto: wrong wireType = %d for field ConsumerId", wireType)
+			}
+			m.ConsumerId = 0
+			for shift := uint(0); ; shift += 7 {
+				if shift >= 64 {
+					return ErrIntOverflowGenesis
+				}
+				if iNdEx >= l {
+					return io.ErrUnexpectedEOF
+				}
+				b := dAtA[iNdEx]
+				iNdEx++
+				m.ConsumerId |= uint64(b&0x7F) << shift
+				if b < 0x80 {
+					break
+				}
+			}
+		case 2:
+			if wireType != 2 {
+				return fmt.Errorf("proto: wrong wireType = %d for field ProviderConsAddr", wireType)
+			}
+			var byteLen int
+			for shift := uint(0); ; shift += 7 {
+				if shift >= 64 {
+					return ErrIntOverflowGenesis
+				}
+				if iNdEx >= l {
+					return io.ErrUnexpectedEOF
+				}
+				b := dAtA[iNdEx]
+				iNdEx++
+				byteLen |= int(b&0x7F) << shift
+				if b < 0x80 {
+					break
+				}
+			}
+			if byteLen < 0 {
+				return ErrInvalidLengthGenesis
+			}
+			postIndex := iNdEx + byteLen
+			if postIndex < 0 {
+				return ErrInvalidLengthGenesis
+			}
+			if postIndex > l {
+				return io.ErrUnexpectedEOF
+			}
+			m.ProviderConsAddr = append(m.ProviderConsAddr[:0], dAtA[iNdEx:postIndex]...)
+			if m.ProviderConsAddr == nil {
+				m.ProviderConsAddr = []byte{}
+			}
+			iNdEx = postIndex
+		case 3:
+			if wireType != 0 {
+				return fmt.Errorf("proto: wrong wireType = %d for field WindowEndHeight", wireType)
+			}
+			m.WindowEndHeight = 0
+			for shift := uint(0); ; shift += 7 {
+				if shift >= 64 {
+					return ErrIntOverflowGenesis
+				}
+				if iNdEx >= l {
+					return io.ErrUnexpectedEOF
+				}
+				b := dAtA[iNdEx]
+				iNdEx++
+				m.WindowEndHeight |= int64(b&0x7F) << shift
+				if b < 0x80 {
+					break
+				}
+			}
+		default:
+			iNdEx = preIndex
+			skippy, err := skipGenesis(dAtA[iNdEx:])
+			if err != nil {
+				return err
+			}
+			if (skippy < 0) || (iNdEx+skippy) < 0 {
+				return ErrInvalidLengthGenesis
+			}
+			if (iNdEx + skippy) > l {
+				return io.ErrUnexpectedEOF
+			}
+			iNdEx += skippy
+		}
+	}
+
+	if iNdEx > l {
+		return io.ErrUnexpectedEOF
+	}
+	return nil
+}
+func (m *EpochDowntimeEntry) Unmarshal(dAtA []byte) error {
+	l := len(dAtA)
+	iNdEx := 0
+	for iNdEx < l {
+		preIndex := iNdEx
+		var wire uint64
+		for shift := uint(0); ; shift += 7 {
+			if shift >= 64 {
+				return ErrIntOverflowGenesis
+			}
+			if iNdEx >= l {
+				return io.ErrUnexpectedEOF
+			}
+			b := dAtA[iNdEx]
+			iNdEx++
+			wire |= uint64(b&0x7F) << shift
+			if b < 0x80 {
+				break
+			}
+		}
+		fieldNum := int32(wire >> 3)
+		wireType := int(wire & 0x7)
+		if wireType == 4 {
+			return fmt.Errorf("proto: EpochDowntimeEntry: wiretype end group for non-group")
+		}
+		if fieldNum <= 0 {
+			return fmt.Errorf("proto: EpochDowntimeEntry: illegal tag %d (wire type %d)", fieldNum, wire)
+		}
+		switch fieldNum {
+		case 1:
+			if wireType != 0 {
+				return fmt.Errorf("proto: wrong wireType = %d for field ConsumerId", wireType)
+			}
+			m.ConsumerId = 0
+			for shift := uint(0); ; shift += 7 {
+				if shift >= 64 {
+					return ErrIntOverflowGenesis
+				}
+				if iNdEx >= l {
+					return io.ErrUnexpectedEOF
+				}
+				b := dAtA[iNdEx]
+				iNdEx++
+				m.ConsumerId |= uint64(b&0x7F) << shift
+				if b < 0x80 {
+					break
+				}
+			}
+		case 2:
+			if wireType != 2 {
+				return fmt.Errorf("proto: wrong wireType = %d for field ProviderConsAddr", wireType)
+			}
+			var byteLen int
+			for shift := uint(0); ; shift += 7 {
+				if shift >= 64 {
+					return ErrIntOverflowGenesis
+				}
+				if iNdEx >= l {
+					return io.ErrUnexpectedEOF
+				}
+				b := dAtA[iNdEx]
+				iNdEx++
+				byteLen |= int(b&0x7F) << shift
+				if b < 0x80 {
+					break
+				}
+			}
+			if byteLen < 0 {
+				return ErrInvalidLengthGenesis
+			}
+			postIndex := iNdEx + byteLen
+			if postIndex < 0 {
+				return ErrInvalidLengthGenesis
+			}
+			if postIndex > l {
+				return io.ErrUnexpectedEOF
+			}
+			m.ProviderConsAddr = append(m.ProviderConsAddr[:0], dAtA[iNdEx:postIndex]...)
+			if m.ProviderConsAddr == nil {
+				m.ProviderConsAddr = []byte{}
+			}
+			iNdEx = postIndex
+		default:
+			iNdEx = preIndex
+			skippy, err := skipGenesis(dAtA[iNdEx:])
+			if err != nil {
+				return err
+			}
+			if (skippy < 0) || (iNdEx+skippy) < 0 {
+				return ErrInvalidLengthGenesis
+			}
+			if (iNdEx + skippy) > l {
+				return io.ErrUnexpectedEOF
+			}
+			iNdEx += skippy
+		}
+	}
+
+	if iNdEx > l {
+		return io.ErrUnexpectedEOF
+	}
+	return nil
+}
+func (m *EpochShareRecord) Unmarshal(dAtA []byte) error {
+	l := len(dAtA)
+	iNdEx := 0
+	for iNdEx < l {
+		preIndex := iNdEx
+		var wire uint64
+		for shift := uint(0); ; shift += 7 {
+			if shift >= 64 {
+				return ErrIntOverflowGenesis
+			}
+			if iNdEx >= l {
+				return io.ErrUnexpectedEOF
+			}
+			b := dAtA[iNdEx]
+			iNdEx++
+			wire |= uint64(b&0x7F) << shift
+			if b < 0x80 {
+				break
+			}
+		}
+		fieldNum := int32(wire >> 3)
+		wireType := int(wire & 0x7)
+		if wireType == 4 {
+			return fmt.Errorf("proto: EpochShareRecord: wiretype end group for non-group")
+		}
+		if fieldNum <= 0 {
+			return fmt.Errorf("proto: EpochShareRecord: illegal tag %d (wire type %d)", fieldNum, wire)
+		}
+		switch fieldNum {
+		case 1:
+			if wireType != 0 {
+				return fmt.Errorf("proto: wrong wireType = %d for field ConsumerId", wireType)
+			}
+			m.ConsumerId = 0
+			for shift := uint(0); ; shift += 7 {
+				if shift >= 64 {
+					return ErrIntOverflowGenesis
+				}
+				if iNdEx >= l {
+					return io.ErrUnexpectedEOF
+				}
+				b := dAtA[iNdEx]
+				iNdEx++
+				m.ConsumerId |= uint64(b&0x7F) << shift
+				if b < 0x80 {
+					break
+				}
+			}
+		case 2:
+			if wireType != 0 {
+				return fmt.Errorf("proto: wrong wireType = %d for field DistributedAtUnixNano", wireType)
+			}
+			m.DistributedAtUnixNano = 0
+			for shift := uint(0); ; shift += 7 {
+				if shift >= 64 {
+					return ErrIntOverflowGenesis
+				}
+				if iNdEx >= l {
+					return io.ErrUnexpectedEOF
+				}
+				b := dAtA[iNdEx]
+				iNdEx++
+				m.DistributedAtUnixNano |= int64(b&0x7F) << shift
+				if b < 0x80 {
+					break
+				}
+			}
+		case 3:
+			if wireType != 2 {
+				return fmt.Errorf("proto: wrong wireType = %d for field Share", wireType)
+			}
+			var stringLen uint64
+			for shift := uint(0); ; shift += 7 {
+				if shift >= 64 {
+					return ErrIntOverflowGenesis
+				}
+				if iNdEx >= l {
+					return io.ErrUnexpectedEOF
+				}
+				b := dAtA[iNdEx]
+				iNdEx++
+				stringLen |= uint64(b&0x7F) << shift
+				if b < 0x80 {
+					break
+				}
+			}
+			intStringLen := int(stringLen)
+			if intStringLen < 0 {
+				return ErrInvalidLengthGenesis
+			}
+			postIndex := iNdEx + intStringLen
+			if postIndex < 0 {
+				return ErrInvalidLengthGenesis
+			}
+			if postIndex > l {
+				return io.ErrUnexpectedEOF
+			}
+			if err := m.Share.Unmarshal(dAtA[iNdEx:postIndex]); err != nil {
 				return err
 			}
 			iNdEx = postIndex
@@ -1987,6 +3591,42 @@ func (m *ConsumerState) Unmarshal(dAtA []byte) error {
 					break
 				}
 			}
+		case 16:
+			if wireType != 2 {
+				return fmt.Errorf("proto: wrong wireType = %d for field PauseExpirationTime", wireType)
+			}
+			var msglen int
+			for shift := uint(0); ; shift += 7 {
+				if shift >= 64 {
+					return ErrIntOverflowGenesis
+				}
+				if iNdEx >= l {
+					return io.ErrUnexpectedEOF
+				}
+				b := dAtA[iNdEx]
+				iNdEx++
+				msglen |= int(b&0x7F) << shift
+				if b < 0x80 {
+					break
+				}
+			}
+			if msglen < 0 {
+				return ErrInvalidLengthGenesis
+			}
+			postIndex := iNdEx + msglen
+			if postIndex < 0 {
+				return ErrInvalidLengthGenesis
+			}
+			if postIndex > l {
+				return io.ErrUnexpectedEOF
+			}
+			if m.PauseExpirationTime == nil {
+				m.PauseExpirationTime = new(time.Time)
+			}
+			if err := github_com_cosmos_gogoproto_types.StdTimeUnmarshal(m.PauseExpirationTime, dAtA[iNdEx:postIndex]); err != nil {
+				return err
+			}
+			iNdEx = postIndex
 		default:
 			iNdEx = preIndex
 			skippy, err := skipGenesis(dAtA[iNdEx:])

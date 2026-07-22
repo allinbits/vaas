@@ -1,6 +1,7 @@
 package keeper_test
 
 import (
+	"fmt"
 	"testing"
 	"time"
 
@@ -10,6 +11,8 @@ import (
 	clienttypes "github.com/cosmos/ibc-go/v10/modules/core/02-client/types"
 	commitmenttypes "github.com/cosmos/ibc-go/v10/modules/core/23-commitment/types"
 	ibctmtypes "github.com/cosmos/ibc-go/v10/modules/light-clients/07-tendermint"
+
+	"cosmossdk.io/math"
 
 	cryptocodec "github.com/cosmos/cosmos-sdk/crypto/codec"
 	"github.com/cosmos/cosmos-sdk/crypto/keys/ed25519"
@@ -231,6 +234,148 @@ func TestGenesisRoundTripLastVSCRecvTime(t *testing.T) {
 	require.Equal(t, lastRecv, ck2.GetLastVSCRecvTime(ctx2))
 }
 
+// TestGenesisRoundTripDowntimeState verifies that the consumer's
+// downtime-detection state (in-progress missed-block bitmaps, first-tracked
+// heights, staged downtime params, and queued evidence packets) survives an
+// export/import restart.
+func TestGenesisRoundTripDowntimeState(t *testing.T) {
+	provClientID := "tendermint-07"
+	params := vaastypes.DefaultConsumerParams()
+	params.Enabled = true
+
+	pubKey := ed25519.GenPrivKey().PubKey()
+	tmPK, err := cryptocodec.ToCmtPubKeyInterface(pubKey)
+	require.NoError(t, err)
+	validator := tmtypes.NewValidator(tmPK, 1)
+
+	addr1 := []byte("validator-addr-downtime-one")
+	addr2 := []byte("validator-addr-downtime-two")
+	bitmap1 := []byte{0xFF, 0x00}
+	bitmap2 := []byte{0x0F, 0xF0}
+	staged := vaastypes.DowntimeParams{
+		SignedBlocksWindow: 200,
+		MinSignedPerWindow: math.LegacyNewDecWithPrec(6, 1),
+	}
+	evPacket := vaastypes.NewEvidencePacketData(
+		sdk.ConsAddress(addr1), 1, []byte{0xFF, 0x03}, 10, 100, math.LegacyNewDecWithPrec(5, 1),
+	)
+
+	ck, ctx, ctrl, _ := testkeeper.GetConsumerKeeperAndCtx(t, testkeeper.NewInMemKeeperParams(t))
+	defer ctrl.Finish()
+	ck.SetParams(ctx, params)
+	ck.SetProviderClientID(ctx, provClientID)
+	cVal, err := consumertypes.NewCCValidator(validator.Address.Bytes(), 1, pubKey)
+	require.NoError(t, err)
+	ck.SetCCValidator(ctx, cVal)
+	ck.SetHeightValsetUpdateID(ctx, 0, 0)
+
+	require.NoError(t, ck.MissedBlockBitmaps.Set(ctx, addr1, bitmap1))
+	require.NoError(t, ck.MissedBlockBitmaps.Set(ctx, addr2, bitmap2))
+	require.NoError(t, ck.FirstTrackedHeights.Set(ctx, addr1, 10))
+	require.NoError(t, ck.FirstTrackedHeights.Set(ctx, addr2, 20))
+	require.NoError(t, ck.StagedDowntimeParams.Set(ctx, staged))
+	require.NoError(t, ck.QueueEvidencePacket(ctx, evPacket))
+
+	exported := ck.ExportGenesis(ctx)
+	require.Len(t, exported.MissedBlockBitmaps, 2)
+	require.Len(t, exported.FirstTrackedHeights, 2)
+	require.NotNil(t, exported.StagedDowntimeParams)
+	require.Equal(t, staged, *exported.StagedDowntimeParams)
+	require.Len(t, exported.PendingEvidencePackets, 1)
+	require.Equal(t, addr1, exported.PendingEvidencePackets[0].Addr)
+	require.Equal(t, evPacket.GetBytes(), exported.PendingEvidencePackets[0].Packet)
+
+	ck2, ctx2, ctrl2, _ := testkeeper.GetConsumerKeeperAndCtx(t, testkeeper.NewInMemKeeperParams(t))
+	defer ctrl2.Finish()
+	ck2.InitGenesis(ctx2, exported)
+
+	gotBitmap1, err := ck2.MissedBlockBitmaps.Get(ctx2, addr1)
+	require.NoError(t, err, "MissedBlockBitmaps lost across round-trip")
+	require.Equal(t, bitmap1, gotBitmap1)
+	gotBitmap2, err := ck2.MissedBlockBitmaps.Get(ctx2, addr2)
+	require.NoError(t, err, "MissedBlockBitmaps lost across round-trip")
+	require.Equal(t, bitmap2, gotBitmap2)
+
+	gotHeight1, err := ck2.FirstTrackedHeights.Get(ctx2, addr1)
+	require.NoError(t, err, "FirstTrackedHeights lost across round-trip")
+	require.Equal(t, int64(10), gotHeight1)
+	gotHeight2, err := ck2.FirstTrackedHeights.Get(ctx2, addr2)
+	require.NoError(t, err, "FirstTrackedHeights lost across round-trip")
+	require.Equal(t, int64(20), gotHeight2)
+
+	gotStaged, err := ck2.StagedDowntimeParams.Get(ctx2)
+	require.NoError(t, err, "StagedDowntimeParams lost across round-trip")
+	require.Equal(t, staged, gotStaged)
+
+	gotPacket, err := ck2.PendingEvidencePackets.Get(ctx2, addr1)
+	require.NoError(t, err, "PendingEvidencePackets lost across round-trip")
+	require.Equal(t, evPacket.GetBytes(), gotPacket)
+
+	reExported := ck2.ExportGenesis(ctx2)
+	require.Equal(t, exported, reExported, "round-trip must be a fixed point")
+
+	// A genesis whose queued packet bytes are corrupt must be rejected by
+	// Validate before InitGenesis ever hands them to the keeper.
+	corrupt := consumertypes.NewRestartGenesisState(
+		provClientID,
+		exported.Provider.InitialValSet,
+		exported.HeightToValsetUpdateId,
+		params,
+	)
+	corrupt.PendingEvidencePackets = []consumertypes.PendingEvidencePacketEntry{
+		{Addr: addr1, Packet: []byte("{not json")},
+	}
+	require.Error(t, corrupt.Validate())
+
+	corrupt.PendingEvidencePackets = []consumertypes.PendingEvidencePacketEntry{
+		{Addr: addr1, Packet: evPacket.GetBytes()},
+	}
+	require.NoError(t, corrupt.Validate())
+}
+
+// TestGenesisRoundTripProviderChainId verifies the consumer's pinned
+// provider chain id survives an export/import restart: ExportGenesis
+// carries the pinned chain id, and InitGenesis's restart branch restores it
+// on a fresh keeper rather than leaving it unset until the next VSC packet
+// lazily re-establishes it via authenticateProviderChainID.
+func TestGenesisRoundTripProviderChainId(t *testing.T) {
+	provClientID := "tendermint-07"
+	params := vaastypes.DefaultConsumerParams()
+	params.Enabled = true
+
+	pubKey := ed25519.GenPrivKey().PubKey()
+	tmPK, err := cryptocodec.ToCmtPubKeyInterface(pubKey)
+	require.NoError(t, err)
+	validator := tmtypes.NewValidator(tmPK, 1)
+
+	providerChainId := "cosmoshub-4"
+
+	ck, ctx, ctrl, _ := testkeeper.GetConsumerKeeperAndCtx(t, testkeeper.NewInMemKeeperParams(t))
+	defer ctrl.Finish()
+	ck.SetParams(ctx, params)
+	ck.SetProviderClientID(ctx, provClientID)
+	cVal, err := consumertypes.NewCCValidator(validator.Address.Bytes(), 1, pubKey)
+	require.NoError(t, err)
+	ck.SetCCValidator(ctx, cVal)
+	ck.SetHeightValsetUpdateID(ctx, 0, 0)
+	ck.SetProviderChainId(ctx, providerChainId)
+
+	exported := ck.ExportGenesis(ctx)
+	require.Equal(t, providerChainId, exported.ProviderChainId, "export must carry provider_chain_id")
+	require.False(t, exported.NewChain, "restart export must not be a new-chain genesis")
+
+	ck2, ctx2, ctrl2, _ := testkeeper.GetConsumerKeeperAndCtx(t, testkeeper.NewInMemKeeperParams(t))
+	defer ctrl2.Finish()
+	ck2.InitGenesis(ctx2, exported)
+
+	gotChainId, ok := ck2.GetProviderChainId(ctx2)
+	require.True(t, ok, "ProviderChainId lost across round-trip")
+	require.Equal(t, providerChainId, gotChainId)
+
+	reExported := ck2.ExportGenesis(ctx2)
+	require.Equal(t, exported, reExported, "round-trip must be a fixed point")
+}
+
 func assertProviderClientID(t *testing.T, ctx sdk.Context, ck *consumerkeeper.Keeper, clientID string) {
 	t.Helper()
 	cid, ok := ck.GetProviderClientID(ctx)
@@ -275,4 +420,48 @@ func TestHighestValsetUpdateID(t *testing.T) {
 	require.NoError(t, err)
 	require.True(t, found)
 	require.Equal(t, uint64(3), highestID)
+}
+
+// TestInitGenesisPanicsOnInvalidStagedDowntimeParams verifies that InitGenesis
+// halts on staged downtime params carrying a nil MinSignedPerWindow -- the
+// value a genesis JSON that omits the min_signed_per_window key deserializes
+// to -- instead of storing them for applyStagedDowntimeParams to copy into
+// the consumer params at the next window close.
+func TestInitGenesisPanicsOnInvalidStagedDowntimeParams(t *testing.T) {
+	consumerKeeper, ctx, ctrl, _ := testkeeper.GetConsumerKeeperAndCtx(t, testkeeper.NewInMemKeeperParams(t))
+	defer ctrl.Finish()
+
+	cId := crypto.NewCryptoIdentityFromIntSeed(738294)
+	validator := tmtypes.NewValidator(cId.TMCryptoPubKey(), 1)
+	valset := []abci.ValidatorUpdate{tmtypes.TM2PB.ValidatorUpdate(validator)}
+
+	params := vaastypes.DefaultConsumerParams()
+	params.Enabled = true
+	genesis := consumertypes.NewRestartGenesisState(
+		"07-tendermint-0",
+		valset,
+		[]consumertypes.HeightToValsetUpdateID{{ValsetUpdateId: 1, Height: 1}},
+		params,
+	)
+	genesis.StagedDowntimeParams = &vaastypes.DowntimeParams{
+		SignedBlocksWindow: params.SignedBlocksWindow,
+		MinSignedPerWindow: math.LegacyDec{},
+	}
+
+	var recovered any
+	func() {
+		defer func() { recovered = recover() }()
+		consumerKeeper.InitGenesis(ctx, genesis)
+	}()
+	require.NotNil(t, recovered)
+	require.Contains(t, fmt.Sprint(recovered), "min_signed_per_window")
+}
+
+// TestInitGenesisAcceptsDefaultGenesis verifies that InitGenesis accepts the
+// module's own default genesis state.
+func TestInitGenesisAcceptsDefaultGenesis(t *testing.T) {
+	consumerKeeper, ctx, ctrl, _ := testkeeper.GetConsumerKeeperAndCtx(t, testkeeper.NewInMemKeeperParams(t))
+	defer ctrl.Finish()
+
+	require.NotPanics(t, func() { consumerKeeper.InitGenesis(ctx, consumertypes.DefaultGenesisState()) })
 }

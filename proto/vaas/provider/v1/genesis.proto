@@ -43,6 +43,97 @@ message GenesisState {
   // empty for a new chain
   repeated ConsumerFeePoolShare consumer_fee_pool_shares = 9
       [ (gogoproto.nullable) = false ];
+
+  // Downtime slashes accepted from consumers but not yet executed. Empty for
+  // a new chain.
+  repeated PendingDowntimeSlash pending_downtime_slashes = 10
+      [ (gogoproto.nullable) = false ];
+
+  // The downtime params in effect immediately before the last change to
+  // InfractionParams, if any. Absent means the downtime params have never
+  // changed.
+  PreviousDowntimeParams previous_downtime_params = 11;
+
+  // Per-validator fee-share records from each consumer's fee distribution
+  // runs. Empty for a new chain.
+  repeated EpochShareRecord epoch_share_records = 12
+      [ (gogoproto.nullable) = false ];
+
+  // Optional override for the module's infraction parameters (double-sign /
+  // downtime slash+jail settings, the downtime detection window, and the
+  // downtime challenge window / evidence max age). Absent means
+  // DefaultInfractionParameters().
+  InfractionParameters infraction_parameters = 13;
+
+  // Fee shares withheld from validators pending a downtime challenge window,
+  // or already forfeited. Empty for a new chain.
+  repeated WithheldFeeRecord withheld_fee_records = 14
+      [ (gogoproto.nullable) = false ];
+
+  // Per-(consumer, validator) downtime-detection windows already accepted,
+  // one record per window, preventing re-acceptance of intersecting
+  // evidence. Empty for a new chain.
+  repeated AcceptedDowntimeWindowRecord accepted_downtime_windows = 15
+      [ (gogoproto.nullable) = false ];
+
+  // Per-(consumer, validator) downtime marks for the epoch fee distribution
+  // currently in progress. Empty for a new chain.
+  repeated EpochDowntimeEntry epoch_downtime_entries = 16
+      [ (gogoproto.nullable) = false ];
+
+  // Per-(consumer, validator) pruned acceptance floors: the window-end
+  // height at or below which downtime evidence is rejected outright because
+  // the accepted-window records covering it have been pruned. Empty for a
+  // new chain.
+  repeated DowntimeWindowFloor downtime_window_floors = 17
+      [ (gogoproto.nullable) = false ];
+}
+
+// AcceptedDowntimeWindowRecord is a single (consumer_id, provider_cons_addr,
+// window_end_height) entry from the keeper's AcceptedDowntimeWindows
+// collection: one downtime-detection window whose evidence has already been
+// accepted for that validator, used to reject intersecting or re-submitted
+// evidence. Recording happens at acceptance, independent of whether the
+// resulting slash ever executes.
+message AcceptedDowntimeWindowRecord {
+  uint64 consumer_id = 1;
+  bytes provider_cons_addr = 2;
+  int64 window_end_height = 3;
+  int64 window_start_height = 4;
+  google.protobuf.Timestamp accepted_at = 5
+      [ (gogoproto.nullable) = false, (gogoproto.stdtime) = true ];
+}
+
+// DowntimeWindowFloor is a single (consumer_id, provider_cons_addr) entry
+// from the keeper's DowntimeWindowFloors collection: the window-end height
+// at or below which downtime evidence for that validator is rejected
+// outright, because the accepted-window records covering those heights have
+// been pruned and intersection cannot be checked against them.
+// Advanced only by pruning, never by acceptance.
+message DowntimeWindowFloor {
+  uint64 consumer_id = 1;
+  bytes provider_cons_addr = 2;
+  int64 window_end_height = 3;
+}
+
+// EpochDowntimeEntry is a single (consumer_id, provider_cons_addr) entry from
+// the keeper's EpochDowntime collection, marking a validator as down for the
+// consumer's current epoch fee distribution.
+message EpochDowntimeEntry {
+  uint64 consumer_id = 1;
+  bytes provider_cons_addr = 2;
+}
+
+// EpochShareRecord is a single per-validator fee-share record produced by a
+// consumer's fee distribution run, keyed by (consumer_id, distributed_at).
+message EpochShareRecord {
+  uint64 consumer_id = 1;
+  int64 distributed_at_unix_nano = 2;
+  string share = 3 [
+    (cosmos_proto.scalar) = "cosmos.Int",
+    (gogoproto.customtype) = "cosmossdk.io/math.Int",
+    (gogoproto.nullable) = false
+  ];
 }
 
 // The provider VAAS module's knowledge of consumer state.
@@ -97,6 +188,13 @@ message ConsumerState {
       [ (gogoproto.stdtime) = true ];
   uint64 highest_sent_vsc_id = 14;
   uint64 highest_acked_vsc_id = 15;
+
+  // PauseExpirationTime is the wall-clock time at which a PAUSED consumer is
+  // scheduled to be auto-stopped if the pause has not otherwise been
+  // resolved. Set only when phase == PAUSED; absent otherwise. Used to
+  // re-derive the keeper's pause-expiration queue.
+  google.protobuf.Timestamp pause_expiration_time = 16
+      [ (gogoproto.stdtime) = true ];
 }
 
 // ValsetUpdateIdToHeight defines the genesis information for the mapping

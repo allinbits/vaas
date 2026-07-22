@@ -91,7 +91,7 @@ func (k Keeper) SendEvidencePackets(ctx sdk.Context) error {
 			"sequence", resp.Sequence,
 			"validator", evidencePacket.ValidatorAddr.String(),
 			"infraction", evidencePacket.Infraction.String(),
-			"infraction_height", evidencePacket.InfractionHeight,
+			"window_end_height", evidencePacket.WindowEndHeight,
 		)
 
 		keysToDelete = append(keysToDelete, kv.Key)
@@ -101,7 +101,7 @@ func (k Keeper) SendEvidencePackets(ctx sdk.Context) error {
 				vaastypes.EventTypeConsumerEvidenceRequest,
 				sdk.NewAttribute(sdk.AttributeKeyModule, types.ModuleName),
 				sdk.NewAttribute(vaastypes.AttributeValidatorAddress, evidencePacket.ValidatorAddr.String()),
-				sdk.NewAttribute(vaastypes.AttributeInfractionHeight, fmt.Sprintf("%d", evidencePacket.InfractionHeight)),
+				sdk.NewAttribute(vaastypes.AttributeWindowEndHeight, fmt.Sprintf("%d", evidencePacket.WindowEndHeight)),
 				sdk.NewAttribute(vaastypes.AttributeInfractionType, evidencePacket.Infraction.String()),
 			),
 		)

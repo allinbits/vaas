@@ -37,6 +37,7 @@ func TestBeginBlockCommitsDebtStateWhenDistributionFails(t *testing.T) {
 	providerParams := providertypes.DefaultParams()
 	providerParams.FeesPerBlockAmount = feesPerBlock.Amount
 	k.SetParams(ctx, providerParams)
+	k.SetInfractionParams(ctx, providertypes.InfractionParameters{})
 
 	consumerInDebtPool := k.GetConsumerFeePoolAddress(consumerInDebt)
 	consumerPayingPool := k.GetConsumerFeePoolAddress(consumerPaying)
@@ -98,6 +99,7 @@ func TestBeginBlockSkipsFeeCollectionWhenNotAtEpochBoundary(t *testing.T) {
 	providerParams := providertypes.DefaultParams()
 	providerParams.FeesPerBlockAmount = feesPerBlock.Amount
 	k.SetParams(ctx, providerParams)
+	k.SetInfractionParams(ctx, providertypes.InfractionParameters{})
 
 	// Height 100 is not an epoch boundary (blocks_per_epoch=600)
 	ctx = ctx.WithBlockHeight(100)
@@ -125,6 +127,7 @@ func TestBeginBlockCollectsFeesAtEpochBoundary(t *testing.T) {
 	providerParams := providertypes.DefaultParams()
 	providerParams.FeesPerBlockAmount = feesPerBlock.Amount
 	k.SetParams(ctx, providerParams)
+	k.SetInfractionParams(ctx, providertypes.InfractionParameters{})
 
 	consumerFeePoolAddr := k.GetConsumerFeePoolAddress(consumer)
 

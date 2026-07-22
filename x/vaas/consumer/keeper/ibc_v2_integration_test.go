@@ -19,8 +19,9 @@ import (
 // 2. Consumer accumulates validator updates
 // 3. Consumer tracks highest valset update ID for out-of-order handling
 func TestIBCV2ConsumerFullVSCFlow(t *testing.T) {
-	consumerKeeper, ctx, ctrl, _ := testkeeper.GetConsumerKeeperAndCtx(t, testkeeper.NewInMemKeeperParams(t))
+	consumerKeeper, ctx, ctrl, mocks := testkeeper.GetConsumerKeeperAndCtx(t, testkeeper.NewInMemKeeperParams(t))
 	defer ctrl.Finish()
+	testkeeper.StubClientState(mocks, "provider-0")
 
 	providerClientID := "07-tendermint-0"
 
@@ -78,8 +79,9 @@ func TestIBCV2ConsumerFullVSCFlow(t *testing.T) {
 // TestIBCV2ConsumerOutOfOrderHandling tests that out-of-order packets are
 // acknowledged but not processed.
 func TestIBCV2ConsumerOutOfOrderHandling(t *testing.T) {
-	consumerKeeper, ctx, ctrl, _ := testkeeper.GetConsumerKeeperAndCtx(t, testkeeper.NewInMemKeeperParams(t))
+	consumerKeeper, ctx, ctrl, mocks := testkeeper.GetConsumerKeeperAndCtx(t, testkeeper.NewInMemKeeperParams(t))
 	defer ctrl.Finish()
+	testkeeper.StubClientState(mocks, "provider-0")
 
 	providerClientID := "07-tendermint-0"
 
@@ -135,8 +137,9 @@ func TestIBCV2ConsumerOutOfOrderHandling(t *testing.T) {
 // TestIBCV2ConsumerRejectsUnknownProvider tests that packets from an unknown
 // provider client are rejected after the provider is established.
 func TestIBCV2ConsumerRejectsUnknownProvider(t *testing.T) {
-	consumerKeeper, ctx, ctrl, _ := testkeeper.GetConsumerKeeperAndCtx(t, testkeeper.NewInMemKeeperParams(t))
+	consumerKeeper, ctx, ctrl, mocks := testkeeper.GetConsumerKeeperAndCtx(t, testkeeper.NewInMemKeeperParams(t))
 	defer ctrl.Finish()
+	testkeeper.StubClientState(mocks, "provider-0")
 
 	providerClientID := "07-tendermint-0"
 	unknownClientID := "07-tendermint-999"
@@ -193,8 +196,9 @@ func TestIBCV2ConsumerProviderInfoQuery(t *testing.T) {
 // TestIBCV2ConsumerDuplicatePacketHandling tests that duplicate packets
 // (same valset update ID) are acknowledged but ignored.
 func TestIBCV2ConsumerDuplicatePacketHandling(t *testing.T) {
-	consumerKeeper, ctx, ctrl, _ := testkeeper.GetConsumerKeeperAndCtx(t, testkeeper.NewInMemKeeperParams(t))
+	consumerKeeper, ctx, ctrl, mocks := testkeeper.GetConsumerKeeperAndCtx(t, testkeeper.NewInMemKeeperParams(t))
 	defer ctrl.Finish()
+	testkeeper.StubClientState(mocks, "provider-0")
 
 	providerClientID := "07-tendermint-0"
 

@@ -6,11 +6,16 @@ import (
 	"time"
 
 	"github.com/stretchr/testify/require"
+	"go.uber.org/mock/gomock"
 
 	cryptocodec "github.com/cosmos/cosmos-sdk/crypto/codec"
 	"github.com/cosmos/cosmos-sdk/crypto/keys/ed25519"
 
 	abci "github.com/cometbft/cometbft/abci/types"
+
+	ibctmtypes "github.com/cosmos/ibc-go/v10/modules/light-clients/07-tendermint"
+
+	"cosmossdk.io/math"
 
 	testcrypto "github.com/allinbits/vaas/testutil/crypto"
 	testkeeper "github.com/allinbits/vaas/testutil/keeper"
@@ -37,8 +42,9 @@ func TestOnRecvVSCPacketV2(t *testing.T) {
 		{PubKey: pk3, Power: 10},
 	}
 
-	consumerKeeper, ctx, ctrl, _ := testkeeper.GetConsumerKeeperAndCtx(t, testkeeper.NewInMemKeeperParams(t))
+	consumerKeeper, ctx, ctrl, mocks := testkeeper.GetConsumerKeeperAndCtx(t, testkeeper.NewInMemKeeperParams(t))
 	defer ctrl.Finish()
+	testkeeper.StubClientState(mocks, "provider-0")
 
 	pd1 := types.NewValidatorSetChangePacketData(changes1, 1)
 	err = consumerKeeper.OnRecvVSCPacketV2(ctx, providerClientID, pd1)
@@ -82,8 +88,9 @@ func TestOnRecvVSCPacketV2OutOfOrder(t *testing.T) {
 	pk2, err := cryptocodec.ToCmtProtoPublicKey(ed25519.GenPrivKey().PubKey())
 	require.NoError(t, err)
 
-	consumerKeeper, ctx, ctrl, _ := testkeeper.GetConsumerKeeperAndCtx(t, testkeeper.NewInMemKeeperParams(t))
+	consumerKeeper, ctx, ctrl, mocks := testkeeper.GetConsumerKeeperAndCtx(t, testkeeper.NewInMemKeeperParams(t))
 	defer ctrl.Finish()
+	testkeeper.StubClientState(mocks, "provider-0")
 
 	changes5 := []abci.ValidatorUpdate{{PubKey: pk1, Power: 50}}
 	pd5 := types.NewValidatorSetChangePacketData(changes5, 5)
@@ -129,8 +136,9 @@ func TestOnRecvVSCPacketV2FirstPacketNotDropped(t *testing.T) {
 	pk1, err := cryptocodec.ToCmtProtoPublicKey(ed25519.GenPrivKey().PubKey())
 	require.NoError(t, err)
 
-	consumerKeeper, ctx, ctrl, _ := testkeeper.GetConsumerKeeperAndCtx(t, testkeeper.NewInMemKeeperParams(t))
+	consumerKeeper, ctx, ctrl, mocks := testkeeper.GetConsumerKeeperAndCtx(t, testkeeper.NewInMemKeeperParams(t))
 	defer ctrl.Finish()
+	testkeeper.StubClientState(mocks, "provider-0")
 
 	_, found, err := consumerKeeper.GetHighestValsetUpdateID(ctx)
 	require.NoError(t, err)
@@ -172,8 +180,9 @@ func TestOnRecvVSCPacketV2AccumulatesChanges(t *testing.T) {
 		{PubKey: pk3, Power: 10},
 	}
 
-	consumerKeeper, ctx, ctrl, _ := testkeeper.GetConsumerKeeperAndCtx(t, testkeeper.NewInMemKeeperParams(t))
+	consumerKeeper, ctx, ctrl, mocks := testkeeper.GetConsumerKeeperAndCtx(t, testkeeper.NewInMemKeeperParams(t))
 	defer ctrl.Finish()
+	testkeeper.StubClientState(mocks, "provider-0")
 
 	pd1 := types.NewValidatorSetChangePacketData(changes1, 1)
 	err = consumerKeeper.OnRecvVSCPacketV2(ctx, providerClientID, pd1)
@@ -204,8 +213,9 @@ func TestOnRecvVSCPacketV2AccumulatesChanges(t *testing.T) {
 func TestOnRecvVSCPacketV2DuplicateUpdates(t *testing.T) {
 	providerClientID := "07-tendermint-0"
 
-	consumerKeeper, ctx, ctrl, _ := testkeeper.GetConsumerKeeperAndCtx(t, testkeeper.NewInMemKeeperParams(t))
+	consumerKeeper, ctx, ctrl, mocks := testkeeper.GetConsumerKeeperAndCtx(t, testkeeper.NewInMemKeeperParams(t))
 	defer ctrl.Finish()
+	testkeeper.StubClientState(mocks, "provider-0")
 
 	cId := testcrypto.NewCryptoIdentityFromIntSeed(43278947)
 	valUpdates := []abci.ValidatorUpdate{
@@ -230,8 +240,9 @@ func TestOnRecvVSCPacketV2DuplicateUpdates(t *testing.T) {
 func TestOnRecvVSCPacketV2DebtStatus(t *testing.T) {
 	providerClientID := "07-tendermint-0"
 
-	consumerKeeper, ctx, ctrl, _ := testkeeper.GetConsumerKeeperAndCtx(t, testkeeper.NewInMemKeeperParams(t))
+	consumerKeeper, ctx, ctrl, mocks := testkeeper.GetConsumerKeeperAndCtx(t, testkeeper.NewInMemKeeperParams(t))
 	defer ctrl.Finish()
+	testkeeper.StubClientState(mocks, "provider-0")
 
 	require.False(t, consumerKeeper.IsConsumerInDebt(ctx))
 
@@ -247,8 +258,9 @@ func TestOnRecvVSCPacketV2DebtStatus(t *testing.T) {
 }
 
 func TestConsumerVSCStaleness(t *testing.T) {
-	k, ctx, ctrl, _ := testkeeper.GetConsumerKeeperAndCtx(t, testkeeper.NewInMemKeeperParams(t))
+	k, ctx, ctrl, mocks := testkeeper.GetConsumerKeeperAndCtx(t, testkeeper.NewInMemKeeperParams(t))
 	defer ctrl.Finish()
+	testkeeper.StubClientState(mocks, "provider-0")
 
 	// Use a non-default threshold so this proves IsVSCStale reads the param
 	// value (not a constant) and that the boundary tracks the param.
@@ -276,8 +288,9 @@ func TestConsumerVSCStaleness(t *testing.T) {
 }
 
 func TestSnapshotReplacesValidatorSet(t *testing.T) {
-	k, ctx, ctrl, _ := testkeeper.GetConsumerKeeperAndCtx(t, testkeeper.NewInMemKeeperParams(t))
+	k, ctx, ctrl, mocks := testkeeper.GetConsumerKeeperAndCtx(t, testkeeper.NewInMemKeeperParams(t))
 	defer ctrl.Finish()
+	testkeeper.StubClientState(mocks, "provider-0")
 
 	pkA := ed25519.GenPrivKey().PubKey()
 	pkB := ed25519.GenPrivKey().PubKey()
@@ -313,8 +326,9 @@ func TestOnRecvVSCRecordsRecvTime(t *testing.T) {
 	pk1, err := cryptocodec.ToCmtProtoPublicKey(ed25519.GenPrivKey().PubKey())
 	require.NoError(t, err)
 
-	consumerKeeper, ctx, ctrl, _ := testkeeper.GetConsumerKeeperAndCtx(t, testkeeper.NewInMemKeeperParams(t))
+	consumerKeeper, ctx, ctrl, mocks := testkeeper.GetConsumerKeeperAndCtx(t, testkeeper.NewInMemKeeperParams(t))
 	defer ctrl.Finish()
+	testkeeper.StubClientState(mocks, "provider-0")
 
 	advancedTime := ctx.BlockTime().Add(10 * time.Minute)
 	ctx = ctx.WithBlockTime(advancedTime)
@@ -337,8 +351,9 @@ func TestDedupDoesNotResetLastVSCRecvTime(t *testing.T) {
 	pk1, err := cryptocodec.ToCmtProtoPublicKey(ed25519.GenPrivKey().PubKey())
 	require.NoError(t, err)
 
-	k, ctx, ctrl, _ := testkeeper.GetConsumerKeeperAndCtx(t, testkeeper.NewInMemKeeperParams(t))
+	k, ctx, ctrl, mocks := testkeeper.GetConsumerKeeperAndCtx(t, testkeeper.NewInMemKeeperParams(t))
 	defer ctrl.Finish()
+	testkeeper.StubClientState(mocks, "provider-0")
 
 	// Deliver packet at blockTime T1 -- records lastVSCRecvTime = T1.
 	t1 := ctx.BlockTime().Add(5 * time.Minute)
@@ -367,8 +382,9 @@ func TestRecvPacketAfterStalenessLiftsStale(t *testing.T) {
 	pk1, err := cryptocodec.ToCmtProtoPublicKey(ed25519.GenPrivKey().PubKey())
 	require.NoError(t, err)
 
-	k, ctx, ctrl, _ := testkeeper.GetConsumerKeeperAndCtx(t, testkeeper.NewInMemKeeperParams(t))
+	k, ctx, ctrl, mocks := testkeeper.GetConsumerKeeperAndCtx(t, testkeeper.NewInMemKeeperParams(t))
 	defer ctrl.Finish()
+	testkeeper.StubClientState(mocks, "provider-0")
 
 	const threshold = 2 * time.Hour
 	k.SetParams(ctx, types.NewConsumerParams(
@@ -397,12 +413,63 @@ func TestRecvPacketAfterStalenessLiftsStale(t *testing.T) {
 	require.False(t, k.IsVSCStale(staleCtx), "resync must lift safe mode")
 }
 
+// TestOnRecvVSCPacketStagesDowntimeParams verifies that a VSC packet carrying
+// downtime params different from the consumer's current ones is staged (not
+// applied live), and that a stale (already-seen) vsc id does not stage
+// anything, even if it carries different downtime params.
+func TestOnRecvVSCPacketStagesDowntimeParams(t *testing.T) {
+	providerClientID := "07-tendermint-0"
+
+	k, ctx, ctrl, mocks := testkeeper.GetConsumerKeeperAndCtx(t, testkeeper.NewInMemKeeperParams(t))
+	defer ctrl.Finish()
+	testkeeper.StubClientState(mocks, "provider-0")
+
+	initialParams := types.DefaultConsumerParams()
+	k.SetParams(ctx, initialParams)
+
+	staged := types.DowntimeParams{
+		SignedBlocksWindow: initialParams.SignedBlocksWindow * 2,
+		MinSignedPerWindow: math.LegacyMustNewDecFromStr("0.75"),
+	}
+
+	pd := types.NewValidatorSetChangePacketData(nil, 1)
+	pd.DowntimeParams = &staged
+	require.NoError(t, k.OnRecvVSCPacketV2(ctx, providerClientID, pd))
+
+	// The staged value is recorded...
+	got, err := k.StagedDowntimeParams.Get(ctx)
+	require.NoError(t, err)
+	require.Equal(t, staged.SignedBlocksWindow, got.SignedBlocksWindow)
+	require.True(t, staged.MinSignedPerWindow.Equal(got.MinSignedPerWindow))
+
+	// ...but the live params are untouched until the next window boundary.
+	live := k.GetConsumerParams(ctx)
+	require.Equal(t, initialParams.SignedBlocksWindow, live.SignedBlocksWindow)
+	require.True(t, initialParams.MinSignedPerWindow.Equal(live.MinSignedPerWindow))
+
+	// Clear the staged value, then replay a stale (already-seen) vsc id
+	// carrying yet another set of downtime params: it must not be staged.
+	require.NoError(t, k.StagedDowntimeParams.Remove(ctx))
+
+	stale := types.DowntimeParams{
+		SignedBlocksWindow: initialParams.SignedBlocksWindow * 3,
+		MinSignedPerWindow: math.LegacyMustNewDecFromStr("0.9"),
+	}
+	pdStale := types.NewValidatorSetChangePacketData(nil, 1)
+	pdStale.DowntimeParams = &stale
+	require.NoError(t, k.OnRecvVSCPacketV2(ctx, providerClientID, pdStale))
+
+	_, err = k.StagedDowntimeParams.Get(ctx)
+	require.Error(t, err, "a stale vsc id must not stage downtime params")
+}
+
 // TestSnapshotResyncEmitsEvent verifies the consumer emits EventTypeSnapshotResync
 // when (and only when) it applies a snapshot packet, so the resync is observable
 // (used by the e2e to distinguish a snapshot from a resent diff).
 func TestSnapshotResyncEmitsEvent(t *testing.T) {
-	k, ctx, ctrl, _ := testkeeper.GetConsumerKeeperAndCtx(t, testkeeper.NewInMemKeeperParams(t))
+	k, ctx, ctrl, mocks := testkeeper.GetConsumerKeeperAndCtx(t, testkeeper.NewInMemKeeperParams(t))
 	defer ctrl.Finish()
+	testkeeper.StubClientState(mocks, "provider-0")
 
 	pk := ed25519.GenPrivKey().PubKey()
 	tm, err := cryptocodec.ToCmtProtoPublicKey(pk)
@@ -436,8 +503,9 @@ func TestSnapshotResyncEmitsEvent(t *testing.T) {
 // TestSnapshotPowerChange seeds the CC set with A=10 and delivers a snapshot
 // that changes A's power to 50. PendingChanges must contain A at power 50.
 func TestSnapshotPowerChange(t *testing.T) {
-	k, ctx, ctrl, _ := testkeeper.GetConsumerKeeperAndCtx(t, testkeeper.NewInMemKeeperParams(t))
+	k, ctx, ctrl, mocks := testkeeper.GetConsumerKeeperAndCtx(t, testkeeper.NewInMemKeeperParams(t))
 	defer ctrl.Finish()
+	testkeeper.StubClientState(mocks, "provider-0")
 
 	pkA, err := cryptocodec.ToCmtProtoPublicKey(ed25519.GenPrivKey().PubKey())
 	require.NoError(t, err)
@@ -460,8 +528,9 @@ func TestSnapshotPowerChange(t *testing.T) {
 // PendingChanges must contain both A and B at their snapshot powers, with no
 // power-0 entry for A.
 func TestSnapshotAddsNewValidator(t *testing.T) {
-	k, ctx, ctrl, _ := testkeeper.GetConsumerKeeperAndCtx(t, testkeeper.NewInMemKeeperParams(t))
+	k, ctx, ctrl, mocks := testkeeper.GetConsumerKeeperAndCtx(t, testkeeper.NewInMemKeeperParams(t))
 	defer ctrl.Finish()
+	testkeeper.StubClientState(mocks, "provider-0")
 
 	pkA, err := cryptocodec.ToCmtProtoPublicKey(ed25519.GenPrivKey().PubKey())
 	require.NoError(t, err)
@@ -494,8 +563,9 @@ func TestSnapshotAddsNewValidator(t *testing.T) {
 // TestSnapshotMultipleRemovals seeds {A, B, C} and delivers a snapshot {A only}.
 // PendingChanges must contain exactly 3 entries: A at its power, B=0, C=0.
 func TestSnapshotMultipleRemovals(t *testing.T) {
-	k, ctx, ctrl, _ := testkeeper.GetConsumerKeeperAndCtx(t, testkeeper.NewInMemKeeperParams(t))
+	k, ctx, ctrl, mocks := testkeeper.GetConsumerKeeperAndCtx(t, testkeeper.NewInMemKeeperParams(t))
 	defer ctrl.Finish()
+	testkeeper.StubClientState(mocks, "provider-0")
 
 	pkA, err := cryptocodec.ToCmtProtoPublicKey(ed25519.GenPrivKey().PubKey())
 	require.NoError(t, err)
@@ -533,8 +603,9 @@ func TestSnapshotMultipleRemovals(t *testing.T) {
 // validator updates (IsSnapshot=true, empty list). PendingChanges must contain
 // exactly two entries: A=0 and B=0.
 func TestSnapshotEmptyRemovesAll(t *testing.T) {
-	k, ctx, ctrl, _ := testkeeper.GetConsumerKeeperAndCtx(t, testkeeper.NewInMemKeeperParams(t))
+	k, ctx, ctrl, mocks := testkeeper.GetConsumerKeeperAndCtx(t, testkeeper.NewInMemKeeperParams(t))
 	defer ctrl.Finish()
+	testkeeper.StubClientState(mocks, "provider-0")
 
 	pkA, err := cryptocodec.ToCmtProtoPublicKey(ed25519.GenPrivKey().PubKey())
 	require.NoError(t, err)
@@ -565,8 +636,9 @@ func TestSnapshotEmptyRemovesAll(t *testing.T) {
 // PendingChanges, then immediately delivers a snapshot. The final PendingChanges
 // must contain only snapshot-derived updates (snapshot replaces, does not merge).
 func TestSnapshotReplacesEarlierPendingChanges(t *testing.T) {
-	k, ctx, ctrl, _ := testkeeper.GetConsumerKeeperAndCtx(t, testkeeper.NewInMemKeeperParams(t))
+	k, ctx, ctrl, mocks := testkeeper.GetConsumerKeeperAndCtx(t, testkeeper.NewInMemKeeperParams(t))
 	defer ctrl.Finish()
+	testkeeper.StubClientState(mocks, "provider-0")
 
 	pkA, err := cryptocodec.ToCmtProtoPublicKey(ed25519.GenPrivKey().PubKey())
 	require.NoError(t, err)
@@ -611,8 +683,9 @@ func TestSnapshotReplacesEarlierPendingChanges(t *testing.T) {
 // snapshot {A=10} (no power change). PendingChanges must contain exactly one
 // entry for A -- the identity match must not duplicate the update.
 func TestSnapshotNoDoubleEmitForUnchangedValidator(t *testing.T) {
-	k, ctx, ctrl, _ := testkeeper.GetConsumerKeeperAndCtx(t, testkeeper.NewInMemKeeperParams(t))
+	k, ctx, ctrl, mocks := testkeeper.GetConsumerKeeperAndCtx(t, testkeeper.NewInMemKeeperParams(t))
 	defer ctrl.Finish()
+	testkeeper.StubClientState(mocks, "provider-0")
 
 	pkA, err := cryptocodec.ToCmtProtoPublicKey(ed25519.GenPrivKey().PubKey())
 	require.NoError(t, err)
@@ -629,4 +702,131 @@ func TestSnapshotNoDoubleEmitForUnchangedValidator(t *testing.T) {
 	require.True(t, ok)
 	require.Len(t, pending.ValidatorUpdates, 1, "unchanged validator must appear exactly once in snapshot pending changes")
 	require.Equal(t, int64(10), pending.ValidatorUpdates[0].Power)
+}
+
+// TestOnRecvVSCPacketV2PinsProviderChainIdOnFirstPacket verifies that the
+// first VSC packet ever accepted pins ProviderChainId from the destination
+// client's tendermint chain id (see authenticateProviderChainID in relay.go),
+// establishing the value later packets get checked against.
+func TestOnRecvVSCPacketV2PinsProviderChainIdOnFirstPacket(t *testing.T) {
+	k, ctx, ctrl, mocks := testkeeper.GetConsumerKeeperAndCtx(t, testkeeper.NewInMemKeeperParams(t))
+	defer ctrl.Finish()
+
+	clientID := "07-tendermint-0"
+	mocks.MockClientKeeper.EXPECT().GetClientState(gomock.Any(), clientID).
+		Return(&ibctmtypes.ClientState{ChainId: "provider-chain"}, true).AnyTimes()
+
+	_, found := k.GetProviderChainId(ctx)
+	require.False(t, found, "no chain id should be pinned before the first packet is accepted")
+
+	pk1, err := cryptocodec.ToCmtProtoPublicKey(ed25519.GenPrivKey().PubKey())
+	require.NoError(t, err)
+	pd := types.NewValidatorSetChangePacketData([]abci.ValidatorUpdate{{PubKey: pk1, Power: 10}}, 1)
+	require.NoError(t, k.OnRecvVSCPacketV2(ctx, clientID, pd))
+
+	pinned, found := k.GetProviderChainId(ctx)
+	require.True(t, found)
+	require.Equal(t, "provider-chain", pinned)
+}
+
+// TestOnRecvVSCPacketV2RejectsDifferentChainId verifies that once a provider
+// chain id is pinned, a VSC packet delivered over a client tracking a
+// different chain id is rejected wholesale: the valset, ProviderClientID and
+// LastVSCRecvTime are all left exactly as they were, and nothing is staged.
+// Without this check, anyone able to stand up their own IBC v2 client and
+// get it routed to the consumer could impersonate the provider.
+func TestOnRecvVSCPacketV2RejectsDifferentChainId(t *testing.T) {
+	k, ctx, ctrl, mocks := testkeeper.GetConsumerKeeperAndCtx(t, testkeeper.NewInMemKeeperParams(t))
+	defer ctrl.Finish()
+
+	legitClientID := "07-tendermint-0"
+	rogueClientID := "07-tendermint-666"
+	mocks.MockClientKeeper.EXPECT().GetClientState(gomock.Any(), legitClientID).
+		Return(&ibctmtypes.ClientState{ChainId: "provider-chain"}, true).AnyTimes()
+	mocks.MockClientKeeper.EXPECT().GetClientState(gomock.Any(), rogueClientID).
+		Return(&ibctmtypes.ClientState{ChainId: "attacker-chain"}, true).AnyTimes()
+
+	pk1, err := cryptocodec.ToCmtProtoPublicKey(ed25519.GenPrivKey().PubKey())
+	require.NoError(t, err)
+
+	// A legitimate first packet establishes the pin.
+	pd1 := types.NewValidatorSetChangePacketData([]abci.ValidatorUpdate{{PubKey: pk1, Power: 10}}, 1)
+	require.NoError(t, k.OnRecvVSCPacketV2(ctx, legitClientID, pd1))
+
+	prevPending, ok := k.GetPendingChanges(ctx)
+	require.True(t, ok)
+	prevClientID, found := k.GetProviderClientID(ctx)
+	require.True(t, found)
+	prevRecvTime := k.GetLastVSCRecvTime(ctx)
+	prevHighestID, _, err := k.GetHighestValsetUpdateID(ctx)
+	require.NoError(t, err)
+
+	// Advance block time so a mutation to LastVSCRecvTime would be observable.
+	laterCtx := ctx.WithBlockTime(ctx.BlockTime().Add(time.Hour))
+
+	staged := types.DowntimeParams{
+		SignedBlocksWindow: 12345,
+		MinSignedPerWindow: math.LegacyMustNewDecFromStr("0.5"),
+	}
+	pd2 := types.NewValidatorSetChangePacketData([]abci.ValidatorUpdate{{PubKey: pk1, Power: 999}}, 2)
+	pd2.DowntimeParams = &staged
+	pd2.IsSnapshot = true
+	pd2.ConsumerInDebt = true
+
+	err = k.OnRecvVSCPacketV2(laterCtx, rogueClientID, pd2)
+	require.Error(t, err, "a packet delivered over a client tracking a different chain id must be rejected")
+
+	pending, ok := k.GetPendingChanges(ctx)
+	require.True(t, ok)
+	require.Equal(t, *prevPending, *pending, "valset must be unchanged by a rejected packet")
+
+	clientID, found := k.GetProviderClientID(ctx)
+	require.True(t, found)
+	require.Equal(t, prevClientID, clientID, "ProviderClientID must be unchanged by a rejected packet")
+
+	require.Equal(t, prevRecvTime, k.GetLastVSCRecvTime(laterCtx), "LastVSCRecvTime must be unchanged by a rejected packet")
+
+	require.False(t, k.IsConsumerInDebt(ctx), "the in-debt flag must be unchanged by a rejected packet")
+
+	_, err = k.StagedDowntimeParams.Get(ctx)
+	require.Error(t, err, "nothing should be staged from a rejected packet")
+
+	highestID, _, err := k.GetHighestValsetUpdateID(ctx)
+	require.NoError(t, err)
+	require.Equal(t, prevHighestID, highestID, "highest vsc id must not advance for a rejected packet")
+
+	pinned, found := k.GetProviderChainId(ctx)
+	require.True(t, found)
+	require.Equal(t, "provider-chain", pinned, "the pin itself must not change")
+}
+
+// TestOnRecvVSCPacketV2SameChainIdHealsClient adapts the pre-existing
+// heal regression coverage (see TestOnRecvVSCPacketV2 above and
+// TestIBCModuleOnRecvPacketHealsStaleProviderClient) to the chain-id gate:
+// a client replacement is allowed, and continues to heal ProviderClientID,
+// as long as the replacement client tracks the SAME pinned chain id.
+func TestOnRecvVSCPacketV2SameChainIdHealsClient(t *testing.T) {
+	k, ctx, ctrl, mocks := testkeeper.GetConsumerKeeperAndCtx(t, testkeeper.NewInMemKeeperParams(t))
+	defer ctrl.Finish()
+	testkeeper.StubClientState(mocks, "provider-chain")
+
+	staleClientID := "07-tendermint-0"
+	freshClientID := "07-tendermint-1"
+
+	pk1, err := cryptocodec.ToCmtProtoPublicKey(ed25519.GenPrivKey().PubKey())
+	require.NoError(t, err)
+	pd1 := types.NewValidatorSetChangePacketData([]abci.ValidatorUpdate{{PubKey: pk1, Power: 10}}, 1)
+	require.NoError(t, k.OnRecvVSCPacketV2(ctx, staleClientID, pd1))
+
+	pd2 := types.NewValidatorSetChangePacketData([]abci.ValidatorUpdate{{PubKey: pk1, Power: 20}}, 2)
+	require.NoError(t, k.OnRecvVSCPacketV2(ctx, freshClientID, pd2),
+		"a same-chain-id client replacement must still be accepted")
+
+	clientID, found := k.GetProviderClientID(ctx)
+	require.True(t, found)
+	require.Equal(t, freshClientID, clientID, "ProviderClientID must heal to the replacement client")
+
+	pinned, found := k.GetProviderChainId(ctx)
+	require.True(t, found)
+	require.Equal(t, "provider-chain", pinned, "the pinned chain id must not change on a same-chain-id heal")
 }

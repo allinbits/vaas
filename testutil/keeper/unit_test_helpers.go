@@ -17,6 +17,7 @@ import (
 
 	dbm "github.com/cosmos/cosmos-db"
 	clientv2types "github.com/cosmos/ibc-go/v10/modules/core/02-client/v2/types"
+	ibctmtypes "github.com/cosmos/ibc-go/v10/modules/light-clients/07-tendermint"
 
 	"cosmossdk.io/log"
 	"cosmossdk.io/store"
@@ -75,6 +76,7 @@ type MockedKeepers struct {
 	*MockChannelV2Keeper
 	*MockStakingKeeper
 	*MockSlashingKeeper
+	*MockPhotonKeeper
 	*MockAccountKeeper
 	*MockBankKeeper
 	*MockDistributionKeeper
@@ -88,6 +90,7 @@ func NewMockedKeepers(ctrl *gomock.Controller) MockedKeepers {
 		MockChannelV2Keeper:    NewMockChannelV2Keeper(ctrl),
 		MockStakingKeeper:      NewMockStakingKeeper(ctrl),
 		MockSlashingKeeper:     NewMockSlashingKeeper(ctrl),
+		MockPhotonKeeper:       NewMockPhotonKeeper(ctrl),
 		MockAccountKeeper:      NewMockAccountKeeper(ctrl),
 		MockBankKeeper:         NewMockBankKeeper(ctrl),
 		MockDistributionKeeper: NewMockDistributionKeeper(ctrl),
@@ -108,6 +111,7 @@ func NewInMemProviderKeeper(params InMemKeeperParams, mocks MockedKeepers) provi
 		mocks.MockChannelV2Keeper,
 		mocks.MockStakingKeeper,
 		mocks.MockSlashingKeeper,
+		mocks.MockPhotonKeeper,
 		mocks.MockAccountKeeper,
 		mocks.MockBankKeeper,
 		mocks.MockDistributionKeeper,
@@ -174,6 +178,20 @@ func ExpectCreateClientMock(ctx sdk.Context, mocks MockedKeepers, clientType, cl
 ) *gomock.Call {
 	return mocks.MockClientKeeper.EXPECT().CreateClient(ctx, clientType, clientState, consState).Return(clientID,
 		nil).Times(1)
+}
+
+// StubClientState makes every call to the mocked ClientKeeper's GetClientState
+// return a tendermint client state tracking chainID, regardless of which
+// client ID is queried. Intended for tests that exercise VSC handling
+// mechanics unrelated to provider-chain-id authentication (see
+// authenticateProviderChainID in x/vaas/consumer/keeper/relay.go), where
+// every client the test touches is meant to represent the same, legitimate
+// provider chain.
+func StubClientState(mocks MockedKeepers, chainID string) *gomock.Call {
+	return mocks.MockClientKeeper.EXPECT().
+		GetClientState(gomock.Any(), gomock.Any()).
+		Return(&ibctmtypes.ClientState{ChainId: chainID}, true).
+		AnyTimes()
 }
 
 func SetupMocksForLastBondedValidatorsExpectation(mockStakingKeeper *MockStakingKeeper, maxValidators uint32, vals []stakingtypes.Validator, times int) {

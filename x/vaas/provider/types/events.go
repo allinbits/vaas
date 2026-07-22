@@ -13,7 +13,6 @@ const (
 	EventTypeConsumerFeePoolWithdraw   = "consumer_fee_pool_withdraw"
 	EventTypeConsumerFeePoolSweep      = "consumer_fee_pool_sweep"
 
-	AttributeInfractionHeight         = "infraction_height"
 	AttributeInitialHeight            = "initial_height"
 	AttributeTrustingPeriod           = "trusting_period"
 	AttributeUnbondingPeriod          = "unbonding_period"

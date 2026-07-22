@@ -564,9 +564,9 @@ func (k msgServer) RemoveConsumer(goCtx context.Context, msg *types.MsgRemoveCon
 	}
 
 	phase := k.Keeper.GetConsumerPhase(ctx, consumerId)
-	if phase != types.CONSUMER_PHASE_LAUNCHED {
+	if phase != types.CONSUMER_PHASE_LAUNCHED && phase != types.CONSUMER_PHASE_PAUSED {
 		return &resp, errorsmod.Wrapf(types.ErrInvalidPhase,
-			"chain with consumer id: %d has to be in its launched phase", consumerId)
+			"chain with consumer id: %d has to be in its launched or paused phase", consumerId)
 	}
 
 	err = k.Keeper.StopAndPrepareForConsumerRemoval(ctx, consumerId)
@@ -769,9 +769,10 @@ func (k msgServer) WithdrawConsumerFeePool(
 
 	isGov := k.IsAuthority(msg.Signer)
 
-	if !isGov && k.GetConsumerPhase(ctx, msg.ConsumerId) == types.CONSUMER_PHASE_LAUNCHED {
+	if phase := k.GetConsumerPhase(ctx, msg.ConsumerId); !isGov &&
+		(phase == types.CONSUMER_PHASE_LAUNCHED || phase == types.CONSUMER_PHASE_PAUSED) {
 		return nil, errorsmod.Wrapf(types.ErrFeePoolLocked,
-			"withdraws are locked while consumer %d is launched; only the gov authority may withdraw at this stage",
+			"withdraws are locked while consumer %d is launched or paused; only the gov authority may withdraw at this stage",
 			msg.ConsumerId)
 	}
 
@@ -853,9 +854,10 @@ func (k msgServer) SweepConsumerFeePool(
 		return nil, errorsmod.Wrapf(types.ErrInvalidPhase,
 			"consumer %d is deleted; pool already auto-swept on delete", msg.ConsumerId)
 	}
-	if phase == types.CONSUMER_PHASE_LAUNCHED {
+	if phase == types.CONSUMER_PHASE_LAUNCHED || phase == types.CONSUMER_PHASE_PAUSED {
 		return nil, errorsmod.Wrapf(types.ErrFeePoolLocked,
-			"sweep is locked while consumer %d is launched", msg.ConsumerId)
+			"sweep is locked while consumer %d is launched or paused; the owner may sweep once the consumer reaches stopped",
+			msg.ConsumerId)
 	}
 
 	ownerAddrString, err := k.GetConsumerOwnerAddress(ctx, msg.ConsumerId)
@@ -872,4 +874,38 @@ func (k msgServer) SweepConsumerFeePool(
 	// The sweep cannot fail under valid state; it panics on corruption.
 	k.Keeper.SweepConsumerFeePool(ctx, msg.ConsumerId, msg.Denoms)
 	return &types.MsgSweepConsumerFeePoolResponse{}, nil
+}
+
+// ChallengeConsumerDowntime lets anyone contest a pending downtime slash by
+// proving the accused validator actually signed the claimed height; see
+// Keeper.HandleChallengeConsumerDowntime for the verification sequence.
+func (k msgServer) ChallengeConsumerDowntime(
+	goCtx context.Context, msg *types.MsgChallengeConsumerDowntime,
+) (*types.MsgChallengeConsumerDowntimeResponse, error) {
+	ctx := sdk.UnwrapSDKContext(goCtx)
+
+	if err := k.Keeper.HandleChallengeConsumerDowntime(ctx, msg); err != nil {
+		return nil, err
+	}
+
+	return &types.MsgChallengeConsumerDowntimeResponse{}, nil
+}
+
+// ResumeConsumer resumes a consumer chain from the PAUSED phase back to
+// LAUNCHED. Only the gov authority may call this; the resume logic itself
+// lives in ResumeConsumerChain (consumer_lifecycle.go), mirroring how
+// ChallengeConsumerDowntime delegates to HandleChallengeConsumerDowntime.
+func (k msgServer) ResumeConsumer(
+	goCtx context.Context, msg *types.MsgResumeConsumer,
+) (*types.MsgResumeConsumerResponse, error) {
+	if k.GetAuthority() != msg.Authority {
+		return nil, errorsmod.Wrapf(govtypes.ErrInvalidSigner, "invalid authority; expected %s, got %s", k.authority, msg.Authority)
+	}
+
+	ctx := sdk.UnwrapSDKContext(goCtx)
+	if err := k.Keeper.ResumeConsumerChain(ctx, msg.ConsumerId); err != nil {
+		return nil, err
+	}
+
+	return &types.MsgResumeConsumerResponse{}, nil
 }

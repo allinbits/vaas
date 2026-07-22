@@ -46,18 +46,45 @@ const (
 	// DefaultDoubleSignSlashFraction is the default slash fraction for double-sign infractions on consumer chains.
 	DefaultDoubleSignSlashFraction = "0.05"
 
-	// DefaultDowntimeSlashFraction is the default slash fraction for downtime infractions on consumer chains (0.05%).
-	DefaultDowntimeSlashFraction = "0.0005"
+	// DefaultDowntimeSlashFraction is the per-window ceiling on the
+	// fee-derived downtime slash, expressed as a fraction of stake -- never
+	// the slash itself. The slash is priced from foregone consumer fees
+	// (P*M/C, see docs/consumer-downtime.md, "Pricing and execution"),
+	// which under honest pricing sits far below this ceiling; the ceiling
+	// only bites when fee overrides or conversion-rate anomalies would
+	// otherwise turn a fee-sized number into a stake-threatening one.
+	// 0.0001 (0.01%) matches the Cosmos Hub's slash_fraction_downtime, so the
+	// worst case for a single mispriced window stays at liveness-fault
+	// scale, far below the double-sign fraction. Repeated windows compound
+	// with no aggregate bound: each pending slash is capped independently,
+	// but nothing limits how many windows a validator can accumulate.
+	DefaultDowntimeSlashFraction = "0.0001"
 
 	// DefaultDowntimeGracePeriod is the default grace period after a consumer chain launches
 	// during which downtime slashing is suppressed. This gives validators time to spin up
 	// their consumer chain nodes without being penalized for early downtime.
 	DefaultDowntimeGracePeriod = 7 * 24 * time.Hour // 1 week
 
+	// DefaultDowntimeChallengeWindow is the default duration during which
+	// downtime evidence for a given header may still be challenged/disputed
+	// before it is considered final.
+	DefaultDowntimeChallengeWindow = 7 * 24 * time.Hour
+
+	// DefaultDowntimeEvidenceMaxAge is the default maximum age of a header
+	// that downtime evidence may reference.
+	DefaultDowntimeEvidenceMaxAge = 72 * time.Hour
+
 	// DefaultMinDepositBlocks is the default minimum-deposit floor expressed
 	// as a multiplier of FeesPerBlock.Amount. 14400 blocks is roughly one day
 	// at a 6s block time, so the default floor is "one day's worth of fees."
 	DefaultMinDepositBlocks = uint64(14400)
+
+	// DefaultMaxPauseDuration is the default maximum time a consumer chain may
+	// remain in the PAUSED phase before the provider automatically stops it
+	// (see PauseConsumerChain). 720h (30 days) gives governance ample time to
+	// resolve whatever triggered the pause without leaving the consumer
+	// paused indefinitely.
+	DefaultMaxPauseDuration = 720 * time.Hour
 )
 
 // NewParams creates new provider parameters with provided arguments
@@ -68,6 +95,7 @@ func NewParams(
 	blocksPerEpoch int64,
 	feesPerBlockAmount math.Int,
 	minDepositBlocks uint64,
+	maxPauseDuration time.Duration,
 ) Params {
 	return Params{
 		TrustingPeriodFraction: trustingPeriodFraction,
@@ -76,6 +104,7 @@ func NewParams(
 		BlocksPerEpoch:         blocksPerEpoch,
 		FeesPerBlockAmount:     feesPerBlockAmount,
 		MinDepositBlocks:       minDepositBlocks,
+		MaxPauseDuration:       maxPauseDuration,
 	}
 }
 
@@ -87,6 +116,7 @@ func DefaultParams() Params {
 		DefaultBlocksPerEpoch,
 		math.NewInt(DefaultFeesPerBlockAmount),
 		DefaultMinDepositBlocks,
+		DefaultMaxPauseDuration,
 	)
 }
 
@@ -94,6 +124,7 @@ func DefaultParams() Params {
 func DefaultInfractionParameters() InfractionParameters {
 	doubleSignSlashFraction, _ := math.LegacyNewDecFromStr(DefaultDoubleSignSlashFraction)
 	downtimeSlashFraction, _ := math.LegacyNewDecFromStr(DefaultDowntimeSlashFraction)
+	minSignedPerWindow, _ := math.LegacyNewDecFromStr(vaastypes.DefaultMinSignedPerWindow)
 	return InfractionParameters{
 		DoubleSign: &SlashJailParameters{
 			JailDuration:  time.Duration(1<<63 - 1),
@@ -105,7 +136,11 @@ func DefaultInfractionParameters() InfractionParameters {
 			SlashFraction: downtimeSlashFraction,
 			Tombstone:     false,
 		},
-		DowntimeGracePeriod: DefaultDowntimeGracePeriod,
+		DowntimeGracePeriod:     DefaultDowntimeGracePeriod,
+		SignedBlocksWindow:      vaastypes.DefaultSignedBlocksWindow,
+		MinSignedPerWindow:      minSignedPerWindow,
+		DowntimeChallengeWindow: DefaultDowntimeChallengeWindow,
+		DowntimeEvidenceMaxAge:  DefaultDowntimeEvidenceMaxAge,
 	}
 }
 
@@ -142,6 +177,45 @@ func (ip InfractionParameters) Validate() error {
 	if ip.DowntimeGracePeriod < 0 {
 		return fmt.Errorf("downtime_grace_period must not be negative")
 	}
+	if err := vaastypes.ValidatePositiveInt64(ip.SignedBlocksWindow); err != nil {
+		return fmt.Errorf("signed_blocks_window: %s", err)
+	}
+	if ip.MinSignedPerWindow.IsNil() || !ip.MinSignedPerWindow.IsPositive() || !ip.MinSignedPerWindow.LT(math.LegacyOneDec()) {
+		return fmt.Errorf("min_signed_per_window must be in (0, 1), got %s", ip.MinSignedPerWindow)
+	}
+	if err := vaastypes.ValidateDuration(ip.DowntimeChallengeWindow); err != nil {
+		return fmt.Errorf("downtime_challenge_window: %s", err)
+	}
+	if err := vaastypes.ValidateDuration(ip.DowntimeEvidenceMaxAge); err != nil {
+		return fmt.Errorf("downtime_evidence_max_age: %s", err)
+	}
+	if ip.DowntimeEvidenceMaxAge > ip.DowntimeChallengeWindow {
+		return fmt.Errorf(
+			"downtime_evidence_max_age (%s) must not exceed downtime_challenge_window (%s)",
+			ip.DowntimeEvidenceMaxAge, ip.DowntimeChallengeWindow,
+		)
+	}
+	return nil
+}
+
+// ValidateInfractionParamsAgainst enforces the cross-param constraint that
+// the oldest challengeable header stays light-client verifiable through its
+// challenge window: evidenceMaxAge + challengeWindow < trustingFraction *
+// defaultConsumerUnbonding. Called wherever incoming infraction params are
+// validated together with Params, since InfractionParameters is stored
+// separately from Params.
+func ValidateInfractionParamsAgainst(ip InfractionParameters, trustingPeriodFraction string) error {
+	frac, err := math.LegacyNewDecFromStr(trustingPeriodFraction)
+	if err != nil {
+		return err
+	}
+	trusting := time.Duration(frac.MulInt64(int64(vaastypes.DefaultConsumerUnbondingPeriod)).TruncateInt64())
+	if ip.DowntimeEvidenceMaxAge+ip.DowntimeChallengeWindow >= trusting {
+		return fmt.Errorf(
+			"downtime_evidence_max_age + downtime_challenge_window (%s) must be below the default trusting period (%s)",
+			ip.DowntimeEvidenceMaxAge+ip.DowntimeChallengeWindow, trusting,
+		)
+	}
 	return nil
 }
 
@@ -172,6 +246,9 @@ func (p Params) Validate() error {
 	}
 	if err := vaastypes.ValidateStringFractionNonZero(p.LivenessGraceFraction); err != nil {
 		return fmt.Errorf("liveness grace fraction is invalid: %s", err)
+	}
+	if err := vaastypes.ValidateDuration(p.MaxPauseDuration); err != nil {
+		return fmt.Errorf("max pause duration is invalid: %s", err)
 	}
 
 	return nil
