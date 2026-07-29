@@ -1,7 +1,6 @@
 package keeper_test
 
 import (
-	"sort"
 	"testing"
 
 	ibctesting "github.com/cosmos/ibc-go/v10/testing"
@@ -13,80 +12,12 @@ import (
 	tmprotocrypto "github.com/cometbft/cometbft/proto/tendermint/crypto"
 
 	testkeeper "github.com/allinbits/vaas/testutil/keeper"
-	providertypes "github.com/allinbits/vaas/x/vaas/provider/types"
 	vaastypes "github.com/allinbits/vaas/x/vaas/types"
 )
 
 const (
 	CONSUMER_ID uint64 = 0
 )
-
-// TestValsetUpdateBlockHeight tests the getter, setter, and deletion methods for valset updates mapped to block height
-func TestValsetUpdateBlockHeight(t *testing.T) {
-	providerKeeper, ctx, ctrl, _ := testkeeper.GetProviderKeeperAndCtx(t, testkeeper.NewInMemKeeperParams(t))
-	defer ctrl.Finish()
-
-	blockHeight, found := providerKeeper.GetValsetUpdateBlockHeight(ctx, uint64(0))
-	require.False(t, found)
-	require.Zero(t, blockHeight)
-
-	providerKeeper.SetValsetUpdateBlockHeight(ctx, uint64(1), uint64(2))
-	blockHeight, found = providerKeeper.GetValsetUpdateBlockHeight(ctx, uint64(1))
-	require.True(t, found)
-	require.Equal(t, blockHeight, uint64(2))
-
-	providerKeeper.DeleteValsetUpdateBlockHeight(ctx, uint64(1))
-	blockHeight, found = providerKeeper.GetValsetUpdateBlockHeight(ctx, uint64(1))
-	require.False(t, found)
-	require.Zero(t, blockHeight)
-
-	providerKeeper.SetValsetUpdateBlockHeight(ctx, uint64(1), uint64(2))
-	providerKeeper.SetValsetUpdateBlockHeight(ctx, uint64(3), uint64(4))
-	blockHeight, found = providerKeeper.GetValsetUpdateBlockHeight(ctx, uint64(3))
-	require.True(t, found)
-	require.Equal(t, blockHeight, uint64(4))
-}
-
-// TestGetAllValsetUpdateBlockHeights tests GetAllValsetUpdateBlockHeights behaviour correctness
-func TestGetAllValsetUpdateBlockHeights(t *testing.T) {
-	pk, ctx, ctrl, _ := testkeeper.GetProviderKeeperAndCtx(t, testkeeper.NewInMemKeeperParams(t))
-	defer ctrl.Finish()
-
-	cases := []providertypes.ValsetUpdateIdToHeight{
-		{
-			ValsetUpdateId: 2,
-			Height:         22,
-		},
-		{
-			ValsetUpdateId: 1,
-			Height:         11,
-		},
-		{
-			// normal execution should not have two ValsetUpdateIdToHeight
-			// with the same Height, but let's test it anyway
-			ValsetUpdateId: 4,
-			Height:         11,
-		},
-		{
-			ValsetUpdateId: 3,
-			Height:         33,
-		},
-	}
-	expectedGetAllOrder := cases
-	// sorting by ValsetUpdateId
-	sort.Slice(expectedGetAllOrder, func(i, j int) bool {
-		return expectedGetAllOrder[i].ValsetUpdateId < expectedGetAllOrder[j].ValsetUpdateId
-	})
-
-	for _, c := range cases {
-		pk.SetValsetUpdateBlockHeight(ctx, c.ValsetUpdateId, c.Height)
-	}
-
-	// iterate and check all results are returned in the expected order
-	result := pk.GetAllValsetUpdateBlockHeights(ctx)
-	require.Len(t, result, len(cases))
-	require.Equal(t, expectedGetAllOrder, result)
-}
 
 // TestPendingVSCs tests the getter, appending, and deletion methods for stored pending VSCs
 func TestPendingVSCs(t *testing.T) {

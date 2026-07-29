@@ -23,9 +23,8 @@ message GenesisState {
   string provider_client_id = 2;
   // true for new chain, false for chain restart.
   bool new_chain = 3;
-  // HeightToValsetUpdateId nil on new chain, filled in on restart.
-  repeated HeightToValsetUpdateID height_to_valset_update_id = 4
-      [ (gogoproto.nullable) = false ];
+  reserved 4;
+  reserved "height_to_valset_update_id";
   // Flag indicating whether the consumer VAAS module starts in pre-VAAS state
   bool preVAAS = 5;
   vaas.v1.ProviderInfo provider = 6 [ (gogoproto.nullable) = false ];
@@ -63,13 +62,24 @@ message GenesisState {
   // chain or when nothing is queued.
   repeated PendingEvidencePacketEntry pending_evidence_packets = 12
       [ (gogoproto.nullable) = false ];
-}
 
-// HeightValsetUpdateID represents a mapping internal to the consumer VAAS module
-// which links a block height to each recv valset update id.
-message HeightToValsetUpdateID {
-  uint64 height = 1;
-  uint64 valset_update_id = 2;
+  // HighestValsetUpdateId is the highest VSC id the consumer has applied: the
+  // out-of-order dedup watermark (see OnRecvVSCPacketV2 in
+  // x/vaas/consumer/keeper/relay.go), which skips any VSC packet whose id is
+  // not greater than it. Round-tripped on restart so a state-export restart
+  // keeps rejecting stale diffs still held in IBC state, instead of resetting
+  // the watermark and re-applying an older set over a newer one. Absent (0)
+  // for a new chain or a consumer that has not yet applied a VSC.
+  uint64 highest_valset_update_id = 13;
+
+  // ConsumerInDebt is the debt flag the provider last stamped on an accepted
+  // VSC packet: one of the two arms of the consumer's tx-admission gate (see
+  // IsConsumerInDebt and NewMsgFilterDecorator), the other being
+  // last_vsc_recv_time. Round-tripped on restart so a debt-gated consumer
+  // comes back gated instead of admitting ordinary transactions until the
+  // next VSC packet re-asserts the flag. False for a new chain or a consumer
+  // that has never been in debt.
+  bool consumer_in_debt = 14;
 }
 
 // MissedBlockBitmapEntry is a single validator's missed-block bitmap for the

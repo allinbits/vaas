@@ -31,8 +31,6 @@ const (
 	// This is the primary lookup mechanism for IBC v2 client-based communication.
 	ConsumerIdToClientIdKeyName = "ConsumerIdToClientIdKey"
 
-	ValsetUpdateBlockHeightKeyName = "ValsetUpdateBlockHeightKey"
-
 	ConsumerGenesisKeyName = "ConsumerGenesisKey"
 
 	InitChainHeightKeyName = "InitChainHeightKey"
@@ -108,7 +106,6 @@ const (
 var (
 	ValidatorSetUpdateIdPrefix             = collections.NewPrefix(0)
 	ConsumerIdToClientIdPrefix             = collections.NewPrefix(1)
-	ValsetUpdateBlockHeightPrefix          = collections.NewPrefix(2)
 	ConsumerGenesisPrefix                  = collections.NewPrefix(3)
 	InitChainHeightPrefix                  = collections.NewPrefix(4)
 	PendingVSCsPrefix                      = collections.NewPrefix(5)

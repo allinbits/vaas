@@ -15,7 +15,6 @@ import (
 
 func NewGenesisState(
 	vscID uint64,
-	vscIdToHeights []ValsetUpdateIdToHeight,
 	consumerStates []ConsumerState,
 	params Params,
 	validatorConsumerPubkeys []ValidatorConsumerPubKey,
@@ -26,7 +25,6 @@ func NewGenesisState(
 ) *GenesisState {
 	return &GenesisState{
 		ValsetUpdateId:                vscID,
-		ValsetUpdateIdToHeight:        vscIdToHeights,
 		ConsumerStates:                consumerStates,
 		Params:                        params,
 		ValidatorConsumerPubkeys:      validatorConsumerPubkeys,
@@ -48,13 +46,6 @@ func DefaultGenesisState() *GenesisState {
 func (gs GenesisState) Validate() error {
 	if gs.ValsetUpdateId == 0 {
 		return errorsmod.Wrap(vaastypes.ErrInvalidGenesis, "valset update ID cannot be equal to zero")
-	}
-
-	if len(gs.ValsetUpdateIdToHeight) > 0 {
-		// check only the first tuple of the list since it is ordered by VSC ID
-		if gs.ValsetUpdateIdToHeight[0].ValsetUpdateId == 0 {
-			return errorsmod.Wrap(vaastypes.ErrInvalidGenesis, "valset update ID cannot be equal to zero")
-		}
 	}
 
 	seenConsumerIds := map[uint64]bool{}
@@ -293,10 +284,15 @@ func validatePendingDowntimeSlashesAgainstAcceptedWindows(
 	return nil
 }
 
-// validateWithheldFeeRecords rejects duplicate (consumer_id,
-// provider_cons_addr) entries and orphan consumer references; the keeper's
-// collection key cannot represent duplicates, and an orphan would never be
-// reachable at runtime (see the fee-pool-share orphan check above).
+// validateWithheldFeeRecords rejects malformed withheld-fee entries: empty
+// provider cons addr, an escrowed amount that is not a valid non-negative
+// coin, orphan consumer references, and duplicate (consumer_id,
+// provider_cons_addr) entries. The keeper's collection key cannot represent
+// duplicates, and an orphan would never be reachable at runtime (see the
+// fee-pool-share orphan check above). The amount check matters because a
+// genesis that omits the amount subfield yields a math.Int wrapping a nil
+// big.Int, which panics the first time the record is read for payment or
+// escrow accounting; a negative amount would instead misprice the escrow.
 func validateWithheldFeeRecords(records []WithheldFeeRecord, knownConsumerIds map[uint64]struct{}) error {
 	type key struct {
 		consumerId uint64
@@ -306,6 +302,14 @@ func validateWithheldFeeRecords(records []WithheldFeeRecord, knownConsumerIds ma
 	for _, r := range records {
 		if len(r.ProviderConsAddr) == 0 {
 			return fmt.Errorf("withheld fee record: provider cons addr cannot be empty")
+		}
+		if r.Amount.Amount.IsNil() || r.Amount.Amount.IsNegative() {
+			return fmt.Errorf("withheld fee record: amount cannot be nil or negative (consumer=%d, validator=%x)",
+				r.ConsumerId, r.ProviderConsAddr)
+		}
+		if err := sdk.ValidateDenom(r.Amount.Denom); err != nil {
+			return fmt.Errorf("withheld fee record: invalid denom %q (consumer=%d, validator=%x): %w",
+				r.Amount.Denom, r.ConsumerId, r.ProviderConsAddr, err)
 		}
 		if _, ok := knownConsumerIds[r.ConsumerId]; !ok {
 			return fmt.Errorf("withheld fee record references unknown consumer %d", r.ConsumerId)
