@@ -234,6 +234,52 @@ func TestBeginBlockRemoveConsumers_DeletesEligible(t *testing.T) {
 	}
 }
 
+// TestBeginBlockRemoveConsumers_UnaccountedFeePoolBalance verifies that a pool
+// balance with no shares behind it -- which a community-pool spend addressed
+// straight at the pool address creates, the send restriction exempting the
+// distribution module -- is credited to the community pool and swept on
+// deletion, rather than panicking inside the BeginBlocker and halting the
+// provider.
+func TestBeginBlockRemoveConsumers_UnaccountedFeePoolBalance(t *testing.T) {
+	k, ctx, ctrl, mocks := testkeeper.GetProviderKeeperAndCtx(t, testkeeper.NewInMemKeeperParams(t))
+	defer ctrl.Finish()
+
+	removalTime := time.Unix(1000, 0)
+	ctx = ctx.WithBlockTime(removalTime.Add(time.Hour))
+
+	consumerId := k.FetchAndIncrementConsumerId(ctx)
+	k.SetConsumerClientId(ctx, consumerId, "07-tendermint-0")
+	k.SetConsumerPhase(ctx, consumerId, providertypes.CONSUMER_PHASE_STOPPED)
+	require.NoError(t, k.SetConsumerRemovalTime(ctx, consumerId, removalTime))
+	require.NoError(t, k.AppendConsumerToBeRemoved(ctx, consumerId, removalTime))
+
+	poolAddr := k.GetConsumerFeePoolAddress(consumerId)
+	require.NoError(t, k.FeePoolAddressToConsumerId.Set(ctx, poolAddr, consumerId))
+	providerAddr := authtypes.NewModuleAddress(providertypes.ModuleName)
+	funds := sdk.NewInt64Coin("uphoton", 100)
+
+	// No share record whatsoever for these funds. The deletion happens in a
+	// cached context, so the mocks match on any context.
+	mocks.MockBankKeeper.EXPECT().GetAllBalances(gomock.Any(), poolAddr).
+		Return(sdk.NewCoins(funds))
+	mocks.MockBankKeeper.EXPECT().GetBalance(gomock.Any(), poolAddr, funds.Denom).
+		Return(funds)
+	mocks.MockBankKeeper.EXPECT().SendCoinsFromAccountToModule(
+		gomock.Any(), poolAddr, providertypes.ModuleName, sdk.NewCoins(funds)).Return(nil)
+	mocks.MockDistributionKeeper.EXPECT().FundCommunityPool(
+		gomock.Any(), sdk.NewCoins(funds), providerAddr).Return(nil)
+
+	require.NotPanics(t, func() {
+		require.NoError(t, k.BeginBlockRemoveConsumers(ctx))
+	})
+
+	require.Equal(t, providertypes.CONSUMER_PHASE_DELETED, k.GetConsumerPhase(ctx, consumerId))
+	_, err := k.ConsumerFeePoolTotalShares.Get(ctx, collections.Join(consumerId, funds.Denom))
+	require.ErrorIs(t, err, collections.ErrNotFound)
+	_, err = k.FeePoolAddressToConsumerId.Get(ctx, poolAddr)
+	require.ErrorIs(t, err, collections.ErrNotFound)
+}
+
 // TestDeleteConsumerChain_SweepBankFailurePanics verifies that a bank failure
 // during the auto-sweep -- only reachable under state corruption or app
 // misconfiguration -- panics rather than silently aborting the delete (which

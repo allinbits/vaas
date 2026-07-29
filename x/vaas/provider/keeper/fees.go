@@ -173,11 +173,40 @@ func (k Keeper) ResolveDowntimeSlashTokens(ctx sdk.Context, consumerId uint64, p
 	if err != nil {
 		return math.Int{}, fmt.Errorf("resolving photon conversion rate: %w", err)
 	}
-	if conversionRate.IsZero() {
-		return math.Int{}, fmt.Errorf("photon conversion rate is zero")
+	if !conversionRate.IsPositive() {
+		return math.Int{}, fmt.Errorf("photon conversion rate must be positive, got %s", conversionRate)
 	}
 
 	return share.ToLegacyDec().Mul(missedFraction).Quo(conversionRate).TruncateInt(), nil
+}
+
+// outstandingWithheldFees totals the amount of denom held in consumer
+// consumerId's fee pool that is escrowed against unexpired WithheldFeeRecords.
+// Those funds back a proven-innocent validator's make-whole payment on a
+// successful downtime challenge (see PayWithheldFees) and must not be paid out
+// again as ordinary epoch fees or handed to a withdrawing depositor before the
+// challenge window closes; distribution and withdrawal both treat the pool
+// balance net of this amount as their spendable balance. Expired records are
+// excluded: their challenge window has passed, so the funds are no longer
+// reserved and are released to the consumer once swept.
+func (k Keeper) outstandingWithheldFees(ctx sdk.Context, consumerId uint64, denom string) math.Int {
+	total := math.ZeroInt()
+	iter, err := k.WithheldFeeRecords.Iterate(ctx, collections.NewPrefixedPairRange[uint64, []byte](consumerId))
+	if err != nil {
+		panic(fmt.Errorf("iterating withheld fee records for consumer %d: %w", consumerId, err))
+	}
+	defer iter.Close()
+	for ; iter.Valid(); iter.Next() {
+		record, err := iter.Value()
+		if err != nil {
+			panic(fmt.Errorf("reading withheld fee record for consumer %d: %w", consumerId, err))
+		}
+		if record.Amount.Denom != denom || !record.ExpiresAt.After(ctx.BlockTime()) {
+			continue
+		}
+		total = total.Add(record.Amount.Amount)
+	}
+	return total
 }
 
 // DistributeConsumerFees collects fees from each launched consumer's fee pool
@@ -192,8 +221,11 @@ func (k Keeper) ResolveDowntimeSlashTokens(ctx sdk.Context, consumerId uint64, p
 // incentivizing validators to DOS competitors (the other validators' shares
 // do not increase when someone is excluded).
 //
-// If a consumer's pool balance is below fees_per_epoch, the consumer is marked
-// as in debt and skipped entirely (no partial distribution).
+// Distribution runs against the pool balance net of any funds already escrowed
+// against unexpired withheld-fee records (see outstandingWithheldFees): a
+// consumer whose unreserved balance cannot cover fees_per_epoch is marked in
+// debt and skipped entirely (no partial distribution), so ordinary
+// distribution can never drain the escrow backing a pending challenge.
 func (k Keeper) DistributeConsumerFees(ctx sdk.Context) error {
 	defaultFeePerBlock := k.GetFeesPerBlock(ctx)
 	blocksPerEpoch := k.GetBlocksPerEpoch(ctx)
@@ -257,25 +289,45 @@ func (k Keeper) DistributeConsumerFees(ctx sdk.Context) error {
 			eligibleAddrs = append(eligibleAddrs, bv.accAddr)
 		}
 		if share.IsZero() {
+			// A zero per-validator share has two very different causes:
+			//   - fees are disabled for this consumer (epoch fee is zero): it
+			//     genuinely owes nothing this epoch, so record a zero share and
+			//     move on without touching debt.
+			//   - the epoch fee is positive but smaller than the bonded
+			//     validator count, so an even split truncates to zero. The
+			//     consumer still owes for the validation it receives but cannot
+			//     pay an integer share to every validator; flag it in debt
+			//     rather than hand it a free epoch. A fee rate below the
+			//     validator count is a provider misconfiguration to resolve
+			//     (raise fees_per_block), not grounds for unpaid validation.
+			if consumerFeePerEpoch.Amount.IsPositive() {
+				k.UpdateConsumerDebtStatus(ctx, consumerId, true)
+			}
 			k.SetEpochShareRecord(ctx, consumerId, ctx.BlockTime(), share)
 			continue
 		}
 
 		consumerFeePoolAddr := k.GetConsumerFeePoolAddress(consumerId)
 
-		// Check the pool can cover the full epoch fee before paying any
-		// validator or escrowing any withheld share. This avoids unfair
-		// partial distribution, and (when everyone is excluded) ensures a
-		// withheld-fee record is only ever written for funds the pool
-		// actually holds -- the record just leaves those funds in place, so
-		// a sufficient balance here is exactly what makes that valid.
+		// Check the unreserved pool balance can cover the full epoch fee before
+		// paying any validator or escrowing any withheld share. Funds already
+		// escrowed against unexpired withheld-fee records are subtracted first:
+		// they back a pending challenge's make-whole payout and must not be
+		// spent here, so a later top-up cannot let this run drain the escrow.
+		// Testing the unreserved balance against the full epoch fee also avoids
+		// unfair partial distribution and (when everyone is excluded) ensures a
+		// withheld-fee record is only ever written for funds the pool genuinely
+		// retains beyond what it already owes.
 		balance := k.bankKeeper.GetBalance(ctx, consumerFeePoolAddr, consumerFeePerEpoch.Denom)
-		if balance.Amount.LT(consumerFeePerEpoch.Amount) {
+		outstandingWithheld := k.outstandingWithheldFees(ctx, consumerId, consumerFeePerEpoch.Denom)
+		available := balance.Amount.Sub(outstandingWithheld)
+		if available.LT(consumerFeePerEpoch.Amount) {
 			k.UpdateConsumerDebtStatus(ctx, consumerId, true)
 			k.SetEpochShareRecord(ctx, consumerId, ctx.BlockTime(), math.ZeroInt())
 			k.Logger(ctx).Debug("consumer fee pool underfunded; skipping distribution",
 				"consumerId", consumerId,
 				"balance", balance.String(),
+				"outstandingWithheld", outstandingWithheld.String(),
 				"required", consumerFeePerEpoch.String(),
 			)
 			continue
@@ -415,6 +467,13 @@ func (k Keeper) PayWithheldFees(ctx sdk.Context, consumerId uint64) error {
 		// reads the record store.
 		if err := k.WithheldFeeRecords.Remove(ctx, keys[i]); err != nil {
 			k.Logger(ctx).Error("failed to delete paid withheld fee record", "error", err)
+		}
+
+		// A record whose challenge window has already elapsed backs a downtime
+		// slash that has since matured and executed; its withheld share is
+		// forfeit, so the record is cleared above but must never be paid out.
+		if !record.ExpiresAt.After(ctx.BlockTime()) {
+			continue
 		}
 
 		payable := record.Amount

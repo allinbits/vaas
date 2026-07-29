@@ -236,9 +236,17 @@ func (k Keeper) HandleConsumerDowntime(ctx sdk.Context, consumerId uint64, evide
 		)
 	}
 
-	// Record downtime for epoch reward exclusion. This takes effect
-	// immediately, independent of the slash challenge window below.
-	k.MarkEpochDowntime(ctx, consumerId, providerAddr.ToSdkConsAddr())
+	// Exclude the validator from fee distribution, but only for the epoch the
+	// infraction actually falls in, not merely the epoch this evidence arrived
+	// in. The window-end time resolves to an already-recorded epoch
+	// distribution exactly when that epoch has already paid out (ResolveEpochShare
+	// finds a run at or after it); excluding then would dock a later epoch the
+	// validator was owed for. Only when the window falls in the current,
+	// not-yet-distributed epoch (no such record) does the exclusion apply,
+	// withholding that epoch's share pending the challenge window below.
+	if _, distributed := k.ResolveEpochShare(ctx, consumerId, windowEndTime); !distributed {
+		k.MarkEpochDowntime(ctx, consumerId, providerAddr.ToSdkConsAddr())
+	}
 
 	maturesAt := ctx.BlockTime().Add(infractionParams.DowntimeChallengeWindow)
 	pending := types.PendingDowntimeSlash{
