@@ -127,8 +127,6 @@ func TestIsValidatorJailed(t *testing.T) {
 	isJailed, err := consumerKeeper.IsValidatorJailed(ctx, consAddr)
 	require.NoError(t, err)
 	require.False(t, isJailed)
-
-	// Standalone changeover functionality removed
 }
 
 // TestValidatorByConsAddr pins the contract x/slashing's per-block
