@@ -18,7 +18,7 @@ var (
 	PendingChangesPrefix         = collections.NewPrefix(3)
 	HistoricalInfoPrefix         = collections.NewPrefix(6)
 	HeightValsetUpdateIDPrefix   = collections.NewPrefix(7)
-	CrossChainValidatorPrefix    = collections.NewPrefix(8)
+	VaasValidatorPrefix          = collections.NewPrefix(8)
 	InitGenesisHeightPrefix      = collections.NewPrefix(9)
 	ParametersPrefix             = collections.NewPrefix(11)
 	HighestValsetUpdateIDPrefix  = collections.NewPrefix(12)

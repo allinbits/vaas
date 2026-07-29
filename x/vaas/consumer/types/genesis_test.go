@@ -89,7 +89,7 @@ func TestValidateInitialGenesisState(t *testing.T) {
 					ConsensusState: consensusState,
 					InitialValSet:  valUpdates,
 				},
-				ProviderClientId: "ccvclient",
+				ProviderClientId: "vaasclient",
 			},
 			true,
 		},
@@ -123,7 +123,7 @@ func TestValidateInitialGenesisState(t *testing.T) {
 			true,
 		},
 		{
-			"invalid new consumer genesis state: invalid params - ccvTimeoutPeriod",
+			"invalid new consumer genesis state: invalid params - vaasTimeoutPeriod",
 			types.NewInitialGenesisState(cs, consensusState, valUpdates,
 				vaastypes.NewConsumerParams(
 					true,
@@ -303,8 +303,8 @@ func TestValidateRestartConsumerGenesisState(t *testing.T) {
 		expError bool
 	}{
 		{
-			"valid restart consumer genesis state: handshake in progress",
-			types.NewRestartGenesisState("ccvclient", valUpdates, heightToValsetUpdateID, params),
+			"valid restart consumer genesis state: provider client already pinned",
+			types.NewRestartGenesisState("vaasclient", valUpdates, heightToValsetUpdateID, params),
 			false,
 		},
 		{
@@ -322,7 +322,7 @@ func TestValidateRestartConsumerGenesisState(t *testing.T) {
 					ConsensusState: nil,
 					InitialValSet:  valUpdates,
 				},
-				ProviderClientId: "ccvclient",
+				ProviderClientId: "vaasclient",
 			},
 			true,
 		},
@@ -336,18 +336,18 @@ func TestValidateRestartConsumerGenesisState(t *testing.T) {
 					ConsensusState: consensusState,
 					InitialValSet:  valUpdates,
 				},
-				ProviderClientId: "ccvclient",
+				ProviderClientId: "vaasclient",
 			},
 			true,
 		},
 		{
 			"invalid restart consumer genesis state: nil initial validator set",
-			types.NewRestartGenesisState("ccvclient", nil, nil, params),
+			types.NewRestartGenesisState("vaasclient", nil, nil, params),
 			true,
 		},
 		{
 			"invalid restart consumer genesis state: invalid params",
-			types.NewRestartGenesisState("ccvclient", valUpdates, nil,
+			types.NewRestartGenesisState("vaasclient", valUpdates, nil,
 				vaastypes.NewConsumerParams(
 					true,
 					0,

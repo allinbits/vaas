@@ -318,7 +318,7 @@ func TestSnapshotReplacesValidatorSet(t *testing.T) {
 	require.NoError(t, err)
 
 	// Seed current CC set: A=10, B=5.
-	k.ApplyCCValidatorChanges(ctx, []abci.ValidatorUpdate{{PubKey: tmA, Power: 10}, {PubKey: tmB, Power: 5}})
+	k.ApplyVaasValidatorChanges(ctx, []abci.ValidatorUpdate{{PubKey: tmA, Power: 10}, {PubKey: tmB, Power: 5}})
 	require.NoError(t, k.SetHighestValsetUpdateID(ctx, 1))
 	k.SetProviderClientID(ctx, "07-tendermint-0")
 
@@ -502,7 +502,7 @@ func TestSnapshotResyncEmitsEvent(t *testing.T) {
 	pk := ed25519.GenPrivKey().PubKey()
 	tm, err := cryptocodec.ToCmtProtoPublicKey(pk)
 	require.NoError(t, err)
-	k.ApplyCCValidatorChanges(ctx, []abci.ValidatorUpdate{{PubKey: tm, Power: 10}})
+	k.ApplyVaasValidatorChanges(ctx, []abci.ValidatorUpdate{{PubKey: tm, Power: 10}})
 	require.NoError(t, k.SetHighestValsetUpdateID(ctx, 1))
 	k.SetProviderClientID(ctx, "07-tendermint-0")
 
@@ -538,7 +538,7 @@ func TestSnapshotPowerChange(t *testing.T) {
 	pkA, err := cryptocodec.ToCmtProtoPublicKey(ed25519.GenPrivKey().PubKey())
 	require.NoError(t, err)
 
-	k.ApplyCCValidatorChanges(ctx, []abci.ValidatorUpdate{{PubKey: pkA, Power: 10}})
+	k.ApplyVaasValidatorChanges(ctx, []abci.ValidatorUpdate{{PubKey: pkA, Power: 10}})
 	require.NoError(t, k.SetHighestValsetUpdateID(ctx, 1))
 	k.SetProviderClientID(ctx, "07-tendermint-0")
 
@@ -565,7 +565,7 @@ func TestSnapshotAddsNewValidator(t *testing.T) {
 	pkB, err := cryptocodec.ToCmtProtoPublicKey(ed25519.GenPrivKey().PubKey())
 	require.NoError(t, err)
 
-	k.ApplyCCValidatorChanges(ctx, []abci.ValidatorUpdate{{PubKey: pkA, Power: 10}})
+	k.ApplyVaasValidatorChanges(ctx, []abci.ValidatorUpdate{{PubKey: pkA, Power: 10}})
 	require.NoError(t, k.SetHighestValsetUpdateID(ctx, 1))
 	k.SetProviderClientID(ctx, "07-tendermint-0")
 
@@ -602,7 +602,7 @@ func TestSnapshotMultipleRemovals(t *testing.T) {
 	pkC, err := cryptocodec.ToCmtProtoPublicKey(ed25519.GenPrivKey().PubKey())
 	require.NoError(t, err)
 
-	k.ApplyCCValidatorChanges(ctx, []abci.ValidatorUpdate{
+	k.ApplyVaasValidatorChanges(ctx, []abci.ValidatorUpdate{
 		{PubKey: pkA, Power: 30},
 		{PubKey: pkB, Power: 20},
 		{PubKey: pkC, Power: 10},
@@ -641,7 +641,7 @@ func TestEmptySnapshotRejected(t *testing.T) {
 	pkB, err := cryptocodec.ToCmtProtoPublicKey(ed25519.GenPrivKey().PubKey())
 	require.NoError(t, err)
 
-	k.ApplyCCValidatorChanges(ctx, []abci.ValidatorUpdate{
+	k.ApplyVaasValidatorChanges(ctx, []abci.ValidatorUpdate{
 		{PubKey: pkA, Power: 10},
 		{PubKey: pkB, Power: 5},
 	})
@@ -753,7 +753,7 @@ func TestSnapshotReplacesEarlierPendingChanges(t *testing.T) {
 	require.NoError(t, k.OnRecvVSCPacketV2(ctx, "07-tendermint-0", diff))
 
 	// Apply so the CC set reflects A and B.
-	k.ApplyCCValidatorChanges(ctx, []abci.ValidatorUpdate{
+	k.ApplyVaasValidatorChanges(ctx, []abci.ValidatorUpdate{
 		{PubKey: pkA, Power: 10},
 		{PubKey: pkB, Power: 20},
 	})
@@ -788,7 +788,7 @@ func TestSnapshotNoDoubleEmitForUnchangedValidator(t *testing.T) {
 	pkA, err := cryptocodec.ToCmtProtoPublicKey(ed25519.GenPrivKey().PubKey())
 	require.NoError(t, err)
 
-	k.ApplyCCValidatorChanges(ctx, []abci.ValidatorUpdate{{PubKey: pkA, Power: 10}})
+	k.ApplyVaasValidatorChanges(ctx, []abci.ValidatorUpdate{{PubKey: pkA, Power: 10}})
 	require.NoError(t, k.SetHighestValsetUpdateID(ctx, 1))
 	k.SetProviderClientID(ctx, "07-tendermint-0")
 

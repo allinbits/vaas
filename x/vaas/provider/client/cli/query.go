@@ -146,7 +146,7 @@ func CmdConsumerValidatorKeyAssignment() *cobra.Command {
 			fmt.Sprintf(`Returns the currently assigned validator consensus public key for a
 consumer chain, if one has been assigned.
 Example:
-$ %s query provider validator-consumer-key 3 %s1gghjut3ccd8ay0zduzj64hwre2fxs9ldmqhffj
+$ %s query vaasprovider validator-consumer-key 3 %s1gghjut3ccd8ay0zduzj64hwre2fxs9ldmqhffj
 `,
 				version.AppName, bech32PrefixConsAddr,
 			),
@@ -196,7 +196,7 @@ func CmdProviderValidatorKey() *cobra.Command {
 		Long: strings.TrimSpace(
 			fmt.Sprintf(`Returns the currently assigned validator consensus public key for the provider chain.
 Example:
-$ %s query provider validator-provider-key 333 %s1gghjut3ccd8ay0zduzj64hwre2fxs9ldmqhffj
+$ %s query vaasprovider validator-provider-key 333 %s1gghjut3ccd8ay0zduzj64hwre2fxs9ldmqhffj
 `,
 				version.AppName, bech32PrefixConsAddr,
 			),
@@ -276,7 +276,7 @@ func CmdProviderParameters() *cobra.Command {
 		Long: strings.TrimSpace(
 			fmt.Sprintf(`Query parameter values of provider.
 Example:
-$ %s query provider params
+$ %s query vaasprovider params
 		`, version.AppName),
 		),
 		Args: cobra.NoArgs,

@@ -6,38 +6,13 @@ import (
 
 const (
 	// ModuleName defines the VAAS provider module name
-	ModuleName = "provider"
+	ModuleName = "vaasprovider"
 
 	// StoreKey is the store key string for IBC provider
 	StoreKey = ModuleName
 
 	// Default validator set update ID
 	DefaultValsetUpdateID = 1
-
-	// Names for the collection storage keys.
-	ConsumerIdToFeesPerBlockOverrideKeyName = "ConsumerIdToFeesPerBlockOverrideKey"
-
-	ConsumerFeePoolSharesKeyName      = "ConsumerFeePoolSharesKey"
-	ConsumerFeePoolTotalSharesKeyName = "ConsumerFeePoolTotalSharesKey"
-	FeePoolAddressToConsumerIdKeyName = "FeePoolAddressToConsumerIdKey"
-
-	EpochDowntimeKeyName = "EpochDowntimeKey"
-
-	PreviousDowntimeParamsKeyName = "PreviousDowntimeParamsKey"
-
-	EpochShareRecordsKeyName = "EpochShareRecordsKey"
-
-	PendingDowntimeSlashesKeyName = "PendingDowntimeSlashesKey"
-
-	AcceptedDowntimeWindowsKeyName = "AcceptedDowntimeWindowsKey"
-
-	WithheldFeeRecordsKeyName = "WithheldFeeRecordsKey"
-
-	ConsumerIdToPauseExpirationTimeKeyName = "ConsumerIdToPauseExpirationTimeKey"
-
-	PauseExpirationTimeToConsumerIdsKeyName = "PauseExpirationTimeToConsumerIdsKey"
-
-	DowntimeWindowFloorsKeyName = "DowntimeWindowFloorsKey"
 )
 
 // Collection key prefixes for use with cosmossdk.io/collections
@@ -55,7 +30,7 @@ var (
 	EquivocationEvidenceMinHeightPrefix    = collections.NewPrefix(8)
 	ConsumerValidatorPrefix                = collections.NewPrefix(9)
 	ConsumerAddrsToPrunePrefix             = collections.NewPrefix(10)
-	LastProviderConsensusVals              = collections.NewPrefix(11)
+	LastProviderConsensusValsPrefix        = collections.NewPrefix(11)
 	ConsumerIdPrefix                       = collections.NewPrefix(12)
 	ConsumerIdToChainIdPrefix              = collections.NewPrefix(13)
 	ConsumerIdToOwnerAddressPrefix         = collections.NewPrefix(14)
