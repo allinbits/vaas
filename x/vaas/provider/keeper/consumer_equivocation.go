@@ -43,7 +43,25 @@ func (k Keeper) HandleConsumerDoubleVoting(
 		)
 	}
 
-	// check that the evidence is not too old
+	// Reject evidence below the per-consumer minimum height (set at launch and
+	// on each resync), which is the ONLY age bound on equivocation. Unlike
+	// downtime -- which additionally bounds evidence by DowntimeEvidenceMaxAge
+	// (see HandleConsumerDowntime) -- double-signing has no maximum-age bound,
+	// and this asymmetry is intentional:
+	//
+	//   - Equivocation is a permanent, self-contained cryptographic fault: the
+	//     two conflicting signed votes prove it forever, so it is punished
+	//     whenever proven. The tombstone applied below makes punishment
+	//     one-time (a re-submitted old evidence hits the already-tombstoned
+	//     path and is a no-op), so there is no re-slash risk from stale
+	//     evidence, and the min-height gate already blocks evidence from before
+	//     the validator was in the consumer's set.
+	//   - Downtime is a liveness signal priced against a specific epoch and
+	//     resolved through a challenge window; letting arbitrarily old downtime
+	//     evidence in would misprice it and reopen a settled window, so it is
+	//     age-bounded.
+	//
+	// Do not add a maximum-age bound here without revisiting that reasoning.
 	minHeight := k.GetEquivocationEvidenceMinHeight(ctx, consumerId)
 	if uint64(evidence.VoteA.Height) < minHeight {
 		return errorsmod.Wrapf(
@@ -127,7 +145,10 @@ func (k Keeper) VerifyDoubleVotingEvidence(
 		)
 	}
 
-	// Note the age of the evidence isn't checked.
+	// The age of the evidence is deliberately not checked here: equivocation is
+	// punished whenever proven, with only the per-consumer min-height gate in
+	// HandleConsumerDoubleVoting bounding it. See the asymmetry-with-downtime
+	// note there.
 
 	// height/round/type must be the same
 	if evidence.VoteA.Height != evidence.VoteB.Height ||
