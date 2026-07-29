@@ -102,7 +102,7 @@ provider-start: build-apps
 	mv /tmp/gen $(provider_home)/config/genesis.json
 
 	# Decrease number of blocks per epoch (VAAS provider VCS update)
-	jq '.app_state.provider.params.blocks_per_epoch = "10"' $(provider_home)/config/genesis.json > /tmp/gen
+	jq '.app_state.vaasprovider.params.blocks_per_epoch = "10"' $(provider_home)/config/genesis.json > /tmp/gen
 	mv /tmp/gen $(provider_home)/config/genesis.json
 
 	$(providerd) start
@@ -145,14 +145,14 @@ consumer-create:
 	# both chains): the submitter becomes the consumer's owner, and the owner
 	# also pins the provider client on the consumer side. A dedicated key,
 	# because the relayer key's sequence is busy with the relayer's own txs.
-	$(providerd) tx provider create-consumer /tmp/vaas-test/create_consumer.json --from owner --gas auto --gas-adjustment 1.5 --fees 10000uatone -y
+	$(providerd) tx vaasprovider create-consumer /tmp/vaas-test/create_consumer.json --from owner --gas auto --gas-adjustment 1.5 --fees 10000uatone -y
 	@echo "Consumer chain created. Wait for spawn time, then run 'make consumer-genesis' to fetch the genesis."
 
 # Fetch consumer genesis from provider and patch local genesis (consumer-id defaults to "0")
 CONSUMER_ID ?= 0
 consumer-genesis:
 	@echo "Fetching consumer genesis for consumer-id $(CONSUMER_ID)..."
-	$(providerd) query provider consumer-genesis $(CONSUMER_ID) -o json > /tmp/vaas-test/consumer_genesis.json
+	$(providerd) query vaasprovider consumer-genesis $(CONSUMER_ID) -o json > /tmp/vaas-test/consumer_genesis.json
 	@echo "Patching consumer genesis.json with provider data..."
 	jq --slurpfile cg /tmp/vaas-test/consumer_genesis.json '.app_state.vaasconsumer = $$cg[0]' $(consumer_home)/config/genesis.json > /tmp/gen
 	mv /tmp/gen $(consumer_home)/config/genesis.json
@@ -173,7 +173,7 @@ consumer-run: consumer-copy-val-key
 consumer-start: consumer-init consumer-create
 	@echo "Waiting for consumer chain to be registered on provider..."
 	@for i in 1 2 3 4 5 6 7 8 9 10; do \
-		if $(providerd) query provider consumer-genesis 0 -o json > /dev/null 2>&1; then \
+		if $(providerd) query vaasprovider consumer-genesis 0 -o json > /dev/null 2>&1; then \
 			echo "Consumer chain registered!"; \
 			break; \
 		fi; \
@@ -190,7 +190,7 @@ consumer-start: consumer-init consumer-create
 # e.g. make provider-fund-consumer-fee-pool CONSUMER_ID=0
 FEE_POOL_AMOUNT ?= 100000000uphoton
 provider-fund-consumer-fee-pool:
-	$(providerd) tx provider fund-consumer-fee-pool $(CONSUMER_ID) $(FEE_POOL_AMOUNT) \
+	$(providerd) tx vaasprovider fund-consumer-fee-pool $(CONSUMER_ID) $(FEE_POOL_AMOUNT) \
 		--from val --keyring-backend test --chain-id provider-localnet \
 		--gas auto --gas-adjustment 1.5 --fees 10000uatone -y
 

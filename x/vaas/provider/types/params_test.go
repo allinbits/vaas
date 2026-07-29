@@ -30,7 +30,7 @@ func TestValidateParams(t *testing.T) {
 			"0.00", "0.5", time.Hour, 1000, math.NewInt(1), types.DefaultMinDepositBlocks, types.DefaultMaxPauseDuration), false},
 		{"0 liveness grace fraction", types.NewParams(
 			"0.33", "0.00", time.Hour, 1000, math.NewInt(1), types.DefaultMinDepositBlocks, types.DefaultMaxPauseDuration), false},
-		{"0 ccv timeout period", types.NewParams(
+		{"0 VAAS timeout period", types.NewParams(
 			"0.33", "0.5", 0, 1000, math.NewInt(1), types.DefaultMinDepositBlocks, types.DefaultMaxPauseDuration), false},
 		{"0 max pause duration", types.NewParams(
 			"0.33", "0.5", time.Hour, 1000, math.NewInt(1), types.DefaultMinDepositBlocks, 0), false},

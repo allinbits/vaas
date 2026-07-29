@@ -286,7 +286,7 @@ func (s *baseTestSuite) registerConsumerOnProvider() {
 	})
 
 	stdout, stderr, err := s.dockerExec(s.providerValRes[0].Container.ID, []string{
-		providerBinary, "tx", "provider", "create-consumer", "/tmp/create_consumer.json",
+		providerBinary, "tx", "vaasprovider", "create-consumer", "/tmp/create_consumer.json",
 		// The submitter becomes the consumer's owner, and the owner is also
 		// the account allowed to pin the provider client on the consumer
 		// side. The owner key (HD index 1 of the shared mnemonic) exists on
@@ -329,7 +329,7 @@ func (s *baseTestSuite) fetchConsumerGenesis() []byte {
 	// Retry fetching consumer genesis (it may take a few blocks)
 	for range 30 {
 		stdout, _, err := s.dockerExec(s.providerValRes[0].Container.ID, []string{
-			providerBinary, "query", "provider", "consumer-genesis", "0",
+			providerBinary, "query", "vaasprovider", "consumer-genesis", "0",
 			"--home", providerHomePath,
 			"--output", "json",
 		})

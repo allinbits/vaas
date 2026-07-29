@@ -1,3 +1,8 @@
+// Package staking wraps the Cosmos SDK x/staking module for use on a VAAS
+// consumer chain. It is identical to x/staking except that its InitGenesis and
+// EndBlock return no validator updates: on a consumer chain the validator set
+// is driven by VSC packets from the provider module rather than by the
+// consumer's own staking module.
 package staking
 
 import (

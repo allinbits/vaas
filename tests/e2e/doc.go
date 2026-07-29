@@ -2,8 +2,8 @@
 // VAAS (Validation as a Service) provider-consumer chain setup.
 //
 // It uses Docker containers (via dockertest) to run a provider chain,
-// a consumer chain, and the ibc-v2-ts-relayer, validating the full CCV
-// (Cross-Chain Validation) lifecycle including:
+// a consumer chain, and the ibc-v2-ts-relayer, validating the full VAAS
+// lifecycle including:
 //
 //   - Provider chain initialization and block production
 //   - Consumer chain registration on the provider

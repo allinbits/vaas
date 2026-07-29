@@ -93,13 +93,13 @@ func (app *App) prepForZeroHeightGenesis(ctx sdk.Context, jailAllowedAddrs []str
 
 // GetValidatorSet returns a slice of bonded validators.
 func (app *App) GetValidatorSet(ctx sdk.Context) ([]tmtypes.GenesisValidator, error) {
-	cVals := app.ConsumerKeeper.GetAllCCValidator(ctx)
-	if len(cVals) == 0 {
+	vaasVals := app.ConsumerKeeper.GetAllVaasValidator(ctx)
+	if len(vaasVals) == 0 {
 		return nil, fmt.Errorf("empty validator set")
 	}
 
 	vals := []tmtypes.GenesisValidator{}
-	for _, v := range cVals {
+	for _, v := range vaasVals {
 		// A GenesisValidator with a nil PubKey serializes as "pub_key": null,
 		// and CometBFT's GenesisDoc.ValidateAndComplete panics dereferencing it
 		// on reload -- so unpack the stored consensus key and set it, mirroring
