@@ -100,9 +100,8 @@ func (s *IntegrationTestSuite) SetupSuite() {
 				// window bitmap tracking, then a challenge-window-gated slash) completes
 				// within the test run instead of the multi-day production defaults.
 				// downtime_evidence_max_age must not exceed downtime_challenge_window
-				// (see InfractionParameters.Validate). The max age is 30s, comfortably
-				// above the relay latency between window close and evidence receipt.
-				// The challenge window is longer, so that a pending slash stays
+				// (see InfractionParameters.Validate); both are 120s, see the note at
+				// the values. The challenge window also keeps a pending slash
 				// challengeable long enough for
 				// testDowntimeChallengeWithoutSealedSignature to assemble a challenge
 				// from consumer chain data and land the tx while the slash is still
@@ -133,11 +132,18 @@ func (s *IntegrationTestSuite) SetupSuite() {
 						"jail_duration":  "0s",
 						"tombstone":      false,
 					},
-					"downtime_grace_period":     "604800s",
-					"signed_blocks_window":      "30",
-					"min_signed_per_window":     "0.500000000000000000",
-					"downtime_challenge_window": "60s",
-					"downtime_evidence_max_age": "30s",
+					"downtime_grace_period": "604800s",
+					"signed_blocks_window":  "30",
+					"min_signed_per_window": "0.500000000000000000",
+					// Both are wide enough to absorb relay latency plus the
+					// window-end anchoring lag: the anchor is the newest
+					// consensus state at or below the window end, so a window's
+					// computed age includes however long the client went without
+					// an update before it. At 30s a slower run can push an
+					// otherwise-fresh window past the age check, and the
+					// consumer drops the error-acked evidence without retrying.
+					"downtime_challenge_window": "120s",
+					"downtime_evidence_max_age": "120s",
 				}
 			}
 

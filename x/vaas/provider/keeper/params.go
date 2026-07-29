@@ -186,6 +186,63 @@ func (k Keeper) SetInfractionParams(ctx context.Context, params types.Infraction
 	}
 }
 
+// challengeableInterval is how far back a challenge may have to reach: evidence
+// is accepted while its window end is within DowntimeEvidenceMaxAge, and the
+// slash it queues stays challengeable for DowntimeChallengeWindow after that.
+// The oldest header a challenge can need is therefore this far in the past, and
+// verifying it requires the consumer's client to still trust a consensus state
+// that old.
+func challengeableInterval(ip types.InfractionParameters) time.Duration {
+	return ip.DowntimeEvidenceMaxAge + ip.DowntimeChallengeWindow
+}
+
+// ValidateInfractionParamsAgainstAdoptedClients rejects infraction parameters
+// that widen the challengeable interval past the trusting period of a consumer
+// client the provider has already adopted. A downtime challenge is verified
+// against that client, so an interval wider than its trusting period leaves the
+// oldest challengeable header unverifiable and the accused validator's slash
+// executing undefended. The provider does not re-adopt a client to repair this,
+// so the only place to catch it is before the parameters change.
+//
+// Only widening is checked. Narrowing the interval, or leaving it unchanged, can
+// only move it further inside every client's trusting period, and must stay
+// unconditionally allowed -- otherwise a chain already holding a client too
+// short for its current parameters could never be brought back into line.
+//
+// Every consumer with an adopted client is checked, not only the launched ones:
+// a paused consumer keeps its client and accepts evidence again once resumed.
+// Clients whose state is missing or is not a Tendermint client are skipped,
+// there being no trusting period to compare against.
+//
+// This generalises types.ValidateInfractionParamsAgainst, which bounds the same
+// interval by the trusting period derived from the default consumer unbonding
+// period: that bound constrains the parameters in the abstract, this one
+// constrains them against the clients that actually exist.
+func (k Keeper) ValidateInfractionParamsAgainstAdoptedClients(ctx sdk.Context, ip types.InfractionParameters) error {
+	proposed := challengeableInterval(ip)
+	if proposed <= challengeableInterval(k.GetInfractionParams(ctx)) {
+		return nil
+	}
+
+	return k.ConsumerClients.Walk(ctx, nil, func(consumerId uint64, clientId string) (bool, error) {
+		clientState, found := k.clientKeeper.GetClientState(ctx, clientId)
+		if !found {
+			return false, nil
+		}
+		tmClientState, ok := clientState.(*ibctmtypes.ClientState)
+		if !ok {
+			return false, nil
+		}
+		if proposed >= tmClientState.TrustingPeriod {
+			return true, fmt.Errorf(
+				"downtime_evidence_max_age + downtime_challenge_window (%s) must be below the trusting period (%s) of client %s, already adopted for consumer %d",
+				proposed, tmClientState.TrustingPeriod, clientId, consumerId,
+			)
+		}
+		return false, nil
+	})
+}
+
 // CurrentDowntimeParams returns the provider's current downtime detection
 // parameters, derived from InfractionParams, for distribution to consumers
 // via genesis and VSC packets.
