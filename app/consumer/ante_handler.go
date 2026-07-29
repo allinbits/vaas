@@ -1,11 +1,13 @@
 package app
 
 import (
-	errorsmod "cosmossdk.io/errors"
 	consumerante "github.com/allinbits/vaas/x/vaas/consumer/ante"
 	ibcconsumerkeeper "github.com/allinbits/vaas/x/vaas/consumer/keeper"
+
 	ibcante "github.com/cosmos/ibc-go/v10/modules/core/ante"
 	ibckeeper "github.com/cosmos/ibc-go/v10/modules/core/keeper"
+
+	errorsmod "cosmossdk.io/errors"
 
 	sdk "github.com/cosmos/cosmos-sdk/types"
 	sdkerrors "github.com/cosmos/cosmos-sdk/types/errors"

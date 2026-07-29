@@ -1,5 +1,6 @@
-# command to run dependency utilities
-rundep=go run -modfile devdeps/go.mod
+# command to run dependency utilities. The modfile path is absolute so the
+# targets that step into the app module keep resolving it.
+rundep=go run -modfile $(CURDIR)/devdeps/go.mod
 
 # Note: If you see "sonic only supports go1.17~1.23" warnings, either:
 # - Use Go 1.23: brew install go@1.23
@@ -12,18 +13,25 @@ rundep=go run -modfile devdeps/go.mod
 build:
 	go build ./...
 
+# app/ is a separate Go module, so ./... in the root module does not reach it
 test:
 	go test -timeout=25m -v $(shell go list ./... | grep -v 'github.com/allinbits/vaas/tests/e2e')
+	cd app && go test -timeout=25m -v ./...
 
+# The app module is linted from its own directory: golangci-lint walks up to the
+# .golangci.yml at the repo root, so both modules share one config.
 lint_cmd=$(rundep) github.com/golangci/golangci-lint/cmd/golangci-lint
 lint:
 	$(lint_cmd) run ./...
+	cd app && $(lint_cmd) run ./...
 
 lint-fix:
 	$(lint_cmd) run --fix --out-format=tab --issues-exit-code=0
+	cd app && $(lint_cmd) run --fix --out-format=tab --issues-exit-code=0
 
 vulncheck:
 	$(rundep) golang.org/x/vuln/cmd/govulncheck ./...
+	cd app && $(rundep) golang.org/x/vuln/cmd/govulncheck ./...
 
 mocks-gen:
 	$(rundep) go.uber.org/mock/mockgen -package=keeper -destination=testutil/keeper/mocks.go -source=x/vaas/types/expected_keepers.go

@@ -4,11 +4,11 @@ import (
 	"fmt"
 	"os"
 
-	svrcmd "github.com/cosmos/cosmos-sdk/server/cmd"
-
 	"github.com/allinbits/vaas/app/cmd/provider/cmd"
 	app "github.com/allinbits/vaas/app/provider"
 	appparams "github.com/allinbits/vaas/app/provider/params"
+
+	svrcmd "github.com/cosmos/cosmos-sdk/server/cmd"
 )
 
 func main() {

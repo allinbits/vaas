@@ -80,7 +80,7 @@ func (app *App) prepForZeroHeightGenesis(ctx sdk.Context, jailAllowedAddrs []str
 	/* Handle fee distribution state. */
 
 	// withdraw all validator commission
-	app.StakingKeeper.IterateValidators(ctx, func(_ int64, val stakingtypes.ValidatorI) (stop bool) {
+	if err := app.StakingKeeper.IterateValidators(ctx, func(_ int64, val stakingtypes.ValidatorI) (stop bool) {
 		valAddr, err := app.StakingKeeper.ValidatorAddressCodec().StringToBytes(val.GetOperator())
 		if err != nil {
 			panic(err)
@@ -91,7 +91,9 @@ func (app *App) prepForZeroHeightGenesis(ctx sdk.Context, jailAllowedAddrs []str
 			panic(err)
 		}
 		return false
-	})
+	}); err != nil {
+		panic(err)
+	}
 
 	// withdraw all delegator rewards
 	dels, err := app.StakingKeeper.GetAllDelegations(ctx)
@@ -99,12 +101,10 @@ func (app *App) prepForZeroHeightGenesis(ctx sdk.Context, jailAllowedAddrs []str
 		panic(err)
 	}
 	for _, delegation := range dels {
-		// TODO: add tests to figure this out (it's low impact since this is just a test app)
 		delAddr, err := app.AccountKeeper.AddressCodec().StringToBytes(delegation.GetDelegatorAddr())
 		if err != nil {
 			panic(err)
 		}
-		// NOTE: @MSalopek this may be wrong -> need validator addr codec
 		valAddr, err := app.StakingKeeper.ValidatorAddressCodec().StringToBytes(delegation.GetValidatorAddr())
 		if err != nil {
 			panic(err)
@@ -142,7 +142,9 @@ func (app *App) prepForZeroHeightGenesis(ctx sdk.Context, jailAllowedAddrs []str
 			panic(err)
 		}
 		feePool.CommunityPool = feePool.CommunityPool.Add(scraps...)
-		app.DistrKeeper.FeePool.Set(ctx, feePool)
+		if err := app.DistrKeeper.FeePool.Set(ctx, feePool); err != nil {
+			panic(err)
+		}
 
 		err = app.DistrKeeper.Hooks().AfterValidatorCreated(ctx, valAddr)
 		if err != nil {
@@ -251,12 +253,21 @@ func (app *App) prepForZeroHeightGenesis(ctx sdk.Context, jailAllowedAddrs []str
 	/* Handle slashing state. */
 
 	// reset start height on signing infos
-	app.SlashingKeeper.IterateValidatorSigningInfos(
+	var setErr error
+	if err := app.SlashingKeeper.IterateValidatorSigningInfos(
 		ctx,
 		func(addr sdk.ConsAddress, info slashingtypes.ValidatorSigningInfo) (stop bool) {
 			info.StartHeight = 0
-			app.SlashingKeeper.SetValidatorSigningInfo(ctx, addr, info)
+			if err := app.SlashingKeeper.SetValidatorSigningInfo(ctx, addr, info); err != nil {
+				setErr = err
+				return true
+			}
 			return false
 		},
-	)
+	); err != nil {
+		panic(err)
+	}
+	if setErr != nil {
+		panic(setErr)
+	}
 }
