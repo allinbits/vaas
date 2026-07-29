@@ -10,7 +10,6 @@ import (
 
 	cryptotypes "github.com/cosmos/cosmos-sdk/crypto/types"
 	sdk "github.com/cosmos/cosmos-sdk/types"
-	sdkgov "github.com/cosmos/cosmos-sdk/x/gov/types"
 	stakingtypes "github.com/cosmos/cosmos-sdk/x/staking/types"
 )
 
@@ -19,10 +18,7 @@ type Hooks struct {
 	k *Keeper
 }
 
-var (
-	_ stakingtypes.StakingHooks = Hooks{}
-	_ sdkgov.GovHooks           = Hooks{}
-)
+var _ stakingtypes.StakingHooks = Hooks{}
 
 // Hooks returns new provider hooks
 func (k *Keeper) Hooks() Hooks {
@@ -137,29 +133,5 @@ func (h Hooks) AfterConsensusPubKeyUpdate(goCtx context.Context, oldPk, newPk cr
 
 	h.k.MigrateStateOnConsPubKeyRotation(ctx, oldAddr, newAddr)
 	h.k.QueueConsPubKeyRotationSnapshots(ctx, newAddr)
-	return nil
-}
-
-//
-// gov hooks
-//
-
-func (h Hooks) AfterProposalSubmission(goCtx context.Context, proposalId uint64) error {
-	return nil
-}
-
-func (h Hooks) AfterProposalVotingPeriodEnded(goCtx context.Context, proposalId uint64) error {
-	return nil
-}
-
-func (h Hooks) AfterProposalDeposit(ctx context.Context, proposalID uint64, depositorAddr sdk.AccAddress) error {
-	return nil
-}
-
-func (h Hooks) AfterProposalVote(ctx context.Context, proposalID uint64, voterAddr sdk.AccAddress) error {
-	return nil
-}
-
-func (h Hooks) AfterProposalFailedMinDeposit(ctx context.Context, proposalID uint64) error {
 	return nil
 }

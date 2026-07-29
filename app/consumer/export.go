@@ -30,7 +30,7 @@ func (app *App) ExportAppStateAndValidators(
 	height := app.LastBlockHeight() + 1
 	if forZeroHeight {
 		height = 0
-		app.prepForZeroHeightGenesis(ctx, jailAllowedAddrs)
+		app.prepForZeroHeightGenesis(ctx)
 	}
 
 	genState, err := app.MM.ExportGenesis(ctx, app.appCodec)
@@ -59,14 +59,11 @@ func (app *App) ExportAppStateAndValidators(
 // NOTE zero height genesis is a temporary feature which will be deprecated
 //
 //	in favour of export at a block height
-func (app *App) prepForZeroHeightGenesis(ctx sdk.Context, jailAllowedAddrs []string) {
-	// set context height to zero
-	height := ctx.BlockHeight()
-	ctx = ctx.WithBlockHeight(0)
-
-	// reset context height
-	ctx = ctx.WithBlockHeight(height)
-
+//
+// A consumer chain wires no staking module: its validator set comes from the
+// provider over VSC packets, so the exporter's jail-allowed list has nothing to
+// act on here and only the slashing state needs a reset.
+func (app *App) prepForZeroHeightGenesis(ctx sdk.Context) {
 	/* Handle slashing state. */
 
 	// reset start height on signing infos

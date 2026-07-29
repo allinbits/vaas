@@ -23,7 +23,6 @@ import (
 
 	"github.com/cosmos/cosmos-sdk/codec"
 	sdk "github.com/cosmos/cosmos-sdk/types"
-	govkeeper "github.com/cosmos/cosmos-sdk/x/gov/keeper"
 	stakingtypes "github.com/cosmos/cosmos-sdk/x/staking/types"
 )
 
@@ -43,7 +42,6 @@ type Keeper struct {
 	photonKeeper       vaastypes.PhotonKeeper
 	bankKeeper         vaastypes.BankKeeper
 	distributionKeeper vaastypes.DistributionKeeper
-	govKeeper          govkeeper.Keeper
 	feeCollectorName   string
 	// feeDenom is the denom charged to consumers per block. It is fixed at
 	// construction and cannot be changed without a binary upgrade. The amount
@@ -201,7 +199,6 @@ func NewKeeper(
 	accountKeeper vaastypes.AccountKeeper,
 	bankKeeper vaastypes.BankKeeper,
 	distributionKeeper vaastypes.DistributionKeeper,
-	govKeeper govkeeper.Keeper,
 	authority string,
 	validatorAddressCodec, consensusAddressCodec addresscodec.Codec,
 	feeCollectorName string,
@@ -233,7 +230,6 @@ func NewKeeper(
 		validatorAddressCodec: validatorAddressCodec,
 		consensusAddressCodec: consensusAddressCodec,
 		channelKeeperV2:       channelKeeperV2,
-		govKeeper:             govKeeper,
 
 		// Initialize collections
 		Params:               collections.NewItem(sb, types.ParametersPrefix, "params", codec.CollValue[types.Params](cdc)),
@@ -394,10 +390,6 @@ func (k Keeper) ValidatorAddressCodec() addresscodec.Codec {
 // ConsensusAddressCodec returns the app consensus address codec.
 func (k Keeper) ConsensusAddressCodec() addresscodec.Codec {
 	return k.consensusAddressCodec
-}
-
-func (k *Keeper) SetGovKeeper(govKeeper govkeeper.Keeper) {
-	k.govKeeper = govKeeper
 }
 
 // Logger returns a module-specific logger.
