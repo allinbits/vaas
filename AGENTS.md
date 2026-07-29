@@ -17,7 +17,7 @@ make mocks-gen          # regenerate mocks from x/vaas/types/expected_keepers.go
 make vulncheck          # govulncheck
 
 # Single test
-go test ./x/vaas/provider/keeper -run TestValsetUpdateBlockHeight -v
+go test ./x/vaas/provider/keeper -run TestConsumerClientId -v
 
 # Protobuf (requires Docker)
 make proto-gen          # generate Go code from .proto files
@@ -47,10 +47,12 @@ The core protocol lives in `x/vaas/` with two symmetric modules:
 
 Each module has: `keeper/` (business logic + state), `types/` (data structures + params), `client/cli/` (CLI commands), `module.go`, and `ibc_module.go` (IBC v2 callbacks implementing `api.IBCModule` from `ibc-go/v10/modules/core/api`).
 
-Two helper modules replace standard Cosmos modules to prevent automatic validator set updates on consumer chains:
+Two helper modules replace the standard Cosmos modules on the **provider** app so the staking module does not push its own validator-set updates to CometBFT -- the VAAS provider module computes and returns the provider validator set itself, in `EndBlock`:
 
 - `x/vaas/no_valupdates_staking/` — staking without EndBlock valset exports
 - `x/vaas/no_valupdates_genutil/` — genutil without gentx-based valset init
+
+The consumer app wires neither: it runs no real staking module and uses stock `genutil` with the `ConsumerKeeper` standing in as a no-op staking keeper, so a consumer's validator set is driven entirely by incoming VSC packets.
 
 ### Application Layer
 
@@ -63,16 +65,22 @@ Built with `make build-apps` into `build/`.
 ### Key Data Flow
 
 1. Once a consumer reaches `LAUNCHED`, a relayer creates an IBC v2 client on the provider pointing to the consumer (and the counterparty on the other side). The provider discovers this client at the next epoch boundary (`discoverActiveConsumerClient`), it never creates the client itself.
-2. Provider computes validator set changes once per epoch (`blocks_per_epoch`, default 600) and queues a VSC packet per launched consumer.
-3. Provider sends each queued VSC packet over the discovered IBC v2 client. Packets are out-of-order; the consumer deduplicates via `HighestValsetUpdateID`.
+2. Once per epoch (`blocks_per_epoch`, default 600) the provider queues a VSC packet per launched consumer and, in the same window, collects each consumer's epoch fee (`fees_per_block * blocks_per_epoch`) from its fee pool and distributes it to the bonded validators.
+3. Provider sends each queued VSC packet over the discovered IBC v2 client. Packets are out-of-order; the consumer deduplicates via `HighestValsetUpdateID`. A packet carries a diff by default, or an absolute snapshot (`is_snapshot`) when the consumer has fallen behind on acks, and every packet also carries the consumer's current in-debt flag.
 4. Consumer's `OnRecvPacket` calls `ApplyCCValidatorChanges()` and the new set is flushed to CometBFT on the next `EndBlock`.
-5. Double-voting / light-client evidence flows consumer → provider via `MsgSubmitConsumerDoubleVoting` / `MsgSubmitConsumerMisbehaviour`; per-consumer infraction parameters determine slash/jail.
+5. Evidence flows back to the provider two ways. Downtime evidence travels consumer -> provider as IBC `EvidencePacketData` packets, which the provider prices into a slash held behind a challenge window (a successful `MsgChallengeConsumerDowntime` cancels it and moves the consumer to `PAUSED`). Double-voting / light-client evidence is submitted as ordinary provider transactions (`MsgSubmitConsumerDoubleVoting` / `MsgSubmitConsumerMisbehaviour`). Global infraction parameters determine slash/jail.
 
 ### Consumer Lifecycle
 
-`REGISTERED → INITIALIZED → LAUNCHED → STOPPED → DELETED`
+`REGISTERED -> INITIALIZED -> LAUNCHED -> STOPPED -> DELETED`, plus a `PAUSED`
+branch off `LAUNCHED` (entered by a successful downtime challenge; governance
+resumes it to `LAUNCHED` or removes it to `STOPPED`).
 
-Managed via `MsgCreateConsumer`, `MsgUpdateConsumer`, `MsgRemoveConsumer` on the provider.
+Managed on the provider via `MsgCreateConsumer`, `MsgUpdateConsumer`,
+`MsgRemoveConsumer`, `MsgChallengeConsumerDowntime`, and `MsgResumeConsumer`;
+the per-consumer fee pool via `MsgFundConsumerFeePool`,
+`MsgWithdrawConsumerFeePool`, `MsgSweepConsumerFeePool`, and
+`MsgSetConsumerFeesPerBlock`.
 
 ### State Management
 
@@ -85,7 +93,7 @@ Under `proto/vaas/`: `v1/` (shared wire types like `ValidatorSetChangePacketData
 ## Testing
 
 - **Unit tests**: alongside source in `*_test.go`. Use `testutil/keeper/unit_test_helpers.go` for in-memory keeper setup with `MockedKeepers` (gomock).
-- **Mock generation**: `make mocks-gen` from `x/vaas/types/expected_keepers.go` → `testutil/keeper/mocks.go`
+- **Mock generation**: `make mocks-gen` from `x/vaas/types/expected_keepers.go` -> `testutil/keeper/mocks.go`
 - **E2E tests**: `tests/e2e/` — Docker-based, spins up real provider/consumer chains plus the `ghcr.io/allinbits/ibc-v2-ts-relayer` container; see [tests/e2e/e2e_tsrelayer_test.go](tests/e2e/e2e_tsrelayer_test.go).
 
 ## Lint / Import Ordering
