@@ -150,7 +150,7 @@ func (s *IntegrationTestSuite) verifyExportedGenesis(exportedJSON []byte) {
 	var app map[string]json.RawMessage
 	s.Require().NoError(json.Unmarshal(appState, &app))
 
-	providerState, ok := app["provider"]
+	providerState, ok := app["vaasprovider"]
 	s.Require().True(ok, "app_state missing provider module")
 
 	type consumerStateJSON struct {

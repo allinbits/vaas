@@ -66,8 +66,8 @@ func bankSendMsg() sdk.Msg {
 	}
 }
 
-// Pre-CCV: /ibc.* messages are accepted so the IBC stack can be set up.
-func TestMsgFilterDecoratorPreCCVAllowsIBCMsgs(t *testing.T) {
+// Bootstrap: /ibc.* messages are accepted so the IBC stack can be set up.
+func TestMsgFilterDecoratorBootstrapAllowsIBCMsgs(t *testing.T) {
 	nextCalled, err := runDecorator(t,
 		mockConsumerKeeper{providerClientFound: false},
 		[]sdk.Msg{&channeltypes.MsgRecvPacket{}},
@@ -76,8 +76,8 @@ func TestMsgFilterDecoratorPreCCVAllowsIBCMsgs(t *testing.T) {
 	require.True(t, nextCalled)
 }
 
-// Pre-CCV: any non-/ibc.* message is rejected.
-func TestMsgFilterDecoratorPreCCVRejectsNonIBCMsgs(t *testing.T) {
+// Bootstrap: any non-/ibc.* message is rejected.
+func TestMsgFilterDecoratorBootstrapRejectsNonIBCMsgs(t *testing.T) {
 	nextCalled, err := runDecorator(t,
 		mockConsumerKeeper{providerClientFound: false},
 		[]sdk.Msg{bankSendMsg()},
@@ -86,7 +86,7 @@ func TestMsgFilterDecoratorPreCCVRejectsNonIBCMsgs(t *testing.T) {
 	require.False(t, nextCalled)
 }
 
-// Post-CCV, not in debt: everything passes.
+// Provider client established, not in debt: everything passes.
 func TestMsgFilterDecoratorAllowsNonIBCTxWhenNotInDebt(t *testing.T) {
 	nextCalled, err := runDecorator(t,
 		mockConsumerKeeper{providerClientFound: true, inDebt: false},
@@ -96,7 +96,7 @@ func TestMsgFilterDecoratorAllowsNonIBCTxWhenNotInDebt(t *testing.T) {
 	require.True(t, nextCalled)
 }
 
-// Post-CCV, in debt: non-IBC, non-gov msgs are rejected with ErrConsumerInDebt.
+// Provider client established, in debt: non-IBC, non-gov msgs are rejected with ErrConsumerInDebt.
 func TestMsgFilterDecoratorBlocksNonIBCTxWhenInDebt(t *testing.T) {
 	nextCalled, err := runDecorator(t,
 		mockConsumerKeeper{providerClientFound: true, inDebt: true},
@@ -107,7 +107,7 @@ func TestMsgFilterDecoratorBlocksNonIBCTxWhenInDebt(t *testing.T) {
 	require.False(t, nextCalled)
 }
 
-// Post-CCV, in debt: /ibc.core.* msgs pass to keep CCV liveness.
+// Provider client established, in debt: /ibc.core.* msgs pass to keep VAAS liveness.
 func TestMsgFilterDecoratorAllowsIBCCoreTxWhenInDebt(t *testing.T) {
 	nextCalled, err := runDecorator(t,
 		mockConsumerKeeper{providerClientFound: true, inDebt: true},
@@ -117,7 +117,7 @@ func TestMsgFilterDecoratorAllowsIBCCoreTxWhenInDebt(t *testing.T) {
 	require.True(t, nextCalled)
 }
 
-// Post-CCV, in debt: a tx mixing /ibc.core.* with anything else is rejected.
+// Provider client established, in debt: a tx mixing /ibc.core.* with anything else is rejected.
 func TestMsgFilterDecoratorBlocksMixedIBCCoreAndNonIBCMessagesWhenInDebt(t *testing.T) {
 	nextCalled, err := runDecorator(t,
 		mockConsumerKeeper{providerClientFound: true, inDebt: true},
@@ -146,7 +146,7 @@ func TestMsgFilterDecoratorAllowsGovTxWhenInDebt(t *testing.T) {
 
 // Authz-wrapped IBC core txs are treated as non-IBC and rejected while the
 // consumer is in debt. Real relayers sign /ibc.core.* messages directly with
-// their own keys, so this path is not needed for CCV liveness.
+// their own keys, so this path is not needed for VAAS liveness.
 func TestMsgFilterDecoratorRejectsAuthzWrappedIBCCoreTxWhenInDebt(t *testing.T) {
 	msgExec := authz.NewMsgExec(testAccAddress(3), []sdk.Msg{&channeltypes.MsgRecvPacket{}})
 	nextCalled, err := runDecorator(t,

@@ -275,7 +275,7 @@ func (s *baseTestSuite) registerConsumerOnProvider() {
 	})
 
 	stdout, stderr, err := s.dockerExec(s.providerValRes[0].Container.ID, []string{
-		providerBinary, "tx", "provider", "create-consumer", "/tmp/create_consumer.json",
+		providerBinary, "tx", "vaasprovider", "create-consumer", "/tmp/create_consumer.json",
 		"--from", "val",
 		"--home", providerHomePath,
 		"--keyring-backend", "test",
@@ -312,7 +312,7 @@ func (s *baseTestSuite) fetchConsumerGenesis() []byte {
 	// Retry fetching consumer genesis (it may take a few blocks)
 	for range 30 {
 		stdout, _, err := s.dockerExec(s.providerValRes[0].Container.ID, []string{
-			providerBinary, "query", "provider", "consumer-genesis", "0",
+			providerBinary, "query", "vaasprovider", "consumer-genesis", "0",
 			"--home", providerHomePath,
 			"--output", "json",
 		})

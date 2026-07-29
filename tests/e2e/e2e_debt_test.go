@@ -12,7 +12,7 @@ import (
 // given consumer id by querying the provider chain.
 func (s *IntegrationTestSuite) queryConsumerFeePoolAddress(consumerID string) string {
 	stdout, _, err := s.dockerExec(s.providerValRes[0].Container.ID, []string{
-		providerBinary, "query", "provider", "consumer-chain", consumerID,
+		providerBinary, "query", "vaasprovider", "consumer-chain", consumerID,
 		"--home", providerHomePath,
 		"--output", "json",
 	})
@@ -86,7 +86,7 @@ func (s *IntegrationTestSuite) providerFundAddress(addr, amount string) {
 // fee pool via MsgFundConsumerFeePool, signed by val.
 func (s *baseTestSuite) providerFundConsumerFeePool(consumerID, amount string) {
 	stdout, stderr, err := s.dockerExec(s.providerValRes[0].Container.ID, []string{
-		providerBinary, "tx", "provider", "fund-consumer-fee-pool",
+		providerBinary, "tx", "vaasprovider", "fund-consumer-fee-pool",
 		consumerID, amount,
 		"--from", "val",
 		"--home", providerHomePath,

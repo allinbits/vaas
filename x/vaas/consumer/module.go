@@ -177,8 +177,8 @@ func (am AppModule) EndBlock(goCtx context.Context) ([]abci.ValidatorUpdate, err
 	if !ok {
 		return []abci.ValidatorUpdate{}, nil
 	}
-	// apply changes to cross-chain validator set
-	tendermintUpdates := am.keeper.ApplyCCValidatorChanges(ctx, data.ValidatorUpdates)
+	// apply changes to VAAS validator set
+	tendermintUpdates := am.keeper.ApplyVaasValidatorChanges(ctx, data.ValidatorUpdates)
 	am.keeper.DeletePendingChanges(ctx)
 
 	am.keeper.Logger(ctx).Debug("sending validator updates to consensus engine", "len updates", len(tendermintUpdates))

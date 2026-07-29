@@ -8,13 +8,13 @@ import (
 	sdkerrors "github.com/cosmos/cosmos-sdk/types/errors"
 )
 
-func NewCCValidator(address []byte, power int64, pubKey cryptotypes.PubKey) (CrossChainValidator, error) {
+func NewVaasValidator(address []byte, power int64, pubKey cryptotypes.PubKey) (VaasValidator, error) {
 	pkAny, err := codectypes.NewAnyWithValue(pubKey)
 	if err != nil {
-		return CrossChainValidator{}, err
+		return VaasValidator{}, err
 	}
 
-	return CrossChainValidator{
+	return VaasValidator{
 		Address: address,
 		Power:   power,
 		Pubkey:  pkAny,
@@ -22,14 +22,14 @@ func NewCCValidator(address []byte, power int64, pubKey cryptotypes.PubKey) (Cro
 }
 
 // UnpackInterfaces implements UnpackInterfacesMessage.UnpackInterfaces
-func (ccv CrossChainValidator) UnpackInterfaces(unpacker codectypes.AnyUnpacker) error {
+func (v VaasValidator) UnpackInterfaces(unpacker codectypes.AnyUnpacker) error {
 	var pk cryptotypes.PubKey
-	return unpacker.UnpackAny(ccv.Pubkey, &pk)
+	return unpacker.UnpackAny(v.Pubkey, &pk)
 }
 
 // ConsPubKey returns the validator PubKey as a cryptotypes.PubKey.
-func (ccv CrossChainValidator) ConsPubKey() (cryptotypes.PubKey, error) {
-	pk, ok := ccv.Pubkey.GetCachedValue().(cryptotypes.PubKey)
+func (v VaasValidator) ConsPubKey() (cryptotypes.PubKey, error) {
+	pk, ok := v.Pubkey.GetCachedValue().(cryptotypes.PubKey)
 	if !ok {
 		return nil, errorsmod.Wrapf(sdkerrors.ErrInvalidType, "expecting cryptotypes.PubKey, got %T", pk)
 	}

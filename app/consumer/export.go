@@ -92,13 +92,13 @@ func (app *App) prepForZeroHeightGenesis(ctx sdk.Context, jailAllowedAddrs []str
 
 // GetValidatorSet returns a slice of bonded validators.
 func (app *App) GetValidatorSet(ctx sdk.Context) ([]tmtypes.GenesisValidator, error) {
-	cVals := app.ConsumerKeeper.GetAllCCValidator(ctx)
-	if len(cVals) == 0 {
+	vaasVals := app.ConsumerKeeper.GetAllVaasValidator(ctx)
+	if len(vaasVals) == 0 {
 		return nil, fmt.Errorf("empty validator set")
 	}
 
 	vals := []tmtypes.GenesisValidator{}
-	for _, v := range cVals {
+	for _, v := range vaasVals {
 		vals = append(vals, tmtypes.GenesisValidator{Address: v.Address, Power: v.Power})
 	}
 	return vals, nil

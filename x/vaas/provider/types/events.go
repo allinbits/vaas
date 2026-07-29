@@ -2,14 +2,14 @@ package types
 
 // Provider events
 const (
-	EventTypeAssignConsumerKey       = "assign_consumer_key"
-	EventTypeCreateConsumer          = "create_consumer"
-	EventTypeUpdateConsumer          = "update_consumer"
-	EventTypeRemoveConsumer          = "remove_consumer"
-	EventTypeSetConsumerFeesPerBlock = "set_consumer_fees_per_block"
-	EventTypeConsumerFeePoolFund     = "consumer_fee_pool_fund"
-	EventTypeConsumerFeePoolWithdraw = "consumer_fee_pool_withdraw"
-	EventTypeConsumerFeePoolSweep    = "consumer_fee_pool_sweep"
+	EventTypeAssignConsumerKey       = "vaas_assign_consumer_key"
+	EventTypeCreateConsumer          = "vaas_create_consumer"
+	EventTypeUpdateConsumer          = "vaas_update_consumer"
+	EventTypeRemoveConsumer          = "vaas_remove_consumer"
+	EventTypeSetConsumerFeesPerBlock = "vaas_set_consumer_fees_per_block"
+	EventTypeConsumerFeePoolFund     = "vaas_consumer_fee_pool_fund"
+	EventTypeConsumerFeePoolWithdraw = "vaas_consumer_fee_pool_withdraw"
+	EventTypeConsumerFeePoolSweep    = "vaas_consumer_fee_pool_sweep"
 
 	AttributeProviderValidatorAddress = "provider_validator_address"
 	AttributeConsumerConsensusPubKey  = "consumer_consensus_pub_key"

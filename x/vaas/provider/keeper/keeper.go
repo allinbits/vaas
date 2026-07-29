@@ -269,7 +269,7 @@ func NewKeeper(
 		ConsumerInitParams:               collections.NewMap(sb, types.ConsumerIdToInitializationParamsPrefix, "consumer_init_params", collections.Uint64Key, codec.CollValue[types.ConsumerInitializationParameters](cdc)),
 		ConsumerPhase:                    collections.NewMap(sb, types.ConsumerIdToPhasePrefix, "consumer_phase", collections.Uint64Key, collections.Uint32Value),
 		ConsumerDebt:                     collections.NewMap(sb, types.ConsumerIdToDebtPrefix, "consumer_debt", collections.Uint64Key, collections.BoolValue),
-		ConsumerFeesPerBlockOverride:     collections.NewMap(sb, types.ConsumerIdToFeesPerBlockOverridePrefix, types.ConsumerIdToFeesPerBlockOverrideKeyName, collections.Uint64Key, sdk.IntValue),
+		ConsumerFeesPerBlockOverride:     collections.NewMap(sb, types.ConsumerIdToFeesPerBlockOverridePrefix, "consumer_fees_per_block_override", collections.Uint64Key, sdk.IntValue),
 		EquivocationEvidenceMinHeight:    collections.NewMap(sb, types.EquivocationEvidenceMinHeightPrefix, "equivocation_evidence_min_height", collections.Uint64Key, collections.Uint64Value),
 		ConsumerRemovalTime:              collections.NewMap(sb, types.ConsumerIdToRemovalTimePrefix, "consumer_removal_time", collections.Uint64Key, collections.BytesValue),
 		ConsumerLastAckTime:              collections.NewMap(sb, types.ConsumerIdToLastAckTimePrefix, "consumer_last_ack_time", collections.Uint64Key, collections.BytesValue),
@@ -277,8 +277,8 @@ func NewKeeper(
 		ConsumerHighestAckedVscId:        collections.NewMap(sb, types.ConsumerIdToHighestAckedVscIdPrefix, "consumer_highest_acked_vsc_id", collections.Uint64Key, collections.Uint64Value),
 		SpawnTimeToConsumerIds:           collections.NewMap(sb, types.SpawnTimeToConsumerIdsPrefix, "spawn_time_to_consumer_ids", collections.BytesKey, codec.CollValue[types.ConsumerIds](cdc)),
 		RemovalTimeToConsumerIds:         collections.NewMap(sb, types.RemovalTimeToConsumerIdsPrefix, "removal_time_to_consumer_ids", collections.BytesKey, codec.CollValue[types.ConsumerIds](cdc)),
-		ConsumerPauseExpirationTime:      collections.NewMap(sb, types.ConsumerIdToPauseExpirationTimePrefix, types.ConsumerIdToPauseExpirationTimeKeyName, collections.Uint64Key, collections.BytesValue),
-		PauseExpirationTimeToConsumerIds: collections.NewMap(sb, types.PauseExpirationTimeToConsumerIdsPrefix, types.PauseExpirationTimeToConsumerIdsKeyName, collections.BytesKey, codec.CollValue[types.ConsumerIds](cdc)),
+		ConsumerPauseExpirationTime:      collections.NewMap(sb, types.ConsumerIdToPauseExpirationTimePrefix, "consumer_pause_expiration_time", collections.Uint64Key, collections.BytesValue),
+		PauseExpirationTimeToConsumerIds: collections.NewMap(sb, types.PauseExpirationTimeToConsumerIdsPrefix, "pause_expiration_time_to_consumer_ids", collections.BytesKey, codec.CollValue[types.ConsumerIds](cdc)),
 
 		// Key assignment collections
 		ValidatorConsumerPubKey: collections.NewMap(sb, types.ConsumerValidatorsPrefix, "validator_consumer_pub_key", collections.PairKeyCodec(collections.Uint64Key, collections.BytesKey), collections.BytesValue),
@@ -287,73 +287,73 @@ func NewKeeper(
 
 		// Validator set collections
 		ConsumerValidators:        collections.NewMap(sb, types.ConsumerValidatorPrefix, "consumer_validators", collections.PairKeyCodec(collections.Uint64Key, collections.BytesKey), codec.CollValue[types.ConsensusValidator](cdc)),
-		LastProviderConsensusVals: collections.NewMap(sb, types.LastProviderConsensusVals, "last_provider_consensus_vals", collections.BytesKey, codec.CollValue[types.ConsensusValidator](cdc)),
+		LastProviderConsensusVals: collections.NewMap(sb, types.LastProviderConsensusValsPrefix, "last_provider_consensus_vals", collections.BytesKey, codec.CollValue[types.ConsensusValidator](cdc)),
 	}
 
 	// Fee pool collections
 	k.ConsumerFeePoolShares = collections.NewMap(
 		sb, types.ConsumerFeePoolSharesPrefix,
-		types.ConsumerFeePoolSharesKeyName,
+		"consumer_fee_pool_shares",
 		collections.TripleKeyCodec(collections.Uint64Key, collections.StringKey, sdk.AccAddressKey),
 		sdk.IntValue,
 	)
 	k.ConsumerFeePoolTotalShares = collections.NewMap(
 		sb, types.ConsumerFeePoolTotalSharesPrefix,
-		types.ConsumerFeePoolTotalSharesKeyName,
+		"consumer_fee_pool_total_shares",
 		collections.PairKeyCodec(collections.Uint64Key, collections.StringKey),
 		sdk.IntValue,
 	)
 	k.FeePoolAddressToConsumerId = collections.NewMap(
 		sb, types.FeePoolAddressToConsumerIdPrefix,
-		types.FeePoolAddressToConsumerIdKeyName,
+		"fee_pool_address_to_consumer_id",
 		sdk.AccAddressKey,
 		collections.Uint64Value,
 	)
 
 	k.EpochDowntime = collections.NewMap(
 		sb, types.EpochDowntimePrefix,
-		types.EpochDowntimeKeyName,
+		"epoch_downtime",
 		collections.PairKeyCodec(collections.Uint64Key, collections.BytesKey),
 		collections.BoolValue,
 	)
 
 	k.PreviousDowntimeParams = collections.NewItem(
 		sb, types.PreviousDowntimeParamsPrefix,
-		types.PreviousDowntimeParamsKeyName,
+		"previous_downtime_params",
 		codec.CollValue[types.PreviousDowntimeParams](cdc),
 	)
 
 	k.EpochShareRecords = collections.NewMap(
 		sb, types.EpochShareRecordsPrefix,
-		types.EpochShareRecordsKeyName,
+		"epoch_share_records",
 		collections.PairKeyCodec(collections.Uint64Key, collections.Int64Key),
 		sdk.IntValue,
 	)
 
 	k.PendingDowntimeSlashes = collections.NewMap(
 		sb, types.PendingDowntimeSlashesPrefix,
-		types.PendingDowntimeSlashesKeyName,
+		"pending_downtime_slashes",
 		collections.TripleKeyCodec(collections.Uint64Key, collections.BytesKey, collections.Int64Key),
 		codec.CollValue[types.PendingDowntimeSlash](cdc),
 	)
 
 	k.AcceptedDowntimeWindows = collections.NewMap(
 		sb, types.AcceptedDowntimeWindowsPrefix,
-		types.AcceptedDowntimeWindowsKeyName,
+		"accepted_downtime_windows",
 		collections.TripleKeyCodec(collections.Uint64Key, collections.BytesKey, collections.Int64Key),
 		codec.CollValue[types.AcceptedDowntimeWindow](cdc),
 	)
 
 	k.DowntimeWindowFloors = collections.NewMap(
 		sb, types.DowntimeWindowFloorsPrefix,
-		types.DowntimeWindowFloorsKeyName,
+		"downtime_window_floors",
 		collections.PairKeyCodec(collections.Uint64Key, collections.BytesKey),
 		collections.Int64Value,
 	)
 
 	k.WithheldFeeRecords = collections.NewMap(
 		sb, types.WithheldFeeRecordsPrefix,
-		types.WithheldFeeRecordsKeyName,
+		"withheld_fee_records",
 		collections.PairKeyCodec(collections.Uint64Key, collections.BytesKey),
 		codec.CollValue[types.WithheldFeeRecord](cdc),
 	)

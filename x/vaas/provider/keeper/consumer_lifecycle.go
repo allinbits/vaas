@@ -292,7 +292,6 @@ func (k Keeper) MakeConsumerGenesis(
 		clientState,
 		consState,
 		initialValidatorUpdates,
-		false,
 		consumerGenesisParams,
 	)
 
@@ -424,7 +423,7 @@ func (k Keeper) PauseConsumerChain(ctx sdk.Context, consumerId uint64) error {
 // does not immediately re-flag the consumer for the pause duration it was
 // rightfully silent), and forces an immediate snapshot VSC packet -- queued
 // and sent right away rather than left for the next epoch boundary, which
-// could be up to BlocksPerEpoch blocks away -- so the consumer's cross-chain
+// could be up to BlocksPerEpoch blocks away -- so the consumer's VAAS
 // validator set is not stale for however long the pause lasted.
 //
 // The send is enforced, not best-effort: unlike the EndBlock path (which

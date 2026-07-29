@@ -21,34 +21,34 @@ import (
 	"github.com/allinbits/vaas/x/vaas/consumer/types"
 )
 
-// TestApplyCCValidatorChanges tests the ApplyCCValidatorChanges method for a consumer keeper
-func TestApplyCCValidatorChanges(t *testing.T) {
+// TestApplyVaasValidatorChanges tests the ApplyVaasValidatorChanges method for a consumer keeper
+func TestApplyVaasValidatorChanges(t *testing.T) {
 	keeperParams := testkeeper.NewInMemKeeperParams(t)
 	consumerKeeper, ctx, ctrl, _ := testkeeper.GetConsumerKeeperAndCtx(t, keeperParams)
 	defer ctrl.Finish()
 
 	// utility functions
-	getCCVals := func() (vals []types.CrossChainValidator) {
-		vals = consumerKeeper.GetAllCCValidator(ctx)
+	getVaasVals := func() (vals []types.VaasValidator) {
+		vals = consumerKeeper.GetAllVaasValidator(ctx)
 		return
 	}
 
-	clearCCVals := func() {
-		ccVals := consumerKeeper.GetAllCCValidator(ctx)
-		for _, v := range ccVals {
-			consumerKeeper.DeleteCCValidator(ctx, v.Address)
+	clearVaasVals := func() {
+		vaasVals := consumerKeeper.GetAllVaasValidator(ctx)
+		for _, v := range vaasVals {
+			consumerKeeper.DeleteVaasValidator(ctx, v.Address)
 		}
 	}
 
-	sumCCValsPow := func(vals []types.CrossChainValidator) (power int64) {
+	sumVaasValsPow := func(vals []types.VaasValidator) (power int64) {
 		for _, v := range vals {
 			power += v.Power
 		}
 		return
 	}
 
-	// prepare the testing setup by clearing the current cross-chain validators in states
-	clearCCVals()
+	// prepare the testing setup by clearing the current VAAS validators in states
+	clearVaasVals()
 
 	tcValidators := GenerateValidators(t)
 
@@ -60,12 +60,12 @@ func TestApplyCCValidatorChanges(t *testing.T) {
 		changesPower += v.VotingPower
 	}
 
-	// finish setup by storing 3 out 4 testing validators as cross-chain validator records
-	SetCCValidators(t, consumerKeeper, ctx, tcValidators[:len(tcValidators)-1])
+	// finish setup by storing 3 out 4 testing validators as VAAS validator records
+	SetVaasValidators(t, consumerKeeper, ctx, tcValidators[:len(tcValidators)-1])
 
 	// verify setup
-	ccVals := getCCVals()
-	require.Len(t, ccVals, len(tcValidators)-1)
+	vaasVals := getVaasVals()
+	require.Len(t, vaasVals, len(tcValidators)-1)
 
 	// test behaviors
 	testCases := []struct {
@@ -78,19 +78,19 @@ func TestApplyCCValidatorChanges(t *testing.T) {
 			name:          "add new bonded validator",
 			changes:       changes[len(changes)-1:],
 			expTotalPower: changesPower,
-			expValsNum:    len(ccVals) + 1,
+			expValsNum:    len(vaasVals) + 1,
 		},
 		{
 			name:          "update a validator voting power",
 			changes:       []abci.ValidatorUpdate{{PubKey: changes[0].PubKey, Power: changes[0].Power + 3}},
 			expTotalPower: changesPower + 3,
-			expValsNum:    len(ccVals) + 1,
+			expValsNum:    len(vaasVals) + 1,
 		},
 		{
 			name:          "unbond a validator",
 			changes:       []abci.ValidatorUpdate{{PubKey: changes[0].PubKey, Power: 0}},
 			expTotalPower: changesPower - changes[0].Power,
-			expValsNum:    len(ccVals),
+			expValsNum:    len(vaasVals),
 		},
 		{
 			name: "update all validators voting power",
@@ -101,17 +101,17 @@ func TestApplyCCValidatorChanges(t *testing.T) {
 				{PubKey: changes[3].PubKey, Power: changes[3].Power + 4},
 			},
 			expTotalPower: changesPower + 10,
-			expValsNum:    len(ccVals) + 1,
+			expValsNum:    len(vaasVals) + 1,
 		},
 	}
 
 	for _, tc := range testCases {
 		t.Run(tc.name, func(t *testing.T) {
-			consumerKeeper.ApplyCCValidatorChanges(ctx, tc.changes)
-			gotVals := getCCVals()
+			consumerKeeper.ApplyVaasValidatorChanges(ctx, tc.changes)
+			gotVals := getVaasVals()
 
 			require.Len(t, gotVals, tc.expValsNum)
-			require.Equal(t, tc.expTotalPower, sumCCValsPow(gotVals))
+			require.Equal(t, tc.expTotalPower, sumVaasValsPow(gotVals))
 		})
 	}
 }
@@ -186,13 +186,13 @@ func TestHistoricalInfo(t *testing.T) {
 
 	// Generate test validators, save them to store, and retrieve stored records
 	validators := GenerateValidators(t)
-	SetCCValidators(t, consumerKeeper, ctx, validators)
-	ccValidators := consumerKeeper.GetAllCCValidator(ctx)
-	require.Len(t, ccValidators, len(validators))
+	SetVaasValidators(t, consumerKeeper, ctx, validators)
+	vaasValidators := consumerKeeper.GetAllVaasValidator(ctx)
+	require.Len(t, vaasValidators, len(validators))
 
 	// iterate over validators and convert them to staking type
 	sVals := []stakingtypes.Validator{}
-	for _, v := range ccValidators {
+	for _, v := range vaasValidators {
 		pk, err := v.ConsPubKey()
 		require.NoError(t, err)
 
@@ -250,8 +250,8 @@ func GenerateValidators(tb testing.TB) []*tmtypes.Validator {
 	return validators
 }
 
-// Sets each input tmtypes.Validator as a types.CrossChainValidator in the consumer keeper store
-func SetCCValidators(tb testing.TB, consumerKeeper keeper.Keeper,
+// Sets each input tmtypes.Validator as a types.VaasValidator in the consumer keeper store
+func SetVaasValidators(tb testing.TB, consumerKeeper keeper.Keeper,
 	ctx sdk.Context, validators []*tmtypes.Validator,
 ) {
 	tb.Helper()
@@ -259,8 +259,8 @@ func SetCCValidators(tb testing.TB, consumerKeeper keeper.Keeper,
 		publicKey, err := cryptocodec.FromCmtPubKeyInterface(v.PubKey)
 		require.NoError(tb, err)
 
-		ccv, err := types.NewCCValidator(v.Address, v.VotingPower, publicKey)
+		vaasVal, err := types.NewVaasValidator(v.Address, v.VotingPower, publicKey)
 		require.NoError(tb, err)
-		consumerKeeper.SetCCValidator(ctx, ccv)
+		consumerKeeper.SetVaasValidator(ctx, vaasVal)
 	}
 }

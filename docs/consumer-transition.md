@@ -181,17 +181,18 @@ changeover.
   the same field number without a wire-format clash. The consumer keeper does
   not read it today.
 - `proto/vaas/v1/shared_consumer.proto` — `ConsumerGenesisState.preVAAS`
-  (field 4) is likewise still present; `x/vaas/types/genesis.go` still validates
-  it and the provider still passes `preVAAS = false` when building a consumer
-  genesis. Removing this shared-type field and its validation is a separate
-  cleanup.
-- `x/vaas/consumer/keeper` — the `InitialValSet` collection with its
-  `SetInitialValSet` / `GetInitialValSet` accessors. These were populated only by
-  the old changeover branch and are now exercised only by unit tests; a future
-  implementation can reuse them.
-
+  (field 4) is likewise still present and fully inert: nothing validates it and
+  nothing sets it anymore (the genesis validation branch and the provider-side
+  `preVAAS = false` pass-through were removed together with the rest of the
+  plumbing). The field number is kept so a future implementation can reuse it
+  without a wire-format clash.
 **Removed (was dead weight):**
 - The `PreVAAS` and `PrevStandaloneChain` state collections.
+- The consumer keeper's `InitialValSet` collection and its `SetInitialValSet` /
+  `GetInitialValSet` accessors, which were written only by the old changeover
+  branch. The `ConsumerGenesisState.Provider.initial_val_set` proto field is a
+  different thing and remains load-bearing: `InitGenesis` applies it to build the
+  VAAS validator set on both the new-chain and restart paths.
 - The `standaloneStakingKeeper` field and its `SetStandaloneStakingKeeper`
   setter.
 - The keeper methods `IsPreVAAS`, `SetPreVAASTrue`, `DeletePreVAAS`,

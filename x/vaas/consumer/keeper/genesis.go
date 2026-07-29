@@ -112,12 +112,12 @@ func (k Keeper) InitGenesis(ctx sdk.Context, state *types.GenesisState) []abci.V
 		}
 	}
 
-	// populate cross chain validators states with initial valset
-	k.ApplyCCValidatorChanges(ctx, state.Provider.InitialValSet)
+	// populate VAAS validators states with initial valset
+	k.ApplyVaasValidatorChanges(ctx, state.Provider.InitialValSet)
 	return state.Provider.InitialValSet
 }
 
-// ExportGenesis returns the CCV consumer module's exported genesis
+// ExportGenesis returns the VAAS consumer module's exported genesis
 func (k Keeper) ExportGenesis(ctx sdk.Context) (genesis *types.GenesisState) {
 	params := k.GetConsumerParams(ctx)
 	if !params.Enabled {

@@ -51,7 +51,7 @@ type Keeper struct {
 	Params                 collections.Item[vaastypes.ConsumerParams]
 	ConsumerInDebt         collections.Item[bool]
 	HeightValsetUpdateIDs  collections.Map[uint64, uint64]
-	CrossChainValidators   collections.Map[[]byte, types.CrossChainValidator]
+	VaasValidators         collections.Map[[]byte, types.VaasValidator]
 	HistoricalInfos        collections.Map[int64, stakingtypes.HistoricalInfo]
 	HighestValsetUpdateID  collections.Item[uint64]
 	PendingEvidencePackets collections.Map[[]byte, []byte]
@@ -101,7 +101,7 @@ func NewKeeper(
 		Params:                 collections.NewItem(sb, types.ParametersPrefix, "params", codec.CollValue[vaastypes.ConsumerParams](cdc)),
 		ConsumerInDebt:         collections.NewItem(sb, types.ConsumerDebtPrefix, "consumer_in_debt", collections.BoolValue),
 		HeightValsetUpdateIDs:  collections.NewMap(sb, types.HeightValsetUpdateIDPrefix, "height_valset_update_ids", collections.Uint64Key, collections.Uint64Value),
-		CrossChainValidators:   collections.NewMap(sb, types.CrossChainValidatorPrefix, "cross_chain_validators", collections.BytesKey, codec.CollValue[types.CrossChainValidator](cdc)),
+		VaasValidators:         collections.NewMap(sb, types.VaasValidatorPrefix, "vaas_validators", collections.BytesKey, codec.CollValue[types.VaasValidator](cdc)),
 		HistoricalInfos:        collections.NewMap(sb, types.HistoricalInfoPrefix, "historical_infos", collections.Int64Key, codec.CollValue[stakingtypes.HistoricalInfo](cdc)),
 		HighestValsetUpdateID:  collections.NewItem(sb, types.HighestValsetUpdateIDPrefix, "highest_valset_update_id", collections.Uint64Value),
 		PendingEvidencePackets: collections.NewMap(sb, types.PendingEvidencePacketsPrefix, "pending_evidence_packets", collections.BytesKey, collections.BytesValue),
@@ -142,7 +142,7 @@ func NewNonZeroKeeper(cdc codec.BinaryCodec, storeService corestoretypes.KVStore
 		Params:                 collections.NewItem(sb, types.ParametersPrefix, "params", codec.CollValue[vaastypes.ConsumerParams](cdc)),
 		ConsumerInDebt:         collections.NewItem(sb, types.ConsumerDebtPrefix, "consumer_in_debt", collections.BoolValue),
 		HeightValsetUpdateIDs:  collections.NewMap(sb, types.HeightValsetUpdateIDPrefix, "height_valset_update_ids", collections.Uint64Key, collections.Uint64Value),
-		CrossChainValidators:   collections.NewMap(sb, types.CrossChainValidatorPrefix, "cross_chain_validators", collections.BytesKey, codec.CollValue[types.CrossChainValidator](cdc)),
+		VaasValidators:         collections.NewMap(sb, types.VaasValidatorPrefix, "vaas_validators", collections.BytesKey, codec.CollValue[types.VaasValidator](cdc)),
 		HistoricalInfos:        collections.NewMap(sb, types.HistoricalInfoPrefix, "historical_infos", collections.Int64Key, codec.CollValue[stakingtypes.HistoricalInfo](cdc)),
 		HighestValsetUpdateID:  collections.NewItem(sb, types.HighestValsetUpdateIDPrefix, "highest_valset_update_id", collections.Uint64Value),
 		PendingEvidencePackets: collections.NewMap(sb, types.PendingEvidencePacketsPrefix, "pending_evidence_packets", collections.BytesKey, collections.BytesValue),
@@ -309,36 +309,36 @@ func (k Keeper) GetAllHeightToValsetUpdateIDs(ctx context.Context) (heightToVals
 	return heightToValsetUpdateIDs
 }
 
-// SetCCValidator sets a cross-chain validator under its validator address
-func (k Keeper) SetCCValidator(ctx context.Context, v types.CrossChainValidator) {
-	if err := k.CrossChainValidators.Set(ctx, v.Address, v); err != nil {
-		panic(fmt.Errorf("failed to set cross-chain validator: %w", err))
+// SetVaasValidator sets a VAAS validator under its validator address
+func (k Keeper) SetVaasValidator(ctx context.Context, v types.VaasValidator) {
+	if err := k.VaasValidators.Set(ctx, v.Address, v); err != nil {
+		panic(fmt.Errorf("failed to set VAAS validator: %w", err))
 	}
 }
 
-// GetCCValidator returns a cross-chain validator for a given address
-func (k Keeper) GetCCValidator(ctx context.Context, addr []byte) (validator types.CrossChainValidator, found bool) {
-	val, err := k.CrossChainValidators.Get(ctx, addr)
+// GetVaasValidator returns a VAAS validator for a given address
+func (k Keeper) GetVaasValidator(ctx context.Context, addr []byte) (validator types.VaasValidator, found bool) {
+	val, err := k.VaasValidators.Get(ctx, addr)
 	if err != nil {
-		return types.CrossChainValidator{}, false
+		return types.VaasValidator{}, false
 	}
 	return val, true
 }
 
-// DeleteCCValidator deletes a cross-chain validator for a given address
-func (k Keeper) DeleteCCValidator(ctx context.Context, addr []byte) {
-	if err := k.CrossChainValidators.Remove(ctx, addr); err != nil {
-		panic(fmt.Errorf("failed to delete cross-chain validator: %w", err))
+// DeleteVaasValidator deletes a VAAS validator for a given address
+func (k Keeper) DeleteVaasValidator(ctx context.Context, addr []byte) {
+	if err := k.VaasValidators.Remove(ctx, addr); err != nil {
+		panic(fmt.Errorf("failed to delete VAAS validator: %w", err))
 	}
 }
 
-// GetAllCCValidator returns all cross-chain validators
+// GetAllVaasValidator returns all VAAS validators
 //
-// Note that the cross-chain validators are stored under keys with the following format:
-// CrossChainValidatorKeyPrefix | address
+// Note that the VAAS validators are stored under keys with the following format:
+// VaasValidatorPrefix | address
 // Thus, the returned array is in ascending order of addresses.
-func (k Keeper) GetAllCCValidator(ctx context.Context) (validators []types.CrossChainValidator) {
-	iter, err := k.CrossChainValidators.Iterate(ctx, nil)
+func (k Keeper) GetAllVaasValidator(ctx context.Context) (validators []types.VaasValidator) {
+	iter, err := k.VaasValidators.Iterate(ctx, nil)
 	if err != nil {
 		return validators
 	}

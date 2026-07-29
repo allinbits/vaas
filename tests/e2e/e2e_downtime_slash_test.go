@@ -329,7 +329,7 @@ type pendingDowntimeSlashJSON struct {
 // any query/decode error so callers can poll it directly inside Eventually.
 func (s *IntegrationTestSuite) queryPendingDowntimeSlashes(consumerID string) []pendingDowntimeSlashJSON {
 	stdout, _, err := s.dockerExec(s.providerValRes[0].Container.ID, []string{
-		providerBinary, "query", "provider", "pending-downtime-slashes", consumerID,
+		providerBinary, "query", "vaasprovider", "pending-downtime-slashes", consumerID,
 		"--home", providerHomePath,
 		"--output", "json",
 	})
@@ -358,7 +358,7 @@ type withheldFeeRecordJSON struct {
 // inside Eventually.
 func (s *IntegrationTestSuite) queryWithheldFeeRecords(consumerID string) []withheldFeeRecordJSON {
 	stdout, _, err := s.dockerExec(s.providerValRes[0].Container.ID, []string{
-		providerBinary, "query", "provider", "withheld-fee-records", consumerID,
+		providerBinary, "query", "vaasprovider", "withheld-fee-records", consumerID,
 		"--home", providerHomePath,
 		"--output", "json",
 	})

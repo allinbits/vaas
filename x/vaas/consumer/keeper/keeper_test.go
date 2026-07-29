@@ -95,68 +95,68 @@ func TestInitGenesisHeight(t *testing.T) {
 	require.Equal(t, int64(43234426), consumerKeeper.GetInitGenesisHeight(ctx))
 }
 
-// TestCrossChainValidator tests the getter, setter, and deletion method for cross chain validator records
-func TestCrossChainValidator(t *testing.T) {
+// TestVaasValidator tests the getter, setter, and deletion method for VAAS validator records
+func TestVaasValidator(t *testing.T) {
 	keeperParams := testkeeper.NewInMemKeeperParams(t)
 	consumerKeeper, ctx, ctrl, _ := testkeeper.GetConsumerKeeperAndCtx(t, keeperParams)
 	defer ctrl.Finish()
 
 	// should return false
-	_, found := consumerKeeper.GetCCValidator(ctx, ed25519.GenPrivKey().PubKey().Address())
+	_, found := consumerKeeper.GetVaasValidator(ctx, ed25519.GenPrivKey().PubKey().Address())
 	require.False(t, found)
 
 	// Obtain derived private key
 	privKey := ed25519.GenPrivKey()
 
-	// Set cross chain validator
-	ccVal, err := types.NewCCValidator(privKey.PubKey().Address(), 1000, privKey.PubKey())
+	// Set VAAS validator
+	vaasVal, err := types.NewVaasValidator(privKey.PubKey().Address(), 1000, privKey.PubKey())
 	require.NoError(t, err)
-	consumerKeeper.SetCCValidator(ctx, ccVal)
+	consumerKeeper.SetVaasValidator(ctx, vaasVal)
 
-	gotCCVal, found := consumerKeeper.GetCCValidator(ctx, ccVal.Address)
+	gotVaasVal, found := consumerKeeper.GetVaasValidator(ctx, vaasVal.Address)
 	require.True(t, found)
 
 	// verify the returned validator values
-	require.EqualValues(t, ccVal, gotCCVal)
+	require.EqualValues(t, vaasVal, gotVaasVal)
 
 	// expect to return the same consensus pubkey
-	pk, err := ccVal.ConsPubKey()
+	pk, err := vaasVal.ConsPubKey()
 	require.NoError(t, err)
-	gotPK, err := gotCCVal.ConsPubKey()
+	gotPK, err := gotVaasVal.ConsPubKey()
 	require.NoError(t, err)
 	require.Equal(t, pk, gotPK)
 
 	// delete validator
-	consumerKeeper.DeleteCCValidator(ctx, ccVal.Address)
+	consumerKeeper.DeleteVaasValidator(ctx, vaasVal.Address)
 
 	// should return false
-	_, found = consumerKeeper.GetCCValidator(ctx, ccVal.Address)
+	_, found = consumerKeeper.GetVaasValidator(ctx, vaasVal.Address)
 	require.False(t, found)
 }
 
-// TestGetAllCCValidator tests GetAllCCValidator behaviour correctness
-func TestGetAllCCValidator(t *testing.T) {
+// TestGetAllVaasValidator tests GetAllVaasValidator behaviour correctness
+func TestGetAllVaasValidator(t *testing.T) {
 	keeperParams := testkeeper.NewInMemKeeperParams(t)
 	ck, ctx, ctrl, _ := testkeeper.GetConsumerKeeperAndCtx(t, keeperParams)
 	defer ctrl.Finish()
 
 	numValidators := 4
-	validators := []types.CrossChainValidator{}
+	validators := []types.VaasValidator{}
 	for range numValidators {
-		validators = append(validators, testkeeper.GetNewCrossChainValidator(t))
+		validators = append(validators, testkeeper.GetNewVaasValidator(t))
 	}
-	// sorting by CrossChainValidator.Address
+	// sorting by VaasValidator.Address
 	expectedGetAllOrder := validators
 	sort.Slice(expectedGetAllOrder, func(i, j int) bool {
 		return bytes.Compare(expectedGetAllOrder[i].Address, expectedGetAllOrder[j].Address) == -1
 	})
 
 	for _, val := range validators {
-		ck.SetCCValidator(ctx, val)
+		ck.SetVaasValidator(ctx, val)
 	}
 
 	// iterate and check all results are returned in the expected order
-	result := ck.GetAllCCValidator(ctx)
+	result := ck.GetAllVaasValidator(ctx)
 	require.Len(t, result, len(validators))
 	require.Equal(t, result, expectedGetAllOrder)
 }

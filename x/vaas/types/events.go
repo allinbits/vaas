@@ -2,15 +2,15 @@ package types
 
 // VAAS events
 const (
-	EventTypeTimeout                    = "timeout"
+	EventTypeTimeout                    = "vaas_timeout"
 	EventTypePacket                     = "vaas_packet"
-	EventTypeClientEstablished          = "client_established"
-	EventTypeSubmitConsumerMisbehaviour = "submit_consumer_misbehaviour"
-	EventTypeSubmitConsumerDoubleVoting = "submit_consumer_double_voting"
-	EventTypeExecuteConsumerChainSlash  = "execute_consumer_chain_slash"
-	EventTypeConsumerEvidenceRequest    = "consumer_evidence_request"
+	EventTypeClientEstablished          = "vaas_client_established"
+	EventTypeSubmitConsumerMisbehaviour = "vaas_submit_consumer_misbehaviour"
+	EventTypeSubmitConsumerDoubleVoting = "vaas_submit_consumer_double_voting"
+	EventTypeExecuteConsumerChainSlash  = "vaas_execute_consumer_chain_slash"
+	EventTypeConsumerEvidenceRequest    = "vaas_consumer_evidence_request"
 	// EventTypeSnapshotResync is emitted by the consumer when it applies a
-	// snapshot VSC packet (is_snapshot=true), i.e. it replaces its cross-chain
+	// snapshot VSC packet (is_snapshot=true), i.e. it replaces its VAAS
 	// validator set rather than accumulating a diff. Emitted only on snapshots,
 	// not on ordinary diffs.
 	EventTypeSnapshotResync = "vaas_snapshot_resync"
@@ -42,6 +42,7 @@ const (
 	EventTypeWithheldFeePaid = "vaas_withheld_fee_paid"
 
 	AttributeKeyAckSuccess            = "success"
+	AttributeKeyAckError              = "error"
 	AttributeWindowEndHeight          = "window_end_height"
 	AttributeProviderValidatorAddress = "provider_validator_address"
 	AttributeConsumerMisbehaviour     = "consumer_misbehaviour"

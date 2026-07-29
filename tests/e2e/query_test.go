@@ -13,7 +13,7 @@ import (
 // from the provider chain (e.g. "CONSUMER_PHASE_LAUNCHED").
 func (s *baseTestSuite) queryProviderConsumerPhase(consumerID string) string {
 	stdout, _, err := s.dockerExec(s.providerValRes[0].Container.ID, []string{
-		providerBinary, "query", "provider", "consumer-chain", consumerID,
+		providerBinary, "query", "vaasprovider", "consumer-chain", consumerID,
 		"--home", providerHomePath,
 		"--output", "json",
 	})
@@ -122,7 +122,7 @@ func (s *IntegrationTestSuite) queryConsumerProviderInfo() (string, error) {
 // queryProviderConsumerChains queries the provider for registered consumer chains.
 func (s *IntegrationTestSuite) queryProviderConsumerChains() (string, error) {
 	stdout, _, err := s.dockerExec(s.providerValRes[0].Container.ID, []string{
-		providerBinary, "query", "provider", "list-consumer-chains",
+		providerBinary, "query", "vaasprovider", "list-consumer-chains",
 		"--home", providerHomePath,
 		"--output", "json",
 	})

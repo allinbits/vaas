@@ -16,9 +16,9 @@ import (
 	"github.com/allinbits/vaas/x/vaas/consumer/types"
 )
 
-// ApplyCCValidatorChanges applies the given changes to the cross-chain validators states
+// ApplyVaasValidatorChanges applies the given changes to the VAAS validators states
 // and returns updates to forward to tendermint.
-func (k Keeper) ApplyCCValidatorChanges(ctx context.Context, changes []abci.ValidatorUpdate) []abci.ValidatorUpdate {
+func (k Keeper) ApplyVaasValidatorChanges(ctx context.Context, changes []abci.ValidatorUpdate) []abci.ValidatorUpdate {
 	ret := []abci.ValidatorUpdate{}
 	for _, change := range changes {
 		// convert TM pubkey to SDK pubkey
@@ -29,29 +29,29 @@ func (k Keeper) ApplyCCValidatorChanges(ctx context.Context, changes []abci.Vali
 			panic(err)
 		}
 		addr := pubkey.Address()
-		val, found := k.GetCCValidator(ctx, addr)
+		val, found := k.GetVaasValidator(ctx, addr)
 
 		if found { //nolint:gocritic
 			// update or delete an existing validator
 			if change.Power < 1 {
-				k.DeleteCCValidator(ctx, addr)
+				k.DeleteVaasValidator(ctx, addr)
 			} else {
 				val.Power = change.Power
-				k.SetCCValidator(ctx, val)
+				k.SetVaasValidator(ctx, val)
 			}
 		} else if 0 < change.Power {
 			// create a new validator
 			consAddr := sdk.ConsAddress(addr)
 
-			ccVal, err := types.NewCCValidator(addr, change.Power, pubkey)
+			vaasVal, err := types.NewVaasValidator(addr, change.Power, pubkey)
 			if err != nil {
 				// An error here would indicate that the validator updates
 				// received from the provider are invalid.
 				panic(err)
 			}
 
-			k.SetCCValidator(ctx, ccVal)
-			valAddr := sdk.ValAddress(ccVal.Address)
+			k.SetVaasValidator(ctx, vaasVal)
+			valAddr := sdk.ValAddress(vaasVal.Address)
 			err = k.AfterValidatorBonded(ctx, consAddr, valAddr)
 			if err != nil {
 				// AfterValidatorBonded is called by the Slashing module and should not return an error.
@@ -69,16 +69,16 @@ func (k Keeper) ApplyCCValidatorChanges(ctx context.Context, changes []abci.Vali
 	return ret
 }
 
-// IterateValidators - unimplemented on CCV keeper but perform a no-op in order to pass the slashing module InitGenesis.
+// IterateValidators - unimplemented on the consumer keeper but performs a no-op in order to pass the slashing module InitGenesis.
 // It is allowed since the condition verifying validator public keys in HandleValidatorSignature (x/slashing/keeper/infractions.go) is removed
 // therefore it isn't required to store any validator public keys to the slashing states during genesis.
 func (k Keeper) IterateValidators(context.Context, func(index int64, validator stakingtypes.ValidatorI) (stop bool)) error {
 	return nil
 }
 
-// Validator - unimplemented on CCV keeper
+// Validator - unimplemented on the consumer keeper
 func (k Keeper) Validator(sdkCtx context.Context, addr sdk.ValAddress) (stakingtypes.ValidatorI, error) {
-	return stakingtypes.Validator{}, errors.New("unimplemented on CCV keeper")
+	return stakingtypes.Validator{}, errors.New("unimplemented on the VAAS consumer keeper")
 }
 
 // IsValidatorJailed - always returns false as slash functionality has been removed.
@@ -125,24 +125,24 @@ func (k Keeper) SlashWithInfractionReason(goCtx context.Context, addr sdk.ConsAd
 	return math.ZeroInt(), nil
 }
 
-// Jail - unimplemented on CCV keeper
+// Jail - unimplemented on the consumer keeper
 //
 // This method should be a no-op for consumer chains.
 func (k Keeper) Jail(context.Context, sdk.ConsAddress) error { return nil }
 
-// Unjail - no-op on CCV keeper
+// Unjail - no-op on the consumer keeper
 func (k Keeper) Unjail(sdkCtx context.Context, addr sdk.ConsAddress) error {
 	return nil
 }
 
-// Delegation - unimplemented on CCV keeper
+// Delegation - unimplemented on the consumer keeper
 func (k Keeper) Delegation(sdkCtx context.Context, addr sdk.AccAddress, valAddr sdk.ValAddress) (stakingtypes.DelegationI, error) {
-	return stakingtypes.Delegation{}, errors.New("unimplemented on CCV keeper")
+	return stakingtypes.Delegation{}, errors.New("unimplemented on the VAAS consumer keeper")
 }
 
-// MaxValidators - unimplemented on CCV keeper
+// MaxValidators - unimplemented on the consumer keeper
 func (k Keeper) MaxValidators(context.Context) (uint32, error) {
-	panic("unimplemented on CCV keeper")
+	panic("unimplemented on the VAAS consumer keeper")
 }
 
 // UnbondingTime returns consumer unbonding period, satisfying the staking keeper interface
@@ -204,18 +204,18 @@ func (k Keeper) TrackHistoricalInfo(goCtx context.Context) error {
 
 	// Create HistoricalInfo struct
 	lastVals := []stakingtypes.Validator{}
-	for _, v := range k.GetAllCCValidator(ctx) {
+	for _, v := range k.GetAllVaasValidator(ctx) {
 		pk, err := v.ConsPubKey()
 		if err != nil {
 			// This should never happen as the pubkey is assumed
-			// to be stored correctly in ApplyCCValidatorChanges.
+			// to be stored correctly in ApplyVaasValidatorChanges.
 			panic(err)
 		}
 
 		val, err := stakingtypes.NewValidator(sdk.ValAddress(pk.Address()).String(), pk, stakingtypes.Description{})
 		if err != nil {
 			// This should never happen as the pubkey is assumed
-			// to be stored correctly in ApplyCCValidatorChanges.
+			// to be stored correctly in ApplyVaasValidatorChanges.
 			panic(err)
 		}
 
@@ -234,22 +234,22 @@ func (k Keeper) TrackHistoricalInfo(goCtx context.Context) error {
 	return nil
 }
 
-// MustGetCurrentValidatorsAsABCIUpdates gets all cross-chain validators converted
+// MustGetCurrentValidatorsAsABCIUpdates gets all VAAS validators converted
 // to the ABCI validator update type. It panics in case of failure.
 func (k Keeper) MustGetCurrentValidatorsAsABCIUpdates(ctx context.Context) []abci.ValidatorUpdate {
-	vals := k.GetAllCCValidator(ctx)
+	vals := k.GetAllVaasValidator(ctx)
 	valUpdates := make([]abci.ValidatorUpdate, 0, len(vals))
 	for _, v := range vals {
 		pk, err := v.ConsPubKey()
 		if err != nil {
 			// This should never happen as the pubkey is assumed
-			// to be stored correctly in ApplyCCValidatorChanges.
+			// to be stored correctly in ApplyVaasValidatorChanges.
 			panic(err)
 		}
 		tmPK, err := cryptocodec.ToCmtProtoPublicKey(pk)
 		if err != nil {
 			// This should never happen as the pubkey is assumed
-			// to be stored correctly in ApplyCCValidatorChanges.
+			// to be stored correctly in ApplyVaasValidatorChanges.
 			panic(err)
 		}
 		valUpdates = append(valUpdates, abci.ValidatorUpdate{PubKey: tmPK, Power: v.Power})
@@ -264,7 +264,7 @@ func (k Keeper) ApplyAndReturnValidatorSetUpdates(context.Context) (updates []ab
 }
 
 // GetAllValidators is needed to implement StakingKeeper as expected by the Slashing module since cosmos-sdk/v0.47.x.
-// Use GetAllCCValidator in places where access to all cross-chain validators is needed.
+// Use GetAllVaasValidator in places where access to all VAAS validators is needed.
 func (k Keeper) GetAllValidators(ctx context.Context) ([]stakingtypes.Validator, error) {
 	return []stakingtypes.Validator{}, nil
 }
@@ -274,19 +274,19 @@ func (k Keeper) GetBondedValidatorsByPower(goCtx context.Context) ([]stakingtype
 }
 
 // computeReplaceUpdates turns a complete target set into the updates needed to
-// move the consumer's current cross-chain set to exactly that target: every
+// move the consumer's current VAAS validator set to exactly that target: every
 // target entry at its absolute power, plus a power-0 removal for each current
 // validator absent from the target.
 //
 // Identity matching uses the cmt proto public key string, which is the same
-// identity used by MustGetCurrentValidatorsAsABCIUpdates and ApplyCCValidatorChanges.
+// identity used by MustGetCurrentValidatorsAsABCIUpdates and ApplyVaasValidatorChanges.
 func (k Keeper) computeReplaceUpdates(ctx context.Context, target []abci.ValidatorUpdate) []abci.ValidatorUpdate {
 	inTarget := make(map[string]struct{}, len(target))
 	for _, u := range target {
 		inTarget[u.PubKey.String()] = struct{}{}
 	}
 
-	current := k.GetAllCCValidator(ctx)
+	current := k.GetAllVaasValidator(ctx)
 	updates := make([]abci.ValidatorUpdate, 0, len(target)+len(current))
 	updates = append(updates, target...)
 

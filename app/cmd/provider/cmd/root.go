@@ -5,7 +5,6 @@ import (
 	"io"
 	"os"
 
-
 	dbm "github.com/cosmos/cosmos-db"
 	"github.com/spf13/cobra"
 	"github.com/spf13/viper"

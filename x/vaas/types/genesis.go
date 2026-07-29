@@ -13,7 +13,6 @@ func NewInitialConsumerGenesisState(
 	cs *ibctmtypes.ClientState,
 	consState *ibctmtypes.ConsensusState,
 	initValSet []abci.ValidatorUpdate,
-	preVAAS bool,
 	params ConsumerParams,
 ) *ConsumerGenesisState {
 	return &ConsumerGenesisState{
@@ -24,7 +23,6 @@ func NewInitialConsumerGenesisState(
 			ConsensusState: consState,
 			InitialValSet:  initValSet,
 		},
-		PreVAAS: preVAAS,
 	}
 }
 
@@ -51,29 +49,20 @@ func (gs ConsumerGenesisState) Validate() error {
 		return errorsmod.Wrapf(ErrInvalidGenesis, "NewChain must be set to true")
 	}
 
-	if gs.PreVAAS {
-		// consumer chain MUST start in pre-VAAS state, i.e.,
-		// the consumer VAAS module MUST NOT pass validator updates
-		// to the underlying consensus engine
-		if gs.Provider.ClientState != nil || gs.Provider.ConsensusState != nil {
-			return errorsmod.Wrap(ErrInvalidGenesis, "provider client state and consensus state must be nil for a pre-VAAS genesis state")
-		}
-	} else {
-		// consumer chain MUST NOT start in pre-VAAS state, i.e.,
-		// the consumer VAAS module MUST pass validator updates
-		// to the underlying consensus engine
-		if gs.Provider.ClientState == nil {
-			return errorsmod.Wrap(ErrInvalidGenesis, "provider client state cannot be nil for new chain")
-		}
-		if err := gs.Provider.ClientState.Validate(); err != nil {
-			return errorsmod.Wrapf(ErrInvalidGenesis, "provider client state invalid for new chain %s", err.Error())
-		}
-		if gs.Provider.ConsensusState == nil {
-			return errorsmod.Wrap(ErrInvalidGenesis, "provider consensus state cannot be nil for new chain")
-		}
-		if err := gs.Provider.ConsensusState.ValidateBasic(); err != nil {
-			return errorsmod.Wrapf(ErrInvalidGenesis, "provider consensus state invalid for new chain %s", err.Error())
-		}
+	// a new consumer chain must carry the provider client and consensus state
+	// so the consumer VAAS module can pass validator updates to the underlying
+	// consensus engine
+	if gs.Provider.ClientState == nil {
+		return errorsmod.Wrap(ErrInvalidGenesis, "provider client state cannot be nil for new chain")
+	}
+	if err := gs.Provider.ClientState.Validate(); err != nil {
+		return errorsmod.Wrapf(ErrInvalidGenesis, "provider client state invalid for new chain %s", err.Error())
+	}
+	if gs.Provider.ConsensusState == nil {
+		return errorsmod.Wrap(ErrInvalidGenesis, "provider consensus state cannot be nil for new chain")
+	}
+	if err := gs.Provider.ConsensusState.ValidateBasic(); err != nil {
+		return errorsmod.Wrapf(ErrInvalidGenesis, "provider consensus state invalid for new chain %s", err.Error())
 	}
 	return nil
 }

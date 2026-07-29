@@ -82,7 +82,7 @@ type ClientV2Keeper interface {
 	GetClientCounterparty(ctx sdk.Context, clientID string) (clientv2types.CounterpartyInfo, bool)
 }
 
-// ConsumerHooks event hooks for newly bonded cross-chain validators
+// ConsumerHooks event hooks for newly bonded VAAS validators
 type ConsumerHooks interface {
 	AfterValidatorBonded(ctx context.Context, consAddr sdk.ConsAddress, valAddresses sdk.ValAddress) error
 }
