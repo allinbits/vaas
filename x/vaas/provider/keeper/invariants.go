@@ -28,8 +28,15 @@ func RegisterInvariants(ir sdk.InvariantRegistry, k *Keeper) {
 //     (lazy-invalidation invariant: balance 0 with shares is reconciled on
 //     the next MintShares, but must not be allowed to persist post-block
 //     as a steady state)
-//   - bank balance > 0 implies total_shares > 0 (orphan-balance invariant:
-//     enforced at genesis and at every MintShares/Sweep call site)
+//   - bank balance > 0 implies total_shares > 0 (orphan-balance invariant)
+//
+// The orphan-balance side is reported, not asserted to be impossible: a
+// community-pool spend addressed straight at a pool address is waved through by
+// the send restriction (see FeePoolSendRestriction) and lands funds with no
+// shares behind them. Genesis import, the next deposit, and the sweep each
+// credit such a balance to the community pool (see absorbUnaccountedBalance)
+// rather than fail, so the state is self-healing -- but until something touches
+// that pool the shares do not cover its balance, and that is worth surfacing.
 func FeePoolSharesConsistencyInvariant(k Keeper) sdk.Invariant {
 	return func(ctx sdk.Context) (string, bool) {
 		var msgs []string

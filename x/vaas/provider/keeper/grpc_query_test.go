@@ -248,6 +248,130 @@ func TestQueryConsumerFeePoolClaims(t *testing.T) {
 	require.Equal(t, "70uphoton", got[bob.String()])
 }
 
+// TestQueryConsumerFeePoolClaim_WithheldEscrow checks that the single-depositor
+// claim query subtracts the withheld-fee escrow, and that the figure it quotes is
+// exactly what a withdrawal of the whole claim delivers.
+func TestQueryConsumerFeePoolClaim_WithheldEscrow(t *testing.T) {
+	k, ctx, ctrl, mocks := testkeeper.GetProviderKeeperAndCtx(t, testkeeper.NewInMemKeeperParams(t))
+	defer ctrl.Finish()
+
+	consumerId := uint64(0)
+	k.SetConsumerPhase(ctx, consumerId, providertypes.CONSUMER_PHASE_STOPPED)
+	alice := sdk.AccAddress([]byte("alice___________"))
+	poolAddr := k.GetConsumerFeePoolAddress(consumerId)
+
+	// Alice is the sole depositor: 100 shares of 100 against a balance of 100,
+	// so her uncapped claim is the whole balance. 40 of it is escrowed against
+	// an unexpired withheld-fee record, leaving 60 claimable.
+	require.NoError(t, k.ConsumerFeePoolShares.Set(ctx,
+		collections.Join3(consumerId, "uphoton", alice), math.NewInt(100)))
+	require.NoError(t, k.ConsumerFeePoolTotalShares.Set(ctx,
+		collections.Join(consumerId, "uphoton"), math.NewInt(100)))
+	require.NoError(t, k.WithheldFeeRecords.Set(ctx,
+		collections.Join(consumerId, []byte("val-escrow-holder__")), providertypes.WithheldFeeRecord{
+			ConsumerId:       consumerId,
+			ProviderConsAddr: []byte("val-escrow-holder__"),
+			Amount:           sdk.NewInt64Coin("uphoton", 40),
+			ExpiresAt:        ctx.BlockTime().Add(time.Hour),
+		}))
+	mocks.MockBankKeeper.EXPECT().GetBalance(ctx, poolAddr, "uphoton").
+		Return(sdk.NewInt64Coin("uphoton", 100)).AnyTimes()
+
+	res, err := k.ConsumerFeePoolClaim(ctx, &providertypes.QueryConsumerFeePoolClaimRequest{
+		ConsumerId: consumerId, Depositor: alice.String(),
+	})
+	require.NoError(t, err)
+	require.Equal(t, "60uphoton", res.Claim.String())
+
+	// The quote is not merely lower, it is what the withdrawal pays.
+	tokens, err := k.WithdrawShares(ctx, consumerId, alice, sdk.NewInt64Coin("uphoton", 100))
+	require.NoError(t, err)
+	require.Equal(t, res.Claim.String(), tokens.String())
+}
+
+// TestQueryConsumerFeePoolClaims_WithheldEscrow checks that the paginated
+// all-depositors query applies the same escrow reservation to every quote.
+func TestQueryConsumerFeePoolClaims_WithheldEscrow(t *testing.T) {
+	k, ctx, ctrl, mocks := testkeeper.GetProviderKeeperAndCtx(t, testkeeper.NewInMemKeeperParams(t))
+	defer ctrl.Finish()
+
+	consumerId := uint64(0)
+	k.SetConsumerPhase(ctx, consumerId, providertypes.CONSUMER_PHASE_LAUNCHED)
+	alice := sdk.AccAddress([]byte("alice___________"))
+	bob := sdk.AccAddress([]byte("bob_____________"))
+	poolAddr := k.GetConsumerFeePoolAddress(consumerId)
+
+	// Balance 100, total 100 shares (alice 30, bob 70), 50 escrowed. Alice's
+	// uncapped claim of 30 fits under the 50 unreserved, so it is unchanged;
+	// bob's uncapped 70 does not and is capped at 50.
+	require.NoError(t, k.ConsumerFeePoolShares.Set(ctx,
+		collections.Join3(consumerId, "uphoton", alice), math.NewInt(30)))
+	require.NoError(t, k.ConsumerFeePoolShares.Set(ctx,
+		collections.Join3(consumerId, "uphoton", bob), math.NewInt(70)))
+	require.NoError(t, k.ConsumerFeePoolTotalShares.Set(ctx,
+		collections.Join(consumerId, "uphoton"), math.NewInt(100)))
+	require.NoError(t, k.WithheldFeeRecords.Set(ctx,
+		collections.Join(consumerId, []byte("val-escrow-holder__")), providertypes.WithheldFeeRecord{
+			ConsumerId:       consumerId,
+			ProviderConsAddr: []byte("val-escrow-holder__"),
+			Amount:           sdk.NewInt64Coin("uphoton", 50),
+			ExpiresAt:        ctx.BlockTime().Add(time.Hour),
+		}))
+	mocks.MockBankKeeper.EXPECT().GetBalance(ctx, poolAddr, "uphoton").
+		Return(sdk.NewInt64Coin("uphoton", 100)).AnyTimes()
+
+	res, err := k.ConsumerFeePoolClaims(ctx, &providertypes.QueryConsumerFeePoolClaimsRequest{
+		ConsumerId: consumerId,
+	})
+	require.NoError(t, err)
+	require.Len(t, res.Claims, 2)
+
+	got := map[string]string{}
+	for _, c := range res.Claims {
+		got[c.Depositor] = c.Claim.String()
+	}
+	require.Equal(t, "30uphoton", got[alice.String()])
+	require.Equal(t, "50uphoton", got[bob.String()])
+}
+
+// TestQueryConsumerFeePoolClaim_FullyEscrowedPool checks that a pool whose
+// entire balance is escrowed quotes nothing at all.
+func TestQueryConsumerFeePoolClaim_FullyEscrowedPool(t *testing.T) {
+	k, ctx, ctrl, mocks := testkeeper.GetProviderKeeperAndCtx(t, testkeeper.NewInMemKeeperParams(t))
+	defer ctrl.Finish()
+
+	consumerId := uint64(0)
+	k.SetConsumerPhase(ctx, consumerId, providertypes.CONSUMER_PHASE_LAUNCHED)
+	alice := sdk.AccAddress([]byte("alice___________"))
+	poolAddr := k.GetConsumerFeePoolAddress(consumerId)
+
+	require.NoError(t, k.ConsumerFeePoolShares.Set(ctx,
+		collections.Join3(consumerId, "uphoton", alice), math.NewInt(100)))
+	require.NoError(t, k.ConsumerFeePoolTotalShares.Set(ctx,
+		collections.Join(consumerId, "uphoton"), math.NewInt(100)))
+	require.NoError(t, k.WithheldFeeRecords.Set(ctx,
+		collections.Join(consumerId, []byte("val-escrow-holder__")), providertypes.WithheldFeeRecord{
+			ConsumerId:       consumerId,
+			ProviderConsAddr: []byte("val-escrow-holder__"),
+			Amount:           sdk.NewInt64Coin("uphoton", 100),
+			ExpiresAt:        ctx.BlockTime().Add(time.Hour),
+		}))
+	mocks.MockBankKeeper.EXPECT().GetBalance(ctx, poolAddr, "uphoton").
+		Return(sdk.NewInt64Coin("uphoton", 100)).AnyTimes()
+
+	res, err := k.ConsumerFeePoolClaim(ctx, &providertypes.QueryConsumerFeePoolClaimRequest{
+		ConsumerId: consumerId, Depositor: alice.String(),
+	})
+	require.NoError(t, err)
+	require.True(t, res.Claim.IsZero())
+
+	claims, err := k.ConsumerFeePoolClaims(ctx, &providertypes.QueryConsumerFeePoolClaimsRequest{
+		ConsumerId: consumerId,
+	})
+	require.NoError(t, err)
+	require.Empty(t, claims.Claims)
+}
+
 func TestQueryConsumerFeePoolClaims_UnknownConsumer(t *testing.T) {
 	k, ctx, ctrl, _ := testkeeper.GetProviderKeeperAndCtx(t, testkeeper.NewInMemKeeperParams(t))
 	defer ctrl.Finish()

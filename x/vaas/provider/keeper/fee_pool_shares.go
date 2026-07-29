@@ -29,9 +29,47 @@ func (k Keeper) emitSweepEvent(
 	))
 }
 
-// ComputeClaim returns the depositor's claimable tokens for one denom on the
-// given consumer's fee pool. Returns math.ZeroInt() if the depositor has no
-// shares or total_shares is zero.
+// feePoolDraw resolves what a depositor holding `shares` of `total` gets out of
+// a pool holding `balance` when at most `limit` tokens may leave the pool right
+// now: `limit` is the lesser of what was asked for and the balance not reserved
+// as withheld-fee escrow (see outstandingWithheldFees).
+//
+// Shares are always measured against the full pool balance -- they back the
+// escrowed portion too -- so a draw held back by `limit` burns shares at the
+// full-balance rate and its token amount is re-derived from the shares actually
+// burned. The remainder therefore stays backed by the depositor's residual
+// shares, and the pool is never left holding a balance with no shares. Both
+// results are zero when nothing can be drawn.
+//
+// This is the single definition of the fee-pool claim: WithdrawShares moves
+// money by it, and ComputeClaim (and through it the claim queries) quote it, so
+// a quote can never promise more than a withdrawal delivers.
+func feePoolDraw(shares, total, balance, limit math.Int) (sharesToBurn, tokens math.Int) {
+	if !shares.IsPositive() || !total.IsPositive() ||
+		!balance.IsPositive() || !limit.IsPositive() {
+		return math.ZeroInt(), math.ZeroInt()
+	}
+	claim := shares.Mul(balance).Quo(total)
+	if claim.LTE(limit) {
+		// The whole claim fits: burn every share and deliver it.
+		return shares, claim
+	}
+	sharesToBurn = limit.Mul(total).Quo(balance)
+	if !sharesToBurn.IsPositive() {
+		return math.ZeroInt(), math.ZeroInt()
+	}
+	return sharesToBurn, sharesToBurn.Mul(balance).Quo(total)
+}
+
+// ComputeClaim returns the depositor's currently claimable tokens for one denom
+// on the given consumer's fee pool: exactly what a withdrawal of the whole
+// claim would deliver at this block. Returns math.ZeroInt() if the depositor has
+// no shares, total_shares is zero, or the entire pool balance is reserved as
+// withheld-fee escrow -- the escrowed portion backs a pending downtime
+// challenge's make-whole payout and cannot be drawn until the challenge resolves
+// (see outstandingWithheldFees and WithdrawShares). Shares blocked by the
+// escrow are not lost: they keep backing the balance and become claimable once
+// the escrow clears.
 func (k Keeper) ComputeClaim(
 	ctx sdk.Context, consumerId uint64, depositor sdk.AccAddress, denom string,
 ) math.Int {
@@ -49,8 +87,52 @@ func (k Keeper) ComputeClaim(
 	if err != nil || total.IsZero() {
 		return math.ZeroInt()
 	}
-	// claim = floor(shares * balance / total)
-	return shares.Mul(balance.Amount).Quo(total)
+	// Nothing bounds the request, so the unreserved balance is the only limit.
+	available := balance.Amount.Sub(k.outstandingWithheldFees(ctx, consumerId, denom))
+	_, tokens := feePoolDraw(shares, total, balance.Amount, available)
+	return tokens
+}
+
+// absorbUnaccountedBalance credits the distribution module account with shares
+// covering a pool balance that no shares account for, so that share accounting
+// covers the whole balance again. On return, total_shares for the pair equals
+// `balance`.
+//
+// On a running chain one sender can produce such a balance, and deliberately so:
+// the bank send restriction rejects every direct transfer into a pool address
+// except from the provider module -- which always mints shares alongside -- and
+// from the distribution module, so that community-pool spends can reach a pool at
+// all (see FeePoolSendRestriction). A community-pool spend addressed straight at
+// a pool address therefore lands funds in it without minting anything. Crediting
+// the distribution module account is the same accounting a gov-signed
+// MsgFundConsumerFeePool would have produced for those funds: the balance
+// returns to the community pool when the pool is swept, and governance can
+// withdraw it before then. Any share record left without a stored total backs no
+// claim at all (every reader treats a missing total as an empty pool), so it is
+// cleared rather than silently re-valued by the new total.
+//
+// This is logged at error level: nothing about it is routine, and an operator
+// wants to know that funds reached a pool outside the accounted path.
+func (k Keeper) absorbUnaccountedBalance(
+	ctx sdk.Context, consumerId uint64, denom string, balance math.Int,
+) error {
+	k.Logger(ctx).Error(
+		"consumer fee pool holds a balance no shares account for; crediting the community pool",
+		"consumerId", consumerId,
+		"denom", denom,
+		"balance", balance.String(),
+	)
+	if err := k.clearAllShares(ctx, consumerId, denom); err != nil {
+		return err
+	}
+	distrAddr := authtypes.NewModuleAddress(disttypes.ModuleName)
+	if err := k.ConsumerFeePoolShares.Set(ctx,
+		collections.Join3(consumerId, denom, distrAddr), balance,
+	); err != nil {
+		return err
+	}
+	return k.ConsumerFeePoolTotalShares.Set(ctx,
+		collections.Join(consumerId, denom), balance)
 }
 
 // MintShares credits the depositor with shares for the given amount in the
@@ -80,15 +162,16 @@ func (k Keeper) MintShares(
 		total = math.ZeroInt()
 	}
 
-	// balance > 0 with no shares should be unreachable: every code path that
-	// adds balance also mints shares, and the send-restriction blocks any
-	// other deposit. InitGenesis catches the same condition on import. If we
-	// see it here mid-life, the state machine is corrupted.
+	// balance > 0 with no shares: funds reached the pool without minting any,
+	// which only a community-pool spend addressed straight at the pool address
+	// can do. Book them to the community pool first so this deposit is priced
+	// against a balance that shares fully cover, instead of handing the
+	// depositor funds nobody minted shares for (see absorbUnaccountedBalance).
 	if total.IsZero() && balance.Amount.IsPositive() {
-		panic(fmt.Sprintf(
-			"fee-pool invariant violated: consumer %d denom %s has balance %s but no shares",
-			consumerId, amount.Denom, balance.Amount.String(),
-		))
+		if err := k.absorbUnaccountedBalance(ctx, consumerId, amount.Denom, balance.Amount); err != nil {
+			return err
+		}
+		total = balance.Amount
 	}
 
 	var shares math.Int
@@ -118,10 +201,12 @@ func (k Keeper) MintShares(
 }
 
 // WithdrawShares burns shares for the given depositor and returns the tokens
-// to send. If amount >= claim, burns all of the depositor's shares (full
-// branch). Otherwise burns a proportional amount (partial branch), truncated
-// downward so the depositor never over-withdraws. Caller is responsible for
-// dispatching the bank send.
+// to send. A withdrawal may only ever draw the pool balance not reserved as
+// withheld-fee escrow (see outstandingWithheldFees): the escrowed portion
+// backs a pending downtime challenge's make-whole payout and cannot be raced
+// out before the challenge resolves. How many shares burn for how many tokens
+// is decided by feePoolDraw, the same computation ComputeClaim quotes.
+// Caller is responsible for dispatching the bank send.
 func (k Keeper) WithdrawShares(
 	ctx sdk.Context, consumerId uint64, depositor sdk.AccAddress, amount sdk.Coin,
 ) (sdk.Coin, error) {
@@ -140,27 +225,23 @@ func (k Keeper) WithdrawShares(
 
 	poolAddr := k.GetConsumerFeePoolAddress(consumerId)
 	balance := k.bankKeeper.GetBalance(ctx, poolAddr, amount.Denom)
-	if balance.Amount.IsZero() {
+	available := balance.Amount.Sub(k.outstandingWithheldFees(ctx, consumerId, amount.Denom))
+	if !available.IsPositive() {
 		return sdk.Coin{}, errorsmod.Wrapf(types.ErrPoolEmpty,
-			"pool has zero balance for denom %s", amount.Denom)
+			"pool has no withdrawable balance for denom %s (reserved as withheld-fee escrow)", amount.Denom)
 	}
 
-	claim := shares.Mul(balance.Amount).Quo(total)
-
-	var sharesToBurn, tokensToSend math.Int
-	if amount.Amount.GTE(claim) {
-		// Full branch: burn all shares, deliver exact claim
-		sharesToBurn = shares
-		tokensToSend = claim
-	} else {
-		// Partial branch: shares_to_burn = floor(amount * total / balance)
-		sharesToBurn = amount.Amount.Mul(total).Quo(balance.Amount)
-		if sharesToBurn.IsZero() {
-			return sdk.Coin{}, errorsmod.Wrapf(types.ErrSubShareWithdraw,
-				"requested %s but pool is too diluted to burn any shares",
-				amount.String())
-		}
-		tokensToSend = sharesToBurn.Mul(balance.Amount).Quo(total)
+	// A withdrawal draws at most the unreserved balance, however much was asked
+	// for.
+	limit := amount.Amount
+	if limit.GT(available) {
+		limit = available
+	}
+	sharesToBurn, tokensToSend := feePoolDraw(shares, total, balance.Amount, limit)
+	if !sharesToBurn.IsPositive() {
+		return sdk.Coin{}, errorsmod.Wrapf(types.ErrSubShareWithdraw,
+			"requested %s but the unreserved pool is too diluted to burn any shares",
+			amount.String())
 	}
 
 	remainingShares := shares.Sub(sharesToBurn)
@@ -193,6 +274,15 @@ func (k Keeper) WithdrawShares(
 // residue to the community pool. Share records and total for the
 // (consumer, denom) pair are deleted.
 //
+// Unlike DistributeConsumerFees and WithdrawShares, this does not reserve
+// outstanding withheld-fee escrow: a sweep runs only once a consumer has left
+// LAUNCHED and PAUSED (the manual sweep is gated to STOPPED and deletion
+// requires STOPPED), by which point no downtime challenge can still resolve
+// -- StopAndPrepareForConsumerRemoval has cancelled every pending slash and a
+// stopped consumer can neither be challenged nor paused. Any withheld-fee
+// record left over is therefore dead escrow the pool no longer owes to a
+// validator, so the full balance is released to share-holders here.
+//
 // Distribution to the distribution module account uses FundCommunityPool
 // rather than a raw bank send, so the community pool's FeePool DecCoins are
 // credited correctly.
@@ -202,11 +292,13 @@ func (k Keeper) WithdrawShares(
 // distributed back out, so the module always holds exactly enough; depositors
 // are tx signers (never blocked module accounts) so the per-depositor sends
 // cannot be rejected; and the distribution-module depositor is paid via
-// FundCommunityPool, not a (blocked) module send. Any remaining error path is
-// a collections store/codec failure or a bank/distribution rejection that can
-// only arise from state corruption or app misconfiguration -- in those cases
-// we panic rather than return, so deletion can never be silently aborted and
-// leave a consumer stranded in STOPPED.
+// FundCommunityPool, not a (blocked) module send. A balance no shares account
+// for is not treated as invalid state either -- it is absorbed (see below) --
+// because this runs from BeginBlock on consumer deletion. Any remaining error
+// path is a collections store/codec failure or a bank/distribution rejection
+// that can only arise from state corruption or app misconfiguration -- in those
+// cases we panic rather than return, so deletion can never be silently aborted
+// and leave a consumer stranded in STOPPED.
 func (k Keeper) SweepConsumerFeePoolDenom(
 	ctx sdk.Context, consumerId uint64, denom string,
 ) {
@@ -222,14 +314,18 @@ func (k Keeper) SweepConsumerFeePoolDenom(
 		return
 	}
 
-	// Orphan balance: balance > 0 with no shares. Unreachable from valid ops
-	// (see MintShares; InitGenesis catches the import case), so this is a
-	// state-corruption signal.
+	// Balance > 0 with no shares: credit the community pool with shares for it
+	// (see absorbUnaccountedBalance) and sweep it like any other holding, which
+	// hands it back to the community pool below. This must not be fatal -- a
+	// community-pool spend addressed straight at the pool address can produce
+	// the state, and this sweep runs from BeginBlock on consumer deletion, where
+	// a panic would halt the provider instead of failing a transaction.
 	if total.IsZero() {
-		panic(fmt.Sprintf(
-			"fee-pool invariant violated: consumer %d denom %s has balance %s but no shares",
-			consumerId, denom, balance.Amount.String(),
-		))
+		if err := k.absorbUnaccountedBalance(ctx, consumerId, denom, balance.Amount); err != nil {
+			panic(fmt.Sprintf("fee-pool sweep: absorb unaccounted balance for consumer %d denom %s: %s",
+				consumerId, denom, err))
+		}
+		total = balance.Amount
 	}
 
 	// Orphan shares: shares > 0 but balance == 0. Burn all shares, no transfer.
