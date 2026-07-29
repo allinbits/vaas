@@ -49,6 +49,16 @@ func (k msgServer) UpdateParams(goCtx context.Context, msg *types.MsgUpdateParam
 
 	ctx := sdk.UnwrapSDKContext(goCtx)
 
+	// TrustingPeriodFraction is one half of a constraint it shares with the
+	// separately-stored infraction parameters: the oldest challengeable header
+	// must stay light-client verifiable through its challenge window. Lowering
+	// the fraction shrinks that budget, so the stored infraction parameters are
+	// re-checked against the incoming fraction here, exactly as genesis checks
+	// the pair together.
+	if err := types.ValidateInfractionParamsAgainst(k.GetInfractionParams(ctx), msg.Params.TrustingPeriodFraction); err != nil {
+		return nil, err
+	}
+
 	// Capture the current floor before applying the new params so we only walk
 	// the overrides when the fees_per_block floor actually rises.
 	oldFloor := k.GetFeesPerBlock(ctx).Amount
@@ -64,6 +74,47 @@ func (k msgServer) UpdateParams(goCtx context.Context, msg *types.MsgUpdateParam
 	}
 
 	return &types.MsgUpdateParamsResponse{}, nil
+}
+
+// UpdateInfractionParams replaces the provider's infraction parameters: the
+// slash/jail policy for consumer double-signs and downtime, the downtime SLA
+// window, the challenge window and the evidence max age. They are stored
+// outside Params, so they have their own governance message; both handlers
+// enforce the constraint the two halves share, each against the stored other
+// half. Widening the challengeable interval is additionally checked against the
+// consumer clients already adopted, which no later discovery would repair (see
+// ValidateInfractionParamsAgainstAdoptedClients).
+//
+// Changing signed_blocks_window or min_signed_per_window redefines the SLA
+// consumers compute their bitmaps against. SetInfractionParams records the
+// superseded pair in PreviousDowntimeParams, so evidence already in flight --
+// computed and echoed under the old values -- keeps being accepted for
+// DowntimeEvidenceMaxAge + DowntimeChallengeWindow after the change (see
+// AcceptableDowntimeParams), judged against the threshold it was computed
+// under. Consumers pick the new values up from the next VSC packet and
+// activate them at their next window boundary.
+func (k msgServer) UpdateInfractionParams(goCtx context.Context, msg *types.MsgUpdateInfractionParams) (*types.MsgUpdateInfractionParamsResponse, error) {
+	if k.GetAuthority() != msg.Authority {
+		return nil, errorsmod.Wrapf(govtypes.ErrInvalidSigner, "invalid authority; expected %s, got %s", k.authority, msg.Authority)
+	}
+
+	if err := msg.InfractionParameters.Validate(); err != nil {
+		return nil, err
+	}
+
+	ctx := sdk.UnwrapSDKContext(goCtx)
+
+	if err := types.ValidateInfractionParamsAgainst(msg.InfractionParameters, k.GetParams(ctx).TrustingPeriodFraction); err != nil {
+		return nil, err
+	}
+
+	if err := k.ValidateInfractionParamsAgainstAdoptedClients(ctx, msg.InfractionParameters); err != nil {
+		return nil, err
+	}
+
+	k.Keeper.SetInfractionParams(ctx, msg.InfractionParameters)
+
+	return &types.MsgUpdateInfractionParamsResponse{}, nil
 }
 
 // AssignConsumerKey defines a method to assign a consensus key on a consumer chain
