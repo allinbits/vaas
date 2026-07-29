@@ -38,6 +38,19 @@ func (s *baseTestSuite) dockerExec(containerID string, cmd []string) (bytes.Buff
 		return stdout, stderr, fmt.Errorf("failed to start exec: %w", err)
 	}
 
+	// StartExec reports how the exec itself went, not how the command inside it
+	// exited, so a command that failed comes back with err == nil and an empty
+	// stdout. Callers that unmarshal stdout then fail on the empty document
+	// rather than on the reason -- a CLI route that no longer exists, a bad
+	// flag, an unfunded key -- which is invisible unless the exit code and
+	// stderr are surfaced. Log them and leave the error nil: several callers
+	// deliberately run commands expected to fail and assert on stderr
+	// themselves.
+	if inspect, inspectErr := s.dkrPool.Client.InspectExec(exec.ID); inspectErr == nil && inspect.ExitCode != 0 {
+		s.T().Logf("command exited %d: %v\nstdout: %s\nstderr: %s",
+			inspect.ExitCode, cmd, stdout.String(), stderr.String())
+	}
+
 	return stdout, stderr, nil
 }
 

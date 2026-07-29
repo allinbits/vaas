@@ -2,7 +2,6 @@ package app
 
 import (
 	"encoding/json"
-	"fmt"
 
 	cmtproto "github.com/cometbft/cometbft/proto/tendermint/types"
 	tmtypes "github.com/cometbft/cometbft/types"
@@ -90,12 +89,10 @@ func (app *App) prepForZeroHeightGenesis(ctx sdk.Context, jailAllowedAddrs []str
 	}
 }
 
-// GetValidatorSet returns a slice of bonded validators.
+// GetValidatorSet returns the consumer's cross-chain validators. The set may be
+// empty if the consumer has not yet received a validator set from the provider.
 func (app *App) GetValidatorSet(ctx sdk.Context) ([]tmtypes.GenesisValidator, error) {
 	cVals := app.ConsumerKeeper.GetAllCCValidator(ctx)
-	if len(cVals) == 0 {
-		return nil, fmt.Errorf("empty validator set")
-	}
 
 	vals := []tmtypes.GenesisValidator{}
 	for _, v := range cVals {
