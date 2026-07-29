@@ -6,93 +6,13 @@ import (
 
 const (
 	// ModuleName defines the VAAS provider module name
-	ModuleName = "provider"
+	ModuleName = "vaasprovider"
 
 	// StoreKey is the store key string for IBC provider
 	StoreKey = ModuleName
 
 	// Default validator set update ID
 	DefaultValsetUpdateID = 1
-
-	// Names for the collection storage keys.
-
-	ParametersKeyName = "ParametersKey"
-
-	ValidatorSetUpdateIdKeyName = "ValidatorSetUpdateIdKey"
-
-	// ConsumerIdToClientIdKeyName stores the mapping from consumer ID to client ID.
-	// This is the primary lookup mechanism for IBC v2 client-based communication.
-	ConsumerIdToClientIdKeyName = "ConsumerIdToClientIdKey"
-
-	ConsumerGenesisKeyName = "ConsumerGenesisKey"
-
-	InitChainHeightKeyName = "InitChainHeightKey"
-
-	PendingVSCsKeyName = "PendingVSCsKey"
-
-	ConsumerValidatorsKeyName = "ConsumerValidatorsKey"
-
-	ValidatorsByConsumerAddrKeyName = "ValidatorsByConsumerAddrKey"
-
-	EquivocationEvidenceMinHeightKeyName = "EquivocationEvidenceMinHeightKey"
-
-	ConsumerValidatorKeyName = "ConsumerValidatorKey"
-
-	LastProviderConsensusValsKeyName = "LastProviderConsensusValsKey"
-
-	ConsumerAddrsToPruneKeyName = "ConsumerAddrsToPruneKey"
-
-	ConsumerIdKeyName = "ConsumerIdKey"
-
-	ConsumerIdToChainIdKeyName = "ConsumerIdToChainIdKey"
-
-	ConsumerIdToOwnerAddressKeyName = "ConsumerIdToOwnerAddress"
-
-	ConsumerIdToConsumerMetadataKeyName = "ConsumerIdToMetadataKey"
-
-	ConsumerIdToInitializationParametersKeyName = "ConsumerIdToInitializationParametersKey"
-
-	ConsumerIdToPhaseKeyName = "ConsumerIdToPhaseKey"
-
-	ConsumerIdToRemovalTimeKeyName = "ConsumerIdToRemovalTimeKey"
-
-	SpawnTimeToConsumerIdsKeyName = "SpawnTimeToConsumerIdsKeyName"
-
-	RemovalTimeToConsumerIdsKeyName = "RemovalTimeToConsumerIdsKeyName"
-
-	// ClientIdToConsumerIdKeyName stores the reverse mapping from client ID to consumer ID.
-	// This is the reverse lookup mechanism for IBC v2 client-based communication.
-	ClientIdToConsumerIdKeyName = "ClientIdToConsumerIdKey"
-
-	ConsumerIdToDebtKeyName = "ConsumerIdToDebtKeyName"
-
-	ConsumerIdToFeesPerBlockOverrideKeyName = "ConsumerIdToFeesPerBlockOverrideKey"
-
-	ConsumerFeePoolSharesKeyName      = "ConsumerFeePoolSharesKey"
-	ConsumerFeePoolTotalSharesKeyName = "ConsumerFeePoolTotalSharesKey"
-	FeePoolAddressToConsumerIdKeyName = "FeePoolAddressToConsumerIdKey"
-
-	EpochDowntimeKeyName = "EpochDowntimeKey"
-
-	PreviousDowntimeParamsKeyName = "PreviousDowntimeParamsKey"
-
-	EpochShareRecordsKeyName = "EpochShareRecordsKey"
-
-	PendingDowntimeSlashesKeyName = "PendingDowntimeSlashesKey"
-
-	AcceptedDowntimeWindowsKeyName = "AcceptedDowntimeWindowsKey"
-
-	WithheldFeeRecordsKeyName = "WithheldFeeRecordsKey"
-
-	ConsumerIdToPauseExpirationTimeKeyName = "ConsumerIdToPauseExpirationTimeKey"
-
-	PauseExpirationTimeToConsumerIdsKeyName = "PauseExpirationTimeToConsumerIdsKey"
-
-	DowntimeWindowFloorsKeyName = "DowntimeWindowFloorsKey"
-
-	ConsumerPauseReasonKeyName = "ConsumerPauseReasonKey"
-
-	ConsumerPausedAtKeyName = "ConsumerPausedAtKey"
 )
 
 // Collection key prefixes for use with cosmossdk.io/collections
@@ -109,7 +29,7 @@ var (
 	EquivocationEvidenceMinHeightPrefix    = collections.NewPrefix(8)
 	ConsumerValidatorPrefix                = collections.NewPrefix(9)
 	ConsumerAddrsToPrunePrefix             = collections.NewPrefix(10)
-	LastProviderConsensusVals              = collections.NewPrefix(11)
+	LastProviderConsensusValsPrefix        = collections.NewPrefix(11)
 	ConsumerIdPrefix                       = collections.NewPrefix(12)
 	ConsumerIdToChainIdPrefix              = collections.NewPrefix(13)
 	ConsumerIdToOwnerAddressPrefix         = collections.NewPrefix(14)

@@ -29,7 +29,7 @@ func TestValidateGenesisState(t *testing.T) {
 		VaasTimeoutPeriod: time.Hour,
 		HistoricalEntries: 10,
 	}
-	launchedCS := func(consumerID uint64, chainID, clientID string, preVAAS bool) types.ConsumerState {
+	launchedCS := func(consumerID uint64, chainID, clientID string) types.ConsumerState {
 		return types.ConsumerState{
 			ConsumerId:      consumerID,
 			ChainId:         chainID,
@@ -37,7 +37,7 @@ func TestValidateGenesisState(t *testing.T) {
 			Phase:           types.CONSUMER_PHASE_LAUNCHED,
 			OwnerAddress:    sdk.AccAddress([]byte("vaas-test-owner-1234")).String(),
 			InitParams:      testInitParams,
-			ConsumerGenesis: getInitialConsumerGenesis(t, chainID, preVAAS),
+			ConsumerGenesis: getInitialConsumerGenesis(t, chainID),
 		}
 	}
 
@@ -50,7 +50,7 @@ func TestValidateGenesisState(t *testing.T) {
 			"valid initializing provider genesis with nil updates",
 			types.NewGenesisState(
 				types.DefaultValsetUpdateID,
-				[]types.ConsumerState{launchedCS(0, "chainid-1", "client-id", false)},
+				[]types.ConsumerState{launchedCS(0, "chainid-1", "client-id")},
 				types.DefaultParams(),
 				nil,
 				nil,
@@ -65,10 +65,10 @@ func TestValidateGenesisState(t *testing.T) {
 			types.NewGenesisState(
 				types.DefaultValsetUpdateID,
 				[]types.ConsumerState{
-					launchedCS(0, "chainid-1", "client-id", false),
-					launchedCS(1, "chainid-2", "client-id", true),
-					launchedCS(2, "chainid-3", "client-id", false),
-					launchedCS(3, "chainid-4", "client-id", true),
+					launchedCS(0, "chainid-1", "client-id"),
+					launchedCS(1, "chainid-2", "client-id"),
+					launchedCS(2, "chainid-3", "client-id"),
+					launchedCS(3, "chainid-4", "client-id"),
 				},
 				types.DefaultParams(),
 				nil,
@@ -83,7 +83,7 @@ func TestValidateGenesisState(t *testing.T) {
 			"valid provider genesis with custom params",
 			types.NewGenesisState(
 				types.DefaultValsetUpdateID,
-				[]types.ConsumerState{launchedCS(0, "chainid-1", "client-id", false)},
+				[]types.ConsumerState{launchedCS(0, "chainid-1", "client-id")},
 				types.NewParams(
 					types.DefaultTrustingPeriodFraction, types.DefaultLivenessGraceFraction, time.Hour, 600, math.NewInt(42), types.DefaultMinDepositBlocks, types.DefaultMaxPauseDuration),
 				nil,
@@ -112,7 +112,7 @@ func TestValidateGenesisState(t *testing.T) {
 			"invalid params, zero trusting period fraction",
 			types.NewGenesisState(
 				types.DefaultValsetUpdateID,
-				[]types.ConsumerState{launchedCS(0, "chainid-1", "client-id", false)},
+				[]types.ConsumerState{launchedCS(0, "chainid-1", "client-id")},
 				types.NewParams(
 					"0.0", // 0 trusting period fraction here
 					types.DefaultLivenessGraceFraction,
@@ -129,11 +129,11 @@ func TestValidateGenesisState(t *testing.T) {
 			"invalid params, zero VAAS timeout",
 			types.NewGenesisState(
 				types.DefaultValsetUpdateID,
-				[]types.ConsumerState{launchedCS(0, "chainid-1", "client-id", false)},
+				[]types.ConsumerState{launchedCS(0, "chainid-1", "client-id")},
 				types.NewParams(
 					types.DefaultTrustingPeriodFraction,
 					types.DefaultLivenessGraceFraction,
-					0, // 0 ccv timeout here
+					0, // 0 VAAS timeout here
 					600, math.NewInt(42), types.DefaultMinDepositBlocks, types.DefaultMaxPauseDuration),
 				nil,
 				nil,
@@ -161,7 +161,7 @@ func TestValidateGenesisState(t *testing.T) {
 			"valid consumer state with client id",
 			types.NewGenesisState(
 				types.DefaultValsetUpdateID,
-				[]types.ConsumerState{launchedCS(0, "chainid", "abc", false)},
+				[]types.ConsumerState{launchedCS(0, "chainid", "abc")},
 				types.DefaultParams(),
 				nil,
 				nil,
@@ -176,7 +176,7 @@ func TestValidateGenesisState(t *testing.T) {
 			types.NewGenesisState(
 				types.DefaultValsetUpdateID,
 				[]types.ConsumerState{func() types.ConsumerState {
-					cs := launchedCS(0, "chainid", "client-id", false)
+					cs := launchedCS(0, "chainid", "client-id")
 					cs.PendingValsetChanges = []vaastypes.ValidatorSetChangePacketData{{}} // ValsetUpdateId=0
 					return cs
 				}()},
@@ -859,7 +859,7 @@ func nonDefaultConsumerGenesis() vaastypes.ConsumerGenesisState {
 	return *gs
 }
 
-func getInitialConsumerGenesis(t *testing.T, chainID string, preVAAS bool) vaastypes.ConsumerGenesisState {
+func getInitialConsumerGenesis(t *testing.T, chainID string) vaastypes.ConsumerGenesisState {
 	t.Helper()
 	cId := crypto.NewCryptoIdentityFromIntSeed(239668)
 	pubKey := cId.TMCryptoPubKey()
@@ -869,26 +869,19 @@ func getInitialConsumerGenesis(t *testing.T, chainID string, preVAAS bool) vaast
 	valHash := valSet.Hash()
 	valUpdates := tmtypes.TM2PB.ValidatorUpdates(valSet)
 
-	var clientState *ibctmtypes.ClientState = nil
-	var consensusState *ibctmtypes.ConsensusState = nil
-
-	if preVAAS {
-		// no client state needed for pre-VAAS
-	} else {
-		clientState = ibctmtypes.NewClientState(
-			chainID,
-			ibctmtypes.DefaultTrustLevel,
-			time.Duration(1),
-			time.Duration(2),
-			time.Duration(1),
-			clienttypes.Height{RevisionNumber: clienttypes.ParseChainID(chainID), RevisionHeight: 1},
-			commitmenttypes.GetSDKSpecs(),
-			[]string{"upgrade", "upgradedIBCState"})
-		consensusState = ibctmtypes.NewConsensusState(time.Now(), commitmenttypes.NewMerkleRoot([]byte("apphash")), valHash)
-	}
+	clientState := ibctmtypes.NewClientState(
+		chainID,
+		ibctmtypes.DefaultTrustLevel,
+		time.Duration(1),
+		time.Duration(2),
+		time.Duration(1),
+		clienttypes.Height{RevisionNumber: clienttypes.ParseChainID(chainID), RevisionHeight: 1},
+		commitmenttypes.GetSDKSpecs(),
+		[]string{"upgrade", "upgradedIBCState"})
+	consensusState := ibctmtypes.NewConsensusState(time.Now(), commitmenttypes.NewMerkleRoot([]byte("apphash")), valHash)
 
 	params := vaastypes.DefaultConsumerParams()
 	params.Enabled = true
 
-	return *vaastypes.NewInitialConsumerGenesisState(clientState, consensusState, valUpdates, preVAAS, params)
+	return *vaastypes.NewInitialConsumerGenesisState(clientState, consensusState, valUpdates, params)
 }

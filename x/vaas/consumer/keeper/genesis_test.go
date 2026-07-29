@@ -97,11 +97,11 @@ func TestInitGenesis(t *testing.T) {
 				require.True(t, ok)
 				require.Equal(t, provClientState.ChainId, gotChainID)
 
-				require.Equal(t, validator.Address.Bytes(), ck.GetAllCCValidator(ctx)[0].Address)
+				require.Equal(t, validator.Address.Bytes(), ck.GetAllVaasValidator(ctx)[0].Address)
 				require.Equal(t, gs.Params, ck.GetConsumerParams(ctx))
 			},
 		}, {
-			"restart a chain without an established CCV channel",
+			"restart a chain with an already pinned provider client",
 			func(ctx sdk.Context, mocks testkeeper.MockedKeepers) {
 			},
 			consumertypes.NewRestartGenesisState(
@@ -111,7 +111,7 @@ func TestInitGenesis(t *testing.T) {
 			),
 			func(ctx sdk.Context, ck consumerkeeper.Keeper, gs *consumertypes.GenesisState) {
 				assertProviderClientID(t, ctx, &ck, provClientID)
-				require.Equal(t, validator.Address.Bytes(), ck.GetAllCCValidator(ctx)[0].Address)
+				require.Equal(t, validator.Address.Bytes(), ck.GetAllVaasValidator(ctx)[0].Address)
 				require.Equal(t, gs.Params, ck.GetConsumerParams(ctx))
 			},
 		},
@@ -151,12 +151,12 @@ func TestExportGenesis(t *testing.T) {
 		expGenesis *consumertypes.GenesisState
 	}{
 		{
-			"export a chain without an established CCV channel",
+			"export a chain with a pinned provider client",
 			func(ctx sdk.Context, ck consumerkeeper.Keeper, mocks testkeeper.MockedKeepers) {
 				ck.SetProviderClientID(ctx, provClientID)
-				cVal, err := consumertypes.NewCCValidator(validator.Address.Bytes(), 1, pubKey)
+				vaasVal, err := consumertypes.NewVaasValidator(validator.Address.Bytes(), 1, pubKey)
 				require.NoError(t, err)
-				ck.SetCCValidator(ctx, cVal)
+				ck.SetVaasValidator(ctx, vaasVal)
 				ck.SetParams(ctx, params)
 			},
 			consumertypes.NewRestartGenesisState(
@@ -204,9 +204,9 @@ func TestGenesisRoundTripLastVSCRecvTime(t *testing.T) {
 	defer ctrl.Finish()
 	ck.SetParams(ctx, params)
 	ck.SetProviderClientID(ctx, provClientID)
-	cVal, err := consumertypes.NewCCValidator(validator.Address.Bytes(), 1, pubKey)
+	vaasVal, err := consumertypes.NewVaasValidator(validator.Address.Bytes(), 1, pubKey)
 	require.NoError(t, err)
-	ck.SetCCValidator(ctx, cVal)
+	ck.SetVaasValidator(ctx, vaasVal)
 	ck.SetLastVSCRecvTime(ctx, lastRecv)
 
 	exported := ck.ExportGenesis(ctx)
@@ -435,9 +435,9 @@ func TestGenesisRoundTripDowntimeState(t *testing.T) {
 	defer ctrl.Finish()
 	ck.SetParams(ctx, params)
 	ck.SetProviderClientID(ctx, provClientID)
-	cVal, err := consumertypes.NewCCValidator(validator.Address.Bytes(), 1, pubKey)
+	vaasVal, err := consumertypes.NewVaasValidator(validator.Address.Bytes(), 1, pubKey)
 	require.NoError(t, err)
-	ck.SetCCValidator(ctx, cVal)
+	ck.SetVaasValidator(ctx, vaasVal)
 
 	require.NoError(t, ck.MissedBlockBitmaps.Set(ctx, addr1, bitmap1))
 	require.NoError(t, ck.MissedBlockBitmaps.Set(ctx, addr2, bitmap2))
@@ -524,9 +524,9 @@ func TestGenesisRoundTripProviderChainId(t *testing.T) {
 	defer ctrl.Finish()
 	ck.SetParams(ctx, params)
 	ck.SetProviderClientID(ctx, provClientID)
-	cVal, err := consumertypes.NewCCValidator(validator.Address.Bytes(), 1, pubKey)
+	vaasVal, err := consumertypes.NewVaasValidator(validator.Address.Bytes(), 1, pubKey)
 	require.NoError(t, err)
-	ck.SetCCValidator(ctx, cVal)
+	ck.SetVaasValidator(ctx, vaasVal)
 	ck.SetProviderChainId(ctx, providerChainId)
 
 	exported := ck.ExportGenesis(ctx)
