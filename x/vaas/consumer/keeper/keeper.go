@@ -6,11 +6,6 @@ import (
 	"fmt"
 	"time"
 
-	"github.com/allinbits/vaas/x/vaas/consumer/types"
-	vaastypes "github.com/allinbits/vaas/x/vaas/types"
-
-	tmtypes "github.com/cometbft/cometbft/abci/types"
-
 	host "github.com/cosmos/ibc-go/v10/modules/core/24-host"
 
 	"cosmossdk.io/collections"
@@ -21,6 +16,9 @@ import (
 	"github.com/cosmos/cosmos-sdk/codec"
 	sdk "github.com/cosmos/cosmos-sdk/types"
 	stakingtypes "github.com/cosmos/cosmos-sdk/x/staking/types"
+
+	"github.com/allinbits/vaas/x/vaas/consumer/types"
+	vaastypes "github.com/allinbits/vaas/x/vaas/types"
 )
 
 // Keeper defines the Cross-Chain Validation Consumer Keeper
@@ -47,11 +45,9 @@ type Keeper struct {
 	Schema collections.Schema
 
 	// State collections
-	Port                   collections.Item[string]
 	ProviderClientID       collections.Item[string]
 	PendingChanges         collections.Item[vaastypes.ValidatorSetChangePacketData]
 	InitGenesisHeight      collections.Item[uint64]
-	InitialValSet          collections.Item[types.GenesisState]
 	Params                 collections.Item[vaastypes.ConsumerParams]
 	ConsumerInDebt         collections.Item[bool]
 	CrossChainValidators   collections.Map[[]byte, types.CrossChainValidator]
@@ -98,11 +94,9 @@ func NewKeeper(
 		consensusAddressCodec: consensusAddressCodec,
 
 		// Initialize collections
-		Port:                   collections.NewItem(sb, types.PortPrefix, "port", collections.StringValue),
 		ProviderClientID:       collections.NewItem(sb, types.ProviderClientIDPrefix, "provider_client_id", collections.StringValue),
 		PendingChanges:         collections.NewItem(sb, types.PendingChangesPrefix, "pending_changes", codec.CollValue[vaastypes.ValidatorSetChangePacketData](cdc)),
 		InitGenesisHeight:      collections.NewItem(sb, types.InitGenesisHeightPrefix, "init_genesis_height", collections.Uint64Value),
-		InitialValSet:          collections.NewItem(sb, types.InitialValSetPrefix, "initial_val_set", codec.CollValue[types.GenesisState](cdc)),
 		Params:                 collections.NewItem(sb, types.ParametersPrefix, "params", codec.CollValue[vaastypes.ConsumerParams](cdc)),
 		ConsumerInDebt:         collections.NewItem(sb, types.ConsumerDebtPrefix, "consumer_in_debt", collections.BoolValue),
 		CrossChainValidators:   collections.NewMap(sb, types.CrossChainValidatorPrefix, "cross_chain_validators", collections.BytesKey, codec.CollValue[types.CrossChainValidator](cdc)),
@@ -125,7 +119,7 @@ func NewKeeper(
 	return k
 }
 
-// GetAuthority returns the x/ccv/provider module's authority.
+// GetAuthority returns the consumer module's authority.
 func (k Keeper) GetAuthority() string {
 	return k.authority
 }
@@ -140,11 +134,9 @@ func NewNonZeroKeeper(cdc codec.BinaryCodec, storeService corestoretypes.KVStore
 		cdc:          cdc,
 
 		// Initialize collections with minimal setup for testing
-		Port:                   collections.NewItem(sb, types.PortPrefix, "port", collections.StringValue),
 		ProviderClientID:       collections.NewItem(sb, types.ProviderClientIDPrefix, "provider_client_id", collections.StringValue),
 		PendingChanges:         collections.NewItem(sb, types.PendingChangesPrefix, "pending_changes", codec.CollValue[vaastypes.ValidatorSetChangePacketData](cdc)),
 		InitGenesisHeight:      collections.NewItem(sb, types.InitGenesisHeightPrefix, "init_genesis_height", collections.Uint64Value),
-		InitialValSet:          collections.NewItem(sb, types.InitialValSetPrefix, "initial_val_set", codec.CollValue[types.GenesisState](cdc)),
 		Params:                 collections.NewItem(sb, types.ParametersPrefix, "params", codec.CollValue[vaastypes.ConsumerParams](cdc)),
 		ConsumerInDebt:         collections.NewItem(sb, types.ConsumerDebtPrefix, "consumer_in_debt", collections.BoolValue),
 		CrossChainValidators:   collections.NewMap(sb, types.CrossChainValidatorPrefix, "cross_chain_validators", collections.BytesKey, codec.CollValue[types.CrossChainValidator](cdc)),
@@ -192,22 +184,6 @@ func (k *Keeper) SetHooks(sh vaastypes.ConsumerHooks) *Keeper {
 	k.hooks = sh
 
 	return k
-}
-
-// GetPort returns the portID for the transfer module. Used in ExportGenesis
-func (k Keeper) GetPort(ctx context.Context) string {
-	port, err := k.Port.Get(ctx)
-	if err != nil {
-		return ""
-	}
-	return port
-}
-
-// SetPort sets the portID for the CCV module. Used in InitGenesis
-func (k Keeper) SetPort(ctx context.Context, portID string) {
-	if err := k.Port.Set(ctx, portID); err != nil {
-		panic(fmt.Errorf("failed to set port: %w", err))
-	}
 }
 
 // SetProviderClientID sets the clientID for the client to the provider.
@@ -299,24 +275,6 @@ func (k Keeper) SetInitGenesisHeight(ctx context.Context, height int64) {
 	if err := k.InitGenesisHeight.Set(ctx, uint64(height)); err != nil {
 		panic(fmt.Errorf("failed to set init genesis height: %w", err))
 	}
-}
-
-func (k Keeper) SetInitialValSet(ctx context.Context, initialValSet []tmtypes.ValidatorUpdate) {
-	// Store the initial validator set in a GenesisState wrapper
-	initialValSetState := types.GenesisState{
-		Provider: vaastypes.ProviderInfo{InitialValSet: initialValSet},
-	}
-	if err := k.InitialValSet.Set(ctx, initialValSetState); err != nil {
-		panic(fmt.Errorf("failed to set initial val set: %w", err))
-	}
-}
-
-func (k Keeper) GetInitialValSet(ctx context.Context) []tmtypes.ValidatorUpdate {
-	initialValSetState, err := k.InitialValSet.Get(ctx)
-	if err != nil {
-		return []tmtypes.ValidatorUpdate{}
-	}
-	return initialValSetState.Provider.InitialValSet
 }
 
 // SetCCValidator sets a cross-chain validator under its validator address

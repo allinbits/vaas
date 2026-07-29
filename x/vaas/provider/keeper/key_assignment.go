@@ -4,15 +4,15 @@ import (
 	"encoding/base64"
 	"fmt"
 
-	"github.com/allinbits/vaas/x/vaas/provider/types"
-	vaastypes "github.com/allinbits/vaas/x/vaas/types"
-
 	tmprotocrypto "github.com/cometbft/cometbft/proto/tendermint/crypto"
 
 	errorsmod "cosmossdk.io/errors"
 
 	sdk "github.com/cosmos/cosmos-sdk/types"
 	stakingtypes "github.com/cosmos/cosmos-sdk/x/staking/types"
+
+	"github.com/allinbits/vaas/x/vaas/provider/types"
+	vaastypes "github.com/allinbits/vaas/x/vaas/types"
 )
 
 // ParseConsumerKey parses the ED25519 PubKey`consumerKey` from a JSON string
@@ -25,8 +25,8 @@ func (k Keeper) ParseConsumerKey(consumerKey string) (tmprotocrypto.PublicKey, e
 	}
 
 	// Note: the correct way to decide if a key type is supported is to check the
-	// consensus params. However this functionality was disabled in https://github.com/cosmos/interchain-security/pull/916
-	// as a quick way to get ed25519 working, avoiding amino/proto-any marshalling issues.
+	// consensus params. That path is disabled for now as a quick way to get
+	// ed25519 working, avoiding amino/proto-any marshalling issues.
 
 	// make sure the consumer key type is supported
 	// cp := ctx.ConsensusParams()
@@ -62,9 +62,9 @@ func (k Keeper) ParseConsumerKey(consumerKey string) (tmprotocrypto.PublicKey, e
 	return consumerTMPublicKey, nil
 }
 
-// AssignConsumerKey assigns the consumerKey to the validator with providerAddr
-// on the consumer chain with the given `consumerId`, if it is either registered or currently
-// voted on in a ConsumerAddition governance proposal
+// AssignConsumerKey assigns the consumerKey to the validator with providerAddr on the
+// consumer chain with the given `consumerId`, provided that consumer is registered,
+// initialized, or launched.
 func (k Keeper) AssignConsumerKey(
 	ctx sdk.Context,
 	consumerId uint64,

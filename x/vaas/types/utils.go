@@ -1,17 +1,13 @@
 package types
 
 import (
-	"errors"
-	"reflect"
 	"sort"
-	"strings"
 
 	abci "github.com/cometbft/cometbft/abci/types"
 	tmprotocrypto "github.com/cometbft/cometbft/proto/tendermint/crypto"
 
 	cryptocodec "github.com/cosmos/cosmos-sdk/crypto/codec"
 	sdk "github.com/cosmos/cosmos-sdk/types"
-	"github.com/cosmos/cosmos-sdk/types/bech32"
 	stakingtypes "github.com/cosmos/cosmos-sdk/x/staking/types"
 )
 
@@ -52,33 +48,6 @@ func TMCryptoPublicKeyToConsAddr(k tmprotocrypto.PublicKey) (sdk.ConsAddress, er
 		return nil, err
 	}
 	return sdk.GetConsAddress(sdkK), nil
-}
-
-func AppendMany(byteses ...[]byte) (out []byte) {
-	for _, bytes := range byteses {
-		out = append(out, bytes...)
-	}
-	return out
-}
-
-func PanicIfZeroOrNil(x any, nameForPanicMsg string) {
-	if x == nil || reflect.ValueOf(x).IsZero() {
-		panic("zero or nil value for " + nameForPanicMsg)
-	}
-}
-
-// GetConsAddrFromBech32 returns a ConsAddress from a Bech32 with an arbitrary prefix
-func GetConsAddrFromBech32(bech32str string) (sdk.ConsAddress, error) {
-	bech32Addr := strings.TrimSpace(bech32str)
-	if len(bech32Addr) == 0 {
-		return nil, errors.New("couldn't parse empty input")
-	}
-	// remove bech32 prefix
-	_, addr, err := bech32.DecodeAndConvert(bech32Addr)
-	if err != nil {
-		return nil, errors.New("couldn't find valid bech32")
-	}
-	return sdk.ConsAddress(addr), nil
 }
 
 // GetLastBondedValidatorsUtil iterates the last validator powers in the staking module

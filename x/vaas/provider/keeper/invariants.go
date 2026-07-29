@@ -4,11 +4,11 @@ import (
 	"fmt"
 	"strings"
 
-	types "github.com/allinbits/vaas/x/vaas/provider/types"
-
 	"cosmossdk.io/math"
 
 	sdk "github.com/cosmos/cosmos-sdk/types"
+
+	types "github.com/allinbits/vaas/x/vaas/provider/types"
 )
 
 // RegisterInvariants registers all provider module invariants
