@@ -50,7 +50,6 @@ func (k Keeper) InitGenesis(ctx sdk.Context, state *types.GenesisState) []abci.V
 		}
 
 		k.SetProviderClientID(ctx, cid)
-		k.SetHeightValsetUpdateID(ctx, uint64(ctx.BlockHeight()), uint64(0))
 
 		// Pre-pin the provider chain id from the client state we were just
 		// handed at genesis, rather than waiting for the first VSC packet to
@@ -62,9 +61,6 @@ func (k Keeper) InitGenesis(ctx sdk.Context, state *types.GenesisState) []abci.V
 			"client id", cid,
 		)
 	} else {
-		for _, h2v := range state.HeightToValsetUpdateId {
-			k.SetHeightValsetUpdateID(ctx, h2v.Height, h2v.ValsetUpdateId)
-		}
 		k.SetProviderClientID(ctx, state.ProviderClientId)
 
 		// Restore the pinned provider chain id on restart (see ExportGenesis):
@@ -86,6 +82,27 @@ func (k Keeper) InitGenesis(ctx sdk.Context, state *types.GenesisState) []abci.V
 	// (new chain / never received a VSC) leaves the never-stale default.
 	if state.LastVscRecvTime != nil {
 		k.SetLastVSCRecvTime(ctx, *state.LastVscRecvTime)
+	}
+
+	// Restore the debt flag on a restart (see ExportGenesis): the other arm of
+	// the tx-admission gate LastVSCRecvTime drives. Without this a debt-gated
+	// consumer comes back ungated until the next VSC packet re-asserts the
+	// flag. False is the absent case and matches a fresh keeper exactly, since
+	// IsConsumerInDebt reads an unset flag as not in debt.
+	if state.ConsumerInDebt {
+		k.SetConsumerInDebt(ctx, true)
+	}
+
+	// Restore the out-of-order dedup watermark on a restart (see ExportGenesis
+	// and OnRecvVSCPacketV2). Without this a state-export restart resets the
+	// watermark to found=false, so a stale diff VSC still sitting in IBC state
+	// would be accepted and applied over a newer set. A watermark of 0 is the
+	// absent case (new chain / no VSC applied yet); VSC ids are strictly
+	// positive, so leaving it unset there matches a fresh keeper exactly.
+	if state.HighestValsetUpdateId != 0 {
+		if err := k.SetHighestValsetUpdateID(ctx, state.HighestValsetUpdateId); err != nil {
+			panic(fmt.Errorf("init: set highest valset update id: %w", err))
+		}
 	}
 
 	// Restore downtime-detection state for the window currently in progress
@@ -150,9 +167,18 @@ func (k Keeper) ExportGenesis(ctx sdk.Context) (genesis *types.GenesisState) {
 	genesis = types.NewRestartGenesisState(
 		clientID,
 		valset,
-		k.GetAllHeightToValsetUpdateIDs(ctx),
 		params,
 	)
+
+	// Preserve the out-of-order dedup watermark across a restart (see
+	// InitGenesis and OnRecvVSCPacketV2): export it only when actually
+	// recorded, so a consumer that has not applied a VSC keeps the absent
+	// default (0) and imports identically to a fresh keeper.
+	if id, found, err := k.GetHighestValsetUpdateID(ctx); err != nil {
+		panic(fmt.Errorf("export: failed to read highest valset update id: %w", err))
+	} else if found {
+		genesis.HighestValsetUpdateId = id
+	}
 
 	// Preserve the pinned provider chain id across a restart (see
 	// InitGenesis); absent when no pin has ever been established (e.g. a
@@ -172,6 +198,12 @@ func (k Keeper) ExportGenesis(ctx sdk.Context) (genesis *types.GenesisState) {
 		t := k.GetLastVSCRecvTime(ctx)
 		genesis.LastVscRecvTime = &t
 	}
+
+	// Preserve the debt flag across a restart (see IsConsumerInDebt): the other
+	// arm of the same tx-admission gate. An unset flag and a stored false are
+	// the same thing to IsConsumerInDebt, so exporting the read value keeps the
+	// round-trip a fixed point without needing to distinguish them.
+	genesis.ConsumerInDebt = k.IsConsumerInDebt(ctx)
 
 	// Preserve downtime-detection state for the window currently in progress
 	// across a restart: the missed-block bitmaps and first-tracked heights

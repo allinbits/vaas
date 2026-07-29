@@ -383,6 +383,13 @@ func TestGenesisRoundTrip(t *testing.T) {
 	pkA.SetConsumerHighestSentVscId(ctxA, keyedConsumerID, 7)
 	pkA.SetConsumerHighestAckedVscId(ctxA, keyedConsumerID, 5)
 
+	// Seed the debt flag on the PAUSED consumer: nothing re-derives it for a
+	// consumer outside LAUNCHED, and a resume queues an immediate snapshot VSC
+	// stamped with whatever the flag then says, so this is the case the export
+	// exists for.
+	const pausedConsumerID uint64 = 5 // consumer-zeta
+	pkA.SetConsumerInDebt(ctxA, pausedConsumerID, true)
+
 	// Seed the downtime-detection state (pending slash, previous downtime
 	// params, epoch share records) so the round-trip covers it too.
 	downtimeProviderAddr := providertypes.NewProviderConsAddress([]byte("provider-addr-downtime-x1"))
@@ -517,6 +524,8 @@ func TestGenesisRoundTrip(t *testing.T) {
 	require.Equal(t, providertypes.CONSUMER_PHASE_PAUSED, zeta.Phase)
 	require.NotNil(t, zeta.PauseExpirationTime, "PAUSED consumer must carry pause_expiration_time")
 	require.Equal(t, pauseExpiresAt, *zeta.PauseExpirationTime)
+	require.True(t, zeta.InDebt, "PAUSED consumer must carry its debt flag")
+	require.False(t, byChainId["consumer-gamma"].InDebt, "a consumer not in debt must export a false flag")
 
 	// Fresh keeper B.
 	pkB, ctxB, ctrlB, stakingB := testkeeper.GetProviderKeeperAndCtx(t, testkeeper.NewInMemKeeperParams(t))
@@ -582,15 +591,21 @@ func TestGenesisRoundTrip(t *testing.T) {
 
 	// The PAUSED consumer's pause-expiration queue must be rebuilt from the
 	// per-consumer pause_expiration_time, mirroring the removal-time queue.
-	const zetaConsumerID uint64 = 5
-	require.Equal(t, providertypes.CONSUMER_PHASE_PAUSED, pkB.GetConsumerPhase(ctxB, zetaConsumerID))
-	gotPET, err := pkB.GetConsumerPauseExpirationTime(ctxB, zetaConsumerID)
+	require.Equal(t, providertypes.CONSUMER_PHASE_PAUSED, pkB.GetConsumerPhase(ctxB, pausedConsumerID))
+	gotPET, err := pkB.GetConsumerPauseExpirationTime(ctxB, pausedConsumerID)
 	require.NoError(t, err, "ConsumerPauseExpirationTime lost across round-trip")
 	require.Equal(t, pauseExpiresAt, gotPET)
 	autoStopIds, err := pkB.GetConsumersToBeAutoStopped(ctxB, pauseExpiresAt)
 	require.NoError(t, err)
-	require.Equal(t, []uint64{zetaConsumerID}, autoStopIds.Ids,
+	require.Equal(t, []uint64{pausedConsumerID}, autoStopIds.Ids,
 		"pause-expiration queue not rebuilt at InitGenesis")
+
+	// The debt flag must reconnect too, and only for the consumer that carried
+	// it -- this is what buildVSCPacket stamps onto the next VSC packet.
+	require.True(t, pkB.IsConsumerInDebt(ctxB, pausedConsumerID),
+		"consumer debt flag lost across round-trip")
+	require.False(t, pkB.IsConsumerInDebt(ctxB, keyedConsumerID),
+		"a consumer not in debt must not come back in debt")
 
 	expB := pkB.ExportGenesis(ctxB)
 

@@ -14,6 +14,11 @@ func (s *IntegrationTestSuite) TestVAAS() {
 	s.testFeePoolSendRestriction()
 	s.testFeePoolFundAndLockEnforcement()
 	s.testFeePoolGovSubsidyClawback()
+	// Stops the consumer container and replaces it with a fresh one started
+	// from its exported genesis at a continuing height, then verifies VSC
+	// flow resumes. Needs consumer "0" LAUNCHED, so it must run before
+	// testLivenessRemoval.
+	s.testConsumerGenesisRoundTrip()
 	// Explicitly remove consumer "0"; verify STOPPED (DELETED if removal_time
 	// has elapsed). Must run after all tests that rely on consumer "0" being
 	// LAUNCHED and before testGenesisRoundTrip (which tolerates any phase).

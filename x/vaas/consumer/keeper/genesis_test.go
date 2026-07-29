@@ -37,9 +37,6 @@ func TestInitGenesis(t *testing.T) {
 	provClientID := "tendermint-07"
 	provClientType := "07-tendermint"
 
-	vscID := uint64(0)
-	blockHeight := uint64(0)
-
 	// create validator set
 	cId := crypto.NewCryptoIdentityFromIntSeed(234234)
 	pubKey := cId.TMCryptoPubKey()
@@ -63,11 +60,6 @@ func TestInitGenesis(t *testing.T) {
 		commitmenttypes.GetSDKSpecs(),
 		[]string{"upgrade", "upgradedIBCState"},
 	)
-
-	// mock height to valset update ID values
-	defaultHeightValsetUpdateIDs := []consumertypes.HeightToValsetUpdateID{
-		{ValsetUpdateId: vscID, Height: blockHeight},
-	}
 
 	params := vaastypes.DefaultConsumerParams()
 	params.Enabled = true
@@ -98,7 +90,6 @@ func TestInitGenesis(t *testing.T) {
 			),
 			func(ctx sdk.Context, ck consumerkeeper.Keeper, gs *consumertypes.GenesisState) {
 				assertProviderClientID(t, ctx, &ck, provClientID)
-				assertHeightValsetUpdateIDs(t, ctx, &ck, defaultHeightValsetUpdateIDs)
 
 				require.Equal(t, validator.Address.Bytes(), ck.GetAllCCValidator(ctx)[0].Address)
 				require.Equal(t, gs.Params, ck.GetConsumerParams(ctx))
@@ -110,11 +101,9 @@ func TestInitGenesis(t *testing.T) {
 			consumertypes.NewRestartGenesisState(
 				provClientID,
 				valset,
-				defaultHeightValsetUpdateIDs,
 				params,
 			),
 			func(ctx sdk.Context, ck consumerkeeper.Keeper, gs *consumertypes.GenesisState) {
-				assertHeightValsetUpdateIDs(t, ctx, &ck, defaultHeightValsetUpdateIDs)
 				assertProviderClientID(t, ctx, &ck, provClientID)
 				require.Equal(t, validator.Address.Bytes(), ck.GetAllCCValidator(ctx)[0].Address)
 				require.Equal(t, gs.Params, ck.GetConsumerParams(ctx))
@@ -140,18 +129,12 @@ func TestInitGenesis(t *testing.T) {
 func TestExportGenesis(t *testing.T) {
 	provClientID := "tendermint-07"
 
-	vscID := uint64(0)
-	blockHeight := uint64(0)
-
 	pubKey := ed25519.GenPrivKey().PubKey()
 	tmPK, err := cryptocodec.ToCmtPubKeyInterface(pubKey)
 	require.NoError(t, err)
 	validator := tmtypes.NewValidator(tmPK, 1)
 	valset := []abci.ValidatorUpdate{tmtypes.TM2PB.ValidatorUpdate(validator)}
 
-	defaultHeightValsetUpdateIDs := []consumertypes.HeightToValsetUpdateID{
-		{ValsetUpdateId: vscID, Height: blockHeight},
-	}
 	params := vaastypes.DefaultConsumerParams()
 	params.Enabled = true
 
@@ -168,13 +151,10 @@ func TestExportGenesis(t *testing.T) {
 				require.NoError(t, err)
 				ck.SetCCValidator(ctx, cVal)
 				ck.SetParams(ctx, params)
-
-				ck.SetHeightValsetUpdateID(ctx, defaultHeightValsetUpdateIDs[0].Height, defaultHeightValsetUpdateIDs[0].ValsetUpdateId)
 			},
 			consumertypes.NewRestartGenesisState(
 				provClientID,
 				valset,
-				defaultHeightValsetUpdateIDs,
 				params,
 			),
 		},
@@ -220,7 +200,6 @@ func TestGenesisRoundTripLastVSCRecvTime(t *testing.T) {
 	cVal, err := consumertypes.NewCCValidator(validator.Address.Bytes(), 1, pubKey)
 	require.NoError(t, err)
 	ck.SetCCValidator(ctx, cVal)
-	ck.SetHeightValsetUpdateID(ctx, 0, 0)
 	ck.SetLastVSCRecvTime(ctx, lastRecv)
 
 	exported := ck.ExportGenesis(ctx)
@@ -232,6 +211,110 @@ func TestGenesisRoundTripLastVSCRecvTime(t *testing.T) {
 	defer ctrl2.Finish()
 	ck2.InitGenesis(ctx2, exported)
 	require.Equal(t, lastRecv, ck2.GetLastVSCRecvTime(ctx2))
+}
+
+// TestGenesisRoundTripConsumerInDebt verifies the consumer's debt flag survives
+// an export/import restart: it is the other arm of the tx-admission gate
+// LastVSCRecvTime drives, and IsConsumerInDebt reads an unset flag as "not in
+// debt", so a debt-gated consumer that did not carry the flag through genesis
+// would come back admitting ordinary transactions until the next VSC packet
+// re-asserted it.
+func TestGenesisRoundTripConsumerInDebt(t *testing.T) {
+	provClientID := "tendermint-07"
+	params := vaastypes.DefaultConsumerParams()
+	params.Enabled = true
+
+	pubKey := ed25519.GenPrivKey().PubKey()
+	tmPK, err := cryptocodec.ToCmtPubKeyInterface(pubKey)
+	require.NoError(t, err)
+	validator := tmtypes.NewValidator(tmPK, 1)
+
+	// Export half: a consumer the provider has flagged as in debt.
+	ck, ctx, ctrl, _ := testkeeper.GetConsumerKeeperAndCtx(t, testkeeper.NewInMemKeeperParams(t))
+	defer ctrl.Finish()
+	ck.SetParams(ctx, params)
+	ck.SetProviderClientID(ctx, provClientID)
+	cVal, err := consumertypes.NewCCValidator(validator.Address.Bytes(), 1, pubKey)
+	require.NoError(t, err)
+	ck.SetCCValidator(ctx, cVal)
+	ck.SetConsumerInDebt(ctx, true)
+
+	exported := ck.ExportGenesis(ctx)
+	require.True(t, exported.ConsumerInDebt, "export must carry the debt flag")
+
+	// Import half: a fresh keeper comes back gated.
+	ck2, ctx2, ctrl2, _ := testkeeper.GetConsumerKeeperAndCtx(t, testkeeper.NewInMemKeeperParams(t))
+	defer ctrl2.Finish()
+	ck2.InitGenesis(ctx2, exported)
+	require.True(t, ck2.IsConsumerInDebt(ctx2), "debt flag lost across the restart round-trip")
+
+	reExported := ck2.ExportGenesis(ctx2)
+	require.Equal(t, exported, reExported, "round-trip must be a fixed point")
+
+	// A consumer that is not in debt exports a false flag and imports
+	// identically to a fresh keeper.
+	ck.SetConsumerInDebt(ctx, false)
+	cleared := ck.ExportGenesis(ctx)
+	require.False(t, cleared.ConsumerInDebt)
+
+	ck3, ctx3, ctrl3, _ := testkeeper.GetConsumerKeeperAndCtx(t, testkeeper.NewInMemKeeperParams(t))
+	defer ctrl3.Finish()
+	ck3.InitGenesis(ctx3, cleared)
+	require.False(t, ck3.IsConsumerInDebt(ctx3))
+	require.Equal(t, cleared, ck3.ExportGenesis(ctx3), "round-trip must be a fixed point")
+}
+
+// TestInitGenesisNewChainPinsProviderChainId verifies that a brand-new consumer
+// pins the provider chain id from the client state it is handed at genesis,
+// rather than leaving no pin at all until the first VSC packet establishes one
+// through authenticateProviderChainID.
+func TestInitGenesisNewChainPinsProviderChainId(t *testing.T) {
+	providerChainId := "provider-chain-1"
+	provClientID := "07-tendermint-0"
+	provClientType := "07-tendermint"
+
+	cId := crypto.NewCryptoIdentityFromIntSeed(915237)
+	validator := tmtypes.NewValidator(cId.TMCryptoPubKey(), 1)
+	valset := []abci.ValidatorUpdate{tmtypes.TM2PB.ValidatorUpdate(validator)}
+
+	provConsState := ibctmtypes.NewConsensusState(
+		time.Unix(1_700_000_000, 0).UTC(),
+		commitmenttypes.NewMerkleRoot([]byte("apphash")),
+		tmtypes.NewValidatorSet([]*tmtypes.Validator{validator}).Hash(),
+	)
+	provClientState := ibctmtypes.NewClientState(
+		providerChainId,
+		ibctmtypes.DefaultTrustLevel,
+		stakingtypes.DefaultUnbondingTime/2,
+		stakingtypes.DefaultUnbondingTime,
+		time.Second*10,
+		// The revision number must match the chain id's, and the revision
+		// height must be non-zero, for ClientState.Validate to accept it.
+		clienttypes.NewHeight(1, 5),
+		commitmenttypes.GetSDKSpecs(),
+		[]string{"upgrade", "upgradedIBCState"},
+	)
+
+	params := vaastypes.DefaultConsumerParams()
+	params.Enabled = true
+
+	ck, ctx, ctrl, mocks := testkeeper.GetConsumerKeeperAndCtx(t, testkeeper.NewInMemKeeperParams(t))
+	defer ctrl.Finish()
+
+	clientStateBytes, err := provClientState.Marshal()
+	require.NoError(t, err)
+	consStateBytes, err := provConsState.Marshal()
+	require.NoError(t, err)
+	testkeeper.ExpectCreateClientMock(ctx, mocks, provClientType, provClientID, clientStateBytes, consStateBytes)
+
+	genesis := consumertypes.NewInitialGenesisState(provClientState, provConsState, valset, params)
+	require.NoError(t, genesis.Validate(), "test fixture must validate")
+	ck.InitGenesis(ctx, genesis)
+
+	got, ok := ck.GetProviderChainId(ctx)
+	require.True(t, ok, "a new chain must pin the provider chain id at genesis")
+	require.Equal(t, providerChainId, got,
+		"the pin must come from the genesis client state, not from the first VSC packet")
 }
 
 // TestGenesisRoundTripDowntimeState verifies that the consumer's
@@ -267,7 +350,6 @@ func TestGenesisRoundTripDowntimeState(t *testing.T) {
 	cVal, err := consumertypes.NewCCValidator(validator.Address.Bytes(), 1, pubKey)
 	require.NoError(t, err)
 	ck.SetCCValidator(ctx, cVal)
-	ck.SetHeightValsetUpdateID(ctx, 0, 0)
 
 	require.NoError(t, ck.MissedBlockBitmaps.Set(ctx, addr1, bitmap1))
 	require.NoError(t, ck.MissedBlockBitmaps.Set(ctx, addr2, bitmap2))
@@ -319,7 +401,6 @@ func TestGenesisRoundTripDowntimeState(t *testing.T) {
 	corrupt := consumertypes.NewRestartGenesisState(
 		provClientID,
 		exported.Provider.InitialValSet,
-		exported.HeightToValsetUpdateId,
 		params,
 	)
 	corrupt.PendingEvidencePackets = []consumertypes.PendingEvidencePacketEntry{
@@ -357,7 +438,6 @@ func TestGenesisRoundTripProviderChainId(t *testing.T) {
 	cVal, err := consumertypes.NewCCValidator(validator.Address.Bytes(), 1, pubKey)
 	require.NoError(t, err)
 	ck.SetCCValidator(ctx, cVal)
-	ck.SetHeightValsetUpdateID(ctx, 0, 0)
 	ck.SetProviderChainId(ctx, providerChainId)
 
 	exported := ck.ExportGenesis(ctx)
@@ -376,22 +456,77 @@ func TestGenesisRoundTripProviderChainId(t *testing.T) {
 	require.Equal(t, exported, reExported, "round-trip must be a fixed point")
 }
 
+// TestGenesisRoundTripHighestValsetUpdateID verifies the consumer's
+// out-of-order dedup watermark (HighestValsetUpdateID) survives an
+// export/import restart, and that once restored it keeps
+// rejecting a stale diff VSC that arrives first after the restart, instead of
+// applying an older set over a newer one. Before the fix InitGenesis left the
+// watermark unset (found=false), so the dedup guard in OnRecvVSCPacketV2 was
+// skipped and the stale diff would be applied.
+func TestGenesisRoundTripHighestValsetUpdateID(t *testing.T) {
+	provClientID := "07-tendermint-0"
+	params := vaastypes.DefaultConsumerParams()
+	params.Enabled = true
+
+	pk1, err := cryptocodec.ToCmtProtoPublicKey(ed25519.GenPrivKey().PubKey())
+	require.NoError(t, err)
+	pk2, err := cryptocodec.ToCmtProtoPublicKey(ed25519.GenPrivKey().PubKey())
+	require.NoError(t, err)
+
+	// Export half: a consumer that has applied VSC packets up to id 5.
+	ck, ctx, ctrl, mocks := testkeeper.GetConsumerKeeperAndCtx(t, testkeeper.NewInMemKeeperParams(t))
+	defer ctrl.Finish()
+	testkeeper.StubClientState(mocks, "provider-0")
+	ck.SetParams(ctx, params)
+	// Pin the provider client the packets arrive over up front, as a real
+	// consumer does at genesis.
+	ck.SetProviderClientID(ctx, provClientID)
+
+	applied := vaastypes.NewValidatorSetChangePacketData(
+		[]abci.ValidatorUpdate{{PubKey: pk1, Power: 30}, {PubKey: pk2, Power: 20}}, 5)
+	require.NoError(t, ck.OnRecvVSCPacketV2(ctx, provClientID, applied))
+
+	highest, found, err := ck.GetHighestValsetUpdateID(ctx)
+	require.NoError(t, err)
+	require.True(t, found)
+	require.Equal(t, uint64(5), highest)
+
+	exported := ck.ExportGenesis(ctx)
+	require.Equal(t, uint64(5), exported.HighestValsetUpdateId, "export must carry the dedup watermark")
+
+	// Import half: a fresh keeper restores the watermark.
+	ck2, ctx2, ctrl2, mocks2 := testkeeper.GetConsumerKeeperAndCtx(t, testkeeper.NewInMemKeeperParams(t))
+	defer ctrl2.Finish()
+	testkeeper.StubClientState(mocks2, "provider-0")
+	ck2.InitGenesis(ctx2, exported)
+
+	gotHighest, gotFound, err := ck2.GetHighestValsetUpdateID(ctx2)
+	require.NoError(t, err)
+	require.True(t, gotFound, "watermark lost across the restart round-trip")
+	require.Equal(t, uint64(5), gotHighest)
+
+	// A stale diff VSC (id 3 <= watermark 5), e.g. one still held in IBC state
+	// across the restart, must be skipped -- it sets no pending changes.
+	stale := vaastypes.NewValidatorSetChangePacketData(
+		[]abci.ValidatorUpdate{{PubKey: pk1, Power: 999}}, 3)
+	require.NoError(t, ck2.OnRecvVSCPacketV2(ctx2, provClientID, stale))
+	_, hasPending := ck2.GetPendingChanges(ctx2)
+	require.False(t, hasPending, "stale diff (id 3 <= watermark 5) must be rejected after restart")
+
+	// A genuinely newer packet is still applied.
+	newer := vaastypes.NewValidatorSetChangePacketData(
+		[]abci.ValidatorUpdate{{PubKey: pk1, Power: 40}}, 6)
+	require.NoError(t, ck2.OnRecvVSCPacketV2(ctx2, provClientID, newer))
+	pending, ok := ck2.GetPendingChanges(ctx2)
+	require.True(t, ok)
+	require.NotEmpty(t, pending.ValidatorUpdates, "a newer VSC after restart must still be applied")
+}
+
 func assertProviderClientID(t *testing.T, ctx sdk.Context, ck *consumerkeeper.Keeper, clientID string) {
 	t.Helper()
 	cid, ok := ck.GetProviderClientID(ctx)
 	require.True(t, ok)
 	require.Equal(t, clientID, cid)
-}
-
-func assertHeightValsetUpdateIDs(t *testing.T, ctx sdk.Context, ck *consumerkeeper.Keeper, heighValsetUpdateIDs []consumertypes.HeightToValsetUpdateID) {
-	t.Helper()
-	ctr := 0
-
-	for _, heightToValsetUpdateID := range ck.GetAllHeightToValsetUpdateIDs(ctx) {
-		require.Equal(t, heighValsetUpdateIDs[ctr].Height, heightToValsetUpdateID.Height)
-		require.Equal(t, heighValsetUpdateIDs[ctr].ValsetUpdateId, heightToValsetUpdateID.ValsetUpdateId)
-		ctr++
-	}
 }
 
 func TestHighestValsetUpdateID(t *testing.T) {
@@ -440,7 +575,6 @@ func TestInitGenesisPanicsOnInvalidStagedDowntimeParams(t *testing.T) {
 	genesis := consumertypes.NewRestartGenesisState(
 		"07-tendermint-0",
 		valset,
-		[]consumertypes.HeightToValsetUpdateID{{ValsetUpdateId: 1, Height: 1}},
 		params,
 	)
 	genesis.StagedDowntimeParams = &vaastypes.DowntimeParams{

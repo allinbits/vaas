@@ -60,7 +60,6 @@ type Keeper struct {
 	Params                 collections.Item[vaastypes.ConsumerParams]
 	ConsumerInDebt         collections.Item[bool]
 	PrevStandaloneChain    collections.Item[[]byte]
-	HeightValsetUpdateIDs  collections.Map[uint64, uint64]
 	CrossChainValidators   collections.Map[[]byte, types.CrossChainValidator]
 	HistoricalInfos        collections.Map[int64, stakingtypes.HistoricalInfo]
 	HighestValsetUpdateID  collections.Item[uint64]
@@ -115,7 +114,6 @@ func NewKeeper(
 		Params:                 collections.NewItem(sb, types.ParametersPrefix, "params", codec.CollValue[vaastypes.ConsumerParams](cdc)),
 		ConsumerInDebt:         collections.NewItem(sb, types.ConsumerDebtPrefix, "consumer_in_debt", collections.BoolValue),
 		PrevStandaloneChain:    collections.NewItem(sb, types.PrevStandaloneChainPrefix, "prev_standalone_chain", collections.BytesValue),
-		HeightValsetUpdateIDs:  collections.NewMap(sb, types.HeightValsetUpdateIDPrefix, "height_valset_update_ids", collections.Uint64Key, collections.Uint64Value),
 		CrossChainValidators:   collections.NewMap(sb, types.CrossChainValidatorPrefix, "cross_chain_validators", collections.BytesKey, codec.CollValue[types.CrossChainValidator](cdc)),
 		HistoricalInfos:        collections.NewMap(sb, types.HistoricalInfoPrefix, "historical_infos", collections.Int64Key, codec.CollValue[stakingtypes.HistoricalInfo](cdc)),
 		HighestValsetUpdateID:  collections.NewItem(sb, types.HighestValsetUpdateIDPrefix, "highest_valset_update_id", collections.Uint64Value),
@@ -160,7 +158,6 @@ func NewNonZeroKeeper(cdc codec.BinaryCodec, storeService corestoretypes.KVStore
 		Params:                 collections.NewItem(sb, types.ParametersPrefix, "params", codec.CollValue[vaastypes.ConsumerParams](cdc)),
 		ConsumerInDebt:         collections.NewItem(sb, types.ConsumerDebtPrefix, "consumer_in_debt", collections.BoolValue),
 		PrevStandaloneChain:    collections.NewItem(sb, types.PrevStandaloneChainPrefix, "prev_standalone_chain", collections.BytesValue),
-		HeightValsetUpdateIDs:  collections.NewMap(sb, types.HeightValsetUpdateIDPrefix, "height_valset_update_ids", collections.Uint64Key, collections.Uint64Value),
 		CrossChainValidators:   collections.NewMap(sb, types.CrossChainValidatorPrefix, "cross_chain_validators", collections.BytesKey, codec.CollValue[types.CrossChainValidator](cdc)),
 		HistoricalInfos:        collections.NewMap(sb, types.HistoricalInfoPrefix, "historical_infos", collections.Int64Key, codec.CollValue[stakingtypes.HistoricalInfo](cdc)),
 		HighestValsetUpdateID:  collections.NewItem(sb, types.HighestValsetUpdateIDPrefix, "highest_valset_update_id", collections.Uint64Value),
@@ -344,55 +341,6 @@ func (k Keeper) GetLastStandaloneValidators(ctx sdk.Context) ([]stakingtypes.Val
 		panic("cannot get last standalone validators if not in pre-VAAS state, or if standalone staking keeper is nil")
 	}
 	return k.GetLastBondedValidators(ctx)
-}
-
-// SetHeightValsetUpdateID sets the valset update id for a given block height
-func (k Keeper) SetHeightValsetUpdateID(ctx context.Context, height, valsetUpdateId uint64) {
-	if err := k.HeightValsetUpdateIDs.Set(ctx, height, valsetUpdateId); err != nil {
-		panic(fmt.Errorf("failed to set height valset update ID: %w", err))
-	}
-}
-
-// GetHeightValsetUpdateID gets the valset update id recorded for a given block height
-func (k Keeper) GetHeightValsetUpdateID(ctx context.Context, height uint64) uint64 {
-	valsetUpdateId, err := k.HeightValsetUpdateIDs.Get(ctx, height)
-	if err != nil {
-		return 0
-	}
-	return valsetUpdateId
-}
-
-// DeleteHeightValsetUpdateID deletes the valset update id for a given block height
-func (k Keeper) DeleteHeightValsetUpdateID(ctx context.Context, height uint64) {
-	if err := k.HeightValsetUpdateIDs.Remove(ctx, height); err != nil {
-		panic(fmt.Errorf("failed to delete height valset update ID: %w", err))
-	}
-}
-
-// GetAllHeightToValsetUpdateIDs returns a list of all the block heights to valset update IDs in the store
-//
-// Note that the block height to vscID mapping is stored under keys with the following format:
-// HeightValsetUpdateIDKeyPrefix | height
-// Thus, the returned array is in ascending order of heights.
-func (k Keeper) GetAllHeightToValsetUpdateIDs(ctx context.Context) (heightToValsetUpdateIDs []types.HeightToValsetUpdateID) {
-	iter, err := k.HeightValsetUpdateIDs.Iterate(ctx, nil)
-	if err != nil {
-		return heightToValsetUpdateIDs
-	}
-	defer iter.Close()
-
-	for ; iter.Valid(); iter.Next() {
-		kv, err := iter.KeyValue()
-		if err != nil {
-			continue
-		}
-		heightToValsetUpdateIDs = append(heightToValsetUpdateIDs, types.HeightToValsetUpdateID{
-			Height:         kv.Key,
-			ValsetUpdateId: kv.Value,
-		})
-	}
-
-	return heightToValsetUpdateIDs
 }
 
 // SetCCValidator sets a cross-chain validator under its validator address

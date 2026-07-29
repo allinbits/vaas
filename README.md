@@ -95,6 +95,7 @@ make test-e2e
 - [Parameters reference](docs/params-reference.md) — every provider and consumer parameter: type, bound, default, where set
 - [Queries reference](docs/queries-reference.md) — every provider and consumer query, its CLI command, and what it returns
 - [Events reference](docs/events-reference.md) — every event both modules emit, its attributes, and what is deliberately not an event
+- [Genesis / restart runbook](docs/genesis-restart-runbook.md) — exporting and re-importing state, per-module round-trip guarantees, and the halt/upgrade flow
 - [End-to-end tests](tests/e2e/README.md) — the Docker e2e suites and how to run and extend them
 - [Contributor guide (AGENTS.md)](AGENTS.md) — architecture, build/test commands, code layout
 - [Design rationale (DESIGN_RATIONALE.md)](DESIGN_RATIONALE.md) — why VAAS is shaped the way it is

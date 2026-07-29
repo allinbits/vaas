@@ -7,6 +7,7 @@ import (
 	cmtproto "github.com/cometbft/cometbft/proto/tendermint/types"
 	tmtypes "github.com/cometbft/cometbft/types"
 
+	cryptocodec "github.com/cosmos/cosmos-sdk/crypto/codec"
 	servertypes "github.com/cosmos/cosmos-sdk/server/types"
 	sdk "github.com/cosmos/cosmos-sdk/types"
 	slashingtypes "github.com/cosmos/cosmos-sdk/x/slashing/types"
@@ -99,7 +100,19 @@ func (app *App) GetValidatorSet(ctx sdk.Context) ([]tmtypes.GenesisValidator, er
 
 	vals := []tmtypes.GenesisValidator{}
 	for _, v := range cVals {
-		vals = append(vals, tmtypes.GenesisValidator{Address: v.Address, Power: v.Power})
+		// A GenesisValidator with a nil PubKey serializes as "pub_key": null,
+		// and CometBFT's GenesisDoc.ValidateAndComplete panics dereferencing it
+		// on reload -- so unpack the stored consensus key and set it, mirroring
+		// x/staking's WriteValidators, to keep the exported genesis loadable.
+		pk, err := v.ConsPubKey()
+		if err != nil {
+			return nil, fmt.Errorf("unpacking cross-chain validator %X consensus pubkey: %w", v.Address, err)
+		}
+		cmtPk, err := cryptocodec.ToCmtPubKeyInterface(pk)
+		if err != nil {
+			return nil, fmt.Errorf("converting cross-chain validator %X consensus pubkey: %w", v.Address, err)
+		}
+		vals = append(vals, tmtypes.GenesisValidator{Address: v.Address, PubKey: cmtPk, Power: v.Power})
 	}
 	return vals, nil
 }

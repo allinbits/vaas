@@ -287,10 +287,6 @@ func TestValidateRestartConsumerGenesisState(t *testing.T) {
 	valHash := valSet.Hash()
 	valUpdates := tmtypes.TM2PB.ValidatorUpdates(valSet)
 
-	heightToValsetUpdateID := []types.HeightToValsetUpdateID{
-		{Height: 0, ValsetUpdateId: 0},
-	}
-
 	cs := ibctmtypes.NewClientState(chainID, ibctmtypes.DefaultTrustLevel, trustingPeriod, ubdPeriod, maxClockDrift, height, commitmenttypes.GetSDKSpecs(), upgradePath)
 	consensusState := ibctmtypes.NewConsensusState(time.Now(), commitmenttypes.NewMerkleRoot([]byte("apphash")), valHash)
 
@@ -304,12 +300,12 @@ func TestValidateRestartConsumerGenesisState(t *testing.T) {
 	}{
 		{
 			"valid restart consumer genesis state: handshake in progress",
-			types.NewRestartGenesisState("ccvclient", valUpdates, heightToValsetUpdateID, params),
+			types.NewRestartGenesisState("ccvclient", valUpdates, params),
 			false,
 		},
 		{
 			"invalid restart consumer genesis state: provider id is empty",
-			types.NewRestartGenesisState("", valUpdates, heightToValsetUpdateID, params),
+			types.NewRestartGenesisState("", valUpdates, params),
 			true,
 		},
 		{
@@ -342,12 +338,12 @@ func TestValidateRestartConsumerGenesisState(t *testing.T) {
 		},
 		{
 			"invalid restart consumer genesis state: nil initial validator set",
-			types.NewRestartGenesisState("ccvclient", nil, nil, params),
+			types.NewRestartGenesisState("ccvclient", nil, params),
 			true,
 		},
 		{
 			"invalid restart consumer genesis state: invalid params",
-			types.NewRestartGenesisState("ccvclient", valUpdates, nil,
+			types.NewRestartGenesisState("ccvclient", valUpdates,
 				vaastypes.NewConsumerParams(
 					true,
 					0,

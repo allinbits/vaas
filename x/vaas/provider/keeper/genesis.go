@@ -23,16 +23,11 @@ import (
 // canonical consumer id carried in cs.ConsumerId. The keeper's derived
 // collections (spawn-time queue, removal-time queue, equivocation evidence
 // min height) are then reconstructed in a second pass from the per-consumer
-// fields. ConsumerDebt is left unset; the first BeginBlock after import
-// re-derives it from the fee pool balance. After all consumers are imported,
-// the ConsumerId sequence counter is advanced past the highest imported id
-// so subsequent MsgCreateConsumer calls do not collide with the imported
-// records.
+// fields. After all consumers are imported, the ConsumerId sequence counter
+// is advanced past the highest imported id so subsequent MsgCreateConsumer
+// calls do not collide with the imported records.
 func (k Keeper) InitGenesis(ctx sdk.Context, genState *types.GenesisState) []abci.ValidatorUpdate {
 	k.SetValidatorSetUpdateId(ctx, genState.ValsetUpdateId)
-	for _, v2h := range genState.ValsetUpdateIdToHeight {
-		k.SetValsetUpdateBlockHeight(ctx, v2h.ValsetUpdateId, v2h.Height)
-	}
 
 	// First pass: write all per-consumer keeper collections under the
 	// provided consumer id from each ConsumerState.
@@ -98,6 +93,12 @@ func (k Keeper) InitGenesis(ctx sdk.Context, genState *types.GenesisState) []abc
 		}
 		if cs.HighestAckedVscId != 0 {
 			k.SetConsumerHighestAckedVscId(ctx, consumerId, cs.HighestAckedVscId)
+		}
+		// Restore the debt flag (see ExportGenesis): only when set, so a
+		// consumer that is not in debt keeps the absent default that
+		// IsConsumerInDebt already reads as "not in debt".
+		if cs.InDebt {
+			k.SetConsumerInDebt(ctx, consumerId, true)
 		}
 		if len(cs.PendingValsetChanges) > 0 {
 			k.AppendPendingVSCPackets(ctx, consumerId, cs.PendingValsetChanges...)
@@ -363,14 +364,14 @@ func (k Keeper) InitGenesisValUpdates(ctx sdk.Context) []abci.ValidatorUpdate {
 // consumer_lifecycle.go for the policy of keeping owner/metadata/init_params
 // past deletion).
 //
-// Spawn-time queue, removal-time queue, equivocation-evidence-min-height,
-// and per-consumer debt are NOT exported because they are derivable from
-// the per-consumer fields above and / or other module state at InitGenesis.
+// Spawn-time queue, removal-time queue, and equivocation-evidence-min-height
+// are NOT exported because they are derivable from the per-consumer fields
+// above at InitGenesis.
 //
 // The liveness clock (last-ack time and the highest-sent / highest-acked VSC
-// ids) IS exported per consumer and restored at InitGenesis, so a state-export
-// restart preserves each consumer's grace window and resync counters rather
-// than resetting them.
+// ids) and the per-consumer debt flag ARE exported per consumer and restored
+// at InitGenesis, so a state-export restart preserves each consumer's grace
+// window, resync counters, and debt status rather than resetting them.
 //
 // Downtime-detection state (PendingDowntimeSlashes, PreviousDowntimeParams,
 // EpochShareRecords, WithheldFeeRecords, AcceptedDowntimeWindows,
@@ -464,6 +465,14 @@ func (k Keeper) ExportGenesis(ctx sdk.Context) *types.GenesisState {
 			cs.HighestAckedVscId = v
 		}
 
+		// Debt flag: exported because it is what buildVSCPacket stamps onto
+		// every VSC packet, and the packet is what gates transactions on the
+		// consumer. Only a fee distribution rewrites it, and that runs at epoch
+		// boundaries for LAUNCHED consumers only, so leaving it to be re-derived
+		// would send a PAUSED consumer resumed before its first post-restart
+		// distribution a snapshot clearing a debt it still owes.
+		cs.InDebt = k.IsConsumerInDebt(ctx, consumerId)
+
 		consumerStates = append(consumerStates, cs)
 	}
 
@@ -524,7 +533,6 @@ func (k Keeper) ExportGenesis(ctx sdk.Context) *types.GenesisState {
 	// TODO (PERMISSIONLESS)
 	genState := types.NewGenesisState(
 		k.GetValidatorSetUpdateId(ctx),
-		k.GetAllValsetUpdateBlockHeights(ctx),
 		consumerStates,
 		k.GetParams(ctx),
 		k.GetAllValidatorConsumerPubKeys(ctx, nil),
