@@ -31,8 +31,9 @@ import (
 )
 
 // TestInitGenesis tests that a consumer chain is correctly initialised from genesis.
-// It covers the start of a new chain, the restart of a chain during the CCV channel handshake
-// and finally the restart of chain when the CCV channel is already established.
+// It covers the two branches InitGenesis takes: the start of a new chain, which creates
+// the provider client from the genesis client/consensus state, and the restart of a chain,
+// which adopts the provider client id carried in the genesis.
 
 // expectProviderClientExists satisfies the restart-arm guard that the pinned
 // provider client must exist in the IBC client store.

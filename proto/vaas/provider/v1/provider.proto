@@ -67,7 +67,8 @@ message Params {
 // AddressList contains a list of consensus addresses
 message AddressList { repeated bytes addresses = 1; }
 
-// ValidatorSetChangePackets is a pb list of ccv.ValidatorSetChangePacketData.
+// ValidatorSetChangePackets is a pb list of
+// vaas.v1.ValidatorSetChangePacketData.
 message ValidatorSetChangePackets {
   repeated vaas.v1.ValidatorSetChangePacketData list = 1
       [ (gogoproto.nullable) = false ];
@@ -76,12 +77,6 @@ message ValidatorSetChangePackets {
 //
 // Key assignment section
 //
-
-message KeyAssignmentReplacement {
-  bytes provider_addr = 1;
-  tendermint.crypto.PublicKey prev_c_key = 2;
-  int64 power = 3;
-}
 
 // Used to serialize the ValidatorConsumerPubKey index from key assignment
 // ValidatorConsumerPubKey: (consumerID, providerAddr consAddr) -> consumerKey
@@ -123,12 +118,23 @@ message ConsensusValidator {
   int64 power = 2;
   // public key the validator uses on the consumer chain during this epoch
   tendermint.crypto.PublicKey public_key = 3;
-  // height the validator had when it FIRST became a consumer validator
-  // If a validator becomes a consumer validator at height `H` and is
-  // continuously a consumer validator for all the upcoming epochs, then the
-  // height of the validator SHOULD remain `H`. This height only resets to a
-  // different height if a validator stops being a consumer validator during an
-  // epoch and later becomes again a consumer validator.
+  // provider block height at which the validator entered this consumer's
+  // validator set. It is stamped the first time the validator appears in the
+  // set and then carried forward unchanged for every epoch it stays in, so it
+  // only moves if the validator drops out of the set and later rejoins. It is
+  // always zero on the provider's own consensus validators, which are not
+  // scoped to a consumer.
+  //
+  // Nothing on the provider compares an infraction height against this field:
+  // downtime evidence is bounded on the consumer, which trims each
+  // validator's missed-block window to the first height it saw that validator
+  // vote. The field is retained because it is the provider's own record of
+  // when a validator joined a given consumer, and it is the durable one: it
+  // persists for as long as the validator stays in the set, whereas the
+  // consumer's first-seen heights are local to that consumer and cleared
+  // every time a downtime window closes. It is state only, and is not carried
+  // in module genesis, in any query response, or in any packet the provider
+  // sends.
   int64 join_height = 4;
 }
 
@@ -193,7 +199,7 @@ message ConsumerInitializationParameters {
 // ConsumerIds contains consumer ids of chains
 message ConsumerIds { repeated uint64 ids = 1; }
 
-// ConsumerPhase indicates the phases of a consumer chain according to ADR 019
+// ConsumerPhase indicates the phases of a consumer chain
 enum ConsumerPhase {
   option (gogoproto.goproto_enum_prefix) = false;
 

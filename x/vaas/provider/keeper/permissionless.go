@@ -172,13 +172,6 @@ func (k Keeper) SetConsumerPhase(ctx context.Context, consumerId uint64, phase t
 	}
 }
 
-// DeleteConsumerPhase deletes the phase associated with this consumer id
-func (k Keeper) DeleteConsumerPhase(ctx context.Context, consumerId uint64) {
-	if err := k.ConsumerPhase.Remove(ctx, consumerId); err != nil {
-		panic(fmt.Errorf("failed to delete consumer phase for consumer id (%d): %w", consumerId, err))
-	}
-}
-
 // IsConsumerPrelaunched checks if a consumer chain is in its prelaunch phase
 func (k Keeper) IsConsumerPrelaunched(ctx context.Context, consumerId uint64) bool {
 	phase := k.GetConsumerPhase(ctx, consumerId)

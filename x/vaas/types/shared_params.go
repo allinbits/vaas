@@ -22,8 +22,6 @@ const (
 	DefaultVAASTimeoutPeriod = time.Hour
 )
 
-var KeyVAASTimeoutPeriod = []byte("VaasTimeoutPeriod")
-
 func ValidateDuration(d time.Duration) error {
 	if d <= time.Duration(0) {
 		return errors.New("duration must be positive")

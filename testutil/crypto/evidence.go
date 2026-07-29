@@ -5,11 +5,8 @@ import (
 	"time"
 
 	"github.com/cometbft/cometbft/crypto/tmhash"
-	"github.com/cometbft/cometbft/libs/bytes"
 	tmproto "github.com/cometbft/cometbft/proto/tendermint/types"
 	tmtypes "github.com/cometbft/cometbft/types"
-
-	ibctmtypes "github.com/cosmos/ibc-go/v10/modules/light-clients/07-tendermint"
 )
 
 // MakeBlockID utility function duplicated from CometBFT
@@ -110,45 +107,4 @@ func MakeAndSignVoteWithForgedValAddress(
 
 	vote.Signature = v.Signature
 	return vote
-}
-
-// CorruptCommitSigsInHeader corrupts the header by changing the value
-// of the commit signature for given validator address.
-// Note that this method is solely used for testing purposes
-func CorruptCommitSigsInHeader(header *ibctmtypes.Header, valAddress bytes.HexBytes) {
-	commit, err := tmtypes.CommitFromProto(header.Commit)
-	if err != nil {
-		panic(err)
-	}
-
-	for idx, sig := range commit.Signatures {
-		if sig.ValidatorAddress.String() == valAddress.String() {
-			sig.Signature = []byte("randomsig")
-			commit.Signatures[idx] = sig
-		}
-	}
-	// update the commit in client the header
-	header.SignedHeader.Commit = commit.ToProto()
-}
-
-// CorruptValidatorPubkeyInHeader corrupts the header by changing the validator pubkey
-// of the given validator address in the validator set.
-// Note that this method is solely used for testing purposes
-func CorruptValidatorPubkeyInHeader(header *ibctmtypes.Header, valAddress bytes.HexBytes) {
-	valset, err := tmtypes.ValidatorSetFromProto(header.ValidatorSet)
-	if err != nil {
-		panic(err)
-	}
-
-	for _, v := range valset.Validators {
-		if v.Address.String() == valAddress.String() {
-			v.PubKey = tmtypes.NewMockPV().PrivKey.PubKey()
-		}
-	}
-
-	vs, err := valset.ToProto()
-	if err != nil {
-		panic(err)
-	}
-	header.ValidatorSet = vs
 }
