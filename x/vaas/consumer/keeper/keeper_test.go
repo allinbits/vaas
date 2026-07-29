@@ -259,47 +259,6 @@ func TestGetAllCCValidator(t *testing.T) {
 	require.Equal(t, result, expectedGetAllOrder)
 }
 
-// TestGetAllHeightToValsetUpdateIDs tests GetAllHeightToValsetUpdateIDs behaviour correctness
-func TestGetAllHeightToValsetUpdateIDs(t *testing.T) {
-	ck, ctx, ctrl, _ := testkeeper.GetConsumerKeeperAndCtx(t, testkeeper.NewInMemKeeperParams(t))
-	defer ctrl.Finish()
-
-	cases := []types.HeightToValsetUpdateID{
-		{
-			ValsetUpdateId: 2,
-			Height:         22,
-		},
-		{
-			ValsetUpdateId: 1,
-			Height:         11,
-		},
-		{
-			// normal execution should not have two HeightToValsetUpdateID
-			// with the same ValsetUpdateId, but let's test it anyway
-			ValsetUpdateId: 1,
-			Height:         44,
-		},
-		{
-			ValsetUpdateId: 3,
-			Height:         33,
-		},
-	}
-	expectedGetAllOrder := cases
-	// sorting by Height
-	sort.Slice(expectedGetAllOrder, func(i, j int) bool {
-		return expectedGetAllOrder[i].Height < expectedGetAllOrder[j].Height
-	})
-
-	for _, c := range cases {
-		ck.SetHeightValsetUpdateID(ctx, c.Height, c.ValsetUpdateId)
-	}
-
-	// iterate and check all results are returned
-	result := ck.GetAllHeightToValsetUpdateIDs(ctx)
-	require.Len(t, result, len(cases))
-	require.Equal(t, expectedGetAllOrder, result)
-}
-
 func TestPrevStandaloneChainFlag(t *testing.T) {
 	ck, ctx, ctrl, _ := testkeeper.GetConsumerKeeperAndCtx(t, testkeeper.NewInMemKeeperParams(t))
 	defer ctrl.Finish()

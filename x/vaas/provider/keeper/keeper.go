@@ -64,7 +64,6 @@ type Keeper struct {
 	ConsumerId                    collections.Sequence
 	ConsumerClients               *collections.IndexedMap[uint64, string, ConsumerClientIndexes]
 	ConsumerGenesis               collections.Map[uint64, vaastypes.ConsumerGenesisState]
-	ValsetUpdateBlockHeight       collections.Map[uint64, uint64]
 	InitChainHeight               collections.Map[uint64, uint64]
 	PendingVSCPackets             collections.Map[uint64, types.ValidatorSetChangePackets]
 	ConsumerChainId               collections.Map[uint64, string]
@@ -260,7 +259,6 @@ func NewKeeper(
 			},
 		),
 		ConsumerGenesis:                  collections.NewMap(sb, types.ConsumerGenesisPrefix, "consumer_genesis", collections.Uint64Key, codec.CollValue[vaastypes.ConsumerGenesisState](cdc)),
-		ValsetUpdateBlockHeight:          collections.NewMap(sb, types.ValsetUpdateBlockHeightPrefix, "valset_update_block_height", collections.Uint64Key, collections.Uint64Value),
 		InitChainHeight:                  collections.NewMap(sb, types.InitChainHeightPrefix, "init_chain_height", collections.Uint64Key, collections.Uint64Value),
 		PendingVSCPackets:                collections.NewMap(sb, types.PendingVSCsPrefix, "pending_vsc_packets", collections.Uint64Key, codec.CollValue[types.ValidatorSetChangePackets](cdc)),
 		ConsumerChainId:                  collections.NewMap(sb, types.ConsumerIdToChainIdPrefix, "consumer_chain_id", collections.Uint64Key, collections.StringValue),
@@ -441,51 +439,6 @@ func (k Keeper) GetValidatorSetUpdateId(ctx context.Context) (validatorSetUpdate
 		return 0
 	}
 	return val
-}
-
-// SetValsetUpdateBlockHeight sets the block height for a given valset update id
-func (k Keeper) SetValsetUpdateBlockHeight(ctx context.Context, valsetUpdateId, blockHeight uint64) {
-	if err := k.ValsetUpdateBlockHeight.Set(ctx, valsetUpdateId, blockHeight); err != nil {
-		panic(fmt.Errorf("failed to set valset update block height: %w", err))
-	}
-}
-
-// GetValsetUpdateBlockHeight gets the block height for a given valset update id
-func (k Keeper) GetValsetUpdateBlockHeight(ctx context.Context, valsetUpdateId uint64) (uint64, bool) {
-	height, err := k.ValsetUpdateBlockHeight.Get(ctx, valsetUpdateId)
-	if err != nil {
-		return 0, false
-	}
-	return height, true
-}
-
-// GetAllValsetUpdateBlockHeights gets all the block heights for all valset updates
-func (k Keeper) GetAllValsetUpdateBlockHeights(ctx context.Context) (valsetUpdateBlockHeights []types.ValsetUpdateIdToHeight) {
-	iter, err := k.ValsetUpdateBlockHeight.Iterate(ctx, nil)
-	if err != nil {
-		return valsetUpdateBlockHeights
-	}
-	defer iter.Close()
-
-	for ; iter.Valid(); iter.Next() {
-		kv, err := iter.KeyValue()
-		if err != nil {
-			continue
-		}
-		valsetUpdateBlockHeights = append(valsetUpdateBlockHeights, types.ValsetUpdateIdToHeight{
-			ValsetUpdateId: kv.Key,
-			Height:         kv.Value,
-		})
-	}
-
-	return valsetUpdateBlockHeights
-}
-
-// DeleteValsetUpdateBlockHeight deletes the block height value for a given vaset update id
-func (k Keeper) DeleteValsetUpdateBlockHeight(ctx context.Context, valsetUpdateId uint64) {
-	if err := k.ValsetUpdateBlockHeight.Remove(ctx, valsetUpdateId); err != nil {
-		panic(fmt.Errorf("failed to delete valset update block height: %w", err))
-	}
 }
 
 // SetInitChainHeight sets the provider block height when the given consumer chain was initiated
