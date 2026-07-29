@@ -4,8 +4,6 @@ import (
 	"errors"
 	"fmt"
 
-	"github.com/allinbits/vaas/x/vaas/consumer/types"
-
 	abci "github.com/cometbft/cometbft/abci/types"
 
 	ibchost "github.com/cosmos/ibc-go/v10/modules/core/exported"
@@ -13,6 +11,8 @@ import (
 	"cosmossdk.io/collections"
 
 	sdk "github.com/cosmos/cosmos-sdk/types"
+
+	"github.com/allinbits/vaas/x/vaas/consumer/types"
 )
 
 func (k Keeper) InitGenesis(ctx sdk.Context, state *types.GenesisState) []abci.ValidatorUpdate {

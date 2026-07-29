@@ -7,9 +7,6 @@ import (
 	"strings"
 	"time"
 
-	"github.com/allinbits/vaas/x/vaas/provider/types"
-	vaastypes "github.com/allinbits/vaas/x/vaas/types"
-
 	tmtypes "github.com/cometbft/cometbft/types"
 
 	"cosmossdk.io/collections"
@@ -23,6 +20,9 @@ import (
 	disttypes "github.com/cosmos/cosmos-sdk/x/distribution/types"
 	govtypes "github.com/cosmos/cosmos-sdk/x/gov/types"
 	stakingtypes "github.com/cosmos/cosmos-sdk/x/staking/types"
+
+	"github.com/allinbits/vaas/x/vaas/provider/types"
+	vaastypes "github.com/allinbits/vaas/x/vaas/types"
 )
 
 type msgServer struct {
@@ -319,8 +319,7 @@ func (k msgServer) CreateConsumer(goCtx context.Context, msg *types.MsgCreateCon
 			sdk.NewAttribute(types.AttributeConsumerGenesisHash, string(initializationParameters.GenesisHash)))
 	}
 
-	// Power shaping and infraction parameters removed - all validators validate all consumers
-	// with default provider parameters
+	// All validators validate all consumers with the default provider parameters.
 
 	if spawnTime, initialized := k.Keeper.InitializeConsumer(ctx, consumerId); initialized {
 		if err := k.Keeper.PrepareConsumerForLaunch(ctx, consumerId, time.Time{}, spawnTime); err != nil {
@@ -514,8 +513,7 @@ func (k msgServer) UpdateConsumer(goCtx context.Context, msg *types.MsgUpdateCon
 		}
 	}
 
-	// Power shaping and infraction parameters removed - all validators validate all consumers
-	// with default provider parameters
+	// All validators validate all consumers with the default provider parameters.
 
 	currentOwnerAddress, err := k.Keeper.GetConsumerOwnerAddress(ctx, consumerId)
 	if err != nil {

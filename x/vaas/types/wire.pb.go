@@ -38,7 +38,7 @@ type ValidatorSetChangePacketData struct {
 	ValidatorUpdates []types.ValidatorUpdate `protobuf:"bytes,1,rep,name=validator_updates,json=validatorUpdates,proto3" json:"validator_updates" yaml:"validator_updates"`
 	// valset_update_id is the provider's monotonically increasing counter
 	// identifying this update. The consumer uses it to detect and drop
-	// out-of-order packets delivered over IBC v2's unordered channel.
+	// out-of-order packets delivered over IBC v2.
 	ValsetUpdateId uint64 `protobuf:"varint,2,opt,name=valset_update_id,json=valsetUpdateId,proto3" json:"valset_update_id,omitempty"`
 	// consumer_in_debt signals whether the consumer chain has fallen behind
 	// on its per-block fee payments to the provider. The provider stamps the

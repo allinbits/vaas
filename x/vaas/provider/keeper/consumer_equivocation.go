@@ -5,9 +5,6 @@ import (
 	"errors"
 	"fmt"
 
-	"github.com/allinbits/vaas/x/vaas/provider/types"
-	vaastypes "github.com/allinbits/vaas/x/vaas/types"
-
 	tmtypes "github.com/cometbft/cometbft/types"
 
 	ibcclienttypes "github.com/cosmos/ibc-go/v10/modules/core/02-client/types"
@@ -20,6 +17,9 @@ import (
 	sdk "github.com/cosmos/cosmos-sdk/types"
 	slashingtypes "github.com/cosmos/cosmos-sdk/x/slashing/types"
 	stakingtypes "github.com/cosmos/cosmos-sdk/x/staking/types"
+
+	"github.com/allinbits/vaas/x/vaas/provider/types"
+	vaastypes "github.com/allinbits/vaas/x/vaas/types"
 )
 
 //
@@ -503,7 +503,8 @@ func (k Keeper) ComputePowerToSlash(ctx sdk.Context, validator stakingtypes.Vali
 	}
 
 	// The power we pass to staking's keeper `Slash` method is the current power of the validator together with the total
-	// power of all the currently undelegated and redelegated tokens (see docs/docs/adrs/adr-013-equivocation-slashing.md).
+	// power of all the currently undelegated and redelegated tokens, so tokens leaving the validator around the
+	// infraction height are still slashed.
 	undelegationsAndRedelegationsInPower := sdk.TokensToConsensusPower(
 		undelegationsInTokens.Add(redelegationsInTokens), powerReduction)
 

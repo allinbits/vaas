@@ -6,9 +6,6 @@ import (
 	"strings"
 	"time"
 
-	"github.com/allinbits/vaas/x/vaas/provider/types"
-	vaastypes "github.com/allinbits/vaas/x/vaas/types"
-
 	tmprotocrypto "github.com/cometbft/cometbft/proto/tendermint/crypto"
 
 	ibchost "github.com/cosmos/ibc-go/v10/modules/core/exported"
@@ -25,6 +22,9 @@ import (
 	sdk "github.com/cosmos/cosmos-sdk/types"
 	govkeeper "github.com/cosmos/cosmos-sdk/x/gov/keeper"
 	stakingtypes "github.com/cosmos/cosmos-sdk/x/staking/types"
+
+	"github.com/allinbits/vaas/x/vaas/provider/types"
+	vaastypes "github.com/allinbits/vaas/x/vaas/types"
 )
 
 // Keeper defines the Cross-Chain Validation Provider Keeper
@@ -367,7 +367,7 @@ func NewKeeper(
 	return k
 }
 
-// GetAuthority returns the x/ccv/provider module's authority.
+// GetAuthority returns the provider module's authority.
 func (k Keeper) GetAuthority() string {
 	return k.authority
 }
@@ -504,7 +504,7 @@ func (k Keeper) GetInitChainHeight(ctx context.Context, consumerId uint64) (uint
 	return height, true
 }
 
-// DeleteInitChainHeight deletes the block height value for which the given consumer chain's channel was established
+// DeleteInitChainHeight deletes the stored block height at which the given consumer chain was initialized
 func (k Keeper) DeleteInitChainHeight(ctx context.Context, consumerId uint64) {
 	if err := k.InitChainHeight.Remove(ctx, consumerId); err != nil {
 		panic(fmt.Errorf("failed to delete init chain height: %w", err))
@@ -889,11 +889,6 @@ func (k Keeper) AppendConsumerToBeRemoved(ctx context.Context, consumerId uint64
 	return k.RemovalTimeToConsumerIds.Set(ctx, key, consumersWithAppend)
 }
 
-// RemoveConsumerToBeRemoved removes consumer id from the given removal time
-func (k Keeper) RemoveConsumerToBeRemoved(ctx context.Context, consumerId uint64, removalTime time.Time) error {
-	return removeConsumerFromTimeQueue(ctx, k.RemovalTimeToConsumerIds, consumerId, removalTime)
-}
-
 // DeleteAllConsumersToBeRemoved deletes all consumer to be removed at this specific removal time
 func (k Keeper) DeleteAllConsumersToBeRemoved(ctx context.Context, removalTime time.Time) {
 	key := timeToBytes(removalTime)
@@ -963,7 +958,7 @@ func (k Keeper) AppendConsumerToBeAutoStopped(ctx context.Context, consumerId ui
 
 // RemoveConsumerToBeAutoStopped removes consumerId from the pause-expiration
 // time bucket for expirationTime, mirroring RemoveConsumerToBeLaunched for the
-// spawn-time queue and RemoveConsumerToBeRemoved for the removal-time queue.
+// spawn-time queue.
 func (k Keeper) RemoveConsumerToBeAutoStopped(ctx context.Context, consumerId uint64, expirationTime time.Time) error {
 	return removeConsumerFromTimeQueue(ctx, k.PauseExpirationTimeToConsumerIds, consumerId, expirationTime)
 }
@@ -1290,7 +1285,17 @@ func (k Keeper) GetConsumerValidator(ctx context.Context, consumerId uint64, pro
 	return validator, true
 }
 
-// DeleteConsumerValidator removes consumer validator with `providerAddr` address
+// IsConsumerValidator returns `true` if the consumer validator with `providerAddr` exists for chain with `consumerId`
+func (k Keeper) IsConsumerValidator(ctx context.Context, consumerId uint64, providerAddr types.ProviderConsAddress) bool {
+	has, err := k.ConsumerValidators.Has(ctx, collections.Join(consumerId, providerAddr.ToSdkConsAddr().Bytes()))
+	if err != nil {
+		return false
+	}
+	return has
+}
+
+// DeleteConsumerValidator removes the consumer validator with `providerAddr` from
+// chain with `consumerId`
 func (k Keeper) DeleteConsumerValidator(
 	ctx context.Context,
 	consumerId uint64,
@@ -1299,15 +1304,6 @@ func (k Keeper) DeleteConsumerValidator(
 	if err := k.ConsumerValidators.Remove(ctx, collections.Join(consumerId, providerConsAddr.ToSdkConsAddr().Bytes())); err != nil {
 		panic(fmt.Errorf("failed to delete consumer validator: %w", err))
 	}
-}
-
-// IsConsumerValidator returns `true` if the consumer validator with `providerAddr` exists for chain with `consumerId`
-func (k Keeper) IsConsumerValidator(ctx context.Context, consumerId uint64, providerAddr types.ProviderConsAddress) bool {
-	has, err := k.ConsumerValidators.Has(ctx, collections.Join(consumerId, providerAddr.ToSdkConsAddr().Bytes()))
-	if err != nil {
-		return false
-	}
-	return has
 }
 
 // GetConsumerValSet returns all the consumer validators for chain with `consumerId`

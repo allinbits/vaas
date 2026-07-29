@@ -5,10 +5,6 @@ import (
 	"encoding/json"
 	"fmt"
 
-	"github.com/allinbits/vaas/x/vaas/consumer/client/cli"
-	"github.com/allinbits/vaas/x/vaas/consumer/keeper"
-	consumertypes "github.com/allinbits/vaas/x/vaas/consumer/types"
-	vaastypes "github.com/allinbits/vaas/x/vaas/types"
 	"github.com/grpc-ecosystem/grpc-gateway/runtime"
 	"github.com/spf13/cobra"
 
@@ -23,6 +19,11 @@ import (
 	"github.com/cosmos/cosmos-sdk/types/module"
 	simtypes "github.com/cosmos/cosmos-sdk/types/simulation"
 	stakingtypes "github.com/cosmos/cosmos-sdk/x/staking/types"
+
+	"github.com/allinbits/vaas/x/vaas/consumer/client/cli"
+	"github.com/allinbits/vaas/x/vaas/consumer/keeper"
+	consumertypes "github.com/allinbits/vaas/x/vaas/consumer/types"
+	vaastypes "github.com/allinbits/vaas/x/vaas/types"
 )
 
 var (
@@ -49,6 +50,7 @@ func (AppModuleBasic) Name() string {
 
 // RegisterLegacyAminoCodec implements AppModuleBasic interface
 func (AppModuleBasic) RegisterLegacyAminoCodec(cdc *codec.LegacyAmino) {
+	// VAAS registers no legacy amino types.
 }
 
 // RegisterInterfaces registers module concrete types into protobuf Any.
@@ -112,7 +114,7 @@ func NewAppModule(k keeper.Keeper) AppModule {
 
 // RegisterInvariants implements the AppModule interface
 func (AppModule) RegisterInvariants(ir sdk.InvariantRegistry) {
-	// TODO
+	// The consumer module registers no invariants.
 }
 
 // RegisterServices registers module services.
@@ -186,13 +188,13 @@ func (am AppModule) EndBlock(goCtx context.Context) ([]abci.ValidatorUpdate, err
 
 // AppModuleSimulation functions
 
-// GenerateGenesisState creates a randomized GenState of the transfer module.
-// TODO
+// GenerateGenesisState creates a randomized GenState of the consumer module.
+// Module simulation is not implemented for VAAS.
 func (AppModule) GenerateGenesisState(simState *module.SimulationState) {
 }
 
-// RegisterStoreDecoder registers a decoder for consumer module's types
-// TODO
+// RegisterStoreDecoder registers a decoder for the consumer module's types.
+// Module simulation is not implemented for VAAS.
 func (am AppModule) RegisterStoreDecoder(sdr simtypes.StoreDecoderRegistry) {
 }
 

@@ -1,13 +1,13 @@
 package keeper
 
 import (
-	vaastypes "github.com/allinbits/vaas/x/vaas/types"
-
 	cmtproto "github.com/cometbft/cometbft/proto/tendermint/types"
 
 	"cosmossdk.io/math"
 
 	sdk "github.com/cosmos/cosmos-sdk/types"
+
+	vaastypes "github.com/allinbits/vaas/x/vaas/types"
 )
 
 // TrackMissedBlocks records the previous block's votes into per-validator

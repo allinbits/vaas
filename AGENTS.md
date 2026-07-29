@@ -96,6 +96,6 @@ Import groups (enforced by gci in `.golangci.yml`):
 2. Third-party
 3. `github.com/cometbft/cometbft`
 4. `github.com/cosmos/*`, `cosmossdk.io/*`, `github.com/cosmos/cosmos-sdk`
-5. `github.com/atomone-hub/atomone`
+5. `github.com/allinbits/vaas` (this module)
 
 Generated files (`*.pb.go`, `*.pb.gw.go`) and `tests/` directory are excluded from linting.

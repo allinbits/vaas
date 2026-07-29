@@ -1,9 +1,6 @@
 package e2e
 
 import (
-	"fmt"
-	"os"
-	"os/exec"
 	"path/filepath"
 	"runtime"
 	"testing"
@@ -186,10 +183,4 @@ func (s *IntegrationTestSuite) SetupSuite() {
 	s.collectIBCDiagnosticsLog()
 
 	s.T().Log("e2e test suite setup complete!")
-}
-
-// chmodRecursive changes permissions on a directory recursively.
-func chmodRecursive(path string, mode os.FileMode) error {
-	cmd := exec.Command("chmod", "-R", fmt.Sprintf("%o", mode), path)
-	return cmd.Run()
 }

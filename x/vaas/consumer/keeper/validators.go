@@ -5,8 +5,6 @@ import (
 	"errors"
 	"time"
 
-	"github.com/allinbits/vaas/x/vaas/consumer/types"
-
 	abci "github.com/cometbft/cometbft/abci/types"
 
 	"cosmossdk.io/math"
@@ -14,6 +12,8 @@ import (
 	cryptocodec "github.com/cosmos/cosmos-sdk/crypto/codec"
 	sdk "github.com/cosmos/cosmos-sdk/types"
 	stakingtypes "github.com/cosmos/cosmos-sdk/x/staking/types"
+
+	"github.com/allinbits/vaas/x/vaas/consumer/types"
 )
 
 // ApplyCCValidatorChanges applies the given changes to the cross-chain validators states

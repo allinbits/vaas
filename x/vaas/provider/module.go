@@ -5,9 +5,6 @@ import (
 	"encoding/json"
 	"fmt"
 
-	"github.com/allinbits/vaas/x/vaas/provider/client/cli"
-	"github.com/allinbits/vaas/x/vaas/provider/keeper"
-	providertypes "github.com/allinbits/vaas/x/vaas/provider/types"
 	"github.com/grpc-ecosystem/grpc-gateway/runtime"
 	"github.com/spf13/cobra"
 
@@ -21,6 +18,10 @@ import (
 	sdk "github.com/cosmos/cosmos-sdk/types"
 	"github.com/cosmos/cosmos-sdk/types/module"
 	simtypes "github.com/cosmos/cosmos-sdk/types/simulation"
+
+	"github.com/allinbits/vaas/x/vaas/provider/client/cli"
+	"github.com/allinbits/vaas/x/vaas/provider/keeper"
+	providertypes "github.com/allinbits/vaas/x/vaas/provider/types"
 )
 
 var (
@@ -123,8 +124,6 @@ func (am AppModule) RegisterServices(cfg module.Configurator) {
 
 // InitGenesis performs genesis initialization for the provider module. It returns validator updates
 // built from the full staking bonded validator set.
-// Note: This method along with ValidateGenesis satisfies the CCV spec:
-// https://github.com/cosmos/ibc/blob/main/spec/app/ics-028-cross-chain-validation/methods.md#ccv-pcf-initg1
 func (am AppModule) InitGenesis(ctx sdk.Context, cdc codec.JSONCodec, data json.RawMessage) []abci.ValidatorUpdate {
 	var genesisState providertypes.GenesisState
 	cdc.MustUnmarshalJSON(data, &genesisState)

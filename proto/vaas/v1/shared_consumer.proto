@@ -23,8 +23,8 @@ import "cosmos_proto/cosmos.proto";
 // SetConsumerGenesis.
 //
 message ConsumerParams {
-    // TODO: Remove enabled flag and find a better way to setup integration tests
-    // See: https://github.com/cosmos/interchain-security/issues/339
+    // enabled must be true for the consumer module to be active; consumer
+    // genesis validation rejects a genesis with enabled=false.
     bool enabled = 1;
 
     // Sent VAAS related IBC packets will timeout after this duration
@@ -68,7 +68,8 @@ message ConsumerGenesisState {
   // This is needed and always set to true; otherwise, new_chain in the consumer
   // genesis state will default to false
   bool new_chain = 3;
-  // Flag indicating whether the consumer VAAS module starts in pre-VAAS state
+  // preVAAS is reserved for a future standalone-to-consumer changeover and is
+  // currently unused. See docs/consumer-transition.md.
   bool preVAAS = 4;
 }
 

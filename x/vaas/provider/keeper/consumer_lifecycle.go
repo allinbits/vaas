@@ -6,9 +6,6 @@ import (
 	"fmt"
 	"time"
 
-	"github.com/allinbits/vaas/x/vaas/provider/types"
-	vaastypes "github.com/allinbits/vaas/x/vaas/types"
-
 	abci "github.com/cometbft/cometbft/abci/types"
 
 	clienttypes "github.com/cosmos/ibc-go/v10/modules/core/02-client/types"
@@ -22,6 +19,9 @@ import (
 	sdk "github.com/cosmos/cosmos-sdk/types"
 	sdkerrors "github.com/cosmos/cosmos-sdk/types/errors"
 	stakingtypes "github.com/cosmos/cosmos-sdk/x/staking/types"
+
+	"github.com/allinbits/vaas/x/vaas/provider/types"
+	vaastypes "github.com/allinbits/vaas/x/vaas/types"
 )
 
 // PrepareConsumerForLaunch prepares to move the launch of a consumer chain from the previous spawn time to spawn time.
@@ -191,33 +191,6 @@ func (k Keeper) ConsumeIdsFromTimeQueue(
 	}
 
 	return result, nil
-}
-
-// HasActiveConsumerValidator checks whether at least one active validator is opted in to chain with `consumerId`
-func (k Keeper) HasActiveConsumerValidator(ctx sdk.Context, consumerId uint64, activeValidators []stakingtypes.Validator) (bool, error) {
-	currentValidatorSet, err := k.GetConsumerValSet(ctx, consumerId)
-	if err != nil {
-		return false, fmt.Errorf("getting consumer validator set of chain with consumerId (%d): %w", consumerId, err)
-	}
-
-	isActiveValidator := make(map[string]bool)
-	for _, val := range activeValidators {
-		consAddr, err := val.GetConsAddr()
-		if err != nil {
-			return false, fmt.Errorf("getting consensus address of validator (%+v), consumerId (%d): %w", val, consumerId, err)
-		}
-		providerConsAddr := types.NewProviderConsAddress(consAddr)
-		isActiveValidator[providerConsAddr.String()] = true
-	}
-
-	for _, val := range currentValidatorSet {
-		providerConsAddr := types.NewProviderConsAddress(val.ProviderConsAddr)
-		if isActiveValidator[providerConsAddr.String()] {
-			return true, nil
-		}
-	}
-
-	return false, nil
 }
 
 // LaunchConsumer launches the chain with the provided consumer id by creating the consumer genesis file.

@@ -4,9 +4,6 @@ import (
 	"errors"
 	"fmt"
 
-	providertypes "github.com/allinbits/vaas/x/vaas/provider/types"
-	vaastypes "github.com/allinbits/vaas/x/vaas/types"
-
 	abci "github.com/cometbft/cometbft/abci/types"
 
 	clienttypes "github.com/cosmos/ibc-go/v10/modules/core/02-client/types"
@@ -17,6 +14,9 @@ import (
 	errorsmod "cosmossdk.io/errors"
 
 	sdk "github.com/cosmos/cosmos-sdk/types"
+
+	providertypes "github.com/allinbits/vaas/x/vaas/provider/types"
+	vaastypes "github.com/allinbits/vaas/x/vaas/types"
 )
 
 func (k Keeper) OnAcknowledgementPacketV2(ctx sdk.Context, sourceClientID string, ackVscId uint64, ackError string) error {
@@ -64,9 +64,9 @@ func (k Keeper) EndBlockVSU(ctx sdk.Context) ([]abci.ValidatorUpdate, error) {
 			return []abci.ValidatorUpdate{}, fmt.Errorf("queueing consumer validator updates: %w", err)
 		}
 
-		// try sending VSC packets to all registered consumer chains;
-		// if the CCV channel is not established for a consumer chain,
-		// the updates will remain queued until the channel is established
+		// try sending VSC packets to all launched consumer chains;
+		// if a consumer's IBC client has not been discovered yet,
+		// the updates remain queued until it is
 		if err := k.SendVSCPackets(ctx); err != nil {
 			return []abci.ValidatorUpdate{}, fmt.Errorf("sending consumer validator updates: %w", err)
 		}
@@ -77,7 +77,7 @@ func (k Keeper) EndBlockVSU(ctx sdk.Context) ([]abci.ValidatorUpdate, error) {
 
 // ProviderValidatorUpdates returns changes in the provider consensus validator set
 // from the last block to the current one.
-// It retrieves the bonded validators from the staking module and creates a `ConsumerValidator` object for each validator.
+// It retrieves the bonded validators from the staking module and creates a `ConsensusValidator` for each validator.
 // The function returns the difference between the current validator set and the next validator set as a list of `abci.ValidatorUpdate` objects.
 func (k Keeper) ProviderValidatorUpdates(ctx sdk.Context) ([]abci.ValidatorUpdate, error) {
 	// get the bonded validators from the staking module

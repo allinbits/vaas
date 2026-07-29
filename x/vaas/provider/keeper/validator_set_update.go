@@ -3,13 +3,13 @@ package keeper
 import (
 	"fmt"
 
-	"github.com/allinbits/vaas/x/vaas/provider/types"
-	vaastypes "github.com/allinbits/vaas/x/vaas/types"
-
 	abci "github.com/cometbft/cometbft/abci/types"
 
 	sdk "github.com/cosmos/cosmos-sdk/types"
 	stakingtypes "github.com/cosmos/cosmos-sdk/x/staking/types"
+
+	"github.com/allinbits/vaas/x/vaas/provider/types"
+	vaastypes "github.com/allinbits/vaas/x/vaas/types"
 )
 
 // DiffValidators compares the current and the next epoch's consumer validators and returns the `ValidatorUpdate` diff
@@ -78,10 +78,12 @@ func (k Keeper) CreateConsumerValidator(ctx sdk.Context, consumerId uint64, vali
 		}
 	}
 
+	// A validator already in the set keeps the join height it was first stamped
+	// with, so the height only advances when a validator joins after having been
+	// absent. See the join_height comment on ConsensusValidator for what this
+	// height means and why it is kept.
 	height := ctx.BlockHeight()
 	if v, found := k.GetConsumerValidator(ctx, consumerId, types.ProviderConsAddress{Address: consAddr}); found {
-		// if validator was already a consumer validator, then do not update the height set the first time
-		// the validator became a consumer validator
 		height = v.JoinHeight
 	}
 

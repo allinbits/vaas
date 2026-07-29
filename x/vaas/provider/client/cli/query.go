@@ -5,13 +5,14 @@ import (
 	"strconv"
 	"strings"
 
-	"github.com/allinbits/vaas/x/vaas/provider/types"
 	"github.com/spf13/cobra"
 
 	"github.com/cosmos/cosmos-sdk/client"
 	"github.com/cosmos/cosmos-sdk/client/flags"
 	sdk "github.com/cosmos/cosmos-sdk/types"
 	"github.com/cosmos/cosmos-sdk/version"
+
+	"github.com/allinbits/vaas/x/vaas/provider/types"
 )
 
 // parseConsumerIdArg parses a CLI positional argument as a uint64 consumer id.

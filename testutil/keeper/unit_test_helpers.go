@@ -5,11 +5,6 @@ import (
 	"encoding/binary"
 	"testing"
 
-	consumerkeeper "github.com/allinbits/vaas/x/vaas/consumer/keeper"
-	consumertypes "github.com/allinbits/vaas/x/vaas/consumer/types"
-	providerkeeper "github.com/allinbits/vaas/x/vaas/provider/keeper"
-	providertypes "github.com/allinbits/vaas/x/vaas/provider/types"
-	"github.com/allinbits/vaas/x/vaas/types"
 	"github.com/stretchr/testify/require"
 	"go.uber.org/mock/gomock"
 
@@ -34,7 +29,12 @@ import (
 	authtypes "github.com/cosmos/cosmos-sdk/x/auth/types"
 	govkeeper "github.com/cosmos/cosmos-sdk/x/gov/keeper"
 	govtypes "github.com/cosmos/cosmos-sdk/x/gov/types"
-	stakingtypes "github.com/cosmos/cosmos-sdk/x/staking/types"
+
+	consumerkeeper "github.com/allinbits/vaas/x/vaas/consumer/keeper"
+	consumertypes "github.com/allinbits/vaas/x/vaas/consumer/types"
+	providerkeeper "github.com/allinbits/vaas/x/vaas/provider/keeper"
+	providertypes "github.com/allinbits/vaas/x/vaas/provider/types"
+	"github.com/allinbits/vaas/x/vaas/types"
 )
 
 // InMemKeeperParams parameters needed to instantiate an in-memory keeper
@@ -211,19 +211,6 @@ func StubClientState(mocks MockedKeepers, chainID string) *gomock.Call {
 		GetClientState(gomock.Any(), gomock.Any()).
 		Return(&ibctmtypes.ClientState{ChainId: chainID}, true).
 		AnyTimes()
-}
-
-func SetupMocksForLastBondedValidatorsExpectation(mockStakingKeeper *MockStakingKeeper, maxValidators uint32, vals []stakingtypes.Validator, times int) {
-	validatorsCall := mockStakingKeeper.EXPECT().GetBondedValidatorsByPower(gomock.Any()).Return(vals, nil)
-	maxValidatorsCall := mockStakingKeeper.EXPECT().MaxValidators(gomock.Any()).Return(maxValidators, nil)
-
-	if times == -1 {
-		validatorsCall.AnyTimes()
-		maxValidatorsCall.AnyTimes()
-	} else {
-		validatorsCall.Times(times)
-		maxValidatorsCall.Times(times)
-	}
 }
 
 // Obtains a CrossChainValidator with a newly generated key, and randomized field values

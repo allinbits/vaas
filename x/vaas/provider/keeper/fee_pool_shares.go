@@ -5,8 +5,6 @@ import (
 	"sort"
 	"strconv"
 
-	"github.com/allinbits/vaas/x/vaas/provider/types"
-
 	"cosmossdk.io/collections"
 	errorsmod "cosmossdk.io/errors"
 	"cosmossdk.io/math"
@@ -14,6 +12,8 @@ import (
 	sdk "github.com/cosmos/cosmos-sdk/types"
 	authtypes "github.com/cosmos/cosmos-sdk/x/auth/types"
 	disttypes "github.com/cosmos/cosmos-sdk/x/distribution/types"
+
+	"github.com/allinbits/vaas/x/vaas/provider/types"
 )
 
 // emitSweepEvent emits one ConsumerFeePoolSweep event per swept denom.

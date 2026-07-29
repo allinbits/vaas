@@ -4,7 +4,6 @@ import (
 	context "context"
 	"time"
 
-	transfertypes "github.com/cosmos/ibc-go/v10/modules/apps/transfer/types"
 	clienttypes "github.com/cosmos/ibc-go/v10/modules/core/02-client/types"
 	clientv2types "github.com/cosmos/ibc-go/v10/modules/core/02-client/v2/types"
 	channeltypesv2 "github.com/cosmos/ibc-go/v10/modules/core/04-channel/v2/types"
@@ -18,9 +17,9 @@ import (
 	stakingtypes "github.com/cosmos/cosmos-sdk/x/staking/types"
 )
 
-// StakingKeeper defines the contract expected by provider-chain ccv module from a Staking Module that will keep track
-// of the provider validator set. This version of the interchain-security protocol will mirror the provider chain's changes
-// so we do not need a registry module between the staking module and CCV.
+// StakingKeeper defines the contract the VAAS provider module expects from the staking module that keeps track
+// of the provider validator set. VAAS mirrors the provider chain's staking changes directly, so no registry
+// module is needed between the staking module and VAAS.
 type StakingKeeper interface {
 	UnbondingCanComplete(ctx context.Context, id uint64) error
 	UnbondingTime(ctx context.Context) (time.Duration, error)
@@ -51,7 +50,7 @@ type StakingKeeper interface {
 	GetHistoricalInfo(ctx context.Context, height int64) (stakingtypes.HistoricalInfo, error)
 }
 
-// SlashingKeeper defines the contract expected to perform ccv slashing
+// SlashingKeeper defines the contract VAAS expects in order to perform slashing
 type SlashingKeeper interface {
 	JailUntil(context.Context, sdk.ConsAddress, time.Time) error // called from provider keeper only
 	Tombstone(context.Context, sdk.ConsAddress) error
@@ -107,12 +106,6 @@ type AccountKeeper interface {
 // ChannelV2Keeper defines the expected IBC v2 channel keeper for sending packets.
 type ChannelV2Keeper interface {
 	SendPacket(ctx context.Context, msg *channeltypesv2.MsgSendPacket) (*channeltypesv2.MsgSendPacketResponse, error)
-}
-
-// IBCTransferKeeper defines the expected interface needed for distribution transfer
-// of tokens from the consumer to the provider chain
-type IBCTransferKeeper interface {
-	Transfer(context.Context, *transfertypes.MsgTransfer) (*transfertypes.MsgTransferResponse, error)
 }
 
 // DistributionKeeper defines the expected interface needed to fund and spend

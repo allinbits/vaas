@@ -804,11 +804,6 @@ func (app *App) SimulationManager() *module.SimulationManager {
 	return app.sm
 }
 
-// GetTestGovKeeper implements the ProviderApp interface.
-func (app *App) GetTestGovKeeper() *govkeeper.Keeper {
-	return app.GovKeeper
-}
-
 // TestingApp functions
 
 // GetBaseApp implements the TestingApp interface.
