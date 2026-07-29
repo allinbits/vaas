@@ -99,14 +99,12 @@ func (k Keeper) closeWindow(ctx sdk.Context, windowStart, window int64, minSigne
 			continue
 		}
 
-		has, err := k.PendingEvidencePackets.Has(ctx, tv.addr)
-		if err != nil {
-			panic(err)
-		}
-		if has {
-			continue
-		}
-
+		// Queue one evidence packet for this window. Pending packets are keyed
+		// by window-end height, so if an earlier window's packet for this same
+		// validator is still queued (unsent, e.g. the provider client is down
+		// across consecutive windows), this later window is queued alongside it
+		// rather than dropped: both windows are reported once the client
+		// recovers.
 		rebased := rebaseBitmap(tv.bitmap, offset, span)
 		packet := vaastypes.NewEvidencePacketData(sdk.ConsAddress(tv.addr), first, rebased, span, window, minSigned)
 		if err := k.QueueEvidencePacket(ctx, packet); err != nil {

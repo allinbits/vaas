@@ -29,6 +29,7 @@ import (
 	"encoding/base64"
 	"encoding/json"
 	"fmt"
+	"strconv"
 	"strings"
 	"time"
 
@@ -40,7 +41,9 @@ import (
 // Downtime parameters this suite's provider genesis patches in
 // patchProviderGenesis (e2e_setup_test.go); the negative control below
 // derives its provable waits from them instead of guessing at wall-clock
-// durations.
+// durations. The liveness suite patches the same window size into its own
+// provider genesis (see e2e_liveness_suite_test.go), so
+// downtimeSignedBlocksWindow is shared by both suites.
 const (
 	// downtimeSignedBlocksWindow is the consumer's tumbling-window size in
 	// consumer blocks (provider genesis signed_blocks_window, echoed into the
@@ -228,7 +231,7 @@ func (s *IntegrationTestSuite) testDowntimeSlashQueueThenExecute() {
 // tumbling window closes, without needing a second physical consumer node.
 // Returns the new validator's account and operator (valoper) bech32
 // addresses.
-func (s *IntegrationTestSuite) createSilentValidator(key, selfBondAmount string) (accAddr, valoperAddr string) {
+func (s *baseTestSuite) createSilentValidator(key, selfBondAmount string) (accAddr, valoperAddr string) {
 	containerID := s.providerValRes[0].Container.ID
 
 	s.dockerExecMust(containerID, []string{
@@ -276,7 +279,7 @@ func (s *IntegrationTestSuite) createSilentValidator(key, selfBondAmount string)
 		"--from", key,
 		"--home", providerHomePath,
 		"--keyring-backend", "test",
-		"--chain-id", providerChainID,
+		"--chain-id", s.cfg.providerChainID,
 		"--gas", "auto",
 		"--gas-adjustment", "1.5",
 		"--fees", "10000" + bondDenom,
@@ -316,18 +319,35 @@ func generateEd25519PubKeyJSON() string {
 		base64.StdEncoding.EncodeToString(pub))
 }
 
-// pendingDowntimeSlashJSON mirrors the fields this test needs from the
-// `pending-downtime-slashes` CLI query's JSON output.
+// pendingDowntimeSlashJSON mirrors the fields the e2e tests need from the
+// `pending-downtime-slashes` CLI query's JSON output. int64 proto fields are
+// serialized as strings by the proto JSON marshaler.
 type pendingDowntimeSlashJSON struct {
-	ConsumerId  string `json:"consumer_id"`
-	SlashTokens string `json:"slash_tokens"`
-	MaturesAt   string `json:"matures_at"`
+	ConsumerId        string `json:"consumer_id"`
+	WindowStartHeight string `json:"window_start_height"`
+	Span              string `json:"span"`
+	SlashTokens       string `json:"slash_tokens"`
+	MaturesAt         string `json:"matures_at"`
+}
+
+// coversWindowEnd reports whether the pending slash entry's window
+// [start, start+span-1] contains the given window-end height.
+func (p pendingDowntimeSlashJSON) coversWindowEnd(windowEnd int64) bool {
+	start, err := strconv.ParseInt(p.WindowStartHeight, 10, 64)
+	if err != nil {
+		return false
+	}
+	span, err := strconv.ParseInt(p.Span, 10, 64)
+	if err != nil {
+		return false
+	}
+	return start <= windowEnd && windowEnd <= start+span-1
 }
 
 // queryPendingDowntimeSlashes returns the pending downtime slashes queued for
 // a consumer, awaiting the challenge window before execution. Returns nil on
 // any query/decode error so callers can poll it directly inside Eventually.
-func (s *IntegrationTestSuite) queryPendingDowntimeSlashes(consumerID string) []pendingDowntimeSlashJSON {
+func (s *baseTestSuite) queryPendingDowntimeSlashes(consumerID string) []pendingDowntimeSlashJSON {
 	stdout, _, err := s.dockerExec(s.providerValRes[0].Container.ID, []string{
 		providerBinary, "query", "provider", "pending-downtime-slashes", consumerID,
 		"--home", providerHomePath,

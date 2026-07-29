@@ -11,7 +11,7 @@ import (
 
 // providerQueryBalance returns the bech32-addressed account's balance for
 // `denom` on the provider, as an int64.
-func (s *IntegrationTestSuite) providerQueryBalance(addr, denom string) int64 {
+func (s *baseTestSuite) providerQueryBalance(addr, denom string) int64 {
 	stdout, _, err := s.dockerExec(s.providerValRes[0].Container.ID, []string{
 		providerBinary, "query", "bank", "balances", addr,
 		"--home", providerHomePath,

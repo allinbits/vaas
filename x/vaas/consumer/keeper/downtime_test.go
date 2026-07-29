@@ -1,16 +1,19 @@
 package keeper_test
 
 import (
+	"bytes"
 	"encoding/json"
 	"testing"
 
 	"github.com/stretchr/testify/require"
+	"go.uber.org/mock/gomock"
 
 	"github.com/allinbits/vaas/x/vaas/consumer/keeper"
 	vaastypes "github.com/allinbits/vaas/x/vaas/types"
 
 	abci "github.com/cometbft/cometbft/abci/types"
 	cmtproto "github.com/cometbft/cometbft/proto/tendermint/types"
+	channeltypesv2 "github.com/cosmos/ibc-go/v10/modules/core/04-channel/v2/types"
 
 	"cosmossdk.io/math"
 
@@ -184,6 +187,62 @@ func TestTrackMissedBlocksTrimsToFirstTrackedHeight(t *testing.T) {
 	require.Equal(t, int64(2), packet.MissedCount())
 }
 
+// TestCloseWindowReportsBothWindowsWhenSendStalled pins the cross-window
+// coalescing fix: when the provider client is down across two consecutive
+// downtime windows, the offender's evidence for the later window is queued
+// alongside the earlier window's (keyed by window-end height) rather than
+// dropped, and both are reported once the client recovers.
+func TestCloseWindowReportsBothWindowsWhenSendStalled(t *testing.T) {
+	consumerKeeper, ctx, ctrl, mocks := testkeeper.GetConsumerKeeperAndCtx(t, testkeeper.NewInMemKeeperParams(t))
+	defer ctrl.Finish()
+
+	// window 4, minSigned 0.5 => maxMissed = 4 - 2 = 2
+	setDowntimeParams(ctx, consumerKeeper, 4, "0.5")
+
+	addr := []byte{0x0A}
+	// the offender misses the first 3 heights of every window (3 > 2)
+	votesForHeight := func(vh int64) []abci.VoteInfo {
+		windowStart := (vh / 4) * 4
+		flag := cmtproto.BlockIDFlagCommit
+		if vh-windowStart < 3 {
+			flag = cmtproto.BlockIDFlagAbsent
+		}
+		return []abci.VoteInfo{
+			{Validator: abci.Validator{Address: addr, Power: 1}, BlockIdFlag: flag},
+		}
+	}
+
+	// The provider client is down: with no client to send to, SendEvidencePackets
+	// is a no-op and evidence accumulates in the queue across both windows.
+	_, found := consumerKeeper.GetProviderClientID(ctx)
+	require.False(t, found)
+
+	// process windows [4,7] (closes at block 8) and [8,11] (closes at block 12),
+	// attempting a (stalled) send every block just as EndBlock would.
+	for h := int64(5); h <= 12; h++ {
+		ctx = ctx.WithBlockHeight(h).WithVoteInfos(votesForHeight(h - 1))
+		consumerKeeper.TrackMissedBlocks(ctx)
+		require.NoError(t, consumerKeeper.SendEvidencePackets(ctx))
+	}
+
+	// both windows survive as distinct pending packets for the same validator
+	packets := pendingPacketsFor(t, ctx, consumerKeeper, addr)
+	require.Len(t, packets, 2, "both stalled windows must remain queued, not coalesced away")
+	require.ElementsMatch(t, []int64{7, 11},
+		[]int64{packets[0].WindowEndHeight, packets[1].WindowEndHeight})
+	require.Equal(t, 2, consumerKeeper.GetPendingEvidencePacketCount(ctx))
+
+	// once the provider client recovers, both windows are sent and cleared
+	consumerKeeper.SetProviderClientID(ctx, "07-tendermint-1")
+	mocks.MockChannelV2Keeper.EXPECT().
+		SendPacket(gomock.Any(), gomock.Any()).
+		Return(&channeltypesv2.MsgSendPacketResponse{Sequence: 1}, nil).
+		Times(2)
+	require.NoError(t, consumerKeeper.SendEvidencePackets(ctx))
+	require.Equal(t, 0, consumerKeeper.GetPendingEvidencePacketCount(ctx),
+		"both windows must be reported once the client recovers")
+}
+
 func TestStagedDowntimeParamsActivateAtWindowBoundary(t *testing.T) {
 	consumerKeeper, ctx, ctrl, _ := testkeeper.GetConsumerKeeperAndCtx(t, testkeeper.NewInMemKeeperParams(t))
 	defer ctrl.Finish()
@@ -345,20 +404,38 @@ func TestTrackMissedBlocksHandlesMismatchedStoredBitmapLength(t *testing.T) {
 	})
 }
 
+// pendingPacketsFor returns every queued evidence packet whose composite store
+// key starts with addr, i.e. all windows currently pending for that validator.
+func pendingPacketsFor(t *testing.T, ctx sdk.Context, k keeper.Keeper, addr []byte) []vaastypes.EvidencePacketData {
+	t.Helper()
+	iter, err := k.PendingEvidencePackets.Iterate(ctx, nil)
+	require.NoError(t, err)
+	defer iter.Close()
+
+	var packets []vaastypes.EvidencePacketData
+	for ; iter.Valid(); iter.Next() {
+		kv, err := iter.KeyValue()
+		require.NoError(t, err)
+		if !bytes.Equal(kv.Key.K1(), addr) {
+			continue
+		}
+		var packet vaastypes.EvidencePacketData
+		require.NoError(t, json.Unmarshal(kv.Value, &packet))
+		packets = append(packets, packet)
+	}
+	return packets
+}
+
 func mustHasPendingPacket(t *testing.T, ctx sdk.Context, k keeper.Keeper, addr []byte) bool {
 	t.Helper()
-	has, err := k.PendingEvidencePackets.Has(ctx, addr)
-	require.NoError(t, err)
-	return has
+	return len(pendingPacketsFor(t, ctx, k, addr)) > 0
 }
 
 func getPendingPacket(t *testing.T, ctx sdk.Context, k keeper.Keeper, addr []byte) vaastypes.EvidencePacketData {
 	t.Helper()
-	bz, err := k.PendingEvidencePackets.Get(ctx, addr)
-	require.NoError(t, err)
-	var packet vaastypes.EvidencePacketData
-	require.NoError(t, json.Unmarshal(bz, &packet))
-	return packet
+	packets := pendingPacketsFor(t, ctx, k, addr)
+	require.Len(t, packets, 1, "expected exactly one pending packet for %x", addr)
+	return packets[0]
 }
 
 // TestStageDowntimeParamsRevertedBeforeWindowCloseDropsTheStage verifies that a

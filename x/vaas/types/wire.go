@@ -9,6 +9,7 @@ import (
 	errorsmod "cosmossdk.io/errors"
 	"cosmossdk.io/math"
 
+	cryptocodec "github.com/cosmos/cosmos-sdk/crypto/codec"
 	sdk "github.com/cosmos/cosmos-sdk/types"
 	stakingtypes "github.com/cosmos/cosmos-sdk/x/staking/types"
 )
@@ -28,6 +29,21 @@ func (vsc ValidatorSetChangePacketData) Validate() error {
 	// slices are treated equivalently here.
 	if vsc.ValsetUpdateId == 0 {
 		return errorsmod.Wrap(ErrInvalidPacketData, "valset update id cannot be equal to zero")
+	}
+	// Every validator update must carry a consensus pubkey that decodes to a
+	// supported key type and a non-negative power. The consumer decodes each
+	// pubkey when it flushes these updates to CometBFT in
+	// ApplyCCValidatorChanges (consumer EndBlock); an undecodable pubkey there
+	// panics and halts block production. Rejecting the packet here converts
+	// that deferred, chain-halting panic into an error acknowledgement.
+	for i := range vsc.ValidatorUpdates {
+		update := vsc.ValidatorUpdates[i]
+		if _, err := cryptocodec.FromCmtProtoPublicKey(update.PubKey); err != nil {
+			return errorsmod.Wrapf(ErrInvalidPacketData, "validator update %d has an undecodable consensus pubkey: %s", i, err)
+		}
+		if update.Power < 0 {
+			return errorsmod.Wrapf(ErrInvalidPacketData, "validator update %d has negative power %d", i, update.Power)
+		}
 	}
 	return nil
 }

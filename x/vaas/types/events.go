@@ -11,6 +11,15 @@ const (
 	EventTypeSubmitConsumerDoubleVoting = "submit_consumer_double_voting"
 	EventTypeExecuteConsumerChainSlash  = "execute_consumer_chain_slash"
 	EventTypeConsumerEvidenceRequest    = "consumer_evidence_request"
+	// EventTypeConsumerEvidenceRejected is emitted by the consumer when the
+	// provider returns an error acknowledgement for a downtime evidence packet.
+	// The provider only error-acks after evaluating and rejecting that exact
+	// packet (unacceptable echoed params, missed count below threshold, unknown
+	// or renamed validator, window too old, window already accepted, or below
+	// the pruned acceptance floor), all of which are permanent for a given
+	// packet, so the evidence is dropped rather than retried and this event
+	// surfaces the rejection.
+	EventTypeConsumerEvidenceRejected = "consumer_evidence_rejected"
 	// EventTypeSnapshotResync is emitted by the consumer when it applies a
 	// snapshot VSC packet (is_snapshot=true), i.e. it replaces its cross-chain
 	// validator set rather than accumulating a diff. Emitted only on snapshots,

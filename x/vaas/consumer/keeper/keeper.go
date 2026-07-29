@@ -64,7 +64,7 @@ type Keeper struct {
 	CrossChainValidators   collections.Map[[]byte, types.CrossChainValidator]
 	HistoricalInfos        collections.Map[int64, stakingtypes.HistoricalInfo]
 	HighestValsetUpdateID  collections.Item[uint64]
-	PendingEvidencePackets collections.Map[[]byte, []byte]
+	PendingEvidencePackets collections.Map[collections.Pair[[]byte, int64], []byte]
 	LastVSCRecvTime        collections.Item[[]byte]
 	MissedBlockBitmaps     collections.Map[[]byte, []byte]
 	FirstTrackedHeights    collections.Map[[]byte, int64]
@@ -119,7 +119,7 @@ func NewKeeper(
 		CrossChainValidators:   collections.NewMap(sb, types.CrossChainValidatorPrefix, "cross_chain_validators", collections.BytesKey, codec.CollValue[types.CrossChainValidator](cdc)),
 		HistoricalInfos:        collections.NewMap(sb, types.HistoricalInfoPrefix, "historical_infos", collections.Int64Key, codec.CollValue[stakingtypes.HistoricalInfo](cdc)),
 		HighestValsetUpdateID:  collections.NewItem(sb, types.HighestValsetUpdateIDPrefix, "highest_valset_update_id", collections.Uint64Value),
-		PendingEvidencePackets: collections.NewMap(sb, types.PendingEvidencePacketsPrefix, "pending_evidence_packets", collections.BytesKey, collections.BytesValue),
+		PendingEvidencePackets: collections.NewMap(sb, types.PendingEvidencePacketsPrefix, "pending_evidence_packets", collections.PairKeyCodec(collections.BytesKey, collections.Int64Key), collections.BytesValue),
 		LastVSCRecvTime:        collections.NewItem(sb, types.LastVSCRecvTimePrefix, "last_vsc_recv_time", collections.BytesValue),
 		MissedBlockBitmaps:     collections.NewMap(sb, types.MissedBlockBitmapsPrefix, "missed_block_bitmaps", collections.BytesKey, collections.BytesValue),
 		FirstTrackedHeights:    collections.NewMap(sb, types.FirstTrackedHeightsPrefix, "first_tracked_heights", collections.BytesKey, collections.Int64Value),
@@ -164,7 +164,7 @@ func NewNonZeroKeeper(cdc codec.BinaryCodec, storeService corestoretypes.KVStore
 		CrossChainValidators:   collections.NewMap(sb, types.CrossChainValidatorPrefix, "cross_chain_validators", collections.BytesKey, codec.CollValue[types.CrossChainValidator](cdc)),
 		HistoricalInfos:        collections.NewMap(sb, types.HistoricalInfoPrefix, "historical_infos", collections.Int64Key, codec.CollValue[stakingtypes.HistoricalInfo](cdc)),
 		HighestValsetUpdateID:  collections.NewItem(sb, types.HighestValsetUpdateIDPrefix, "highest_valset_update_id", collections.Uint64Value),
-		PendingEvidencePackets: collections.NewMap(sb, types.PendingEvidencePacketsPrefix, "pending_evidence_packets", collections.BytesKey, collections.BytesValue),
+		PendingEvidencePackets: collections.NewMap(sb, types.PendingEvidencePacketsPrefix, "pending_evidence_packets", collections.PairKeyCodec(collections.BytesKey, collections.Int64Key), collections.BytesValue),
 		LastVSCRecvTime:        collections.NewItem(sb, types.LastVSCRecvTimePrefix, "last_vsc_recv_time", collections.BytesValue),
 		MissedBlockBitmaps:     collections.NewMap(sb, types.MissedBlockBitmapsPrefix, "missed_block_bitmaps", collections.BytesKey, collections.BytesValue),
 		FirstTrackedHeights:    collections.NewMap(sb, types.FirstTrackedHeightsPrefix, "first_tracked_heights", collections.BytesKey, collections.Int64Value),
