@@ -41,7 +41,13 @@ type GenesisState struct {
 	ProviderClientId string `protobuf:"bytes,2,opt,name=provider_client_id,json=providerClientId,proto3" json:"provider_client_id,omitempty"`
 	// true for new chain, false for chain restart.
 	NewChain bool `protobuf:"varint,3,opt,name=new_chain,json=newChain,proto3" json:"new_chain,omitempty"`
-	// Flag indicating whether the consumer VAAS module starts in pre-VAAS state
+	// preVAAS is currently unused and reserved for a future standalone-to-consumer
+	// changeover. When implemented it would signal that the chain is mid-transition,
+	// so the consumer module defers applying the provider validator set; the
+	// consumer keeper does not act on this field today. Field number 4 is kept
+	// (deliberately not removed and not marked `reserved`) so a future
+	// implementation can reuse it without a wire-format clash. See
+	// docs/consumer-transition.md.
 	PreVAAS  bool               `protobuf:"varint,4,opt,name=preVAAS,proto3" json:"preVAAS,omitempty"`
 	Provider types.ProviderInfo `protobuf:"bytes,5,opt,name=provider,proto3" json:"provider"`
 	// LastVSCRecvTime is the block time of the last VSC packet the consumer
