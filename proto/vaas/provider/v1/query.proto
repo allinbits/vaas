@@ -242,6 +242,10 @@ message QueryParamsRequest {}
 
 message QueryParamsResponse {
   Params params = 1 [(gogoproto.nullable) = false];
+  // The infraction parameters, stored separately from params and updated by
+  // their own governance message (MsgUpdateInfractionParams), so a proposer
+  // can read the values in force before proposing a change.
+  InfractionParameters infraction_parameters = 2 [(gogoproto.nullable) = false];
 }
 
 message QueryConsumerValidatorsRequest {

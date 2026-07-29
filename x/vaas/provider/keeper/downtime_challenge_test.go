@@ -477,6 +477,112 @@ func TestHandleChallengeConsumerDowntime_SuccessIsolatesOtherConsumer(t *testing
 	require.True(t, hasB, "consumer B's withheld fee record must survive consumer A's successful challenge")
 }
 
+// TestHandleChallengeConsumerDowntime_SucceedsAfterKeyAssignmentPruned proves
+// the pending-slash lookup survives key rotation/pruning. A validator that
+// assigned a custom consumer key has its downtime slash keyed under the
+// provider consensus address resolved at acceptance. When the
+// consumer-addr to provider-addr mapping is later pruned -- a key rotation
+// whose old address has aged out of the prune queue, or the validator leaving
+// the staking set -- GetProviderAddrFromConsumerAddr falls back to treating the
+// consumer address as the provider address, so the direct (fast-path) lookup
+// no longer reaches the slash. The challenge must still find it via the
+// consumer address stored on the slash and succeed; without that fallback the
+// legit slash would be un-cancellable.
+func TestHandleChallengeConsumerDowntime_SucceedsAfterKeyAssignmentPruned(t *testing.T) {
+	k, ctx, ctrl, mocks := testkeeper.GetProviderKeeperAndCtx(t, testkeeper.NewInMemKeeperParams(t))
+	defer ctrl.Finish()
+
+	k.OverrideVerifyDowntimeChallengeHeaderForTest(func(sdk.Context, string, *ibctmtypes.Header) error {
+		return nil
+	})
+
+	cid := k.FetchAndIncrementConsumerId(ctx)
+	k.SetConsumerPhase(ctx, cid, types.CONSUMER_PHASE_LAUNCHED)
+	k.SetConsumerChainId(ctx, cid, challengeTestChainID)
+	k.SetConsumerClientId(ctx, cid, "07-tendermint-0")
+	mocks.MockClientKeeper.EXPECT().GetClientStatus(gomock.Any(), "07-tendermint-0").
+		Return(ibcexported.Active).AnyTimes()
+
+	// The signer holds the validator's CONSUMER key: the challenge names its
+	// consumer consensus address and its signature self-authenticates it.
+	signer := tmtypes.NewMockPV()
+	pubKey, err := signer.GetPubKey()
+	require.NoError(t, err)
+	consumerAddr := types.NewConsumerConsAddress(sdk.ConsAddress(pubKey.Address()))
+
+	// The validator's provider consensus address is distinct from its consumer
+	// address (a custom consumer key was assigned).
+	providerAddr := types.NewProviderConsAddress(sdk.ConsAddress([]byte("provider-cons-addr-0")))
+	require.NotEqual(t, consumerAddr.ToSdkConsAddr().Bytes(), providerAddr.ToSdkConsAddr().Bytes())
+
+	// Assign the key, confirm the mapping resolves, then prune it: resolution
+	// now falls back to the consumer address and no longer reaches the slash.
+	k.SetValidatorByConsumerAddr(ctx, cid, consumerAddr, providerAddr)
+	resolved := k.GetProviderAddrFromConsumerAddr(ctx, cid, consumerAddr)
+	require.Equal(t, providerAddr.ToSdkConsAddr().Bytes(), resolved.ToSdkConsAddr().Bytes())
+	k.DeleteValidatorByConsumerAddr(ctx, cid, consumerAddr)
+	fallback := k.GetProviderAddrFromConsumerAddr(ctx, cid, consumerAddr)
+	require.Equal(t, consumerAddr.ToSdkConsAddr().Bytes(), fallback.ToSdkConsAddr().Bytes())
+
+	const (
+		claimedHeight = int64(100)
+		windowStart   = claimedHeight
+		span          = int64(5)
+	)
+	windowEndHeight := windowStart + span - 1
+	// Keyed under the provider address (as HandleConsumerDowntime does), but
+	// carrying the consumer address the fallback matches on.
+	pending := types.PendingDowntimeSlash{
+		ConsumerId:         cid,
+		ProviderConsAddr:   providerAddr.ToSdkConsAddr().Bytes(),
+		ConsumerConsAddr:   consumerAddr.ToSdkConsAddr().Bytes(),
+		WindowStartHeight:  windowStart,
+		Span:               span,
+		MissedCount:        1,
+		MissedBlocksBitmap: []byte{0x01}, // bit 0 (claimedHeight - windowStart) marked missed
+		SlashTokens:        math.NewInt(1000),
+		MaturesAt:          ctx.BlockTime().Add(time.Hour),
+	}
+	pendingKey := collections.Join3(cid, providerAddr.ToSdkConsAddr().Bytes(), windowEndHeight)
+	require.NoError(t, k.PendingDowntimeSlashes.Set(ctx, pendingKey, pending))
+
+	blockID := cryptotestutil.MakeBlockID([]byte("blockhash"), 1, []byte("partshash"))
+	vote, err := tmtypes.MakeVote(signer, challengeTestChainID, 0, claimedHeight, 0, tmproto.PrecommitType, blockID, ctx.BlockTime())
+	require.NoError(t, err)
+	commit := &tmtypes.Commit{
+		Height:     claimedHeight,
+		Round:      0,
+		BlockID:    blockID,
+		Signatures: []tmtypes.CommitSig{vote.CommitSig()},
+	}
+	header := &ibctmtypes.Header{
+		SignedHeader: &tmproto.SignedHeader{
+			Header: &tmproto.Header{
+				ChainID:        challengeTestChainID,
+				Height:         claimedHeight + 1,
+				LastCommitHash: commit.Hash(),
+			},
+			Commit: &tmproto.Commit{},
+		},
+	}
+	msg := &types.MsgChallengeConsumerDowntime{
+		Signer:          "cosmos1qypqxpq9qcrsszgse4wwrq4vt3s2r0y8ryqhx7",
+		ConsumerId:      cid,
+		ValidatorAddr:   pubKey.Address(),
+		ClaimedHeight:   claimedHeight,
+		Header:          header,
+		LastCommit:      commit.ToProto(),
+		ValidatorPubkey: pubKey.Bytes(),
+	}
+
+	// No withheld fee record is seeded, so PayWithheldFees needs no bank/staking
+	// mocks. Success proves the fallback found the slash despite the pruned map.
+	require.NoError(t, k.HandleChallengeConsumerDowntime(ctx, msg))
+	require.Equal(t, types.CONSUMER_PHASE_PAUSED, k.GetConsumerPhase(ctx, cid))
+	_, err = k.PendingDowntimeSlashes.Get(ctx, pendingKey)
+	require.ErrorIs(t, err, collections.ErrNotFound, "the slash must be found and cancelled despite the pruned key-assignment mapping")
+}
+
 // TestHandleChallengeConsumerDowntime_NoPendingSlash verifies step 1: without
 // a pending slash for the accused validator, the challenge is rejected
 // before touching any header/commit/signature verification.
