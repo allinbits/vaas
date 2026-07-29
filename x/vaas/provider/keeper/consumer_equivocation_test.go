@@ -321,6 +321,93 @@ func TestVerifyDoubleVotingEvidence(t *testing.T) {
 	}
 }
 
+// TestHandleConsumerDoubleVotingSlashesOldButAboveMinHeightEvidence confirms
+// the intentional asymmetry documented in HandleConsumerDoubleVoting: double
+// voting evidence carries NO maximum-age bound, so a still-bonded validator's
+// equivocation is slashed, jailed, and tombstoned whenever proven -- even when
+// the votes are far older than any downtime-style max age -- as long as the
+// evidence height clears the per-consumer minimum-height gate. Contrast the
+// downtime path, which rejects evidence older than DowntimeEvidenceMaxAge.
+func TestHandleConsumerDoubleVotingSlashesOldButAboveMinHeightEvidence(t *testing.T) {
+	providerKeeper, ctx, ctrl, mocks := testkeeper.GetProviderKeeperAndCtx(t, testkeeper.NewInMemKeeperParams(t))
+	defer ctrl.Finish()
+
+	const (
+		chainID        = "consumer-chain-0"
+		consumerID     = uint64(0)
+		minHeight      = uint64(5)
+		evidenceHeight = int64(100) // well above minHeight
+	)
+
+	providerKeeper.SetConsumerPhase(ctx, consumerID, types.CONSUMER_PHASE_LAUNCHED)
+	providerKeeper.SetConsumerChainId(ctx, consumerID, chainID)
+	providerKeeper.SetEquivocationEvidenceMinHeight(ctx, consumerID, minHeight)
+	providerKeeper.SetInfractionParams(ctx, *getTestInfractionParameters())
+
+	// The votes are signed with a long-past block time while the provider's
+	// current block time is years later. The double-vote path never compares
+	// the two, so this staleness must not prevent the slash.
+	oldVoteTime := time.Date(2020, 1, 1, 0, 0, 0, 0, time.UTC)
+	ctx = ctx.WithBlockTime(time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC))
+
+	signer := tmtypes.NewMockPV()
+	val := tmtypes.NewValidator(signer.PrivKey.PubKey(), 1)
+	valSet := tmtypes.NewValidatorSet([]*tmtypes.Validator{val})
+	valPubkey, err := cryptocodec.FromCmtPubKeyInterface(val.PubKey)
+	require.NoError(t, err)
+
+	blockID1 := cryptotestutil.MakeBlockID([]byte("blockhash1"), 1000, []byte("partshash"))
+	blockID2 := cryptotestutil.MakeBlockID([]byte("blockhash2"), 1000, []byte("partshash"))
+	evidence := &tmtypes.DuplicateVoteEvidence{
+		VoteA:            cryptotestutil.MakeAndSignVote(blockID1, evidenceHeight, oldVoteTime, valSet, signer, chainID),
+		VoteB:            cryptotestutil.MakeAndSignVote(blockID2, evidenceHeight, oldVoteTime, valSet, signer, chainID),
+		ValidatorPower:   val.VotingPower,
+		TotalVotingPower: val.VotingPower,
+		Timestamp:        oldVoteTime,
+	}
+
+	// Build the bonded staking validator whose consensus key matches the signer,
+	// so the provider consensus address resolves to it (no key assignment).
+	stakingVal, err := stakingtypes.NewValidator(
+		sdk.ValAddress(valPubkey.Address()).String(),
+		valPubkey,
+		stakingtypes.NewDescription("", "", "", "", ""),
+	)
+	require.NoError(t, err)
+	stakingVal.Status = stakingtypes.Bonded
+	stakingVal.Tokens = sdk.DefaultPowerReduction
+	stakingVal.DelegatorShares = math.LegacyNewDecFromInt(sdk.DefaultPowerReduction)
+	consAddr, err := stakingVal.GetConsAddr()
+	require.NoError(t, err)
+
+	mocks.MockStakingKeeper.EXPECT().GetValidatorByConsAddr(gomock.Any(), sdk.ConsAddress(consAddr)).Return(stakingVal, nil).AnyTimes()
+	mocks.MockSlashingKeeper.EXPECT().IsTombstoned(gomock.Any(), sdk.ConsAddress(consAddr)).Return(false).AnyTimes()
+	mocks.MockStakingKeeper.EXPECT().GetUnbondingDelegationsFromValidator(gomock.Any(), gomock.Any()).Return([]stakingtypes.UnbondingDelegation{}, nil).AnyTimes()
+	mocks.MockStakingKeeper.EXPECT().GetRedelegationsFromSrcValidator(gomock.Any(), gomock.Any()).Return([]stakingtypes.Redelegation{}, nil).AnyTimes()
+	mocks.MockStakingKeeper.EXPECT().GetLastValidatorPower(gomock.Any(), gomock.Any()).Return(int64(10), nil).AnyTimes()
+	mocks.MockStakingKeeper.EXPECT().PowerReduction(gomock.Any()).Return(sdk.DefaultPowerReduction).AnyTimes()
+
+	slashCalled := false
+	mocks.MockStakingKeeper.EXPECT().
+		SlashWithInfractionReason(gomock.Any(), sdk.ConsAddress(consAddr), int64(0), gomock.Any(), getTestInfractionParameters().DoubleSign.SlashFraction, stakingtypes.Infraction_INFRACTION_DOUBLE_SIGN).
+		DoAndReturn(func(_ sdk.Context, _ sdk.ConsAddress, _ int64, power int64, _ math.LegacyDec, _ stakingtypes.Infraction) (math.Int, error) {
+			slashCalled = true
+			return math.NewInt(power), nil
+		}).Times(1)
+
+	mocks.MockStakingKeeper.EXPECT().Jail(gomock.Any(), sdk.ConsAddress(consAddr)).Return(nil).Times(1)
+	mocks.MockSlashingKeeper.EXPECT().JailUntil(gomock.Any(), sdk.ConsAddress(consAddr), gomock.Any()).Return(nil).Times(1)
+	tombstoneCalled := false
+	mocks.MockSlashingKeeper.EXPECT().Tombstone(gomock.Any(), sdk.ConsAddress(consAddr)).DoAndReturn(func(_ sdk.Context, _ sdk.ConsAddress) error {
+		tombstoneCalled = true
+		return nil
+	}).Times(1)
+
+	require.NoError(t, providerKeeper.HandleConsumerDoubleVoting(ctx, consumerID, evidence, valPubkey))
+	require.True(t, slashCalled, "an old but above-min-height double-sign must still slash")
+	require.True(t, tombstoneCalled, "an old but above-min-height double-sign must still tombstone")
+}
+
 // TestJailAndTombstoneValidator tests that the jailing of a validator is only executed
 // under the conditions that the validator is neither unbonded, nor jailed, nor tombstoned.
 func TestJailAndTombstoneValidator(t *testing.T) {

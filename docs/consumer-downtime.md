@@ -72,11 +72,16 @@ on, so the provider owns them:
 - The consumer's `MsgUpdateParams` preserves the stored values; they are not locally
   changeable.
 
-Because an update can race in-flight evidence, packets echo the params they were computed
-under, and the provider accepts evidence computed under either its current values or the
-immediately previous ones (within the evidence-age horizon). Staged values are validated
-before activation: a malformed update (zero window, out-of-range fraction) is logged and
-dropped rather than applied.
+Governance changes them with `MsgUpdateInfractionParams` (section 8). Because a change can
+race in-flight evidence, packets echo the params they were computed under, and the provider
+accepts evidence computed under either its current values or the immediately previous ones.
+The superseded pair is recorded with the block time of the change and stays acceptable for
+`DowntimeEvidenceMaxAge + DowntimeChallengeWindow` afterwards -- exactly as long as evidence
+computed under it could still be inside its own challenge window. A packet is always judged
+by the threshold its echoed values imply, never by the live one, so widening the window
+mid-flight neither retroactively excuses nor retroactively creates an infraction. Staged
+values are validated before activation: a malformed update (zero window, out-of-range
+fraction) is logged and dropped rather than applied.
 
 ## 3. Provider validation of incoming evidence
 
@@ -89,11 +94,22 @@ acknowledgement at the first failure:
 3. **Identity** -- the consumer consensus address maps to a known provider validator that is
    in this consumer's validator set; the window end respects the consumer's minimum evidence
    height.
-4. **Time anchoring** -- the window-end timestamp is taken from the smallest stored consensus
-   state at or above the window-end height (the IBC client's own verified history). Against
-   that anchor: the window must end after the launch grace period
+4. **Time anchoring** -- the window-end height must be *bracketed* by two consensus states
+   the provider's IBC client for this consumer still stores, each doing a different job. The
+   smallest stored height at or above the window end proves the consumer chain actually
+   reached it. The largest stored height at or below it supplies the timestamp: consumer
+   block times rise with height, so that state's timestamp is a verified lower bound on the
+   true window-end time, and the anchor can therefore never place the window end later than
+   it really was. Against that anchor: the window must end after the launch grace period
    (`SpawnTime + DowntimeGracePeriod`), and must be no older than `DowntimeEvidenceMaxAge`
    at receipt -- old windows are rejected because their challenge data availability decays.
+   Anchoring to the upper state instead would overstate the window-end time by however far
+   the client skipped past it, understating the evidence's age by the same amount and
+   admitting evidence whose challenge data is already gone; anchoring to the lower state
+   biases the error the safe way, so a computed age is never smaller than the real one.
+   Evidence whose window end is not bracketed -- typically because the states around it
+   expired and were pruned, or because relaying was idle across the window -- is rejected
+   with `cannot anchor downtime evidence window`; section 9 covers how to read that.
 5. **No re-acceptance** -- the window must not intersect any window already accepted for
    this validator on this consumer (`AcceptedDowntimeWindows`, one record per accepted
    window, written at acceptance), and must start above the pair's pruned acceptance floor
@@ -310,18 +326,52 @@ them along with the escrow records.
 | `DowntimeEvidenceMaxAge` | provider `InfractionParameters` | `(0, DowntimeChallengeWindow]` | 3 days |
 | `MaxPauseDuration` | provider module param | `> 0` | 30 days |
 
+Every `InfractionParameters` row is governance-updatable on a running chain with
+`MsgUpdateInfractionParams`, which replaces the set in full and revalidates it; the values in
+force are readable from the provider `params` query. They live outside the module `Params`
+because they are stored (and exported) as their own state item, so a fee or epoch change need
+not restate the slashing policy and vice versa.
+
+What an update reaches differs by parameter, which matters when governance is responding to an
+incident with slashes already queued. A pending slash carries the maturity timestamp it was
+stamped with at acceptance, so changing `DowntimeChallengeWindow` neither accelerates nor
+delays anything already pending -- it only sizes the window for evidence accepted afterwards
+(the same holds for withheld-fee-record expiries). `Downtime.SlashFraction`, by contrast, is
+the cap applied when a matured entry executes, so lowering it does limit slashes already
+queued, and raising it can let them execute closer to their priced amount -- never above it,
+since the token amount was fixed at receipt.
+
 `DowntimeEvidenceMaxAge <= DowntimeChallengeWindow` is enforced at validation time: were
 evidence allowed to be older than the challenge window, a consumer could re-submit a window
 whose previous slash had already matured while the window was still fresh enough to accept.
-The sum of the two must also stay below the consumer client trusting period (checked against
-the default consumer unbonding at genesis; per-consumer deviations are operator guidance),
-so the oldest challengeable header remains light-client verifiable through the end of its
-challenge window.
+The sum of the two -- the *challengeable interval*, how far back a challenge may have to reach
+-- must also stay below the consumer client trusting period, so the oldest challengeable header
+remains light-client verifiable through the end of its challenge window. That constraint spans
+both halves of the configuration, so both governance messages enforce it against the stored
+other half: `MsgUpdateInfractionParams` against the stored `Params.TrustingPeriodFraction`, and
+`MsgUpdateParams` against the stored infraction parameters. Neither half can be moved out from
+under the other one proposal at a time.
+
+That check bounds the interval by the trusting period derived from the *default* consumer
+unbonding period, i.e. it constrains the parameters in the abstract. A proposal that *widens*
+the interval is checked once more against the clients that actually exist: if the new interval
+would reach past the trusting period of a consumer client the provider has already adopted, the
+proposal is rejected and names that consumer. Such an interval would leave the oldest
+challengeable header unverifiable on that consumer, so its pending slashes would execute
+undefended, and the provider does not re-adopt a client to repair it afterwards. Narrowing the
+interval is never blocked, whatever the adopted clients look like -- it can only move the
+interval further inside every trusting period, and a chain that somehow holds a client too
+short for its current parameters has to be able to correct itself.
 
 ## 9. Operator guidance
 
-- **Retain blocks.** A challenger must produce the commit for a height up to
-  `DowntimeEvidenceMaxAge + DowntimeChallengeWindow` in the past (10 days at defaults).
+- **Retain blocks.** A challenger must produce the commit for a claimed-missed height. The
+  oldest one a live accusation can name is `DowntimeEvidenceMaxAge + DowntimeChallengeWindow`
+  in the past, plus the window's own `SignedBlocksWindow` blocks: evidence is accepted only
+  while its window end is within `DowntimeEvidenceMaxAge` of now, measured against an anchor
+  that never understates that age (section 3); the slash then waits out
+  `DowntimeChallengeWindow`; and the window's first height sits `SignedBlocksWindow` blocks
+  below its end. At defaults that is 10 days plus one window (600 blocks, about an hour).
   Validators should configure consumer-node retention (`min-retain-blocks`, pruning) to keep
   at least that span.
 - **Watch the acceptance events.** An accepted evidence packet emits the claimed window,
@@ -330,6 +380,17 @@ challenge window.
   A validator that was online should challenge well inside the window.
 - **Keep clients fresh during pauses.** Relayers have no packet traffic on a paused
   consumer; updating the clients anyway avoids the `MsgRecoverClient` step at resume time.
+- **Read `cannot anchor downtime evidence window` as client coverage, not validator
+  behavior.** The provider rejected an accusation because it could not bracket the window end
+  between two stored consensus states for that consumer's client -- normally because no state
+  sits at or below the window end, the states around it having expired and been pruned, or
+  relaying having been idle across the window. Nothing is at stake for the accused validator:
+  the packet was refused with an error acknowledgement, so no slash was ever queued. The
+  remedy is on the relaying side: a client that takes at least one update per evidence window
+  brackets every window. A sparse client also drags the anchor down toward its last stored
+  state, spending part of the `DowntimeEvidenceMaxAge` budget and possibly rejecting otherwise
+  fresh evidence as too old; the effect is bounded by the client's update interval, which is
+  one epoch while packets are flowing -- negligible against the 3-day default.
 
 ## 10. Trust boundaries
 

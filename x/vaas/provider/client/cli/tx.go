@@ -27,6 +27,7 @@ import (
 	"github.com/cosmos/cosmos-sdk/client/tx"
 	"github.com/cosmos/cosmos-sdk/codec"
 	sdk "github.com/cosmos/cosmos-sdk/types"
+	"github.com/cosmos/cosmos-sdk/types/query"
 	"github.com/cosmos/cosmos-sdk/version"
 )
 
@@ -512,12 +513,15 @@ func NewSweepConsumerFeePoolCmd() *cobra.Command {
 // verify a challenge (see docs/consumer-downtime.md, "The challenge"): the
 // canonical commit for the claimed height H (/commit?height=H), the signed
 // header for H+1 (/commit?height=H+1), the validator set matching that header
-// (/validators?height=H+1), and the accused validator's self-authenticating
-// pubkey (/validators?height=H). This is client-side tooling: it trusts the
-// consumer RPC endpoint to answer honestly, exactly as any light client or
-// relayer does -- the assembled message is still independently verified
-// on-chain by HandleChallengeConsumerDowntime, so a dishonest RPC endpoint
-// can at worst waste the challenger's gas, never forge a false challenge.
+// (/validators?height=H+1), the trusted validator set for the header's
+// trusted height T (/validators?height=T+1 -- the set the client's consensus
+// state at T commits to through its NextValidatorsHash), and the accused
+// validator's self-authenticating pubkey (/validators?height=H). This is
+// client-side tooling: it trusts the consumer RPC endpoint to answer
+// honestly, exactly as any light client or relayer does -- the assembled
+// message is still independently verified on-chain by
+// HandleChallengeConsumerDowntime, so a dishonest RPC endpoint can at worst
+// waste the challenger's gas, never forge a false challenge.
 func NewChallengeConsumerDowntimeCmd() *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "challenge-consumer-downtime [consumer-id] [validator-cons-addr] [claimed-height]",
@@ -528,10 +532,11 @@ H, the light-client header for H+1, and the relevant validator sets from
 the consumer chain's own RPC endpoint (--%s), then assembles and broadcasts
 MsgChallengeConsumerDowntime.
 
-The H+1 header's trusted height defaults to the provider's currently
-tracked latest height for this consumer's IBC client (queried on-chain);
-pass --%s to override it, e.g. if that client's light-client module trails
-behind the consumer chain tip.
+The H+1 header carries a trusted height: a height below H+1 at which the
+provider's IBC client for this consumer stores a consensus state to verify
+the header against. It defaults to the highest such stored height (queried
+on-chain); pass --%s to pick a different one, which must also be below H+1
+and have a stored consensus state.
 
 Example:
 %s tx provider challenge-consumer-downtime 0 cosmosvalcons1... 12345 --%s http://consumer-rpc:26657
@@ -618,9 +623,13 @@ Example:
 			}
 
 			// The trusted height for the H+1 header: --trusted-height if given,
-			// else the provider's currently tracked latest height for this
-			// consumer's IBC client. The client state is queried regardless, to
-			// source the revision number for the trusted height.
+			// else the highest height below H+1 at which the provider's client
+			// for this consumer stores a consensus state. The light client
+			// verifies the header against the consensus state at the trusted
+			// height, so only a stored height strictly below the header's own
+			// works. The client state is queried regardless, to source the
+			// revision number (a trusted height must sit in the header's own
+			// revision) and to fail fast on a non-tendermint client.
 			chainResp, err := types.NewQueryClient(clientCtx).QueryConsumerChain(ctx, &types.QueryConsumerChainRequest{ConsumerId: consumerId})
 			if err != nil {
 				return fmt.Errorf("looking up client id for consumer %d: %w", consumerId, err)
@@ -628,7 +637,8 @@ Example:
 			if chainResp.ClientId == "" {
 				return fmt.Errorf("consumer %d has no registered IBC client", consumerId)
 			}
-			clientStateResp, err := clienttypes.NewQueryClient(clientCtx).ClientState(ctx, &clienttypes.QueryClientStateRequest{ClientId: chainResp.ClientId})
+			ibcClientQuerier := clienttypes.NewQueryClient(clientCtx)
+			clientStateResp, err := ibcClientQuerier.ClientState(ctx, &clienttypes.QueryClientStateRequest{ClientId: chainResp.ClientId})
 			if err != nil {
 				return fmt.Errorf("querying client state for client %s: %w", chainResp.ClientId, err)
 			}
@@ -641,18 +651,43 @@ Example:
 				return fmt.Errorf("client %s is not a tendermint client", chainResp.ClientId)
 			}
 
-			trustedHeight := tmClientState.LatestHeight
-			if h, err := cmd.Flags().GetUint64(FlagTrustedHeight); err == nil && h != 0 {
-				trustedHeight = clienttypes.NewHeight(tmClientState.LatestHeight.RevisionNumber, h)
+			headerHeight := clienttypes.NewHeight(tmClientState.LatestHeight.RevisionNumber, uint64(nextHeight))
+			trustedHeightOverride, err := cmd.Flags().GetUint64(FlagTrustedHeight)
+			if err != nil {
+				return err
+			}
+			var trustedHeight clienttypes.Height
+			if trustedHeightOverride != 0 {
+				trustedHeight = clienttypes.NewHeight(headerHeight.RevisionNumber, trustedHeightOverride)
+				if trustedHeight.GTE(headerHeight) {
+					return fmt.Errorf("--%s %d is not below the header height %d (claimed-height+1); the light client rejects a header at or below its trusted height",
+						FlagTrustedHeight, trustedHeightOverride, nextHeight)
+				}
+			} else {
+				consensusHeights, err := fetchConsensusStateHeights(ctx, ibcClientQuerier, chainResp.ClientId)
+				if err != nil {
+					return fmt.Errorf("querying consensus state heights for client %s: %w", chainResp.ClientId, err)
+				}
+				var found bool
+				trustedHeight, found = highestHeightBelow(consensusHeights, headerHeight)
+				if !found {
+					return fmt.Errorf("client %s stores no consensus state below height %d (claimed-height+1); the claimed height predates every state the client retains, so the header cannot be verified against it",
+						chainResp.ClientId, nextHeight)
+				}
 			}
 
-			trustedVals, err := fetchAllValidators(ctx, rpcClient, int64(trustedHeight.RevisionHeight))
+			// The light client checks TrustedValidators against the consensus
+			// state at the trusted height T through that state's
+			// NextValidatorsHash -- the hash of the validator set at T+1 -- so
+			// the set is fetched at T+1, not T.
+			trustedValsHeight := int64(trustedHeight.RevisionHeight) + 1
+			trustedVals, err := fetchAllValidators(ctx, rpcClient, trustedValsHeight)
 			if err != nil {
-				return fmt.Errorf("fetching validators at trusted height %d: %w", trustedHeight.RevisionHeight, err)
+				return fmt.Errorf("fetching validators at height %d (trusted height + 1): %w", trustedValsHeight, err)
 			}
 			trustedValSet, err := tmtypes.NewValidatorSet(trustedVals).ToProto()
 			if err != nil {
-				return fmt.Errorf("converting validator set at trusted height %d: %w", trustedHeight.RevisionHeight, err)
+				return fmt.Errorf("converting validator set at height %d: %w", trustedValsHeight, err)
 			}
 
 			header := &ibctmtypes.Header{
@@ -681,7 +716,7 @@ Example:
 
 	cmd.Flags().String(FlagConsumerRPC, "", "CometBFT RPC endpoint of the consumer chain (required)")
 	cmd.Flags().Uint64(FlagTrustedHeight, 0,
-		"trusted height for the H+1 light-client header (default: the provider's tracked latest height for this consumer's client)")
+		"trusted height for the H+1 light-client header; must be below claimed-height+1 and have a consensus state stored on the provider's client for this consumer (default: the highest such height)")
 	flags.AddTxFlagsToCmd(cmd)
 	_ = cmd.MarkFlagRequired(flags.FlagFrom)
 	_ = cmd.MarkFlagRequired(FlagConsumerRPC)
@@ -708,4 +743,47 @@ func fetchAllValidators(ctx context.Context, rpcClient *rpchttp.HTTP, height int
 		}
 		page++
 	}
+}
+
+// fetchConsensusStateHeights pages through the provider's
+// ibc.core.client.v1.Query/ConsensusStateHeights endpoint to return every
+// height at which the client identified by clientId stores a consensus
+// state. Pages arrive in store-key order, not numeric height order, so the
+// full list is needed before choosing among the heights.
+func fetchConsensusStateHeights(ctx context.Context, queryClient clienttypes.QueryClient, clientId string) ([]clienttypes.Height, error) {
+	var heights []clienttypes.Height
+	var nextKey []byte
+	for {
+		res, err := queryClient.ConsensusStateHeights(ctx, &clienttypes.QueryConsensusStateHeightsRequest{
+			ClientId:   clientId,
+			Pagination: &query.PageRequest{Key: nextKey},
+		})
+		if err != nil {
+			return nil, err
+		}
+		heights = append(heights, res.ConsensusStateHeights...)
+		if res.Pagination == nil || len(res.Pagination.NextKey) == 0 {
+			return heights, nil
+		}
+		nextKey = res.Pagination.NextKey
+	}
+}
+
+// highestHeightBelow returns the highest of heights that shares bound's
+// revision number and sits strictly below it, and whether any does. Heights
+// from other revisions never qualify: the light client only accepts a
+// trusted height in the same revision as the header being verified.
+func highestHeightBelow(heights []clienttypes.Height, bound clienttypes.Height) (clienttypes.Height, bool) {
+	var best clienttypes.Height
+	found := false
+	for _, h := range heights {
+		if h.RevisionNumber != bound.RevisionNumber || h.RevisionHeight >= bound.RevisionHeight {
+			continue
+		}
+		if !found || h.GT(best) {
+			best = h
+			found = true
+		}
+	}
+	return best, found
 }

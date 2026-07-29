@@ -306,6 +306,20 @@ func (msg MsgRemoveConsumer) ValidateBasic() error {
 	return nil
 }
 
+// ValidateBasic enforces that the authority parses as bech32 and that the
+// replacement infraction parameters are internally consistent. The constraint
+// they share with Params.TrustingPeriodFraction needs stored state, so it is
+// enforced in the handler instead (see ValidateInfractionParamsAgainst).
+func (msg MsgUpdateInfractionParams) ValidateBasic() error {
+	if _, err := sdk.AccAddressFromBech32(msg.Authority); err != nil {
+		return errorsmod.Wrapf(sdkerrors.ErrInvalidAddress, "invalid authority address: %s", err)
+	}
+	if err := msg.InfractionParameters.Validate(); err != nil {
+		return errorsmod.Wrap(sdkerrors.ErrInvalidRequest, err.Error())
+	}
+	return nil
+}
+
 // ValidateBasic enforces:
 //   - authority parses as bech32
 //   - amount is empty (clear semantics) OR parses as a positive math.Int
