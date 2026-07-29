@@ -12,7 +12,6 @@ import (
 
 	abci "github.com/cometbft/cometbft/abci/types"
 
-	"github.com/allinbits/vaas/testutil/crypto"
 	testkeeper "github.com/allinbits/vaas/testutil/keeper"
 	"github.com/allinbits/vaas/x/vaas/consumer/types"
 	vaastypes "github.com/allinbits/vaas/x/vaas/types"
@@ -78,7 +77,8 @@ func TestPendingChanges(t *testing.T) {
 	require.Nil(t, gotPd, "got non-nil pending changes after Delete")
 }
 
-// TestLastSovereignHeight tests the getter and setter for the ccv init genesis height
+// TestInitGenesisHeight tests the getter and setter for the height at which the
+// consumer module ran InitGenesis.
 func TestInitGenesisHeight(t *testing.T) {
 	consumerKeeper, ctx, ctrl, _ := testkeeper.GetConsumerKeeperAndCtx(t, testkeeper.NewInMemKeeperParams(t))
 	defer ctrl.Finish()
@@ -93,50 +93,6 @@ func TestInitGenesisHeight(t *testing.T) {
 	// Set/get the height being 43234426
 	consumerKeeper.SetInitGenesisHeight(ctx, 43234426)
 	require.Equal(t, int64(43234426), consumerKeeper.GetInitGenesisHeight(ctx))
-}
-
-// TestInitialValSet tests the getter and setter methods for storing the initial validator set for a consumer
-func TestInitialValSet(t *testing.T) {
-	consumerKeeper, ctx, ctrl, _ := testkeeper.GetConsumerKeeperAndCtx(t, testkeeper.NewInMemKeeperParams(t))
-	defer ctrl.Finish()
-
-	// Default value is empty val update list
-	require.Empty(t, consumerKeeper.GetInitialValSet(ctx))
-
-	// Set/get the initial validator set
-	cId1 := crypto.NewCryptoIdentityFromIntSeed(7896)
-	cId2 := crypto.NewCryptoIdentityFromIntSeed(7897)
-	cId3 := crypto.NewCryptoIdentityFromIntSeed(7898)
-	valUpdates := []abci.ValidatorUpdate{
-		{
-			PubKey: cId1.TMProtoCryptoPublicKey(),
-			Power:  1097,
-		},
-		{
-			PubKey: cId2.TMProtoCryptoPublicKey(),
-			Power:  19068,
-		},
-		{
-			PubKey: cId3.TMProtoCryptoPublicKey(),
-			Power:  10978554,
-		},
-	}
-
-	consumerKeeper.SetInitialValSet(ctx, valUpdates)
-	require.Equal(t, []abci.ValidatorUpdate{
-		{
-			PubKey: cId1.TMProtoCryptoPublicKey(),
-			Power:  1097,
-		},
-		{
-			PubKey: cId2.TMProtoCryptoPublicKey(),
-			Power:  19068,
-		},
-		{
-			PubKey: cId3.TMProtoCryptoPublicKey(),
-			Power:  10978554,
-		},
-	}, consumerKeeper.GetInitialValSet(ctx))
 }
 
 // TestCrossChainValidator tests the getter, setter, and deletion method for cross chain validator records

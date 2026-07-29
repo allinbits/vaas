@@ -4,9 +4,6 @@ import (
 	"bytes"
 	"context"
 
-	"github.com/allinbits/vaas/x/vaas/consumer/types"
-	vaastypes "github.com/allinbits/vaas/x/vaas/types"
-
 	ibcexported "github.com/cosmos/ibc-go/v10/modules/core/exported"
 	ibctmtypes "github.com/cosmos/ibc-go/v10/modules/light-clients/07-tendermint"
 
@@ -15,6 +12,9 @@ import (
 	sdk "github.com/cosmos/cosmos-sdk/types"
 	"github.com/cosmos/cosmos-sdk/types/bech32"
 	govtypes "github.com/cosmos/cosmos-sdk/x/gov/types"
+
+	"github.com/allinbits/vaas/x/vaas/consumer/types"
+	vaastypes "github.com/allinbits/vaas/x/vaas/types"
 )
 
 type msgServer struct {
@@ -118,7 +118,7 @@ func (k msgServer) SetProviderClient(goCtx context.Context, msg *types.MsgSetPro
 	k.Logger(ctx).Info("provider client pinned", "clientID", msg.ClientId, "signer", msg.Signer)
 	ctx.EventManager().EmitEvent(
 		sdk.NewEvent(
-			vaastypes.EventTypeChannelEstablished,
+			vaastypes.EventTypeClientEstablished,
 			sdk.NewAttribute(sdk.AttributeKeyModule, types.ModuleName),
 			sdk.NewAttribute("client_id", msg.ClientId),
 		),

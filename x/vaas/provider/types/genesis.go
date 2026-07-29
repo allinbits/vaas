@@ -5,12 +5,12 @@ import (
 	"fmt"
 	"sort"
 
-	vaastypes "github.com/allinbits/vaas/x/vaas/types"
-
 	errorsmod "cosmossdk.io/errors"
 	"cosmossdk.io/math"
 
 	sdk "github.com/cosmos/cosmos-sdk/types"
+
+	vaastypes "github.com/allinbits/vaas/x/vaas/types"
 )
 
 func NewGenesisState(

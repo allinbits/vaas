@@ -5,9 +5,9 @@ import (
 	"fmt"
 	"time"
 
-	vaastypes "github.com/allinbits/vaas/x/vaas/types"
-
 	stakingtypes "github.com/cosmos/cosmos-sdk/x/staking/types"
+
+	vaastypes "github.com/allinbits/vaas/x/vaas/types"
 )
 
 // GetConsumerParams returns the params for the consumer VAAS module
@@ -35,7 +35,7 @@ func (k Keeper) SetParams(ctx context.Context, params vaastypes.ConsumerParams) 
 // GetParams implements StakingKeeper GetParams interface method
 // it returns an a empty stakingtypes.Params struct
 // NOTE: this method must be implemented on the consumer keeper because the evidence module keeper
-// in cosmos-sdk v0.50 requires this exact method with this exact signature to be available on the StakingKeepr
+// in cosmos-sdk v0.50 requires this exact method with this exact signature to be available on the StakingKeeper
 func (k Keeper) GetParams(context.Context) (stakingtypes.Params, error) {
 	return stakingtypes.Params{}, nil
 }

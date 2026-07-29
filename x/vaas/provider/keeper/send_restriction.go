@@ -3,13 +3,13 @@ package keeper
 import (
 	"context"
 
-	"github.com/allinbits/vaas/x/vaas/provider/types"
-
 	errorsmod "cosmossdk.io/errors"
 
 	sdk "github.com/cosmos/cosmos-sdk/types"
 	authtypes "github.com/cosmos/cosmos-sdk/x/auth/types"
 	disttypes "github.com/cosmos/cosmos-sdk/x/distribution/types"
+
+	"github.com/allinbits/vaas/x/vaas/provider/types"
 )
 
 // FeePoolSendRestriction returns a bank send-restriction that rejects sends

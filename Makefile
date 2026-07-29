@@ -28,7 +28,11 @@ vulncheck:
 mocks-gen:
 	$(rundep) go.uber.org/mock/mockgen -package=keeper -destination=testutil/keeper/mocks.go -source=x/vaas/types/expected_keepers.go
 
-.PHONY: build test lint lint-fix vulncheck mocks-gen
+# Run `go mod tidy` across every module in the workspace (root, app, devdeps, tests/e2e).
+tidy:
+	@bash ./scripts/go-mod-tidy-all.sh
+
+.PHONY: build test lint lint-fix vulncheck mocks-gen tidy
 
 ###############################################################################
 ###                                Protobuf                                 ###
