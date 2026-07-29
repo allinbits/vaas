@@ -26,7 +26,13 @@ message GenesisState {
   // HeightToValsetUpdateId nil on new chain, filled in on restart.
   repeated HeightToValsetUpdateID height_to_valset_update_id = 4
       [ (gogoproto.nullable) = false ];
-  // Flag indicating whether the consumer VAAS module starts in pre-VAAS state
+  // preVAAS is currently unused and reserved for a future standalone-to-consumer
+  // changeover. When implemented it would signal that the chain is mid-transition,
+  // so the consumer module defers applying the provider validator set; the
+  // consumer keeper does not act on this field today. Field number 5 is kept
+  // (deliberately not removed and not marked `reserved`) so a future
+  // implementation can reuse it without a wire-format clash. See
+  // docs/consumer-transition.md.
   bool preVAAS = 5;
   vaas.v1.ProviderInfo provider = 6 [ (gogoproto.nullable) = false ];
   // LastVSCRecvTime is the block time of the last VSC packet the consumer

@@ -29,20 +29,16 @@ type Keeper struct {
 	// should be the x/gov module account.
 	authority string
 
-	storeService    corestoretypes.KVStoreService
-	cdc             codec.BinaryCodec
-	clientKeeper    vaastypes.ClientKeeper
-	clientV2Keeper  vaastypes.ClientV2Keeper
-	channelKeeperV2 vaastypes.ChannelV2Keeper
-	// standaloneStakingKeeper is the staking keeper that managed proof of stake for a previously standalone chain,
-	// before the chain went through a standalone to consumer changeover.
-	// This keeper is not used for consumers that launched with ICS, and is therefore set after the constructor.
-	standaloneStakingKeeper vaastypes.StakingKeeper
-	slashingKeeper          vaastypes.SlashingKeeper
-	hooks                   vaastypes.ConsumerHooks
-	bankKeeper              vaastypes.BankKeeper
-	authKeeper              vaastypes.AccountKeeper
-	feeCollectorName        string
+	storeService     corestoretypes.KVStoreService
+	cdc              codec.BinaryCodec
+	clientKeeper     vaastypes.ClientKeeper
+	clientV2Keeper   vaastypes.ClientV2Keeper
+	channelKeeperV2  vaastypes.ChannelV2Keeper
+	slashingKeeper   vaastypes.SlashingKeeper
+	hooks            vaastypes.ConsumerHooks
+	bankKeeper       vaastypes.BankKeeper
+	authKeeper       vaastypes.AccountKeeper
+	feeCollectorName string
 
 	validatorAddressCodec addresscodec.Codec
 	consensusAddressCodec addresscodec.Codec
@@ -55,11 +51,9 @@ type Keeper struct {
 	ProviderClientID       collections.Item[string]
 	PendingChanges         collections.Item[vaastypes.ValidatorSetChangePacketData]
 	InitGenesisHeight      collections.Item[uint64]
-	PreVAAS                collections.Item[uint64]
 	InitialValSet          collections.Item[types.GenesisState]
 	Params                 collections.Item[vaastypes.ConsumerParams]
 	ConsumerInDebt         collections.Item[bool]
-	PrevStandaloneChain    collections.Item[[]byte]
 	HeightValsetUpdateIDs  collections.Map[uint64, uint64]
 	CrossChainValidators   collections.Map[[]byte, types.CrossChainValidator]
 	HistoricalInfos        collections.Map[int64, stakingtypes.HistoricalInfo]
@@ -91,30 +85,27 @@ func NewKeeper(
 	sb := collections.NewSchemaBuilder(storeService)
 
 	k := Keeper{
-		authority:               authority,
-		storeService:            storeService,
-		cdc:                     cdc,
-		clientKeeper:            clientKeeper,
-		clientV2Keeper:          clientV2Keeper,
-		channelKeeperV2:         channelKeeperV2,
-		slashingKeeper:          slashingKeeper,
-		bankKeeper:              bankKeeper,
-		authKeeper:              accountKeeper,
-		feeCollectorName:        feeCollectorName,
-		standaloneStakingKeeper: nil,
-		validatorAddressCodec:   validatorAddressCodec,
-		consensusAddressCodec:   consensusAddressCodec,
+		authority:             authority,
+		storeService:          storeService,
+		cdc:                   cdc,
+		clientKeeper:          clientKeeper,
+		clientV2Keeper:        clientV2Keeper,
+		channelKeeperV2:       channelKeeperV2,
+		slashingKeeper:        slashingKeeper,
+		bankKeeper:            bankKeeper,
+		authKeeper:            accountKeeper,
+		feeCollectorName:      feeCollectorName,
+		validatorAddressCodec: validatorAddressCodec,
+		consensusAddressCodec: consensusAddressCodec,
 
 		// Initialize collections
 		Port:                   collections.NewItem(sb, types.PortPrefix, "port", collections.StringValue),
 		ProviderClientID:       collections.NewItem(sb, types.ProviderClientIDPrefix, "provider_client_id", collections.StringValue),
 		PendingChanges:         collections.NewItem(sb, types.PendingChangesPrefix, "pending_changes", codec.CollValue[vaastypes.ValidatorSetChangePacketData](cdc)),
 		InitGenesisHeight:      collections.NewItem(sb, types.InitGenesisHeightPrefix, "init_genesis_height", collections.Uint64Value),
-		PreVAAS:                collections.NewItem(sb, types.PreVAASPrefix, "pre_vaas", collections.Uint64Value),
 		InitialValSet:          collections.NewItem(sb, types.InitialValSetPrefix, "initial_val_set", codec.CollValue[types.GenesisState](cdc)),
 		Params:                 collections.NewItem(sb, types.ParametersPrefix, "params", codec.CollValue[vaastypes.ConsumerParams](cdc)),
 		ConsumerInDebt:         collections.NewItem(sb, types.ConsumerDebtPrefix, "consumer_in_debt", collections.BoolValue),
-		PrevStandaloneChain:    collections.NewItem(sb, types.PrevStandaloneChainPrefix, "prev_standalone_chain", collections.BytesValue),
 		HeightValsetUpdateIDs:  collections.NewMap(sb, types.HeightValsetUpdateIDPrefix, "height_valset_update_ids", collections.Uint64Key, collections.Uint64Value),
 		CrossChainValidators:   collections.NewMap(sb, types.CrossChainValidatorPrefix, "cross_chain_validators", collections.BytesKey, codec.CollValue[types.CrossChainValidator](cdc)),
 		HistoricalInfos:        collections.NewMap(sb, types.HistoricalInfoPrefix, "historical_infos", collections.Int64Key, codec.CollValue[stakingtypes.HistoricalInfo](cdc)),
@@ -155,11 +146,9 @@ func NewNonZeroKeeper(cdc codec.BinaryCodec, storeService corestoretypes.KVStore
 		ProviderClientID:       collections.NewItem(sb, types.ProviderClientIDPrefix, "provider_client_id", collections.StringValue),
 		PendingChanges:         collections.NewItem(sb, types.PendingChangesPrefix, "pending_changes", codec.CollValue[vaastypes.ValidatorSetChangePacketData](cdc)),
 		InitGenesisHeight:      collections.NewItem(sb, types.InitGenesisHeightPrefix, "init_genesis_height", collections.Uint64Value),
-		PreVAAS:                collections.NewItem(sb, types.PreVAASPrefix, "pre_vaas", collections.Uint64Value),
 		InitialValSet:          collections.NewItem(sb, types.InitialValSetPrefix, "initial_val_set", codec.CollValue[types.GenesisState](cdc)),
 		Params:                 collections.NewItem(sb, types.ParametersPrefix, "params", codec.CollValue[vaastypes.ConsumerParams](cdc)),
 		ConsumerInDebt:         collections.NewItem(sb, types.ConsumerDebtPrefix, "consumer_in_debt", collections.BoolValue),
-		PrevStandaloneChain:    collections.NewItem(sb, types.PrevStandaloneChainPrefix, "prev_standalone_chain", collections.BytesValue),
 		HeightValsetUpdateIDs:  collections.NewMap(sb, types.HeightValsetUpdateIDPrefix, "height_valset_update_ids", collections.Uint64Key, collections.Uint64Value),
 		CrossChainValidators:   collections.NewMap(sb, types.CrossChainValidatorPrefix, "cross_chain_validators", collections.BytesKey, codec.CollValue[types.CrossChainValidator](cdc)),
 		HistoricalInfos:        collections.NewMap(sb, types.HistoricalInfoPrefix, "historical_infos", collections.Int64Key, codec.CollValue[stakingtypes.HistoricalInfo](cdc)),
@@ -179,12 +168,6 @@ func NewNonZeroKeeper(cdc codec.BinaryCodec, storeService corestoretypes.KVStore
 	k.Schema = schema
 
 	return k
-}
-
-// SetStandaloneStakingKeeper sets the standalone staking keeper for the consumer chain.
-// This method should only be called for previously standalone chains that are now consumers.
-func (k *Keeper) SetStandaloneStakingKeeper(sk vaastypes.StakingKeeper) {
-	k.standaloneStakingKeeper = sk
 }
 
 // ValidatorAddressCodec returns the app validator address codec.
@@ -301,26 +284,6 @@ func (k Keeper) SetInitGenesisHeight(ctx context.Context, height int64) {
 	}
 }
 
-func (k Keeper) IsPreVAAS(ctx context.Context) bool {
-	has, err := k.PreVAAS.Has(ctx)
-	if err != nil {
-		return false
-	}
-	return has
-}
-
-func (k Keeper) SetPreVAASTrue(ctx context.Context) {
-	if err := k.PreVAAS.Set(ctx, 1); err != nil {
-		panic(fmt.Errorf("failed to set pre-VAAS: %w", err))
-	}
-}
-
-func (k Keeper) DeletePreVAAS(ctx context.Context) {
-	if err := k.PreVAAS.Remove(ctx); err != nil {
-		panic(fmt.Errorf("failed to delete pre-VAAS: %w", err))
-	}
-}
-
 func (k Keeper) SetInitialValSet(ctx context.Context, initialValSet []tmtypes.ValidatorUpdate) {
 	// Store the initial validator set in a GenesisState wrapper
 	initialValSetState := types.GenesisState{
@@ -337,13 +300,6 @@ func (k Keeper) GetInitialValSet(ctx context.Context) []tmtypes.ValidatorUpdate 
 		return []tmtypes.ValidatorUpdate{}
 	}
 	return initialValSetState.Provider.InitialValSet
-}
-
-func (k Keeper) GetLastStandaloneValidators(ctx sdk.Context) ([]stakingtypes.Validator, error) {
-	if !k.IsPreVAAS(ctx) || k.standaloneStakingKeeper == nil {
-		panic("cannot get last standalone validators if not in pre-VAAS state, or if standalone staking keeper is nil")
-	}
-	return k.GetLastBondedValidators(ctx)
 }
 
 // SetHeightValsetUpdateID sets the valset update id for a given block height
@@ -439,30 +395,6 @@ func (k Keeper) GetAllCCValidator(ctx context.Context) (validators []types.Cross
 	}
 
 	return validators
-}
-
-func (k Keeper) MarkAsPrevStandaloneChain(ctx context.Context) {
-	if err := k.PrevStandaloneChain.Set(ctx, []byte{}); err != nil {
-		panic(fmt.Errorf("failed to mark as prev standalone chain: %w", err))
-	}
-}
-
-func (k Keeper) IsPrevStandaloneChain(ctx context.Context) bool {
-	has, err := k.PrevStandaloneChain.Has(ctx)
-	if err != nil {
-		return false
-	}
-	return has
-}
-
-// GetLastBondedValidators iterates the last validator powers in the staking module
-// and returns the first MaxValidators many validators with the largest powers.
-func (k Keeper) GetLastBondedValidators(ctx sdk.Context) ([]stakingtypes.Validator, error) {
-	maxVals, err := k.standaloneStakingKeeper.MaxValidators(ctx)
-	if err != nil {
-		return nil, err
-	}
-	return vaastypes.GetLastBondedValidatorsUtil(ctx, k.standaloneStakingKeeper, maxVals)
 }
 
 // SetHighestValsetUpdateID sets the highest valset update ID that has been processed.

@@ -16,17 +16,6 @@ import (
 )
 
 func (k Keeper) InitGenesis(ctx sdk.Context, state *types.GenesisState) []abci.ValidatorUpdate {
-	// PreVAAS is true during the process of a standalone to consumer changeover.
-	// At the PreVAAS point in the process, the standalone chain has just been upgraded to include
-	// the consumer VAAS module, but the standalone staking keeper is still managing the validator set.
-	// Once the provider validator set starts validating blocks, the consumer VAAS module
-	// will take over proof of stake capabilities, but the standalone staking keeper will
-	// stick around for slashing/jailing purposes.
-	if state.PreVAAS {
-		k.SetPreVAASTrue(ctx)
-		k.MarkAsPrevStandaloneChain(ctx)
-		k.SetInitialValSet(ctx, state.Provider.InitialValSet)
-	}
 	k.SetInitGenesisHeight(ctx, ctx.BlockHeight())
 
 	k.SetParams(ctx, state.Params)
@@ -76,10 +65,6 @@ func (k Keeper) InitGenesis(ctx sdk.Context, state *types.GenesisState) []abci.V
 		if state.ProviderChainId != "" {
 			k.SetProviderChainId(ctx, state.ProviderChainId)
 		}
-	}
-
-	if state.PreVAAS {
-		return []abci.ValidatorUpdate{}
 	}
 
 	// Restore the VSC staleness clock on a restart (see ExportGenesis); absent
@@ -155,8 +140,7 @@ func (k Keeper) ExportGenesis(ctx sdk.Context) (genesis *types.GenesisState) {
 	)
 
 	// Preserve the pinned provider chain id across a restart (see
-	// InitGenesis); absent when no pin has ever been established (e.g. a
-	// PreVAAS chain that has not launched yet).
+	// InitGenesis); absent when no pin has ever been established.
 	if chainId, ok := k.GetProviderChainId(ctx); ok {
 		genesis.ProviderChainId = chainId
 	}

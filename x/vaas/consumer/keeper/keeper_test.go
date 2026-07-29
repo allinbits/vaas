@@ -9,7 +9,6 @@ import (
 
 	cryptocodec "github.com/cosmos/cosmos-sdk/crypto/codec"
 	"github.com/cosmos/cosmos-sdk/crypto/keys/ed25519"
-	stakingtypes "github.com/cosmos/cosmos-sdk/x/staking/types"
 
 	abci "github.com/cometbft/cometbft/abci/types"
 
@@ -96,23 +95,6 @@ func TestInitGenesisHeight(t *testing.T) {
 	require.Equal(t, int64(43234426), consumerKeeper.GetInitGenesisHeight(ctx))
 }
 
-// TestPreVAAS tests the getter, setter and deletion methods for the pre-VAAS state flag
-func TestPreVAAS(t *testing.T) {
-	consumerKeeper, ctx, ctrl, _ := testkeeper.GetConsumerKeeperAndCtx(t, testkeeper.NewInMemKeeperParams(t))
-	defer ctrl.Finish()
-
-	// Default value is false without any setter
-	require.False(t, consumerKeeper.IsPreVAAS(ctx))
-
-	// Set/get the pre-VAAS state to true
-	consumerKeeper.SetPreVAASTrue(ctx)
-	require.True(t, consumerKeeper.IsPreVAAS(ctx))
-
-	// Delete the pre-VAAS state, setting it to false
-	consumerKeeper.DeletePreVAAS(ctx)
-	require.False(t, consumerKeeper.IsPreVAAS(ctx))
-}
-
 // TestInitialValSet tests the getter and setter methods for storing the initial validator set for a consumer
 func TestInitialValSet(t *testing.T) {
 	consumerKeeper, ctx, ctrl, _ := testkeeper.GetConsumerKeeperAndCtx(t, testkeeper.NewInMemKeeperParams(t))
@@ -155,42 +137,6 @@ func TestInitialValSet(t *testing.T) {
 			Power:  10978554,
 		},
 	}, consumerKeeper.GetInitialValSet(ctx))
-}
-
-// TestGetLastSovereignValidators tests the getter method for getting the last valset
-// from the standalone staking keeper
-func TestGetLastSovereignValidators(t *testing.T) {
-	ck, ctx, ctrl, mocks := testkeeper.GetConsumerKeeperAndCtx(t, testkeeper.NewInMemKeeperParams(t))
-	defer ctrl.Finish()
-
-	// Should panic if pre-VAAS is true but staking keeper is not set
-	ck.SetPreVAASTrue(ctx)
-	require.Panics(t, func() { _, _ = ck.GetLastStandaloneValidators(ctx) })
-
-	// Should panic if staking keeper is set but pre-VAAS is false
-	ck.SetStandaloneStakingKeeper(mocks.MockStakingKeeper)
-	ck.DeletePreVAAS(ctx)
-	require.False(t, ck.IsPreVAAS(ctx))
-	require.Panics(t, func() { _, _ = ck.GetLastStandaloneValidators(ctx) })
-
-	// Set the pre-VAAS state to true and get the last standalone validators from mock
-	ck.SetPreVAASTrue(ctx)
-	require.True(t, ck.IsPreVAAS(ctx))
-	cId1 := crypto.NewCryptoIdentityFromIntSeed(11)
-	val := cId1.SDKStakingValidator()
-	val.Description.Moniker = "sanity check this is the correctly serialized val"
-	testkeeper.SetupMocksForLastBondedValidatorsExpectation(
-		mocks.MockStakingKeeper,
-		180,
-		[]stakingtypes.Validator{val},
-		1,
-	)
-
-	lastSovVals, err := ck.GetLastStandaloneValidators(ctx)
-	require.NoError(t, err)
-	require.Equal(t, []stakingtypes.Validator{val}, lastSovVals)
-	require.Equal(t, "sanity check this is the correctly serialized val",
-		lastSovVals[0].Description.Moniker)
 }
 
 // TestCrossChainValidator tests the getter, setter, and deletion method for cross chain validator records
@@ -298,16 +244,4 @@ func TestGetAllHeightToValsetUpdateIDs(t *testing.T) {
 	result := ck.GetAllHeightToValsetUpdateIDs(ctx)
 	require.Len(t, result, len(cases))
 	require.Equal(t, expectedGetAllOrder, result)
-}
-
-func TestPrevStandaloneChainFlag(t *testing.T) {
-	ck, ctx, ctrl, _ := testkeeper.GetConsumerKeeperAndCtx(t, testkeeper.NewInMemKeeperParams(t))
-	defer ctrl.Finish()
-
-	// Test that the default value is false
-	require.False(t, ck.IsPrevStandaloneChain(ctx))
-
-	// Test that the value can be set and retrieved
-	ck.MarkAsPrevStandaloneChain(ctx)
-	require.True(t, ck.IsPrevStandaloneChain(ctx))
 }

@@ -77,13 +77,11 @@ func (k Keeper) IterateValidators(context.Context, func(index int64, validator s
 }
 
 // Validator - unimplemented on CCV keeper
-// Note: Standalone changeover functionality has been removed.
 func (k Keeper) Validator(sdkCtx context.Context, addr sdk.ValAddress) (stakingtypes.ValidatorI, error) {
 	return stakingtypes.Validator{}, errors.New("unimplemented on CCV keeper")
 }
 
 // IsValidatorJailed - always returns false as slash functionality has been removed.
-// Note: Standalone changeover functionality has been removed.
 func (k Keeper) IsValidatorJailed(goCtx context.Context, addr sdk.ConsAddress) (bool, error) {
 	// Slash functionality removed - validators are never considered jailed from the consumer's perspective
 	return false, nil
@@ -132,13 +130,12 @@ func (k Keeper) SlashWithInfractionReason(goCtx context.Context, addr sdk.ConsAd
 // This method should be a no-op for consumer chains.
 func (k Keeper) Jail(context.Context, sdk.ConsAddress) error { return nil }
 
-// Unjail - no-op on CCV keeper as standalone changeover functionality has been removed.
+// Unjail - no-op on CCV keeper
 func (k Keeper) Unjail(sdkCtx context.Context, addr sdk.ConsAddress) error {
 	return nil
 }
 
 // Delegation - unimplemented on CCV keeper
-// Note: Standalone changeover functionality has been removed.
 func (k Keeper) Delegation(sdkCtx context.Context, addr sdk.AccAddress, valAddr sdk.ValAddress) (stakingtypes.DelegationI, error) {
 	return stakingtypes.Delegation{}, errors.New("unimplemented on CCV keeper")
 }
