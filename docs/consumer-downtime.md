@@ -74,9 +74,11 @@ on, so the provider owns them:
 
 Because an update can race in-flight evidence, packets echo the params they were computed
 under, and the provider accepts evidence computed under either its current values or the
-immediately previous ones (within the evidence-age horizon). Staged values are validated
-before activation: a malformed update (zero window, out-of-range fraction) is logged and
-dropped rather than applied.
+immediately previous ones -- the latter only while the change that superseded them is no
+older than `DowntimeEvidenceMaxAge + DowntimeChallengeWindow` (10 days at the defaults),
+which is the same horizon a challenge has to work within (`AcceptableDowntimeParams`).
+Staged values are validated before activation: a malformed update (zero window,
+out-of-range fraction) is logged and dropped rather than applied.
 
 ## 3. Provider validation of incoming evidence
 
@@ -124,9 +126,16 @@ Note what is deliberately *not* checked: the truth of the bitmap. That is the ch
 mechanism's job (section 6).
 
 On acceptance the provider does three things: it marks the validator for **fee exclusion**
-in the current epoch (section 5), it prices and stores a **pending slash** (section 4), and
-it emits an event carrying the claimed window and bitmap so the accused validator can see
-exactly which heights it must disprove.
+for the epoch the window falls in, if that epoch has not yet been distributed (section 5),
+it prices and stores a **pending slash** (section 4), and it emits
+**`vaas_pending_downtime_slash`** carrying the claimed window, the bitmap, the priced
+`slash_tokens`, and `matures_at`, so the accused validator can see exactly which heights it
+must disprove and by when.
+
+A rejected packet emits nothing on the provider -- the rejection travels back as an IBC
+error acknowledgement, and the *consumer* surfaces it as
+`vaas_consumer_evidence_rejected` (with the raw ack in the `error` attribute) and drops
+the packet rather than retrying it. See [events-reference.md](events-reference.md).
 
 ## 4. Pricing and execution: P*M/C behind a challenge window
 
@@ -140,7 +149,9 @@ slash_tokens = (P * M) / C
   in. Each epoch distribution records the share it paid (zero for an epoch where nothing was
   paid out); evidence for a past epoch resolves against that record, evidence for the
   current epoch prices live. Downtime during an epoch the consumer did not pay for prices to
-  zero -- no fees were foregone, so the slash is vacuous (the fee exclusion still applies).
+  zero -- no fees were foregone, so the slash is vacuous, and because that epoch has already
+  been recorded there is no fee exclusion either (section 5). Fee exclusion applies only
+  when the window falls in the current, not-yet-distributed epoch.
 - `C` -- the photon conversion rate (photons per bond token), read at receipt from the
   embedding application's `x/photon` via an injected `PhotonKeeper`; this repository's
   standalone provider app wires a fixed rate of 1.
@@ -168,10 +179,14 @@ than executed; a zero-token slash is likewise dropped as vacuous.
 
 ## 5. Fee exclusion and the pool as escrow
 
-Fee exclusion is immediate: an accepted evidence packet excludes the validator from the
-current epoch's distribution for that consumer. The excluded share is simply never drawn
-from the consumer's fee pool -- the other validators' shares do not grow (no incentive to
-DOS a competitor), and the consumer does not pay for validation work it did not receive.
+Fee exclusion targets the epoch the infraction window falls in. When that is the current,
+not-yet-distributed epoch, the validator is excluded from that distribution: the excluded
+share is simply never drawn from the consumer's fee pool -- the other validators' shares do
+not grow (no incentive to DOS a competitor), and the consumer does not pay for validation
+work it did not receive. When the window falls in an epoch that has already paid out there is
+nothing left to withhold -- docking a later epoch would take fees the validator was genuinely
+owed -- so only the pending slash applies, priced against that past epoch's recorded share
+(section 4).
 
 Because the withheld money never leaves the pool, the pool itself acts as the escrow for a
 possible successful challenge (see [consumer-fee-pool.md](consumer-fee-pool.md) for the
@@ -193,9 +208,12 @@ while windows keep pending. The record ends one of three ways:
   accusation withheld. Payment is best-effort against the pool balance for the edge where
   the consumer was stopped through an unrelated path in between.
 
-Records are only written when the distribution actually had the funds to cover the epoch;
-an underfunded epoch marks debt and writes no records, so a record is always backed by money
-the pool genuinely retained. The `MsgWithdrawConsumerFeePool` depositor lock covers the
+Records are only written when the pool's *unreserved* balance -- balance minus the amounts
+already escrowed against unexpired records -- covered a full epoch fee; an underfunded epoch
+marks debt and writes no records, so a record is always backed by money the pool genuinely
+retained beyond what it already owes. Note the pool must *hold* a full epoch fee for the
+distribution to run at all, even though only the eligible validators' shares are drawn from
+it. The `MsgWithdrawConsumerFeePool` depositor lock covers the
 `PAUSED` phase as well as `LAUNCHED`, so escrowed funds cannot be raced out by depositors
 between a challenge and its payout.
 
@@ -240,7 +258,7 @@ canonical commit for `H`, `/commit?height=H+1` the header, `/validators` the key
 does the assembly:
 
 ```
-providerd tx provider challenge-consumer-downtime <consumer-id> <validator-cons-addr> <height> \
+providerd tx vaasprovider challenge-consumer-downtime <consumer-id> <validator-cons-addr> <height> \
     --consumer-rpc http://consumer-node:26657
 ```
 
@@ -324,10 +342,17 @@ challenge window.
   `DowntimeEvidenceMaxAge + DowntimeChallengeWindow` in the past (10 days at defaults).
   Validators should configure consumer-node retention (`min-retain-blocks`, pruning) to keep
   at least that span.
-- **Watch the acceptance events.** An accepted evidence packet emits the claimed window,
-  bitmap, and priced slash; the pending-slash and withheld-fee-record queries
-  (`pending-downtime-slashes`, `withheld-fee-records`) show everything currently at stake.
-  A validator that was online should challenge well inside the window.
+- **Watch the acceptance events.** An accepted evidence packet emits
+  `vaas_pending_downtime_slash` with the claimed window, bitmap, priced `slash_tokens`, and
+  `matures_at`; execution emits `vaas_execute_consumer_chain_slash`, a discarded entry
+  `vaas_downtime_slash_dropped` (with a `reason`), and a won challenge
+  `vaas_downtime_challenge_succeeded` plus one `vaas_withheld_fee_paid` per repaid record.
+  On the consumer side, `vaas_consumer_evidence_request` marks each packet sent and
+  `vaas_consumer_evidence_rejected` a packet the provider refused. See
+  [events-reference.md](events-reference.md). The pending-slash and withheld-fee-record
+  queries (`pending-downtime-slashes`, `withheld-fee-records`) show everything currently at
+  stake; see [queries-reference.md](queries-reference.md). A validator that was online
+  should challenge well inside the window.
 - **Keep clients fresh during pauses.** Relayers have no packet traffic on a paused
   consumer; updating the clients anyway avoids the `MsgRecoverClient` step at resume time.
 
