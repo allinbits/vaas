@@ -347,8 +347,6 @@ func ParseConsumerKeyFromJson(jsonStr string) (pkType, key string, err error) {
 
 // ValidateHeaderForConsumerDoubleVoting validates Tendermint light client header
 // for consumer double voting evidence.
-//
-// TODO create unit test
 func ValidateHeaderForConsumerDoubleVoting(header *ibctmtypes.Header) error {
 	if header == nil {
 		return errors.New("infraction block header cannot be nil")

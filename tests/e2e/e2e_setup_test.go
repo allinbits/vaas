@@ -100,8 +100,15 @@ func (s *IntegrationTestSuite) SetupSuite() {
 				// window bitmap tracking, then a challenge-window-gated slash) completes
 				// within the test run instead of the multi-day production defaults.
 				// downtime_evidence_max_age must not exceed downtime_challenge_window
-				// (see InfractionParameters.Validate); both are set to 30s, comfortably
+				// (see InfractionParameters.Validate). The max age is 30s, comfortably
 				// above the relay latency between window close and evidence receipt.
+				// The challenge window is longer, so that a pending slash stays
+				// challengeable long enough for
+				// testDowntimeChallengeWithoutSealedSignature to assemble a challenge
+				// from consumer chain data and land the tx while the slash is still
+				// pending -- keep it in sync with downtimeChallengeWindow in
+				// e2e_downtime_slash_test.go, which the negative control's watch
+				// duration is derived from.
 				// downtime_grace_period is left at its default: the fixed 2024 spawn_time
 				// in testdata/create_consumer.json is already years in the past by any
 				// real test run, so the grace period has already elapsed regardless.
@@ -129,7 +136,7 @@ func (s *IntegrationTestSuite) SetupSuite() {
 					"downtime_grace_period":     "604800s",
 					"signed_blocks_window":      "30",
 					"min_signed_per_window":     "0.500000000000000000",
-					"downtime_challenge_window": "30s",
+					"downtime_challenge_window": "60s",
 					"downtime_evidence_max_age": "30s",
 				}
 			}
