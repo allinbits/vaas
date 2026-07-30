@@ -622,6 +622,7 @@ func (k Keeper) DeleteConsumerChain(ctx sdk.Context, consumerId uint64) (err err
 	k.DeletePendingVSCPackets(ctx, consumerId)
 
 	k.DeleteConsumerValSet(ctx, consumerId)
+	k.DeleteConsumerPrevValSetHash(ctx, consumerId)
 
 	k.DeleteConsumerRemovalTime(ctx, consumerId)
 	k.DeleteConsumerLastAckTime(ctx, consumerId)

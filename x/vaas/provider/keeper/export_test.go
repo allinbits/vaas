@@ -44,3 +44,11 @@ func (k Keeper) WindowEndTimestampForTest(ctx sdk.Context, clientId string, wind
 func (k Keeper) VerifyDowntimeChallengeHeaderForTest(ctx sdk.Context, clientId string, header *ibctmtypes.Header) error {
 	return k.verifyDowntimeChallengeHeader(ctx, clientId, header)
 }
+
+// DiscoverActiveConsumerClientForTest exposes discoverActiveConsumerClient so
+// tests can drive client adoption -- the content check, the fail-closed
+// no-candidate path, and the post-adoption latch -- without assembling the
+// full SendVSCPackets EndBlock flow around it.
+func (k Keeper) DiscoverActiveConsumerClientForTest(ctx sdk.Context, consumerId uint64, currentClientID string) string {
+	return k.discoverActiveConsumerClient(ctx, consumerId, currentClientID)
+}

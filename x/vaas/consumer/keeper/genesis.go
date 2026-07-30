@@ -49,6 +49,12 @@ func (k Keeper) InitGenesis(ctx sdk.Context, state *types.GenesisState) []abci.V
 			panic(err)
 		}
 
+		// This genesis client is built from provider-authored state, but it can
+		// never carry packets (created outside a MsgCreateClient, it has no
+		// recorded creator, so its IBC v2 counterparty can never be
+		// registered). The pin moves off it exactly once, to the first client
+		// that actually delivers a VSC packet, and is permanent from then on;
+		// see enforcePinnedProviderClient in relay.go for the trust model.
 		k.SetProviderClientID(ctx, cid)
 		k.SetHeightValsetUpdateID(ctx, uint64(ctx.BlockHeight()), uint64(0))
 

@@ -101,6 +101,14 @@ type Keeper struct {
 	ConsumerValidators        collections.Map[collections.Pair[uint64, []byte], types.ConsensusValidator]
 	LastProviderConsensusVals collections.Map[[]byte, types.ConsensusValidator]
 
+	// ConsumerPrevValSetHash retains, per consumer, the CometBFT hash of the
+	// validator set that was stored for the consumer immediately before the
+	// current one (see SetConsumerValSet). Client discovery content-verifies a
+	// candidate IBC client against the hash of the current set or this one:
+	// while the latest VSC packet is in flight, the consumer is still running
+	// the previous set, so its headers still carry this hash.
+	ConsumerPrevValSetHash collections.Map[uint64, []byte]
+
 	// Fee pool collections.
 	//
 	// ConsumerFeePoolShares is keyed (consumer_id, denom, depositor): denom
@@ -288,6 +296,7 @@ func NewKeeper(
 		// Validator set collections
 		ConsumerValidators:        collections.NewMap(sb, types.ConsumerValidatorPrefix, "consumer_validators", collections.PairKeyCodec(collections.Uint64Key, collections.BytesKey), codec.CollValue[types.ConsensusValidator](cdc)),
 		LastProviderConsensusVals: collections.NewMap(sb, types.LastProviderConsensusVals, "last_provider_consensus_vals", collections.BytesKey, codec.CollValue[types.ConsensusValidator](cdc)),
+		ConsumerPrevValSetHash:    collections.NewMap(sb, types.ConsumerIdToPrevValSetHashPrefix, "consumer_prev_val_set_hash", collections.Uint64Key, collections.BytesValue),
 	}
 
 	// Fee pool collections
@@ -1333,8 +1342,31 @@ func (k Keeper) GetConsumerValSet(
 	return validators, nil
 }
 
-// SetConsumerValSet resets the current consumer validators with the `nextValidators`
+// SetConsumerValSet resets the current consumer validators with the `nextValidators`.
+//
+// Before the stored set is replaced, its CometBFT hash is retained in
+// ConsumerPrevValSetHash: while the VSC packet carrying nextValidators is in
+// flight, the consumer chain is still running the outgoing set, so client
+// discovery must be able to content-verify a candidate client against either
+// set's hash (see discoverActiveConsumerClient). When no set is stored yet --
+// the consumer's first set at launch, or right after a state-export restart
+// (the per-validator entries are not part of genesis) -- the retained hash is
+// left untouched rather than degraded to the hash of an empty set.
 func (k Keeper) SetConsumerValSet(ctx context.Context, consumerId uint64, nextValidators []types.ConsensusValidator) error {
+	prevValidators, err := k.GetConsumerValSet(ctx, consumerId)
+	if err != nil {
+		return err
+	}
+	if len(prevValidators) > 0 {
+		prevHash, err := ComputeConsumerValSetHash(prevValidators)
+		if err != nil {
+			return fmt.Errorf("hashing outgoing consumer validator set, consumerId(%d): %w", consumerId, err)
+		}
+		if err := k.SetConsumerPrevValSetHash(ctx, consumerId, prevHash); err != nil {
+			return err
+		}
+	}
+
 	// First delete existing validators
 	k.DeleteConsumerValSet(ctx, consumerId)
 
@@ -1345,6 +1377,30 @@ func (k Keeper) SetConsumerValSet(ctx context.Context, consumerId uint64, nextVa
 		}
 	}
 	return nil
+}
+
+// SetConsumerPrevValSetHash stores the CometBFT hash of the consumer's
+// previous validator set (see ConsumerPrevValSetHash).
+func (k Keeper) SetConsumerPrevValSetHash(ctx context.Context, consumerId uint64, hash []byte) error {
+	return k.ConsumerPrevValSetHash.Set(ctx, consumerId, hash)
+}
+
+// GetConsumerPrevValSetHash returns the CometBFT hash of the consumer's
+// previous validator set, if one has been retained.
+func (k Keeper) GetConsumerPrevValSetHash(ctx context.Context, consumerId uint64) ([]byte, bool) {
+	hash, err := k.ConsumerPrevValSetHash.Get(ctx, consumerId)
+	if err != nil {
+		return nil, false
+	}
+	return hash, true
+}
+
+// DeleteConsumerPrevValSetHash removes the retained previous-validator-set
+// hash for the consumer.
+func (k Keeper) DeleteConsumerPrevValSetHash(ctx context.Context, consumerId uint64) {
+	if err := k.ConsumerPrevValSetHash.Remove(ctx, consumerId); err != nil {
+		panic(fmt.Errorf("failed to delete previous valset hash for consumer id (%d): %w", consumerId, err))
+	}
 }
 
 // DeleteConsumerValSet deletes all the stored consumer validators for chain with `consumerId`
