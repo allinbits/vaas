@@ -19,10 +19,11 @@ import (
 // TestIBCModuleOnRecvPacketStoresDestinationClientAsProviderClient guards
 // against regressing to storing the packet's SourceClient (the provider's
 // own client, meaningless to the consumer for outbound sends) as the
-// consumer's ProviderClientID. It must store DestinationClient: the
-// consumer's own client that received the packet, which ibc-go's RecvPacket
-// handler has already verified carries a registered counterparty, and which
-// SendEvidencePackets later needs to address packets back to the provider.
+// consumer's ProviderClientID when the bootstrap adoption re-pins from the
+// genesis client. It must store DestinationClient: the consumer's own client
+// that received the packet, which ibc-go's RecvPacket handler has already
+// verified carries a registered counterparty, and which SendEvidencePackets
+// later needs to address packets back to the provider.
 func TestIBCModuleOnRecvPacketStoresDestinationClientAsProviderClient(t *testing.T) {
 	consumerKeeper, ctx, ctrl, mocks := testkeeper.GetConsumerKeeperAndCtx(t, testkeeper.NewInMemKeeperParams(t))
 	defer ctrl.Finish()
@@ -31,6 +32,10 @@ func TestIBCModuleOnRecvPacketStoresDestinationClientAsProviderClient(t *testing
 	// it is the one pin the first delivered packet is allowed to replace. That
 	// is what makes which id gets stored observable.
 	consumerKeeper.SetProviderClientID(ctx, "07-tendermint-genesis")
+
+	// The unroutable client pinned at genesis; neither the packet's source
+	// nor its destination, so storing the wrong one is observable.
+	consumerKeeper.SetProviderClientID(ctx, "07-tendermint-9")
 
 	module := consumer.NewIBCModule(&consumerKeeper)
 
@@ -57,12 +62,12 @@ func TestIBCModuleOnRecvPacketStoresDestinationClientAsProviderClient(t *testing
 		"ProviderClientID must be the consumer's own (destination) client, not the provider's own (source) client")
 }
 
-// TestIBCModuleOnRecvPacketHealsStaleProviderClient guards against the
-// consumer latching onto a genesis-time placeholder client (self-created
-// before any relayer-established, counterparty-linked client exists) and
-// never correcting it: every accepted VSC packet must resync ProviderClientID
-// to whichever client actually delivered it.
-func TestIBCModuleOnRecvPacketHealsStaleProviderClient(t *testing.T) {
+// TestIBCModuleOnRecvPacketBootstrapReplacesGenesisClient covers the one-time
+// bootstrap adoption through the full IBC module callback: the consumer is
+// pinned to the genesis-time client (self-created, no registered counterparty,
+// unreachable by packet routing), and the first VSC packet delivered over the
+// relayer's counterparty-linked client re-pins ProviderClientID to it.
+func TestIBCModuleOnRecvPacketBootstrapReplacesGenesisClient(t *testing.T) {
 	consumerKeeper, ctx, ctrl, mocks := testkeeper.GetConsumerKeeperAndCtx(t, testkeeper.NewInMemKeeperParams(t))
 	defer ctrl.Finish()
 	testkeeper.StubClientState(mocks, "provider-0")
@@ -71,8 +76,8 @@ func TestIBCModuleOnRecvPacketHealsStaleProviderClient(t *testing.T) {
 	// is what makes which id gets stored observable.
 	consumerKeeper.SetProviderClientID(ctx, "07-tendermint-genesis")
 
-	staleGenesisClientID := "07-tendermint-0"
-	consumerKeeper.SetProviderClientID(ctx, staleGenesisClientID)
+	genesisClientID := "07-tendermint-0"
+	consumerKeeper.SetProviderClientID(ctx, genesisClientID)
 
 	module := consumer.NewIBCModule(&consumerKeeper)
 
@@ -94,7 +99,7 @@ func TestIBCModuleOnRecvPacketHealsStaleProviderClient(t *testing.T) {
 	clientID, found := consumerKeeper.GetProviderClientID(ctx)
 	require.True(t, found)
 	require.Equal(t, liveClientID, clientID,
-		"ProviderClientID must heal to the client actually delivering VSC packets, not stay stuck on the stale genesis client")
+		"ProviderClientID must re-pin to the client actually delivering VSC packets, not stay stuck on the unroutable genesis client")
 }
 
 // TestIBCModuleOnRecvPacketRejectsWrongSourcePort guards against accepting a

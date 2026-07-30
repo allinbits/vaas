@@ -195,6 +195,15 @@ message ConsumerState {
   // re-derive the keeper's pause-expiration queue.
   google.protobuf.Timestamp pause_expiration_time = 16
       [ (gogoproto.stdtime) = true ];
+
+  // PrevConsumerValsetHash is the CometBFT hash of the validator set the
+  // provider had computed for this consumer immediately before the currently
+  // stored one. Client discovery accepts a candidate IBC client only if the
+  // client's latest consensus state carries the hash of the current set or
+  // this one (the set still running on the consumer while the latest VSC
+  // packet is in flight). Absent until the consumer's validator set has
+  // rotated at least once.
+  bytes prev_consumer_valset_hash = 17;
 }
 
 // ValsetUpdateIdToHeight defines the genesis information for the mapping

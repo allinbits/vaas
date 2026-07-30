@@ -8,6 +8,8 @@ import (
 	vaastypes "github.com/allinbits/vaas/x/vaas/types"
 
 	abci "github.com/cometbft/cometbft/abci/types"
+	cryptoenc "github.com/cometbft/cometbft/crypto/encoding"
+	tmtypes "github.com/cometbft/cometbft/types"
 
 	sdk "github.com/cosmos/cosmos-sdk/types"
 	stakingtypes "github.com/cosmos/cosmos-sdk/x/staking/types"
@@ -168,6 +170,43 @@ func (k Keeper) GetLastBondedValidators(ctx sdk.Context) ([]stakingtypes.Validat
 		return nil, err
 	}
 	return vaastypes.GetLastBondedValidatorsUtil(ctx, k.stakingKeeper, maxVals)
+}
+
+// ComputeConsumerValSetHash computes the CometBFT hash of a consumer
+// validator set exactly as the consumer chain's consensus engine does: the
+// stored public keys (the assigned consumer keys, i.e. what the consumer
+// actually runs) and powers are assembled into a canonically ordered
+// tmtypes.ValidatorSet and hashed. The result is comparable byte-for-byte
+// with the NextValidatorsHash the consumer's block headers -- and therefore
+// the consensus states of any honest IBC client of the consumer -- carry
+// while that set is the consumer's next validator set.
+//
+// A zero-power entry is skipped rather than hashed: everywhere in the
+// protocol (ABCI updates, DiffValidators, the consumer's
+// ApplyCCValidatorChanges) zero power means the validator is not in the set,
+// so the consumer's consensus engine never includes it in the hash either.
+func ComputeConsumerValSetHash(validators []types.ConsensusValidator) ([]byte, error) {
+	tmValidators := make([]*tmtypes.Validator, 0, len(validators))
+	for _, val := range validators {
+		if val.PublicKey == nil {
+			return nil, fmt.Errorf("consumer validator %x has no public key", val.ProviderConsAddr)
+		}
+		// tmtypes.NewValidatorSet panics on negative powers; a stored consumer
+		// validator always has non-negative power, so surface a violation as
+		// an error instead.
+		if val.Power < 0 {
+			return nil, fmt.Errorf("consumer validator %x has negative power %d", val.ProviderConsAddr, val.Power)
+		}
+		if val.Power == 0 {
+			continue
+		}
+		pubKey, err := cryptoenc.PubKeyFromProto(*val.PublicKey)
+		if err != nil {
+			return nil, fmt.Errorf("converting consumer validator %x public key: %w", val.ProviderConsAddr, err)
+		}
+		tmValidators = append(tmValidators, tmtypes.NewValidator(pubKey, val.Power))
+	}
+	return tmtypes.NewValidatorSet(tmValidators).Hash(), nil
 }
 
 // FullValSetUpdates renders a complete validator set as absolute-power updates.

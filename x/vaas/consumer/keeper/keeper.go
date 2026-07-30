@@ -231,7 +231,10 @@ func (k Keeper) SetPort(ctx context.Context, portID string) {
 }
 
 // SetProviderClientID sets the clientID for the client to the provider.
-// Set in InitGenesis
+// Written at InitGenesis (the genesis client on NewChain, the exported pin on
+// a restart) and by the one-time bootstrap adoption in
+// enforcePinnedProviderClient (relay.go), which also documents why the pin
+// never moves after that.
 func (k Keeper) SetProviderClientID(ctx context.Context, clientID string) {
 	if err := k.ProviderClientID.Set(ctx, clientID); err != nil {
 		panic(fmt.Errorf("failed to set provider client ID: %w", err))
