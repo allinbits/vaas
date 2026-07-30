@@ -8,6 +8,7 @@ import (
 
 	"cosmossdk.io/math"
 
+	cryptotypes "github.com/cosmos/cosmos-sdk/crypto/types"
 	sdk "github.com/cosmos/cosmos-sdk/types"
 	sdkgov "github.com/cosmos/cosmos-sdk/x/gov/types"
 	stakingtypes "github.com/cosmos/cosmos-sdk/x/staking/types"
@@ -99,6 +100,43 @@ func (h Hooks) BeforeDelegationRemoved(_ context.Context, _ sdk.AccAddress, _ sd
 }
 
 func (h Hooks) BeforeTokenizeShareRecordRemoved(_ context.Context, _ uint64) error {
+	return nil
+}
+
+// AfterConsensusPubKeyUpdate fires when a provider validator rotates its
+// consensus key. VAAS state that is keyed by the provider consensus address is
+// migrated to the new address (MigrateStateOnConsPubKeyRotation), and every
+// consumer whose view of the validator the rotation changes is handed the new
+// key right away instead of at the next epoch boundary
+// (QueueConsPubKeyRotationSnapshots).
+//
+// The hook runs in EndBlock -- x/staking applies a recorded rotation from
+// ApplyAndReturnValidatorSetUpdates, not from the MsgRotateConsPubKey handler --
+// so by the time it is called the rotation is already committed and there is
+// nothing left to reject. Any error returned here would propagate out of
+// EndBlock and halt the provider chain, so it always returns nil, and both
+// steps log what they cannot do rather than reporting it upwards.
+//
+// Rotating onto a consensus key already assigned as some validator's consumer
+// key is therefore refused at tx admission instead, by the ante decorator in
+// x/vaas/provider/ante. If such a rotation lands anyway -- on a chain that did
+// not wire that decorator -- it is logged here, and the consumer validator set
+// computation drops the colliding entry so neither chain is handed a set with
+// two validators at one consensus address (see CreateConsumerValidators).
+func (h Hooks) AfterConsensusPubKeyUpdate(goCtx context.Context, oldPk, newPk cryptotypes.PubKey, _ sdk.Coin) error {
+	ctx := sdk.UnwrapSDKContext(goCtx)
+	oldAddr := providertypes.NewProviderConsAddress(sdk.ConsAddress(oldPk.Address()))
+	newAddr := providertypes.NewProviderConsAddress(sdk.ConsAddress(newPk.Address()))
+
+	if h.k.IsConsumerConsAddrInUse(ctx, newAddr.ToSdkConsAddr()) {
+		h.k.Logger(ctx).Error(
+			"validator rotated its provider consensus key onto a key already assigned as a consumer key",
+			"providerConsAddr", newAddr.String(),
+		)
+	}
+
+	h.k.MigrateStateOnConsPubKeyRotation(ctx, oldAddr, newAddr)
+	h.k.QueueConsPubKeyRotationSnapshots(ctx, newAddr)
 	return nil
 }
 

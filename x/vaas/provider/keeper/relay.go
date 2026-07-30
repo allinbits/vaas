@@ -350,8 +350,9 @@ func (k Keeper) QueueVSCPackets(ctx sdk.Context) error {
 // forced true here rather than derived from the acked/sent comparison) and
 // advancing the global valset-update-id counter the same way QueueVSCPackets
 // does, so the consumer's monotonic dedup logic treats it as a fresh update.
-// Used by ResumeConsumerChain to force a prompt resync instead of waiting for
-// the next epoch boundary.
+// Used where waiting for the next epoch boundary would leave the consumer with
+// a set it must not act on for that long: ResumeConsumerChain, after a pause,
+// and QueueConsPubKeyRotationSnapshots, after a consensus-key rotation.
 func (k Keeper) QueueImmediateSnapshotVSCPacket(ctx sdk.Context, consumerId uint64) error {
 	valUpdateID := k.GetValidatorSetUpdateId(ctx)
 
@@ -380,6 +381,65 @@ func (k Keeper) QueueImmediateSnapshotVSCPacket(ctx sdk.Context, consumerId uint
 	k.IncrementValidatorSetUpdateId(ctx)
 
 	return nil
+}
+
+// QueueConsPubKeyRotationSnapshots hands the consumers a validator's rotated
+// provider consensus key right away, instead of at the next epoch boundary.
+//
+// A validator with no assigned consumer key on a consumer validates it with its
+// provider key, so rotating that key changes the identity the consumer expects
+// to sign its blocks. Left to the epoch cadence, the handover lands up to
+// BlocksPerEpoch blocks late: swap the node key at rotation time and the
+// validator signs with a key the consumer does not know until then, never swap
+// it and the consumer counts every block it produces in that span against the
+// old key. Either way it accumulates misses on every such consumer at once, and
+// the downtime grace period cannot absorb them since it is anchored to the
+// consumer's spawn time. So a full snapshot is queued and sent now.
+//
+// Only the consumers whose view actually changes are snapshotted. Where the
+// validator has an assigned consumer key the consumer keeps validating under
+// that key, unchanged by the rotation, and a snapshot would carry a set
+// identical to the one the consumer already has -- a packet, a valset update
+// id, and a relayer round trip per consumer per rotation, for no change. Those
+// consumers instead have their stored validator set entry re-keyed in place by
+// MigrateStateOnConsPubKeyRotation. Consumers that are not launched are left
+// out too: they have no client to send over, and resuming a paused one forces
+// its own snapshot (see ResumeConsumerChain).
+//
+// The snapshot goes out over the client already discovered for the consumer,
+// without re-running client discovery: that scan belongs to the epoch path,
+// which runs it for every consumer anyway, and a rotation must not pay for it.
+// A consumer with no discovered client yet simply keeps the packet queued.
+//
+// Called from Hooks.AfterConsensusPubKeyUpdate in EndBlock, so nothing here may
+// fail the block: a snapshot that cannot be computed is logged and skipped, and
+// SendVSCPacketsToChain swallows a send failure, leaving the packet queued for
+// the next epoch.
+func (k Keeper) QueueConsPubKeyRotationSnapshots(ctx sdk.Context, newProviderAddr providertypes.ProviderConsAddress) {
+	for _, consumerId := range k.GetAllLaunchedConsumerIds(ctx) {
+		if _, assigned := k.GetValidatorConsumerPubKey(ctx, consumerId, newProviderAddr); assigned {
+			continue
+		}
+
+		if err := k.QueueImmediateSnapshotVSCPacket(ctx, consumerId); err != nil {
+			k.Logger(ctx).Error("cannot queue consensus-key rotation snapshot; consumer learns the rotated key at the next epoch",
+				"consumerId", consumerId,
+				"providerConsAddr", newProviderAddr.String(),
+				"error", err,
+			)
+			continue
+		}
+
+		clientId, found := k.GetConsumerClientId(ctx, consumerId)
+		if !found {
+			k.Logger(ctx).Error("no client discovered for consumer; consensus-key rotation snapshot stays queued for the next epoch",
+				"consumerId", consumerId,
+				"providerConsAddr", newProviderAddr.String(),
+			)
+			continue
+		}
+		_ = k.SendVSCPacketsToChain(ctx, consumerId, clientId)
+	}
 }
 
 // EndBlockTrackValsetUpdates records the height-to-VSC-ID mapping for the

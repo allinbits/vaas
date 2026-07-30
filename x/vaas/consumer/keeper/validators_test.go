@@ -131,6 +131,30 @@ func TestIsValidatorJailed(t *testing.T) {
 	// Standalone changeover functionality removed
 }
 
+// TestValidatorByConsAddr pins the contract x/slashing's per-block
+// HandleValidatorSignature relies on: the returned validator is non-nil, not
+// jailed, not UNBONDED (the evidence module's requirement), and answers
+// GetConsAddr with the queried address itself -- the consumer runs no
+// consensus-key rotation, so the slashing module's rotation remap must be the
+// identity. A zero staking validator instead panics inside GetConsAddr (nil
+// consensus pubkey Any), which crashes every consumer at the first block
+// whose BeginBlock processes signatures.
+func TestValidatorByConsAddr(t *testing.T) {
+	consumerKeeper, ctx, ctrl, _ := testkeeper.GetConsumerKeeperAndCtx(t, testkeeper.NewInMemKeeperParams(t))
+	defer ctrl.Finish()
+
+	consAddr := sdk.ConsAddress([]byte{0x01, 0x02, 0x03})
+	val, err := consumerKeeper.ValidatorByConsAddr(ctx, consAddr)
+	require.NoError(t, err)
+	require.NotNil(t, val)
+	require.False(t, val.IsJailed())
+	require.NotEqual(t, stakingtypes.Unbonded, val.GetStatus())
+
+	got, err := val.GetConsAddr()
+	require.NoError(t, err, "GetConsAddr must not fail: x/slashing calls it every block per signer")
+	require.Equal(t, consAddr.Bytes(), got, "the rotation remap must be the identity on a consumer")
+}
+
 // TestSlash asserts that SlashWithInfractionReason never queues an evidence
 // packet, for any infraction type. VAAS-owned tumbling-window tracking
 // (downtime.go) is the sole source of downtime evidence; x/slashing calls

@@ -1,6 +1,7 @@
 package keeper
 
 import (
+	"bytes"
 	"fmt"
 
 	"github.com/allinbits/vaas/x/vaas/provider/types"
@@ -94,18 +95,65 @@ func (k Keeper) CreateConsumerValidator(ctx sdk.Context, consumerId uint64, vali
 }
 
 // CreateConsumerValidators creates a consumer validator for `consumerId` from each
-// of the provided `bondedValidators`.
+// of the provided `bondedValidators`, dropping any entry that would put two
+// validators at the same consensus address on the consumer.
+//
+// Two bonded validators collide when one's consumer consensus key equals the
+// other's: a validator rotated its provider consensus key onto a key another
+// validator had assigned as its consumer key, or a hand-assembled genesis wired
+// the two that way. Key assignment and the provider ante handler refuse to
+// create such a state, but a set that does contain a duplicate is fatal on both
+// sides -- the provider panics hashing it (a CometBFT validator set rejects
+// duplicate addresses) and the consumer halts when its consensus engine applies
+// the duplicate -- so the duplicate is removed here, at the single point where
+// the set is assembled, before it is stored, hashed, or queued in a VSC packet.
+// Each drop is logged at error level: the set is safe to use, but the underlying
+// state is not something operators should discover from a stalled chain.
+//
+// Of a colliding pair the entry whose provider consensus address sorts first is
+// kept. That address is unique per validator (x/staking indexes validators by
+// it), so the rule is a total order and never ties, and it reads nothing but the
+// two addresses, so every node keeps the same validator. It deliberately does
+// not depend on the order of `bondedValidators`, which is power-ranked: a mere
+// power change must not silently move the consumer slot from one validator to
+// the other. Nor does it prefer the holder of an assigned key over a validator
+// running its default key, which would leave a genesis-born collision between
+// two assigned keys unresolved.
 func (k Keeper) CreateConsumerValidators(
 	ctx sdk.Context,
 	consumerId uint64,
 	bondedValidators []stakingtypes.Validator,
 ) ([]types.ConsensusValidator, error) {
 	var nextValidators []types.ConsensusValidator
+	indexByConsumerAddr := make(map[string]int, len(bondedValidators))
 	for _, val := range bondedValidators {
 		nextValidator, err := k.CreateConsumerValidator(ctx, consumerId, val)
 		if err != nil {
 			return nextValidators, err
 		}
+
+		consumerAddr, err := vaastypes.TMCryptoPublicKeyToConsAddr(*nextValidator.PublicKey)
+		if err != nil {
+			return nextValidators, fmt.Errorf("could not retrieve consumer consensus address of validator (%+v): %w",
+				val, err)
+		}
+
+		if i, seen := indexByConsumerAddr[string(consumerAddr)]; seen {
+			kept, dropped := nextValidators[i], nextValidator
+			if bytes.Compare(nextValidator.ProviderConsAddr, kept.ProviderConsAddr) < 0 {
+				kept, dropped = nextValidator, kept
+				nextValidators[i] = nextValidator
+			}
+			k.Logger(ctx).Error("two validators share a consumer consensus address; dropping one of them",
+				"consumerId", consumerId,
+				"consumerConsAddr", consumerAddr.String(),
+				"keptProviderConsAddr", sdk.ConsAddress(kept.ProviderConsAddr).String(),
+				"droppedProviderConsAddr", sdk.ConsAddress(dropped.ProviderConsAddr).String(),
+			)
+			continue
+		}
+
+		indexByConsumerAddr[string(consumerAddr)] = len(nextValidators)
 		nextValidators = append(nextValidators, nextValidator)
 	}
 
@@ -135,7 +183,9 @@ func FullValSetUpdates(validators []types.ConsensusValidator) []abci.ValidatorUp
 
 // ComputeConsumerNextValSet computes the consumer next validator set and returns
 // the validator updates to be sent to the consumer chain.
-// Every active provider validator validates every consumer.
+// Every active provider validator validates every consumer, except one dropped
+// for sharing a consumer consensus address with another (see
+// CreateConsumerValidators).
 // When isSnapshot is true, it returns the full set as absolute-power updates;
 // otherwise it returns the diff against currentConsumerValSet.
 func (k Keeper) ComputeConsumerNextValSet(

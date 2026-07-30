@@ -1,6 +1,8 @@
 package app
 
 import (
+	providerante "github.com/allinbits/vaas/x/vaas/provider/ante"
+	ibcproviderkeeper "github.com/allinbits/vaas/x/vaas/provider/keeper"
 
 	errorsmod "cosmossdk.io/errors"
 
@@ -9,10 +11,12 @@ import (
 	"github.com/cosmos/cosmos-sdk/x/auth/ante"
 )
 
-// HandlerOptions extend the SDK's AnteHandler options by requiring the IBC
-// channel keeper.
+// HandlerOptions extend the SDK's AnteHandler options by requiring the VAAS
+// provider keeper.
 type HandlerOptions struct {
 	ante.HandlerOptions
+
+	ProviderKeeper ibcproviderkeeper.Keeper
 }
 
 func NewAnteHandler(options HandlerOptions) (sdk.AnteHandler, error) {
@@ -35,6 +39,7 @@ func NewAnteHandler(options HandlerOptions) (sdk.AnteHandler, error) {
 		ante.NewSetUpContextDecorator(),
 		ante.NewExtensionOptionsDecorator(nil),
 		ante.NewValidateBasicDecorator(),
+		providerante.NewConsPubKeyRotationDecorator(options.ProviderKeeper),
 		ante.NewTxTimeoutHeightDecorator(),
 		ante.NewValidateMemoDecorator(options.AccountKeeper),
 		ante.NewConsumeGasForTxSizeDecorator(options.AccountKeeper),
