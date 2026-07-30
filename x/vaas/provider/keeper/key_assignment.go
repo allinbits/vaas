@@ -239,14 +239,45 @@ func (k Keeper) ValidatorConsensusKeyInUse(ctx sdk.Context, valAddr sdk.ValAddre
 		panic("could not get validator cons addr ")
 	}
 
-	allConsumerIds := k.GetAllActiveConsumerIds(ctx)
-	for _, c := range allConsumerIds {
-		if _, exist := k.GetValidatorByConsumerAddr(ctx,
-			c,
-			types.NewConsumerConsAddress(consensusAddr),
-		); exist {
+	return k.IsConsumerConsAddrInUse(ctx, consensusAddr)
+}
+
+// IsConsumerConsAddrInUse reports whether consAddr is already assigned as some
+// validator's consumer consensus key on a consumer chain that still holds key
+// assignments. It backs both the validator-creation check above and the
+// consensus-key-rotation check the provider ante handler runs at tx admission
+// (see x/vaas/provider/ante), keeping a key already in use as a consumer key
+// from becoming a second validator's provider consensus address -- which would
+// put two validators at the same consensus address on that consumer.
+//
+// The scan deliberately spans every consumer that is not deleted rather than
+// only the active ones: a paused consumer keeps all of its key assignments (only
+// DeleteConsumerChain clears them) and can be resumed to LAUNCHED, so a
+// collision created while it is paused would surface the moment it resumes.
+func (k Keeper) IsConsumerConsAddrInUse(ctx sdk.Context, consAddr sdk.ConsAddress) bool {
+	for _, consumerId := range k.nonDeletedConsumerIds(ctx) {
+		if _, exist := k.GetValidatorByConsumerAddr(ctx, consumerId, types.NewConsumerConsAddress(consAddr)); exist {
 			return true
 		}
 	}
 	return false
+}
+
+// nonDeletedConsumerIds returns every consumer whose per-validator state may
+// still be live, i.e. every consumer that has not been deleted. That state
+// outlives the launched phase: key assignments, the stored validator set, and
+// the downtime and fee bookkeeping all survive a pause (which can be resumed)
+// and a stop (until removal completes), and only DeleteConsumerChain clears
+// them. Used by the collision guard above and by
+// MigrateStateOnConsPubKeyRotation.
+func (k Keeper) nonDeletedConsumerIds(ctx sdk.Context) []uint64 {
+	consumerIds := []uint64{}
+	for _, consumerId := range k.GetAllConsumerIds(ctx) {
+		switch k.GetConsumerPhase(ctx, consumerId) {
+		case types.CONSUMER_PHASE_UNSPECIFIED, types.CONSUMER_PHASE_DELETED:
+			continue
+		}
+		consumerIds = append(consumerIds, consumerId)
+	}
+	return consumerIds
 }

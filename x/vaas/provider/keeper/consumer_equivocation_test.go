@@ -324,7 +324,19 @@ func TestVerifyDoubleVotingEvidence(t *testing.T) {
 // TestJailAndTombstoneValidator tests that the jailing of a validator is only executed
 // under the conditions that the validator is neither unbonded, nor jailed, nor tombstoned.
 func TestJailAndTombstoneValidator(t *testing.T) {
-	providerConsAddr := cryptotestutil.NewCryptoIdentityFromIntSeed(7842334).ProviderConsAddress()
+	identity := cryptotestutil.NewCryptoIdentityFromIntSeed(7842334)
+	providerConsAddr := identity.ProviderConsAddress()
+
+	// The jailing path reads the validator's consensus pubkey to learn the
+	// address x/slashing keys it under, so the mocked lookups answer with a
+	// validator that holds one, as x/staking always does. This one has never
+	// rotated, so that address is the one the caller passed.
+	bonded := stakingValidatorFor(t, identity.SDKValOpAddress(), identity.ConsensusSDKPubKey())
+	unbonded := bonded
+	unbonded.Status = stakingtypes.Unbonded
+	jailed := bonded
+	jailed.Jailed = true
+
 	testCases := []struct {
 		name          string
 		provAddr      types.ProviderConsAddress
@@ -358,7 +370,7 @@ func TestJailAndTombstoneValidator(t *testing.T) {
 					// We only expect a single call to GetValidatorByConsAddr.
 					mocks.MockStakingKeeper.EXPECT().GetValidatorByConsAddr(
 						ctx, providerConsAddr.ToSdkConsAddr()).Return(
-						stakingtypes.Validator{Status: stakingtypes.Unbonded}, nil,
+						unbonded, nil,
 					).Times(1),
 				}
 			},
@@ -373,7 +385,7 @@ func TestJailAndTombstoneValidator(t *testing.T) {
 				return []any{
 					mocks.MockStakingKeeper.EXPECT().GetValidatorByConsAddr(
 						ctx, providerConsAddr.ToSdkConsAddr()).Return(
-						stakingtypes.Validator{}, nil,
+						bonded, nil,
 					).Times(1),
 					mocks.MockSlashingKeeper.EXPECT().IsTombstoned(
 						ctx, providerConsAddr.ToSdkConsAddr()).Return(
@@ -393,7 +405,7 @@ func TestJailAndTombstoneValidator(t *testing.T) {
 				return []any{
 					mocks.MockStakingKeeper.EXPECT().GetValidatorByConsAddr(
 						ctx, providerConsAddr.ToSdkConsAddr()).Return(
-						stakingtypes.Validator{Jailed: true}, nil,
+						jailed, nil,
 					).Times(1),
 					mocks.MockSlashingKeeper.EXPECT().IsTombstoned(
 						ctx, providerConsAddr.ToSdkConsAddr()).Return(
@@ -418,7 +430,7 @@ func TestJailAndTombstoneValidator(t *testing.T) {
 				return []any{
 					mocks.MockStakingKeeper.EXPECT().GetValidatorByConsAddr(
 						ctx, providerConsAddr.ToSdkConsAddr()).Return(
-						stakingtypes.Validator{Status: stakingtypes.Bonded}, nil,
+						bonded, nil,
 					).Times(1),
 					mocks.MockSlashingKeeper.EXPECT().IsTombstoned(
 						ctx, providerConsAddr.ToSdkConsAddr()).Return(

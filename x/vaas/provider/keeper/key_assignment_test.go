@@ -9,6 +9,7 @@ import (
 
 	"github.com/stretchr/testify/require"
 	"go.uber.org/mock/gomock"
+	protov2 "google.golang.org/protobuf/proto"
 
 	codectypes "github.com/cosmos/cosmos-sdk/codec/types"
 	sdk "github.com/cosmos/cosmos-sdk/types"
@@ -19,10 +20,20 @@ import (
 
 	cryptotestutil "github.com/allinbits/vaas/testutil/crypto"
 	testkeeper "github.com/allinbits/vaas/testutil/keeper"
+	providerante "github.com/allinbits/vaas/x/vaas/provider/ante"
 	providerkeeper "github.com/allinbits/vaas/x/vaas/provider/keeper"
 	"github.com/allinbits/vaas/x/vaas/provider/types"
 	vaastypes "github.com/allinbits/vaas/x/vaas/types"
 )
+
+// rotationTx is a minimal sdk.Tx carrying consensus-key rotation messages, for
+// driving the provider ante decorator against real keeper state.
+type rotationTx struct {
+	msgs []sdk.Msg
+}
+
+func (tx rotationTx) GetMsgs() []sdk.Msg                    { return tx.msgs }
+func (tx rotationTx) GetMsgsV2() ([]protov2.Message, error) { return nil, nil }
 
 func TestValidatorConsumerPubKeyCRUD(t *testing.T) {
 	consumerID := CONSUMER_ID
@@ -44,6 +55,227 @@ func TestValidatorConsumerPubKeyCRUD(t *testing.T) {
 	require.False(t, found, "consumer pubkey was found")
 	require.Empty(t, consumerPubKey, "consumer pubkey was returned")
 	require.NotEqual(t, consumerPubKey, consumerKey)
+}
+
+// TestMigrateStateOnConsPubKeyRotationCoversEveryConsumerAndMapping checks that
+// a provider consensus-key rotation moves a validator's assigned-key state from
+// its old provider consensus address to its new one, so the assigned key keeps
+// resolving (VSC set computation) and evidence keeps attributing (consumer ->
+// provider) -- on every consumer the validator has an assignment on, and for
+// every reverse mapping that names the old address, not just the first of
+// either.
+//
+// Both counts are load-bearing. A validator validates every consumer, so a
+// migration that stopped at the first would leave the rest resolving a rotated
+// validator's assigned key under an address it no longer holds. And a validator
+// has more than one reverse mapping on a consumer whenever it has re-assigned
+// its consumer key there: the superseded consumer addresses are deliberately
+// kept resolvable until the unbonding period elapses, precisely so a slash
+// request naming one can still be attributed, so a migration that stopped at the
+// first repoint would orphan exactly the mappings that exist for pending
+// slashes.
+func TestMigrateStateOnConsPubKeyRotationCoversEveryConsumerAndMapping(t *testing.T) {
+	keeper, ctx, ctrl, _ := testkeeper.GetProviderKeeperAndCtx(t, testkeeper.NewInMemKeeperParams(t))
+	defer ctrl.Finish()
+
+	rotating := cryptotestutil.NewCryptoIdentityFromIntSeed(1)
+	rotated := cryptotestutil.NewCryptoIdentityFromIntSeed(2)
+	oldProviderAddr := rotating.ProviderConsAddress()
+	newProviderAddr := rotated.ProviderConsAddress()
+
+	// A bystander validator with its own assignment on every consumer, to pin
+	// that the migration repoints the rotating validator's mappings only.
+	bystanderAddr := cryptotestutil.NewCryptoIdentityFromIntSeed(3).ProviderConsAddress()
+
+	// Three consumers, each holding: the rotating validator's current assigned
+	// key, two superseded consumer addresses still pointing at its old provider
+	// address, and the bystander's assignment.
+	type consumerState struct {
+		id            uint64
+		consumerKey   tmprotocrypto.PublicKey
+		consumerAddr  types.ConsumerConsAddress
+		supersededOne types.ConsumerConsAddress
+		supersededTwo types.ConsumerConsAddress
+		bystanderAddr types.ConsumerConsAddress
+	}
+	consumers := []consumerState{}
+	for i := range 3 {
+		seed := 10 + i*10
+		current := cryptotestutil.NewCryptoIdentityFromIntSeed(seed)
+		state := consumerState{
+			id:            keeper.FetchAndIncrementConsumerId(ctx),
+			consumerKey:   current.TMProtoCryptoPublicKey(),
+			consumerAddr:  current.ConsumerConsAddress(),
+			supersededOne: cryptotestutil.NewCryptoIdentityFromIntSeed(seed + 1).ConsumerConsAddress(),
+			supersededTwo: cryptotestutil.NewCryptoIdentityFromIntSeed(seed + 2).ConsumerConsAddress(),
+			bystanderAddr: cryptotestutil.NewCryptoIdentityFromIntSeed(seed + 3).ConsumerConsAddress(),
+		}
+		keeper.SetConsumerPhase(ctx, state.id, types.CONSUMER_PHASE_LAUNCHED)
+		keeper.SetValidatorConsumerPubKey(ctx, state.id, oldProviderAddr, state.consumerKey)
+		keeper.SetValidatorByConsumerAddr(ctx, state.id, state.consumerAddr, oldProviderAddr)
+		keeper.SetValidatorByConsumerAddr(ctx, state.id, state.supersededOne, oldProviderAddr)
+		keeper.SetValidatorByConsumerAddr(ctx, state.id, state.supersededTwo, oldProviderAddr)
+		keeper.SetValidatorByConsumerAddr(ctx, state.id, state.bystanderAddr, bystanderAddr)
+		consumers = append(consumers, state)
+	}
+
+	keeper.MigrateStateOnConsPubKeyRotation(ctx, oldProviderAddr, newProviderAddr)
+
+	for _, state := range consumers {
+		// The assigned key resolves under the new provider address, not the old.
+		gotKey, found := keeper.GetValidatorConsumerPubKey(ctx, state.id, newProviderAddr)
+		require.True(t, found, "assigned key should resolve under the rotated provider address on consumer %d", state.id)
+		require.Equal(t, state.consumerKey, gotKey)
+		_, found = keeper.GetValidatorConsumerPubKey(ctx, state.id, oldProviderAddr)
+		require.False(t, found, "assigned key should not survive under the old provider address on consumer %d", state.id)
+
+		// Every reverse mapping the rotating validator owns resolves to the new
+		// address: the current assignment and both superseded consumer addresses.
+		for name, consumerAddr := range map[string]types.ConsumerConsAddress{
+			"current":       state.consumerAddr,
+			"superseded #1": state.supersededOne,
+			"superseded #2": state.supersededTwo,
+		} {
+			require.Equal(t, newProviderAddr, keeper.GetProviderAddrFromConsumerAddr(ctx, state.id, consumerAddr),
+				"%s consumer address should attribute to the rotated provider address on consumer %d", name, state.id)
+		}
+
+		// The bystander's mapping is untouched.
+		gotProviderAddr, found := keeper.GetValidatorByConsumerAddr(ctx, state.id, state.bystanderAddr)
+		require.True(t, found)
+		require.Equal(t, bystanderAddr, gotProviderAddr,
+			"another validator's mapping must not be repointed on consumer %d", state.id)
+	}
+}
+
+// TestAfterConsensusPubKeyUpdateNeverErrorsOnCollision pins the hook's contract.
+// It fires in EndBlock, from x/staking's ApplyAndReturnValidatorSetUpdates, once
+// the rotation is already committed: an error returned there propagates out of
+// EndBlock and halts the provider chain, and any bonded validator could trigger
+// it by rotating onto a public consumer key. So even a rotation onto a key
+// already assigned as another validator's consumer key -- which the hook can
+// observe but no longer prevent -- must return nil and still migrate the
+// rotating validator's own assignment state. Admission-time rejection lives in
+// the provider ante decorator instead.
+func TestAfterConsensusPubKeyUpdateNeverErrorsOnCollision(t *testing.T) {
+	keeper, ctx, ctrl, _ := testkeeper.GetProviderKeeperAndCtx(t, testkeeper.NewInMemKeeperParams(t))
+	defer ctrl.Finish()
+
+	consumerID := keeper.FetchAndIncrementConsumerId(ctx)
+	keeper.SetConsumerPhase(ctx, consumerID, types.CONSUMER_PHASE_LAUNCHED)
+
+	// Validator B has assigned consumer key K on the consumer.
+	victimKey := cryptotestutil.NewCryptoIdentityFromIntSeed(1)
+	bProviderAddr := cryptotestutil.NewCryptoIdentityFromIntSeed(5).ProviderConsAddress()
+	keeper.SetValidatorByConsumerAddr(ctx, consumerID, victimKey.ConsumerConsAddress(), bProviderAddr)
+
+	// Validator A holds an assignment of its own, and rotates its provider
+	// consensus key onto K (the rotation message carries no proof of possession).
+	aOld := cryptotestutil.NewCryptoIdentityFromIntSeed(2)
+	aConsumerKey := cryptotestutil.NewCryptoIdentityFromIntSeed(6)
+	keeper.SetValidatorConsumerPubKey(ctx, consumerID, aOld.ProviderConsAddress(), aConsumerKey.TMProtoCryptoPublicKey())
+	keeper.SetValidatorByConsumerAddr(ctx, consumerID, aConsumerKey.ConsumerConsAddress(), aOld.ProviderConsAddress())
+
+	err := keeper.Hooks().AfterConsensusPubKeyUpdate(
+		ctx, aOld.ConsensusSDKPubKey(), victimKey.ConsensusSDKPubKey(), sdk.Coin{},
+	)
+	require.NoError(t, err,
+		"the hook runs in EndBlock: returning an error would halt the provider chain")
+
+	// A's own assignment still migrated to its rotated provider address.
+	aNewAddr := types.NewProviderConsAddress(victimKey.SDKValConsAddress())
+	gotKey, found := keeper.GetValidatorConsumerPubKey(ctx, consumerID, aNewAddr)
+	require.True(t, found, "the rotating validator's assignment must still migrate")
+	require.Equal(t, aConsumerKey.TMProtoCryptoPublicKey(), gotKey)
+	_, found = keeper.GetValidatorConsumerPubKey(ctx, consumerID, aOld.ProviderConsAddress())
+	require.False(t, found, "stale assignment must not survive under the old address")
+	require.Equal(t, aNewAddr,
+		keeper.GetProviderAddrFromConsumerAddr(ctx, consumerID, aConsumerKey.ConsumerConsAddress()))
+
+	// B's assignment is not touched: the migration only repoints A's own state.
+	gotProviderAddr, found := keeper.GetValidatorByConsumerAddr(ctx, consumerID, victimKey.ConsumerConsAddress())
+	require.True(t, found)
+	require.Equal(t, bProviderAddr, gotProviderAddr)
+}
+
+// TestConsumerKeyGuardsCoverPausedConsumers: a paused consumer keeps all of its
+// key assignments and can be resumed, so both the admission-time collision check
+// and the rotation migration must see it. Missing it would let a second validator
+// take a paused consumer's assigned consumer key as its own provider key, putting
+// two validators at one consensus address on that consumer the moment it resumes.
+func TestConsumerKeyGuardsCoverPausedConsumers(t *testing.T) {
+	keeper, ctx, ctrl, _ := testkeeper.GetProviderKeeperAndCtx(t, testkeeper.NewInMemKeeperParams(t))
+	defer ctrl.Finish()
+
+	consumerID := keeper.FetchAndIncrementConsumerId(ctx)
+	keeper.SetConsumerPhase(ctx, consumerID, types.CONSUMER_PHASE_PAUSED)
+
+	victimKey := cryptotestutil.NewCryptoIdentityFromIntSeed(11)
+	holderOld := cryptotestutil.NewCryptoIdentityFromIntSeed(12)
+	holderNew := cryptotestutil.NewCryptoIdentityFromIntSeed(13)
+	holderAddr := holderOld.ProviderConsAddress()
+
+	keeper.SetValidatorConsumerPubKey(ctx, consumerID, holderAddr, victimKey.TMProtoCryptoPublicKey())
+	keeper.SetValidatorByConsumerAddr(ctx, consumerID, victimKey.ConsumerConsAddress(), holderAddr)
+
+	// The ante decorator must reject a rotation onto the paused consumer's
+	// assigned key, reading the real keeper state.
+	pkAny, err := codectypes.NewAnyWithValue(victimKey.ConsensusSDKPubKey())
+	require.NoError(t, err)
+	rotation := &stakingtypes.MsgRotateConsPubKey{
+		ValidatorAddress: cryptotestutil.NewCryptoIdentityFromIntSeed(14).SDKValOpAddressString(),
+		NewPubkey:        pkAny,
+	}
+	_, err = providerante.NewConsPubKeyRotationDecorator(keeper).AnteHandle(
+		ctx, rotationTx{msgs: []sdk.Msg{rotation}}, false,
+		func(ctx sdk.Context, _ sdk.Tx, _ bool) (sdk.Context, error) { return ctx, nil },
+	)
+	require.ErrorIs(t, err, types.ErrConsumerKeyInUse,
+		"a paused consumer's assigned key must still be treated as in use")
+
+	// The migration must follow a rotation on the paused consumer too.
+	keeper.MigrateStateOnConsPubKeyRotation(ctx, holderAddr, holderNew.ProviderConsAddress())
+
+	gotKey, found := keeper.GetValidatorConsumerPubKey(ctx, consumerID, holderNew.ProviderConsAddress())
+	require.True(t, found, "assignment must migrate for a paused consumer")
+	require.Equal(t, victimKey.TMProtoCryptoPublicKey(), gotKey)
+	_, found = keeper.GetValidatorConsumerPubKey(ctx, consumerID, holderAddr)
+	require.False(t, found, "stale assignment must not survive under the old address")
+	require.Equal(t, holderNew.ProviderConsAddress(),
+		keeper.GetProviderAddrFromConsumerAddr(ctx, consumerID, victimKey.ConsumerConsAddress()))
+}
+
+// TestAfterConsensusPubKeyUpdateMigratesAssignment exercises the full hook on a
+// legitimate rotation (onto a fresh key): the validator's assigned-key state
+// follows to the new provider address.
+func TestAfterConsensusPubKeyUpdateMigratesAssignment(t *testing.T) {
+	keeper, ctx, ctrl, _ := testkeeper.GetProviderKeeperAndCtx(t, testkeeper.NewInMemKeeperParams(t))
+	defer ctrl.Finish()
+
+	consumerID := keeper.FetchAndIncrementConsumerId(ctx)
+	keeper.SetConsumerPhase(ctx, consumerID, types.CONSUMER_PHASE_LAUNCHED)
+
+	aOld := cryptotestutil.NewCryptoIdentityFromIntSeed(2) // A's old provider key
+	aNew := cryptotestutil.NewCryptoIdentityFromIntSeed(3) // fresh rotation target
+	cKey := cryptotestutil.NewCryptoIdentityFromIntSeed(4) // A's assigned consumer key
+
+	oldAddr := aOld.ProviderConsAddress()
+	newAddr := aNew.ProviderConsAddress()
+	consumerKey := cKey.TMProtoCryptoPublicKey()
+	consumerAddr := cKey.ConsumerConsAddress()
+
+	keeper.SetValidatorConsumerPubKey(ctx, consumerID, oldAddr, consumerKey)
+	keeper.SetValidatorByConsumerAddr(ctx, consumerID, consumerAddr, oldAddr)
+
+	err := keeper.Hooks().AfterConsensusPubKeyUpdate(ctx, aOld.ConsensusSDKPubKey(), aNew.ConsensusSDKPubKey(), sdk.Coin{})
+	require.NoError(t, err)
+
+	gotKey, found := keeper.GetValidatorConsumerPubKey(ctx, consumerID, newAddr)
+	require.True(t, found)
+	require.Equal(t, consumerKey, gotKey)
+	_, found = keeper.GetValidatorConsumerPubKey(ctx, consumerID, oldAddr)
+	require.False(t, found)
+	require.Equal(t, newAddr, keeper.GetProviderAddrFromConsumerAddr(ctx, consumerID, consumerAddr))
 }
 
 func TestGetAllValidatorConsumerPubKey(t *testing.T) {

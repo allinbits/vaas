@@ -89,8 +89,27 @@ func (k Keeper) IsValidatorJailed(goCtx context.Context, addr sdk.ConsAddress) (
 	return false, nil
 }
 
-// ValidatorByConsAddr returns an empty validator
-func (k Keeper) ValidatorByConsAddr(context.Context, sdk.ConsAddress) (stakingtypes.ValidatorI, error) {
+// stubValidator is the stakingtypes.ValidatorI the consumer keeper hands to
+// SDK modules that look validators up by consensus address. It is the zero
+// staking validator (never jailed, status not UNBONDED) except that it can
+// answer GetConsAddr: it echoes the address it was looked up under, since a
+// consumer runs no consensus-key rotation and an address is therefore always
+// its own current identity (the same invariant ValidatorIdentifier encodes).
+// The zero validator alone no longer suffices because x/slashing's
+// HandleValidatorSignature remaps the observed signer address through
+// GetConsAddr to support rotation, and the zero validator panics there (its
+// consensus pubkey Any is nil).
+type stubValidator struct {
+	stakingtypes.Validator
+	consAddr sdk.ConsAddress
+}
+
+func (v stubValidator) GetConsAddr() ([]byte, error) {
+	return v.consAddr, nil
+}
+
+// ValidatorByConsAddr returns a minimal validator echoing the queried address.
+func (k Keeper) ValidatorByConsAddr(_ context.Context, addr sdk.ConsAddress) (stakingtypes.ValidatorI, error) {
 	/*
 		NOTE:
 
@@ -98,10 +117,19 @@ func (k Keeper) ValidatorByConsAddr(context.Context, sdk.ConsAddress) (stakingty
 		The returned value must not be nil and must not have an UNBONDED validator status,
 		or evidence will reject it.
 
-		Also, the slashing module will cal lthis function when it observes downtime. In that case
-		the only requirement on the returned value is that it isn't null.
+		Also, the slashing module will call this function when it observes downtime
+		(HandleValidatorSignature). It requires the returned value to be non-nil, to
+		report the jailed status, and to answer GetConsAddr with the validator's
+		current consensus address; see stubValidator.
 	*/
-	return stakingtypes.Validator{}, nil
+	return stubValidator{consAddr: addr}, nil
+}
+
+// ValidatorIdentifier maps a consensus address to the identifier the slashing
+// module tracks it under. The consumer runs no real staking and no consensus-key
+// rotation, so the address is its own identifier.
+func (k Keeper) ValidatorIdentifier(_ context.Context, consAddr sdk.ConsAddress) (sdk.ConsAddress, error) {
+	return consAddr, nil
 }
 
 // Calls SlashWithInfractionReason with Infraction_INFRACTION_UNSPECIFIED.

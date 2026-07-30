@@ -94,16 +94,21 @@ func putPendingDowntimeSlash(
 // expectSlashableStakeLookup wires the mock call chain slashableStake makes
 // for one pending entry. Every matcher is keyed on consAddr (the address the
 // entry is keyed under), so multiple validators' lookups can be expected in
-// the same test without depending on sweep iteration order.
+// the same test without depending on sweep iteration order. The tombstone
+// check is the exception: it names the address the validator runs now, which
+// x/slashing keys its signing info by, and that differs from consAddr when the
+// entry is keyed under an address the validator has rotated away from.
 func expectSlashableStakeLookup(t *testing.T, k providerkeeper.Keeper, mocks testkeeper.MockedKeepers, ctx sdk.Context, validator stakingtypes.Validator, consAddr sdk.ConsAddress, lastPower int64, powerReduction math.Int) {
 	t.Helper()
 	valAddr, err := k.ValidatorAddressCodec().StringToBytes(validator.GetOperator())
+	require.NoError(t, err)
+	liveConsAddr, err := validator.GetConsAddr()
 	require.NoError(t, err)
 	mocks.MockStakingKeeper.EXPECT().
 		GetValidatorByConsAddr(ctx, consAddr).
 		Return(validator, nil)
 	mocks.MockSlashingKeeper.EXPECT().
-		IsTombstoned(ctx, consAddr).
+		IsTombstoned(ctx, sdk.ConsAddress(liveConsAddr)).
 		Return(false)
 	mocks.MockStakingKeeper.EXPECT().
 		GetUnbondingDelegationsFromValidator(ctx, valAddr).
