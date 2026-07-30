@@ -176,3 +176,39 @@ func TestSetProviderClientOwnerBech32PrefixInsensitive(t *testing.T) {
 	})
 	require.NoError(t, err, "owner authorization must compare address bytes, not bech32 strings")
 }
+
+// TestUpdateParamsTogglesPhotonFees verifies the photon-only fee policy is
+// reachable by consumer governance: the flag is consumer-local, so unlike the
+// provider-owned downtime window it takes the value the message carries.
+func TestUpdateParamsTogglesPhotonFees(t *testing.T) {
+	k, ctx, ctrl, _ := testkeeper.GetConsumerKeeperAndCtx(t, testkeeper.NewInMemKeeperParams(t))
+	defer ctrl.Finish()
+	k.SetParams(ctx, vaastypes.DefaultConsumerParams())
+	require.False(t, k.PhotonFeesEnabled(ctx))
+
+	msgSrv := consumerkeeper.NewMsgServerImpl(&k)
+
+	enable := vaastypes.DefaultConsumerParams()
+	enable.PhotonFeesEnabled = true
+	_, err := msgSrv.UpdateParams(ctx, &types.MsgUpdateParams{
+		Authority: k.GetAuthority(),
+		Params:    enable,
+	})
+	require.NoError(t, err)
+	require.True(t, k.PhotonFeesEnabled(ctx))
+
+	disable := vaastypes.DefaultConsumerParams()
+	_, err = msgSrv.UpdateParams(ctx, &types.MsgUpdateParams{
+		Authority: k.GetAuthority(),
+		Params:    disable,
+	})
+	require.NoError(t, err)
+	require.False(t, k.PhotonFeesEnabled(ctx))
+
+	_, err = msgSrv.UpdateParams(ctx, &types.MsgUpdateParams{
+		Authority: "cosmos1notgov",
+		Params:    enable,
+	})
+	require.Error(t, err)
+	require.False(t, k.PhotonFeesEnabled(ctx))
+}

@@ -54,6 +54,18 @@ func (k Keeper) OnRecvVSCPacketV2(ctx sdk.Context, consumerClientID string, newC
 		return nil
 	}
 
+	// Refuse -- before any state change, so the error acknowledgement leaves
+	// the consumer exactly as it was -- a packet whose application would leave
+	// the consumer with zero validators: CometBFT rejects an EndBlock that
+	// empties the validator set, halting the chain irrecoverably. A working
+	// provider never emits such a packet (it always has a live validator set
+	// of its own), so dropping it with an error ack loses nothing: the next
+	// epoch's VSC can still be applied on top of the untouched state.
+	if k.wouldEmptyValidatorSet(ctx, newChanges) {
+		return errorsmod.Wrapf(types.ErrEmptyValidatorSet,
+			"rejecting VSC packet %d: applying it would leave the consumer with no validators", newChanges.ValsetUpdateId)
+	}
+
 	k.SetLastVSCRecvTime(ctx, ctx.BlockTime())
 
 	if newChanges.DowntimeParams != nil {
@@ -108,6 +120,45 @@ func (k Keeper) OnRecvVSCPacketV2(ctx sdk.Context, consumerClientID string, newC
 		"consumerClientID", consumerClientID,
 	)
 	return nil
+}
+
+// wouldEmptyValidatorSet reports whether applying the packet would leave the
+// consumer with no validator of positive power -- the state in which the next
+// EndBlock flush halts the chain.
+//
+// For a snapshot the answer is a property of the packet alone: the packet's
+// positive-power updates ARE the target set (computeReplaceUpdates turns them
+// into the target plus removals, so nothing outside the packet survives). For
+// a diff the answer depends on state: the set EndBlock will apply is the
+// current cross-chain set overlaid with the already-accumulated pending
+// changes and then with this packet's updates, latest write per key winning --
+// the same per-pubkey overwrite AccumulateChanges and ApplyCCValidatorChanges
+// perform. Both checks reuse the existing helpers and cost one walk of the
+// current set, so the diff case (a diff removing every validator is exactly as
+// fatal as an empty snapshot) is guarded rather than only the snapshot resync
+// path. An empty-update heartbeat diff over a live set stays accepted: it
+// leaves the set as it was, which is non-empty.
+func (k Keeper) wouldEmptyValidatorSet(ctx sdk.Context, newChanges vaastypes.ValidatorSetChangePacketData) bool {
+	if newChanges.IsSnapshot {
+		return !hasPositivePower(newChanges.ValidatorUpdates)
+	}
+
+	resulting := k.MustGetCurrentValidatorsAsABCIUpdates(ctx)
+	if pending, ok := k.GetPendingChanges(ctx); ok {
+		resulting = vaastypes.AccumulateChanges(resulting, pending.ValidatorUpdates)
+	}
+	resulting = vaastypes.AccumulateChanges(resulting, newChanges.ValidatorUpdates)
+	return !hasPositivePower(resulting)
+}
+
+// hasPositivePower reports whether any update carries positive voting power.
+func hasPositivePower(updates []abci.ValidatorUpdate) bool {
+	for _, u := range updates {
+		if u.Power > 0 {
+			return true
+		}
+	}
+	return false
 }
 
 // authenticateProviderChainID pins the consumer's inbound VSC traffic to a

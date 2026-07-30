@@ -72,10 +72,17 @@ func (k Keeper) InitGenesis(ctx sdk.Context, state *types.GenesisState) []abci.V
 		return []abci.ValidatorUpdate{}
 	}
 
-	// Restore the VSC staleness clock on a restart (see ExportGenesis); absent
-	// (new chain / never received a VSC) leaves the never-stale default.
+	// Arm the VSC staleness clock (see IsVSCStale): a restart restores the
+	// exported value, while a new chain starts the clock at the genesis block
+	// time, so that a consumer that never receives a single VSC packet still
+	// crosses the safe-mode threshold instead of running on its genesis
+	// validator set unrestricted forever. PreVAAS chains return above and stay
+	// unarmed until their first VSC: the standalone staking keeper still runs
+	// the chain there, so VSC staleness is not yet meaningful.
 	if state.LastVscRecvTime != nil {
 		k.SetLastVSCRecvTime(ctx, *state.LastVscRecvTime)
+	} else if state.NewChain {
+		k.SetLastVSCRecvTime(ctx, ctx.BlockTime())
 	}
 
 	// Restore downtime-detection state for the window currently in progress
@@ -154,9 +161,11 @@ func (k Keeper) ExportGenesis(ctx sdk.Context) (genesis *types.GenesisState) {
 		genesis.ProviderChainId = chainId
 	}
 
-	// Preserve the VSC staleness clock across a restart (see IsVSCStale): export
-	// the last-VSC-recv time only when actually recorded, so a consumer that has
-	// not received a VSC keeps the absent-default (never stale) on import.
+	// Preserve the VSC staleness clock across a restart (see IsVSCStale). On a
+	// chain that launched as NewChain the clock is always set (armed at
+	// genesis), so a restart export always carries it; the conditional covers
+	// keepers where it was never armed (a PreVAAS chain still waiting for its
+	// first VSC), which keep the absent-default (never stale) on import.
 	has, err := k.LastVSCRecvTime.Has(ctx)
 	if err != nil {
 		panic(err)

@@ -230,6 +230,84 @@ func TestGenesisRoundTripLastVSCRecvTime(t *testing.T) {
 	require.Equal(t, lastRecv, ck2.GetLastVSCRecvTime(ctx2))
 }
 
+// TestInitGenesisNewChainArmsVSCStalenessClock verifies that a NewChain
+// InitGenesis records the genesis block time as the last-VSC-recv time, so a
+// consumer that never receives a single VSC packet accrues staleness from
+// chain start and crosses the safe-mode threshold -- instead of the unset
+// clock falling back to the current block time and never reading as stale.
+// A restart genesis without the field (never armed, e.g. exported from a
+// PreVAAS chain) must stay on the never-stale fallback.
+func TestInitGenesisNewChainArmsVSCStalenessClock(t *testing.T) {
+	provClientID := "07-tendermint-0"
+
+	cId := crypto.NewCryptoIdentityFromIntSeed(893243)
+	validator := tmtypes.NewValidator(cId.TMCryptoPubKey(), 1)
+	valset := []abci.ValidatorUpdate{tmtypes.TM2PB.ValidatorUpdate(validator)}
+
+	provConsState := ibctmtypes.NewConsensusState(
+		time.Time{},
+		commitmenttypes.NewMerkleRoot([]byte("apphash")),
+		tmtypes.NewValidatorSet([]*tmtypes.Validator{validator}).Hash(),
+	)
+	provClientState := ibctmtypes.NewClientState(
+		"provider",
+		ibctmtypes.DefaultTrustLevel,
+		0,
+		stakingtypes.DefaultUnbondingTime,
+		time.Second*10,
+		clienttypes.Height{},
+		commitmenttypes.GetSDKSpecs(),
+		[]string{"upgrade", "upgradedIBCState"},
+	)
+
+	params := vaastypes.DefaultConsumerParams()
+	params.Enabled = true
+
+	t.Run("new chain arms the clock at the genesis block time", func(t *testing.T) {
+		ck, ctx, ctrl, _ := testkeeper.GetConsumerKeeperAndCtx(t, testkeeper.NewInMemKeeperParams(t))
+		defer ctrl.Finish()
+
+		genesisTime := time.Unix(1_850_000_000, 0).UTC()
+		ctx = ctx.WithBlockTime(genesisTime)
+
+		ck.InitGenesis(ctx, consumertypes.NewInitialGenesisState(provClientState, provConsState, valset, params))
+
+		has, err := ck.LastVSCRecvTime.Has(ctx)
+		require.NoError(t, err)
+		require.True(t, has, "NewChain InitGenesis must arm the staleness clock")
+		require.Equal(t, genesisTime, ck.GetLastVSCRecvTime(ctx))
+
+		// The behavioral consequence: with no VSC ever received, the consumer
+		// reads as stale once the threshold elapses from genesis...
+		staleCtx := ctx.WithBlockTime(genesisTime.Add(params.SafeModeThreshold + time.Minute))
+		require.True(t, ck.IsVSCStale(staleCtx),
+			"a never-connected consumer must cross the safe-mode threshold")
+
+		// ...and the armed clock is exported, keeping restarts consistent.
+		exported := ck.ExportGenesis(ctx)
+		require.NotNil(t, exported.LastVscRecvTime, "export must carry the armed clock")
+		require.Equal(t, genesisTime, *exported.LastVscRecvTime)
+	})
+
+	t.Run("restart genesis without the field stays unarmed", func(t *testing.T) {
+		ck, ctx, ctrl, _ := testkeeper.GetConsumerKeeperAndCtx(t, testkeeper.NewInMemKeeperParams(t))
+		defer ctrl.Finish()
+
+		genesis := consumertypes.NewRestartGenesisState(
+			provClientID,
+			valset,
+			[]consumertypes.HeightToValsetUpdateID{{ValsetUpdateId: 1, Height: 1}},
+			params,
+		)
+		ck.InitGenesis(ctx, genesis)
+
+		has, err := ck.LastVSCRecvTime.Has(ctx)
+		require.NoError(t, err)
+		require.False(t, has, "a restart genesis without last_vsc_recv_time must not arm the clock")
+		require.False(t, ck.IsVSCStale(ctx.WithBlockTime(ctx.BlockTime().Add(params.SafeModeThreshold+time.Hour))))
+	})
+}
+
 // TestGenesisRoundTripDowntimeState verifies that the consumer's
 // downtime-detection state (in-progress missed-block bitmaps, first-tracked
 // heights, staged downtime params, and queued evidence packets) survives an
@@ -367,6 +445,47 @@ func TestGenesisRoundTripProviderChainId(t *testing.T) {
 	gotChainId, ok := ck2.GetProviderChainId(ctx2)
 	require.True(t, ok, "ProviderChainId lost across round-trip")
 	require.Equal(t, providerChainId, gotChainId)
+
+	reExported := ck2.ExportGenesis(ctx2)
+	require.Equal(t, exported, reExported, "round-trip must be a fixed point")
+}
+
+// TestGenesisRoundTripPhotonFeesEnabled verifies the photon-only fee policy is
+// carried by the consumer params through genesis: a genesis that opts in leaves
+// the ante decorator enforcing right after InitGenesis, and an export/import
+// restart preserves the opt-in rather than silently reverting the chain to the
+// default (off) policy.
+func TestGenesisRoundTripPhotonFeesEnabled(t *testing.T) {
+	provClientID := "tendermint-07"
+	params := vaastypes.DefaultConsumerParams()
+	params.Enabled = true
+	params.PhotonFeesEnabled = true
+
+	pubKey := ed25519.GenPrivKey().PubKey()
+	tmPK, err := cryptocodec.ToCmtPubKeyInterface(pubKey)
+	require.NoError(t, err)
+	validator := tmtypes.NewValidator(tmPK, 1)
+	cVal, err := consumertypes.NewCCValidator(validator.Address.Bytes(), 1, pubKey)
+	require.NoError(t, err)
+
+	ck, ctx, ctrl, _ := testkeeper.GetConsumerKeeperAndCtx(t, testkeeper.NewInMemKeeperParams(t))
+	defer ctrl.Finish()
+	ck.InitGenesis(ctx, consumertypes.NewRestartGenesisState(
+		provClientID,
+		nil,
+		[]consumertypes.HeightToValsetUpdateID{{ValsetUpdateId: 0, Height: 0}},
+		params,
+	))
+	require.True(t, ck.PhotonFeesEnabled(ctx), "genesis opt-in must reach the stored params")
+	ck.SetCCValidator(ctx, cVal)
+
+	exported := ck.ExportGenesis(ctx)
+	require.True(t, exported.Params.PhotonFeesEnabled, "export must carry photon_fees_enabled")
+
+	ck2, ctx2, ctrl2, _ := testkeeper.GetConsumerKeeperAndCtx(t, testkeeper.NewInMemKeeperParams(t))
+	defer ctrl2.Finish()
+	ck2.InitGenesis(ctx2, exported)
+	require.True(t, ck2.PhotonFeesEnabled(ctx2), "photon_fees_enabled lost across round-trip")
 
 	reExported := ck2.ExportGenesis(ctx2)
 	require.Equal(t, exported, reExported, "round-trip must be a fixed point")
