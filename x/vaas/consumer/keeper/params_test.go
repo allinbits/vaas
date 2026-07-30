@@ -36,3 +36,19 @@ func TestParams(t *testing.T) {
 	storedUnbondingPeriod := consumerKeeper.GetUnbondingPeriod(ctx)
 	require.Equal(t, time.Hour*24*10, storedUnbondingPeriod)
 }
+
+// TestPhotonFeesEnabledParam covers the accessor the photon fee ante decorator
+// consults on every transaction: off under the default params, on once the
+// param is stored.
+func TestPhotonFeesEnabledParam(t *testing.T) {
+	consumerKeeper, ctx, ctrl, _ := testkeeper.GetConsumerKeeperAndCtx(t, testkeeper.NewInMemKeeperParams(t))
+	defer ctrl.Finish()
+
+	consumerKeeper.SetParams(ctx, vaastypes.DefaultConsumerParams())
+	require.False(t, consumerKeeper.PhotonFeesEnabled(ctx))
+
+	params := vaastypes.DefaultConsumerParams()
+	params.PhotonFeesEnabled = true
+	consumerKeeper.SetParams(ctx, params)
+	require.True(t, consumerKeeper.PhotonFeesEnabled(ctx))
+}

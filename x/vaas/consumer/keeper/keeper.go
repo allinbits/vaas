@@ -250,6 +250,23 @@ func (k Keeper) GetProviderClientID(ctx context.Context) (string, bool) {
 	return clientID, true
 }
 
+// HasRoutableProviderClient reports whether the pinned provider client has a
+// registered IBC v2 counterparty, i.e. whether packets can actually be routed
+// over it. On a new chain this is false while the pin still rests on the
+// unroutable genesis client and becomes true -- permanently -- once the first
+// VSC delivery re-pins the consumer to a counterparty-linked client (see
+// enforcePinnedProviderClient in relay.go). Because ICS-20 vouchers can only
+// arrive over a routable client, this is also the earliest point at which a
+// voucher denominated over the provider client can exist on this chain.
+func (k Keeper) HasRoutableProviderClient(ctx context.Context) bool {
+	pinned, found := k.GetProviderClientID(ctx)
+	if !found {
+		return false
+	}
+	_, found = k.clientV2Keeper.GetClientCounterparty(sdk.UnwrapSDKContext(ctx), pinned)
+	return found
+}
+
 // SetProviderChainId pins the chain id the consumer treats as belonging to
 // the provider. See authenticateProviderChainID in relay.go.
 func (k Keeper) SetProviderChainId(ctx context.Context, chainID string) {
@@ -504,8 +521,11 @@ func (k Keeper) SetLastVSCRecvTime(ctx context.Context, t time.Time) {
 }
 
 // GetLastVSCRecvTime returns the block time of the last processed VSC packet.
-// Falls back to the current block time when no packet has been received yet,
-// so a freshly launched consumer is never considered stale.
+// The clock is armed at NewChain InitGenesis (genesis block time) and re-armed
+// by every accepted VSC packet, so on a launched consumer it is always set.
+// When it is absent anyway -- a PreVAAS chain whose changeover has not
+// completed, or a hand-crafted restart genesis omitting the field -- fall back
+// to the current block time, i.e. never stale until the first VSC arms it.
 func (k Keeper) GetLastVSCRecvTime(ctx context.Context) time.Time {
 	buf, err := k.LastVSCRecvTime.Get(ctx)
 	if err != nil {

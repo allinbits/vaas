@@ -46,6 +46,12 @@ func NewAnteHandler(options HandlerOptions) (sdk.AnteHandler, error) {
 		ante.NewTxTimeoutHeightDecorator(),
 		ante.NewValidateMemoDecorator(options.AccountKeeper),
 		ante.NewConsumeGasForTxSizeDecorator(options.AccountKeeper),
+		// The photon fee policy sits immediately before fee deduction, per the
+		// decorator's contract: it vets the fee denom that DeductFeeDecorator
+		// is about to collect. It self-gates on the photon_fees_enabled
+		// consumer param, so it is wired unconditionally and no-ops on chains
+		// that did not opt in.
+		consumerante.NewPhotonFeeDecorator(options.ConsumerKeeper),
 		ante.NewDeductFeeDecorator(options.AccountKeeper, options.BankKeeper, options.FeegrantKeeper, options.TxFeeChecker),
 		// SetPubKeyDecorator must be called before all signature verification decorators
 		ante.NewSetPubKeyDecorator(options.AccountKeeper),

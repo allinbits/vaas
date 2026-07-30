@@ -25,6 +25,20 @@ func TestNewConsumerParamsAppliesDowntimeWindowDefaults(t *testing.T) {
 	require.Equal(t, math.LegacyMustNewDecFromStr(types.DefaultMinSignedPerWindow), p.MinSignedPerWindow)
 }
 
+// The photon-only fee policy is off unless a chain opts in, and both settings
+// are valid params: the flag selects a fee policy, it constrains nothing else.
+func TestConsumerParamsPhotonFeesEnabled(t *testing.T) {
+	p := types.DefaultConsumerParams()
+	require.False(t, p.PhotonFeesEnabled)
+	require.NoError(t, p.Validate())
+
+	p = types.NewConsumerParams(true, types.DefaultVAASTimeoutPeriod, 1000, types.DefaultConsumerUnbondingPeriod, types.DefaultSafeModeThreshold)
+	require.False(t, p.PhotonFeesEnabled)
+
+	p.PhotonFeesEnabled = true
+	require.NoError(t, p.Validate())
+}
+
 func TestConsumerParamsValidateSignedBlocksWindow(t *testing.T) {
 	bad := types.DefaultConsumerParams()
 	bad.SignedBlocksWindow = 0

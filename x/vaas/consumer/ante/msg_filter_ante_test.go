@@ -21,10 +21,16 @@ type mockConsumerKeeper struct {
 	providerClientFound bool
 	inDebt              bool
 	vscStale            bool
+	routableClient      bool
+	photonFees          bool
 }
 
 func (m mockConsumerKeeper) GetProviderClientID(context.Context) (string, bool) {
 	return "07-tendermint-0", m.providerClientFound
+}
+
+func (m mockConsumerKeeper) PhotonFeesEnabled(context.Context) bool {
+	return m.photonFees
 }
 
 func (m mockConsumerKeeper) IsConsumerInDebt(context.Context) bool {
@@ -33,6 +39,10 @@ func (m mockConsumerKeeper) IsConsumerInDebt(context.Context) bool {
 
 func (m mockConsumerKeeper) IsVSCStale(context.Context) bool {
 	return m.vscStale
+}
+
+func (m mockConsumerKeeper) HasRoutableProviderClient(context.Context) bool {
+	return m.providerClientFound && m.routableClient
 }
 
 type mockTx struct {
