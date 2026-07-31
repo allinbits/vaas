@@ -43,6 +43,7 @@ var (
 	_ sdk.Msg = (*MsgCreateConsumer)(nil)
 	_ sdk.Msg = (*MsgUpdateConsumer)(nil)
 	_ sdk.Msg = (*MsgRemoveConsumer)(nil)
+	_ sdk.Msg = (*MsgRetireConsumer)(nil)
 	_ sdk.Msg = (*MsgFundConsumerFeePool)(nil)
 	_ sdk.Msg = (*MsgWithdrawConsumerFeePool)(nil)
 	_ sdk.Msg = (*MsgSweepConsumerFeePool)(nil)
@@ -55,6 +56,7 @@ var (
 	_ sdk.HasValidateBasic = (*MsgCreateConsumer)(nil)
 	_ sdk.HasValidateBasic = (*MsgUpdateConsumer)(nil)
 	_ sdk.HasValidateBasic = (*MsgRemoveConsumer)(nil)
+	_ sdk.HasValidateBasic = (*MsgRetireConsumer)(nil)
 	_ sdk.HasValidateBasic = (*MsgSetConsumerFeesPerBlock)(nil)
 	_ sdk.HasValidateBasic = (*MsgFundConsumerFeePool)(nil)
 	_ sdk.HasValidateBasic = (*MsgWithdrawConsumerFeePool)(nil)
@@ -302,6 +304,16 @@ func NewMsgRemoveConsumer(authority string, consumerId uint64) (*MsgRemoveConsum
 func (msg MsgRemoveConsumer) ValidateBasic() error {
 	if _, err := sdk.AccAddressFromBech32(msg.Authority); err != nil {
 		return errorsmod.Wrapf(sdkerrors.ErrInvalidAddress, "invalid authority address: %s", err)
+	}
+	return nil
+}
+
+// ValidateBasic implements the sdk.HasValidateBasic interface.
+func (msg MsgRetireConsumer) ValidateBasic() error {
+	// The signer is either the consumer owner or the gov authority; which one
+	// it is can only be told against state, so RetireConsumer decides.
+	if _, err := sdk.AccAddressFromBech32(msg.Signer); err != nil {
+		return errorsmod.Wrapf(sdkerrors.ErrInvalidAddress, "invalid signer: %s", err)
 	}
 	return nil
 }

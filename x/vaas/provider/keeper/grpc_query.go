@@ -76,10 +76,15 @@ func (k Keeper) QueryConsumerChains(goCtx context.Context, req *types.QueryConsu
 	return &types.QueryConsumerChainsResponse{Chains: chains, Pagination: pageRes}, nil
 }
 
-// GetConsumerChain returns a Chain data structure with all the necessary fields
+// GetConsumerChain returns a Chain data structure with all the necessary fields.
+// A deleted consumer comes back with an empty chain id: its teardown released
+// the chain id for reuse (see DeleteConsumerChain), and the record is still
+// listed so the deletion stays visible without an archive node.
 func (k Keeper) GetConsumerChain(ctx sdk.Context, consumerId uint64) (types.Chain, error) {
+	phase := k.GetConsumerPhase(ctx, consumerId)
+
 	chainID, err := k.GetConsumerChainId(ctx, consumerId)
-	if err != nil {
+	if err != nil && phase != types.CONSUMER_PHASE_DELETED {
 		return types.Chain{}, fmt.Errorf("cannot find chainID for consumer (%d)", consumerId)
 	}
 
@@ -93,7 +98,7 @@ func (k Keeper) GetConsumerChain(ctx sdk.Context, consumerId uint64) (types.Chai
 	return types.Chain{
 		ChainId:        chainID,
 		ClientId:       clientID,
-		Phase:          k.GetConsumerPhase(ctx, consumerId).String(),
+		Phase:          phase.String(),
 		Metadata:       metadata,
 		ConsumerId:     consumerId,
 		FeePoolAddress: k.GetConsumerFeePoolAddress(consumerId).String(),
@@ -278,19 +283,21 @@ func (k Keeper) QueryConsumerChain(goCtx context.Context, req *types.QueryConsum
 	consumerId := req.ConsumerId
 	ctx := sdk.UnwrapSDKContext(goCtx)
 
+	phase := k.GetConsumerPhase(ctx, consumerId)
+	if phase == types.CONSUMER_PHASE_UNSPECIFIED {
+		return nil, status.Errorf(codes.InvalidArgument, "cannot retrieve phase for consumer id: %d", consumerId)
+	}
+
+	// A deleted consumer answers with an empty chain id: the teardown released
+	// the chain id for reuse (see DeleteConsumerChain).
 	chainId, err := k.GetConsumerChainId(ctx, consumerId)
-	if err != nil {
+	if err != nil && phase != types.CONSUMER_PHASE_DELETED {
 		return nil, status.Errorf(codes.InvalidArgument, "cannot retrieve chain id for consumer id: %d", consumerId)
 	}
 
 	ownerAddress, err := k.GetConsumerOwnerAddress(ctx, consumerId)
 	if err != nil {
 		return nil, status.Errorf(codes.InvalidArgument, "cannot retrieve owner address for consumer id: %d", consumerId)
-	}
-
-	phase := k.GetConsumerPhase(ctx, consumerId)
-	if phase == types.CONSUMER_PHASE_UNSPECIFIED {
-		return nil, status.Errorf(codes.InvalidArgument, "cannot retrieve phase for consumer id: %d", consumerId)
 	}
 
 	metadata, err := k.GetConsumerMetadata(ctx, consumerId)

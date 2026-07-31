@@ -648,6 +648,36 @@ func TestMsgSweepConsumerFeePool_ValidateBasic(t *testing.T) {
 	}
 }
 
+func TestMsgRetireConsumer_ValidateBasic(t *testing.T) {
+	tests := []struct {
+		name    string
+		msg     types.MsgRetireConsumer
+		wantErr bool
+	}{
+		{"valid", types.MsgRetireConsumer{
+			Signer:     sdk.AccAddress([]byte("alice___________")).String(),
+			ConsumerId: 0,
+		}, false},
+		{"invalid signer", types.MsgRetireConsumer{
+			Signer:     "not-bech32",
+			ConsumerId: 0,
+		}, true},
+		{"empty signer", types.MsgRetireConsumer{
+			ConsumerId: 0,
+		}, true},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			err := tc.msg.ValidateBasic()
+			if tc.wantErr {
+				require.Error(t, err)
+			} else {
+				require.NoError(t, err)
+			}
+		})
+	}
+}
+
 func TestValidateChainId(t *testing.T) {
 	testCases := []struct {
 		name    string

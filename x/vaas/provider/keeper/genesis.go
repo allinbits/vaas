@@ -48,7 +48,12 @@ func (k Keeper) InitGenesis(ctx sdk.Context, genState *types.GenesisState) []abc
 			maxConsumerId = consumerId
 		}
 
-		k.SetConsumerChainId(ctx, consumerId, cs.ChainId)
+		// A deleted consumer carries no chain id (see DeleteConsumerChain):
+		// writing one back would re-reserve a chain id that the deletion
+		// released, so the release survives a state-export restart.
+		if cs.ChainId != "" {
+			k.SetConsumerChainId(ctx, consumerId, cs.ChainId)
+		}
 		k.SetConsumerPhase(ctx, consumerId, cs.Phase)
 
 		if cs.OwnerAddress != "" {
@@ -395,16 +400,19 @@ func (k Keeper) ExportGenesis(ctx sdk.Context) *types.GenesisState {
 	for _, consumerId := range allConsumerIds {
 		phase := k.GetConsumerPhase(ctx, consumerId)
 
-		chainId, err := k.GetConsumerChainId(ctx, consumerId)
-		if err != nil {
-			panic(fmt.Errorf("export: failed to read chain id for consumer %d: %w", consumerId, err))
-		}
-
 		cs := types.ConsumerState{
 			ConsumerId:           consumerId,
-			ChainId:              chainId,
 			Phase:                phase,
 			PendingValsetChanges: k.GetPendingVSCPackets(ctx, consumerId),
+		}
+
+		// A deleted consumer has no chain id: the teardown released it so the
+		// chain id can be registered again (see DeleteConsumerChain). Every
+		// other phase must have one.
+		if chainId, err := k.GetConsumerChainId(ctx, consumerId); err == nil {
+			cs.ChainId = chainId
+		} else if !errors.Is(err, collections.ErrNotFound) {
+			panic(fmt.Errorf("export: failed to read chain id for consumer %d: %w", consumerId, err))
 		}
 
 		if owner, err := k.GetConsumerOwnerAddress(ctx, consumerId); err == nil {

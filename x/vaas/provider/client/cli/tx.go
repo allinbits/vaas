@@ -53,6 +53,7 @@ func GetTxCmd() *cobra.Command {
 	cmd.AddCommand(NewSubmitConsumerDoubleVotingCmd())
 	cmd.AddCommand(NewCreateConsumerCmd())
 	cmd.AddCommand(NewUpdateConsumerCmd())
+	cmd.AddCommand(NewRetireConsumerCmd())
 	cmd.AddCommand(NewFundConsumerFeePoolCmd())
 	cmd.AddCommand(NewWithdrawConsumerFeePoolCmd())
 	cmd.AddCommand(NewSweepConsumerFeePoolCmd())
@@ -402,6 +403,46 @@ If one of the fields is missing, it will be set to its zero value.
 
 	_ = cmd.MarkFlagRequired(flags.FlagFrom)
 
+	return cmd
+}
+
+func NewRetireConsumerCmd() *cobra.Command {
+	cmd := &cobra.Command{
+		Use:   "retire-consumer [consumer-id]",
+		Short: "Erase a consumer chain that has not launched and release its chain id",
+		Long: strings.TrimSpace(
+			fmt.Sprintf(`Erase a consumer chain that is still registered or initialized, freeing its
+chain id for reuse and returning any fee-pool balance to its depositors.
+
+Signed by the consumer owner, or by the governance authority when the owner key
+is lost. A launched or paused consumer cannot be retired: governance removes it
+with a MsgRemoveConsumer proposal instead.
+
+Example:
+%s tx vaasprovider retire-consumer 0 --from mykey
+`, version.AppName)),
+		Args: cobra.ExactArgs(1),
+		RunE: func(cmd *cobra.Command, args []string) error {
+			clientCtx, err := client.GetClientTxContext(cmd)
+			if err != nil {
+				return err
+			}
+			consumerId, err := parseConsumerIdArg(args[0])
+			if err != nil {
+				return err
+			}
+			msg := &types.MsgRetireConsumer{
+				Signer:     clientCtx.GetFromAddress().String(),
+				ConsumerId: consumerId,
+			}
+			if err := msg.ValidateBasic(); err != nil {
+				return err
+			}
+			return tx.GenerateOrBroadcastTxCLI(clientCtx, cmd.Flags(), msg)
+		},
+	}
+	flags.AddTxFlagsToCmd(cmd)
+	_ = cmd.MarkFlagRequired(flags.FlagFrom)
 	return cmd
 }
 

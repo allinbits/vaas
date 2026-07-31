@@ -599,6 +599,70 @@ func (k msgServer) RemoveConsumer(goCtx context.Context, msg *types.MsgRemoveCon
 	return &resp, err
 }
 
+// RetireConsumer defines an RPC handler method for MsgRetireConsumer: it
+// erases a consumer that has not launched yet and releases its chain id.
+//
+// The signer may be either the consumer owner or the gov authority, the same
+// owner-or-gov admission MsgFundConsumerFeePool and MsgWithdrawConsumerFeePool
+// use. The owner arm lets whoever registered a chain abandon it; the gov arm is
+// the remedy when the owner key is lost, which would otherwise leave the
+// consumer -- and the chain id it holds -- in place with nobody able to clear
+// it. A launched or paused consumer is not retirable here: it is removed with
+// MsgRemoveConsumer, which stops it and defers the erasure by the unbonding
+// period.
+func (k msgServer) RetireConsumer(goCtx context.Context, msg *types.MsgRetireConsumer) (*types.MsgRetireConsumerResponse, error) {
+	ctx := sdk.UnwrapSDKContext(goCtx)
+
+	exists, err := k.ConsumerPhase.Has(ctx, msg.ConsumerId)
+	if err != nil {
+		return nil, err
+	}
+	if !exists {
+		return nil, errorsmod.Wrapf(types.ErrUnknownConsumerId,
+			"consumer %d does not exist", msg.ConsumerId)
+	}
+
+	if !k.IsAuthority(msg.Signer) {
+		ownerAddress, err := k.GetConsumerOwnerAddress(ctx, msg.ConsumerId)
+		if err != nil {
+			return nil, errorsmod.Wrapf(types.ErrNoOwnerAddress,
+				"consumer %d has no owner: %s", msg.ConsumerId, err)
+		}
+		if !strings.EqualFold(msg.Signer, ownerAddress) {
+			return nil, errorsmod.Wrapf(types.ErrUnauthorized,
+				"only consumer owner %s or the gov authority may retire consumer %d, got %s",
+				ownerAddress, msg.ConsumerId, msg.Signer)
+		}
+	}
+
+	// Read the chain id before the teardown releases it, so the event still
+	// reports which chain was retired. A consumer in a retirable phase always
+	// holds one; the phases that may not are rejected right below.
+	chainId, _ := k.GetConsumerChainId(ctx, msg.ConsumerId)
+
+	if err := k.Keeper.RetireConsumerChain(ctx, msg.ConsumerId); err != nil {
+		return nil, err
+	}
+
+	k.Logger(ctx).Info("retired consumer",
+		"consumerId", msg.ConsumerId,
+		"chainId", chainId,
+		"signer", msg.Signer,
+	)
+
+	ctx.EventManager().EmitEvent(
+		sdk.NewEvent(
+			types.EventTypeRetireConsumer,
+			sdk.NewAttribute(sdk.AttributeKeyModule, types.ModuleName),
+			sdk.NewAttribute(types.AttributeConsumerId, strconv.FormatUint(msg.ConsumerId, 10)),
+			sdk.NewAttribute(types.AttributeConsumerChainId, chainId),
+			sdk.NewAttribute(types.AttributeSubmitterAddress, msg.Signer),
+		),
+	)
+
+	return &types.MsgRetireConsumerResponse{}, nil
+}
+
 // SetConsumerFeesPerBlock sets or clears the per-consumer override for the
 // per-block fee amount. Only the gov authority may call this.
 func (k msgServer) SetConsumerFeesPerBlock(

@@ -447,7 +447,14 @@ func validateEpochDowntimeEntries(entries []EpochDowntimeEntry, knownConsumerIds
 // Each phase has different required and forbidden fields, mirroring the
 // invariants the keeper maintains (see x/vaas/provider/keeper/consumer_lifecycle.go).
 func (cs ConsumerState) Validate() error {
-	if cs.ChainId == "" {
+	// A deleted consumer is the one phase without a chain id: the teardown
+	// releases it so the chain id can be registered again, and importing one
+	// back would take it out of circulation a second time.
+	if cs.Phase == CONSUMER_PHASE_DELETED {
+		if cs.ChainId != "" {
+			return fmt.Errorf("chain id must be empty for phase %s", cs.Phase)
+		}
+	} else if cs.ChainId == "" {
 		return errors.New("chain id cannot be empty")
 	}
 	if cs.OwnerAddress == "" {
@@ -540,7 +547,7 @@ func (cs ConsumerState) Validate() error {
 	case CONSUMER_PHASE_DELETED:
 		// Tombstoned: keeper retains owner+metadata+init_params for explorer UX
 		// (see consumer_lifecycle.go DeleteConsumerChain comment).
-		// Everything else is cleared.
+		// Everything else is cleared, including the chain id (checked above).
 		if cs.InitParams == nil {
 			return fmt.Errorf("init params required for phase %s", cs.Phase)
 		}

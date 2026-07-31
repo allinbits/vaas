@@ -599,11 +599,60 @@ func (k Keeper) BeginBlockRemoveConsumers(ctx sdk.Context) error {
 	return nil
 }
 
+// RetireConsumerChain erases a consumer that has not launched, i.e. one still
+// in the registered or initialized phase.
+//
+// Such a consumer has no counterpart to wind down: no IBC client was ever
+// adopted for it (discoverActiveConsumerClient runs only for launched
+// consumers), no validator set was ever computed or sent, and evidence,
+// downtime accusations and fee distribution all require phase LAUNCHED. No
+// validator ever validated it, so there is nothing to keep slashable for an
+// unbonding period either -- hence it does not go through STOPPED and the
+// removal queue the way StopAndPrepareForConsumerRemoval does for a live
+// chain, but straight to the shared teardown in DeleteConsumerChain.
+//
+// Two pieces of live state a pre-launch consumer can hold are worth naming:
+// key assignments, which AssignConsumerKey accepts for registered and
+// initialized consumers, and a funded fee pool, which anyone may deposit into
+// before launch. DeleteConsumerChain clears the former and pays the latter
+// back to its depositors.
+func (k Keeper) RetireConsumerChain(ctx sdk.Context, consumerId uint64) error {
+	phase := k.GetConsumerPhase(ctx, consumerId)
+	if !k.IsConsumerPrelaunched(ctx, consumerId) {
+		return errorsmod.Wrapf(types.ErrInvalidPhase,
+			"cannot retire consumer %d: expected phase registered or initialized, got %s", consumerId, phase)
+	}
+
+	// An initialized consumer waits in the spawn-time queue: drop its entry so
+	// the queue cannot hand an erased consumer to BeginBlockLaunchConsumers.
+	// The phase and the entry are always written together (see
+	// InitializeConsumer plus PrepareConsumerForLaunch, and the same derivation
+	// at InitGenesis), so a missing entry means inconsistent state and is
+	// reported rather than ignored.
+	if phase == types.CONSUMER_PHASE_INITIALIZED {
+		initializationParameters, err := k.GetConsumerInitializationParameters(ctx, consumerId)
+		if err != nil {
+			return fmt.Errorf("getting initialization parameters, consumerId(%d): %w", consumerId, err)
+		}
+		if err := k.RemoveConsumerToBeLaunched(ctx, consumerId, initializationParameters.SpawnTime); err != nil {
+			return errorsmod.Wrapf(vaastypes.ErrInvalidConsumerState,
+				"cannot remove consumer %d from the launch queue: %s", consumerId, err.Error())
+		}
+	}
+
+	return k.DeleteConsumerChain(ctx, consumerId)
+}
+
 // DeleteConsumerChain cleans up the state of the given consumer chain.
+//
+// It accepts a consumer in either of the two positions from which erasure is
+// final: STOPPED, reached via StopAndPrepareForConsumerRemoval once
+// BeginBlockRemoveConsumers has waited out the unbonding delay, or a pre-launch
+// phase, reached via RetireConsumerChain, which needs no such delay (see there).
 func (k Keeper) DeleteConsumerChain(ctx sdk.Context, consumerId uint64) (err error) {
 	phase := k.GetConsumerPhase(ctx, consumerId)
-	if phase != types.CONSUMER_PHASE_STOPPED {
-		return fmt.Errorf("cannot delete non-stopped chain: %d", consumerId)
+	if phase != types.CONSUMER_PHASE_STOPPED && !k.IsConsumerPrelaunched(ctx, consumerId) {
+		return fmt.Errorf("cannot delete chain %d in phase %s", consumerId, phase)
 	}
 
 	// Auto-sweep the fee pool. This cannot fail under valid state; on state
@@ -663,8 +712,22 @@ func (k Keeper) DeleteConsumerChain(ctx sdk.Context, consumerId uint64) (err err
 		return fmt.Errorf("clearing downtime window floors for consumer %d: %w", consumerId, err)
 	}
 
-	// Note that we do not delete ConsumerIdToChainIdKey and ConsumerIdToPhase, as well
-	// as consumer metadata and initialization parameters.
+	// Release the chain id. The provider stores it to keep two consumers from
+	// claiming the same chain (ChainIdInUse, consulted by MsgCreateConsumer and
+	// MsgUpdateConsumer), and by this point nothing can name this consumer's
+	// chain any more: its client mapping has just been removed, so an inbound
+	// packet can no longer be attributed to it (the provider resolves packets
+	// by destination client, see OnRecvPacket), and evidence, downtime
+	// accusations and fee distribution all require phase LAUNCHED. On the
+	// stop-then-remove path a full unbonding period has additionally passed
+	// since the consumer was stopped, so any infraction it could still be
+	// punished for is already outside the slashable window. Keeping the id past
+	// this point would reserve that chain id for good, since DELETED is
+	// terminal.
+	k.DeleteConsumerChainId(ctx, consumerId)
+
+	// Note that we do not delete ConsumerIdToPhase, as well as consumer
+	// metadata, initialization parameters and owner address.
 	// This is to enable block explorers and front ends to show information of
 	// consumer chains that were removed without needing an archive node.
 
