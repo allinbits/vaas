@@ -2,6 +2,7 @@ package keeper
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"strings"
 	"time"
@@ -566,8 +567,13 @@ func (k Keeper) GetClientIdToConsumerId(ctx context.Context, clientId string) (u
 
 // DeleteConsumerClientId removes from the store the client id for the given consumer id.
 // The reverse index is automatically cleaned up by the indexed map.
+//
+// A consumer with no client mapping is not an error: the indexed map has to read
+// the value to unreference the index, so it reports a missing entry, and a
+// consumer that never launched never had a client adopted for it (see
+// RetireConsumerChain). Only a genuine store failure panics.
 func (k Keeper) DeleteConsumerClientId(ctx context.Context, consumerId uint64) {
-	if err := k.ConsumerClients.Remove(ctx, consumerId); err != nil {
+	if err := k.ConsumerClients.Remove(ctx, consumerId); err != nil && !errors.Is(err, collections.ErrNotFound) {
 		panic(fmt.Errorf("failed to remove consumer id to client id mapping: %w", err))
 	}
 }

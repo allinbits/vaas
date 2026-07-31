@@ -131,15 +131,22 @@ func (k Keeper) GetConsumerInitializationParameters(ctx context.Context, consume
 	return params, nil
 }
 
-// SetConsumerInitializationParameters sets the initialization parameters associated with this consumer id
+// SetConsumerInitializationParameters sets the initialization parameters associated with this consumer id.
+//
+// The initial height is cross-checked against the chain id's revision, except
+// for a deleted consumer, which no longer has a chain id to check against: its
+// teardown released it (see DeleteConsumerChain). Only genesis import writes
+// parameters for a deleted consumer, since deletion keeps them for explorer UX.
 func (k Keeper) SetConsumerInitializationParameters(ctx context.Context, consumerId uint64, parameters types.ConsumerInitializationParameters) error {
-	chainId, err := k.GetConsumerChainId(ctx, consumerId)
-	if err != nil {
-		return fmt.Errorf("failed to get consumer chain ID for consumer id (%d): %w", consumerId, err)
-	}
-	// validate that the initial height matches the chain ID
-	if err := types.ValidateInitialHeight(parameters.InitialHeight, chainId); err != nil {
-		return fmt.Errorf("invalid initial height for consumer id (%d): %w", consumerId, err)
+	if k.GetConsumerPhase(ctx, consumerId) != types.CONSUMER_PHASE_DELETED {
+		chainId, err := k.GetConsumerChainId(ctx, consumerId)
+		if err != nil {
+			return fmt.Errorf("failed to get consumer chain ID for consumer id (%d): %w", consumerId, err)
+		}
+		// validate that the initial height matches the chain ID
+		if err := types.ValidateInitialHeight(parameters.InitialHeight, chainId); err != nil {
+			return fmt.Errorf("invalid initial height for consumer id (%d): %w", consumerId, err)
+		}
 	}
 
 	if err := k.ConsumerInitParams.Set(ctx, consumerId, parameters); err != nil {
