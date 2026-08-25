@@ -165,3 +165,33 @@ func TestInfractionParametersRejectsEvidenceMaxAgeAboveChallengeWindow(t *testin
 	ip.DowntimeEvidenceMaxAge = 10*time.Second + time.Nanosecond
 	require.Error(t, ip.Validate(), "evidence max age above challenge window must be rejected")
 }
+
+// TestInfractionParametersRejectsZeroDoubleSignSlashFraction verifies that
+// equivocation must carry a non-zero stake penalty, while downtime may be
+// configured to jail without slashing.
+//
+// A nil slash_fraction is already refused, but zero passes the shared fraction
+// check: it is inside [0,1]. For downtime that is a legitimate policy -- jail
+// the validator, take nothing -- and a chain may well want it. For double
+// signing it silently removes the entire economic deterrent while the
+// parameters still read as configured, which is not a policy anyone selects on
+// purpose by leaving a field at zero.
+func TestInfractionParametersRejectsZeroDoubleSignSlashFraction(t *testing.T) {
+	ip := types.DefaultInfractionParameters()
+	ip.DoubleSign.SlashFraction = math.LegacyZeroDec()
+
+	err := ip.Validate()
+	require.Error(t, err)
+	require.Contains(t, err.Error(), "double_sign")
+	require.Contains(t, err.Error(), "slash_fraction")
+}
+
+// TestInfractionParametersAllowsZeroDowntimeSlashFraction pins the other half
+// of that asymmetry: a jail-only downtime policy is valid configuration.
+func TestInfractionParametersAllowsZeroDowntimeSlashFraction(t *testing.T) {
+	ip := types.DefaultInfractionParameters()
+	ip.Downtime.SlashFraction = math.LegacyZeroDec()
+
+	require.NoError(t, ip.Validate(),
+		"a zero downtime slash fraction is a jail-only policy, not a misconfiguration")
+}

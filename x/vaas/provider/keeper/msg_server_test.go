@@ -1823,3 +1823,33 @@ func TestUpdateConsumerUnbondingBounds(t *testing.T) {
 		})
 	}
 }
+
+// TestUpdateConsumerRejectsPausedConsumer pins the one place that deliberately
+// treats PAUSED as ineligible even though IsConsumerActive accepts it.
+//
+// An update can rewrite the infraction parameters and initialization
+// parameters that the challenge which paused the consumer was judged under,
+// and the resume path replays state built from them. Governance resumes or
+// removes the consumer first, then updates it. Key assignment, by contrast, is
+// available during a pause.
+func TestUpdateConsumerRejectsPausedConsumer(t *testing.T) {
+	providerKeeper, ctx, ctrl, _ := testkeeper.GetProviderKeeperAndCtx(t, testkeeper.NewInMemKeeperParams(t))
+	defer ctrl.Finish()
+
+	msgServer := providerkeeper.NewMsgServerImpl(&providerKeeper)
+
+	owner := "cosmos1dkas8mu4kyhl5jrh4nzvm65qz588hy9qcz08la"
+	consumerId := providerKeeper.FetchAndIncrementConsumerId(ctx)
+	providerKeeper.SetConsumerOwnerAddress(ctx, consumerId, owner)
+	providerKeeper.SetConsumerPhase(ctx, consumerId, providertypes.CONSUMER_PHASE_PAUSED)
+
+	_, err := msgServer.UpdateConsumer(ctx, &providertypes.MsgUpdateConsumer{
+		Owner:      owner,
+		ConsumerId: consumerId,
+		Metadata: &providertypes.ConsumerMetadata{
+			Name: "renamed", Description: "d", Metadata: "m",
+		},
+	})
+	require.ErrorIs(t, err, providertypes.ErrInvalidPhase,
+		"a paused consumer must not be updatable")
+}

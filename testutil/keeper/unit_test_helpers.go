@@ -80,6 +80,17 @@ type MockedKeepers struct {
 	*MockAccountKeeper
 	*MockBankKeeper
 	*MockDistributionKeeper
+
+	// counterparties holds the client ids that report a registered IBC v2
+	// counterparty. Default is none; StubClientCounterparty opts a client in.
+	counterparties map[string]bool
+}
+
+// StubClientCounterparty makes clientID report a registered IBC v2
+// counterparty, which is what marks a client as routable: packets can be
+// delivered over it, and the registration cannot be undone.
+func (m MockedKeepers) StubClientCounterparty(clientID string) {
+	m.counterparties[clientID] = true
 }
 
 // NewMockedKeepers instantiates a struct with pointers to properly instantiated mocked keepers.
@@ -95,7 +106,15 @@ func NewMockedKeepers(ctrl *gomock.Controller) MockedKeepers {
 		MockBankKeeper:         NewMockBankKeeper(ctrl),
 		MockDistributionKeeper: NewMockDistributionKeeper(ctrl),
 	}
-	mocks.MockClientV2Keeper.EXPECT().GetClientCounterparty(gomock.Any(), gomock.Any()).Return(clientv2types.CounterpartyInfo{}, false).AnyTimes()
+	mocks.counterparties = map[string]bool{}
+	counterparties := mocks.counterparties
+	mocks.MockClientV2Keeper.EXPECT().GetClientCounterparty(gomock.Any(), gomock.Any()).
+		DoAndReturn(func(_ sdk.Context, clientID string) (clientv2types.CounterpartyInfo, bool) {
+			if counterparties[clientID] {
+				return clientv2types.CounterpartyInfo{ClientId: clientID}, true
+			}
+			return clientv2types.CounterpartyInfo{}, false
+		}).AnyTimes()
 	mocks.MockClientV2Keeper.EXPECT().SetClientCounterparty(gomock.Any(), gomock.Any(), gomock.Any()).AnyTimes()
 	return mocks
 }

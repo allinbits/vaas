@@ -19,8 +19,15 @@ import (
 
 	testcrypto "github.com/allinbits/vaas/testutil/crypto"
 	testkeeper "github.com/allinbits/vaas/testutil/keeper"
+	consumertypes "github.com/allinbits/vaas/x/vaas/consumer/types"
 	"github.com/allinbits/vaas/x/vaas/types"
 )
+
+// testProviderClientID is the client every test in this file delivers VSC
+// packets over. Production pins a provider client at genesis on both paths (a
+// new chain creates one, a restart restores the exported one), so a keeper that
+// has not pinned anything is a state these tests should not start from.
+const testProviderClientID = "07-tendermint-0"
 
 func TestOnRecvVSCPacketV2(t *testing.T) {
 	providerClientID := "07-tendermint-0"
@@ -45,6 +52,7 @@ func TestOnRecvVSCPacketV2(t *testing.T) {
 	consumerKeeper, ctx, ctrl, mocks := testkeeper.GetConsumerKeeperAndCtx(t, testkeeper.NewInMemKeeperParams(t))
 	defer ctrl.Finish()
 	testkeeper.StubClientState(mocks, "provider-0")
+	consumerKeeper.SetProviderClientID(ctx, testProviderClientID)
 
 	pd1 := types.NewValidatorSetChangePacketData(changes1, 1)
 	err = consumerKeeper.OnRecvVSCPacketV2(ctx, providerClientID, pd1)
@@ -91,6 +99,7 @@ func TestOnRecvVSCPacketV2OutOfOrder(t *testing.T) {
 	consumerKeeper, ctx, ctrl, mocks := testkeeper.GetConsumerKeeperAndCtx(t, testkeeper.NewInMemKeeperParams(t))
 	defer ctrl.Finish()
 	testkeeper.StubClientState(mocks, "provider-0")
+	consumerKeeper.SetProviderClientID(ctx, testProviderClientID)
 
 	changes5 := []abci.ValidatorUpdate{{PubKey: pk1, Power: 50}}
 	pd5 := types.NewValidatorSetChangePacketData(changes5, 5)
@@ -139,6 +148,7 @@ func TestOnRecvVSCPacketV2FirstPacketNotDropped(t *testing.T) {
 	consumerKeeper, ctx, ctrl, mocks := testkeeper.GetConsumerKeeperAndCtx(t, testkeeper.NewInMemKeeperParams(t))
 	defer ctrl.Finish()
 	testkeeper.StubClientState(mocks, "provider-0")
+	consumerKeeper.SetProviderClientID(ctx, testProviderClientID)
 
 	_, found, err := consumerKeeper.GetHighestValsetUpdateID(ctx)
 	require.NoError(t, err)
@@ -183,6 +193,7 @@ func TestOnRecvVSCPacketV2AccumulatesChanges(t *testing.T) {
 	consumerKeeper, ctx, ctrl, mocks := testkeeper.GetConsumerKeeperAndCtx(t, testkeeper.NewInMemKeeperParams(t))
 	defer ctrl.Finish()
 	testkeeper.StubClientState(mocks, "provider-0")
+	consumerKeeper.SetProviderClientID(ctx, testProviderClientID)
 
 	pd1 := types.NewValidatorSetChangePacketData(changes1, 1)
 	err = consumerKeeper.OnRecvVSCPacketV2(ctx, providerClientID, pd1)
@@ -216,6 +227,7 @@ func TestOnRecvVSCPacketV2DuplicateUpdates(t *testing.T) {
 	consumerKeeper, ctx, ctrl, mocks := testkeeper.GetConsumerKeeperAndCtx(t, testkeeper.NewInMemKeeperParams(t))
 	defer ctrl.Finish()
 	testkeeper.StubClientState(mocks, "provider-0")
+	consumerKeeper.SetProviderClientID(ctx, testProviderClientID)
 
 	cId := testcrypto.NewCryptoIdentityFromIntSeed(43278947)
 	valUpdates := []abci.ValidatorUpdate{
@@ -243,6 +255,7 @@ func TestOnRecvVSCPacketV2DebtStatus(t *testing.T) {
 	consumerKeeper, ctx, ctrl, mocks := testkeeper.GetConsumerKeeperAndCtx(t, testkeeper.NewInMemKeeperParams(t))
 	defer ctrl.Finish()
 	testkeeper.StubClientState(mocks, "provider-0")
+	consumerKeeper.SetProviderClientID(ctx, testProviderClientID)
 
 	require.False(t, consumerKeeper.IsConsumerInDebt(ctx))
 
@@ -261,6 +274,7 @@ func TestConsumerVSCStaleness(t *testing.T) {
 	k, ctx, ctrl, mocks := testkeeper.GetConsumerKeeperAndCtx(t, testkeeper.NewInMemKeeperParams(t))
 	defer ctrl.Finish()
 	testkeeper.StubClientState(mocks, "provider-0")
+	k.SetProviderClientID(ctx, testProviderClientID)
 
 	// Use a non-default threshold so this proves IsVSCStale reads the param
 	// value (not a constant) and that the boundary tracks the param.
@@ -291,6 +305,7 @@ func TestSnapshotReplacesValidatorSet(t *testing.T) {
 	k, ctx, ctrl, mocks := testkeeper.GetConsumerKeeperAndCtx(t, testkeeper.NewInMemKeeperParams(t))
 	defer ctrl.Finish()
 	testkeeper.StubClientState(mocks, "provider-0")
+	k.SetProviderClientID(ctx, testProviderClientID)
 
 	pkA := ed25519.GenPrivKey().PubKey()
 	pkB := ed25519.GenPrivKey().PubKey()
@@ -329,6 +344,7 @@ func TestOnRecvVSCRecordsRecvTime(t *testing.T) {
 	consumerKeeper, ctx, ctrl, mocks := testkeeper.GetConsumerKeeperAndCtx(t, testkeeper.NewInMemKeeperParams(t))
 	defer ctrl.Finish()
 	testkeeper.StubClientState(mocks, "provider-0")
+	consumerKeeper.SetProviderClientID(ctx, testProviderClientID)
 
 	advancedTime := ctx.BlockTime().Add(10 * time.Minute)
 	ctx = ctx.WithBlockTime(advancedTime)
@@ -354,6 +370,7 @@ func TestDedupDoesNotResetLastVSCRecvTime(t *testing.T) {
 	k, ctx, ctrl, mocks := testkeeper.GetConsumerKeeperAndCtx(t, testkeeper.NewInMemKeeperParams(t))
 	defer ctrl.Finish()
 	testkeeper.StubClientState(mocks, "provider-0")
+	k.SetProviderClientID(ctx, testProviderClientID)
 
 	// Deliver packet at blockTime T1 -- records lastVSCRecvTime = T1.
 	t1 := ctx.BlockTime().Add(5 * time.Minute)
@@ -385,6 +402,7 @@ func TestRecvPacketAfterStalenessLiftsStale(t *testing.T) {
 	k, ctx, ctrl, mocks := testkeeper.GetConsumerKeeperAndCtx(t, testkeeper.NewInMemKeeperParams(t))
 	defer ctrl.Finish()
 	testkeeper.StubClientState(mocks, "provider-0")
+	k.SetProviderClientID(ctx, testProviderClientID)
 
 	const threshold = 2 * time.Hour
 	k.SetParams(ctx, types.NewConsumerParams(
@@ -423,6 +441,7 @@ func TestOnRecvVSCPacketStagesDowntimeParams(t *testing.T) {
 	k, ctx, ctrl, mocks := testkeeper.GetConsumerKeeperAndCtx(t, testkeeper.NewInMemKeeperParams(t))
 	defer ctrl.Finish()
 	testkeeper.StubClientState(mocks, "provider-0")
+	k.SetProviderClientID(ctx, testProviderClientID)
 
 	initialParams := types.DefaultConsumerParams()
 	k.SetParams(ctx, initialParams)
@@ -470,6 +489,7 @@ func TestSnapshotResyncEmitsEvent(t *testing.T) {
 	k, ctx, ctrl, mocks := testkeeper.GetConsumerKeeperAndCtx(t, testkeeper.NewInMemKeeperParams(t))
 	defer ctrl.Finish()
 	testkeeper.StubClientState(mocks, "provider-0")
+	k.SetProviderClientID(ctx, testProviderClientID)
 
 	pk := ed25519.GenPrivKey().PubKey()
 	tm, err := cryptocodec.ToCmtProtoPublicKey(pk)
@@ -506,6 +526,7 @@ func TestSnapshotPowerChange(t *testing.T) {
 	k, ctx, ctrl, mocks := testkeeper.GetConsumerKeeperAndCtx(t, testkeeper.NewInMemKeeperParams(t))
 	defer ctrl.Finish()
 	testkeeper.StubClientState(mocks, "provider-0")
+	k.SetProviderClientID(ctx, testProviderClientID)
 
 	pkA, err := cryptocodec.ToCmtProtoPublicKey(ed25519.GenPrivKey().PubKey())
 	require.NoError(t, err)
@@ -531,6 +552,7 @@ func TestSnapshotAddsNewValidator(t *testing.T) {
 	k, ctx, ctrl, mocks := testkeeper.GetConsumerKeeperAndCtx(t, testkeeper.NewInMemKeeperParams(t))
 	defer ctrl.Finish()
 	testkeeper.StubClientState(mocks, "provider-0")
+	k.SetProviderClientID(ctx, testProviderClientID)
 
 	pkA, err := cryptocodec.ToCmtProtoPublicKey(ed25519.GenPrivKey().PubKey())
 	require.NoError(t, err)
@@ -566,6 +588,7 @@ func TestSnapshotMultipleRemovals(t *testing.T) {
 	k, ctx, ctrl, mocks := testkeeper.GetConsumerKeeperAndCtx(t, testkeeper.NewInMemKeeperParams(t))
 	defer ctrl.Finish()
 	testkeeper.StubClientState(mocks, "provider-0")
+	k.SetProviderClientID(ctx, testProviderClientID)
 
 	pkA, err := cryptocodec.ToCmtProtoPublicKey(ed25519.GenPrivKey().PubKey())
 	require.NoError(t, err)
@@ -606,6 +629,7 @@ func TestSnapshotEmptyRemovesAll(t *testing.T) {
 	k, ctx, ctrl, mocks := testkeeper.GetConsumerKeeperAndCtx(t, testkeeper.NewInMemKeeperParams(t))
 	defer ctrl.Finish()
 	testkeeper.StubClientState(mocks, "provider-0")
+	k.SetProviderClientID(ctx, testProviderClientID)
 
 	pkA, err := cryptocodec.ToCmtProtoPublicKey(ed25519.GenPrivKey().PubKey())
 	require.NoError(t, err)
@@ -639,6 +663,7 @@ func TestSnapshotReplacesEarlierPendingChanges(t *testing.T) {
 	k, ctx, ctrl, mocks := testkeeper.GetConsumerKeeperAndCtx(t, testkeeper.NewInMemKeeperParams(t))
 	defer ctrl.Finish()
 	testkeeper.StubClientState(mocks, "provider-0")
+	k.SetProviderClientID(ctx, testProviderClientID)
 
 	pkA, err := cryptocodec.ToCmtProtoPublicKey(ed25519.GenPrivKey().PubKey())
 	require.NoError(t, err)
@@ -686,6 +711,7 @@ func TestSnapshotNoDoubleEmitForUnchangedValidator(t *testing.T) {
 	k, ctx, ctrl, mocks := testkeeper.GetConsumerKeeperAndCtx(t, testkeeper.NewInMemKeeperParams(t))
 	defer ctrl.Finish()
 	testkeeper.StubClientState(mocks, "provider-0")
+	k.SetProviderClientID(ctx, testProviderClientID)
 
 	pkA, err := cryptocodec.ToCmtProtoPublicKey(ed25519.GenPrivKey().PubKey())
 	require.NoError(t, err)
@@ -715,6 +741,7 @@ func TestOnRecvVSCPacketV2PinsProviderChainIdOnFirstPacket(t *testing.T) {
 	clientID := "07-tendermint-0"
 	mocks.MockClientKeeper.EXPECT().GetClientState(gomock.Any(), clientID).
 		Return(&ibctmtypes.ClientState{ChainId: "provider-chain"}, true).AnyTimes()
+	k.SetProviderClientID(ctx, clientID)
 
 	_, found := k.GetProviderChainId(ctx)
 	require.False(t, found, "no chain id should be pinned before the first packet is accepted")
@@ -745,6 +772,8 @@ func TestOnRecvVSCPacketV2RejectsDifferentChainId(t *testing.T) {
 		Return(&ibctmtypes.ClientState{ChainId: "provider-chain"}, true).AnyTimes()
 	mocks.MockClientKeeper.EXPECT().GetClientState(gomock.Any(), rogueClientID).
 		Return(&ibctmtypes.ClientState{ChainId: "attacker-chain"}, true).AnyTimes()
+	k.SetProviderClientID(ctx, legitClientID)
+	mocks.StubClientCounterparty(legitClientID)
 
 	pk1, err := cryptocodec.ToCmtProtoPublicKey(ed25519.GenPrivKey().PubKey())
 	require.NoError(t, err)
@@ -800,33 +829,117 @@ func TestOnRecvVSCPacketV2RejectsDifferentChainId(t *testing.T) {
 	require.Equal(t, "provider-chain", pinned, "the pin itself must not change")
 }
 
-// TestOnRecvVSCPacketV2SameChainIdHealsClient adapts the pre-existing
-// heal regression coverage (see TestOnRecvVSCPacketV2 above and
-// TestIBCModuleOnRecvPacketHealsStaleProviderClient) to the chain-id gate:
-// a client replacement is allowed, and continues to heal ProviderClientID,
-// as long as the replacement client tracks the SAME pinned chain id.
-func TestOnRecvVSCPacketV2SameChainIdHealsClient(t *testing.T) {
+// TestOnRecvVSCPacketRejectsClientOverrideOnceRoutable verifies that a second
+// IBC client cannot take over as the provider client once a routable one is
+// established.
+//
+// The chain-id gate alone does not close this: IBC has no notion of chain-id
+// uniqueness, so anyone can stand up a chain that reports the provider's chain
+// id, create a client for it on the consumer, register a counterparty, and
+// deliver a VSC packet. The chain id then matches the pin while the validator
+// set behind it does not. Left to overwrite the pin, that packet redirects the
+// consumer's evidence packets to a chain that simply drops them -- silently
+// disabling downtime reporting -- and a large valset_update_id in the same
+// packet strands the real provider below the dedup watermark forever.
+//
+// A registered counterparty is the discriminator rather than the client's
+// status: counterparties cannot be unregistered, so a pin that has one is
+// routable for good and no expiry or freeze reopens the override.
+func TestOnRecvVSCPacketRejectsClientOverrideOnceRoutable(t *testing.T) {
+	const (
+		establishedClientID = "07-tendermint-0"
+		attackerClientID    = "07-tendermint-9"
+		providerChainID     = "provider-0"
+	)
+
+	pk, err := cryptocodec.ToCmtProtoPublicKey(ed25519.GenPrivKey().PubKey())
+	require.NoError(t, err)
+
+	consumerKeeper, ctx, ctrl, mocks := testkeeper.GetConsumerKeeperAndCtx(t, testkeeper.NewInMemKeeperParams(t))
+	defer ctrl.Finish()
+	// Both clients report the provider's chain id: that is the attacker's whole
+	// trick, and it is why the chain-id gate lets the packet through.
+	testkeeper.StubClientState(mocks, providerChainID)
+
+	consumerKeeper.SetProviderClientID(ctx, establishedClientID)
+	mocks.StubClientCounterparty(establishedClientID)
+
+	attack := types.NewValidatorSetChangePacketData(
+		[]abci.ValidatorUpdate{{PubKey: pk, Power: 1}}, 999999)
+	err = consumerKeeper.OnRecvVSCPacketV2(ctx, attackerClientID, attack)
+	require.ErrorIs(t, err, consumertypes.ErrInvalidProviderClient)
+
+	pinned, found := consumerKeeper.GetProviderClientID(ctx)
+	require.True(t, found)
+	require.Equal(t, establishedClientID, pinned, "the established provider client must not be overridden")
+
+	_, hasPending := consumerKeeper.GetPendingChanges(ctx)
+	require.False(t, hasPending, "the rejected packet must not stage any validator changes")
+
+	highest, found, err := consumerKeeper.GetHighestValsetUpdateID(ctx)
+	require.NoError(t, err)
+	require.False(t, found, "the rejected packet must not advance the dedup watermark")
+	require.Zero(t, highest)
+
+	chainID, found := consumerKeeper.GetProviderChainId(ctx)
+	require.True(t, found)
+	require.Equal(t, providerChainID, chainID, "the pinned chain id must survive the rejection")
+}
+
+// TestOnRecvVSCPacketAdoptsClientWhenPinIsUnroutable verifies the one case that
+// still moves the pin: the genesis client, which the consumer creates for
+// itself and which packet routing can never reach because it has no registered
+// counterparty. The first client that actually delivers takes over from it.
+func TestOnRecvVSCPacketAdoptsClientWhenPinIsUnroutable(t *testing.T) {
+	const (
+		genesisClientID  = "07-tendermint-0"
+		deliveredOverIDs = "07-tendermint-1"
+		providerChainID  = "provider-0"
+	)
+
+	pk, err := cryptocodec.ToCmtProtoPublicKey(ed25519.GenPrivKey().PubKey())
+	require.NoError(t, err)
+
+	consumerKeeper, ctx, ctrl, mocks := testkeeper.GetConsumerKeeperAndCtx(t, testkeeper.NewInMemKeeperParams(t))
+	defer ctrl.Finish()
+	testkeeper.StubClientState(mocks, providerChainID)
+
+	// The genesis client is left without a counterparty: nothing can be
+	// delivered over it, which is what makes it replaceable.
+	consumerKeeper.SetProviderClientID(ctx, genesisClientID)
+
+	pd := types.NewValidatorSetChangePacketData([]abci.ValidatorUpdate{{PubKey: pk, Power: 1}}, 1)
+	require.NoError(t, consumerKeeper.OnRecvVSCPacketV2(ctx, deliveredOverIDs, pd))
+
+	pinned, found := consumerKeeper.GetProviderClientID(ctx)
+	require.True(t, found)
+	require.Equal(t, deliveredOverIDs, pinned,
+		"the unroutable genesis pin must be replaced by the client that delivered")
+}
+
+// TestOnRecvVSCPacketRejectsWhenNoClientPinned verifies the fail-closed path:
+// a consumer with no pinned provider client rejects VSC packets rather than
+// letting one establish the pin.
+//
+// Both genesis paths pin a client -- a new chain creates one and pins it, a
+// restart restores the exported pin -- so reaching this state means a malformed
+// genesis or corrupted store. Accepting the packet there would hand the pin to
+// whoever delivered first, which is the override this gate exists to prevent.
+func TestOnRecvVSCPacketRejectsWhenNoClientPinned(t *testing.T) {
 	k, ctx, ctrl, mocks := testkeeper.GetConsumerKeeperAndCtx(t, testkeeper.NewInMemKeeperParams(t))
 	defer ctrl.Finish()
-	testkeeper.StubClientState(mocks, "provider-chain")
+	testkeeper.StubClientState(mocks, "provider-0")
 
-	staleClientID := "07-tendermint-0"
-	freshClientID := "07-tendermint-1"
+	_, found := k.GetProviderClientID(ctx)
+	require.False(t, found, "fixture must start with no pin")
 
-	pk1, err := cryptocodec.ToCmtProtoPublicKey(ed25519.GenPrivKey().PubKey())
+	pk, err := cryptocodec.ToCmtProtoPublicKey(ed25519.GenPrivKey().PubKey())
 	require.NoError(t, err)
-	pd1 := types.NewValidatorSetChangePacketData([]abci.ValidatorUpdate{{PubKey: pk1, Power: 10}}, 1)
-	require.NoError(t, k.OnRecvVSCPacketV2(ctx, staleClientID, pd1))
+	pd := types.NewValidatorSetChangePacketData([]abci.ValidatorUpdate{{PubKey: pk, Power: 1}}, 1)
 
-	pd2 := types.NewValidatorSetChangePacketData([]abci.ValidatorUpdate{{PubKey: pk1, Power: 20}}, 2)
-	require.NoError(t, k.OnRecvVSCPacketV2(ctx, freshClientID, pd2),
-		"a same-chain-id client replacement must still be accepted")
+	require.ErrorIs(t, k.OnRecvVSCPacketV2(ctx, testProviderClientID, pd),
+		consumertypes.ErrInvalidProviderClient)
 
-	clientID, found := k.GetProviderClientID(ctx)
-	require.True(t, found)
-	require.Equal(t, freshClientID, clientID, "ProviderClientID must heal to the replacement client")
-
-	pinned, found := k.GetProviderChainId(ctx)
-	require.True(t, found)
-	require.Equal(t, "provider-chain", pinned, "the pinned chain id must not change on a same-chain-id heal")
+	_, found = k.GetProviderClientID(ctx)
+	require.False(t, found, "a rejected packet must not establish the pin")
 }

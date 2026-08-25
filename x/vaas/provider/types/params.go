@@ -168,6 +168,14 @@ func (ip InfractionParameters) Validate() error {
 	if err := ip.DoubleSign.Validate(); err != nil {
 		return fmt.Errorf("double_sign: %s", err)
 	}
+	// Zero passes the shared fraction check, and for downtime it is a real
+	// policy: jail the validator without taking stake. For equivocation it
+	// removes the whole economic deterrent while the parameters still read as
+	// configured, which is not something a chain chooses by leaving a field
+	// unset -- so require a positive fraction here and let downtime keep zero.
+	if !ip.DoubleSign.SlashFraction.IsPositive() {
+		return fmt.Errorf("double_sign: slash_fraction must be positive, got %s", ip.DoubleSign.SlashFraction)
+	}
 	if ip.Downtime == nil {
 		return fmt.Errorf("downtime infraction parameters must be set")
 	}

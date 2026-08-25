@@ -24,6 +24,7 @@ func TestIBCV2ConsumerFullVSCFlow(t *testing.T) {
 	testkeeper.StubClientState(mocks, "provider-0")
 
 	providerClientID := "07-tendermint-0"
+	consumerKeeper.SetProviderClientID(ctx, providerClientID)
 
 	// Create validator updates
 	pk1, err := cryptocodec.ToCmtProtoPublicKey(ed25519.GenPrivKey().PubKey())
@@ -84,6 +85,7 @@ func TestIBCV2ConsumerOutOfOrderHandling(t *testing.T) {
 	testkeeper.StubClientState(mocks, "provider-0")
 
 	providerClientID := "07-tendermint-0"
+	consumerKeeper.SetProviderClientID(ctx, providerClientID)
 
 	pk1, err := cryptocodec.ToCmtProtoPublicKey(ed25519.GenPrivKey().PubKey())
 	require.NoError(t, err)
@@ -142,6 +144,7 @@ func TestIBCV2ConsumerRejectsUnknownProvider(t *testing.T) {
 	testkeeper.StubClientState(mocks, "provider-0")
 
 	providerClientID := "07-tendermint-0"
+	consumerKeeper.SetProviderClientID(ctx, providerClientID)
 	unknownClientID := "07-tendermint-999"
 
 	pk, err := cryptocodec.ToCmtProtoPublicKey(ed25519.GenPrivKey().PubKey())
@@ -201,6 +204,7 @@ func TestIBCV2ConsumerDuplicatePacketHandling(t *testing.T) {
 	testkeeper.StubClientState(mocks, "provider-0")
 
 	providerClientID := "07-tendermint-0"
+	consumerKeeper.SetProviderClientID(ctx, providerClientID)
 
 	pk, err := cryptocodec.ToCmtProtoPublicKey(ed25519.GenPrivKey().PubKey())
 	require.NoError(t, err)

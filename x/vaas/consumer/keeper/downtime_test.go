@@ -360,3 +360,66 @@ func getPendingPacket(t *testing.T, ctx sdk.Context, k keeper.Keeper, addr []byt
 	require.NoError(t, json.Unmarshal(bz, &packet))
 	return packet
 }
+
+// TestStageDowntimeParamsRevertedBeforeWindowCloseDropsTheStage verifies that a
+// parameter change reverted before it took effect does not activate anyway at
+// the next window boundary.
+//
+// Staging is keyed off a comparison with the *active* params, so a revert
+// arrives looking like a no-op: the provider went A -> B -> A, the consumer
+// staged B while still running A, and the second packet carries A, which equals
+// what is active. Left as a plain no-op the stale B survives to the window
+// boundary and activates, and the consumer then measures downtime under
+// parameters the provider is not using -- the consumer's MaxMissed and the
+// provider's threshold check disagree on the same window, which is the one
+// divergence this design cannot absorb.
+func TestStageDowntimeParamsRevertedBeforeWindowCloseDropsTheStage(t *testing.T) {
+	consumerKeeper, ctx, ctrl, _ := testkeeper.GetConsumerKeeperAndCtx(t, testkeeper.NewInMemKeeperParams(t))
+	defer ctrl.Finish()
+
+	// A: window 4, min-signed 0.5 -- active, and a window is in progress.
+	setDowntimeParams(ctx, consumerKeeper, 4, "0.5")
+
+	addr := []byte{0x0E}
+	allCommit := func(int64) []abci.VoteInfo {
+		return []abci.VoteInfo{
+			{Validator: abci.Validator{Address: addr, Power: 1}, BlockIdFlag: cmtproto.BlockIDFlagCommit},
+		}
+	}
+	for h := int64(5); h <= 6; h++ {
+		ctx = ctx.WithBlockHeight(h).WithVoteInfos(allCommit(h - 1))
+		consumerKeeper.TrackMissedBlocks(ctx)
+	}
+
+	// B staged mid-window by the first packet.
+	consumerKeeper.StageDowntimeParams(ctx, vaastypes.DowntimeParams{
+		SignedBlocksWindow: 8,
+		MinSignedPerWindow: math.LegacyMustNewDecFromStr("0.6"),
+	})
+	staged, err := consumerKeeper.StagedDowntimeParams.Get(ctx)
+	require.NoError(t, err, "fixture must have something staged to revert")
+	require.Equal(t, int64(8), staged.SignedBlocksWindow)
+
+	// The provider reverts to A before the window closes. This packet carries
+	// values equal to the active ones, so it reads as a no-op.
+	consumerKeeper.StageDowntimeParams(ctx, vaastypes.DowntimeParams{
+		SignedBlocksWindow: 4,
+		MinSignedPerWindow: math.LegacyMustNewDecFromStr("0.5"),
+	})
+
+	has, err := consumerKeeper.StagedDowntimeParams.Has(ctx)
+	require.NoError(t, err)
+	require.False(t, has, "a revert to the active params must drop the pending stage")
+
+	// Close the window: the consumer must still be measuring under A.
+	for h := int64(7); h <= 8; h++ {
+		ctx = ctx.WithBlockHeight(h).WithVoteInfos(allCommit(h - 1))
+		consumerKeeper.TrackMissedBlocks(ctx)
+	}
+
+	window, minSigned := consumerKeeper.GetDowntimeParams(ctx)
+	require.Equal(t, int64(4), window,
+		"the reverted window size must not activate at the boundary")
+	require.True(t, math.LegacyMustNewDecFromStr("0.5").Equal(minSigned),
+		"the reverted min-signed fraction must not activate at the boundary")
+}

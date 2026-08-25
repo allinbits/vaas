@@ -176,6 +176,15 @@ func (k Keeper) StageDowntimeParams(ctx sdk.Context, p vaastypes.DowntimeParams)
 
 	current := k.GetConsumerParams(ctx)
 	if current.SignedBlocksWindow == p.SignedBlocksWindow && current.MinSignedPerWindow.Equal(p.MinSignedPerWindow) {
+		// p is already active, so there is nothing to stage -- but a pending
+		// stage has to go. Reaching here with something staged means the
+		// provider changed the params and changed them back before the window
+		// closed, and this packet carries the revert; leaving the stage in
+		// place would activate the abandoned value at the boundary and leave
+		// the consumer measuring windows the provider prices differently.
+		if err := k.StagedDowntimeParams.Remove(ctx); err != nil {
+			panic(err)
+		}
 		return
 	}
 	if err := k.StagedDowntimeParams.Set(ctx, p); err != nil {

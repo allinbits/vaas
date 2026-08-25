@@ -11,6 +11,7 @@ import (
 	cmtproto "github.com/cometbft/cometbft/proto/tendermint/types"
 	tmtypes "github.com/cometbft/cometbft/types"
 
+	ibcexported "github.com/cosmos/ibc-go/v10/modules/core/exported"
 	ibctmtypes "github.com/cosmos/ibc-go/v10/modules/light-clients/07-tendermint"
 
 	"cosmossdk.io/collections"
@@ -245,10 +246,27 @@ func verifySealedCommitSignature(lastCommit *cmtproto.Commit, header *ibctmtypes
 // ibctmtypes.Header is itself a valid exported.ClientMessage, and
 // VerifyClientMessage dispatches it to the client state's header-update
 // verification (trusted-state lookup, trust-level check, trusting period).
-// Tests may override this via OverrideVerifyDowntimeChallengeHeaderForTest
-// when fabricating a real client store is impractical; production always
-// takes this path.
+//
+// The client's status is checked first, because VerifyClientMessage does not
+// check it: it validates the header against the trusted state, and an expired
+// client only fails that path incidentally through the trusting-period check
+// while a frozen one does not fail it at all. Frozen is the state a client
+// enters once the chain behind it is proven to have equivocated, so a frozen
+// client's headers are the last thing that should be allowed to cancel a slash
+// and pause the consumer. Gate on Active and let every other status fail
+// closed.
+//
+// Tests may override the verification step via
+// OverrideVerifyDowntimeChallengeHeaderForTest when fabricating a real client
+// store is impractical; the status gate is not part of that seam, so it is
+// enforced on every path.
 func (k Keeper) verifyDowntimeChallengeHeader(ctx sdk.Context, clientId string, header *ibctmtypes.Header) error {
+	if status := k.clientKeeper.GetClientStatus(ctx, clientId); status != ibcexported.Active {
+		return errorsmod.Wrapf(types.ErrDowntimeChallengeFailed,
+			"consumer client %s is %s, not %s: its headers cannot be trusted to disprove downtime",
+			clientId, status, ibcexported.Active)
+	}
+
 	if k.verifyDowntimeChallengeHeaderFn != nil {
 		return k.verifyDowntimeChallengeHeaderFn(ctx, clientId, header)
 	}

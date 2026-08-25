@@ -338,6 +338,12 @@ func (k Keeper) recordWithheldFee(ctx sdk.Context, consumerId uint64, providerCo
 	key := collections.Join(consumerId, providerConsAddr.Bytes())
 	expiresAt := ctx.BlockTime().Add(k.GetInfractionParams(ctx).DowntimeChallengeWindow)
 
+	// Accumulate onto a live record, replace an expired one outright. The escrow
+	// exists to make a validator whole if it challenges successfully, so once the
+	// challenge window closes unchallenged the claim is extinguished: the
+	// accusation stood, and the amount stays with the consumer to be released on
+	// the next sweep. Carrying the old amount forward would re-escrow funds the
+	// validator can no longer claim.
 	if existing, err := k.WithheldFeeRecords.Get(ctx, key); err == nil && existing.ExpiresAt.After(ctx.BlockTime()) {
 		amount = amount.Add(existing.Amount)
 	}

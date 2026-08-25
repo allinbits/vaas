@@ -1,6 +1,7 @@
 package keeper_test
 
 import (
+	"go.uber.org/mock/gomock"
 	"testing"
 
 	"github.com/stretchr/testify/require"
@@ -8,6 +9,7 @@ import (
 	tmproto "github.com/cometbft/cometbft/proto/tendermint/types"
 
 	ibcclienttypes "github.com/cosmos/ibc-go/v10/modules/core/02-client/types"
+	ibcexported "github.com/cosmos/ibc-go/v10/modules/core/exported"
 	ibctmtypes "github.com/cosmos/ibc-go/v10/modules/light-clients/07-tendermint"
 
 	testkeeper "github.com/allinbits/vaas/testutil/keeper"
@@ -34,6 +36,13 @@ func TestVerifyDowntimeChallengeHeaderDispatchesToLightClientModule(t *testing.T
 	// ever written to it: the client id below is never registered.
 	storeProvider := newFakeClientStoreProvider(keeperParams)
 	mocks.MockClientKeeper.EXPECT().GetStoreProvider().Return(storeProvider).AnyTimes()
+	// The status gate fronts the verification call and would otherwise reject
+	// this unregistered client before the dispatch under test happens. What is
+	// being asserted here is that an Active client's header reaches the light
+	// client module, so report Active and let the empty store produce the
+	// error.
+	mocks.MockClientKeeper.EXPECT().GetClientStatus(gomock.Any(), gomock.Any()).
+		Return(ibcexported.Active).AnyTimes()
 
 	header := &ibctmtypes.Header{
 		SignedHeader: &tmproto.SignedHeader{

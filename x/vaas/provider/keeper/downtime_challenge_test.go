@@ -13,6 +13,7 @@ import (
 	tmproto "github.com/cometbft/cometbft/proto/tendermint/types"
 	tmtypes "github.com/cometbft/cometbft/types"
 
+	ibcexported "github.com/cosmos/ibc-go/v10/modules/core/exported"
 	ibctmtypes "github.com/cosmos/ibc-go/v10/modules/light-clients/07-tendermint"
 
 	"github.com/cosmos/cosmos-sdk/codec/address"
@@ -50,6 +51,10 @@ type challengeFixture struct {
 	claimedHeight   int64
 	windowEndHeight int64
 	msg             *types.MsgChallengeConsumerDowntime
+
+	// clientStatus is what the consumer's IBC client reports; a test flips it
+	// to exercise the status gate in front of header verification.
+	clientStatus ibcexported.Status
 }
 
 func newChallengeFixture(t *testing.T) *challengeFixture {
@@ -134,7 +139,7 @@ func newChallengeFixture(t *testing.T) *challengeFixture {
 		ValidatorPubkey: pubKey.Bytes(),
 	}
 
-	return &challengeFixture{
+	f := &challengeFixture{
 		k:               k,
 		ctx:             ctx,
 		mocks:           mocks,
@@ -143,7 +148,12 @@ func newChallengeFixture(t *testing.T) *challengeFixture {
 		claimedHeight:   claimedHeight,
 		windowEndHeight: windowEndHeight,
 		msg:             msg,
+		clientStatus:    ibcexported.Active,
 	}
+	mocks.MockClientKeeper.EXPECT().GetClientStatus(gomock.Any(), gomock.Any()).
+		DoAndReturn(func(sdk.Context, string) ibcexported.Status { return f.clientStatus }).AnyTimes()
+
+	return f
 }
 
 // pendingSlashKey returns the PendingDowntimeSlashes key (consumer,
@@ -238,7 +248,8 @@ func TestHandleChallengeConsumerDowntime_Success(t *testing.T) {
 // rejected as "no pending slash"), and succeeds -- cancelling every pending
 // slash for the consumer, including the untouched first window.
 func TestHandleChallengeConsumerDowntime_FindsContainingWindowAmongSeveral(t *testing.T) {
-	k, ctx, ctrl, _ := testkeeper.GetProviderKeeperAndCtx(t, testkeeper.NewInMemKeeperParams(t))
+	k, ctx, ctrl, mocks := testkeeper.GetProviderKeeperAndCtx(t, testkeeper.NewInMemKeeperParams(t))
+	mocks.MockClientKeeper.EXPECT().GetClientStatus(gomock.Any(), gomock.Any()).Return(ibcexported.Active).AnyTimes()
 	defer ctrl.Finish()
 
 	k.OverrideVerifyDowntimeChallengeHeaderForTest(func(sdk.Context, string, *ibctmtypes.Header) error {
@@ -331,7 +342,8 @@ func TestHandleChallengeConsumerDowntime_FindsContainingWindowAmongSeveral(t *te
 // (bit 11). The challenge succeeds down the full path: the pending slash is
 // cancelled and the consumer is paused.
 func TestHandleChallengeConsumerDowntime_SuccessAtLastWindowHeight(t *testing.T) {
-	k, ctx, ctrl, _ := testkeeper.GetProviderKeeperAndCtx(t, testkeeper.NewInMemKeeperParams(t))
+	k, ctx, ctrl, mocks := testkeeper.GetProviderKeeperAndCtx(t, testkeeper.NewInMemKeeperParams(t))
+	mocks.MockClientKeeper.EXPECT().GetClientStatus(gomock.Any(), gomock.Any()).Return(ibcexported.Active).AnyTimes()
 	defer ctrl.Finish()
 
 	k.OverrideVerifyDowntimeChallengeHeaderForTest(func(sdk.Context, string, *ibctmtypes.Header) error {
@@ -650,4 +662,32 @@ func TestHandleChallengeConsumerDowntime_ForgedSignature(t *testing.T) {
 	require.ErrorIs(t, err, types.ErrDowntimeChallengeFailed)
 	require.ErrorContains(t, err, "does not verify against validator_pubkey")
 	f.requireNoStateChange(t)
+}
+
+// TestHandleChallengeConsumerDowntime_RejectsNonActiveClient verifies that a
+// challenge is refused when the consumer's IBC client is not Active.
+//
+// The header is verified through the 07-tendermint module's
+// VerifyClientMessage, which checks the trusted state, trust level and
+// trusting period but not the client's status. An expired client fails that
+// path incidentally, via the trusting-period check; a frozen one does not fail
+// it at all. Frozen is exactly the state a client enters when the chain behind
+// it is caught equivocating, so its headers are the last thing that should be
+// allowed to cancel a slash and pause the consumer.
+func TestHandleChallengeConsumerDowntime_RejectsNonActiveClient(t *testing.T) {
+	for _, status := range []ibcexported.Status{ibcexported.Frozen, ibcexported.Expired, ibcexported.Unknown} {
+		t.Run(string(status), func(t *testing.T) {
+			f := newChallengeFixture(t)
+			f.clientStatus = status
+
+			err := f.k.HandleChallengeConsumerDowntime(f.ctx, f.msg)
+			require.ErrorIs(t, err, types.ErrDowntimeChallengeFailed)
+			require.Contains(t, err.Error(), string(status))
+
+			_, getErr := f.k.PendingDowntimeSlashes.Get(f.ctx, f.pendingSlashKey())
+			require.NoError(t, getErr, "the pending slash must survive a challenge over a non-active client")
+			require.Equal(t, types.CONSUMER_PHASE_LAUNCHED, f.k.GetConsumerPhase(f.ctx, f.cid),
+				"the consumer must not be paused by a challenge over a non-active client")
+		})
+	}
 }

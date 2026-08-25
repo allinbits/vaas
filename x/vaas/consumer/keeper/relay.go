@@ -26,13 +26,16 @@ func (k Keeper) OnRecvVSCPacketV2(ctx sdk.Context, consumerClientID string, newC
 	}
 
 	// Authenticate the packet's source before touching any state: a client
-	// tracking an unexpected chain id is rejected outright, before the
-	// dedup check below and every state mutation that follows it
-	// (SetLastVSCRecvTime, the ProviderClientID heal, param staging, valset
-	// apply). Anyone can permissionlessly create an IBC v2 client, so
-	// DestinationClient alone does not prove the packet came from the
-	// provider; pinning the chain id closes that gap.
+	// tracking an unexpected chain id, or any client other than the pinned
+	// provider client, is rejected outright -- before the dedup check below and
+	// every state mutation that follows it (SetLastVSCRecvTime, param staging,
+	// valset apply). Anyone can permissionlessly create an IBC v2 client, so
+	// DestinationClient alone does not prove the packet came from the provider;
+	// the chain-id gate and the client pin together close that gap.
 	if err := k.authenticateProviderChainID(ctx, consumerClientID); err != nil {
+		return err
+	}
+	if err := k.enforcePinnedProviderClient(ctx, consumerClientID); err != nil {
 		return err
 	}
 
@@ -54,23 +57,6 @@ func (k Keeper) OnRecvVSCPacketV2(ctx sdk.Context, consumerClientID string, newC
 
 	if newChanges.DowntimeParams != nil {
 		k.StageDowntimeParams(ctx, *newChanges.DowntimeParams)
-	}
-
-	// The stored client follows whichever client is actually delivering VSC
-	// packets: the first value ever seen is not authoritative, because at
-	// genesis it is a placeholder client the consumer creates for itself
-	// before the relayer establishes the real, counterparty-linked client.
-	if current, found := k.GetProviderClientID(ctx); !found || current != consumerClientID {
-		k.SetProviderClientID(ctx, consumerClientID)
-		k.Logger(ctx).Info("Provider client established", "clientID", consumerClientID)
-
-		ctx.EventManager().EmitEvent(
-			sdk.NewEvent(
-				vaastypes.EventTypeChannelEstablished,
-				sdk.NewAttribute(sdk.AttributeKeyModule, types.ModuleName),
-				sdk.NewAttribute("client_id", consumerClientID),
-			),
-		)
 	}
 
 	k.SetConsumerInDebt(ctx, newChanges.ConsumerInDebt)
@@ -132,17 +118,72 @@ func (k Keeper) OnRecvVSCPacketV2(ctx sdk.Context, consumerClientID string, newC
 // accepted teaches the consumer the provider's chain id from that packet's
 // destination client; every packet after that must arrive over a client
 // tracking the same chain id, or it is rejected before any state changes
-// (see the call site in OnRecvVSCPacketV2). A same-chain-id client
-// replacement -- e.g. swapping an expired/frozen client for a fresh one --
-// remains allowed, since the ProviderClientID heal logic in OnRecvVSCPacketV2
-// is unaffected by this gate as long as the chain id matches.
+// (see the call site in OnRecvVSCPacketV2).
 //
-// Residual trust boundary: this only pins the chain-id *string*. A chain
-// that reuses the same chain-id (a fork, or a chain deliberately renamed to
-// collide) still has to produce a light-client history that convinces the
-// consumer's tendermint light client of that chain id; forging that history
-// is the job of the misbehaviour/light-client-fraud machinery, not this
+// This gate only pins the chain-id *string*, which on its own is weak: IBC
+// attaches no meaning to chain-id uniqueness, so a chain that simply reports
+// the provider's chain id passes it while carrying a different validator set.
+// What makes that insufficient rather than exploitable is
+// enforcePinnedProviderClient, which will not let such a packet displace the
+// established provider client. A chain that reuses the chain id must still
+// produce a light-client history the consumer's tendermint client accepts;
+// forging that is the job of the misbehaviour/light-client-fraud machinery, not
+// this
 // check.
+// enforcePinnedProviderClient rejects a VSC packet that arrives over a client
+// other than the established provider client, and adopts the delivering client
+// when the pin is one that packet routing can never reach.
+//
+// The chain-id gate above is not sufficient on its own. IBC attaches no meaning
+// to chain-id uniqueness, so anyone can run a chain that reports the provider's
+// chain id, create a client for it here, register a counterparty and deliver a
+// VSC packet: the chain id matches the pin while the validator set behind it
+// does not. Overwriting the pin from such a packet hands the attacker the
+// address SendEvidencePackets uses, so every downtime report goes to a chain
+// that discards it -- and a large valset_update_id in the same packet leaves the
+// real provider permanently below the dedup watermark. Downtime reporting stops
+// and the validator set freezes, with nothing on either chain to show why.
+//
+// The discriminator is a registered counterparty, not the client's status.
+// Counterparties cannot be unregistered, so a pin that has one is routable for
+// good and neither expiry nor a freeze reopens the override; recovering an
+// expired pin is a governance MsgRecoverClient, which substitutes fresh client
+// state under the same client id and leaves the pin untouched. A pin without a
+// counterparty is the client the consumer created for itself at genesis, which
+// no packet can ever be delivered over, so the first client that does deliver
+// takes over from it -- once, since that client necessarily has a counterparty.
+func (k Keeper) enforcePinnedProviderClient(ctx sdk.Context, consumerClientID string) error {
+	pinned, found := k.GetProviderClientID(ctx)
+	if !found {
+		// Both genesis paths pin a client (a new chain creates one and pins it,
+		// a restart restores the exported pin), so an absent pin means a
+		// malformed genesis or corrupted state: fail closed rather than let this
+		// packet establish one.
+		return errorsmod.Wrapf(types.ErrInvalidProviderClient,
+			"no provider client pinned; rejecting VSC packet over client %s", consumerClientID)
+	}
+	if pinned == consumerClientID {
+		return nil
+	}
+	if _, hasCounterparty := k.clientV2Keeper.GetClientCounterparty(ctx, pinned); hasCounterparty {
+		return errorsmod.Wrapf(types.ErrInvalidProviderClient,
+			"VSC packet arrived over client %s, but the provider client is pinned to %s",
+			consumerClientID, pinned)
+	}
+
+	k.SetProviderClientID(ctx, consumerClientID)
+	k.Logger(ctx).Info("provider client established", "clientID", consumerClientID)
+	ctx.EventManager().EmitEvent(
+		sdk.NewEvent(
+			vaastypes.EventTypeChannelEstablished,
+			sdk.NewAttribute(sdk.AttributeKeyModule, types.ModuleName),
+			sdk.NewAttribute("client_id", consumerClientID),
+		),
+	)
+
+	return nil
+}
+
 func (k Keeper) authenticateProviderChainID(ctx sdk.Context, consumerClientID string) error {
 	clientState, found := k.clientKeeper.GetClientState(ctx, consumerClientID)
 	if !found {

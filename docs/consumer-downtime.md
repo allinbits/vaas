@@ -258,6 +258,21 @@ re-registration. While paused:
 - An **auto-stop** is scheduled at `now + MaxPauseDuration`: a pause governance never
   resolves becomes `STOPPED` (then `DELETED`) like any other dead consumer. No consumer can
   be paused forever.
+- The consumer keeps all of its state, key assignments included -- they are what the resume
+  snapshot is rebuilt from. So a paused consumer stays visible to anything asking whether a
+  consumer still holds state: notably the consensus-key collision guard that runs when a
+  validator is created, which would otherwise let a new validator take a consensus key
+  already serving as someone's assigned key here and deliver a validator set carrying one
+  address twice at resume.
+- **Key assignment stays open.** A pause can last up to `MaxPauseDuration` and resolves on
+  someone else's governance decision, so a validator needing to replace a compromised
+  consumer key must not have to wait for it. Replacing a key here schedules the old consumer
+  address for pruning rather than deleting it, since a paused consumer is exactly the one
+  with downtime state in flight and both the challenge lookup and the re-submission defence
+  resolve an accused address through that mapping.
+- **`MsgUpdateConsumer` is refused**, unlike key assignment. An update can rewrite the
+  infraction and initialization parameters the challenge was judged under, and the resume
+  path replays state built from them. Resume or remove first, then update.
 
 Two governance exits:
 
@@ -331,15 +346,24 @@ challenge window.
   the provider application's source port, and the consumer accepts them only over a client
   whose tracked chain id matches the provider chain id pinned at genesis (or at first
   contact). See [consumer-liveness.md](consumer-liveness.md) for the delivery model.
+- An attacker chain reusing the provider's exact chain-id string. No forged light-client
+  history is needed for this -- IBC attaches no meaning to chain-id uniqueness, so a chain
+  that simply reports the provider's chain id passes the pinning check while carrying a
+  different validator set. What stops it is that the established provider client cannot be
+  replaced: once the pinned client has a registered IBC v2 counterparty, a VSC packet
+  arriving over any other client is rejected. Without that, such a packet would redirect
+  every downtime evidence packet to a chain that discards them, and a large
+  `valset_update_id` in the same packet would strand the real provider below the dedup
+  watermark for good. A pin with no counterparty is the client the consumer created for
+  itself at genesis, which nothing can be delivered over; the first client that does deliver
+  replaces it, once. Recovering an expired or frozen pin is a governance `MsgRecoverClient`,
+  which substitutes fresh client state under the same client id and leaves the pin intact.
 
 **Out of scope**
 
 - Collusion of 2/3+ of the consumer's voting power to seal a forged `LastCommit`. That is a
   light client attack by the provider's own validator set, detected and punished by the
   existing misbehaviour machinery.
-- An attacker chain reusing the provider's exact chain-id string against the pinning check:
-  distinguishing it requires a forged light-client history, which again lands in the
-  misbehaviour machinery's domain.
 - Sustained sub-threshold missing (a validator that signs just over `MinSignedPerWindow` of
   every window keeps full fees). The SLA is per-window by construction; burst misses aligned
   across a window boundary can total up to `2 * maxMissed` without triggering -- accepted,

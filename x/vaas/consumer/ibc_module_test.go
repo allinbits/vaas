@@ -27,6 +27,10 @@ func TestIBCModuleOnRecvPacketStoresDestinationClientAsProviderClient(t *testing
 	consumerKeeper, ctx, ctrl, mocks := testkeeper.GetConsumerKeeperAndCtx(t, testkeeper.NewInMemKeeperParams(t))
 	defer ctrl.Finish()
 	testkeeper.StubClientState(mocks, "provider-0")
+	// Start from the genesis placeholder: it has no registered counterparty, so
+	// it is the one pin the first delivered packet is allowed to replace. That
+	// is what makes which id gets stored observable.
+	consumerKeeper.SetProviderClientID(ctx, "07-tendermint-genesis")
 
 	module := consumer.NewIBCModule(&consumerKeeper)
 
@@ -62,6 +66,10 @@ func TestIBCModuleOnRecvPacketHealsStaleProviderClient(t *testing.T) {
 	consumerKeeper, ctx, ctrl, mocks := testkeeper.GetConsumerKeeperAndCtx(t, testkeeper.NewInMemKeeperParams(t))
 	defer ctrl.Finish()
 	testkeeper.StubClientState(mocks, "provider-0")
+	// Start from the genesis placeholder: it has no registered counterparty, so
+	// it is the one pin the first delivered packet is allowed to replace. That
+	// is what makes which id gets stored observable.
+	consumerKeeper.SetProviderClientID(ctx, "07-tendermint-genesis")
 
 	staleGenesisClientID := "07-tendermint-0"
 	consumerKeeper.SetProviderClientID(ctx, staleGenesisClientID)

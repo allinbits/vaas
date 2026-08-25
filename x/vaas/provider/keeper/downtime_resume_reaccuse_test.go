@@ -54,6 +54,7 @@ func TestResumeThenReaccuse_SameWindowRejectedLaterWindowChallengeable(t *testin
 	k.SetConsumerPhase(ctx, cid, types.CONSUMER_PHASE_LAUNCHED)
 	k.SetConsumerChainId(ctx, cid, reaccuseTestChainID)
 	k.SetConsumerClientId(ctx, cid, clientId)
+	mocks.MockClientKeeper.EXPECT().GetClientStatus(gomock.Any(), clientId).Return(ibcexported.Active).AnyTimes()
 	k.SetEquivocationEvidenceMinHeight(ctx, cid, 1)
 	require.NoError(t, k.SetConsumerInitializationParameters(ctx, cid, types.ConsumerInitializationParameters{
 		SpawnTime: windowEndTime.Add(-30 * 24 * time.Hour),
@@ -164,7 +165,6 @@ func TestResumeThenReaccuse_SameWindowRejectedLaterWindowChallengeable(t *testin
 	// drop out of GetConsumerValidator and short-circuit the post-resume
 	// evidence checks below before they ever reach the window-overlap logic
 	// this test is actually about.
-	mocks.MockClientKeeper.EXPECT().GetClientStatus(gomock.Any(), clientId).Return(ibcexported.Active)
 	mocks.MockStakingKeeper.EXPECT().MaxValidators(gomock.Any()).Return(uint32(100), nil).AnyTimes()
 	mocks.MockStakingKeeper.EXPECT().GetBondedValidatorsByPower(gomock.Any()).Return([]stakingtypes.Validator{validator}, nil).AnyTimes()
 	mocks.MockStakingKeeper.EXPECT().GetLastValidatorPower(gomock.Any(), gomock.Any()).Return(int64(1000), nil).AnyTimes()
