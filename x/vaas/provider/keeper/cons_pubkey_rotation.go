@@ -2,11 +2,13 @@ package keeper
 
 import (
 	"errors"
+	"fmt"
 
 	"github.com/allinbits/vaas/x/vaas/provider/types"
 
 	"cosmossdk.io/collections"
 
+	cryptotypes "github.com/cosmos/cosmos-sdk/crypto/types"
 	sdk "github.com/cosmos/cosmos-sdk/types"
 	stakingtypes "github.com/cosmos/cosmos-sdk/x/staking/types"
 )
@@ -71,6 +73,33 @@ func (k Keeper) MigrateStateOnConsPubKeyRotation(
 // providerAddr comes back unchanged when x/staking knows no validator for it,
 // leaving a caller that resolves an address in order to read state under it
 // to find nothing there, exactly as it would have without the resolution.
+// pendingRotationClaims reports whether consAddr is the target of a
+// consensus-key rotation recorded in the current block. x/staking writes a
+// rotation at tx time but applies it only in its own EndBlock, so inside that
+// window the new key belongs to no validator that GetValidatorByConsAddr can
+// see; the block's rotation records are the only place the claim exists. Used
+// by AssignConsumerKey so a consumer-key assignment delivered after the
+// rotation in the same block cannot take the key and hand two validators one
+// consumer consensus address when EndBlock applies the rotation.
+func (k Keeper) pendingRotationClaims(ctx sdk.Context, consAddr sdk.ConsAddress) (bool, error) {
+	rotations, err := k.stakingKeeper.GetBlockConsPubKeyRotationHistory(ctx)
+	if err != nil {
+		return false, fmt.Errorf("reading current-block consensus-key rotations: %w", err)
+	}
+	for _, rotation := range rotations {
+		pk, ok := rotation.NewConsPubkey.GetCachedValue().(cryptotypes.PubKey)
+		if !ok {
+			// Not decodable as a public key: staking's own handler rejected or
+			// will reject this rotation, so it claims nothing.
+			continue
+		}
+		if consAddr.Equals(sdk.ConsAddress(pk.Address())) {
+			return true, nil
+		}
+	}
+	return false, nil
+}
+
 func (k Keeper) liveProviderConsAddr(ctx sdk.Context, providerAddr types.ProviderConsAddress) types.ProviderConsAddress {
 	validator, err := k.stakingKeeper.GetValidatorByConsAddr(ctx, providerAddr.ToSdkConsAddr())
 	if err != nil {

@@ -1,6 +1,7 @@
 package keeper
 
 import (
+	"context"
 	"crypto/rand"
 	"encoding/binary"
 	"testing"
@@ -29,6 +30,7 @@ import (
 	codectypes "github.com/cosmos/cosmos-sdk/codec/types"
 	cryptocodec "github.com/cosmos/cosmos-sdk/crypto/codec"
 	"github.com/cosmos/cosmos-sdk/crypto/keys/ed25519"
+	cryptotypes "github.com/cosmos/cosmos-sdk/crypto/types"
 	"github.com/cosmos/cosmos-sdk/runtime"
 	sdk "github.com/cosmos/cosmos-sdk/types"
 	authtypes "github.com/cosmos/cosmos-sdk/x/auth/types"
@@ -84,6 +86,23 @@ type MockedKeepers struct {
 	// counterparties holds the client ids that report a registered IBC v2
 	// counterparty. Default is none; StubClientCounterparty opts a client in.
 	counterparties map[string]bool
+
+	// pendingRotations holds what GetBlockConsPubKeyRotationHistory reports:
+	// the consensus-key rotations recorded in the current block, not yet
+	// applied by staking's EndBlock. Default is none; StubPendingRotation
+	// records one.
+	pendingRotations *[]stakingtypes.ConsPubKeyRotationHistory
+}
+
+// StubPendingRotation records a same-block consensus-key rotation onto
+// newConsPubKey, as x/staking's msg handler would before EndBlock applies it.
+func (m MockedKeepers) StubPendingRotation(t *testing.T, newConsPubKey cryptotypes.PubKey) {
+	t.Helper()
+	anyPk, err := codectypes.NewAnyWithValue(newConsPubKey)
+	require.NoError(t, err)
+	*m.pendingRotations = append(*m.pendingRotations, stakingtypes.ConsPubKeyRotationHistory{
+		NewConsPubkey: anyPk,
+	})
 }
 
 // StubClientCounterparty makes clientID report a registered IBC v2
@@ -107,6 +126,12 @@ func NewMockedKeepers(ctrl *gomock.Controller) MockedKeepers {
 		MockDistributionKeeper: NewMockDistributionKeeper(ctrl),
 	}
 	mocks.counterparties = map[string]bool{}
+	mocks.pendingRotations = &[]stakingtypes.ConsPubKeyRotationHistory{}
+	pendingRotations := mocks.pendingRotations
+	mocks.MockStakingKeeper.EXPECT().GetBlockConsPubKeyRotationHistory(gomock.Any()).
+		DoAndReturn(func(context.Context) ([]stakingtypes.ConsPubKeyRotationHistory, error) {
+			return *pendingRotations, nil
+		}).AnyTimes()
 	counterparties := mocks.counterparties
 	mocks.MockClientV2Keeper.EXPECT().GetClientCounterparty(gomock.Any(), gomock.Any()).
 		DoAndReturn(func(_ sdk.Context, clientID string) (clientv2types.CounterpartyInfo, bool) {

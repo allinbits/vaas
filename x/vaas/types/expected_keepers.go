@@ -25,6 +25,11 @@ type StakingKeeper interface {
 	UnbondingCanComplete(ctx context.Context, id uint64) error
 	UnbondingTime(ctx context.Context) (time.Duration, error)
 	GetValidatorByConsAddr(ctx context.Context, consAddr sdk.ConsAddress) (stakingtypes.Validator, error)
+	// GetBlockConsPubKeyRotationHistory lists the consensus-key rotations
+	// recorded in the current block: x/staking writes them at tx time but only
+	// applies them in its EndBlock, so this is the sole view of a key that is
+	// already claimed by a rotation yet absent from every validator lookup.
+	GetBlockConsPubKeyRotationHistory(ctx context.Context) ([]stakingtypes.ConsPubKeyRotationHistory, error)
 	GetLastValidatorPower(ctx context.Context, operator sdk.ValAddress) (int64, error)
 	Jail(context.Context, sdk.ConsAddress) error // jail a validator
 	SlashWithInfractionReason(ctx context.Context, consAddr sdk.ConsAddress, infractionHeight, power int64, slashFactor math.LegacyDec, infraction stakingtypes.Infraction) (math.Int, error)
