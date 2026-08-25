@@ -90,6 +90,18 @@ func (k Keeper) AssignConsumerKey(
 	}
 	providerAddr := types.NewProviderConsAddress(consAddrTmp)
 
+	// A rotation recorded earlier in this same block claims the key just as an
+	// existing validator does, but is invisible to GetValidatorByConsAddr until
+	// staking's EndBlock applies it -- check the block's rotation records first.
+	if claimed, err := k.pendingRotationClaims(ctx, consumerAddr.ToSdkConsAddr()); err != nil {
+		return err
+	} else if claimed {
+		return errorsmod.Wrapf(
+			types.ErrConsumerKeyInUse,
+			"a consensus-key rotation in this block already claims this consumer key",
+		)
+	}
+
 	if existingVal, err := k.stakingKeeper.GetValidatorByConsAddr(ctx, consumerAddr.ToSdkConsAddr()); err == nil {
 		// If there is already a different validator using the consumer key to validate on the provider
 		// we prevent assigning the consumer key.

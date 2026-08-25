@@ -1301,3 +1301,68 @@ func TestAssignConsumerKeyOnPausedConsumerPrunesRatherThanDeletes(t *testing.T) 
 		oldConsumerAddr.ToSdkConsAddr().Bytes(),
 		"the replaced consumer address must be queued for pruning after the unbonding period")
 }
+
+// TestAssignConsumerKeyRejectsSameBlockRotationTarget closes the ordering gap
+// between rotation and assignment inside one block.
+//
+// x/staking records a MsgRotateConsPubKey at tx time but applies it only in
+// its EndBlock, so between those two points the new key belongs to no
+// validator any lookup can see: the rotating validator still answers under its
+// old key, and GetValidatorByConsAddr on the new key finds nothing. An
+// assignment of that key delivered in the same block therefore passed every
+// existing check, and EndBlock then handed two validators one consumer
+// consensus address. The current block's rotation records are the only place
+// the claim is visible, so assignment must consult them.
+func TestAssignConsumerKeyRejectsSameBlockRotationTarget(t *testing.T) {
+	k, ctx, ctrl, mocks := testkeeper.GetProviderKeeperAndCtx(t, testkeeper.NewInMemKeeperParams(t))
+	defer ctrl.Finish()
+
+	assigner := cryptotestutil.NewCryptoIdentityFromIntSeed(4850)
+	rotationTarget := cryptotestutil.NewCryptoIdentityFromIntSeed(4851)
+
+	consumerId := k.FetchAndIncrementConsumerId(ctx)
+	k.SetConsumerPhase(ctx, consumerId, types.CONSUMER_PHASE_LAUNCHED)
+
+	// The rotation is recorded this block; staking's lookups do not know the
+	// key yet.
+	mocks.StubPendingRotation(t, rotationTarget.ConsensusSDKPubKey())
+	mocks.MockStakingKeeper.EXPECT().
+		GetValidatorByConsAddr(gomock.Any(), rotationTarget.SDKValConsAddress()).
+		Return(stakingtypes.Validator{}, stakingtypes.ErrNoValidatorFound).AnyTimes()
+
+	err := k.AssignConsumerKey(ctx, consumerId,
+		assigner.SDKStakingValidator(), rotationTarget.TMProtoCryptoPublicKey())
+	require.ErrorIs(t, err, types.ErrConsumerKeyInUse,
+		"a key claimed by a same-block rotation must not be assignable")
+
+	_, found := k.GetValidatorByConsumerAddr(ctx, consumerId, rotationTarget.ConsumerConsAddress())
+	require.False(t, found, "the rejected assignment must write nothing")
+}
+
+// TestAssignConsumerKeyUnrelatedSameBlockRotationDoesNotBlock pins that the
+// same-block check matches on the rotated-to key, not on the mere existence of
+// a rotation: an unrelated rotation in the block must not reject an honest
+// assignment.
+func TestAssignConsumerKeyUnrelatedSameBlockRotationDoesNotBlock(t *testing.T) {
+	k, ctx, ctrl, mocks := testkeeper.GetProviderKeeperAndCtx(t, testkeeper.NewInMemKeeperParams(t))
+	defer ctrl.Finish()
+
+	assigner := cryptotestutil.NewCryptoIdentityFromIntSeed(4860)
+	consumerKey := cryptotestutil.NewCryptoIdentityFromIntSeed(4861)
+	unrelatedRotation := cryptotestutil.NewCryptoIdentityFromIntSeed(4862)
+
+	consumerId := k.FetchAndIncrementConsumerId(ctx)
+	k.SetConsumerPhase(ctx, consumerId, types.CONSUMER_PHASE_LAUNCHED)
+
+	mocks.StubPendingRotation(t, unrelatedRotation.ConsensusSDKPubKey())
+	mocks.MockStakingKeeper.EXPECT().
+		GetValidatorByConsAddr(gomock.Any(), consumerKey.SDKValConsAddress()).
+		Return(stakingtypes.Validator{}, stakingtypes.ErrNoValidatorFound)
+
+	require.NoError(t, k.AssignConsumerKey(ctx, consumerId,
+		assigner.SDKStakingValidator(), consumerKey.TMProtoCryptoPublicKey()))
+
+	got, found := k.GetValidatorByConsumerAddr(ctx, consumerId, consumerKey.ConsumerConsAddress())
+	require.True(t, found)
+	require.Equal(t, assigner.ProviderConsAddress(), got)
+}
