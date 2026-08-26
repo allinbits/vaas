@@ -1,7 +1,6 @@
 package keeper
 
 import (
-	"bytes"
 	"errors"
 	"fmt"
 
@@ -12,8 +11,6 @@ import (
 
 	clienttypes "github.com/cosmos/ibc-go/v10/modules/core/02-client/types"
 	channeltypesv2 "github.com/cosmos/ibc-go/v10/modules/core/04-channel/v2/types"
-	ibcexported "github.com/cosmos/ibc-go/v10/modules/core/exported"
-	ibctmtypes "github.com/cosmos/ibc-go/v10/modules/light-clients/07-tendermint"
 
 	sdk "github.com/cosmos/cosmos-sdk/types"
 )
@@ -140,9 +137,13 @@ func (k Keeper) BlocksUntilNextEpoch(ctx sdk.Context) int64 {
 
 func (k Keeper) SendVSCPackets(ctx sdk.Context) error {
 	for _, consumerId := range k.GetAllLaunchedConsumerIds(ctx) {
-		clientID, _ := k.GetConsumerClientId(ctx, consumerId)
-		clientID = k.discoverActiveConsumerClient(ctx, consumerId, clientID)
-		if clientID == "" {
+		// A consumer with no declared client keeps its packets queued: the
+		// owner declares the client once via MsgUpdateConsumer after the
+		// relayer has created it (see SetConsumerClient). Nothing is
+		// discovered or adopted here -- inferring which permissionlessly
+		// created client "is" the consumer is what the declaration replaced.
+		clientID, found := k.GetConsumerClientId(ctx, consumerId)
+		if !found || clientID == "" {
 			continue
 		}
 
@@ -151,143 +152,6 @@ func (k Keeper) SendVSCPackets(ctx sdk.Context) error {
 		}
 	}
 	return nil
-}
-
-// discoverActiveConsumerClient returns the IBC client the provider uses to
-// reach the consumer.
-//
-// Once a client has been adopted for the consumer, it is returned
-// unconditionally: the binding never moves again, no matter the client's
-// status. An expired or frozen adopted client halts VSC traffic (sends fail
-// and stay queued; the liveness sweep eventually removes a consumer that
-// never resumes acknowledging) instead of reopening adoption -- anyone can
-// permissionlessly create a client for a chain that reuses the consumer's
-// chain id, so re-running discovery on client death would hand a look-alike
-// chain a standing opportunity to capture the binding. Recovering a dead
-// client is governance's job via ibc-go's MsgRecoverClient, which substitutes
-// fresh client state under the SAME client id: the binding survives recovery
-// unchanged, even though the client's latest height may jump arbitrarily.
-//
-// While no client was ever adopted, each call scans for a candidate and
-// adopts one only if it proves by content to track the chain the provider
-// itself launched: the candidate must be an Active tendermint client of the
-// consumer's chain id with a registered counterparty, whose latest consensus
-// state carries the CometBFT hash of the validator set the provider most
-// recently computed for this consumer -- or of the set before that, since the
-// consumer keeps running the previous set until the latest VSC packet is
-// delivered. The chain id string is trivially copied by an attacker, but
-// these hashes are not: producing a header carrying them requires the very
-// validators the provider put in charge of the consumer to have signed it. A
-// same-chain-id client that fails the content check is logged at warn level
-// and skipped. If several candidates verify, the one with the highest latest
-// height wins; if none does, nothing is adopted and discovery retries at the
-// next epoch boundary (fail closed).
-func (k Keeper) discoverActiveConsumerClient(ctx sdk.Context, consumerId uint64, currentClientID string) string {
-	if currentClientID != "" {
-		return currentClientID
-	}
-
-	chainID, err := k.GetConsumerChainId(ctx, consumerId)
-	if err != nil {
-		return ""
-	}
-
-	expectedHashes := k.expectedConsumerValSetHashes(ctx, consumerId)
-	if len(expectedHashes) == 0 {
-		k.Logger(ctx).Error("no consumer validator set hash available to verify candidate clients against, skipping discovery",
-			"consumerId", consumerId)
-		return ""
-	}
-
-	var bestClient string
-	var bestHeight uint64
-
-	k.clientKeeper.IterateClientStates(ctx, nil, func(clientID string, cs ibcexported.ClientState) bool {
-		tmCS, ok := cs.(*ibctmtypes.ClientState)
-		if !ok || tmCS.ChainId != chainID {
-			return false
-		}
-		if k.clientKeeper.GetClientStatus(ctx, clientID) != ibcexported.Active {
-			return false
-		}
-		cp, found := k.clientV2Keeper.GetClientCounterparty(ctx, clientID)
-		if !found || cp.ClientId == "" {
-			return false
-		}
-		if !k.clientCarriesExpectedValSetHash(ctx, clientID, tmCS.LatestHeight, expectedHashes) {
-			k.Logger(ctx).Warn("client matches the consumer chain id but its consensus state does not carry a validator set this provider sent; ignoring look-alike client",
-				"consumerId", consumerId,
-				"chainId", chainID,
-				"clientId", clientID,
-			)
-			return false
-		}
-		height := tmCS.LatestHeight.RevisionHeight
-		if height > bestHeight {
-			bestHeight = height
-			bestClient = clientID
-		}
-		return false
-	})
-
-	if bestClient != "" {
-		k.Logger(ctx).Info("adopting content-verified consumer client",
-			"consumerId", consumerId,
-			"clientId", bestClient,
-		)
-		k.SetConsumerClientId(ctx, consumerId, bestClient)
-		return bestClient
-	}
-	return ""
-}
-
-// expectedConsumerValSetHashes returns the CometBFT hashes a genuine client
-// of the consumer chain may currently carry in its latest consensus state:
-// the hash of the validator set most recently computed for the consumer and,
-// once at least one rotation has happened, the hash of the set before that
-// (still running on the consumer while the latest VSC packet is in flight).
-func (k Keeper) expectedConsumerValSetHashes(ctx sdk.Context, consumerId uint64) [][]byte {
-	var hashes [][]byte
-
-	valSet, err := k.GetConsumerValSet(ctx, consumerId)
-	if err != nil {
-		k.Logger(ctx).Error("failed to read consumer validator set",
-			"consumerId", consumerId, "error", err.Error())
-		return nil
-	}
-	if len(valSet) > 0 {
-		currentHash, err := ComputeConsumerValSetHash(valSet)
-		if err != nil {
-			k.Logger(ctx).Error("failed to hash consumer validator set",
-				"consumerId", consumerId, "error", err.Error())
-			return nil
-		}
-		hashes = append(hashes, currentHash)
-	}
-	if prevHash, found := k.GetConsumerPrevValSetHash(ctx, consumerId); found {
-		hashes = append(hashes, prevHash)
-	}
-	return hashes
-}
-
-// clientCarriesExpectedValSetHash reports whether the client's consensus
-// state at the given height carries one of the expected validator set hashes
-// in its NextValidatorsHash.
-func (k Keeper) clientCarriesExpectedValSetHash(ctx sdk.Context, clientID string, height clienttypes.Height, expectedHashes [][]byte) bool {
-	consState, found := k.clientKeeper.GetClientConsensusState(ctx, clientID, height)
-	if !found {
-		return false
-	}
-	tmConsState, ok := consState.(*ibctmtypes.ConsensusState)
-	if !ok {
-		return false
-	}
-	for _, expected := range expectedHashes {
-		if bytes.Equal(tmConsState.NextValidatorsHash, expected) {
-			return true
-		}
-	}
-	return false
 }
 
 func (k Keeper) SendVSCPacketsToChain(ctx sdk.Context, consumerId uint64, clientId string) error {

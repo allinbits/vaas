@@ -260,6 +260,7 @@ func (msg MsgCreateConsumer) ValidateBasic() error {
 func NewMsgUpdateConsumer(owner string, consumerId uint64, ownerAddress string, metadata *ConsumerMetadata,
 	initializationParameters *ConsumerInitializationParameters,
 	newChainId string,
+	clientId string,
 ) (*MsgUpdateConsumer, error) {
 	return &MsgUpdateConsumer{
 		Owner:                    owner,
@@ -268,6 +269,7 @@ func NewMsgUpdateConsumer(owner string, consumerId uint64, ownerAddress string, 
 		Metadata:                 metadata,
 		InitializationParameters: initializationParameters,
 		NewChainId:               newChainId,
+		ClientId:                 clientId,
 	}, nil
 }
 

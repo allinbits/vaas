@@ -1,7 +1,6 @@
 package keeper_test
 
 import (
-	"bytes"
 	"fmt"
 	"sort"
 	"testing"
@@ -394,12 +393,6 @@ func TestGenesisRoundTrip(t *testing.T) {
 	pkA.SetConsumerHighestSentVscId(ctxA, keyedConsumerID, 7)
 	pkA.SetConsumerHighestAckedVscId(ctxA, keyedConsumerID, 5)
 
-	// Seed the previous-valset hash used by client discovery's one-step
-	// content check so the round-trip covers it (tmhash-sized, as a real
-	// CometBFT validator set hash would be).
-	prevValSetHash := bytes.Repeat([]byte{0xAB}, 32)
-	require.NoError(t, pkA.SetConsumerPrevValSetHash(ctxA, keyedConsumerID, prevValSetHash))
-
 	// Seed the downtime-detection state (pending slash, previous downtime
 	// params, epoch share records) so the round-trip covers it too.
 	downtimeProviderAddr := providertypes.NewProviderConsAddress([]byte("provider-addr-downtime-x1"))
@@ -535,11 +528,8 @@ func TestGenesisRoundTrip(t *testing.T) {
 	require.NotNil(t, zeta.PauseExpirationTime, "PAUSED consumer must carry pause_expiration_time")
 	require.Equal(t, pauseExpiresAt, *zeta.PauseExpirationTime)
 
-	// Sanity: the LAUNCHED consumer (gamma) carries the previous-valset hash.
-	gamma, ok := byChainId["consumer-gamma"]
+	_, ok = byChainId["consumer-gamma"]
 	require.True(t, ok, "consumer-gamma missing from export")
-	require.Equal(t, prevValSetHash, gamma.PrevConsumerValsetHash,
-		"previous valset hash missing from export")
 
 	// Fresh keeper B.
 	pkB, ctxB, ctrlB, stakingB := testkeeper.GetProviderKeeperAndCtx(t, testkeeper.NewInMemKeeperParams(t))
@@ -602,10 +592,6 @@ func TestGenesisRoundTrip(t *testing.T) {
 
 	require.True(t, pkB.IsEpochDowntime(ctxB, keyedConsumerID, downtimeProviderAddr.ToSdkConsAddr()),
 		"EpochDowntime lost across round-trip")
-
-	gotPrevHash, foundPrevHash := pkB.GetConsumerPrevValSetHash(ctxB, keyedConsumerID)
-	require.True(t, foundPrevHash, "previous valset hash lost across round-trip")
-	require.Equal(t, prevValSetHash, gotPrevHash)
 
 	// The PAUSED consumer's pause-expiration queue must be rebuilt from the
 	// per-consumer pause_expiration_time, mirroring the removal-time queue.

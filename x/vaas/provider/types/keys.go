@@ -98,8 +98,6 @@ const (
 	PauseExpirationTimeToConsumerIdsKeyName = "PauseExpirationTimeToConsumerIdsKey"
 
 	DowntimeWindowFloorsKeyName = "DowntimeWindowFloorsKey"
-
-	ConsumerIdToPrevValSetHashKeyName = "ConsumerIdToPrevValSetHashKey"
 )
 
 // Collection key prefixes for use with cosmossdk.io/collections
@@ -144,6 +142,5 @@ var (
 	ConsumerIdToPauseExpirationTimePrefix  = collections.NewPrefix(37)
 	PauseExpirationTimeToConsumerIdsPrefix = collections.NewPrefix(38)
 	DowntimeWindowFloorsPrefix             = collections.NewPrefix(39)
-	ConsumerIdToPrevValSetHashPrefix       = collections.NewPrefix(40)
 	ParametersPrefix                       = collections.NewPrefix(0xFF)
 )

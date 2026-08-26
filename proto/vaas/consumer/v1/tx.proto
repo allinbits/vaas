@@ -13,6 +13,7 @@ import "vaas/v1/shared_consumer.proto";
 service Msg {
   option (cosmos.msg.v1.service) = true;
   rpc UpdateParams(MsgUpdateParams) returns (MsgUpdateParamsResponse);
+  rpc SetProviderClient(MsgSetProviderClient) returns (MsgSetProviderClientResponse);
 }
 
 // MsgUpdateParams is the Msg/UpdateParams request type
@@ -27,3 +28,25 @@ message MsgUpdateParams {
 }
 
 message MsgUpdateParamsResponse {}
+
+// MsgSetProviderClient pins the IBC client the consumer treats as the
+// provider, exactly once, at bootstrap. Only the owner seeded into the
+// consumer params by the provider (or the governance authority) may submit
+// it, and it is accepted only while no provider client is pinned: after the
+// pin is set it never moves, and recovering an expired or frozen pinned
+// client is governance's MsgRecoverClient, which substitutes fresh client
+// state under the same client id.
+message MsgSetProviderClient {
+  option (cosmos.msg.v1.signer) = "signer";
+
+  // the consumer-chain account submitting the pin: the owner seeded in the
+  // consumer params, or the governance authority.
+  string signer = 1 [(cosmos_proto.scalar) = "cosmos.AddressString"];
+
+  // the IBC client id to pin as the provider client. It must exist, be an
+  // Active tendermint client tracking the provider chain id pinned at
+  // genesis, and have a registered IBC v2 counterparty (be routable).
+  string client_id = 2;
+}
+
+message MsgSetProviderClientResponse {}

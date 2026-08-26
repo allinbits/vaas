@@ -102,11 +102,6 @@ func (k Keeper) InitGenesis(ctx sdk.Context, genState *types.GenesisState) []abc
 		if len(cs.PendingValsetChanges) > 0 {
 			k.AppendPendingVSCPackets(ctx, consumerId, cs.PendingValsetChanges...)
 		}
-		if len(cs.PrevConsumerValsetHash) > 0 {
-			if err := k.SetConsumerPrevValSetHash(ctx, consumerId, cs.PrevConsumerValsetHash); err != nil {
-				panic(fmt.Errorf("init: set previous valset hash for %d: %w", consumerId, err))
-			}
-		}
 	}
 
 	// Second pass: derive queue and equivocation-min-height state from the
@@ -467,13 +462,6 @@ func (k Keeper) ExportGenesis(ctx sdk.Context) *types.GenesisState {
 		}
 		if v := k.GetConsumerHighestAckedVscId(ctx, consumerId); v != 0 {
 			cs.HighestAckedVscId = v
-		}
-
-		// Previous-valset hash for client discovery's content check: exported
-		// so a consumer that has not adopted a client yet keeps its one-step
-		// verification tolerance across a state-export restart.
-		if h, found := k.GetConsumerPrevValSetHash(ctx, consumerId); found {
-			cs.PrevConsumerValsetHash = h
 		}
 
 		consumerStates = append(consumerStates, cs)

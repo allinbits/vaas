@@ -41,3 +41,9 @@ const (
 	WithdrawPathDirect        = "direct"
 	WithdrawPathCommunityPool = "community_pool"
 )
+
+const (
+	// AttributeConsumerClientID carries the IBC client id declared for a
+	// consumer via MsgUpdateConsumer.
+	AttributeConsumerClientID = "consumer_client_id"
+)

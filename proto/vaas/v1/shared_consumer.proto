@@ -57,6 +57,12 @@ message ConsumerParams {
         (gogoproto.customtype) = "cosmossdk.io/math.LegacyDec",
         (gogoproto.nullable) = false
     ];
+
+    // The account authorized to pin the provider IBC client at bootstrap via
+    // MsgSetProviderClient (the governance authority always may). Seeded by
+    // the provider from the consumer's registered owner when it authors the
+    // consumer genesis; empty leaves the pin to governance alone.
+    string owner_address = 8 [(cosmos_proto.scalar) = "cosmos.AddressString"];
 }
 
 // ConsumerGenesisState defines shared genesis information between provider and

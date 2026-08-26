@@ -370,7 +370,7 @@ func TestMsgUpdateConsumerValidateBasic(t *testing.T) {
 	}
 
 	for _, tc := range testCases {
-		msg, _ := types.NewMsgUpdateConsumer("", 0, "cosmos1p3ucd3ptpw902fluyjzhq3ffgq4ntddac9sa3s", nil, nil, tc.newChainId)
+		msg, _ := types.NewMsgUpdateConsumer("", 0, "cosmos1p3ucd3ptpw902fluyjzhq3ffgq4ntddac9sa3s", nil, nil, tc.newChainId, "")
 		err := msg.ValidateBasic()
 		if tc.expPass {
 			require.NoError(t, err, "valid case: %s should not return error. got %w", tc.name, err)

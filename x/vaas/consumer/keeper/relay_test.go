@@ -818,60 +818,6 @@ func TestOnRecvVSCPacketV2RejectsDifferentChainId(t *testing.T) {
 	require.Equal(t, "provider-chain", pinned, "the pin itself must not change")
 }
 
-// TestOnRecvVSCPacketV2BootstrapAdoptionThenLatch walks the pin through its
-// whole lifecycle: pinned to the unroutable genesis client at first (no
-// registered counterparty -- packet routing can never reach it), re-pinned
-// exactly once to the first client that actually delivers a VSC packet, and
-// permanently latched from then on -- later packets over other clients are
-// rejected and the pin does not move again.
-func TestOnRecvVSCPacketV2BootstrapAdoptionThenLatch(t *testing.T) {
-	k, ctx, ctrl, mocks := testkeeper.GetConsumerKeeperAndCtx(t, testkeeper.NewInMemKeeperParams(t))
-	defer ctrl.Finish()
-	testkeeper.StubClientState(mocks, "provider-chain")
-
-	genesisClientID := "07-tendermint-0"
-	relayerClientID := "07-tendermint-1"
-	otherClientID := "07-tendermint-2"
-
-	// NewChain genesis pins the client it created; that client never gets a
-	// counterparty (mocks.ClientCounterparties deliberately has no entry for it).
-	k.SetProviderClientID(ctx, genesisClientID)
-
-	// The relayer's client is counterparty-linked, as ibc-go guarantees for
-	// any client a packet actually arrives on.
-	mocks.ClientCounterparties[relayerClientID] = clientv2types.CounterpartyInfo{ClientId: "07-tendermint-9"}
-	mocks.ClientCounterparties[otherClientID] = clientv2types.CounterpartyInfo{ClientId: "07-tendermint-8"}
-
-	pk1, err := cryptocodec.ToCmtProtoPublicKey(ed25519.GenPrivKey().PubKey())
-	require.NoError(t, err)
-
-	// First VSC packet arrives over the relayer's client: the pin moves to it.
-	pd1 := types.NewValidatorSetChangePacketData([]abci.ValidatorUpdate{{PubKey: pk1, Power: 10}}, 1)
-	require.NoError(t, k.OnRecvVSCPacketV2(ctx, relayerClientID, pd1),
-		"the first VSC over a routable client must be accepted while the pin is the unroutable genesis client")
-
-	clientID, found := k.GetProviderClientID(ctx)
-	require.True(t, found)
-	require.Equal(t, relayerClientID, clientID, "the pin must move to the delivering client")
-
-	// From now on the pin is latched: a same-chain-id packet over any other
-	// client is rejected and moves nothing.
-	pd2 := types.NewValidatorSetChangePacketData([]abci.ValidatorUpdate{{PubKey: pk1, Power: 20}}, 2)
-	err = k.OnRecvVSCPacketV2(ctx, otherClientID, pd2)
-	require.Error(t, err, "a VSC over a non-pinned client must be rejected once the pin is routable")
-
-	clientID, found = k.GetProviderClientID(ctx)
-	require.True(t, found)
-	require.Equal(t, relayerClientID, clientID, "the pin must never move on inbound traffic again")
-
-	highestID, _, err := k.GetHighestValsetUpdateID(ctx)
-	require.NoError(t, err)
-	require.Equal(t, uint64(1), highestID, "the rejected packet must not have been processed")
-
-	// Traffic over the pinned client keeps flowing.
-	require.NoError(t, k.OnRecvVSCPacketV2(ctx, relayerClientID, pd2))
-}
-
 // TestOnRecvVSCPacketV2MissingPinRejects verifies a VSC packet is rejected
 // outright when no provider client is pinned at all: both genesis paths
 // establish the pin, so its absence means a malformed genesis or corrupted
@@ -1020,37 +966,6 @@ func TestOnRecvVSCPacketRejectsClientOverrideOnceRoutable(t *testing.T) {
 	chainID, found := consumerKeeper.GetProviderChainId(ctx)
 	require.True(t, found)
 	require.Equal(t, providerChainID, chainID, "the pinned chain id must survive the rejection")
-}
-
-// TestOnRecvVSCPacketAdoptsClientWhenPinIsUnroutable verifies the one case that
-// still moves the pin: the genesis client, which the consumer creates for
-// itself and which packet routing can never reach because it has no registered
-// counterparty. The first client that actually delivers takes over from it.
-func TestOnRecvVSCPacketAdoptsClientWhenPinIsUnroutable(t *testing.T) {
-	const (
-		genesisClientID  = "07-tendermint-0"
-		deliveredOverIDs = "07-tendermint-1"
-		providerChainID  = "provider-0"
-	)
-
-	pk, err := cryptocodec.ToCmtProtoPublicKey(ed25519.GenPrivKey().PubKey())
-	require.NoError(t, err)
-
-	consumerKeeper, ctx, ctrl, mocks := testkeeper.GetConsumerKeeperAndCtx(t, testkeeper.NewInMemKeeperParams(t))
-	defer ctrl.Finish()
-	testkeeper.StubClientState(mocks, providerChainID)
-
-	// The genesis client is left without a counterparty: nothing can be
-	// delivered over it, which is what makes it replaceable.
-	consumerKeeper.SetProviderClientID(ctx, genesisClientID)
-
-	pd := types.NewValidatorSetChangePacketData([]abci.ValidatorUpdate{{PubKey: pk, Power: 1}}, 1)
-	require.NoError(t, consumerKeeper.OnRecvVSCPacketV2(ctx, deliveredOverIDs, pd))
-
-	pinned, found := consumerKeeper.GetProviderClientID(ctx)
-	require.True(t, found)
-	require.Equal(t, deliveredOverIDs, pinned,
-		"the unroutable genesis pin must be replaced by the client that delivered")
 }
 
 // TestOnRecvVSCPacketRejectsWhenNoClientPinned verifies the fail-closed path:

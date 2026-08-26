@@ -294,6 +294,14 @@ func (k Keeper) MakeConsumerGenesis(
 	consumerGenesisParams.SignedBlocksWindow = downtimeParams.SignedBlocksWindow
 	consumerGenesisParams.MinSignedPerWindow = downtimeParams.MinSignedPerWindow
 
+	// Seed the consumer-side pin authority: the registered owner is the account
+	// allowed to submit MsgSetProviderClient on the consumer at bootstrap (the
+	// consumer's governance authority always may). Rendered under the
+	// provider's bech32 prefix; the consumer compares decoded address bytes.
+	if owner, err := k.GetConsumerOwnerAddress(ctx, consumerId); err == nil {
+		consumerGenesisParams.OwnerAddress = owner
+	}
+
 	providerUnbondingPeriod, err := k.stakingKeeper.UnbondingTime(ctx)
 	if err != nil {
 		return gen, errorsmod.Wrapf(types.ErrNoUnbondingTime, "unbonding time not found: %s", err)
@@ -622,7 +630,6 @@ func (k Keeper) DeleteConsumerChain(ctx sdk.Context, consumerId uint64) (err err
 	k.DeletePendingVSCPackets(ctx, consumerId)
 
 	k.DeleteConsumerValSet(ctx, consumerId)
-	k.DeleteConsumerPrevValSetHash(ctx, consumerId)
 
 	k.DeleteConsumerRemovalTime(ctx, consumerId)
 	k.DeleteConsumerLastAckTime(ctx, consumerId)
@@ -702,5 +709,72 @@ func (k Keeper) SweepUnresponsiveConsumers(ctx sdk.Context) error {
 		}
 		writeFn()
 	}
+	return nil
+}
+
+// SetConsumerClient records the IBC client the provider uses to reach the
+// consumer, declared by the consumer's owner exactly once.
+//
+// Nothing is discovered or adopted: anyone can permissionlessly create a
+// client whose state claims the consumer's chain id, and a creation-time
+// consensus state is stored unverified, so no on-chain inference can tell the
+// real consumer's client from a forged one. The binding is therefore an owner
+// statement. What is validated is coherence, not provenance: the client must
+// exist, be a tendermint client of the consumer's chain id, be Active, have a
+// registered IBC v2 counterparty (without one no packet can ever be routed
+// over it), and carry a trusting period strictly above the downtime challenge
+// horizon (see ChallengeableInterval) so every accepted accusation stays
+// disprovable for its whole challenge window.
+//
+// The binding is permanent. Replacing it would re-key the consumer's identity
+// -- downtime state on the provider and the fee denom on the consumer both
+// derive from client ids -- so a dead client is recovered in place by
+// governance via ibc-go's MsgRecoverClient, which substitutes fresh client
+// state under the same client id.
+func (k Keeper) SetConsumerClient(ctx sdk.Context, consumerId uint64, clientID string) error {
+	if existing, found := k.GetConsumerClientId(ctx, consumerId); found && existing != "" {
+		return errorsmod.Wrapf(types.ErrInvalidMsgUpdateConsumer,
+			"consumer %d already has client %s; the binding is permanent (recover a dead client in place via MsgRecoverClient)",
+			consumerId, existing)
+	}
+
+	chainID, err := k.GetConsumerChainId(ctx, consumerId)
+	if err != nil {
+		return errorsmod.Wrapf(vaastypes.ErrInvalidConsumerState, "cannot get consumer chain id: %s", err.Error())
+	}
+
+	clientState, found := k.clientKeeper.GetClientState(ctx, clientID)
+	if !found {
+		return errorsmod.Wrapf(types.ErrInvalidMsgUpdateConsumer, "client %s does not exist", clientID)
+	}
+	tmClientState, ok := clientState.(*ibctmtypes.ClientState)
+	if !ok {
+		return errorsmod.Wrapf(types.ErrInvalidMsgUpdateConsumer, "client %s is not a tendermint client", clientID)
+	}
+	if tmClientState.ChainId != chainID {
+		return errorsmod.Wrapf(types.ErrInvalidMsgUpdateConsumer,
+			"client %s tracks chain id %s, expected the consumer's chain id %s",
+			clientID, tmClientState.ChainId, chainID)
+	}
+	if status := k.clientKeeper.GetClientStatus(ctx, clientID); status != ibcexported.Active {
+		return errorsmod.Wrapf(types.ErrInvalidMsgUpdateConsumer,
+			"client %s is %s, not %s", clientID, status, ibcexported.Active)
+	}
+	if cp, found := k.clientV2Keeper.GetClientCounterparty(ctx, clientID); !found || cp.ClientId == "" {
+		return errorsmod.Wrapf(types.ErrInvalidMsgUpdateConsumer,
+			"client %s has no registered IBC v2 counterparty, so no packet can be routed over it", clientID)
+	}
+	if horizon := k.GetInfractionParams(ctx).ChallengeableInterval(); tmClientState.TrustingPeriod <= horizon {
+		return errorsmod.Wrapf(types.ErrInvalidMsgUpdateConsumer,
+			"client %s trusting period (%s) must exceed the downtime challenge horizon (%s): every accepted downtime accusation must stay disprovable by a header this client can still verify",
+			clientID, tmClientState.TrustingPeriod, horizon)
+	}
+
+	k.SetConsumerClientId(ctx, consumerId, clientID)
+	k.Logger(ctx).Info("consumer client declared",
+		"consumerId", consumerId,
+		"clientId", clientID,
+	)
+
 	return nil
 }
