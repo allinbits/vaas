@@ -10,7 +10,6 @@ const (
 	EventTypeConsumerFeePoolFund     = "vaas_consumer_fee_pool_fund"
 	EventTypeConsumerFeePoolWithdraw = "vaas_consumer_fee_pool_withdraw"
 	EventTypeConsumerFeePoolSweep    = "vaas_consumer_fee_pool_sweep"
-	EventTypeRetireConsumer          = "vaas_retire_consumer"
 
 	AttributeProviderValidatorAddress = "provider_validator_address"
 	// AttributeConsumerClientID carries the IBC client id declared for a

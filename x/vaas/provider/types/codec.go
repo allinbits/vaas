@@ -38,7 +38,6 @@ func RegisterInterfaces(registry codectypes.InterfaceRegistry) {
 		&MsgCreateConsumer{},
 		&MsgUpdateConsumer{},
 		&MsgRemoveConsumer{},
-		&MsgRetireConsumer{},
 		&MsgUpdateParams{},
 		&MsgSubmitConsumerMisbehaviour{},
 		&MsgSubmitConsumerDoubleVoting{},
