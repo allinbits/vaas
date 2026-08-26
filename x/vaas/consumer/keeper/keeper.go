@@ -521,11 +521,11 @@ func (k Keeper) SetLastVSCRecvTime(ctx context.Context, t time.Time) {
 }
 
 // GetLastVSCRecvTime returns the block time of the last processed VSC packet.
-// The clock is armed at NewChain InitGenesis (genesis block time) and re-armed
-// by every accepted VSC packet, so on a launched consumer it is always set.
-// When it is absent anyway -- a PreVAAS chain whose changeover has not
-// completed, or a hand-crafted restart genesis omitting the field -- fall back
-// to the current block time, i.e. never stale until the first VSC arms it.
+// The clock is armed by ArmVSCStalenessClock at the first block after genesis
+// and re-armed by every accepted VSC packet, so on a launched consumer it is
+// always set. When it is absent anyway -- the genesis block itself, or a
+// PreVAAS chain whose changeover has not completed -- fall back to the current
+// block time, i.e. never stale until something arms it.
 func (k Keeper) GetLastVSCRecvTime(ctx context.Context) time.Time {
 	buf, err := k.LastVSCRecvTime.Get(ctx)
 	if err != nil {
@@ -536,6 +536,30 @@ func (k Keeper) GetLastVSCRecvTime(ctx context.Context) time.Time {
 		return sdk.UnwrapSDKContext(ctx).BlockTime()
 	}
 	return t
+}
+
+// ArmVSCStalenessClock arms the VSC staleness clock (see IsVSCStale) at the
+// first block that carries wall-clock time, so a consumer that never receives
+// a single VSC packet accrues staleness from launch and crosses the safe-mode
+// threshold instead of running on its genesis validator set unrestricted
+// forever. It runs every BeginBlock and is a no-op once the clock is set
+// (by a restart genesis, a received VSC, or an earlier arming), on PreVAAS
+// chains (the standalone staking keeper still runs the chain there, so VSC
+// staleness is not yet meaningful), and at the genesis block itself: under
+// BFT time that block's timestamp is the genesis file's genesis_time, which
+// may predate launch by however long the genesis ceremony took, and arming
+// with it would burn safe-mode budget before the chain produced a block.
+func (k Keeper) ArmVSCStalenessClock(ctx sdk.Context) {
+	if k.IsPreVAAS(ctx) {
+		return
+	}
+	if ctx.BlockHeight() <= k.GetInitGenesisHeight(ctx) {
+		return
+	}
+	if has, err := k.LastVSCRecvTime.Has(ctx); err != nil || has {
+		return
+	}
+	k.SetLastVSCRecvTime(ctx, ctx.BlockTime())
 }
 
 // IsVSCStale reports whether the consumer has not received a VSC packet within

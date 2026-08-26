@@ -158,6 +158,7 @@ func (am AppModule) BeginBlock(goCtx context.Context) error {
 		am.keeper.Logger(ctx).Warn("failed to track historical info", "error", err)
 	}
 
+	am.keeper.ArmVSCStalenessClock(ctx)
 	am.keeper.TrackMissedBlocks(ctx)
 	return nil
 }

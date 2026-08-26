@@ -9,6 +9,7 @@ BINARY="${BINARY:-consumer}"
 HOME_DIR="${HOME_DIR:-/home/nonroot/.consumer}"
 CHAIN_ID="${CHAIN_ID:-consumer-e2e}"
 DENOM="${DENOM:-uatone}"
+MIN_GAS_PRICE="${MIN_GAS_PRICE:-0.01${DENOM}}"
 MNEMONIC="${MNEMONIC:-abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon art}"
 
 # Initialize chain
@@ -35,8 +36,9 @@ $BINARY genesis add-genesis-account owner "100000000${DENOM}" --home "$HOME_DIR"
 # Enable REST API
 $BINARY config set app api.enable true --home "$HOME_DIR"
 
-# Set minimum gas prices
-sed -i "s#^minimum-gas-prices = .*#minimum-gas-prices = \"0.01${DENOM}\"#g" "$HOME_DIR/config/app.toml"
+# Set minimum gas prices (a photon-fees consumer launches with a zero price:
+# fee-denom policy is enforced by the ante in consensus, not by the mempool)
+sed -i "s#^minimum-gas-prices = .*#minimum-gas-prices = \"${MIN_GAS_PRICE}\"#g" "$HOME_DIR/config/app.toml"
 
 # Bind RPC to all interfaces
 sed -i 's#laddr = "tcp://127.0.0.1:26657"#laddr = "tcp://0.0.0.0:26657"#g' "$HOME_DIR/config/config.toml"

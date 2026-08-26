@@ -41,8 +41,10 @@ func (s *baseTestSuite) consumerUserBech32() string {
 
 // consumerBankSendDryRun attempts a tiny bank send from user to user on the
 // consumer in simulate mode. The simulation traverses the ante chain, so the
-// debt gate fires here just like it would for a real broadcast. Returns the
-// stderr output so callers can inspect rejection reasons.
+// debt gate fires here just like it would for a real broadcast. It carries no
+// fee, keeping it neutral to the photon-only policy (simulation permits empty
+// fees) so the main suite, which enables that policy, can use it too. Returns
+// the stderr output so callers can inspect rejection reasons.
 func (s *baseTestSuite) consumerBankSendDryRun() (string, error) {
 	user := s.consumerUserBech32()
 	_, stderr, err := s.dockerExec(s.consumerValRes[0].Container.ID, []string{
@@ -50,7 +52,6 @@ func (s *baseTestSuite) consumerBankSendDryRun() (string, error) {
 		"--home", consumerHomePath,
 		"--keyring-backend", "test",
 		"--chain-id", s.cfg.consumerChainID,
-		"--fees", "1000" + bondDenom,
 		"--dry-run",
 		"-y",
 	})

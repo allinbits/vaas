@@ -44,8 +44,9 @@ const (
 // provider-owned and always take their default values here; the provider
 // updates them directly on the stored ConsumerParams via VSC packets.
 // PhotonFeesEnabled stays at its default (off): the photon fee policy is a
-// consumer-local opt-in, set in the consumer genesis or switched on later by
-// consumer governance.
+// consumer-local opt-in that the provider-authored genesis never enables. A
+// chain opts in through a hand-authored genesis or a later MsgUpdateParams
+// from its params authority, where the embedding app wires one.
 func NewConsumerParams(enabled bool,
 	vaasTimeoutPeriod time.Duration,
 	historicalEntries int64,

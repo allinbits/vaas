@@ -230,14 +230,16 @@ func TestGenesisRoundTripLastVSCRecvTime(t *testing.T) {
 	require.Equal(t, lastRecv, ck2.GetLastVSCRecvTime(ctx2))
 }
 
-// TestInitGenesisNewChainArmsVSCStalenessClock verifies that a NewChain
-// InitGenesis records the genesis block time as the last-VSC-recv time, so a
-// consumer that never receives a single VSC packet accrues staleness from
-// chain start and crosses the safe-mode threshold -- instead of the unset
-// clock falling back to the current block time and never reading as stale.
-// A restart genesis without the field (never armed, e.g. exported from a
-// PreVAAS chain) must stay on the never-stale fallback.
-func TestInitGenesisNewChainArmsVSCStalenessClock(t *testing.T) {
+// TestVSCStalenessClockArmsAtFirstWallClockBlock verifies the VSC staleness
+// clock (see IsVSCStale) arms at the first block after genesis rather than at
+// InitGenesis: under BFT time the genesis block's timestamp is the genesis
+// file's genesis_time, which may predate launch by however long the genesis
+// ceremony took, and arming with it would burn safe-mode budget before the
+// chain produced a block. A restart genesis carrying the exported value keeps
+// it; one without the field arms at the next block the same way; PreVAAS
+// chains stay unarmed until their changeover, since the standalone staking
+// keeper still runs the chain there and VSC staleness is not yet meaningful.
+func TestVSCStalenessClockArmsAtFirstWallClockBlock(t *testing.T) {
 	provClientID := "07-tendermint-0"
 
 	cId := crypto.NewCryptoIdentityFromIntSeed(893243)
@@ -263,33 +265,65 @@ func TestInitGenesisNewChainArmsVSCStalenessClock(t *testing.T) {
 	params := vaastypes.DefaultConsumerParams()
 	params.Enabled = true
 
-	t.Run("new chain arms the clock at the genesis block time", func(t *testing.T) {
+	t.Run("new chain arms at the first block after genesis, with wall-clock time", func(t *testing.T) {
 		ck, ctx, ctrl, _ := testkeeper.GetConsumerKeeperAndCtx(t, testkeeper.NewInMemKeeperParams(t))
 		defer ctrl.Finish()
 
 		genesisTime := time.Unix(1_850_000_000, 0).UTC()
-		ctx = ctx.WithBlockTime(genesisTime)
+		launchTime := genesisTime.Add(48 * time.Hour) // ceremony finished long after the file was written
+		ctx = ctx.WithBlockHeight(1).WithBlockTime(genesisTime)
 
 		ck.InitGenesis(ctx, consumertypes.NewInitialGenesisState(provClientState, provConsState, valset, params))
 
 		has, err := ck.LastVSCRecvTime.Has(ctx)
 		require.NoError(t, err)
-		require.True(t, has, "NewChain InitGenesis must arm the staleness clock")
-		require.Equal(t, genesisTime, ck.GetLastVSCRecvTime(ctx))
+		require.False(t, has, "InitGenesis must not arm the clock: the genesis timestamp may predate launch")
 
-		// The behavioral consequence: with no VSC ever received, the consumer
-		// reads as stale once the threshold elapses from genesis...
-		staleCtx := ctx.WithBlockTime(genesisTime.Add(params.SafeModeThreshold + time.Minute))
-		require.True(t, ck.IsVSCStale(staleCtx),
+		// The genesis block itself still carries genesis_time; no arming.
+		ck.ArmVSCStalenessClock(ctx)
+		has, err = ck.LastVSCRecvTime.Has(ctx)
+		require.NoError(t, err)
+		require.False(t, has, "the genesis block carries genesis_time, not wall-clock time")
+
+		// The next block carries wall-clock time; the clock arms with it.
+		armCtx := ctx.WithBlockHeight(2).WithBlockTime(launchTime)
+		ck.ArmVSCStalenessClock(armCtx)
+		require.Equal(t, launchTime, ck.GetLastVSCRecvTime(armCtx))
+
+		// Budget counts from launch, not from the genesis file: just under
+		// the threshold after launch must not read stale (armed at genesis
+		// time it would), just over must.
+		require.False(t, ck.IsVSCStale(ctx.WithBlockTime(launchTime.Add(params.SafeModeThreshold-time.Minute))))
+		require.True(t, ck.IsVSCStale(ctx.WithBlockTime(launchTime.Add(params.SafeModeThreshold+time.Minute))),
 			"a never-connected consumer must cross the safe-mode threshold")
 
-		// ...and the armed clock is exported, keeping restarts consistent.
-		exported := ck.ExportGenesis(ctx)
+		// The armed clock is exported, keeping restarts consistent.
+		exported := ck.ExportGenesis(armCtx)
 		require.NotNil(t, exported.LastVscRecvTime, "export must carry the armed clock")
-		require.Equal(t, genesisTime, *exported.LastVscRecvTime)
+		require.Equal(t, launchTime, *exported.LastVscRecvTime)
 	})
 
-	t.Run("restart genesis without the field stays unarmed", func(t *testing.T) {
+	t.Run("a clock restored from a restart genesis is never re-armed", func(t *testing.T) {
+		ck, ctx, ctrl, _ := testkeeper.GetConsumerKeeperAndCtx(t, testkeeper.NewInMemKeeperParams(t))
+		defer ctrl.Finish()
+
+		armedAt := time.Unix(1_850_000_000, 0).UTC()
+		genesis := consumertypes.NewRestartGenesisState(
+			provClientID,
+			valset,
+			[]consumertypes.HeightToValsetUpdateID{{ValsetUpdateId: 1, Height: 1}},
+			params,
+		)
+		genesis.LastVscRecvTime = &armedAt
+
+		ctx = ctx.WithBlockHeight(100).WithBlockTime(armedAt.Add(time.Hour))
+		ck.InitGenesis(ctx, genesis)
+
+		ck.ArmVSCStalenessClock(ctx.WithBlockHeight(101).WithBlockTime(armedAt.Add(2 * time.Hour)))
+		require.Equal(t, armedAt, ck.GetLastVSCRecvTime(ctx), "arming must never overwrite a set clock")
+	})
+
+	t.Run("restart genesis without the field arms at the next block", func(t *testing.T) {
 		ck, ctx, ctrl, _ := testkeeper.GetConsumerKeeperAndCtx(t, testkeeper.NewInMemKeeperParams(t))
 		defer ctrl.Finish()
 
@@ -299,12 +333,31 @@ func TestInitGenesisNewChainArmsVSCStalenessClock(t *testing.T) {
 			[]consumertypes.HeightToValsetUpdateID{{ValsetUpdateId: 1, Height: 1}},
 			params,
 		)
+		restartTime := time.Unix(1_850_000_000, 0).UTC()
+		ctx = ctx.WithBlockHeight(100).WithBlockTime(restartTime)
 		ck.InitGenesis(ctx, genesis)
 
+		// The restart's own genesis block still carries the file's timestamp.
+		ck.ArmVSCStalenessClock(ctx)
 		has, err := ck.LastVSCRecvTime.Has(ctx)
 		require.NoError(t, err)
-		require.False(t, has, "a restart genesis without last_vsc_recv_time must not arm the clock")
-		require.False(t, ck.IsVSCStale(ctx.WithBlockTime(ctx.BlockTime().Add(params.SafeModeThreshold+time.Hour))))
+		require.False(t, has)
+
+		nextBlock := restartTime.Add(5 * time.Second)
+		ck.ArmVSCStalenessClock(ctx.WithBlockHeight(101).WithBlockTime(nextBlock))
+		require.Equal(t, nextBlock, ck.GetLastVSCRecvTime(ctx))
+	})
+
+	t.Run("preVAAS chains stay unarmed", func(t *testing.T) {
+		ck, ctx, ctrl, _ := testkeeper.GetConsumerKeeperAndCtx(t, testkeeper.NewInMemKeeperParams(t))
+		defer ctrl.Finish()
+
+		ck.SetPreVAASTrue(ctx)
+
+		ck.ArmVSCStalenessClock(ctx.WithBlockHeight(2).WithBlockTime(time.Unix(1_850_000_000, 0).UTC()))
+		has, err := ck.LastVSCRecvTime.Has(ctx)
+		require.NoError(t, err)
+		require.False(t, has, "standalone staking still runs a preVAAS chain; VSC staleness is not meaningful yet")
 	})
 }
 

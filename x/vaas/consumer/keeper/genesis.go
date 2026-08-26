@@ -72,17 +72,13 @@ func (k Keeper) InitGenesis(ctx sdk.Context, state *types.GenesisState) []abci.V
 		return []abci.ValidatorUpdate{}
 	}
 
-	// Arm the VSC staleness clock (see IsVSCStale): a restart restores the
-	// exported value, while a new chain starts the clock at the genesis block
-	// time, so that a consumer that never receives a single VSC packet still
-	// crosses the safe-mode threshold instead of running on its genesis
-	// validator set unrestricted forever. PreVAAS chains return above and stay
-	// unarmed until their first VSC: the standalone staking keeper still runs
-	// the chain there, so VSC staleness is not yet meaningful.
+	// Restore the VSC staleness clock (see IsVSCStale) from a restart export.
+	// A genesis without the field is deliberately left unarmed here: the
+	// genesis block's timestamp is the genesis file's genesis_time, which may
+	// predate launch, so ArmVSCStalenessClock arms the clock at the first
+	// block that carries wall-clock time instead.
 	if state.LastVscRecvTime != nil {
 		k.SetLastVSCRecvTime(ctx, *state.LastVscRecvTime)
-	} else if state.NewChain {
-		k.SetLastVSCRecvTime(ctx, ctx.BlockTime())
 	}
 
 	// Restore downtime-detection state for the window currently in progress
