@@ -90,7 +90,6 @@ no CLI command.
 |---|---|---|
 | `MsgCreateConsumer` | submitter | `create-consumer <path/to/params.json>` |
 | `MsgUpdateConsumer` | owner | `update-consumer <path/to/params.json>` |
-| `MsgRetireConsumer` | owner **or** gov authority | `retire-consumer <consumer-id>` |
 | `MsgAssignConsumerKey` | validator account | `assign-consensus-key <consumer-id> <consumer-pubkey>` |
 | `MsgFundConsumerFeePool` | any | `fund-consumer-fee-pool <consumer-id> <amount>` |
 | `MsgWithdrawConsumerFeePool` | depositor | `withdraw-consumer-fee-pool <consumer-id> <coins>` |
@@ -98,7 +97,7 @@ no CLI command.
 | `MsgSubmitConsumerDoubleVoting` | any | `submit-consumer-double-voting <consumer-id> <evidence.json> <header.json>` |
 | `MsgSubmitConsumerMisbehaviour` | any | `submit-consumer-misbehaviour <consumer-id> <misbehaviour.json>` |
 | `MsgChallengeConsumerDowntime` | any | `challenge-consumer-downtime <consumer-id> <validator-cons-addr> <claimed-height> --consumer-rpc <url>` |
-| `MsgRemoveConsumer` | gov authority | none -- governance proposal |
+| `MsgRemoveConsumer` | owner **or** gov pre-launch; gov only after | `remove-consumer <consumer-id>` (pre-launch); governance proposal after launch |
 | `MsgResumeConsumer` | gov authority | none -- governance proposal |
 | `MsgSetConsumerFeesPerBlock` | gov authority | none -- governance proposal |
 | `MsgUpdateParams` | gov authority | none -- governance proposal |

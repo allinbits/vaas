@@ -23,8 +23,7 @@ Two conventions worth knowing before you filter:
 |---|---|---|---|
 | `vaas_create_consumer` | `msgServer.CreateConsumer` | `module`, `consumer_id`, `consumer_chain_id`, `consumer_name`, `submitter_address`, `consumer_owner`, `consumer_phase`; plus `consumer_spawn_time`, `consumer_binary_hash`, `consumer_genesis_hash` when set | A consumer was registered. `consumer_phase` is `REGISTERED` or, if a spawn time was given, `INITIALIZED`. |
 | `vaas_update_consumer` | `msgServer.UpdateConsumer` | `module`, `consumer_id`, `consumer_chain_id`, `submitter_address`, `consumer_owner`, `consumer_phase`; plus `consumer_name` when metadata changed and `consumer_spawn_time` / `consumer_binary_hash` / `consumer_genesis_hash` when initialization parameters changed | Metadata, initialization parameters, or ownership changed. |
-| `vaas_remove_consumer` | `msgServer.RemoveConsumer` | `module`, `consumer_id`, `consumer_chain_id`, `submitter_address` | Governance stopped a `LAUNCHED` or `PAUSED` consumer. It is now `STOPPED` and queued for deletion. |
-| `vaas_retire_consumer` | `msgServer.RetireConsumer` | `module`, `consumer_id`, `consumer_chain_id`, `submitter_address` | The owner or governance terminated a consumer that had not launched. It is now `DELETED`, its fee pool has been swept, and `consumer_chain_id` is the chain ID the deletion just released -- read it here, since `consumer-chain` reports it empty afterwards. |
+| `vaas_remove_consumer` | `msgServer.RemoveConsumer` | `module`, `consumer_id`, `consumer_chain_id`, `consumer_phase`, `submitter_address` | A consumer was removed; `consumer_phase` is the phase at removal and tells the arms apart. Pre-launch phases mean the owner or governance erased it immediately: it is now `DELETED`, its fee pool swept, and `consumer_chain_id` is the chain ID the deletion just released. `LAUNCHED` or `PAUSED` mean governance stopped it: it is now `STOPPED` and queued for deletion after the unbonding period. |
 | `vaas_consumer_paused` | `Keeper.PauseConsumerChain` | `module`, `consumer_id` | The consumer moved `LAUNCHED` to `PAUSED`. Only a successful downtime challenge does this. |
 | `vaas_consumer_resumed` | `Keeper.ResumeConsumerChain` | `module`, `consumer_id` | Governance resumed a paused consumer; the snapshot VSC has already been sent. |
 | `vaas_assign_consumer_key` | `msgServer.AssignConsumerKey` | `module`, `consumer_id`, `consumer_chain_id`, `provider_validator_address`, `consumer_consensus_pub_key`, `submitter_address` | A validator assigned a per-consumer consensus key. |
@@ -63,9 +62,9 @@ Several paths log only, so do not build alerting on events that do not exist:
   `StopAndPrepareForConsumerRemoval`, `DeleteConsumerChain`, the liveness sweep,
   and the pause auto-stop emit nothing. Only the *messages* that drive
   lifecycle changes emit (`vaas_create_consumer`, `vaas_update_consumer`,
-  `vaas_remove_consumer`, `vaas_retire_consumer`, `vaas_consumer_paused`,
-  `vaas_consumer_resumed`). `vaas_retire_consumer` is the one exception that does
-  report a deletion, because a pre-launch retirement *is* a message.
+  `vaas_remove_consumer`, `vaas_consumer_paused`, `vaas_consumer_resumed`).
+  The one deletion an event does report is `vaas_remove_consumer` with a
+  pre-launch `consumer_phase`, because that immediate erasure *is* a message.
   Watch the `phase` field of `consumer-chain` / `list-consumer-chains` instead
   (see [queries-reference.md](queries-reference.md)).
 - **Downtime evidence rejection on the provider.** Rejections are returned as

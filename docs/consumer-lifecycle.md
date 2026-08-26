@@ -18,8 +18,9 @@ launch resets the consumer back to REGISTERED so the owner can retry; a successf
 downtime challenge moves a LAUNCHED consumer to PAUSED, from which governance can either
 resume it back to LAUNCHED or remove it (see
 [consumer-downtime.md](consumer-downtime.md)); and a consumer that has not launched can be
-terminated outright with `MsgRetireConsumer`, which skips STOPPED and moves it straight to
-DELETED (see [Retiring a consumer before launch](#retiring-a-consumer-before-launch)).
+terminated outright with the same `MsgRemoveConsumer`, which for a pre-launch consumer
+skips STOPPED and moves it straight to DELETED (see
+[Removing a consumer before launch](#removing-a-consumer-before-launch)).
 
 ---
 
@@ -75,8 +76,8 @@ defaults.
 new position in the queue. Only the owner address can submit `MsgUpdateConsumer`.
 
 **To call the launch off entirely**, rather than push `spawn_time` out indefinitely, the
-owner (or governance) submits `MsgRetireConsumer`: see
-[Retiring a consumer before launch](#retiring-a-consumer-before-launch).
+owner (or governance) submits `MsgRemoveConsumer`: see
+[Removing a consumer before launch](#removing-a-consumer-before-launch).
 
 ---
 
@@ -191,8 +192,8 @@ auto-stop moves it to `STOPPED`.
 - automatic, at the first `BeginBlock` where
   `block_time >= stopped_time + provider_unbonding_period`, for a consumer that went
   through `STOPPED`, or
-- `MsgRetireConsumer`, for a consumer that never launched — no unbonding delay applies
-  (see [Retiring a consumer before launch](#retiring-a-consumer-before-launch)).
+- `MsgRemoveConsumer` on a consumer that never launched — no unbonding delay applies
+  (see [Removing a consumer before launch](#removing-a-consumer-before-launch)).
 
 **What happens on-chain:**
 1. Up to 200 due consumers are dequeued per block.
@@ -232,23 +233,25 @@ listed so the deletion stays visible without an archive node; identify it by
 
 ---
 
-## Retiring a consumer before launch
+## Removing a consumer before launch
 
 A registration is not permanent, and it does not tie up its chain ID until someone
-launches the chain. `MsgRetireConsumer` terminates a consumer that has not launched.
+launches the chain. `MsgRemoveConsumer` on a consumer that has not launched terminates
+it immediately: the message's effect depends on the consumer's phase.
 
-**Requirements:** consumer must be in `REGISTERED` or `INITIALIZED` phase
-(`IsConsumerPrelaunched`). A `LAUNCHED` or `PAUSED` consumer is not retirable — it is
-removed with `MsgRemoveConsumer` (gov), which stops it first and defers the erasure by
-a full unbonding period. A `STOPPED` or `DELETED` consumer is rejected too.
+**Requirements:** the immediate arm applies in `REGISTERED` or `INITIALIZED`
+(`IsConsumerPrelaunched`). For a `LAUNCHED` or `PAUSED` consumer the same message is
+governance-only and stops the chain first, deferring the erasure by a full unbonding
+period. A `STOPPED` or `DELETED` consumer is rejected.
 
-**Who can submit:** the consumer's **owner** or the **governance authority**.
-The owner arm lets whoever registered a chain abandon one it no longer intends to
-launch. The gov arm is the remedy when the owner key is lost, which would otherwise
-leave the consumer, and the chain ID it holds, in place with nobody able to clear it.
+**Who can submit:** pre-launch, the consumer's **owner** or the **governance
+authority**. The owner arm lets whoever registered a chain abandon one it no longer
+intends to launch. The gov arm is the remedy when the owner key is lost, which would
+otherwise leave the consumer, and the chain ID it holds, in place with nobody able to
+clear it.
 
 ```
-providerd tx vaasprovider retire-consumer <consumer-id> --from <owner>
+providerd tx vaasprovider remove-consumer <consumer-id> --from <owner>
 ```
 
 **What happens on-chain:** `RetireConsumerChain` first drops the consumer's entry from
@@ -263,14 +266,14 @@ while an unbonding period runs down.
 **A funded fee pool is settled, not stranded.** The auto-sweep distributes the pool
 pro rata to its depositors, with the per-denom truncation residue forwarded to the
 community pool, so anyone who prepaid fees for a chain that never launched is paid out
-at retirement and the owner does not have to run `MsgSweepConsumerFeePool` first (see
+at removal and the owner does not have to run `MsgSweepConsumerFeePool` first (see
 [consumer-fee-pool.md](consumer-fee-pool.md)). Key assignments the consumer accumulated
 before launch — assignment is allowed while `REGISTERED` and `INITIALIZED` (see
 [key-assignment.md](key-assignment.md)) — are cleared with the rest of its state.
 
-**The chain ID is free immediately.** Unlike the stop-then-remove path, retirement is
-not gated on an unbonding period, so a mistyped or abandoned registration can be
-retired and its chain ID re-registered in the next block.
+**The chain ID is free immediately.** Unlike the post-launch path, the pre-launch
+removal is not gated on an unbonding period, so a mistyped or abandoned registration
+can be erased and its chain ID re-registered in the next block.
 
 ---
 
@@ -284,4 +287,4 @@ retired and its chain ID re-registered in the next block.
 | `PAUSED` | Successful downtime challenge | Any account (with proof) | Pending slashes cancelled, withheld fees repaid, auto-stop scheduled |
 | `STOPPED` | `MsgRemoveConsumer` (gov), liveness sweep, or pause auto-stop | Governance / on-chain | Queued for deletion after unbonding period |
 | `DELETED` | Unbonding period elapsed | On-chain (BeginBlock) | Fee pool auto-swept to depositors, state cleaned up, chain ID released |
-| `DELETED` | `MsgRetireConsumer` on a consumer that never launched | Owner or governance | Same teardown, with no `STOPPED` stopover and no unbonding delay |
+| `DELETED` | `MsgRemoveConsumer` on a consumer that never launched | Owner or governance | Same teardown, with no `STOPPED` stopover and no unbonding delay |
