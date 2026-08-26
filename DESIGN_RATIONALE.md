@@ -25,8 +25,8 @@ work-in-progress.
 3. **IBC v2 only.** No channel handshake, no ordered channels, no port
    reservations. VAAS modules register on `ibcRouterV2` under the application
    IDs `vaasprovider` and `vaasconsumer`; consumer launch relies on a relayer
-   creating the IBC v2 clients and the provider discovering its consumer
-   client at the next epoch boundary.
+   creating the IBC v2 clients and the consumer's owner declaring them on
+   each chain.
 4. **Almost-forward-only consumer lifecycle.** `REGISTERED -> INITIALIZED ->
    LAUNCHED -> STOPPED -> DELETED`, with three exceptions: a failed launch rolls
    back to `REGISTERED`; a successful downtime challenge moves a `LAUNCHED`

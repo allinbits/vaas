@@ -123,19 +123,21 @@ owner (or governance) submits `MsgRetireConsumer`: see
    - Installs the initial validator set from the genesis.
    - The consumer is now live and tracking the provider.
 
-**What the relayer must do after both chains are running:**
+**What happens after both chains are running:**
 
-The ts-relayer creates an IBC v2 client on the **provider** pointing to the **consumer**,
-and registers the counterparty on both sides (`add-path`). The provider does not create
-this client itself — it only discovers it.
+The ts-relayer creates an IBC v2 client on each chain pointing at the other and registers
+the counterparties (`add-path`). Neither chain creates these clients itself, and creation
+alone grants them no authority.
 
-At the next epoch boundary, the provider scans IBC clients (`discoverActiveConsumerClient`)
-to find one pointing to the consumer chain with a registered counterparty. Once found, it
-is stored and used for all subsequent VSC packet delivery.
+The consumer's owner (or governance) then declares them: the provider-side client through
+`MsgUpdateConsumer`'s `client_id`, the consumer-side client through `MsgSetProviderClient`.
+Each declaration is validated and permanent (see [security-model.md](security-model.md));
+the provider uses the declared client for all subsequent VSC packet delivery, starting at
+the next epoch boundary.
 
 **VSC packet flow (ongoing, every epoch):**
 1. Provider queues validator set changes for all launched consumers.
-2. Provider sends VSC packets to each consumer via the discovered IBC v2 client.
+2. Provider sends VSC packets to each consumer via the declared IBC v2 client.
 3. The relayer relays the packets to the consumer.
 4. The consumer applies the validator set changes on `EndBlock`.
 
@@ -240,8 +242,7 @@ launches the chain. `MsgRetireConsumer` terminates a consumer that has not launc
 removed with `MsgRemoveConsumer` (gov), which stops it first and defers the erasure by
 a full unbonding period. A `STOPPED` or `DELETED` consumer is rejected too.
 
-**Who can submit:** the consumer's **owner** or the **governance authority** — the same
-owner-or-gov admission `MsgFundConsumerFeePool` and `MsgWithdrawConsumerFeePool` use.
+**Who can submit:** the consumer's **owner** or the **governance authority**.
 The owner arm lets whoever registered a chain abandon one it no longer intends to
 launch. The gov arm is the remedy when the owner key is lost, which would otherwise
 leave the consumer, and the chain ID it holds, in place with nobody able to clear it.
@@ -255,7 +256,7 @@ the spawn-time launch queue if it was `INITIALIZED`, so the queue cannot later h
 erased consumer to the launch sweep. It then runs the same `DeleteConsumerChain`
 teardown a stopped consumer goes through: fee-pool auto-sweep, state cleanup, chain ID
 released, phase `DELETED`. There is no `STOPPED` stopover and no unbonding delay,
-because no validator ever validated this chain, no IBC client was ever adopted for it,
+because no validator ever validated this chain, no IBC client was ever declared for it,
 and no validator set was ever computed or sent — so there is nothing to keep slashable
 while an unbonding period runs down.
 
