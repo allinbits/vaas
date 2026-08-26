@@ -202,7 +202,7 @@ message ConsumerState {
   // to the next fee distribution: a PAUSED consumer resumed before its first
   // post-restart distribution would otherwise be sent a snapshot clearing a
   // debt it still owes. False for a consumer that is not in debt.
-  bool in_debt = 18;
+  bool in_debt = 17;
 }
 
 // ConsumerFeesPerBlockOverride is a single per-consumer override entry for
