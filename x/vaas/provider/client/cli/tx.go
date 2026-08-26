@@ -53,7 +53,7 @@ func GetTxCmd() *cobra.Command {
 	cmd.AddCommand(NewSubmitConsumerDoubleVotingCmd())
 	cmd.AddCommand(NewCreateConsumerCmd())
 	cmd.AddCommand(NewUpdateConsumerCmd())
-	cmd.AddCommand(NewRetireConsumerCmd())
+	cmd.AddCommand(NewRemoveConsumerCmd())
 	cmd.AddCommand(NewFundConsumerFeePoolCmd())
 	cmd.AddCommand(NewWithdrawConsumerFeePoolCmd())
 	cmd.AddCommand(NewSweepConsumerFeePoolCmd())
@@ -406,20 +406,22 @@ If one of the fields is missing, it will be set to its zero value.
 	return cmd
 }
 
-func NewRetireConsumerCmd() *cobra.Command {
+func NewRemoveConsumerCmd() *cobra.Command {
 	cmd := &cobra.Command{
-		Use:   "retire-consumer [consumer-id]",
-		Short: "Erase a consumer chain that has not launched and release its chain id",
+		Use:   "remove-consumer [consumer-id]",
+		Short: "Remove a consumer chain",
 		Long: strings.TrimSpace(
-			fmt.Sprintf(`Erase a consumer chain that is still registered or initialized, freeing its
-chain id for reuse and returning any fee-pool balance to its depositors.
+			fmt.Sprintf(`Remove a consumer chain. The effect depends on the consumer's phase.
 
-Signed by the consumer owner, or by the governance authority when the owner key
-is lost. A launched or paused consumer cannot be retired: governance removes it
-with a MsgRemoveConsumer proposal instead.
+A consumer that has not launched (registered or initialized) is erased right
+away, its fee-pool balance returns to its depositors, and its chain id frees
+for reuse; the consumer owner may sign, or the governance authority when the
+owner key is lost. A launched or paused consumer is stopped and erased after
+the unbonding period, and only the governance authority may sign, so from the
+CLI that path is a governance proposal rather than a direct transaction.
 
 Example:
-%s tx vaasprovider retire-consumer 0 --from mykey
+%s tx vaasprovider remove-consumer 0 --from mykey
 `, version.AppName)),
 		Args: cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
@@ -431,7 +433,7 @@ Example:
 			if err != nil {
 				return err
 			}
-			msg := &types.MsgRetireConsumer{
+			msg := &types.MsgRemoveConsumer{
 				Signer:     clientCtx.GetFromAddress().String(),
 				ConsumerId: consumerId,
 			}

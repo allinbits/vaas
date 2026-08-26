@@ -603,8 +603,8 @@ func (k Keeper) BeginBlockRemoveConsumers(ctx sdk.Context) error {
 // in the registered or initialized phase.
 //
 // Such a consumer has no counterpart to wind down: no IBC client was ever
-// adopted for it (discoverActiveConsumerClient runs only for launched
-// consumers), no validator set was ever computed or sent, and evidence,
+// associated with it (that only happens once a consumer launches), no
+// validator set was ever computed or sent, and evidence,
 // downtime accusations and fee distribution all require phase LAUNCHED. No
 // validator ever validated it, so there is nothing to keep slashable for an
 // unbonding period either -- hence it does not go through STOPPED and the

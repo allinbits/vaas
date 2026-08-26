@@ -43,7 +43,6 @@ var (
 	_ sdk.Msg = (*MsgCreateConsumer)(nil)
 	_ sdk.Msg = (*MsgUpdateConsumer)(nil)
 	_ sdk.Msg = (*MsgRemoveConsumer)(nil)
-	_ sdk.Msg = (*MsgRetireConsumer)(nil)
 	_ sdk.Msg = (*MsgFundConsumerFeePool)(nil)
 	_ sdk.Msg = (*MsgWithdrawConsumerFeePool)(nil)
 	_ sdk.Msg = (*MsgSweepConsumerFeePool)(nil)
@@ -56,7 +55,6 @@ var (
 	_ sdk.HasValidateBasic = (*MsgCreateConsumer)(nil)
 	_ sdk.HasValidateBasic = (*MsgUpdateConsumer)(nil)
 	_ sdk.HasValidateBasic = (*MsgRemoveConsumer)(nil)
-	_ sdk.HasValidateBasic = (*MsgRetireConsumer)(nil)
 	_ sdk.HasValidateBasic = (*MsgSetConsumerFeesPerBlock)(nil)
 	_ sdk.HasValidateBasic = (*MsgFundConsumerFeePool)(nil)
 	_ sdk.HasValidateBasic = (*MsgWithdrawConsumerFeePool)(nil)
@@ -293,25 +291,18 @@ func (msg MsgUpdateConsumer) ValidateBasic() error {
 }
 
 // NewMsgRemoveConsumer creates a new MsgRemoveConsumer instance
-func NewMsgRemoveConsumer(authority string, consumerId uint64) (*MsgRemoveConsumer, error) {
+func NewMsgRemoveConsumer(signer string, consumerId uint64) (*MsgRemoveConsumer, error) {
 	return &MsgRemoveConsumer{
-		Authority:  authority,
+		Signer:     signer,
 		ConsumerId: consumerId,
 	}, nil
 }
 
 // ValidateBasic implements the sdk.HasValidateBasic interface.
 func (msg MsgRemoveConsumer) ValidateBasic() error {
-	if _, err := sdk.AccAddressFromBech32(msg.Authority); err != nil {
-		return errorsmod.Wrapf(sdkerrors.ErrInvalidAddress, "invalid authority address: %s", err)
-	}
-	return nil
-}
-
-// ValidateBasic implements the sdk.HasValidateBasic interface.
-func (msg MsgRetireConsumer) ValidateBasic() error {
-	// The signer is either the consumer owner or the gov authority; which one
-	// it is can only be told against state, so RetireConsumer decides.
+	// The signer is the consumer owner (pre-launch) or the gov authority;
+	// which one is acceptable depends on the consumer's phase, so
+	// RemoveConsumer decides against state.
 	if _, err := sdk.AccAddressFromBech32(msg.Signer); err != nil {
 		return errorsmod.Wrapf(sdkerrors.ErrInvalidAddress, "invalid signer: %s", err)
 	}

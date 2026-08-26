@@ -554,37 +554,84 @@ func (k msgServer) UpdateConsumer(goCtx context.Context, msg *types.MsgUpdateCon
 	return &resp, nil
 }
 
-// RemoveConsumer defines an RPC handler method for MsgRemoveConsumer.
-// Only the governance authority can remove a consumer chain.
+// RemoveConsumer defines an RPC handler method for MsgRemoveConsumer. Its
+// effect depends on the consumer's phase.
+//
+// A consumer that has not launched is erased immediately by
+// RetireConsumerChain -- a chain no validator ever validated needs no
+// unbonding delay -- under the owner-or-gov admission: the owner abandons a
+// chain it no longer intends to launch, and governance is the remedy for a
+// lost owner key, which would otherwise pin the consumer, and the chain id it
+// holds, in place forever.
+//
+// A launched or paused consumer is stopped and prepared for a removal that
+// erases state only once the unbonding period has elapsed; real validators
+// are running such a chain, so ending it is governance's call alone.
 func (k msgServer) RemoveConsumer(goCtx context.Context, msg *types.MsgRemoveConsumer) (*types.MsgRemoveConsumerResponse, error) {
 	ctx := sdk.UnwrapSDKContext(goCtx)
-
-	if k.GetAuthority() != msg.Authority {
-		return nil, errorsmod.Wrapf(govtypes.ErrInvalidSigner, "invalid authority; expected %s, got %s", k.authority, msg.Authority)
-	}
-
 	resp := types.MsgRemoveConsumerResponse{}
-
 	consumerId := msg.ConsumerId
 
+	exists, err := k.ConsumerPhase.Has(ctx, consumerId)
+	if err != nil {
+		return nil, err
+	}
+	if !exists {
+		return nil, errorsmod.Wrapf(types.ErrUnknownConsumerId,
+			"consumer %d does not exist", consumerId)
+	}
+
+	// Read the chain id up front: the pre-launch teardown releases it, and the
+	// event should still report which chain was removed.
 	chainId, err := k.GetConsumerChainId(ctx, consumerId)
 	if err != nil {
 		return &resp, errorsmod.Wrapf(vaastypes.ErrInvalidConsumerState, "cannot get consumer chain ID: %s", err.Error())
 	}
-
 	phase := k.Keeper.GetConsumerPhase(ctx, consumerId)
-	if phase != types.CONSUMER_PHASE_LAUNCHED && phase != types.CONSUMER_PHASE_PAUSED {
+	isGov := k.GetAuthority() == msg.Signer
+
+	switch {
+	case k.IsConsumerPrelaunched(ctx, consumerId):
+		if !isGov {
+			ownerAddress, err := k.GetConsumerOwnerAddress(ctx, consumerId)
+			if err != nil {
+				return nil, errorsmod.Wrapf(types.ErrNoOwnerAddress,
+					"consumer %d has no owner: %s", consumerId, err)
+			}
+			if !strings.EqualFold(msg.Signer, ownerAddress) {
+				return nil, errorsmod.Wrapf(types.ErrUnauthorized,
+					"only consumer owner %s or the gov authority may remove pre-launch consumer %d, got %s",
+					ownerAddress, consumerId, msg.Signer)
+			}
+		}
+		if err := k.Keeper.RetireConsumerChain(ctx, consumerId); err != nil {
+			return nil, err
+		}
+		k.Logger(ctx).Info("removed pre-launch consumer",
+			"consumerId", consumerId,
+			"chainId", chainId,
+			"signer", msg.Signer,
+		)
+
+	case phase == types.CONSUMER_PHASE_LAUNCHED || phase == types.CONSUMER_PHASE_PAUSED:
+		if !isGov {
+			return nil, errorsmod.Wrapf(govtypes.ErrInvalidSigner,
+				"invalid authority; a launched or paused consumer is removed only by the governance authority %s, got %s",
+				k.GetAuthority(), msg.Signer)
+		}
+		if err := k.Keeper.StopAndPrepareForConsumerRemoval(ctx, consumerId); err != nil {
+			return &resp, err
+		}
+		k.Logger(ctx).Info("stopped consumer",
+			"consumerId", consumerId,
+			"chainId", chainId,
+			"phase", phase,
+		)
+
+	default:
 		return &resp, errorsmod.Wrapf(types.ErrInvalidPhase,
-			"chain with consumer id: %d has to be in its launched or paused phase", consumerId)
+			"consumer %d is %s; a stopped or deleted consumer cannot be removed again", consumerId, phase)
 	}
-
-	err = k.Keeper.StopAndPrepareForConsumerRemoval(ctx, consumerId)
-
-	k.Logger(ctx).Info("stopped consumer",
-		"consumerId", consumerId,
-		"chainId", chainId,
-		"phase", phase,
-	)
 
 	ctx.EventManager().EmitEvent(
 		sdk.NewEvent(
@@ -592,74 +639,15 @@ func (k msgServer) RemoveConsumer(goCtx context.Context, msg *types.MsgRemoveCon
 			sdk.NewAttribute(sdk.AttributeKeyModule, types.ModuleName),
 			sdk.NewAttribute(types.AttributeConsumerId, strconv.FormatUint(consumerId, 10)),
 			sdk.NewAttribute(types.AttributeConsumerChainId, chainId),
-			sdk.NewAttribute(types.AttributeSubmitterAddress, msg.Authority),
-		),
-	)
-
-	return &resp, err
-}
-
-// RetireConsumer defines an RPC handler method for MsgRetireConsumer: it
-// erases a consumer that has not launched yet and releases its chain id.
-//
-// The signer may be either the consumer owner or the gov authority. The
-// owner arm lets whoever registered a chain abandon it; the gov arm is
-// the remedy when the owner key is lost, which would otherwise leave the
-// consumer -- and the chain id it holds -- in place with nobody able to clear
-// it. A launched or paused consumer is not retirable here: it is removed with
-// MsgRemoveConsumer, which stops it and defers the erasure by the unbonding
-// period.
-func (k msgServer) RetireConsumer(goCtx context.Context, msg *types.MsgRetireConsumer) (*types.MsgRetireConsumerResponse, error) {
-	ctx := sdk.UnwrapSDKContext(goCtx)
-
-	exists, err := k.ConsumerPhase.Has(ctx, msg.ConsumerId)
-	if err != nil {
-		return nil, err
-	}
-	if !exists {
-		return nil, errorsmod.Wrapf(types.ErrUnknownConsumerId,
-			"consumer %d does not exist", msg.ConsumerId)
-	}
-
-	if !k.IsAuthority(msg.Signer) {
-		ownerAddress, err := k.GetConsumerOwnerAddress(ctx, msg.ConsumerId)
-		if err != nil {
-			return nil, errorsmod.Wrapf(types.ErrNoOwnerAddress,
-				"consumer %d has no owner: %s", msg.ConsumerId, err)
-		}
-		if !strings.EqualFold(msg.Signer, ownerAddress) {
-			return nil, errorsmod.Wrapf(types.ErrUnauthorized,
-				"only consumer owner %s or the gov authority may retire consumer %d, got %s",
-				ownerAddress, msg.ConsumerId, msg.Signer)
-		}
-	}
-
-	// Read the chain id before the teardown releases it, so the event still
-	// reports which chain was retired. A consumer in a retirable phase always
-	// holds one; the phases that may not are rejected right below.
-	chainId, _ := k.GetConsumerChainId(ctx, msg.ConsumerId)
-
-	if err := k.Keeper.RetireConsumerChain(ctx, msg.ConsumerId); err != nil {
-		return nil, err
-	}
-
-	k.Logger(ctx).Info("retired consumer",
-		"consumerId", msg.ConsumerId,
-		"chainId", chainId,
-		"signer", msg.Signer,
-	)
-
-	ctx.EventManager().EmitEvent(
-		sdk.NewEvent(
-			types.EventTypeRetireConsumer,
-			sdk.NewAttribute(sdk.AttributeKeyModule, types.ModuleName),
-			sdk.NewAttribute(types.AttributeConsumerId, strconv.FormatUint(msg.ConsumerId, 10)),
-			sdk.NewAttribute(types.AttributeConsumerChainId, chainId),
+			// The phase at removal tells the two arms apart for indexers: a
+			// pre-launch phase means immediate erasure, launched or paused a
+			// deferred one.
+			sdk.NewAttribute(types.AttributeConsumerPhase, phase.String()),
 			sdk.NewAttribute(types.AttributeSubmitterAddress, msg.Signer),
 		),
 	)
 
-	return &types.MsgRetireConsumerResponse{}, nil
+	return &resp, nil
 }
 
 // SetConsumerFeesPerBlock sets or clears the per-consumer override for the
