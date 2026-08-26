@@ -648,21 +648,21 @@ func TestMsgSweepConsumerFeePool_ValidateBasic(t *testing.T) {
 	}
 }
 
-func TestMsgRetireConsumer_ValidateBasic(t *testing.T) {
+func TestMsgRemoveConsumer_ValidateBasic(t *testing.T) {
 	tests := []struct {
 		name    string
-		msg     types.MsgRetireConsumer
+		msg     types.MsgRemoveConsumer
 		wantErr bool
 	}{
-		{"valid", types.MsgRetireConsumer{
+		{"valid", types.MsgRemoveConsumer{
 			Signer:     sdk.AccAddress([]byte("alice___________")).String(),
 			ConsumerId: 0,
 		}, false},
-		{"invalid signer", types.MsgRetireConsumer{
+		{"invalid signer", types.MsgRemoveConsumer{
 			Signer:     "not-bech32",
 			ConsumerId: 0,
 		}, true},
-		{"empty signer", types.MsgRetireConsumer{
+		{"empty signer", types.MsgRemoveConsumer{
 			ConsumerId: 0,
 		}, true},
 	}
