@@ -602,9 +602,8 @@ func (k msgServer) RemoveConsumer(goCtx context.Context, msg *types.MsgRemoveCon
 // RetireConsumer defines an RPC handler method for MsgRetireConsumer: it
 // erases a consumer that has not launched yet and releases its chain id.
 //
-// The signer may be either the consumer owner or the gov authority, the same
-// owner-or-gov admission MsgFundConsumerFeePool and MsgWithdrawConsumerFeePool
-// use. The owner arm lets whoever registered a chain abandon it; the gov arm is
+// The signer may be either the consumer owner or the gov authority. The
+// owner arm lets whoever registered a chain abandon it; the gov arm is
 // the remedy when the owner key is lost, which would otherwise leave the
 // consumer -- and the chain id it holds -- in place with nobody able to clear
 // it. A launched or paused consumer is not retirable here: it is removed with
