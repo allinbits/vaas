@@ -2,10 +2,12 @@ package ante
 
 import (
 	"context"
+	"strings"
 
 	consumertypes "github.com/allinbits/vaas/x/vaas/consumer/types"
 
 	transfertypes "github.com/cosmos/ibc-go/v10/modules/apps/transfer/types"
+	channeltypesv2 "github.com/cosmos/ibc-go/v10/modules/core/04-channel/v2/types"
 
 	errorsmod "cosmossdk.io/errors"
 
@@ -41,8 +43,11 @@ type PhotonFeeKeeper interface {
 // client. A consumer wires it into its ante chain unconditionally, immediately
 // before ante.NewDeductFeeDecorator, and turns the policy on through the
 // photon_fees_enabled consumer param: while that param is false -- its default
-// -- the decorator is a full no-op. A chain opts in by setting the param in its
-// consumer genesis, or later through a governance MsgUpdateParams.
+// -- the decorator is a full no-op. A chain opts in by setting the param in a
+// hand-authored consumer genesis (the provider-authored consumer genesis
+// always writes it off); after genesis only the params authority can change
+// it, and the reference consumer app wires no module able to sign as that
+// authority, which makes the genesis choice final there.
 //
 // The switch belongs in the module params, i.e. in consensus state, rather than
 // in node configuration: the decorator has no CheckTx-only carve-out and so
@@ -83,6 +88,19 @@ type PhotonFeeKeeper interface {
 //     simulations are exempt from the non-empty requirement, since fees are
 //     typically computed only after simulating.
 //
+//     One class of transactions stays exempt while enforcing: those made up
+//     exclusively of chain-infrastructure messages (see isInfrastructureTx).
+//     The vouchers the policy demands can only arrive in relayer-submitted
+//     /ibc.core.* packet deliveries; pricing those in photon would deadlock
+//     the chain the moment the policy activates, with the relayer unable to
+//     deliver the very transfers that create the fee denom. Governance stays
+//     exempt for the same reason it passes the restricted msg filter:
+//     recovery must never be priced in a token the chain may not hold. What
+//     exempt transactions pay, if anything, is node-local min-gas-prices
+//     policy; a tokenless core shard launches with empty min-gas-prices and
+//     genesis-declared relayer and owner accounts, and its validators can
+//     raise prices once photon circulates.
+//
 // Note the decorator constrains the fee denom, not the amount; minimum-fee
 // policy stays with the fee market (validator min-gas-prices and the fee
 // checker in DeductFeeDecorator).
@@ -104,6 +122,33 @@ func ExpectedPhotonDenom(providerClientID string) string {
 	return denom.IBCDenom()
 }
 
+// isInfrastructureTx reports whether every message in the tx is chain
+// infrastructure the photon-only policy must not price: /ibc.core.* (relayer
+// plumbing, including the packet deliveries that carry photon vouchers in)
+// and /cosmos.gov.* (recovery governance). MsgSendPacket is carved out of
+// /ibc.core.*: it is the user-originating raw form of an outbound ICS-20 v2
+// transfer, not relayer traffic. MsgSetProviderClient needs no entry: it is
+// only accepted while no pin exists, and the decorator is a no-op until the
+// pin is routable.
+func isInfrastructureTx(msgs []sdk.Msg) bool {
+	if len(msgs) == 0 {
+		return false
+	}
+	sendPacketURL := sdk.MsgTypeURL(&channeltypesv2.MsgSendPacket{})
+	for _, msg := range msgs {
+		url := sdk.MsgTypeURL(msg)
+		switch {
+		case url == sendPacketURL:
+			return false
+		case strings.HasPrefix(url, "/ibc.core."):
+		case strings.HasPrefix(url, "/cosmos.gov."):
+		default:
+			return false
+		}
+	}
+	return true
+}
+
 func (d PhotonFeeDecorator) AnteHandle(ctx sdk.Context, tx sdk.Tx, simulate bool, next sdk.AnteHandler) (sdk.Context, error) {
 	feeTx, ok := tx.(sdk.FeeTx)
 	if !ok {
@@ -111,6 +156,11 @@ func (d PhotonFeeDecorator) AnteHandle(ctx sdk.Context, tx sdk.Tx, simulate bool
 	}
 
 	if !d.keeper.PhotonFeesEnabled(ctx) {
+		return next(ctx, tx, simulate)
+	}
+
+	if isInfrastructureTx(tx.GetMsgs()) {
+		// Never priced in photon, whatever the phase: see the type godoc.
 		return next(ctx, tx, simulate)
 	}
 

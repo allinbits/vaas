@@ -78,6 +78,11 @@ func (s *IntegrationTestSuite) SetupSuite() {
 		consumerTemplateFile:        "create_consumer.json",
 		consumerTemplatePlaceholder: "CONSUMER_CHAIN_ID",
 
+		// The whole main suite runs with photon-only fees on: every consumer
+		// transaction it sends must comply with (or be exempt from) the
+		// policy, and testPhotonFeeEnforcement proves the policy end to end.
+		enableConsumerPhotonFees: true,
+
 		patchProviderGenesis: func(appState map[string]any) {
 			// Set fast voting period
 			if gov, ok := appState["gov"].(map[string]any); ok {

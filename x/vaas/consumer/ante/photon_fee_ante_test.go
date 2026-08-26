@@ -8,6 +8,10 @@ import (
 
 	errorsmod "cosmossdk.io/errors"
 	sdk "github.com/cosmos/cosmos-sdk/types"
+	govtypes "github.com/cosmos/cosmos-sdk/x/gov/types/v1"
+	transfertypes "github.com/cosmos/ibc-go/v10/modules/apps/transfer/types"
+	clienttypes "github.com/cosmos/ibc-go/v10/modules/core/02-client/types"
+	channeltypesv2 "github.com/cosmos/ibc-go/v10/modules/core/04-channel/v2/types"
 	"github.com/stretchr/testify/require"
 	protov2 "google.golang.org/protobuf/proto"
 
@@ -16,10 +20,11 @@ import (
 
 // mockFeeTx is a minimal sdk.FeeTx for testing the photon fee decorator.
 type mockFeeTx struct {
-	fee sdk.Coins
+	fee  sdk.Coins
+	msgs []sdk.Msg
 }
 
-func (m mockFeeTx) GetMsgs() []sdk.Msg                    { return nil }
+func (m mockFeeTx) GetMsgs() []sdk.Msg                    { return m.msgs }
 func (m mockFeeTx) GetMsgsV2() ([]protov2.Message, error) { return nil, nil }
 func (m mockFeeTx) GetGas() uint64                        { return 0 }
 func (m mockFeeTx) GetFee() sdk.Coins                     { return m.fee }
@@ -166,6 +171,90 @@ func TestPhotonFeeDecorator(t *testing.T) {
 				photonFees:          tc.photonFees,
 			}
 			nextCalled, err := runPhotonDecorator(t, k, tc.tx, tc.simulate)
+			if tc.expectErr {
+				require.Error(t, err)
+				require.True(t, errorsmod.IsOf(err, consumertypes.ErrInvalidFeeDenom))
+				require.False(t, nextCalled)
+				return
+			}
+			require.NoError(t, err)
+			require.True(t, nextCalled)
+		})
+	}
+}
+
+// TestPhotonFeeDecoratorInfrastructureExemption covers the enforcing-phase
+// message exemption: transactions made up exclusively of chain-infrastructure
+// messages (IBC core relayer plumbing and governance) pass whatever their fee,
+// including none. Without the exemption the policy deadlocks the chain: photon
+// vouchers can only arrive in relayer-submitted packet deliveries, which would
+// themselves need photon fees. User-originating messages stay enforced, and
+// /ibc.core.channel.v2.MsgSendPacket counts as user-originating (it is the raw
+// form of an outbound ICS-20 v2 transfer).
+func TestPhotonFeeDecoratorInfrastructureExemption(t *testing.T) {
+	photon := ExpectedPhotonDenom("07-tendermint-0")
+	uatone := sdk.NewCoins(sdk.NewInt64Coin("uatone", 100))
+	testCases := []struct {
+		name      string
+		msgs      []sdk.Msg
+		fee       sdk.Coins
+		expectErr bool
+	}{
+		{
+			name: "relayer packet delivery with a non-photon fee is exempt",
+			msgs: []sdk.Msg{&channeltypesv2.MsgRecvPacket{}},
+			fee:  uatone,
+		},
+		{
+			name: "relayer packet delivery with an empty fee is exempt",
+			msgs: []sdk.Msg{&channeltypesv2.MsgRecvPacket{}},
+			fee:  sdk.NewCoins(),
+		},
+		{
+			name: "client update with an empty fee is exempt",
+			msgs: []sdk.Msg{&clienttypes.MsgUpdateClient{}},
+			fee:  sdk.NewCoins(),
+		},
+		{
+			name: "governance with a non-photon fee is exempt",
+			msgs: []sdk.Msg{&govtypes.MsgVote{}},
+			fee:  uatone,
+		},
+		{
+			name: "exempt messages still pass with a photon fee",
+			msgs: []sdk.Msg{&channeltypesv2.MsgRecvPacket{}},
+			fee:  sdk.NewCoins(sdk.NewInt64Coin(photon, 100)),
+		},
+		{
+			name:      "outbound ICS-20 transfer is not exempt",
+			msgs:      []sdk.Msg{&transfertypes.MsgTransfer{}},
+			fee:       uatone,
+			expectErr: true,
+		},
+		{
+			name:      "raw v2 send packet is not exempt (user-originating)",
+			msgs:      []sdk.Msg{&channeltypesv2.MsgSendPacket{}},
+			fee:       uatone,
+			expectErr: true,
+		},
+		{
+			name:      "mixing exempt and non-exempt messages is not exempt",
+			msgs:      []sdk.Msg{&channeltypesv2.MsgRecvPacket{}, bankSendMsg()},
+			fee:       uatone,
+			expectErr: true,
+		},
+		{
+			name:      "no messages is not exempt",
+			msgs:      nil,
+			fee:       uatone,
+			expectErr: true,
+		},
+	}
+
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			k := mockConsumerKeeper{providerClientFound: true, routableClient: true, photonFees: true}
+			nextCalled, err := runPhotonDecorator(t, k, mockFeeTx{fee: tc.fee, msgs: tc.msgs}, false)
 			if tc.expectErr {
 				require.Error(t, err)
 				require.True(t, errorsmod.IsOf(err, consumertypes.ErrInvalidFeeDenom))

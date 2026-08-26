@@ -65,10 +65,12 @@ type ConsumerParams struct {
 	OwnerAddress string `protobuf:"bytes,8,opt,name=owner_address,json=ownerAddress,proto3" json:"owner_address,omitempty"`
 	// Whether transaction fees must be paid exclusively in the one-hop photon
 	// voucher received from the provider (an AtomOne core-shard requirement).
-	// Consumer-local: off by default, switched on in the consumer genesis or by
-	// consumer governance via MsgUpdateParams. The switch lives here, in
-	// consensus state, because the ante policy it drives also runs in
-	// FinalizeBlock.
+	// Consumer-local and off by default; the provider-authored consumer
+	// genesis always writes it off, so a chain opts in through a hand-authored
+	// genesis or a later MsgUpdateParams from its params authority, where the
+	// embedding app wires one (the reference consumer app wires none). The
+	// switch lives here, in consensus state, because the ante policy it drives
+	// also runs in FinalizeBlock.
 	PhotonFeesEnabled bool `protobuf:"varint,9,opt,name=photon_fees_enabled,json=photonFeesEnabled,proto3" json:"photon_fees_enabled,omitempty"`
 }
 
