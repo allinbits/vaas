@@ -23,44 +23,42 @@ message GenesisState {
   string provider_client_id = 2;
   // true for new chain, false for chain restart.
   bool new_chain = 3;
-  reserved 4;
-  reserved "height_to_valset_update_id";
   // Flag indicating whether the consumer VAAS module starts in pre-VAAS state
-  bool preVAAS = 5;
-  vaas.v1.ProviderInfo provider = 6 [ (gogoproto.nullable) = false ];
+  bool preVAAS = 4;
+  vaas.v1.ProviderInfo provider = 5 [ (gogoproto.nullable) = false ];
   // LastVSCRecvTime is the block time of the last VSC packet the consumer
   // received; it drives IsVSCStale (safe mode). Round-tripped on restart so a
   // state-export upgrade preserves the staleness clock. Absent for a new chain
   // that has not received a VSC yet.
-  google.protobuf.Timestamp last_vsc_recv_time = 7 [ (gogoproto.stdtime) = true ];
+  google.protobuf.Timestamp last_vsc_recv_time = 6 [ (gogoproto.stdtime) = true ];
 
   // Missed-block bitmaps for validators currently tracked within the open
   // downtime window. Empty for a new chain or right after a window closes.
-  repeated MissedBlockBitmapEntry missed_block_bitmaps = 8
+  repeated MissedBlockBitmapEntry missed_block_bitmaps = 7
       [ (gogoproto.nullable) = false ];
 
   // First height at which each currently-tracked validator was observed
   // within the open downtime window. Empty for a new chain or right after a
   // window closes.
-  repeated FirstTrackedHeightEntry first_tracked_heights = 9
+  repeated FirstTrackedHeightEntry first_tracked_heights = 8
       [ (gogoproto.nullable) = false ];
 
   // Downtime params staged to take effect at the next window boundary.
   // Absent means nothing is staged.
-  vaas.v1.DowntimeParams staged_downtime_params = 10;
+  vaas.v1.DowntimeParams staged_downtime_params = 9;
 
   // ProviderChainId is the chain id the consumer has pinned as belonging to
   // the provider (see ProviderChainId in x/vaas/consumer/keeper/keeper.go).
   // Round-tripped on restart so a state-export restart preserves the pin
   // instead of leaving a window with no pin until the next VSC packet
   // re-establishes it. Empty for a new chain that has not launched yet.
-  string provider_chain_id = 11;
+  string provider_chain_id = 10;
 
   // Downtime evidence packets queued for send to the provider. Round-tripped
   // on restart because closing a window clears the source bitmaps, leaving
   // the queue as the only remaining copy of the evidence. Empty for a new
   // chain or when nothing is queued.
-  repeated PendingEvidencePacketEntry pending_evidence_packets = 12
+  repeated PendingEvidencePacketEntry pending_evidence_packets = 11
       [ (gogoproto.nullable) = false ];
 
   // HighestValsetUpdateId is the highest VSC id the consumer has applied: the
@@ -70,7 +68,7 @@ message GenesisState {
   // keeps rejecting stale diffs still held in IBC state, instead of resetting
   // the watermark and re-applying an older set over a newer one. Absent (0)
   // for a new chain or a consumer that has not yet applied a VSC.
-  uint64 highest_valset_update_id = 13;
+  uint64 highest_valset_update_id = 12;
 
   // ConsumerInDebt is the debt flag the provider last stamped on an accepted
   // VSC packet: one of the two arms of the consumer's tx-admission gate (see
@@ -79,7 +77,7 @@ message GenesisState {
   // comes back gated instead of admitting ordinary transactions until the
   // next VSC packet re-asserts the flag. False for a new chain or a consumer
   // that has never been in debt.
-  bool consumer_in_debt = 14;
+  bool consumer_in_debt = 13;
 }
 
 // MissedBlockBitmapEntry is a single validator's missed-block bitmap for the
