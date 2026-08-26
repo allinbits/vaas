@@ -92,6 +92,7 @@ import (
 	tmjson "github.com/cometbft/cometbft/libs/json"
 	tmos "github.com/cometbft/cometbft/libs/os"
 
+	"github.com/allinbits/vaas/app/ibcshim"
 	ibcconsumer "github.com/allinbits/vaas/x/vaas/consumer"
 	ibcconsumerkeeper "github.com/allinbits/vaas/x/vaas/consumer/keeper"
 	ibcconsumertypes "github.com/allinbits/vaas/x/vaas/consumer/types"
@@ -384,7 +385,10 @@ func New(
 		slashing.NewAppModule(appCodec, app.SlashingKeeper, app.AccountKeeper, app.BankKeeper, app.ConsumerKeeper, app.GetSubspace(slashingtypes.ModuleName), app.interfaceRegistry),
 		upgrade.NewAppModule(&app.UpgradeKeeper, app.AccountKeeper.AddressCodec()),
 		params.NewAppModule(app.ParamsKeeper),
-		ibc.NewAppModule(app.IBCKeeper),
+		// ibcshim, not ibc directly: works around ibc-go's clientv2 genesis
+		// Validate rejecting colliding cross-chain client ids, which makes a
+		// restart-from-export panic at InitChain. See app/ibcshim.
+		ibcshim.NewAppModule(app.IBCKeeper),
 		ibctm.NewAppModule(tmLightClientModule),
 		params.NewAppModule(app.ParamsKeeper),
 		transferModule,
