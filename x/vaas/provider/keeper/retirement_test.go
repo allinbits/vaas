@@ -124,11 +124,11 @@ func requireConsumerTornDown(
 	require.NoError(t, err, "metadata must be kept for explorers")
 }
 
-// TestRetireConsumerOwnerRetiresPrelaunchedConsumer verifies that the owner of
-// a consumer that has not launched can retire it from either pre-launch phase,
-// that the teardown leaves nothing behind, and that the chain id it held can be
-// registered again afterwards.
-func TestRetireConsumerOwnerRetiresPrelaunchedConsumer(t *testing.T) {
+// TestRemoveConsumerOwnerErasesPrelaunchedConsumer verifies the pre-launch arm
+// of MsgRemoveConsumer: the owner of a consumer that has not launched can
+// remove it from either pre-launch phase, the teardown is immediate and leaves
+// nothing behind, and the chain id it held can be registered again afterwards.
+func TestRemoveConsumerOwnerErasesPrelaunchedConsumer(t *testing.T) {
 	owner := sdk.AccAddress([]byte("consumer-owner-addr1")).String()
 
 	testCases := []struct {
@@ -174,7 +174,7 @@ func TestRetireConsumerOwnerRetiresPrelaunchedConsumer(t *testing.T) {
 				Return(sdk.NewCoins())
 
 			ms := providerkeeper.NewMsgServerImpl(&k)
-			_, err := ms.RetireConsumer(ctx, &providertypes.MsgRetireConsumer{
+			_, err := ms.RemoveConsumer(ctx, &providertypes.MsgRemoveConsumer{
 				Signer: owner, ConsumerId: consumerId,
 			})
 			require.NoError(t, err)
@@ -204,10 +204,10 @@ func TestRetireConsumerOwnerRetiresPrelaunchedConsumer(t *testing.T) {
 	}
 }
 
-// TestRetireConsumerGovernanceRetiresWhenOwnerKeyIsLost verifies the gov arm of
-// the message: a consumer whose owner can no longer sign is still retirable, so
-// neither its state nor its chain id is pinned forever.
-func TestRetireConsumerGovernanceRetiresWhenOwnerKeyIsLost(t *testing.T) {
+// TestRemoveConsumerGovernanceErasesPrelaunchedWhenOwnerKeyIsLost verifies the
+// gov side of the pre-launch arm: a consumer whose owner can no longer sign is
+// still removable, so neither its state nor its chain id is pinned forever.
+func TestRemoveConsumerGovernanceErasesPrelaunchedWhenOwnerKeyIsLost(t *testing.T) {
 	k, ctx, ctrl, mocks := testkeeper.GetProviderKeeperAndCtx(t, testkeeper.NewInMemKeeperParams(t))
 	defer ctrl.Finish()
 
@@ -223,7 +223,7 @@ func TestRetireConsumerGovernanceRetiresWhenOwnerKeyIsLost(t *testing.T) {
 		Return(sdk.NewCoins())
 
 	ms := providerkeeper.NewMsgServerImpl(&k)
-	_, err := ms.RetireConsumer(ctx, &providertypes.MsgRetireConsumer{
+	_, err := ms.RemoveConsumer(ctx, &providertypes.MsgRemoveConsumer{
 		Signer: k.GetAuthority(), ConsumerId: consumerId,
 	})
 	require.NoError(t, err)
@@ -235,10 +235,10 @@ func TestRetireConsumerGovernanceRetiresWhenOwnerKeyIsLost(t *testing.T) {
 	require.False(t, inUse)
 }
 
-// TestRetireConsumerRejectsUnauthorizedSigner verifies that a signer who is
-// neither the owner nor the gov authority cannot retire a consumer, so
-// retirement is not a way to destroy someone else's registration.
-func TestRetireConsumerRejectsUnauthorizedSigner(t *testing.T) {
+// TestRemoveConsumerRejectsUnauthorizedSigner verifies that a signer who is
+// neither the owner nor the gov authority cannot remove a pre-launch consumer,
+// so removal is not a way to destroy someone else's registration.
+func TestRemoveConsumerRejectsUnauthorizedSigner(t *testing.T) {
 	k, ctx, ctrl, mocks := testkeeper.GetProviderKeeperAndCtx(t, testkeeper.NewInMemKeeperParams(t))
 	defer ctrl.Finish()
 
@@ -251,7 +251,7 @@ func TestRetireConsumerRejectsUnauthorizedSigner(t *testing.T) {
 	consumerId := createRetirableConsumer(t, k, ctx, owner, chainId, time.Time{})
 
 	ms := providerkeeper.NewMsgServerImpl(&k)
-	_, err := ms.RetireConsumer(ctx, &providertypes.MsgRetireConsumer{
+	_, err := ms.RemoveConsumer(ctx, &providertypes.MsgRemoveConsumer{
 		Signer: stranger, ConsumerId: consumerId,
 	})
 	require.ErrorIs(t, err, providertypes.ErrUnauthorized)
@@ -263,29 +263,70 @@ func TestRetireConsumerRejectsUnauthorizedSigner(t *testing.T) {
 	require.True(t, inUse)
 }
 
-// TestRetireConsumerRejectsUnknownConsumer verifies that a consumer id that was
+// TestRemoveConsumerRejectsUnknownConsumer verifies that a consumer id that was
 // never registered is reported as unknown, including for the gov authority.
-func TestRetireConsumerRejectsUnknownConsumer(t *testing.T) {
+func TestRemoveConsumerRejectsUnknownConsumer(t *testing.T) {
 	k, ctx, ctrl, _ := testkeeper.GetProviderKeeperAndCtx(t, testkeeper.NewInMemKeeperParams(t))
 	defer ctrl.Finish()
 
 	ms := providerkeeper.NewMsgServerImpl(&k)
 	for _, signer := range []string{sdk.AccAddress([]byte("consumer-owner-addr1")).String(), k.GetAuthority()} {
-		_, err := ms.RetireConsumer(ctx, &providertypes.MsgRetireConsumer{
+		_, err := ms.RemoveConsumer(ctx, &providertypes.MsgRemoveConsumer{
 			Signer: signer, ConsumerId: 42,
 		})
 		require.ErrorIs(t, err, providertypes.ErrUnknownConsumerId)
 	}
 }
 
-// TestRetireConsumerRejectsLaunchedAndLater verifies that retirement covers
-// only the pre-launch phases: a live consumer keeps going through
-// MsgRemoveConsumer, which stops it and defers erasure by the unbonding period,
-// and its chain id stays reserved throughout.
-func TestRetireConsumerRejectsLaunchedAndLater(t *testing.T) {
+// TestRemoveConsumerPastLaunchIsGovOnlyAndDeferred verifies the
+// launched-and-later arms of MsgRemoveConsumer: a launched or paused consumer
+// is removable only by the governance authority, and is stopped with erasure
+// deferred by the unbonding period rather than erased immediately (its chain
+// id stays reserved). A stopped or deleted consumer is rejected for any
+// signer.
+func TestRemoveConsumerPastLaunchIsGovOnlyAndDeferred(t *testing.T) {
 	owner := sdk.AccAddress([]byte("consumer-owner-addr1")).String()
 
-	testCases := []struct {
+	for _, phase := range []providertypes.ConsumerPhase{
+		providertypes.CONSUMER_PHASE_LAUNCHED,
+		providertypes.CONSUMER_PHASE_PAUSED,
+	} {
+		t.Run(phase.String(), func(t *testing.T) {
+			k, ctx, ctrl, mocks := testkeeper.GetProviderKeeperAndCtx(t, testkeeper.NewInMemKeeperParams(t))
+			defer ctrl.Finish()
+
+			mocks.MockStakingKeeper.EXPECT().UnbondingTime(gomock.Any()).
+				Return(21*24*time.Hour, nil).AnyTimes()
+
+			const chainId = "live-1"
+			consumerId := createRetirableConsumer(t, k, ctx, owner, chainId, time.Time{})
+			k.SetConsumerPhase(ctx, consumerId, phase)
+
+			ms := providerkeeper.NewMsgServerImpl(&k)
+
+			// Past launch the owner may not remove: real validators are
+			// running the chain, so ending it is governance's call.
+			_, err := ms.RemoveConsumer(ctx, &providertypes.MsgRemoveConsumer{
+				Signer: owner, ConsumerId: consumerId,
+			})
+			require.Error(t, err)
+			require.Contains(t, err.Error(), "invalid authority")
+			require.Equal(t, phase, k.GetConsumerPhase(ctx, consumerId), "a rejected removal must not move the phase")
+
+			// Governance removes it: stopped now, erased after unbonding, the
+			// chain id stays reserved until the deferred deletion.
+			_, err = ms.RemoveConsumer(ctx, &providertypes.MsgRemoveConsumer{
+				Signer: k.GetAuthority(), ConsumerId: consumerId,
+			})
+			require.NoError(t, err)
+			require.Equal(t, providertypes.CONSUMER_PHASE_STOPPED, k.GetConsumerPhase(ctx, consumerId))
+			inUse, err := k.ChainIdInUse(ctx, chainId)
+			require.NoError(t, err)
+			require.True(t, inUse)
+		})
+	}
+
+	terminalCases := []struct {
 		phase providertypes.ConsumerPhase
 		// A consumer past launch that has not been erased yet still holds its
 		// chain id. The deleted case below is set up by phase alone, so its
@@ -293,13 +334,10 @@ func TestRetireConsumerRejectsLaunchedAndLater(t *testing.T) {
 		// TestDeleteConsumerChainReleasesChainIdOnStoppedPath.
 		stillHoldsChainId bool
 	}{
-		{providertypes.CONSUMER_PHASE_LAUNCHED, true},
-		{providertypes.CONSUMER_PHASE_PAUSED, true},
 		{providertypes.CONSUMER_PHASE_STOPPED, true},
 		{providertypes.CONSUMER_PHASE_DELETED, false},
 	}
-
-	for _, tc := range testCases {
+	for _, tc := range terminalCases {
 		phase := tc.phase
 		t.Run(phase.String(), func(t *testing.T) {
 			k, ctx, ctrl, mocks := testkeeper.GetProviderKeeperAndCtx(t, testkeeper.NewInMemKeeperParams(t))
@@ -316,7 +354,7 @@ func TestRetireConsumerRejectsLaunchedAndLater(t *testing.T) {
 
 			// Both arms are rejected on the phase, not on the signer.
 			for _, signer := range []string{owner, k.GetAuthority()} {
-				_, err := ms.RetireConsumer(ctx, &providertypes.MsgRetireConsumer{
+				_, err := ms.RemoveConsumer(ctx, &providertypes.MsgRemoveConsumer{
 					Signer: signer, ConsumerId: consumerId,
 				})
 				require.ErrorIs(t, err, providertypes.ErrInvalidPhase)
@@ -335,10 +373,10 @@ func TestRetireConsumerRejectsLaunchedAndLater(t *testing.T) {
 	}
 }
 
-// TestRetireConsumerReturnsFundedFeePool verifies that retiring a consumer
+// TestRemoveConsumerReturnsFundedFeePool verifies that removing a pre-launch consumer
 // whose fee pool holds a deposit pays the depositors back rather than leaving
 // the balance behind an address nobody can withdraw from any more.
-func TestRetireConsumerReturnsFundedFeePool(t *testing.T) {
+func TestRemoveConsumerReturnsFundedFeePool(t *testing.T) {
 	k, ctx, ctrl, mocks := testkeeper.GetProviderKeeperAndCtx(t, testkeeper.NewInMemKeeperParams(t))
 	defer ctrl.Finish()
 
@@ -367,7 +405,7 @@ func TestRetireConsumerReturnsFundedFeePool(t *testing.T) {
 		ctx, providertypes.ModuleName, depositor, sdk.NewCoins(deposit)).Return(nil)
 
 	ms := providerkeeper.NewMsgServerImpl(&k)
-	_, err := ms.RetireConsumer(ctx, &providertypes.MsgRetireConsumer{
+	_, err := ms.RemoveConsumer(ctx, &providertypes.MsgRemoveConsumer{
 		Signer: owner, ConsumerId: consumerId,
 	})
 	require.NoError(t, err)
