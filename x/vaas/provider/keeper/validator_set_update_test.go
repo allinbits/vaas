@@ -159,8 +159,8 @@ func TestSnapshotAfterLostDiff(t *testing.T) {
 	}
 }
 
-// TestQueueVSCPacketsEmptyStoredValSetForcesSnapshot is the M3 provider-restart
-// property. A state-export restart does NOT carry the per-consumer
+// TestQueueVSCPacketsEmptyStoredValSetForcesSnapshot: a state-export restart
+// must force a snapshot. Such a restart does NOT carry the per-consumer
 // ConsumerValSet, so on the first post-restart epoch the stored set is empty
 // even though the consumer looks "caught up" (acked == sent, nothing pending) --
 // the exact state that would otherwise select a diff. Diffing the live bonded
@@ -188,8 +188,9 @@ func TestQueueVSCPacketsEmptyStoredValSetForcesSnapshot(t *testing.T) {
 	// set one so the queued packet has a non-zero id the consumer will accept.
 	k.SetValidatorSetUpdateId(ctx, 7)
 
-	// Post-restart: caught up and nothing pending (pre-M3 this selected a
-	// diff), and -- crucially -- the per-consumer valset was not restored.
+	// Post-restart: caught up and nothing pending (the state that would
+	// select a diff), and -- crucially -- the per-consumer valset was not
+	// restored.
 	k.SetConsumerHighestSentVscId(ctx, cid, 5)
 	k.SetConsumerHighestAckedVscId(ctx, cid, 5)
 	stored, err := k.GetConsumerValSet(ctx, cid)
