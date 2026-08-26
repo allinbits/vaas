@@ -10,14 +10,11 @@ const (
 	EventTypeConsumerFeePoolFund     = "vaas_consumer_fee_pool_fund"
 	EventTypeConsumerFeePoolWithdraw = "vaas_consumer_fee_pool_withdraw"
 	EventTypeConsumerFeePoolSweep    = "vaas_consumer_fee_pool_sweep"
-	// EventTypeRetireConsumer belongs to MsgRetireConsumer; defined here so
-	// the wholesale rewrite of this block does not drop it out from under its
-	// user. Harmless ahead of that user.
-	EventTypeRetireConsumer = "vaas_retire_consumer"
 
 	AttributeProviderValidatorAddress = "provider_validator_address"
 	// AttributeConsumerClientID carries the IBC client id declared for a
-	// consumer; defined here for the same reason as EventTypeRetireConsumer.
+	// consumer; defined here so the wholesale rewrite of this block does not
+	// drop it out from under its user. Harmless ahead of that user.
 	AttributeConsumerClientID        = "consumer_client_id"
 	AttributeConsumerConsensusPubKey = "consumer_consensus_pub_key"
 	AttributeSubmitterAddress        = "submitter_address"
