@@ -7,8 +7,6 @@ import (
 
 	vaastypes "github.com/allinbits/vaas/x/vaas/types"
 
-	"github.com/cometbft/cometbft/crypto/tmhash"
-
 	errorsmod "cosmossdk.io/errors"
 	"cosmossdk.io/math"
 
@@ -462,10 +460,6 @@ func (cs ConsumerState) Validate() error {
 		if pVSC.ValsetUpdateId == 0 {
 			return errors.New("valset update ID cannot be equal to zero")
 		}
-	}
-	if len(cs.PrevConsumerValsetHash) != 0 && len(cs.PrevConsumerValsetHash) != tmhash.Size {
-		return fmt.Errorf("previous consumer valset hash must be %d bytes when set, got %d",
-			tmhash.Size, len(cs.PrevConsumerValsetHash))
 	}
 
 	switch cs.Phase {

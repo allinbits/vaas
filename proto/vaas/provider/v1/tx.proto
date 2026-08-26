@@ -164,6 +164,16 @@ message MsgUpdateConsumer {
   // the chain id CANNOT be updated.
   // This field is optional and can remain empty (i.e., `new_chain_id = ""`) or correspond to the chain id the chain already has.
   string new_chain_id = 6;
+
+  // (optional) The IBC client the provider uses to reach the consumer,
+  // declared by the owner once the consumer is LAUNCHED and a relayer has
+  // created the client. Settable exactly once: the field is accepted only
+  // while no client is set for the consumer, and the declared client must be
+  // an Active tendermint client of the consumer's chain id with a registered
+  // IBC v2 counterparty and a trusting period that outlives the downtime
+  // challenge horizon. Replacing a dead client afterwards is governance's
+  // MsgRecoverClient, which substitutes state under the same client id.
+  string client_id = 7;
 }
 
 // MsgUpdateConsumerResponse defines response type for MsgUpdateConsumer messages

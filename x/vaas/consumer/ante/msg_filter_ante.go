@@ -47,12 +47,33 @@ func NewMsgFilterDecorator(k ConsumerKeeper) MsgFilterDecorator {
 	}
 }
 
+// isAllowedBootstrapTx reports whether every message in the tx is allowed
+// while no provider client is pinned: IBC messages, the pin message itself,
+// and governance.
+func isAllowedBootstrapTx(msgs []sdk.Msg) bool {
+	for _, msg := range msgs {
+		msgType := sdk.MsgTypeURL(msg)
+		switch {
+		case strings.HasPrefix(msgType, "/ibc."):
+		case strings.HasPrefix(msgType, "/cosmos.gov."):
+		case msgType == sdk.MsgTypeURL(&consumertypes.MsgSetProviderClient{}):
+		default:
+			return false
+		}
+	}
+	return true
+}
+
 func (mfd MsgFilterDecorator) AnteHandle(ctx sdk.Context, tx sdk.Tx, simulate bool, next sdk.AnteHandler) (newCtx sdk.Context, err error) {
 	if _, ok := mfd.ConsumerKeeper.GetProviderClientID(ctx); !ok {
-		// pre-CCV: only /ibc.* messages until the provider client is up.
-		// Note, rather than listing out all possible IBC message types, we assume
-		// all IBC message types have a correct and canonical prefix -- /ibc.*
-		if !hasOnlyPrefix(tx.GetMsgs(), "/ibc.") {
+		// Pre-pin: the chain has no synced validator set, so only what the
+		// bootstrap itself needs may pass. That is /ibc.* (the relayer setting
+		// up clients and counterparties; all IBC message types share the
+		// canonical /ibc. prefix), the pin message itself
+		// (MsgSetProviderClient -- a filter without it would deadlock the
+		// bootstrap, unpinned because unpinned), and /cosmos.gov.* so
+		// governance can pin when the seeded owner cannot or will not.
+		if !isAllowedBootstrapTx(tx.GetMsgs()) {
 			return ctx, fmt.Errorf("tx contains unsupported message types at height %d", ctx.BlockHeight())
 		}
 		return next(ctx, tx, simulate)
@@ -84,15 +105,6 @@ func (mfd MsgFilterDecorator) AnteHandle(ctx sdk.Context, tx sdk.Tx, simulate bo
 		)
 	}
 	return next(ctx, tx, simulate)
-}
-
-func hasOnlyPrefix(msgs []sdk.Msg, prefix string) bool {
-	for _, msg := range msgs {
-		if !strings.HasPrefix(sdk.MsgTypeURL(msg), prefix) {
-			return false
-		}
-	}
-	return true
 }
 
 func isAllowedRestrictedTx(msgs []sdk.Msg) bool {

@@ -348,16 +348,18 @@ challenge window.
   contact). See [consumer-liveness.md](consumer-liveness.md) for the delivery model.
 - An attacker chain reusing the provider's exact chain-id string. No forged light-client
   history is needed for this -- IBC attaches no meaning to chain-id uniqueness, so a chain
-  that simply reports the provider's chain id passes the pinning check while carrying a
-  different validator set. What stops it is that the established provider client cannot be
-  replaced: once the pinned client has a registered IBC v2 counterparty, a VSC packet
-  arriving over any other client is rejected. Without that, such a packet would redirect
-  every downtime evidence packet to a chain that discards them, and a large
-  `valset_update_id` in the same packet would strand the real provider below the dedup
-  watermark for good. A pin with no counterparty is the client the consumer created for
-  itself at genesis, which nothing can be delivered over; the first client that does deliver
-  replaces it, once. Recovering an expired or frozen pin is a governance `MsgRecoverClient`,
-  which substitutes fresh client state under the same client id and leaves the pin intact.
+  that simply reports the provider's chain id passes the chain-id check while carrying a
+  different validator set. What stops it is that the provider client is never inferred from
+  traffic at all: a new consumer starts with no provider client pinned and rejects every VSC
+  packet until the owner seeded into the consumer params (or governance) pins the
+  relayer-created client explicitly with `MsgSetProviderClient`, exactly once. Were the pin
+  ever movable by an incoming packet, such a packet would redirect every downtime evidence
+  packet to a chain that discards them, and a large `valset_update_id` in the same packet
+  would strand the real provider below the dedup watermark for good. Recovering an expired
+  or frozen pin is a governance `MsgRecoverClient`, which substitutes fresh client state
+  under the same client id and leaves the pin intact -- the client id is identity here (the
+  photon fee denom derives from it, and the provider keys downtime state by its own client
+  ids), which is why no path replaces a pin with a different client.
 
 **Out of scope**
 

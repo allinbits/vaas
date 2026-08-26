@@ -87,13 +87,12 @@ func (gs GenesisState) Validate() error {
 		if len(gs.HeightToValsetUpdateId) != 0 {
 			return errorsmod.Wrap(vaastypes.ErrInvalidGenesis, "HeightToValsetUpdateId must be nil for new chain")
 		}
-	} else {
-		if gs.ProviderClientId == "" {
-			return errorsmod.Wrap(vaastypes.ErrInvalidGenesis, "provider client id must be set for a restarting consumer genesis state")
-		}
-		if gs.Provider.ClientState != nil || gs.Provider.ConsensusState != nil {
-			return errorsmod.Wrap(vaastypes.ErrInvalidGenesis, "provider client state and consensus state must be nil for a restarting genesis state")
-		}
+	} else if gs.Provider.ClientState != nil || gs.Provider.ConsensusState != nil {
+		// Note that an empty provider client id is valid on restart: it is the
+		// export of a chain that had not been pinned yet (genesis creates no
+		// client; the owner pins one via MsgSetProviderClient), and it
+		// restarts still waiting to be pinned.
+		return errorsmod.Wrap(vaastypes.ErrInvalidGenesis, "provider client state and consensus state must be nil for a restarting genesis state")
 	}
 
 	// A bitmap imported at a length other than what the current

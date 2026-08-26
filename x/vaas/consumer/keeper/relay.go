@@ -116,11 +116,11 @@ func (k Keeper) OnRecvVSCPacketV2(ctx sdk.Context, consumerClientID string, newC
 // consumerClientID is a registered, counterparty-linked client is not by
 // itself proof the packets originate from the real provider chain -- it only
 // proves *some* chain is on the other end. The chain id is normally pinned at
-// genesis from the provider-authored client state; as a fallback, the first
-// VSC packet ever accepted teaches the consumer the provider's chain id from
-// that packet's destination client. Every packet after that must arrive over
-// a client tracking the same chain id, or it is rejected before any state
-// changes (see the call site in OnRecvVSCPacketV2).
+// genesis from the provider-authored client state (a restart restores the
+// exported pin). Every packet must arrive over a client tracking that chain
+// id, or it is rejected before any state changes (see the call site in
+// OnRecvVSCPacketV2); the first-packet fallback below only matters for state
+// predating the genesis seed.
 //
 // Residual trust boundary: this only pins the chain-id *string*, so on its
 // own it does not distinguish the real provider from a chain that reuses the
@@ -155,69 +155,31 @@ func (k Keeper) authenticateProviderChainID(ctx sdk.Context, consumerClientID st
 }
 
 // enforcePinnedProviderClient rejects a VSC packet unless it arrived over the
-// consumer's pinned provider client, allowing the pin to move at most once in
-// the chain's lifetime: from the unroutable client created at genesis to the
-// first client that actually delivers a VSC packet.
+// consumer's pinned provider client.
 //
-// The pin's trust model: at NewChain genesis the consumer creates its own
-// IBC client of the provider from client and consensus state the provider
-// itself authored into the consumer genesis, and pins it (a restart restores
-// the exported pin instead). That genesis client is a genuine light client of
-// the real provider, but it can never carry packets: ibc-go only lets a
-// client's recorded creator register the IBC v2 counterparty that packet
-// routing requires, and a client created directly at genesis has no recorded
-// creator. Whichever relayer serves the chain therefore creates its own,
-// counterparty-linked client of the provider, and the first VSC packet
-// delivered over such a client re-pins the consumer to it: ibc-go's
-// RecvPacket has already proven the packet against that client's consensus
-// state and registered counterparty, and authenticateProviderChainID has
-// already checked it tracks the pinned provider chain id.
+// The pin is never established here. A new chain starts with no pin at all --
+// no client is created at genesis -- and rejects every VSC packet until the
+// owner seeded into the consumer params (or governance) pins the
+// relayer-created client explicitly via MsgSetProviderClient; a restart
+// restores the exported pin. Letting the first delivered packet establish or
+// move the pin is exactly the front-runnable bootstrap this replaced: anyone
+// can permissionlessly create a client of a look-alike chain reusing the
+// provider's chain id and race the relayer's first delivery.
 //
-// From that moment the pin is permanent. A pinned client that has a
-// registered counterparty is a routable client, so there is no legitimate
-// reason for VSC traffic to ever arrive anywhere else: anyone can
-// permissionlessly create a client of a look-alike chain reusing the
-// provider's chain id and have packets routed over it, so following inbound
-// traffic off the pin would let such a chain capture the consumer's validator
-// set. If the pinned client dies (expires, is frozen), packet flow halts
-// until governance revives it in place via ibc-go's MsgRecoverClient, which
-// substitutes fresh client state under the SAME client id -- the pin survives
-// recovery unchanged.
+// From the moment it is set the pin is permanent. If the pinned client dies
+// (expires, is frozen), packet flow halts until governance revives it in
+// place via ibc-go's MsgRecoverClient, which substitutes fresh client state
+// under the SAME client id -- the pin survives recovery unchanged.
 func (k Keeper) enforcePinnedProviderClient(ctx sdk.Context, consumerClientID string) error {
 	pinned, found := k.GetProviderClientID(ctx)
-	if !found {
-		// Both genesis paths establish the pin (NewChain creates and pins the
-		// genesis client; a restart restores the exported pin), so an absent
-		// pin means a malformed genesis or corrupted state: fail closed.
+	if !found || pinned == "" {
 		return errorsmod.Wrapf(types.ErrInvalidProviderClient,
-			"no provider client pinned; rejecting VSC packet over client %s", consumerClientID)
+			"no provider client pinned; rejecting VSC packet over client %s until MsgSetProviderClient pins one", consumerClientID)
 	}
-	if pinned == consumerClientID {
-		return nil
-	}
-	if _, found := k.clientV2Keeper.GetClientCounterparty(ctx, pinned); found {
+	if pinned != consumerClientID {
 		return errorsmod.Wrapf(types.ErrInvalidProviderClient,
 			"VSC packet arrived over client %s, but the provider client is pinned to %s",
 			consumerClientID, pinned)
 	}
-
-	// The pinned client has no registered counterparty, so it is the genesis
-	// client that packet routing can never reach: adopt the delivering client
-	// as the permanent pin. Counterparties cannot be unregistered, so once a
-	// routable client is pinned this branch is unreachable.
-	k.SetProviderClientID(ctx, consumerClientID)
-	k.Logger(ctx).Info("provider client pinned",
-		"clientID", consumerClientID,
-		"genesisClientID", pinned,
-	)
-
-	ctx.EventManager().EmitEvent(
-		sdk.NewEvent(
-			vaastypes.EventTypeChannelEstablished,
-			sdk.NewAttribute(sdk.AttributeKeyModule, types.ModuleName),
-			sdk.NewAttribute("client_id", consumerClientID),
-		),
-	)
-
 	return nil
 }

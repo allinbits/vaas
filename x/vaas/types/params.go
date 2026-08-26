@@ -6,6 +6,7 @@ import (
 
 	"cosmossdk.io/math"
 
+	"github.com/cosmos/cosmos-sdk/types/bech32"
 	stakingtypes "github.com/cosmos/cosmos-sdk/x/staking/types"
 )
 
@@ -83,6 +84,15 @@ func (p ConsumerParams) Validate() error {
 	}
 	if p.MinSignedPerWindow.IsNil() || !p.MinSignedPerWindow.IsPositive() || !p.MinSignedPerWindow.LT(math.LegacyOneDec()) {
 		return fmt.Errorf("min_signed_per_window must be in (0, 1), got %s", p.MinSignedPerWindow)
+	}
+	// The pin authority the provider seeds arrives rendered under the
+	// provider's bech32 prefix, so only decodability is checked here; the
+	// authorization compares decoded address bytes. Empty is valid and leaves
+	// the pin to governance alone.
+	if p.OwnerAddress != "" {
+		if _, _, err := bech32.DecodeAndConvert(p.OwnerAddress); err != nil {
+			return fmt.Errorf("owner_address is not a bech32 address: %s", err)
+		}
 	}
 	return nil
 }
