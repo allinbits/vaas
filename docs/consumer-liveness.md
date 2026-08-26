@@ -167,12 +167,14 @@ safe mode engages before the provider's sweep removes it.
 
 ## 6. Operator guidance: the liveness query
 
-Operators can observe a consumer's liveness without waiting for removal through the
-provider's `QueryConsumerLiveness` gRPC query, exposed over REST as:
+Operators can observe a consumer's liveness without waiting for removal
+through the provider's `QueryConsumerLiveness` query, via the CLI:
 
 ```
-/vaas/provider/consumer_liveness/<consumer-id>
+providerd query provider consumer-liveness <consumer-id>
 ```
+
+or over REST as `/vaas/provider/consumer_liveness/<consumer-id>`.
 
 It returns one stored value and three derived from it:
 
