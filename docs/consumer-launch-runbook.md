@@ -70,16 +70,16 @@ moves straight to `INITIALIZED` and is queued for launch. The owner can still
 adjust parameters (including `spawn_time`) with `MsgUpdateConsumer` until launch.
 
 **To abandon the registration** -- a mistyped `chain_id`, or a launch called off --
-the owner retires it rather than leaving it parked:
+the owner removes it rather than leaving it parked:
 
 ```
-providerd tx vaasprovider retire-consumer <consumer-id> --from <owner>
+providerd tx vaasprovider remove-consumer <consumer-id> --from <owner>
 ```
 
-This works only before launch (`REGISTERED` or `INITIALIZED`). It erases the
-consumer's provider state, pays any fee-pool balance back to its depositors, and
-releases the `chain_id` for immediate re-registration. Governance can also submit
-it, which is the way out if the owner key is lost. See
+Before launch (`REGISTERED` or `INITIALIZED`) this erases the consumer's provider
+state immediately, pays any fee-pool balance back to its depositors, and releases
+the `chain_id` for immediate re-registration. Governance can also submit it, which
+is the way out if the owner key is lost. See
 [consumer-lifecycle.md](consumer-lifecycle.md).
 
 ## 2. Launch at spawn time (provider side, automatic)

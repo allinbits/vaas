@@ -195,10 +195,10 @@ Any truncation residue per denom is forwarded to the community pool.
 
 The same sweep runs automatically when a consumer is deleted (auto-sweep
 on `DeleteConsumerChain`), whether it reached deletion through the
-stop-and-remove path or through a pre-launch `MsgRetireConsumer` (see
+post-launch stop or through a pre-launch removal, both `MsgRemoveConsumer` (see
 [consumer-lifecycle.md](consumer-lifecycle.md)). So a depositor who
 prepaid fees for a chain that never launched is paid out when the
-registration is retired, without the owner having to sweep first.
+registration is removed, without the owner having to sweep first.
 The auto-sweep cannot fail under valid state --
 the pool balance is moved into the provider module and distributed back out
 in the same transaction, and depositors are never blocked accounts -- so
