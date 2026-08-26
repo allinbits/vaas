@@ -49,7 +49,7 @@ Two conventions worth knowing before you filter:
 | `vaas_consumer_evidence_request` | `Keeper.SendEvidencePackets`, in the consumer `EndBlock` | `module` (`vaasconsumer`), `validator_address`, `window_end_height`, `infraction_type` | A downtime evidence packet was handed to IBC and dequeued. One per packet sent. |
 | `vaas_consumer_evidence_rejected` | `Keeper.DropRejectedEvidencePacket`, from `OnAcknowledgementPacket` | `module` (`vaasconsumer`), `validator_address`, `window_end_height`, `error` (hex-encoded ack bytes) | The provider error-acked the evidence, which is always permanent for that packet, so it is dropped rather than retried. **This is the only signal that evidence was refused** -- the provider emits nothing on a rejection. On an undecodable payload `validator_address` is empty and `window_end_height` is `0`. |
 | `vaas_snapshot_resync` | `Keeper.OnRecvVSCPacketV2` | `module` (`vaasconsumer`), `valset_update_id`, `num_validators` | A snapshot VSC replaced the whole validator set. Not emitted for ordinary diffs. |
-| `vaas_client_established` | `Keeper.enforcePinnedProviderClient` | `module` (`vaasconsumer`), `client_id` | The consumer re-pinned its provider client from the unroutable genesis client to the client that actually delivered a VSC. One-shot: it never fires again for that chain. |
+| `vaas_client_established` | `msgServer.SetProviderClient` | `module` (`vaasconsumer`), `client_id` | The consumer's owner (or governance) declared the provider client, setting the pin. One-shot: the pin is permanent, so it never fires again for that chain. |
 | `vaas_packet` | consumer `IBCModule.OnRecvPacket` | `module` (`vaasconsumer`), `valset_update_id`, `success`, `source_client` | A VSC packet was received and applied. `success` is always `true` here -- a rejected packet returns an error acknowledgement and emits nothing. |
 | `vaas_timeout` | consumer `IBCModule.OnTimeoutPacket` | `module` (`vaasconsumer`), `source_client`, `sequence` | A consumer-sent evidence packet timed out. Its payload was re-queued for retry, unlike a rejection. |
 
@@ -71,9 +71,10 @@ Several paths log only, so do not build alerting on events that do not exist:
 - **Downtime evidence rejection on the provider.** Rejections are returned as
   IBC error acknowledgements; the consumer surfaces them as
   `vaas_consumer_evidence_rejected`.
-- **Client discovery and look-alike rejection on the provider.**
-  `discoverActiveConsumerClient` logs at info and warn level only. The only
-  client-related event is the consumer-side `vaas_client_established`.
+- **Client declaration on the provider.** The binding set through
+  `MsgUpdateConsumer`'s `client_id` rides that message's ordinary
+  `vaas_update_consumer` event. The only dedicated client event is the
+  consumer-side `vaas_client_established`.
 - **Epoch fee distribution.** `DistributeConsumerFees` emits nothing; only the
   fund, withdraw, and sweep messages do.
 - **Debt status changes.** `ConsumerInDebt` is state and a VSC packet field, not

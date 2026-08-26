@@ -14,8 +14,8 @@ application IDs `vaasprovider` and `vaasconsumer`. After a consumer launches,
 a relayer (the localnet and e2e suites use
 [`ts-relayer`](https://github.com/allinbits/ibc-v2-ts-relayer)) creates an
 IBC v2 client on each chain pointing at the counterparty and registers the
-path. The provider then discovers its consumer client at the next epoch
-boundary; all VSC packets flow over that client.
+path. The consumer's owner then declares those clients on each chain, and all
+VSC packets flow over the declared client from the next epoch boundary.
 
 Registering the v2 routes is necessary but nowhere near sufficient: a host chain
 must also carry a set of wiring duties the modules cannot install themselves,

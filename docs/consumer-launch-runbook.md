@@ -86,9 +86,10 @@ it, which is the way out if the owner key is lost. See
 
 At the first provider `BeginBlock` where `block_time >= spawn_time`, the provider
 runs `LaunchConsumer`: it snapshots the current bonded validator set, builds the
-`ConsumerGenesisState` (embedding the provider client/consensus state so the
-consumer can create its provider client), stores it, and sets the phase to
-`LAUNCHED`. If launch fails, the consumer is reset to `REGISTERED` for a retry.
+`ConsumerGenesisState` (seeding the provider chain id and the owner address the
+consumer will validate its client declaration against), stores it, and sets the
+phase to `LAUNCHED`. If launch fails, the consumer is reset to `REGISTERED` for
+a retry.
 See [consumer-lifecycle.md](consumer-lifecycle.md) phase 3.
 
 ## 3. Bootstrap and start the consumer node (operator side)
@@ -99,17 +100,30 @@ providerd query vaasprovider consumer-genesis <consumer-id> -o json > consumer_g
 
 Inject the result into the consumer chain's `genesis.json` under
 `app_state.vaasconsumer`, then start the consumer node. On its first block the
-consumer's `InitGenesis` creates its IBC client to the provider and installs the
-initial validator set from the genesis.
+consumer's `InitGenesis` installs the initial validator set from the genesis.
+It creates no IBC client: the clients come from the relayer and are declared by
+the owner in the next step.
 
-## 4. Create the IBC v2 path (relayer side)
+## 4. Create the IBC v2 path and declare the clients
 
-A relayer creates an IBC v2 client on the **provider** pointing to the
-**consumer** and registers the counterparty on both sides (`add-path`,
-`--ibc-version 2`). The provider does not create this client -- at the next epoch
-boundary it *discovers* the client pointing at the consumer
-(`discoverActiveConsumerClient`) and uses it for all subsequent VSC delivery. In
-localnet and e2e this is the `ts-relayer`; see
+A relayer creates an IBC v2 client on each chain pointing at the other and
+registers the counterparties (`add-path`, `--ibc-version 2`). Neither chain
+creates these clients itself, and creation alone grants them no authority: the
+consumer's owner then declares them, one transaction per side.
+
+```
+providerd tx vaasprovider update-consumer declare.json --from <owner>
+    # declare.json: {"consumer_id": <consumer-id>, "client_id": "07-tendermint-..."}
+
+consumerd tx vaasconsumer set-provider-client <client-id> --from <owner>
+```
+
+Each declaration is validated before it binds (an active tendermint client of
+the right chain id with a registered counterparty; on the provider side also a
+trusting period above the downtime challenge horizon) and is permanent once
+accepted ([security-model.md](security-model.md)). VSC delivery starts at the
+first epoch boundary after the provider-side declaration. In localnet and e2e
+the relayer is the `ts-relayer` and the declarations are scripted; see
 [consumer-lifecycle.md](consumer-lifecycle.md) phase 3 and the localnet
 [app/README.md](../app/README.md).
 
@@ -172,7 +186,7 @@ or withdraw under the locks described in
 
 ## 6. Steady state
 
-Once the client is discovered and the pool is funded:
+Once the clients are declared and the pool is funded:
 
 - Every epoch the provider queues and sends a VSC packet per launched consumer;
   the consumer applies the changes on its next `EndBlock`. Diffs by default, an
