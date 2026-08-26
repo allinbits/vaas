@@ -146,31 +146,31 @@ corruption, which panics rather than stranding the consumer in `STOPPED`.
 
 ## Queries
 
-- `appd query provider consumer-fee-pool-claim <consumer-id> <depositor>`
+- `appd query vaasprovider consumer-fee-pool-claim <consumer-id> <depositor>`
   -- one depositor's claim across all denoms. Pass the gov authority address
   to query the community pool's holdings (the query aliases the gov authority
   to the distribution module account, which is the depositor of record for
   community-pool funding).
-- `appd query provider consumer-fee-pool-claims <consumer-id>` --
+- `appd query vaasprovider consumer-fee-pool-claims <consumer-id>` --
   paginated list of all depositors with non-zero claims.
 
 ## CLI examples
 
     # fund a pool with 1000uphoton from your key
-    appd tx provider fund-consumer-fee-pool 5 1000uphoton --from operator
+    appd tx vaasprovider fund-consumer-fee-pool 5 1000uphoton --from operator
 
     # withdraw a mix of denoms from your share in pool 5
-    appd tx provider withdraw-consumer-fee-pool 5 250uphoton,30uatone --from operator
+    appd tx vaasprovider withdraw-consumer-fee-pool 5 250uphoton,30uatone --from operator
 
     # owner sweeps all denoms with shares or balance
-    appd tx provider sweep-consumer-fee-pool 5 --from owner
+    appd tx vaasprovider sweep-consumer-fee-pool 5 --from owner
 
     # owner sweeps only the listed denoms (comma-separated or repeated flag)
-    appd tx provider sweep-consumer-fee-pool 5 --denoms=uphoton,uatone --from owner
-    appd tx provider sweep-consumer-fee-pool 5 --denoms=uphoton --denoms=uatone --from owner
+    appd tx vaasprovider sweep-consumer-fee-pool 5 --denoms=uphoton,uatone --from owner
+    appd tx vaasprovider sweep-consumer-fee-pool 5 --denoms=uphoton --denoms=uatone --from owner
 
     # query a single depositor's claim
-    appd query provider consumer-fee-pool-claim 5 cosmos1...
+    appd query vaasprovider consumer-fee-pool-claim 5 cosmos1...
 
     # paginated list of all depositors with non-zero claims
-    appd query provider consumer-fee-pool-claims 5 --page 1 --limit 100
+    appd query vaasprovider consumer-fee-pool-claims 5 --page 1 --limit 100
