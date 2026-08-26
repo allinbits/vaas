@@ -9,6 +9,11 @@ const (
 	EventTypeSubmitConsumerDoubleVoting = "vaas_submit_consumer_double_voting"
 	EventTypeExecuteConsumerChainSlash  = "vaas_execute_consumer_chain_slash"
 	EventTypeConsumerEvidenceRequest    = "vaas_consumer_evidence_request"
+	// EventTypeConsumerEvidenceRejected belongs to the consumer's handling of
+	// a provider error-ack on an evidence packet; defined here, prefixed, so
+	// the wholesale rewrite of this block does not drop it out from under its
+	// user. Harmless ahead of that user.
+	EventTypeConsumerEvidenceRejected = "vaas_consumer_evidence_rejected"
 	// EventTypeSnapshotResync is emitted by the consumer when it applies a
 	// snapshot VSC packet (is_snapshot=true), i.e. it replaces its VAAS
 	// validator set rather than accumulating a diff. Emitted only on snapshots,
