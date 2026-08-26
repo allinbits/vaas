@@ -156,9 +156,9 @@ absorb it: the grace period ends at `SpawnTime + DowntimeGracePeriod`, anchored
 to the consumer's launch and not to your rotation
 ([consumer-downtime.md](consumer-downtime.md) section 3).
 
-The snapshot rides the IBC client the provider already discovered for that
-consumer -- rotation never triggers client discovery, which belongs to the epoch
-path. A consumer with no discovered client yet, or one whose send fails, simply
+The snapshot rides the IBC client already declared for that consumer --
+rotation never binds a client, which belongs to the owner's declaration. A
+consumer with no declared client yet, or one whose send fails, simply
 keeps the packet queued for the next epoch rather than failing the block. A
 paused or not-yet-launched consumer gets no snapshot at all; a governance resume
 forces its own snapshot resync anyway

@@ -18,14 +18,13 @@ applies the validator set these packets carry, so their authenticity is what
 keeps a consumer's set honest. The consumer accepts a VAAS packet only when it
 carries the provider application's source port, arrives over an IBC client
 whose tracked chain id matches the provider chain id pinned in the consumer's
-genesis, and -- once a provider client has been adopted -- arrives over exactly
+genesis, and -- once the provider client has been pinned -- arrives over exactly
 that pinned client (see the client-authentication model below). A malformed
 packet -- an undecodable consensus pubkey or a negative power -- is rejected
 with an error acknowledgement on receipt, never applied.
 
 **Consumer -> provider: evidence.** Downtime evidence travels as IBC evidence
-packets; the provider discovers the consumer's client at an epoch boundary
-(`discoverActiveConsumerClient`) and prices any accepted downtime into a slash
+packets over the declared client; the provider prices any accepted downtime into a slash
 held behind a challenge window. If the provider rejects an evidence packet, the
 consumer surfaces the rejection (a `vaas_consumer_evidence_rejected` event)
 rather than retrying it indefinitely; a packet that merely times out is retried.
@@ -33,42 +32,44 @@ Double-voting and light-client evidence are submitted as ordinary provider
 transactions and independently re-verified, so a malformed or dishonest
 submission can at worst waste the submitter's gas.
 
-### Client authentication: content-bound adoption, then a permanent pin
+### Client authentication: owner-declared clients, permanently pinned
 
-Neither side trusts a chain-id string alone.
+Neither side trusts a chain-id string alone, and neither side infers a client
+from delivered traffic. The party that registered the consumer declares both
+bindings explicitly.
 
-**Provider side.** The provider adopts a client for a consumer only once, and
-only after verifying its content: the candidate must be an active tendermint
-client of the consumer's chain id, counterparty-linked, and its latest consensus
-state's `NextValidatorsHash` must equal the CometBFT hash of the validator set
-the provider itself last computed and stored for that consumer (or the set
-before that, to tolerate a validator-set change whose packet is still in
-flight). The comparison is against the provider's own stored set, not against
-delivery: `expectedConsumerValSetHashes` hashes `ConsumerValSet` and reads the
-retained `ConsumerPrevValSetHash`. A chain that
-copies the chain-id string cannot make the provider's own validators sign its
-blocks, so its consensus states cannot carry the right hash and keep advancing;
-a chain-id match that fails the content check is logged as a look-alike. If no
-candidate verifies, the provider adopts nothing and retries at the next epoch
-(fail closed -- the liveness sweep owns a consumer that never gets served). Once
-adopted, the client is latched permanently: expiry, freezing, or counterparty
-loss halt traffic rather than reopening adoption.
+**Provider side.** The provider binds a client to a consumer exactly once, when
+the consumer's owner (or governance) declares it through the optional
+`client_id` of `MsgUpdateConsumer`. The declaration is validated before it
+binds: the client must exist, be an active tendermint client of the consumer's
+registered chain id, hold a registered IBC v2 counterparty (an IBC v2 packet
+can only route over a counterparty-linked client), and its trusting period must
+exceed the downtime challenge horizon, so every accepted downtime accusation
+stays disprovable by a header the client can still verify. Until a valid
+declaration lands the provider sends nothing (fail closed -- the liveness sweep
+owns a consumer that never gets served). Once bound, the client is latched
+permanently: expiry, freezing, or counterparty loss halt traffic rather than
+reopening the binding.
 
-**Consumer side.** The provider client id is pinned. The client created from
-provider-produced state at genesis cannot itself receive packets (IBC v2 only
-routes to clients whose counterparty was registered by their creator, and a
-genesis-created client has none), so the pin moves exactly once: from that
-unroutable genesis client to the first client that actually delivers a VSC --
-already proof-verified and counterparty-linked by IBC, and chain-id-gated by
-VAAS -- and is then permanent. Every later packet must arrive over the pinned
-client or it is rejected before any state changes. The residual
-trust-on-first-use window is the interval between consumer start and its first
-VSC delivery.
+**Consumer side.** The mirror declaration. The consumer genesis creates no
+client and seeds two facts from the provider: the provider's chain id and the
+owner's address. `MsgSetProviderClient`, signed by that owner (or governance,
+where the embedding app wires it), pins the provider client once, under the
+symmetric validations (existing, tendermint, chain-id match against the seeded
+value, active, counterparty-linked). Every later packet must arrive over the
+pinned client or it is rejected before any state changes. Until the pin lands,
+a message filter keeps the chain in bootstrap: only IBC messages, governance,
+and the pin message itself are accepted.
+
+Both bindings rest on the owner's signature rather than on anything inferred
+from delivered content, so no relayer, and no chain that merely copies the
+chain-id string, can steer either side onto a client of its choosing. A
+dishonest owner can only mis-declare the consumer that owner registered.
 
 **Re-keying.** The only path to replace a dead client, on either side, is
 IBC's governance client recovery (`MsgRecoverClient`), which substitutes the
 client state under the same client id -- so the pin and the latch survive it.
-No automatic re-adoption exists.
+No automatic re-binding exists.
 
 ## Infractions and punishment
 

@@ -4,7 +4,7 @@
 
 VAAS (Validator-as-a-Service) is a simplified Interchain Security (ICS) implementation for Cosmos blockchains, derived from [interchain-security](https://github.com/cosmos/interchain-security). It lets a provider chain lease its proof-of-stake security to consumer chains via automatic validator synchronization. All active validators validate all consumers — no opt-in/opt-out.
 
-VAAS runs on **IBC v2 only** (client-based, out-of-order). There is no IBC v1 channel handshake; the VAAS modules register on `ibcRouterV2` under application IDs `vaasprovider` and `vaasconsumer` (see [x/vaas/types/keys.go](x/vaas/types/keys.go)). Consumer launch relies on a relayer (ts-relayer in localnet and e2e) creating IBC v2 clients on both sides; the provider then discovers its consumer client at the next epoch boundary.
+VAAS runs on **IBC v2 only** (client-based, out-of-order). There is no IBC v1 channel handshake; the VAAS modules register on `ibcRouterV2` under application IDs `vaasprovider` and `vaasconsumer` (see [x/vaas/types/keys.go](x/vaas/types/keys.go)). Consumer launch relies on a relayer (ts-relayer in localnet and e2e) creating IBC v2 clients on both sides; the consumer's owner then declares them on each chain, and the provider serves the declared client from the next epoch boundary.
 
 ## Build & Test Commands
 
@@ -64,9 +64,9 @@ Built with `make build-apps` into `build/`.
 
 ### Key Data Flow
 
-1. Once a consumer reaches `LAUNCHED`, a relayer creates an IBC v2 client on the provider pointing to the consumer (and the counterparty on the other side). The provider discovers this client at the next epoch boundary (`discoverActiveConsumerClient`), it never creates the client itself.
+1. Once a consumer reaches `LAUNCHED`, a relayer creates an IBC v2 client on each chain pointing at the other (with counterparties registered). The consumer's owner then declares them: `MsgUpdateConsumer`'s `client_id` binds the provider side, `MsgSetProviderClient` pins the consumer side. Neither chain creates or infers a client itself.
 2. Once per epoch (`blocks_per_epoch`, default 600) the provider queues a VSC packet per launched consumer and, in the same window, collects each consumer's epoch fee (`fees_per_block * blocks_per_epoch`) from its fee pool and distributes it to the bonded validators.
-3. Provider sends each queued VSC packet over the discovered IBC v2 client. Packets are out-of-order; the consumer deduplicates via `HighestValsetUpdateID`. A packet carries a diff by default, or an absolute snapshot (`is_snapshot`) when the consumer has fallen behind on acks, and every packet also carries the consumer's current in-debt flag.
+3. Provider sends each queued VSC packet over the declared IBC v2 client. Packets are out-of-order; the consumer deduplicates via `HighestValsetUpdateID`. A packet carries a diff by default, or an absolute snapshot (`is_snapshot`) when the consumer has fallen behind on acks, and every packet also carries the consumer's current in-debt flag.
 4. Consumer's `OnRecvPacket` calls `ApplyCCValidatorChanges()` and the new set is flushed to CometBFT on the next `EndBlock`.
 5. Evidence flows back to the provider two ways. Downtime evidence travels consumer -> provider as IBC `EvidencePacketData` packets, which the provider prices into a slash held behind a challenge window (a successful `MsgChallengeConsumerDowntime` cancels it and moves the consumer to `PAUSED`). Double-voting / light-client evidence is submitted as ordinary provider transactions (`MsgSubmitConsumerDoubleVoting` / `MsgSubmitConsumerMisbehaviour`). Global infraction parameters determine slash/jail.
 
