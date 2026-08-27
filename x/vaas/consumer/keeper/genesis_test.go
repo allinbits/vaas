@@ -30,8 +30,9 @@ import (
 )
 
 // TestInitGenesis tests that a consumer chain is correctly initialised from genesis.
-// It covers the start of a new chain, the restart of a chain during the CCV channel handshake
-// and finally the restart of chain when the CCV channel is already established.
+// It covers the two branches InitGenesis takes: the start of a new chain, which creates
+// the provider client from the genesis client/consensus state, and the restart of a chain,
+// which adopts the provider client id carried in the genesis.
 func TestInitGenesis(t *testing.T) {
 	// mock the consumer genesis state values
 	provClientID := "tendermint-07"
@@ -100,11 +101,11 @@ func TestInitGenesis(t *testing.T) {
 				assertProviderClientID(t, ctx, &ck, provClientID)
 				assertHeightValsetUpdateIDs(t, ctx, &ck, defaultHeightValsetUpdateIDs)
 
-				require.Equal(t, validator.Address.Bytes(), ck.GetAllCCValidator(ctx)[0].Address)
+				require.Equal(t, validator.Address.Bytes(), ck.GetAllVaasValidator(ctx)[0].Address)
 				require.Equal(t, gs.Params, ck.GetConsumerParams(ctx))
 			},
 		}, {
-			"restart a chain without an established CCV channel",
+			"restart a chain with an already pinned provider client",
 			func(ctx sdk.Context, mocks testkeeper.MockedKeepers) {
 			},
 			consumertypes.NewRestartGenesisState(
@@ -116,7 +117,7 @@ func TestInitGenesis(t *testing.T) {
 			func(ctx sdk.Context, ck consumerkeeper.Keeper, gs *consumertypes.GenesisState) {
 				assertHeightValsetUpdateIDs(t, ctx, &ck, defaultHeightValsetUpdateIDs)
 				assertProviderClientID(t, ctx, &ck, provClientID)
-				require.Equal(t, validator.Address.Bytes(), ck.GetAllCCValidator(ctx)[0].Address)
+				require.Equal(t, validator.Address.Bytes(), ck.GetAllVaasValidator(ctx)[0].Address)
 				require.Equal(t, gs.Params, ck.GetConsumerParams(ctx))
 			},
 		},
@@ -161,12 +162,12 @@ func TestExportGenesis(t *testing.T) {
 		expGenesis *consumertypes.GenesisState
 	}{
 		{
-			"export a chain without an established CCV channel",
+			"export a chain with a pinned provider client",
 			func(ctx sdk.Context, ck consumerkeeper.Keeper, mocks testkeeper.MockedKeepers) {
 				ck.SetProviderClientID(ctx, provClientID)
-				cVal, err := consumertypes.NewCCValidator(validator.Address.Bytes(), 1, pubKey)
+				vaasVal, err := consumertypes.NewVaasValidator(validator.Address.Bytes(), 1, pubKey)
 				require.NoError(t, err)
-				ck.SetCCValidator(ctx, cVal)
+				ck.SetVaasValidator(ctx, vaasVal)
 				ck.SetParams(ctx, params)
 
 				ck.SetHeightValsetUpdateID(ctx, defaultHeightValsetUpdateIDs[0].Height, defaultHeightValsetUpdateIDs[0].ValsetUpdateId)
@@ -217,9 +218,9 @@ func TestGenesisRoundTripLastVSCRecvTime(t *testing.T) {
 	defer ctrl.Finish()
 	ck.SetParams(ctx, params)
 	ck.SetProviderClientID(ctx, provClientID)
-	cVal, err := consumertypes.NewCCValidator(validator.Address.Bytes(), 1, pubKey)
+	vaasVal, err := consumertypes.NewVaasValidator(validator.Address.Bytes(), 1, pubKey)
 	require.NoError(t, err)
-	ck.SetCCValidator(ctx, cVal)
+	ck.SetVaasValidator(ctx, vaasVal)
 	ck.SetHeightValsetUpdateID(ctx, 0, 0)
 	ck.SetLastVSCRecvTime(ctx, lastRecv)
 
@@ -264,9 +265,9 @@ func TestGenesisRoundTripDowntimeState(t *testing.T) {
 	defer ctrl.Finish()
 	ck.SetParams(ctx, params)
 	ck.SetProviderClientID(ctx, provClientID)
-	cVal, err := consumertypes.NewCCValidator(validator.Address.Bytes(), 1, pubKey)
+	vaasVal, err := consumertypes.NewVaasValidator(validator.Address.Bytes(), 1, pubKey)
 	require.NoError(t, err)
-	ck.SetCCValidator(ctx, cVal)
+	ck.SetVaasValidator(ctx, vaasVal)
 	ck.SetHeightValsetUpdateID(ctx, 0, 0)
 
 	require.NoError(t, ck.MissedBlockBitmaps.Set(ctx, addr1, bitmap1))
@@ -354,9 +355,9 @@ func TestGenesisRoundTripProviderChainId(t *testing.T) {
 	defer ctrl.Finish()
 	ck.SetParams(ctx, params)
 	ck.SetProviderClientID(ctx, provClientID)
-	cVal, err := consumertypes.NewCCValidator(validator.Address.Bytes(), 1, pubKey)
+	vaasVal, err := consumertypes.NewVaasValidator(validator.Address.Bytes(), 1, pubKey)
 	require.NoError(t, err)
-	ck.SetCCValidator(ctx, cVal)
+	ck.SetVaasValidator(ctx, vaasVal)
 	ck.SetHeightValsetUpdateID(ctx, 0, 0)
 	ck.SetProviderChainId(ctx, providerChainId)
 

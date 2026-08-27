@@ -9,11 +9,9 @@ import (
 
 	cryptocodec "github.com/cosmos/cosmos-sdk/crypto/codec"
 	"github.com/cosmos/cosmos-sdk/crypto/keys/ed25519"
-	stakingtypes "github.com/cosmos/cosmos-sdk/x/staking/types"
 
 	abci "github.com/cometbft/cometbft/abci/types"
 
-	"github.com/allinbits/vaas/testutil/crypto"
 	testkeeper "github.com/allinbits/vaas/testutil/keeper"
 	"github.com/allinbits/vaas/x/vaas/consumer/types"
 	vaastypes "github.com/allinbits/vaas/x/vaas/types"
@@ -79,7 +77,8 @@ func TestPendingChanges(t *testing.T) {
 	require.Nil(t, gotPd, "got non-nil pending changes after Delete")
 }
 
-// TestLastSovereignHeight tests the getter and setter for the ccv init genesis height
+// TestInitGenesisHeight tests the getter and setter for the height at which the
+// consumer module ran InitGenesis.
 func TestInitGenesisHeight(t *testing.T) {
 	consumerKeeper, ctx, ctrl, _ := testkeeper.GetConsumerKeeperAndCtx(t, testkeeper.NewInMemKeeperParams(t))
 	defer ctrl.Finish()
@@ -96,165 +95,68 @@ func TestInitGenesisHeight(t *testing.T) {
 	require.Equal(t, int64(43234426), consumerKeeper.GetInitGenesisHeight(ctx))
 }
 
-// TestPreVAAS tests the getter, setter and deletion methods for the pre-VAAS state flag
-func TestPreVAAS(t *testing.T) {
-	consumerKeeper, ctx, ctrl, _ := testkeeper.GetConsumerKeeperAndCtx(t, testkeeper.NewInMemKeeperParams(t))
-	defer ctrl.Finish()
-
-	// Default value is false without any setter
-	require.False(t, consumerKeeper.IsPreVAAS(ctx))
-
-	// Set/get the pre-VAAS state to true
-	consumerKeeper.SetPreVAASTrue(ctx)
-	require.True(t, consumerKeeper.IsPreVAAS(ctx))
-
-	// Delete the pre-VAAS state, setting it to false
-	consumerKeeper.DeletePreVAAS(ctx)
-	require.False(t, consumerKeeper.IsPreVAAS(ctx))
-}
-
-// TestInitialValSet tests the getter and setter methods for storing the initial validator set for a consumer
-func TestInitialValSet(t *testing.T) {
-	consumerKeeper, ctx, ctrl, _ := testkeeper.GetConsumerKeeperAndCtx(t, testkeeper.NewInMemKeeperParams(t))
-	defer ctrl.Finish()
-
-	// Default value is empty val update list
-	require.Empty(t, consumerKeeper.GetInitialValSet(ctx))
-
-	// Set/get the initial validator set
-	cId1 := crypto.NewCryptoIdentityFromIntSeed(7896)
-	cId2 := crypto.NewCryptoIdentityFromIntSeed(7897)
-	cId3 := crypto.NewCryptoIdentityFromIntSeed(7898)
-	valUpdates := []abci.ValidatorUpdate{
-		{
-			PubKey: cId1.TMProtoCryptoPublicKey(),
-			Power:  1097,
-		},
-		{
-			PubKey: cId2.TMProtoCryptoPublicKey(),
-			Power:  19068,
-		},
-		{
-			PubKey: cId3.TMProtoCryptoPublicKey(),
-			Power:  10978554,
-		},
-	}
-
-	consumerKeeper.SetInitialValSet(ctx, valUpdates)
-	require.Equal(t, []abci.ValidatorUpdate{
-		{
-			PubKey: cId1.TMProtoCryptoPublicKey(),
-			Power:  1097,
-		},
-		{
-			PubKey: cId2.TMProtoCryptoPublicKey(),
-			Power:  19068,
-		},
-		{
-			PubKey: cId3.TMProtoCryptoPublicKey(),
-			Power:  10978554,
-		},
-	}, consumerKeeper.GetInitialValSet(ctx))
-}
-
-// TestGetLastSovereignValidators tests the getter method for getting the last valset
-// from the standalone staking keeper
-func TestGetLastSovereignValidators(t *testing.T) {
-	ck, ctx, ctrl, mocks := testkeeper.GetConsumerKeeperAndCtx(t, testkeeper.NewInMemKeeperParams(t))
-	defer ctrl.Finish()
-
-	// Should panic if pre-VAAS is true but staking keeper is not set
-	ck.SetPreVAASTrue(ctx)
-	require.Panics(t, func() { _, _ = ck.GetLastStandaloneValidators(ctx) })
-
-	// Should panic if staking keeper is set but pre-VAAS is false
-	ck.SetStandaloneStakingKeeper(mocks.MockStakingKeeper)
-	ck.DeletePreVAAS(ctx)
-	require.False(t, ck.IsPreVAAS(ctx))
-	require.Panics(t, func() { _, _ = ck.GetLastStandaloneValidators(ctx) })
-
-	// Set the pre-VAAS state to true and get the last standalone validators from mock
-	ck.SetPreVAASTrue(ctx)
-	require.True(t, ck.IsPreVAAS(ctx))
-	cId1 := crypto.NewCryptoIdentityFromIntSeed(11)
-	val := cId1.SDKStakingValidator()
-	val.Description.Moniker = "sanity check this is the correctly serialized val"
-	testkeeper.SetupMocksForLastBondedValidatorsExpectation(
-		mocks.MockStakingKeeper,
-		180,
-		[]stakingtypes.Validator{val},
-		1,
-	)
-
-	lastSovVals, err := ck.GetLastStandaloneValidators(ctx)
-	require.NoError(t, err)
-	require.Equal(t, []stakingtypes.Validator{val}, lastSovVals)
-	require.Equal(t, "sanity check this is the correctly serialized val",
-		lastSovVals[0].Description.Moniker)
-}
-
-// TestCrossChainValidator tests the getter, setter, and deletion method for cross chain validator records
-func TestCrossChainValidator(t *testing.T) {
+// TestVaasValidator tests the getter, setter, and deletion method for VAAS validator records
+func TestVaasValidator(t *testing.T) {
 	keeperParams := testkeeper.NewInMemKeeperParams(t)
 	consumerKeeper, ctx, ctrl, _ := testkeeper.GetConsumerKeeperAndCtx(t, keeperParams)
 	defer ctrl.Finish()
 
 	// should return false
-	_, found := consumerKeeper.GetCCValidator(ctx, ed25519.GenPrivKey().PubKey().Address())
+	_, found := consumerKeeper.GetVaasValidator(ctx, ed25519.GenPrivKey().PubKey().Address())
 	require.False(t, found)
 
 	// Obtain derived private key
 	privKey := ed25519.GenPrivKey()
 
-	// Set cross chain validator
-	ccVal, err := types.NewCCValidator(privKey.PubKey().Address(), 1000, privKey.PubKey())
+	// Set VAAS validator
+	vaasVal, err := types.NewVaasValidator(privKey.PubKey().Address(), 1000, privKey.PubKey())
 	require.NoError(t, err)
-	consumerKeeper.SetCCValidator(ctx, ccVal)
+	consumerKeeper.SetVaasValidator(ctx, vaasVal)
 
-	gotCCVal, found := consumerKeeper.GetCCValidator(ctx, ccVal.Address)
+	gotVaasVal, found := consumerKeeper.GetVaasValidator(ctx, vaasVal.Address)
 	require.True(t, found)
 
 	// verify the returned validator values
-	require.EqualValues(t, ccVal, gotCCVal)
+	require.EqualValues(t, vaasVal, gotVaasVal)
 
 	// expect to return the same consensus pubkey
-	pk, err := ccVal.ConsPubKey()
+	pk, err := vaasVal.ConsPubKey()
 	require.NoError(t, err)
-	gotPK, err := gotCCVal.ConsPubKey()
+	gotPK, err := gotVaasVal.ConsPubKey()
 	require.NoError(t, err)
 	require.Equal(t, pk, gotPK)
 
 	// delete validator
-	consumerKeeper.DeleteCCValidator(ctx, ccVal.Address)
+	consumerKeeper.DeleteVaasValidator(ctx, vaasVal.Address)
 
 	// should return false
-	_, found = consumerKeeper.GetCCValidator(ctx, ccVal.Address)
+	_, found = consumerKeeper.GetVaasValidator(ctx, vaasVal.Address)
 	require.False(t, found)
 }
 
-// TestGetAllCCValidator tests GetAllCCValidator behaviour correctness
-func TestGetAllCCValidator(t *testing.T) {
+// TestGetAllVaasValidator tests GetAllVaasValidator behaviour correctness
+func TestGetAllVaasValidator(t *testing.T) {
 	keeperParams := testkeeper.NewInMemKeeperParams(t)
 	ck, ctx, ctrl, _ := testkeeper.GetConsumerKeeperAndCtx(t, keeperParams)
 	defer ctrl.Finish()
 
 	numValidators := 4
-	validators := []types.CrossChainValidator{}
+	validators := []types.VaasValidator{}
 	for range numValidators {
-		validators = append(validators, testkeeper.GetNewCrossChainValidator(t))
+		validators = append(validators, testkeeper.GetNewVaasValidator(t))
 	}
-	// sorting by CrossChainValidator.Address
+	// sorting by VaasValidator.Address
 	expectedGetAllOrder := validators
 	sort.Slice(expectedGetAllOrder, func(i, j int) bool {
 		return bytes.Compare(expectedGetAllOrder[i].Address, expectedGetAllOrder[j].Address) == -1
 	})
 
 	for _, val := range validators {
-		ck.SetCCValidator(ctx, val)
+		ck.SetVaasValidator(ctx, val)
 	}
 
 	// iterate and check all results are returned in the expected order
-	result := ck.GetAllCCValidator(ctx)
+	result := ck.GetAllVaasValidator(ctx)
 	require.Len(t, result, len(validators))
 	require.Equal(t, result, expectedGetAllOrder)
 }
@@ -298,16 +200,4 @@ func TestGetAllHeightToValsetUpdateIDs(t *testing.T) {
 	result := ck.GetAllHeightToValsetUpdateIDs(ctx)
 	require.Len(t, result, len(cases))
 	require.Equal(t, expectedGetAllOrder, result)
-}
-
-func TestPrevStandaloneChainFlag(t *testing.T) {
-	ck, ctx, ctrl, _ := testkeeper.GetConsumerKeeperAndCtx(t, testkeeper.NewInMemKeeperParams(t))
-	defer ctrl.Finish()
-
-	// Test that the default value is false
-	require.False(t, ck.IsPrevStandaloneChain(ctx))
-
-	// Test that the value can be set and retrieved
-	ck.MarkAsPrevStandaloneChain(ctx)
-	require.True(t, ck.IsPrevStandaloneChain(ctx))
 }

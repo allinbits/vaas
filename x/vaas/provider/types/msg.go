@@ -6,8 +6,6 @@ import (
 	"fmt"
 	"strings"
 
-	vaastypes "github.com/allinbits/vaas/x/vaas/types"
-
 	"github.com/cometbft/cometbft/crypto/ed25519"
 	tmtypes "github.com/cometbft/cometbft/proto/tendermint/types"
 	cmttypes "github.com/cometbft/cometbft/types"
@@ -21,6 +19,8 @@ import (
 
 	sdk "github.com/cosmos/cosmos-sdk/types"
 	sdkerrors "github.com/cosmos/cosmos-sdk/types/errors"
+
+	vaastypes "github.com/allinbits/vaas/x/vaas/types"
 )
 
 const (
@@ -32,8 +32,6 @@ const (
 	MaxMetadataLength = 255
 	// MaxHashLength defines the maximum length of a hash
 	MaxHashLength = 64
-	// MaxValidatorCount defines the maximum number of validators
-	MaxValidatorCount = 1000
 )
 
 var (
@@ -212,14 +210,16 @@ func NewMsgCreateConsumer(submitter, chainId string, metadata ConsumerMetadata,
 	}, nil
 }
 
-// IsReservedChainId returns true if the specific chain id is reserved and cannot be used by other consumer chains
+// reservedChainIds lists chain-ids that a consumer chain may not use. It is
+// currently empty; the check is kept as the hook a future release (or
+// governance) can populate, e.g. to reserve the provider's own chain-id.
+var reservedChainIds = map[string]struct{}{}
+
+// IsReservedChainId reports whether chainId is reserved and therefore cannot be
+// used by a consumer chain.
 func IsReservedChainId(chainId string) bool {
-	// With permissionless ICS, we can have multiple consumer chains with the exact same chain id.
-	// However, as we already have the Neutron and Stride Top N chains running, as a first step we would like to
-	// prevent permissionless chains from re-using the chain ids of Neutron and Stride. Note that this is just a
-	// preliminary measure that will be removed later on as part of:
-	// TODO (#2242): find a better way of ignoring past misbehaviors
-	return chainId == "neutron-1" || chainId == "stride-1"
+	_, reserved := reservedChainIds[chainId]
+	return reserved
 }
 
 // ValidateChainId validates that the chain id is valid and is not reserved.
@@ -290,14 +290,6 @@ func (msg MsgUpdateConsumer) ValidateBasic() error {
 	return nil
 }
 
-// NewMsgRemoveConsumer creates a new MsgRemoveConsumer instance
-func NewMsgRemoveConsumer(authority string, consumerId uint64) (*MsgRemoveConsumer, error) {
-	return &MsgRemoveConsumer{
-		Authority:  authority,
-		ConsumerId: consumerId,
-	}, nil
-}
-
 // ValidateBasic implements the sdk.HasValidateBasic interface.
 func (msg MsgRemoveConsumer) ValidateBasic() error {
 	if _, err := sdk.AccAddressFromBech32(msg.Authority); err != nil {
@@ -347,8 +339,6 @@ func ParseConsumerKeyFromJson(jsonStr string) (pkType, key string, err error) {
 
 // ValidateHeaderForConsumerDoubleVoting validates Tendermint light client header
 // for consumer double voting evidence.
-//
-// TODO create unit test
 func ValidateHeaderForConsumerDoubleVoting(header *ibctmtypes.Header) error {
 	if header == nil {
 		return errors.New("infraction block header cannot be nil")

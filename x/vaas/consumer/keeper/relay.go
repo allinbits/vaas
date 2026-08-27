@@ -3,9 +3,6 @@ package keeper
 import (
 	"strconv"
 
-	"github.com/allinbits/vaas/x/vaas/consumer/types"
-	vaastypes "github.com/allinbits/vaas/x/vaas/types"
-
 	abci "github.com/cometbft/cometbft/abci/types"
 
 	ibctmtypes "github.com/cosmos/ibc-go/v10/modules/light-clients/07-tendermint"
@@ -13,6 +10,9 @@ import (
 	errorsmod "cosmossdk.io/errors"
 
 	sdk "github.com/cosmos/cosmos-sdk/types"
+
+	"github.com/allinbits/vaas/x/vaas/consumer/types"
+	vaastypes "github.com/allinbits/vaas/x/vaas/types"
 )
 
 // OnRecvVSCPacketV2 handles a validator-set-change packet from the provider.
@@ -175,7 +175,7 @@ func (k Keeper) enforcePinnedProviderClient(ctx sdk.Context, consumerClientID st
 	k.Logger(ctx).Info("provider client established", "clientID", consumerClientID)
 	ctx.EventManager().EmitEvent(
 		sdk.NewEvent(
-			vaastypes.EventTypeChannelEstablished,
+			vaastypes.EventTypeClientEstablished,
 			sdk.NewAttribute(sdk.AttributeKeyModule, types.ModuleName),
 			sdk.NewAttribute("client_id", consumerClientID),
 		),

@@ -4,10 +4,6 @@ import (
 	"fmt"
 	"strconv"
 
-	"github.com/allinbits/vaas/x/vaas/consumer/keeper"
-	consumertypes "github.com/allinbits/vaas/x/vaas/consumer/types"
-	vaastypes "github.com/allinbits/vaas/x/vaas/types"
-
 	channeltypesv2 "github.com/cosmos/ibc-go/v10/modules/core/04-channel/v2/types"
 	"github.com/cosmos/ibc-go/v10/modules/core/api"
 
@@ -15,6 +11,10 @@ import (
 
 	sdk "github.com/cosmos/cosmos-sdk/types"
 	sdkerrors "github.com/cosmos/cosmos-sdk/types/errors"
+
+	"github.com/allinbits/vaas/x/vaas/consumer/keeper"
+	consumertypes "github.com/allinbits/vaas/x/vaas/consumer/types"
+	vaastypes "github.com/allinbits/vaas/x/vaas/types"
 )
 
 var _ api.IBCModule = (*IBCModule)(nil)

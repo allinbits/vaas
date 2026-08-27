@@ -6,9 +6,6 @@ import (
 	"strings"
 	"time"
 
-	"github.com/allinbits/vaas/x/vaas/provider/types"
-	vaastypes "github.com/allinbits/vaas/x/vaas/types"
-
 	tmprotocrypto "github.com/cometbft/cometbft/proto/tendermint/crypto"
 
 	ibchost "github.com/cosmos/ibc-go/v10/modules/core/exported"
@@ -25,6 +22,9 @@ import (
 	sdk "github.com/cosmos/cosmos-sdk/types"
 	govkeeper "github.com/cosmos/cosmos-sdk/x/gov/keeper"
 	stakingtypes "github.com/cosmos/cosmos-sdk/x/staking/types"
+
+	"github.com/allinbits/vaas/x/vaas/provider/types"
+	vaastypes "github.com/allinbits/vaas/x/vaas/types"
 )
 
 // Keeper defines the Cross-Chain Validation Provider Keeper
@@ -269,7 +269,7 @@ func NewKeeper(
 		ConsumerInitParams:               collections.NewMap(sb, types.ConsumerIdToInitializationParamsPrefix, "consumer_init_params", collections.Uint64Key, codec.CollValue[types.ConsumerInitializationParameters](cdc)),
 		ConsumerPhase:                    collections.NewMap(sb, types.ConsumerIdToPhasePrefix, "consumer_phase", collections.Uint64Key, collections.Uint32Value),
 		ConsumerDebt:                     collections.NewMap(sb, types.ConsumerIdToDebtPrefix, "consumer_debt", collections.Uint64Key, collections.BoolValue),
-		ConsumerFeesPerBlockOverride:     collections.NewMap(sb, types.ConsumerIdToFeesPerBlockOverridePrefix, types.ConsumerIdToFeesPerBlockOverrideKeyName, collections.Uint64Key, sdk.IntValue),
+		ConsumerFeesPerBlockOverride:     collections.NewMap(sb, types.ConsumerIdToFeesPerBlockOverridePrefix, "consumer_fees_per_block_override", collections.Uint64Key, sdk.IntValue),
 		EquivocationEvidenceMinHeight:    collections.NewMap(sb, types.EquivocationEvidenceMinHeightPrefix, "equivocation_evidence_min_height", collections.Uint64Key, collections.Uint64Value),
 		ConsumerRemovalTime:              collections.NewMap(sb, types.ConsumerIdToRemovalTimePrefix, "consumer_removal_time", collections.Uint64Key, collections.BytesValue),
 		ConsumerLastAckTime:              collections.NewMap(sb, types.ConsumerIdToLastAckTimePrefix, "consumer_last_ack_time", collections.Uint64Key, collections.BytesValue),
@@ -277,8 +277,8 @@ func NewKeeper(
 		ConsumerHighestAckedVscId:        collections.NewMap(sb, types.ConsumerIdToHighestAckedVscIdPrefix, "consumer_highest_acked_vsc_id", collections.Uint64Key, collections.Uint64Value),
 		SpawnTimeToConsumerIds:           collections.NewMap(sb, types.SpawnTimeToConsumerIdsPrefix, "spawn_time_to_consumer_ids", collections.BytesKey, codec.CollValue[types.ConsumerIds](cdc)),
 		RemovalTimeToConsumerIds:         collections.NewMap(sb, types.RemovalTimeToConsumerIdsPrefix, "removal_time_to_consumer_ids", collections.BytesKey, codec.CollValue[types.ConsumerIds](cdc)),
-		ConsumerPauseExpirationTime:      collections.NewMap(sb, types.ConsumerIdToPauseExpirationTimePrefix, types.ConsumerIdToPauseExpirationTimeKeyName, collections.Uint64Key, collections.BytesValue),
-		PauseExpirationTimeToConsumerIds: collections.NewMap(sb, types.PauseExpirationTimeToConsumerIdsPrefix, types.PauseExpirationTimeToConsumerIdsKeyName, collections.BytesKey, codec.CollValue[types.ConsumerIds](cdc)),
+		ConsumerPauseExpirationTime:      collections.NewMap(sb, types.ConsumerIdToPauseExpirationTimePrefix, "consumer_pause_expiration_time", collections.Uint64Key, collections.BytesValue),
+		PauseExpirationTimeToConsumerIds: collections.NewMap(sb, types.PauseExpirationTimeToConsumerIdsPrefix, "pause_expiration_time_to_consumer_ids", collections.BytesKey, codec.CollValue[types.ConsumerIds](cdc)),
 
 		// Key assignment collections
 		ValidatorConsumerPubKey: collections.NewMap(sb, types.ConsumerValidatorsPrefix, "validator_consumer_pub_key", collections.PairKeyCodec(collections.Uint64Key, collections.BytesKey), collections.BytesValue),
@@ -287,73 +287,73 @@ func NewKeeper(
 
 		// Validator set collections
 		ConsumerValidators:        collections.NewMap(sb, types.ConsumerValidatorPrefix, "consumer_validators", collections.PairKeyCodec(collections.Uint64Key, collections.BytesKey), codec.CollValue[types.ConsensusValidator](cdc)),
-		LastProviderConsensusVals: collections.NewMap(sb, types.LastProviderConsensusVals, "last_provider_consensus_vals", collections.BytesKey, codec.CollValue[types.ConsensusValidator](cdc)),
+		LastProviderConsensusVals: collections.NewMap(sb, types.LastProviderConsensusValsPrefix, "last_provider_consensus_vals", collections.BytesKey, codec.CollValue[types.ConsensusValidator](cdc)),
 	}
 
 	// Fee pool collections
 	k.ConsumerFeePoolShares = collections.NewMap(
 		sb, types.ConsumerFeePoolSharesPrefix,
-		types.ConsumerFeePoolSharesKeyName,
+		"consumer_fee_pool_shares",
 		collections.TripleKeyCodec(collections.Uint64Key, collections.StringKey, sdk.AccAddressKey),
 		sdk.IntValue,
 	)
 	k.ConsumerFeePoolTotalShares = collections.NewMap(
 		sb, types.ConsumerFeePoolTotalSharesPrefix,
-		types.ConsumerFeePoolTotalSharesKeyName,
+		"consumer_fee_pool_total_shares",
 		collections.PairKeyCodec(collections.Uint64Key, collections.StringKey),
 		sdk.IntValue,
 	)
 	k.FeePoolAddressToConsumerId = collections.NewMap(
 		sb, types.FeePoolAddressToConsumerIdPrefix,
-		types.FeePoolAddressToConsumerIdKeyName,
+		"fee_pool_address_to_consumer_id",
 		sdk.AccAddressKey,
 		collections.Uint64Value,
 	)
 
 	k.EpochDowntime = collections.NewMap(
 		sb, types.EpochDowntimePrefix,
-		types.EpochDowntimeKeyName,
+		"epoch_downtime",
 		collections.PairKeyCodec(collections.Uint64Key, collections.BytesKey),
 		collections.BoolValue,
 	)
 
 	k.PreviousDowntimeParams = collections.NewItem(
 		sb, types.PreviousDowntimeParamsPrefix,
-		types.PreviousDowntimeParamsKeyName,
+		"previous_downtime_params",
 		codec.CollValue[types.PreviousDowntimeParams](cdc),
 	)
 
 	k.EpochShareRecords = collections.NewMap(
 		sb, types.EpochShareRecordsPrefix,
-		types.EpochShareRecordsKeyName,
+		"epoch_share_records",
 		collections.PairKeyCodec(collections.Uint64Key, collections.Int64Key),
 		sdk.IntValue,
 	)
 
 	k.PendingDowntimeSlashes = collections.NewMap(
 		sb, types.PendingDowntimeSlashesPrefix,
-		types.PendingDowntimeSlashesKeyName,
+		"pending_downtime_slashes",
 		collections.TripleKeyCodec(collections.Uint64Key, collections.BytesKey, collections.Int64Key),
 		codec.CollValue[types.PendingDowntimeSlash](cdc),
 	)
 
 	k.AcceptedDowntimeWindows = collections.NewMap(
 		sb, types.AcceptedDowntimeWindowsPrefix,
-		types.AcceptedDowntimeWindowsKeyName,
+		"accepted_downtime_windows",
 		collections.TripleKeyCodec(collections.Uint64Key, collections.BytesKey, collections.Int64Key),
 		codec.CollValue[types.AcceptedDowntimeWindow](cdc),
 	)
 
 	k.DowntimeWindowFloors = collections.NewMap(
 		sb, types.DowntimeWindowFloorsPrefix,
-		types.DowntimeWindowFloorsKeyName,
+		"downtime_window_floors",
 		collections.PairKeyCodec(collections.Uint64Key, collections.BytesKey),
 		collections.Int64Value,
 	)
 
 	k.WithheldFeeRecords = collections.NewMap(
 		sb, types.WithheldFeeRecordsPrefix,
-		types.WithheldFeeRecordsKeyName,
+		"withheld_fee_records",
 		collections.PairKeyCodec(collections.Uint64Key, collections.BytesKey),
 		codec.CollValue[types.WithheldFeeRecord](cdc),
 	)
@@ -367,7 +367,7 @@ func NewKeeper(
 	return k
 }
 
-// GetAuthority returns the x/ccv/provider module's authority.
+// GetAuthority returns the provider module's authority.
 func (k Keeper) GetAuthority() string {
 	return k.authority
 }
@@ -504,7 +504,7 @@ func (k Keeper) GetInitChainHeight(ctx context.Context, consumerId uint64) (uint
 	return height, true
 }
 
-// DeleteInitChainHeight deletes the block height value for which the given consumer chain's channel was established
+// DeleteInitChainHeight deletes the stored block height at which the given consumer chain was initialized
 func (k Keeper) DeleteInitChainHeight(ctx context.Context, consumerId uint64) {
 	if err := k.InitChainHeight.Remove(ctx, consumerId); err != nil {
 		panic(fmt.Errorf("failed to delete init chain height: %w", err))
@@ -889,11 +889,6 @@ func (k Keeper) AppendConsumerToBeRemoved(ctx context.Context, consumerId uint64
 	return k.RemovalTimeToConsumerIds.Set(ctx, key, consumersWithAppend)
 }
 
-// RemoveConsumerToBeRemoved removes consumer id from the given removal time
-func (k Keeper) RemoveConsumerToBeRemoved(ctx context.Context, consumerId uint64, removalTime time.Time) error {
-	return removeConsumerFromTimeQueue(ctx, k.RemovalTimeToConsumerIds, consumerId, removalTime)
-}
-
 // DeleteAllConsumersToBeRemoved deletes all consumer to be removed at this specific removal time
 func (k Keeper) DeleteAllConsumersToBeRemoved(ctx context.Context, removalTime time.Time) {
 	key := timeToBytes(removalTime)
@@ -963,7 +958,7 @@ func (k Keeper) AppendConsumerToBeAutoStopped(ctx context.Context, consumerId ui
 
 // RemoveConsumerToBeAutoStopped removes consumerId from the pause-expiration
 // time bucket for expirationTime, mirroring RemoveConsumerToBeLaunched for the
-// spawn-time queue and RemoveConsumerToBeRemoved for the removal-time queue.
+// spawn-time queue.
 func (k Keeper) RemoveConsumerToBeAutoStopped(ctx context.Context, consumerId uint64, expirationTime time.Time) error {
 	return removeConsumerFromTimeQueue(ctx, k.PauseExpirationTimeToConsumerIds, consumerId, expirationTime)
 }
@@ -1290,7 +1285,17 @@ func (k Keeper) GetConsumerValidator(ctx context.Context, consumerId uint64, pro
 	return validator, true
 }
 
-// DeleteConsumerValidator removes consumer validator with `providerAddr` address
+// IsConsumerValidator returns `true` if the consumer validator with `providerAddr` exists for chain with `consumerId`
+func (k Keeper) IsConsumerValidator(ctx context.Context, consumerId uint64, providerAddr types.ProviderConsAddress) bool {
+	has, err := k.ConsumerValidators.Has(ctx, collections.Join(consumerId, providerAddr.ToSdkConsAddr().Bytes()))
+	if err != nil {
+		return false
+	}
+	return has
+}
+
+// DeleteConsumerValidator removes the consumer validator with `providerAddr` from
+// chain with `consumerId`
 func (k Keeper) DeleteConsumerValidator(
 	ctx context.Context,
 	consumerId uint64,
@@ -1299,15 +1304,6 @@ func (k Keeper) DeleteConsumerValidator(
 	if err := k.ConsumerValidators.Remove(ctx, collections.Join(consumerId, providerConsAddr.ToSdkConsAddr().Bytes())); err != nil {
 		panic(fmt.Errorf("failed to delete consumer validator: %w", err))
 	}
-}
-
-// IsConsumerValidator returns `true` if the consumer validator with `providerAddr` exists for chain with `consumerId`
-func (k Keeper) IsConsumerValidator(ctx context.Context, consumerId uint64, providerAddr types.ProviderConsAddress) bool {
-	has, err := k.ConsumerValidators.Has(ctx, collections.Join(consumerId, providerAddr.ToSdkConsAddr().Bytes()))
-	if err != nil {
-		return false
-	}
-	return has
 }
 
 // GetConsumerValSet returns all the consumer validators for chain with `consumerId`

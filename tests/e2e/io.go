@@ -34,13 +34,3 @@ func copyFile(srcFile, dstFile string) error {
 
 	return out.Sync()
 }
-
-// writeFile writes content to the given path, creating any necessary
-// parent directories. File permissions are set to 0o600.
-func writeFile(path string, body []byte) error {
-	if err := os.MkdirAll(filepath.Dir(path), 0o750); err != nil {
-		return fmt.Errorf("failed to create directory for %s: %w", path, err)
-	}
-
-	return os.WriteFile(path, body, 0o600)
-}

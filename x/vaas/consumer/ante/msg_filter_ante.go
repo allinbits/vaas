@@ -5,11 +5,11 @@ import (
 	"fmt"
 	"strings"
 
-	consumertypes "github.com/allinbits/vaas/x/vaas/consumer/types"
-
 	errorsmod "cosmossdk.io/errors"
 
 	sdk "github.com/cosmos/cosmos-sdk/types"
+
+	consumertypes "github.com/allinbits/vaas/x/vaas/consumer/types"
 )
 
 type (
@@ -24,7 +24,7 @@ type (
 	// MsgFilterDecorator is the consumer-side tx admission gate. It runs in
 	// four modes driven by consumer state:
 	//
-	//   pre-CCV    : provider IBC client not yet established -> only /ibc.* msgs
+	//   bootstrap  : provider IBC client not yet established -> only /ibc.* msgs
 	//               are accepted, so the chain can stand up its IBC stack.
 	//   normal     : provider client established, consumer is paying its fees
 	//               and has a fresh validator set -> everything passes.
@@ -34,7 +34,7 @@ type (
 	//               the safe-mode threshold -> restricted mode (see below).
 	//
 	// Restricted mode: only /ibc.core.* and /cosmos.gov.* messages pass,
-	// keeping CCV liveness and governance available so the chain can recover
+	// keeping VAAS liveness and governance available so the chain can recover
 	// without off-chain coordination.
 	MsgFilterDecorator struct {
 		ConsumerKeeper ConsumerKeeper
@@ -49,7 +49,7 @@ func NewMsgFilterDecorator(k ConsumerKeeper) MsgFilterDecorator {
 
 func (mfd MsgFilterDecorator) AnteHandle(ctx sdk.Context, tx sdk.Tx, simulate bool, next sdk.AnteHandler) (newCtx sdk.Context, err error) {
 	if _, ok := mfd.ConsumerKeeper.GetProviderClientID(ctx); !ok {
-		// pre-CCV: only /ibc.* messages until the provider client is up.
+		// bootstrap: only /ibc.* messages until the provider client is up.
 		// Note, rather than listing out all possible IBC message types, we assume
 		// all IBC message types have a correct and canonical prefix -- /ibc.*
 		if !hasOnlyPrefix(tx.GetMsgs(), "/ibc.") {
@@ -62,7 +62,7 @@ func (mfd MsgFilterDecorator) AnteHandle(ctx sdk.Context, tx sdk.Tx, simulate bo
 	//
 	// Only /ibc.core.* and /cosmos.gov.* messages pass:
 	//
-	// /ibc.core.* preserves CCV liveness and keeps all IBC apps working.
+	// /ibc.core.* preserves VAAS liveness and keeps all IBC apps working.
 	// The prefix covers both IBC v1 and v2 channel/connection/client
 	// messages, since the consumer chain may have v1 apps (ICS-20 v1) wired
 	// in addition to VAAS itself (which uses v2). User-initiated ICS-20 v2

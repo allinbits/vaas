@@ -699,21 +699,11 @@ func (app *App) SimulationManager() *module.SimulationManager {
 	return app.sm
 }
 
-// GetConsumerKeeper implements the ConsumerApp interface.
-func (app *App) GetConsumerKeeper() ibcconsumerkeeper.Keeper {
-	return app.ConsumerKeeper
-}
-
 // TestingApp functions
 
 // GetBaseApp implements the TestingApp interface.
 func (app *App) GetBaseApp() *baseapp.BaseApp {
 	return app.BaseApp
-}
-
-// GetStakingKeeper implements the TestingApp interface.
-func (app *App) GetStakingKeeper() *ibcconsumerkeeper.Keeper {
-	return &app.ConsumerKeeper
 }
 
 // GetIBCKeeper implements the TestingApp interface.

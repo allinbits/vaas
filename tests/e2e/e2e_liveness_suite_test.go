@@ -122,7 +122,7 @@ func (s *LivenessIntegrationTestSuite) SetupSuite() {
 				}
 			}
 
-			if provider, ok := appState["provider"].(map[string]any); ok {
+			if provider, ok := appState["vaasprovider"].(map[string]any); ok {
 				if params, ok := provider["params"].(map[string]any); ok {
 					// One block per epoch so a VSC packet (and its ack) flows every
 					// block. Combined with the fast block time (see patchConfigToml)
@@ -367,7 +367,7 @@ func (s *LivenessIntegrationTestSuite) testLivenessQuery() {
 		s.T().Logf("diagnostic: provider staking params: %s", stakingOut.String())
 
 		chainOut, _, _ := s.dockerExec(s.providerValRes[0].Container.ID, []string{
-			providerBinary, "query", "provider", "consumer-chain", consumerID,
+			providerBinary, "query", "vaasprovider", "consumer-chain", consumerID,
 			"--home", providerHomePath, "--output", "json",
 		})
 		s.T().Logf("diagnostic: consumer chain (init_params): %s", chainOut.String())
@@ -504,7 +504,7 @@ func (s *LivenessIntegrationTestSuite) testAutoSweepRemoval() {
 		s.T().Logf("diagnostic: provider staking params: %s", stakingOut.String())
 
 		chainOut, _, _ := s.dockerExec(s.providerValRes[0].Container.ID, []string{
-			providerBinary, "query", "provider", "consumer-chain", consumerID,
+			providerBinary, "query", "vaasprovider", "consumer-chain", consumerID,
 			"--home", providerHomePath, "--output", "json",
 		})
 		s.T().Logf("diagnostic: consumer chain (init_params): %s", chainOut.String())

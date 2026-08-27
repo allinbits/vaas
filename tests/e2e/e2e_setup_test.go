@@ -1,9 +1,6 @@
 package e2e
 
 import (
-	"fmt"
-	"os"
-	"os/exec"
 	"path/filepath"
 	"runtime"
 	"testing"
@@ -89,7 +86,7 @@ func (s *IntegrationTestSuite) SetupSuite() {
 			// Set fast epoch for VSC and a small per-block fee amount. The fee
 			// denom is fixed to feeDenom at module wiring, only the amount is
 			// configurable here. val is funded with feeDenom in provider-init.sh
-			if provider, ok := appState["provider"].(map[string]any); ok {
+			if provider, ok := appState["vaasprovider"].(map[string]any); ok {
 				if params, ok := provider["params"].(map[string]any); ok {
 					params["blocks_per_epoch"] = "5"
 					params["fees_per_block_amount"] = "1000"
@@ -186,10 +183,4 @@ func (s *IntegrationTestSuite) SetupSuite() {
 	s.collectIBCDiagnosticsLog()
 
 	s.T().Log("e2e test suite setup complete!")
-}
-
-// chmodRecursive changes permissions on a directory recursively.
-func chmodRecursive(path string, mode os.FileMode) error {
-	cmd := exec.Command("chmod", "-R", fmt.Sprintf("%o", mode), path)
-	return cmd.Run()
 }

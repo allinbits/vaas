@@ -19,10 +19,9 @@ import (
 	types "github.com/cosmos/cosmos-sdk/types"
 	types0 "github.com/cosmos/cosmos-sdk/x/bank/types"
 	types1 "github.com/cosmos/cosmos-sdk/x/staking/types"
-	types2 "github.com/cosmos/ibc-go/v10/modules/apps/transfer/types"
-	types3 "github.com/cosmos/ibc-go/v10/modules/core/02-client/types"
-	types4 "github.com/cosmos/ibc-go/v10/modules/core/02-client/v2/types"
-	types5 "github.com/cosmos/ibc-go/v10/modules/core/04-channel/v2/types"
+	types2 "github.com/cosmos/ibc-go/v10/modules/core/02-client/types"
+	types3 "github.com/cosmos/ibc-go/v10/modules/core/02-client/v2/types"
+	types4 "github.com/cosmos/ibc-go/v10/modules/core/04-channel/v2/types"
 	exported "github.com/cosmos/ibc-go/v10/modules/core/exported"
 	gomock "go.uber.org/mock/gomock"
 )
@@ -564,10 +563,10 @@ func (mr *MockClientKeeperMockRecorder) GetClientStatus(ctx, clientID any) *gomo
 }
 
 // GetStoreProvider mocks base method.
-func (m *MockClientKeeper) GetStoreProvider() types3.StoreProvider {
+func (m *MockClientKeeper) GetStoreProvider() types2.StoreProvider {
 	m.ctrl.T.Helper()
 	ret := m.ctrl.Call(m, "GetStoreProvider")
-	ret0, _ := ret[0].(types3.StoreProvider)
+	ret0, _ := ret[0].(types2.StoreProvider)
 	return ret0
 }
 
@@ -614,10 +613,10 @@ func (m *MockClientV2Keeper) EXPECT() *MockClientV2KeeperMockRecorder {
 }
 
 // GetClientCounterparty mocks base method.
-func (m *MockClientV2Keeper) GetClientCounterparty(ctx types.Context, clientID string) (types4.CounterpartyInfo, bool) {
+func (m *MockClientV2Keeper) GetClientCounterparty(ctx types.Context, clientID string) (types3.CounterpartyInfo, bool) {
 	m.ctrl.T.Helper()
 	ret := m.ctrl.Call(m, "GetClientCounterparty", ctx, clientID)
-	ret0, _ := ret[0].(types4.CounterpartyInfo)
+	ret0, _ := ret[0].(types3.CounterpartyInfo)
 	ret1, _ := ret[1].(bool)
 	return ret0, ret1
 }
@@ -629,7 +628,7 @@ func (mr *MockClientV2KeeperMockRecorder) GetClientCounterparty(ctx, clientID an
 }
 
 // SetClientCounterparty mocks base method.
-func (m *MockClientV2Keeper) SetClientCounterparty(ctx types.Context, clientID string, counterparty types4.CounterpartyInfo) {
+func (m *MockClientV2Keeper) SetClientCounterparty(ctx types.Context, clientID string, counterparty types3.CounterpartyInfo) {
 	m.ctrl.T.Helper()
 	m.ctrl.Call(m, "SetClientCounterparty", ctx, clientID, counterparty)
 }
@@ -863,10 +862,10 @@ func (m *MockChannelV2Keeper) EXPECT() *MockChannelV2KeeperMockRecorder {
 }
 
 // SendPacket mocks base method.
-func (m *MockChannelV2Keeper) SendPacket(ctx context.Context, msg *types5.MsgSendPacket) (*types5.MsgSendPacketResponse, error) {
+func (m *MockChannelV2Keeper) SendPacket(ctx context.Context, msg *types4.MsgSendPacket) (*types4.MsgSendPacketResponse, error) {
 	m.ctrl.T.Helper()
 	ret := m.ctrl.Call(m, "SendPacket", ctx, msg)
-	ret0, _ := ret[0].(*types5.MsgSendPacketResponse)
+	ret0, _ := ret[0].(*types4.MsgSendPacketResponse)
 	ret1, _ := ret[1].(error)
 	return ret0, ret1
 }
@@ -875,45 +874,6 @@ func (m *MockChannelV2Keeper) SendPacket(ctx context.Context, msg *types5.MsgSen
 func (mr *MockChannelV2KeeperMockRecorder) SendPacket(ctx, msg any) *gomock.Call {
 	mr.mock.ctrl.T.Helper()
 	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "SendPacket", reflect.TypeOf((*MockChannelV2Keeper)(nil).SendPacket), ctx, msg)
-}
-
-// MockIBCTransferKeeper is a mock of IBCTransferKeeper interface.
-type MockIBCTransferKeeper struct {
-	ctrl     *gomock.Controller
-	recorder *MockIBCTransferKeeperMockRecorder
-	isgomock struct{}
-}
-
-// MockIBCTransferKeeperMockRecorder is the mock recorder for MockIBCTransferKeeper.
-type MockIBCTransferKeeperMockRecorder struct {
-	mock *MockIBCTransferKeeper
-}
-
-// NewMockIBCTransferKeeper creates a new mock instance.
-func NewMockIBCTransferKeeper(ctrl *gomock.Controller) *MockIBCTransferKeeper {
-	mock := &MockIBCTransferKeeper{ctrl: ctrl}
-	mock.recorder = &MockIBCTransferKeeperMockRecorder{mock}
-	return mock
-}
-
-// EXPECT returns an object that allows the caller to indicate expected use.
-func (m *MockIBCTransferKeeper) EXPECT() *MockIBCTransferKeeperMockRecorder {
-	return m.recorder
-}
-
-// Transfer mocks base method.
-func (m *MockIBCTransferKeeper) Transfer(arg0 context.Context, arg1 *types2.MsgTransfer) (*types2.MsgTransferResponse, error) {
-	m.ctrl.T.Helper()
-	ret := m.ctrl.Call(m, "Transfer", arg0, arg1)
-	ret0, _ := ret[0].(*types2.MsgTransferResponse)
-	ret1, _ := ret[1].(error)
-	return ret0, ret1
-}
-
-// Transfer indicates an expected call of Transfer.
-func (mr *MockIBCTransferKeeperMockRecorder) Transfer(arg0, arg1 any) *gomock.Call {
-	mr.mock.ctrl.T.Helper()
-	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "Transfer", reflect.TypeOf((*MockIBCTransferKeeper)(nil).Transfer), arg0, arg1)
 }
 
 // MockDistributionKeeper is a mock of DistributionKeeper interface.

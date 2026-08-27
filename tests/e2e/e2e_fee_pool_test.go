@@ -39,7 +39,7 @@ func (s *IntegrationTestSuite) providerQueryBalance(addr, denom string) int64 {
 // fee pool in the given denom (returns 0 if no claim).
 func (s *IntegrationTestSuite) providerQueryFeePoolClaim(consumerID, depositor, denom string) int64 {
 	stdout, _, err := s.dockerExec(s.providerValRes[0].Container.ID, []string{
-		providerBinary, "query", "provider", "consumer-fee-pool-claim",
+		providerBinary, "query", "vaasprovider", "consumer-fee-pool-claim",
 		consumerID, depositor,
 		"--home", providerHomePath,
 		"--output", "json",
@@ -78,7 +78,7 @@ func (s *IntegrationTestSuite) providerKeyAddress(key string) string {
 // providerFundConsumerFeePool (which is hardcoded to --from val).
 func (s *IntegrationTestSuite) providerFundConsumerFeePoolFrom(consumerID, from, amount string) {
 	stdout, stderr, err := s.dockerExec(s.providerValRes[0].Container.ID, []string{
-		providerBinary, "tx", "provider", "fund-consumer-fee-pool",
+		providerBinary, "tx", "vaasprovider", "fund-consumer-fee-pool",
 		consumerID, amount,
 		"--from", from,
 		"--home", providerHomePath,
@@ -151,7 +151,7 @@ func (s *IntegrationTestSuite) testFeePoolFundAndLockEnforcement() {
 		// --from must be a bech32 address, not a key name: simulation mode does
 		// not access the keyring, so a name cannot be resolved.
 		_, stderr, err := s.dockerExec(s.providerValRes[0].Container.ID, []string{
-			providerBinary, "tx", "provider", "withdraw-consumer-fee-pool",
+			providerBinary, "tx", "vaasprovider", "withdraw-consumer-fee-pool",
 			consumerID, "1000" + denom,
 			"--from", valAddr,
 			"--home", providerHomePath,
@@ -170,7 +170,7 @@ func (s *IntegrationTestSuite) testFeePoolFundAndLockEnforcement() {
 
 		// Owner sweep during LAUNCHED is also rejected (no gov bypass on sweep).
 		_, stderr, err = s.dockerExec(s.providerValRes[0].Container.ID, []string{
-			providerBinary, "tx", "provider", "sweep-consumer-fee-pool",
+			providerBinary, "tx", "vaasprovider", "sweep-consumer-fee-pool",
 			consumerID,
 			"--from", valAddr,
 			"--home", providerHomePath,

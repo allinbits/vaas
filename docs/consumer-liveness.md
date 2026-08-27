@@ -159,7 +159,7 @@ safe mode engages before the provider's sweep removes it.
 Operators can observe a consumer's liveness without waiting for removal:
 
 ```
-providerd query provider consumer-liveness <consumer-id>
+providerd query vaasprovider consumer-liveness <consumer-id>
 ```
 
 It returns, all derived (no stored extra state):

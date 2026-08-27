@@ -37,8 +37,8 @@ const _ = proto.GoGoProtoPackageIsVersion3 // please upgrade the proto package
 // and persisted on the provider, see MakeConsumerGenesis and
 // SetConsumerGenesis.
 type ConsumerParams struct {
-	// TODO: Remove enabled flag and find a better way to setup integration tests
-	// See: https://github.com/cosmos/interchain-security/issues/339
+	// enabled must be true for the consumer module to be active; consumer
+	// genesis validation rejects a genesis with enabled=false.
 	Enabled bool `protobuf:"varint,1,opt,name=enabled,proto3" json:"enabled,omitempty"`
 	// Sent VAAS related IBC packets will timeout after this duration
 	VaasTimeoutPeriod time.Duration `protobuf:"bytes,2,opt,name=vaas_timeout_period,json=vaasTimeoutPeriod,proto3,stdduration" json:"vaas_timeout_period"`
@@ -144,7 +144,8 @@ type ConsumerGenesisState struct {
 	// This is needed and always set to true; otherwise, new_chain in the consumer
 	// genesis state will default to false
 	NewChain bool `protobuf:"varint,3,opt,name=new_chain,json=newChain,proto3" json:"new_chain,omitempty"`
-	// Flag indicating whether the consumer VAAS module starts in pre-VAAS state
+	// preVAAS is reserved for a future standalone-to-consumer changeover and is
+	// currently unused. See docs/consumer-transition.md.
 	PreVAAS bool `protobuf:"varint,4,opt,name=preVAAS,proto3" json:"preVAAS,omitempty"`
 }
 

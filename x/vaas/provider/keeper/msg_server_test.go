@@ -379,7 +379,7 @@ func TestSubmitConsumerDoubleVotingHappyPath(t *testing.T) {
 	// Sanity-check the chain event surfaced the expected consumer/chain attrs.
 	var found bool
 	for _, ev := range ctx.EventManager().Events() {
-		if ev.Type != "submit_consumer_double_voting" {
+		if ev.Type != "vaas_submit_consumer_double_voting" {
 			continue
 		}
 		found = true
@@ -1074,7 +1074,7 @@ func TestCreateConsumerEventsIncludeInitParams(t *testing.T) {
 	// verify the event has binary_hash, genesis_hash, and spawn_time attributes
 	var found bool
 	for _, ev := range ctx.EventManager().Events() {
-		if ev.Type != "create_consumer" {
+		if ev.Type != "vaas_create_consumer" {
 			continue
 		}
 		found = true

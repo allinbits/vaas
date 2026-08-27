@@ -9,7 +9,6 @@ import (
 	"strconv"
 	"strings"
 
-	"github.com/allinbits/vaas/x/vaas/provider/types"
 	"github.com/spf13/cobra"
 
 	"github.com/cometbft/cometbft/crypto"
@@ -28,6 +27,8 @@ import (
 	"github.com/cosmos/cosmos-sdk/codec"
 	sdk "github.com/cosmos/cosmos-sdk/types"
 	"github.com/cosmos/cosmos-sdk/version"
+
+	"github.com/allinbits/vaas/x/vaas/provider/types"
 )
 
 // FlagConsumerRPC and FlagTrustedHeight configure
@@ -114,7 +115,7 @@ An IBC misbehaviour contains two conflicting IBC client headers, which are used 
 The misbehaviour type definition can be found in the IBC client messages, see ibc-go/proto/ibc/core/client/v1/tx.proto.
 
 Example:
-%s tx provider submit-consumer-misbehaviour [consumer-id] [path/to/misbehaviour.json]
+%s tx vaasprovider submit-consumer-misbehaviour [consumer-id] [path/to/misbehaviour.json]
 			`, version.AppName)),
 		Args: cobra.ExactArgs(2),
 		RunE: func(cmd *cobra.Command, args []string) error {
@@ -177,7 +178,7 @@ func NewSubmitConsumerDoubleVotingCmd() *cobra.Command {
  definition can be found in the IBC messages, see ibc-go/proto/ibc/lightclients/tendermint/v1/tendermint.proto.
 
 Example:
-%s tx provider submit-consumer-double-voting [consumer-id] [path/to/evidence.json] [path/to/infraction_header.json]
+%s tx vaasprovider submit-consumer-double-voting [consumer-id] [path/to/evidence.json] [path/to/infraction_header.json]
 `, version.AppName)),
 		Args: cobra.ExactArgs(3),
 		RunE: func(cmd *cobra.Command, args []string) error {
@@ -248,7 +249,7 @@ Note that the one that signs this message is the owner of this consumer chain. T
 changed by updating the consumer chain.
 
 Example:
-%s tx provider create-consumer [path/to/create_consumer.json]
+%s tx vaasprovider create-consumer [path/to/create_consumer.json]
 
 where create_consumer.json has the following structure:
 {
@@ -267,7 +268,7 @@ where create_consumer.json has the following structure:
     "binary_hash": "",
     "spawn_time": "2024-08-29T12:26:16.529913Z",
     "unbonding_period": 1728000000000000,
-    "ccv_timeout_period": 2419200000000000,
+    "vaas_timeout_period": 2419200000000000,
     "historical_entries": 10000
   }
 }
@@ -328,7 +329,7 @@ func NewUpdateConsumerCmd() *cobra.Command {
 Note that only the owner of the chain can initialize it.
 
 Example:
-%s tx provider update-consumer [path/to/update_consumer.json]
+%s tx vaasprovider update-consumer [path/to/update_consumer.json]
 
 where update_consumer.json has the following structure:
 {
@@ -348,7 +349,7 @@ where update_consumer.json has the following structure:
     "binary_hash": "",
     "spawn_time": "2024-08-29T12:26:16.529913Z",
     "unbonding_period": 1728000000000000,
-    "ccv_timeout_period": 2419200000000000,
+    "vaas_timeout_period": 2419200000000000,
     "historical_entries": 10000
    },
    "new_chain_id": "newConsumer-1" // is optional and can be empty (i.e., "new_chain_id": "")
@@ -534,7 +535,7 @@ pass --%s to override it, e.g. if that client's light-client module trails
 behind the consumer chain tip.
 
 Example:
-%s tx provider challenge-consumer-downtime 0 cosmosvalcons1... 12345 --%s http://consumer-rpc:26657
+%s tx vaasprovider challenge-consumer-downtime 0 cosmosvalcons1... 12345 --%s http://consumer-rpc:26657
 `, FlagConsumerRPC, FlagTrustedHeight, version.AppName, FlagConsumerRPC)),
 		Args: cobra.ExactArgs(3),
 		RunE: func(cmd *cobra.Command, args []string) error {

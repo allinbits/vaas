@@ -240,7 +240,7 @@ canonical commit for `H`, `/commit?height=H+1` the header, `/validators` the key
 does the assembly:
 
 ```
-providerd tx provider challenge-consumer-downtime <consumer-id> <validator-cons-addr> <height> \
+providerd tx vaasprovider challenge-consumer-downtime <consumer-id> <validator-cons-addr> <height> \
     --consumer-rpc http://consumer-node:26657
 ```
 

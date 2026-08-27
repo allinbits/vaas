@@ -327,16 +327,6 @@ func TestMsgCreateConsumerValidateBasic(t *testing.T) {
 			false,
 		},
 		{
-			"neutron chain id that cannot be reused",
-			"neutron-1",
-			false,
-		},
-		{
-			"stride chain id that cannot be reused",
-			"stride-1",
-			false,
-		},
-		{
 			"valid chain id",
 			"somechain-1",
 			true,
@@ -667,16 +657,6 @@ func TestValidateChainId(t *testing.T) {
 		{
 			name:    "invalid (too long) chain id",
 			chainId: strings.Repeat("thisIsAnExtremelyLongChainId", 2),
-			expPass: false,
-		},
-		{
-			name:    "reserved chain id",
-			chainId: "stride-1",
-			expPass: false,
-		},
-		{
-			name:    "reserved chain id",
-			chainId: "neutron-1",
 			expPass: false,
 		},
 		{

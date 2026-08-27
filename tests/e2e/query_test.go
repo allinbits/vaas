@@ -3,7 +3,6 @@ package e2e
 import (
 	"encoding/json"
 	"fmt"
-	"strings"
 
 	cmtservice "github.com/cosmos/cosmos-sdk/client/grpc/cmtservice"
 	banktypes "github.com/cosmos/cosmos-sdk/x/bank/types"
@@ -14,7 +13,7 @@ import (
 // from the provider chain (e.g. "CONSUMER_PHASE_LAUNCHED").
 func (s *baseTestSuite) queryProviderConsumerPhase(consumerID string) string {
 	stdout, _, err := s.dockerExec(s.providerValRes[0].Container.ID, []string{
-		providerBinary, "query", "provider", "consumer-chain", consumerID,
+		providerBinary, "query", "vaasprovider", "consumer-chain", consumerID,
 		"--home", providerHomePath,
 		"--output", "json",
 	})
@@ -123,7 +122,7 @@ func (s *IntegrationTestSuite) queryConsumerProviderInfo() (string, error) {
 // queryProviderConsumerChains queries the provider for registered consumer chains.
 func (s *IntegrationTestSuite) queryProviderConsumerChains() (string, error) {
 	stdout, _, err := s.dockerExec(s.providerValRes[0].Container.ID, []string{
-		providerBinary, "query", "provider", "list-consumer-chains",
+		providerBinary, "query", "vaasprovider", "list-consumer-chains",
 		"--home", providerHomePath,
 		"--output", "json",
 	})
@@ -151,29 +150,4 @@ func (s *IntegrationTestSuite) queryBalance(restEndpoint, address, denom string)
 		}
 	}
 	return "0", nil
-}
-
-// queryProviderBalance queries an account balance on the provider chain.
-func (s *IntegrationTestSuite) queryProviderBalance(address, denom string) (string, error) {
-	return s.queryBalance(s.providerRESTEndpoint(), address, denom)
-}
-
-// queryConsumerBalance queries an account balance on the consumer chain.
-func (s *IntegrationTestSuite) queryConsumerBalance(address, denom string) (string, error) {
-	return s.queryBalance(s.consumerRESTEndpoint(), address, denom)
-}
-
-// queryProviderConsumerGenesis queries the provider for a specific consumer's genesis.
-func (s *IntegrationTestSuite) queryProviderConsumerGenesis(consumerID string) (string, error) {
-	stdout, stderr, err := s.dockerExec(s.providerValRes[0].Container.ID, []string{
-		providerBinary, "query", "provider", "consumer-genesis", consumerID,
-		"--home", providerHomePath,
-		"--output", "json",
-	})
-	if err != nil {
-		return "", fmt.Errorf("query failed: %w (stderr: %s)", err, stderr.String())
-	}
-
-	output := strings.TrimSpace(stdout.String())
-	return output, nil
 }

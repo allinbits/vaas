@@ -13,13 +13,13 @@ import "google/protobuf/timestamp.proto";
 // VAAS module. These schemas can change with proper consideration of
 // compatibility or migration.
 
-// CrossChainValidator defines the type used to store validator information
-// internal to the consumer VAAS module.  Note one cross chain validator entry is
+// VaasValidator defines the type used to store validator information
+// internal to the consumer VAAS module.  Note one VAAS validator entry is
 // persisted for each consumer validator, where incoming VSC packets update this
 // data, which is eventually forwarded to comet for consumer chain consensus.
 //
 // Note this type is only used internally to the consumer VAAS module.
-message CrossChainValidator {
+message VaasValidator {
   bytes address = 1;
   int64 power = 2;
   // pubkey is the consensus public key of the validator, as a Protobuf Any.

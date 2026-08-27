@@ -83,7 +83,7 @@ new position in the queue. Only the owner address can submit `MsgUpdateConsumer`
 
 1. **Fetch the consumer genesis** from the provider:
    ```
-   providerd query provider consumer-genesis <consumer-id>
+   providerd query vaasprovider consumer-genesis <consumer-id>
    ```
    This returns the `ConsumerGenesisState` built in step 2 above.
 
