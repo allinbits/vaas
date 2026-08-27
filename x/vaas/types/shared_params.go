@@ -79,6 +79,9 @@ func ValidateStringFractionNonZero(str string) error {
 }
 
 func ValidateFraction(dec math.LegacyDec) error {
+	if dec.IsNil() {
+		return fmt.Errorf("param cannot be nil")
+	}
 	if dec.IsNegative() {
 		return fmt.Errorf("param cannot be negative, got %s", dec)
 	}

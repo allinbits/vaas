@@ -157,6 +157,8 @@ func (am AppModule) BeginBlock(goCtx context.Context) error {
 	if err != nil {
 		am.keeper.Logger(ctx).Warn("failed to track historical info", "error", err)
 	}
+
+	am.keeper.TrackMissedBlocks(ctx)
 	return nil
 }
 

@@ -94,6 +94,56 @@ func (s *IntegrationTestSuite) SetupSuite() {
 					params["blocks_per_epoch"] = "5"
 					params["fees_per_block_amount"] = "1000"
 				}
+
+				// Shrink the downtime detection window and the challenge window so
+				// testDowntimeSlash's queue-then-execute flow (x/vaas-owned tumbling
+				// window bitmap tracking, then a challenge-window-gated slash) completes
+				// within the test run instead of the multi-day production defaults.
+				// downtime_evidence_max_age must not exceed downtime_challenge_window
+				// (see InfractionParameters.Validate); both are set to 30s, comfortably
+				// above the relay latency between window close and evidence receipt.
+				// downtime_grace_period is left at its default: the fixed 2024 spawn_time
+				// in testdata/create_consumer.json is already years in the past by any
+				// real test run, so the grace period has already elapsed regardless.
+				// downtime.slash_fraction must be set explicitly: the genesis JSON
+				// is unmarshaled directly into InfractionParameters with no
+				// defaulting pass, so an absent key deserializes to a nil
+				// LegacyDec that the keeper's store round-trip turns into zero --
+				// not DefaultDowntimeSlashFraction -- silently capping every
+				// downtime slash at zero. It is pinned to a deliberately
+				// test-sized value (like window/challenge/max-age above) rather
+				// than the shipped default so the fee-priced slash this test
+				// observes (~2500 tokens on a 5,000,000-token self-bond, a
+				// 0.0005 fraction) executes uncapped and clearly visible.
+				provider["infraction_parameters"] = map[string]any{
+					"double_sign": map[string]any{
+						"slash_fraction": "0.050000000000000000",
+						"jail_duration":  "315360000s",
+						"tombstone":      true,
+					},
+					"downtime": map[string]any{
+						"slash_fraction": "0.010000000000000000",
+						"jail_duration":  "0s",
+						"tombstone":      false,
+					},
+					"downtime_grace_period":     "604800s",
+					"signed_blocks_window":      "30",
+					"min_signed_per_window":     "0.500000000000000000",
+					"downtime_challenge_window": "30s",
+					"downtime_evidence_max_age": "30s",
+				}
+			}
+
+			// Loosen the provider's own native x/slashing downtime window so the
+			// permanently-silent second validator created by testDowntimeSlash (which
+			// never runs a node, by design, to produce real missed-block evidence for
+			// the VAAS-owned downtime tracking above) is never natively jailed on the
+			// provider chain itself during the test run; that would remove it from the
+			// bonded set before it can accumulate consumer-side downtime evidence.
+			if slashing, ok := appState["slashing"].(map[string]any); ok {
+				if params, ok := slashing["params"].(map[string]any); ok {
+					params["signed_blocks_window"] = "100000"
+				}
 			}
 		},
 	}

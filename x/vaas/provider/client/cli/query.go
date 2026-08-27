@@ -48,6 +48,8 @@ func NewQueryCmd() *cobra.Command {
 	cmd.AddCommand(CmdAllConsumerFeesPerBlockOverrides())
 	cmd.AddCommand(CmdConsumerFeePoolClaim())
 	cmd.AddCommand(CmdConsumerFeePoolClaims())
+	cmd.AddCommand(CmdPendingDowntimeSlashes())
+	cmd.AddCommand(CmdWithheldFeeRecords())
 	return cmd
 }
 
@@ -586,5 +588,71 @@ func CmdConsumerFeePoolClaims() *cobra.Command {
 	}
 	flags.AddPaginationFlagsToCmd(cmd, "consumer-fee-pool-claims")
 	flags.AddQueryFlagsToCmd(cmd)
+	return cmd
+}
+
+// CmdPendingDowntimeSlashes queries the pending downtime slashes queued for a
+// consumer, awaiting the challenge window before execution.
+func CmdPendingDowntimeSlashes() *cobra.Command {
+	cmd := &cobra.Command{
+		Use:   "pending-downtime-slashes [consumer-id]",
+		Short: "Query the pending downtime slashes queued for a consumer",
+		Args:  cobra.ExactArgs(1),
+		RunE: func(cmd *cobra.Command, args []string) error {
+			clientCtx, err := client.GetClientQueryContext(cmd)
+			if err != nil {
+				return err
+			}
+			queryClient := types.NewQueryClient(clientCtx)
+
+			consumerId, err := parseConsumerIdArg(args[0])
+			if err != nil {
+				return err
+			}
+			req := &types.QueryPendingDowntimeSlashesRequest{ConsumerId: consumerId}
+			res, err := queryClient.QueryPendingDowntimeSlashes(cmd.Context(), req)
+			if err != nil {
+				return err
+			}
+
+			return clientCtx.PrintProto(res)
+		},
+	}
+
+	flags.AddQueryFlagsToCmd(cmd)
+
+	return cmd
+}
+
+// CmdWithheldFeeRecords queries the fee shares currently withheld from
+// validators for a consumer due to a pending or executed downtime slash.
+func CmdWithheldFeeRecords() *cobra.Command {
+	cmd := &cobra.Command{
+		Use:   "withheld-fee-records [consumer-id]",
+		Short: "Query the fee shares withheld from validators for a consumer",
+		Args:  cobra.ExactArgs(1),
+		RunE: func(cmd *cobra.Command, args []string) error {
+			clientCtx, err := client.GetClientQueryContext(cmd)
+			if err != nil {
+				return err
+			}
+			queryClient := types.NewQueryClient(clientCtx)
+
+			consumerId, err := parseConsumerIdArg(args[0])
+			if err != nil {
+				return err
+			}
+			req := &types.QueryWithheldFeeRecordsRequest{ConsumerId: consumerId}
+			res, err := queryClient.QueryWithheldFeeRecords(cmd.Context(), req)
+			if err != nil {
+				return err
+			}
+
+			return clientCtx.PrintProto(res)
+		},
+	}
+
+	flags.AddQueryFlagsToCmd(cmd)
+
 	return cmd
 }

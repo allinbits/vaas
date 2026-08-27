@@ -131,6 +131,10 @@ func TestIsValidatorJailed(t *testing.T) {
 	// Standalone changeover functionality removed
 }
 
+// TestSlash asserts that SlashWithInfractionReason never queues an evidence
+// packet, for any infraction type. VAAS-owned tumbling-window tracking
+// (downtime.go) is the sole source of downtime evidence; x/slashing calls
+// into this method are informational only.
 func TestSlash(t *testing.T) {
 	consumerKeeper, ctx, ctrl, _ := testkeeper.GetConsumerKeeperAndCtx(t, testkeeper.NewInMemKeeperParams(t))
 	defer ctrl.Finish()
@@ -140,41 +144,39 @@ func TestSlash(t *testing.T) {
 	slashed, err := consumerKeeper.SlashWithInfractionReason(ctx, addr, 5, 6, math.LegacyNewDec(9.0), stakingtypes.Infraction_INFRACTION_DOWNTIME)
 	require.NoError(t, err)
 	require.True(t, slashed.IsZero())
+	require.Equal(t, 0, consumerKeeper.GetPendingEvidencePacketCount(ctx))
 
-	require.Equal(t, 1, consumerKeeper.GetPendingEvidencePacketCount(ctx))
-
-	// double-sign should not queue a packet
+	// double-sign should not queue a packet either
 	slashed, err = consumerKeeper.SlashWithInfractionReason(ctx, addr, 5, 6, math.LegacyNewDec(9.0), stakingtypes.Infraction_INFRACTION_DOUBLE_SIGN)
 	require.NoError(t, err)
 	require.True(t, slashed.IsZero())
-
-	require.Equal(t, 1, consumerKeeper.GetPendingEvidencePacketCount(ctx))
+	require.Equal(t, 0, consumerKeeper.GetPendingEvidencePacketCount(ctx))
 }
 
-func TestSlashSkipsDuplicateDowntime(t *testing.T) {
+// TestSlashRepeatedDowntimeQueuesNothing asserts that repeated downtime
+// slash requests for the same or different validators never queue evidence
+// packets, since detection and queueing live exclusively in downtime.go.
+func TestSlashRepeatedDowntimeQueuesNothing(t *testing.T) {
 	consumerKeeper, ctx, ctrl, _ := testkeeper.GetConsumerKeeperAndCtx(t, testkeeper.NewInMemKeeperParams(t))
 	defer ctrl.Finish()
 
 	addr := sdk.ConsAddress([]byte{0x01, 0x02, 0x03})
 
-	// First downtime slash → queues packet
 	slashed, err := consumerKeeper.SlashWithInfractionReason(ctx, addr, 5, 6, math.LegacyNewDec(9.0), stakingtypes.Infraction_INFRACTION_DOWNTIME)
 	require.NoError(t, err)
 	require.True(t, slashed.IsZero())
-	require.Equal(t, 1, consumerKeeper.GetPendingEvidencePacketCount(ctx))
+	require.Equal(t, 0, consumerKeeper.GetPendingEvidencePacketCount(ctx))
 
-	// Duplicate downtime → skipped (validator already has pending packet)
 	slashed, err = consumerKeeper.SlashWithInfractionReason(ctx, addr, 5, 6, math.LegacyNewDec(9.0), stakingtypes.Infraction_INFRACTION_DOWNTIME)
 	require.NoError(t, err)
 	require.True(t, slashed.IsZero())
-	require.Equal(t, 1, consumerKeeper.GetPendingEvidencePacketCount(ctx))
+	require.Equal(t, 0, consumerKeeper.GetPendingEvidencePacketCount(ctx))
 
-	// Different validator → queues packet
 	addr2 := sdk.ConsAddress([]byte{0x04, 0x05, 0x06})
 	slashed, err = consumerKeeper.SlashWithInfractionReason(ctx, addr2, 5, 6, math.LegacyNewDec(9.0), stakingtypes.Infraction_INFRACTION_DOWNTIME)
 	require.NoError(t, err)
 	require.True(t, slashed.IsZero())
-	require.Equal(t, 2, consumerKeeper.GetPendingEvidencePacketCount(ctx))
+	require.Equal(t, 0, consumerKeeper.GetPendingEvidencePacketCount(ctx))
 }
 
 // Tests the getter and setter behavior for historical info

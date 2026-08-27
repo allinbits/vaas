@@ -314,3 +314,121 @@ func TestQueryConsumerLiveness_UnknownConsumer(t *testing.T) {
 	require.Error(t, err)
 	require.Equal(t, codes.InvalidArgument, status.Code(err))
 }
+
+// TestQueryPendingDowntimeSlashes verifies that querying a consumer returns
+// exactly its own pending downtime slashes, with the bitmap and slash tokens
+// intact, and does not leak entries belonging to another consumer.
+func TestQueryPendingDowntimeSlashes(t *testing.T) {
+	k, ctx, ctrl, _ := testkeeper.GetProviderKeeperAndCtx(t, testkeeper.NewInMemKeeperParams(t))
+	defer ctrl.Finish()
+
+	const consumer1 = uint64(1)
+	const consumer2 = uint64(2)
+	k.SetConsumerPhase(ctx, consumer1, providertypes.CONSUMER_PHASE_LAUNCHED)
+	k.SetConsumerPhase(ctx, consumer2, providertypes.CONSUMER_PHASE_LAUNCHED)
+
+	maturesAt := ctx.BlockTime().Add(time.Hour).UTC()
+
+	entryA := providertypes.PendingDowntimeSlash{
+		ConsumerId:         consumer1,
+		ProviderConsAddr:   []byte("provider-addr-validator-a"),
+		WindowStartHeight:  100,
+		Span:               200,
+		MissedCount:        50,
+		MissedBlocksBitmap: []byte{0xff, 0x00, 0xab},
+		SlashTokens:        math.NewInt(1000),
+		MaturesAt:          maturesAt,
+	}
+	entryB := providertypes.PendingDowntimeSlash{
+		ConsumerId:         consumer1,
+		ProviderConsAddr:   []byte("provider-addr-validator-b"),
+		WindowStartHeight:  150,
+		Span:               200,
+		MissedCount:        75,
+		MissedBlocksBitmap: []byte{0x0f, 0xf0},
+		SlashTokens:        math.NewInt(2000),
+		MaturesAt:          maturesAt,
+	}
+	entryC := providertypes.PendingDowntimeSlash{
+		ConsumerId:         consumer2,
+		ProviderConsAddr:   []byte("provider-addr-validator-c"),
+		WindowStartHeight:  100,
+		Span:               200,
+		MissedCount:        50,
+		MissedBlocksBitmap: []byte{0x11},
+		SlashTokens:        math.NewInt(3000),
+		MaturesAt:          maturesAt,
+	}
+
+	require.NoError(t, k.PendingDowntimeSlashes.Set(ctx, collections.Join3(consumer1, entryA.ProviderConsAddr, entryA.WindowStartHeight+entryA.Span-1), entryA))
+	require.NoError(t, k.PendingDowntimeSlashes.Set(ctx, collections.Join3(consumer1, entryB.ProviderConsAddr, entryB.WindowStartHeight+entryB.Span-1), entryB))
+	require.NoError(t, k.PendingDowntimeSlashes.Set(ctx, collections.Join3(consumer2, entryC.ProviderConsAddr, entryC.WindowStartHeight+entryC.Span-1), entryC))
+
+	resp, err := k.QueryPendingDowntimeSlashes(ctx, &providertypes.QueryPendingDowntimeSlashesRequest{ConsumerId: consumer1})
+	require.NoError(t, err)
+	require.ElementsMatch(t, []providertypes.PendingDowntimeSlash{entryA, entryB}, resp.Slashes)
+}
+
+// TestQueryPendingDowntimeSlashes_UnknownConsumer verifies that querying an
+// unregistered consumer id returns a codes.InvalidArgument gRPC error.
+func TestQueryPendingDowntimeSlashes_UnknownConsumer(t *testing.T) {
+	k, ctx, ctrl, _ := testkeeper.GetProviderKeeperAndCtx(t, testkeeper.NewInMemKeeperParams(t))
+	defer ctrl.Finish()
+
+	_, err := k.QueryPendingDowntimeSlashes(ctx, &providertypes.QueryPendingDowntimeSlashesRequest{ConsumerId: 999})
+	require.Error(t, err)
+	require.Equal(t, codes.InvalidArgument, status.Code(err))
+}
+
+// TestQueryWithheldFeeRecords verifies that querying a consumer returns
+// exactly its own withheld fee records and does not leak entries belonging
+// to another consumer.
+func TestQueryWithheldFeeRecords(t *testing.T) {
+	k, ctx, ctrl, _ := testkeeper.GetProviderKeeperAndCtx(t, testkeeper.NewInMemKeeperParams(t))
+	defer ctrl.Finish()
+
+	const consumer1 = uint64(1)
+	const consumer2 = uint64(2)
+	k.SetConsumerPhase(ctx, consumer1, providertypes.CONSUMER_PHASE_LAUNCHED)
+	k.SetConsumerPhase(ctx, consumer2, providertypes.CONSUMER_PHASE_LAUNCHED)
+
+	expiresAt := ctx.BlockTime().Add(time.Hour).UTC()
+
+	recordA := providertypes.WithheldFeeRecord{
+		ConsumerId:       consumer1,
+		ProviderConsAddr: []byte("provider-addr-validator-a"),
+		Amount:           sdk.NewInt64Coin("uphoton", 50),
+		ExpiresAt:        expiresAt,
+	}
+	recordB := providertypes.WithheldFeeRecord{
+		ConsumerId:       consumer1,
+		ProviderConsAddr: []byte("provider-addr-validator-b"),
+		Amount:           sdk.NewInt64Coin("uphoton", 75),
+		ExpiresAt:        expiresAt,
+	}
+	recordC := providertypes.WithheldFeeRecord{
+		ConsumerId:       consumer2,
+		ProviderConsAddr: []byte("provider-addr-validator-c"),
+		Amount:           sdk.NewInt64Coin("uphoton", 100),
+		ExpiresAt:        expiresAt,
+	}
+
+	require.NoError(t, k.WithheldFeeRecords.Set(ctx, collections.Join(consumer1, recordA.ProviderConsAddr), recordA))
+	require.NoError(t, k.WithheldFeeRecords.Set(ctx, collections.Join(consumer1, recordB.ProviderConsAddr), recordB))
+	require.NoError(t, k.WithheldFeeRecords.Set(ctx, collections.Join(consumer2, recordC.ProviderConsAddr), recordC))
+
+	resp, err := k.QueryWithheldFeeRecords(ctx, &providertypes.QueryWithheldFeeRecordsRequest{ConsumerId: consumer1})
+	require.NoError(t, err)
+	require.ElementsMatch(t, []providertypes.WithheldFeeRecord{recordA, recordB}, resp.Records)
+}
+
+// TestQueryWithheldFeeRecords_UnknownConsumer verifies that querying an
+// unregistered consumer id returns a codes.InvalidArgument gRPC error.
+func TestQueryWithheldFeeRecords_UnknownConsumer(t *testing.T) {
+	k, ctx, ctrl, _ := testkeeper.GetProviderKeeperAndCtx(t, testkeeper.NewInMemKeeperParams(t))
+	defer ctrl.Finish()
+
+	_, err := k.QueryWithheldFeeRecords(ctx, &providertypes.QueryWithheldFeeRecordsRequest{ConsumerId: 999})
+	require.Error(t, err)
+	require.Equal(t, codes.InvalidArgument, status.Code(err))
+}

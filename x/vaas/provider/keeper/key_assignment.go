@@ -126,9 +126,16 @@ func (k Keeper) AssignConsumerKey(
 		}
 		oldConsumerAddr := types.NewConsumerConsAddress(oldConsumerAddrTmp)
 
-		// check whether the consumer chain has already launched (i.e., a client to the consumer was already created)
+		// check whether the consumer chain has already launched (i.e., a client
+		// to the consumer was already created). A paused consumer counts as
+		// launched here: it has a client and a validator set running under the
+		// old address, and it is the one phase certain to have downtime state in
+		// flight, since a pause is entered by a successful downtime challenge.
+		// Both the challenge lookup and the re-submission defence resolve an
+		// accused consumer address through this mapping, so it has to survive
+		// until pruning rather than be dropped at assignment time.
 		phase := k.GetConsumerPhase(ctx, consumerId)
-		if phase == types.CONSUMER_PHASE_LAUNCHED {
+		if phase == types.CONSUMER_PHASE_LAUNCHED || phase == types.CONSUMER_PHASE_PAUSED {
 			// mark the old consumer address as prunable once UnbondingPeriod elapses;
 			// note: this state is removed on EndBlock
 			unbondingPeriod, err := k.stakingKeeper.UnbondingTime(ctx)

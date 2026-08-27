@@ -293,6 +293,7 @@ func TestGenesisRoundTrip(t *testing.T) {
 	md := providertypes.ConsumerMetadata{Name: "n", Description: "d", Metadata: "m"}
 	spawnAt := time.Unix(1_700_000_000, 0).UTC()
 	removeAt := time.Unix(1_800_000_000, 0).UTC()
+	pauseExpiresAt := time.Unix(1_820_000_000, 0).UTC()
 	ip := providertypes.ConsumerInitializationParameters{
 		InitialHeight:     clienttypes.Height{RevisionNumber: 0, RevisionHeight: 42},
 		GenesisHash:       []byte("g"),
@@ -307,22 +308,24 @@ func TestGenesisRoundTrip(t *testing.T) {
 
 	// Seed keeper A by going through FetchAndIncrementConsumerId for each
 	// consumer, mirroring what production code does at MsgCreateConsumer time.
-	// This produces consumer ids "0".."4" in alpha..epsilon order.
+	// This produces consumer ids "0".."5" in alpha..zeta order.
 	type seed struct {
 		chainId  string
 		phase    providertypes.ConsumerPhase
 		clientId string
 		setRT    bool
-		setSpawn bool // → enqueue spawn
-		setRem   bool // → enqueue removal + setMinHeight
-		setMinHt bool // → setEquivocationEvidenceMinHeight (LAUNCHED+STOPPED)
+		setSpawn bool // enqueue spawn
+		setRem   bool // enqueue removal + setMinHeight
+		setMinHt bool // setEquivocationEvidenceMinHeight (LAUNCHED+STOPPED+PAUSED)
+		setPET   bool // enqueue pause-expiration (PAUSED)
 	}
 	seeds := []seed{
-		{"consumer-alpha", providertypes.CONSUMER_PHASE_REGISTERED, "", false, false, false, false},
-		{"consumer-beta", providertypes.CONSUMER_PHASE_INITIALIZED, "", false, true, false, false},
-		{"consumer-gamma", providertypes.CONSUMER_PHASE_LAUNCHED, "07-tendermint-0", false, false, false, true},
-		{"consumer-delta", providertypes.CONSUMER_PHASE_STOPPED, "07-tendermint-1", true, false, true, true},
-		{"consumer-epsilon", providertypes.CONSUMER_PHASE_DELETED, "", false, false, false, false},
+		{"consumer-alpha", providertypes.CONSUMER_PHASE_REGISTERED, "", false, false, false, false, false},
+		{"consumer-beta", providertypes.CONSUMER_PHASE_INITIALIZED, "", false, true, false, false, false},
+		{"consumer-gamma", providertypes.CONSUMER_PHASE_LAUNCHED, "07-tendermint-0", false, false, false, true, false},
+		{"consumer-delta", providertypes.CONSUMER_PHASE_STOPPED, "07-tendermint-1", true, false, true, true, false},
+		{"consumer-epsilon", providertypes.CONSUMER_PHASE_DELETED, "", false, false, false, false, false},
+		{"consumer-zeta", providertypes.CONSUMER_PHASE_PAUSED, "07-tendermint-2", false, false, false, true, true},
 	}
 	for _, s := range seeds {
 		id := pkA.FetchAndIncrementConsumerId(ctxA)
@@ -337,7 +340,7 @@ func TestGenesisRoundTrip(t *testing.T) {
 		if s.clientId != "" {
 			pkA.SetConsumerClientId(ctxA, id, s.clientId)
 		}
-		if s.phase == providertypes.CONSUMER_PHASE_LAUNCHED || s.phase == providertypes.CONSUMER_PHASE_STOPPED {
+		if s.phase == providertypes.CONSUMER_PHASE_LAUNCHED || s.phase == providertypes.CONSUMER_PHASE_STOPPED || s.phase == providertypes.CONSUMER_PHASE_PAUSED {
 			require.NoError(t, pkA.SetConsumerGenesis(ctxA, id, cg))
 		}
 		if s.setRT {
@@ -351,6 +354,10 @@ func TestGenesisRoundTrip(t *testing.T) {
 		}
 		if s.setMinHt {
 			pkA.SetEquivocationEvidenceMinHeight(ctxA, id, ip.InitialHeight.RevisionHeight)
+		}
+		if s.setPET {
+			require.NoError(t, pkA.SetConsumerPauseExpirationTime(ctxA, id, pauseExpiresAt))
+			require.NoError(t, pkA.AppendConsumerToBeAutoStopped(ctxA, id, pauseExpiresAt))
 		}
 	}
 	// Seed one entry per consumer-id-keyed key-assignment / prune collection
@@ -376,11 +383,85 @@ func TestGenesisRoundTrip(t *testing.T) {
 	pkA.SetConsumerHighestSentVscId(ctxA, keyedConsumerID, 7)
 	pkA.SetConsumerHighestAckedVscId(ctxA, keyedConsumerID, 5)
 
+	// Seed the downtime-detection state (pending slash, previous downtime
+	// params, epoch share records) so the round-trip covers it too.
+	downtimeProviderAddr := providertypes.NewProviderConsAddress([]byte("provider-addr-downtime-x1"))
+	pendingSlash := providertypes.PendingDowntimeSlash{
+		ConsumerId:        keyedConsumerID,
+		ProviderConsAddr:  downtimeProviderAddr.ToSdkConsAddr().Bytes(),
+		WindowStartHeight: 100,
+		Span:              50,
+		MissedCount:       30,
+		// ceil(50/8) = 7 bytes, per the bitmap-length/span check in Validate().
+		MissedBlocksBitmap: []byte{0xFF, 0x0F, 0xFF, 0x0F, 0xFF, 0x0F, 0xFF},
+		SlashTokens:        math.NewInt(12345),
+		MaturesAt:          time.Unix(1_950_000_000, 0).UTC(),
+	}
+	// windowEnd = WindowStartHeight(100) + Span(50) - 1 = 149.
+	require.NoError(t, pkA.PendingDowntimeSlashes.Set(ctxA,
+		collections.Join3(keyedConsumerID, downtimeProviderAddr.ToSdkConsAddr().Bytes(), int64(149)), pendingSlash))
+
+	previousDowntimeParams := providertypes.PreviousDowntimeParams{
+		Params: vaastypes.DowntimeParams{
+			SignedBlocksWindow: 100,
+			MinSignedPerWindow: math.LegacyNewDecWithPrec(5, 1),
+		},
+		ChangedAt: time.Unix(1_960_000_000, 0).UTC(),
+	}
+	require.NoError(t, pkA.PreviousDowntimeParams.Set(ctxA, previousDowntimeParams))
+
+	const otherConsumerID uint64 = 3 // consumer-delta
+	require.NoError(t, pkA.EpochShareRecords.Set(ctxA,
+		collections.Join(keyedConsumerID, time.Unix(1_700_000_001, 0).UTC().UnixNano()), math.NewInt(500)))
+	require.NoError(t, pkA.EpochShareRecords.Set(ctxA,
+		collections.Join(otherConsumerID, time.Unix(1_700_000_002, 0).UTC().UnixNano()), math.NewInt(700)))
+
+	// Seed one WithheldFeeRecords / EpochDowntime entry, two
+	// AcceptedDowntimeWindows records for the same pair, and one
+	// DowntimeWindowFloors entry so the round-trip covers those collections
+	// too, including more than one accepted window per pair.
+	withheldFeeRecord := providertypes.WithheldFeeRecord{
+		ConsumerId:       keyedConsumerID,
+		ProviderConsAddr: downtimeProviderAddr.ToSdkConsAddr().Bytes(),
+		Amount:           sdk.NewInt64Coin("uphoton", 777),
+		ExpiresAt:        time.Unix(1_970_000_000, 0).UTC(),
+	}
+	require.NoError(t, pkA.WithheldFeeRecords.Set(ctxA,
+		collections.Join(keyedConsumerID, downtimeProviderAddr.ToSdkConsAddr().Bytes()), withheldFeeRecord))
+
+	// The pending slash seeded above covers window [100, 149]; its accepted
+	// record must exist with the same boundaries for the export to validate.
+	acceptedAt := time.Unix(1_940_000_000, 0).UTC()
+	require.NoError(t, pkA.AcceptedDowntimeWindows.Set(ctxA,
+		collections.Join3(keyedConsumerID, downtimeProviderAddr.ToSdkConsAddr().Bytes(), int64(149)),
+		providertypes.AcceptedDowntimeWindow{WindowStart: 100, AcceptedAt: acceptedAt}))
+	require.NoError(t, pkA.AcceptedDowntimeWindows.Set(ctxA,
+		collections.Join3(keyedConsumerID, downtimeProviderAddr.ToSdkConsAddr().Bytes(), int64(199)),
+		providertypes.AcceptedDowntimeWindow{WindowStart: 150, AcceptedAt: acceptedAt}))
+
+	require.NoError(t, pkA.DowntimeWindowFloors.Set(ctxA,
+		collections.Join(keyedConsumerID, downtimeProviderAddr.ToSdkConsAddr().Bytes()), int64(99)))
+
+	require.NoError(t, pkA.EpochDowntime.Set(ctxA,
+		collections.Join(keyedConsumerID, downtimeProviderAddr.ToSdkConsAddr().Bytes()), true))
+
 	pkA.SetParams(ctxA, providertypes.DefaultParams())
 	pkA.SetValidatorSetUpdateId(ctxA, 1)
 
+	// Seed a non-default InfractionParameters so the round-trip covers the
+	// optional genesis override (a real chain always has these set by
+	// InitGenesis; this asserts the values survive an export/import cycle).
+	customInfractionParams := providertypes.DefaultInfractionParameters()
+	customInfractionParams.DowntimeChallengeWindow = 1 * time.Hour
+	customInfractionParams.DowntimeEvidenceMaxAge = 1 * time.Hour
+	customInfractionParams.SignedBlocksWindow = 30
+	customInfractionParams.MinSignedPerWindow = math.LegacyNewDecWithPrec(5, 1)
+	pkA.SetInfractionParams(ctxA, customInfractionParams)
+
 	expA := pkA.ExportGenesis(ctxA)
 	require.NoError(t, expA.Validate(), "first export must validate")
+	require.NotNil(t, expA.InfractionParameters, "infraction params lost at export")
+	require.Equal(t, customInfractionParams, *expA.InfractionParameters)
 
 	// Sanity: the export must carry the key-assignment / prune entries
 	// keyed by the actual consumer id (matching the original alloc).
@@ -390,6 +471,52 @@ func TestGenesisRoundTrip(t *testing.T) {
 	require.Equal(t, keyedConsumerID, expA.ValidatorsByConsumerAddr[0].ConsumerId)
 	require.Len(t, expA.ConsumerAddrsToPrune, 1)
 	require.Equal(t, keyedConsumerID, expA.ConsumerAddrsToPrune[0].ConsumerId)
+
+	// Sanity: the export must carry the downtime-detection state.
+	require.Len(t, expA.PendingDowntimeSlashes, 1)
+	require.Equal(t, pendingSlash, expA.PendingDowntimeSlashes[0])
+	require.NotNil(t, expA.PreviousDowntimeParams)
+	require.Equal(t, previousDowntimeParams, *expA.PreviousDowntimeParams)
+	require.Len(t, expA.EpochShareRecords, 2)
+	require.Len(t, expA.WithheldFeeRecords, 1)
+	require.Equal(t, withheldFeeRecord, expA.WithheldFeeRecords[0])
+	require.ElementsMatch(t, []providertypes.AcceptedDowntimeWindowRecord{
+		{
+			ConsumerId:        keyedConsumerID,
+			ProviderConsAddr:  downtimeProviderAddr.ToSdkConsAddr().Bytes(),
+			WindowEndHeight:   149,
+			WindowStartHeight: 100,
+			AcceptedAt:        acceptedAt,
+		},
+		{
+			ConsumerId:        keyedConsumerID,
+			ProviderConsAddr:  downtimeProviderAddr.ToSdkConsAddr().Bytes(),
+			WindowEndHeight:   199,
+			WindowStartHeight: 150,
+			AcceptedAt:        acceptedAt,
+		},
+	}, expA.AcceptedDowntimeWindows)
+	require.Equal(t, []providertypes.DowntimeWindowFloor{{
+		ConsumerId:       keyedConsumerID,
+		ProviderConsAddr: downtimeProviderAddr.ToSdkConsAddr().Bytes(),
+		WindowEndHeight:  99,
+	}}, expA.DowntimeWindowFloors)
+	require.Len(t, expA.EpochDowntimeEntries, 1)
+	require.Equal(t, providertypes.EpochDowntimeEntry{
+		ConsumerId:       keyedConsumerID,
+		ProviderConsAddr: downtimeProviderAddr.ToSdkConsAddr().Bytes(),
+	}, expA.EpochDowntimeEntries[0])
+
+	// Sanity: the PAUSED consumer (zeta) carries its pause-expiration time.
+	byChainId := map[string]providertypes.ConsumerState{}
+	for _, cs := range expA.ConsumerStates {
+		byChainId[cs.ChainId] = cs
+	}
+	zeta, ok := byChainId["consumer-zeta"]
+	require.True(t, ok, "consumer-zeta missing from export")
+	require.Equal(t, providertypes.CONSUMER_PHASE_PAUSED, zeta.Phase)
+	require.NotNil(t, zeta.PauseExpirationTime, "PAUSED consumer must carry pause_expiration_time")
+	require.Equal(t, pauseExpiresAt, *zeta.PauseExpirationTime)
 
 	// Fresh keeper B.
 	pkB, ctxB, ctrlB, stakingB := testkeeper.GetProviderKeeperAndCtx(t, testkeeper.NewInMemKeeperParams(t))
@@ -416,6 +543,54 @@ func TestGenesisRoundTrip(t *testing.T) {
 	require.Equal(t, assignedProviderConsAddr, gotProvider)
 	require.Len(t, pkB.GetAllConsumerAddrsToPrune(ctxB, keyedConsumerID), 1,
 		"ConsumerAddrsToPrune lost across round-trip")
+
+	// Downtime-detection state must also reconnect across the round-trip.
+	gotPending, err := pkB.PendingDowntimeSlashes.Get(ctxB,
+		collections.Join3(keyedConsumerID, downtimeProviderAddr.ToSdkConsAddr().Bytes(), int64(149)))
+	require.NoError(t, err, "PendingDowntimeSlashes lost across round-trip")
+	require.Equal(t, pendingSlash, gotPending)
+	gotPrevious, err := pkB.PreviousDowntimeParams.Get(ctxB)
+	require.NoError(t, err, "PreviousDowntimeParams lost across round-trip")
+	require.Equal(t, previousDowntimeParams, gotPrevious)
+
+	require.Equal(t, customInfractionParams, pkB.GetInfractionParams(ctxB),
+		"InfractionParameters lost across round-trip")
+
+	// WithheldFeeRecords, AcceptedDowntimeWindows, DowntimeWindowFloors, and
+	// EpochDowntime must also reconnect across the round-trip.
+	gotWithheld, err := pkB.WithheldFeeRecords.Get(ctxB,
+		collections.Join(keyedConsumerID, downtimeProviderAddr.ToSdkConsAddr().Bytes()))
+	require.NoError(t, err, "WithheldFeeRecords lost across round-trip")
+	require.Equal(t, withheldFeeRecord, gotWithheld)
+
+	gotFirstAccepted, err := pkB.AcceptedDowntimeWindows.Get(ctxB,
+		collections.Join3(keyedConsumerID, downtimeProviderAddr.ToSdkConsAddr().Bytes(), int64(149)))
+	require.NoError(t, err, "AcceptedDowntimeWindows lost across round-trip")
+	require.Equal(t, providertypes.AcceptedDowntimeWindow{WindowStart: 100, AcceptedAt: acceptedAt}, gotFirstAccepted)
+	gotSecondAccepted, err := pkB.AcceptedDowntimeWindows.Get(ctxB,
+		collections.Join3(keyedConsumerID, downtimeProviderAddr.ToSdkConsAddr().Bytes(), int64(199)))
+	require.NoError(t, err, "second AcceptedDowntimeWindows record lost across round-trip")
+	require.Equal(t, providertypes.AcceptedDowntimeWindow{WindowStart: 150, AcceptedAt: acceptedAt}, gotSecondAccepted)
+
+	gotFloor, err := pkB.DowntimeWindowFloors.Get(ctxB,
+		collections.Join(keyedConsumerID, downtimeProviderAddr.ToSdkConsAddr().Bytes()))
+	require.NoError(t, err, "DowntimeWindowFloors lost across round-trip")
+	require.Equal(t, int64(99), gotFloor)
+
+	require.True(t, pkB.IsEpochDowntime(ctxB, keyedConsumerID, downtimeProviderAddr.ToSdkConsAddr()),
+		"EpochDowntime lost across round-trip")
+
+	// The PAUSED consumer's pause-expiration queue must be rebuilt from the
+	// per-consumer pause_expiration_time, mirroring the removal-time queue.
+	const zetaConsumerID uint64 = 5
+	require.Equal(t, providertypes.CONSUMER_PHASE_PAUSED, pkB.GetConsumerPhase(ctxB, zetaConsumerID))
+	gotPET, err := pkB.GetConsumerPauseExpirationTime(ctxB, zetaConsumerID)
+	require.NoError(t, err, "ConsumerPauseExpirationTime lost across round-trip")
+	require.Equal(t, pauseExpiresAt, gotPET)
+	autoStopIds, err := pkB.GetConsumersToBeAutoStopped(ctxB, pauseExpiresAt)
+	require.NoError(t, err)
+	require.Equal(t, []uint64{zetaConsumerID}, autoStopIds.Ids,
+		"pause-expiration queue not rebuilt at InitGenesis")
 
 	expB := pkB.ExportGenesis(ctxB)
 
@@ -650,4 +825,38 @@ func TestInitGenesis_RebuildsDerivedCollections(t *testing.T) {
 
 	_, err = k.FeePoolAddressToConsumerId.Get(ctx, k.GetConsumerFeePoolAddress(1))
 	require.ErrorIs(t, err, collections.ErrNotFound)
+}
+
+// TestInitGenesisPanicsOnNilDowntimeSlashFraction verifies that InitGenesis
+// halts on infraction parameters whose downtime SlashFraction is a nil
+// LegacyDec -- the value a genesis JSON that omits the slash_fraction key
+// deserializes to -- instead of storing a zero slash ceiling.
+func TestInitGenesisPanicsOnNilDowntimeSlashFraction(t *testing.T) {
+	k, ctx, ctrl, _ := testkeeper.GetProviderKeeperAndCtx(t, testkeeper.NewInMemKeeperParams(t))
+	defer ctrl.Finish()
+
+	gs := providertypes.DefaultGenesisState()
+	ip := providertypes.DefaultInfractionParameters()
+	ip.Downtime.SlashFraction = math.LegacyDec{}
+	gs.InfractionParameters = &ip
+
+	var recovered any
+	func() {
+		defer func() { recovered = recover() }()
+		k.InitGenesis(ctx, gs)
+	}()
+	require.NotNil(t, recovered)
+	require.Contains(t, fmt.Sprint(recovered), "slash_fraction")
+}
+
+// TestInitGenesisAcceptsDefaultGenesis verifies that the infraction-parameter
+// check in InitGenesis accepts the module's own default genesis state.
+func TestInitGenesisAcceptsDefaultGenesis(t *testing.T) {
+	k, ctx, ctrl, mocks := testkeeper.GetProviderKeeperAndCtx(t, testkeeper.NewInMemKeeperParams(t))
+	defer ctrl.Finish()
+
+	// InitGenesisValUpdates queries the staking keeper for the validator set.
+	mocks.MockStakingKeeper.EXPECT().GetBondedValidatorsByPower(gomock.Any()).Return(nil, nil).Times(1)
+
+	require.NotPanics(t, func() { k.InitGenesis(ctx, providertypes.DefaultGenesisState()) })
 }

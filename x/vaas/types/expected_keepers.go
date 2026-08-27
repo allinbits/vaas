@@ -58,6 +58,14 @@ type SlashingKeeper interface {
 	IsTombstoned(context.Context, sdk.ConsAddress) bool
 }
 
+// PhotonKeeper exposes the photon-to-bond-denom conversion rate. The
+// embedding application (AtomOne) wires x/photon here; the standalone
+// provider app wires a fixed-rate stub.
+type PhotonKeeper interface {
+	// ConversionRate returns how many photons are minted per bond token.
+	ConversionRate(ctx context.Context) (math.LegacyDec, error)
+}
+
 // ClientKeeper defines the expected IBC client keeper for v1 operations.
 type ClientKeeper interface {
 	CreateClient(ctx sdk.Context, clientType string, clientState, consensusState []byte) (string, error)

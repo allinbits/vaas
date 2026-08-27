@@ -197,11 +197,33 @@ func (k Keeper) discoverActiveConsumerClient(ctx sdk.Context, consumerId uint64,
 }
 
 func (k Keeper) SendVSCPacketsToChain(ctx sdk.Context, consumerId uint64, clientId string) error {
+	// EndBlock cannot fail the block over a relayer or client hiccup: any
+	// send error is logged (inside sendVSCPacketsToChainStrict) and
+	// swallowed here, leaving the packets queued for a retry next epoch.
+	// The liveness sweep owns eventually removing a consumer that never
+	// resumes acknowledging.
+	_ = k.sendVSCPacketsToChainStrict(ctx, consumerId, clientId)
+	return nil
+}
+
+// sendVSCPacketsToChainStrict sends every pending VSC packet for a consumer
+// over the given IBC v2 client, in order, stopping at and returning the
+// first send error instead of swallowing it. On success all pending packets
+// have been sent and are cleared; on failure the packets from the failing
+// one onward remain queued untouched, so a retry (next epoch, or a repeated
+// call) resends exactly what did not go through.
+//
+// This is the shared implementation behind two callers with different error
+// contracts: SendVSCPacketsToChain (the EndBlock wrapper above) swallows the
+// error since EndBlock must not fail the block; ResumeConsumerChain calls
+// this directly and propagates the error, since a resume tx that cannot
+// actually deliver its forced resync snapshot must not report success.
+func (k Keeper) sendVSCPacketsToChainStrict(ctx sdk.Context, consumerId uint64, clientId string) error {
 	if k.channelKeeperV2 == nil {
 		k.Logger(ctx).Debug("IBC v2 channel keeper not configured, skipping send",
 			"consumerId", consumerId,
 		)
-		return nil
+		return fmt.Errorf("IBC v2 channel keeper not configured")
 	}
 
 	timeoutPeriod := min(k.GetVAASTimeoutPeriod(ctx), channeltypesv2.MaxTimeoutDelta)
@@ -232,12 +254,12 @@ func (k Keeper) SendVSCPacketsToChain(ctx sdk.Context, consumerId uint64, client
 					"clientId", clientId,
 					"vscid", data.ValsetUpdateId,
 				)
-				return nil
+				return err
 			}
 
 			k.Logger(ctx).Error("cannot send VSC, leaving packet data stored; liveness sweep owns removal",
 				"consumerId", consumerId, "clientId", clientId, "vscid", data.ValsetUpdateId, "err", err.Error())
-			return nil
+			return err
 		}
 
 		k.Logger(ctx).Info("VSCPacket sent:",
@@ -253,6 +275,18 @@ func (k Keeper) SendVSCPacketsToChain(ctx sdk.Context, consumerId uint64, client
 	k.DeletePendingVSCPackets(ctx, consumerId)
 
 	return nil
+}
+
+// buildVSCPacket assembles a VSC packet for a consumer, stamping the
+// consumer's current debt flag, the snapshot flag, and the provider's
+// current downtime params in one place for every queueing path.
+func (k Keeper) buildVSCPacket(ctx sdk.Context, consumerId uint64, valUpdates []abci.ValidatorUpdate, valUpdateID uint64, isSnapshot bool) vaastypes.ValidatorSetChangePacketData {
+	packet := vaastypes.NewValidatorSetChangePacketData(valUpdates, valUpdateID)
+	packet.ConsumerInDebt = k.IsConsumerInDebt(ctx, consumerId)
+	packet.IsSnapshot = isSnapshot
+	dp := k.CurrentDowntimeParams(ctx)
+	packet.DowntimeParams = &dp
+	return packet
 }
 
 // QueueVSCPackets queues latest validator updates for every consumer chain
@@ -274,8 +308,15 @@ func (k Keeper) QueueVSCPackets(ctx sdk.Context) error {
 		}
 
 		// Send a full snapshot when the consumer is behind (i.e. it has
-		// unacknowledged packets), otherwise send a diff.
-		isSnapshot := k.GetConsumerHighestAckedVscId(ctx, consumerId) < k.GetConsumerHighestSentVscId(ctx, consumerId)
+		// unacknowledged packets) or still has a packet stuck in the local
+		// send queue (e.g. a client that hasn't been discovered yet, or a
+		// prior send that failed and left highestSent unadvanced). Invariant:
+		// never stack a diff behind an undelivered packet -- a diff assumes
+		// the consumer already applied everything before it, which may never
+		// hold once packets can be dropped or reordered; a snapshot converges
+		// regardless of arrival order.
+		isSnapshot := k.GetConsumerHighestAckedVscId(ctx, consumerId) < k.GetConsumerHighestSentVscId(ctx, consumerId) ||
+			len(k.GetPendingVSCPackets(ctx, consumerId)) > 0
 
 		valUpdates, err := k.ComputeConsumerNextValSet(ctx, bondedValidators, consumerId, currentValSet, isSnapshot)
 		if err != nil {
@@ -289,9 +330,7 @@ func (k Keeper) QueueVSCPackets(ctx sdk.Context) error {
 		// transitions propagate at epoch boundaries without needing a
 		// separate mid-epoch notification mechanism. The extra traffic is
 		// bounded: at most one packet per consumer per epoch.
-		packet := vaastypes.NewValidatorSetChangePacketData(valUpdates, valUpdateID)
-		packet.ConsumerInDebt = k.IsConsumerInDebt(ctx, consumerId)
-		packet.IsSnapshot = isSnapshot
+		packet := k.buildVSCPacket(ctx, consumerId, valUpdates, valUpdateID, isSnapshot)
 		k.AppendPendingVSCPackets(ctx, consumerId, packet)
 		k.Logger(ctx).Info("VSCPacket enqueued:",
 			"consumerId", consumerId,
@@ -299,6 +338,44 @@ func (k Keeper) QueueVSCPackets(ctx sdk.Context) error {
 			"len updates", len(valUpdates),
 		)
 	}
+
+	k.IncrementValidatorSetUpdateId(ctx)
+
+	return nil
+}
+
+// QueueImmediateSnapshotVSCPacket queues a full-snapshot VSC packet for a
+// single consumer outside the normal epoch cadence, sharing
+// ComputeConsumerNextValSet's snapshot path with QueueVSCPackets (isSnapshot
+// forced true here rather than derived from the acked/sent comparison) and
+// advancing the global valset-update-id counter the same way QueueVSCPackets
+// does, so the consumer's monotonic dedup logic treats it as a fresh update.
+// Used by ResumeConsumerChain to force a prompt resync instead of waiting for
+// the next epoch boundary.
+func (k Keeper) QueueImmediateSnapshotVSCPacket(ctx sdk.Context, consumerId uint64) error {
+	valUpdateID := k.GetValidatorSetUpdateId(ctx)
+
+	bondedValidators, err := k.GetLastBondedValidators(ctx)
+	if err != nil {
+		return fmt.Errorf("getting bonded validators: %w", err)
+	}
+
+	currentValSet, err := k.GetConsumerValSet(ctx, consumerId)
+	if err != nil {
+		return fmt.Errorf("getting consumer current validator set, consumerId(%d): %w", consumerId, err)
+	}
+
+	valUpdates, err := k.ComputeConsumerNextValSet(ctx, bondedValidators, consumerId, currentValSet, true)
+	if err != nil {
+		return fmt.Errorf("computing consumer next validator set, consumerId(%d): %w", consumerId, err)
+	}
+
+	packet := k.buildVSCPacket(ctx, consumerId, valUpdates, valUpdateID, true)
+	k.AppendPendingVSCPackets(ctx, consumerId, packet)
+	k.Logger(ctx).Info("immediate snapshot VSCPacket enqueued:",
+		"consumerId", consumerId,
+		"vscID", valUpdateID,
+	)
 
 	k.IncrementValidatorSetUpdateId(ctx)
 

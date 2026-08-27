@@ -12,6 +12,8 @@ import (
 	clienttypes "github.com/cosmos/ibc-go/v10/modules/core/02-client/types"
 	channeltypesv2 "github.com/cosmos/ibc-go/v10/modules/core/04-channel/v2/types"
 
+	stakingtypes "github.com/cosmos/cosmos-sdk/x/staking/types"
+
 	testkeeper "github.com/allinbits/vaas/testutil/keeper"
 	providertypes "github.com/allinbits/vaas/x/vaas/provider/types"
 	vaastypes "github.com/allinbits/vaas/x/vaas/types"
@@ -280,4 +282,85 @@ func TestHighestSentAdvancesOnlyOnSuccess(t *testing.T) {
 		require.Equal(t, uint64(3), k.GetConsumerHighestSentVscId(ctx, consumerId))
 		require.Len(t, k.GetPendingVSCPackets(ctx, consumerId), 2)
 	})
+}
+
+// TestQueueVSCPacketsStampsDowntimeParams verifies that every packet queued by
+// QueueVSCPackets carries the provider's current downtime detection params, so
+// consumers stay in sync with the provider without a dedicated update message.
+func TestQueueVSCPacketsStampsDowntimeParams(t *testing.T) {
+	k, ctx, ctrl, mocks := testkeeper.GetProviderKeeperAndCtx(t, testkeeper.NewInMemKeeperParams(t))
+	defer ctrl.Finish()
+
+	k.SetInfractionParams(ctx, providertypes.DefaultInfractionParameters())
+
+	cid := k.FetchAndIncrementConsumerId(ctx)
+	k.SetConsumerPhase(ctx, cid, providertypes.CONSUMER_PHASE_LAUNCHED)
+
+	mocks.MockStakingKeeper.EXPECT().MaxValidators(gomock.Any()).Return(uint32(100), nil).AnyTimes()
+	mocks.MockStakingKeeper.EXPECT().GetBondedValidatorsByPower(gomock.Any()).Return([]stakingtypes.Validator{}, nil).AnyTimes()
+
+	require.NoError(t, k.QueueVSCPackets(ctx))
+
+	pending := k.GetPendingVSCPackets(ctx, cid)
+	require.Len(t, pending, 1)
+	require.NotNil(t, pending[0].DowntimeParams)
+	require.Equal(t, int64(600), pending[0].DowntimeParams.SignedBlocksWindow)
+}
+
+// TestQueueVSCPacketsSkipsPausedConsumer verifies that a paused consumer gets
+// no VSC packet queued: QueueVSCPackets only iterates
+// GetAllLaunchedConsumerIds, which excludes PAUSED (and every other
+// non-LAUNCHED phase).
+func TestQueueVSCPacketsSkipsPausedConsumer(t *testing.T) {
+	k, ctx, ctrl, mocks := testkeeper.GetProviderKeeperAndCtx(t, testkeeper.NewInMemKeeperParams(t))
+	defer ctrl.Finish()
+
+	k.SetInfractionParams(ctx, providertypes.DefaultInfractionParameters())
+
+	cid := k.FetchAndIncrementConsumerId(ctx)
+	k.SetConsumerPhase(ctx, cid, providertypes.CONSUMER_PHASE_PAUSED)
+
+	mocks.MockStakingKeeper.EXPECT().MaxValidators(gomock.Any()).Return(uint32(100), nil).AnyTimes()
+	mocks.MockStakingKeeper.EXPECT().GetBondedValidatorsByPower(gomock.Any()).Return([]stakingtypes.Validator{}, nil).AnyTimes()
+
+	require.NoError(t, k.QueueVSCPackets(ctx))
+
+	require.Empty(t, k.GetPendingVSCPackets(ctx, cid))
+}
+
+// TestQueueVSCPacketsSnapshotsWhileUndeliveredPacketQueued verifies that
+// QueueVSCPackets forces a full snapshot when a previously queued packet is
+// still stuck in PendingVSCPackets (e.g. a prior local send failed and
+// highestSent never advanced), even though acked == sent would otherwise
+// read as "caught up". Stacking a diff behind that undelivered packet would
+// let the consumer apply the diff first (out-of-order delivery) and drop
+// the earlier packet as stale, permanently diverging while the provider
+// believes -- via acks -- that it has converged.
+func TestQueueVSCPacketsSnapshotsWhileUndeliveredPacketQueued(t *testing.T) {
+	k, ctx, ctrl, mocks := testkeeper.GetProviderKeeperAndCtx(t, testkeeper.NewInMemKeeperParams(t))
+	defer ctrl.Finish()
+
+	k.SetInfractionParams(ctx, providertypes.DefaultInfractionParameters())
+
+	cid := k.FetchAndIncrementConsumerId(ctx)
+	k.SetConsumerPhase(ctx, cid, providertypes.CONSUMER_PHASE_LAUNCHED)
+
+	mocks.MockStakingKeeper.EXPECT().MaxValidators(gomock.Any()).Return(uint32(100), nil).AnyTimes()
+	mocks.MockStakingKeeper.EXPECT().GetBondedValidatorsByPower(gomock.Any()).Return([]stakingtypes.Validator{}, nil).AnyTimes()
+
+	// Simulate a failed local send from a prior epoch: the packet stays
+	// queued and highestSent/highestAcked are both left at 0, so a naive
+	// acked < sent check would read as caught up.
+	k.AppendPendingVSCPackets(ctx, cid, vaastypes.ValidatorSetChangePacketData{
+		ValidatorUpdates: []abci.ValidatorUpdate{},
+		ValsetUpdateId:   1,
+	})
+	require.Equal(t, k.GetConsumerHighestAckedVscId(ctx, cid), k.GetConsumerHighestSentVscId(ctx, cid))
+
+	require.NoError(t, k.QueueVSCPackets(ctx))
+
+	pending := k.GetPendingVSCPackets(ctx, cid)
+	require.Len(t, pending, 2)
+	require.True(t, pending[1].IsSnapshot,
+		"packet queued behind an undelivered packet must be a snapshot")
 }
