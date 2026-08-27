@@ -95,11 +95,13 @@ type PhotonFeeKeeper interface {
 //     the chain the moment the policy activates, with the relayer unable to
 //     deliver the very transfers that create the fee denom. Governance stays
 //     exempt for the same reason it passes the restricted msg filter:
-//     recovery must never be priced in a token the chain may not hold. What
-//     exempt transactions pay, if anything, is node-local min-gas-prices
-//     policy; a tokenless core shard launches with empty min-gas-prices and
-//     genesis-declared relayer and owner accounts, and its validators can
-//     raise prices once photon circulates.
+//     recovery must never be priced in a token the chain may not hold. The
+//     exemption holds at the node fee floor too: the reference app wires
+//     InfrastructureExemptTxFeeChecker into fee deduction, so raising
+//     minimum-gas-prices never prices this traffic (see that checker's doc).
+//     A tokenless core shard launches with genesis-declared relayer and owner
+//     accounts, and any floor its validators set belongs in the voucher denom
+//     once the pin is known.
 //
 // Note the decorator constrains the fee denom, not the amount; minimum-fee
 // policy stays with the fee market (validator min-gas-prices and the fee

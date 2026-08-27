@@ -18,15 +18,17 @@ import (
 	consumertypes "github.com/allinbits/vaas/x/vaas/consumer/types"
 )
 
-// mockFeeTx is a minimal sdk.FeeTx for testing the photon fee decorator.
+// mockFeeTx is a minimal sdk.FeeTx for testing the photon fee decorator and
+// the fee checker.
 type mockFeeTx struct {
 	fee  sdk.Coins
 	msgs []sdk.Msg
+	gas  uint64
 }
 
 func (m mockFeeTx) GetMsgs() []sdk.Msg                    { return m.msgs }
 func (m mockFeeTx) GetMsgsV2() ([]protov2.Message, error) { return nil, nil }
-func (m mockFeeTx) GetGas() uint64                        { return 0 }
+func (m mockFeeTx) GetGas() uint64                        { return m.gas }
 func (m mockFeeTx) GetFee() sdk.Coins                     { return m.fee }
 func (m mockFeeTx) FeePayer() []byte                      { return nil }
 func (m mockFeeTx) FeeGranter() []byte                    { return nil }
