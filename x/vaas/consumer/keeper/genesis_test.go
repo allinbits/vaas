@@ -230,6 +230,137 @@ func TestGenesisRoundTripLastVSCRecvTime(t *testing.T) {
 	require.Equal(t, lastRecv, ck2.GetLastVSCRecvTime(ctx2))
 }
 
+// TestVSCStalenessClockArmsAtFirstWallClockBlock verifies the VSC staleness
+// clock (see IsVSCStale) arms at the first block after genesis rather than at
+// InitGenesis: under BFT time the genesis block's timestamp is the genesis
+// file's genesis_time, which may predate launch by however long the genesis
+// ceremony took, and arming with it would burn safe-mode budget before the
+// chain produced a block. A restart genesis carrying the exported value keeps
+// it; one without the field arms at the next block the same way; PreVAAS
+// chains stay unarmed until their changeover, since the standalone staking
+// keeper still runs the chain there and VSC staleness is not yet meaningful.
+func TestVSCStalenessClockArmsAtFirstWallClockBlock(t *testing.T) {
+	provClientID := "07-tendermint-0"
+
+	cId := crypto.NewCryptoIdentityFromIntSeed(893243)
+	validator := tmtypes.NewValidator(cId.TMCryptoPubKey(), 1)
+	valset := []abci.ValidatorUpdate{tmtypes.TM2PB.ValidatorUpdate(validator)}
+
+	provConsState := ibctmtypes.NewConsensusState(
+		time.Time{},
+		commitmenttypes.NewMerkleRoot([]byte("apphash")),
+		tmtypes.NewValidatorSet([]*tmtypes.Validator{validator}).Hash(),
+	)
+	provClientState := ibctmtypes.NewClientState(
+		"provider",
+		ibctmtypes.DefaultTrustLevel,
+		0,
+		stakingtypes.DefaultUnbondingTime,
+		time.Second*10,
+		clienttypes.Height{},
+		commitmenttypes.GetSDKSpecs(),
+		[]string{"upgrade", "upgradedIBCState"},
+	)
+
+	params := vaastypes.DefaultConsumerParams()
+	params.Enabled = true
+
+	t.Run("new chain arms at the first block after genesis, with wall-clock time", func(t *testing.T) {
+		ck, ctx, ctrl, _ := testkeeper.GetConsumerKeeperAndCtx(t, testkeeper.NewInMemKeeperParams(t))
+		defer ctrl.Finish()
+
+		genesisTime := time.Unix(1_850_000_000, 0).UTC()
+		launchTime := genesisTime.Add(48 * time.Hour) // ceremony finished long after the file was written
+		ctx = ctx.WithBlockHeight(1).WithBlockTime(genesisTime)
+
+		ck.InitGenesis(ctx, consumertypes.NewInitialGenesisState(provClientState, provConsState, valset, params))
+
+		has, err := ck.LastVSCRecvTime.Has(ctx)
+		require.NoError(t, err)
+		require.False(t, has, "InitGenesis must not arm the clock: the genesis timestamp may predate launch")
+
+		// The genesis block itself still carries genesis_time; no arming.
+		ck.ArmVSCStalenessClock(ctx)
+		has, err = ck.LastVSCRecvTime.Has(ctx)
+		require.NoError(t, err)
+		require.False(t, has, "the genesis block carries genesis_time, not wall-clock time")
+
+		// The next block carries wall-clock time; the clock arms with it.
+		armCtx := ctx.WithBlockHeight(2).WithBlockTime(launchTime)
+		ck.ArmVSCStalenessClock(armCtx)
+		require.Equal(t, launchTime, ck.GetLastVSCRecvTime(armCtx))
+
+		// Budget counts from launch, not from the genesis file: just under
+		// the threshold after launch must not read stale (armed at genesis
+		// time it would), just over must.
+		require.False(t, ck.IsVSCStale(ctx.WithBlockTime(launchTime.Add(params.SafeModeThreshold-time.Minute))))
+		require.True(t, ck.IsVSCStale(ctx.WithBlockTime(launchTime.Add(params.SafeModeThreshold+time.Minute))),
+			"a never-connected consumer must cross the safe-mode threshold")
+
+		// The armed clock is exported, keeping restarts consistent.
+		exported := ck.ExportGenesis(armCtx)
+		require.NotNil(t, exported.LastVscRecvTime, "export must carry the armed clock")
+		require.Equal(t, launchTime, *exported.LastVscRecvTime)
+	})
+
+	t.Run("a clock restored from a restart genesis is never re-armed", func(t *testing.T) {
+		ck, ctx, ctrl, _ := testkeeper.GetConsumerKeeperAndCtx(t, testkeeper.NewInMemKeeperParams(t))
+		defer ctrl.Finish()
+
+		armedAt := time.Unix(1_850_000_000, 0).UTC()
+		genesis := consumertypes.NewRestartGenesisState(
+			provClientID,
+			valset,
+			[]consumertypes.HeightToValsetUpdateID{{ValsetUpdateId: 1, Height: 1}},
+			params,
+		)
+		genesis.LastVscRecvTime = &armedAt
+
+		ctx = ctx.WithBlockHeight(100).WithBlockTime(armedAt.Add(time.Hour))
+		ck.InitGenesis(ctx, genesis)
+
+		ck.ArmVSCStalenessClock(ctx.WithBlockHeight(101).WithBlockTime(armedAt.Add(2 * time.Hour)))
+		require.Equal(t, armedAt, ck.GetLastVSCRecvTime(ctx), "arming must never overwrite a set clock")
+	})
+
+	t.Run("restart genesis without the field arms at the next block", func(t *testing.T) {
+		ck, ctx, ctrl, _ := testkeeper.GetConsumerKeeperAndCtx(t, testkeeper.NewInMemKeeperParams(t))
+		defer ctrl.Finish()
+
+		genesis := consumertypes.NewRestartGenesisState(
+			provClientID,
+			valset,
+			[]consumertypes.HeightToValsetUpdateID{{ValsetUpdateId: 1, Height: 1}},
+			params,
+		)
+		restartTime := time.Unix(1_850_000_000, 0).UTC()
+		ctx = ctx.WithBlockHeight(100).WithBlockTime(restartTime)
+		ck.InitGenesis(ctx, genesis)
+
+		// The restart's own genesis block still carries the file's timestamp.
+		ck.ArmVSCStalenessClock(ctx)
+		has, err := ck.LastVSCRecvTime.Has(ctx)
+		require.NoError(t, err)
+		require.False(t, has)
+
+		nextBlock := restartTime.Add(5 * time.Second)
+		ck.ArmVSCStalenessClock(ctx.WithBlockHeight(101).WithBlockTime(nextBlock))
+		require.Equal(t, nextBlock, ck.GetLastVSCRecvTime(ctx))
+	})
+
+	t.Run("preVAAS chains stay unarmed", func(t *testing.T) {
+		ck, ctx, ctrl, _ := testkeeper.GetConsumerKeeperAndCtx(t, testkeeper.NewInMemKeeperParams(t))
+		defer ctrl.Finish()
+
+		ck.SetPreVAASTrue(ctx)
+
+		ck.ArmVSCStalenessClock(ctx.WithBlockHeight(2).WithBlockTime(time.Unix(1_850_000_000, 0).UTC()))
+		has, err := ck.LastVSCRecvTime.Has(ctx)
+		require.NoError(t, err)
+		require.False(t, has, "standalone staking still runs a preVAAS chain; VSC staleness is not meaningful yet")
+	})
+}
+
 // TestGenesisRoundTripDowntimeState verifies that the consumer's
 // downtime-detection state (in-progress missed-block bitmaps, first-tracked
 // heights, staged downtime params, and queued evidence packets) survives an
@@ -367,6 +498,47 @@ func TestGenesisRoundTripProviderChainId(t *testing.T) {
 	gotChainId, ok := ck2.GetProviderChainId(ctx2)
 	require.True(t, ok, "ProviderChainId lost across round-trip")
 	require.Equal(t, providerChainId, gotChainId)
+
+	reExported := ck2.ExportGenesis(ctx2)
+	require.Equal(t, exported, reExported, "round-trip must be a fixed point")
+}
+
+// TestGenesisRoundTripPhotonFeesEnabled verifies the photon-only fee policy is
+// carried by the consumer params through genesis: a genesis that opts in leaves
+// the ante decorator enforcing right after InitGenesis, and an export/import
+// restart preserves the opt-in rather than silently reverting the chain to the
+// default (off) policy.
+func TestGenesisRoundTripPhotonFeesEnabled(t *testing.T) {
+	provClientID := "tendermint-07"
+	params := vaastypes.DefaultConsumerParams()
+	params.Enabled = true
+	params.PhotonFeesEnabled = true
+
+	pubKey := ed25519.GenPrivKey().PubKey()
+	tmPK, err := cryptocodec.ToCmtPubKeyInterface(pubKey)
+	require.NoError(t, err)
+	validator := tmtypes.NewValidator(tmPK, 1)
+	cVal, err := consumertypes.NewCCValidator(validator.Address.Bytes(), 1, pubKey)
+	require.NoError(t, err)
+
+	ck, ctx, ctrl, _ := testkeeper.GetConsumerKeeperAndCtx(t, testkeeper.NewInMemKeeperParams(t))
+	defer ctrl.Finish()
+	ck.InitGenesis(ctx, consumertypes.NewRestartGenesisState(
+		provClientID,
+		nil,
+		[]consumertypes.HeightToValsetUpdateID{{ValsetUpdateId: 0, Height: 0}},
+		params,
+	))
+	require.True(t, ck.PhotonFeesEnabled(ctx), "genesis opt-in must reach the stored params")
+	ck.SetCCValidator(ctx, cVal)
+
+	exported := ck.ExportGenesis(ctx)
+	require.True(t, exported.Params.PhotonFeesEnabled, "export must carry photon_fees_enabled")
+
+	ck2, ctx2, ctrl2, _ := testkeeper.GetConsumerKeeperAndCtx(t, testkeeper.NewInMemKeeperParams(t))
+	defer ctrl2.Finish()
+	ck2.InitGenesis(ctx2, exported)
+	require.True(t, ck2.PhotonFeesEnabled(ctx2), "photon_fees_enabled lost across round-trip")
 
 	reExported := ck2.ExportGenesis(ctx2)
 	require.Equal(t, exported, reExported, "round-trip must be a fixed point")

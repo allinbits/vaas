@@ -31,12 +31,22 @@ const (
 	// DefaultSignedBlocksWindow that a validator must sign to avoid a downtime
 	// infraction.
 	DefaultMinSignedPerWindow = "0.5"
+
+	// DefaultPhotonFeesEnabled leaves the photon-only fee policy off, keeping
+	// the consumer implementation agnostic about the provider's fee token
+	// unless the chain opts in. See PhotonFeeDecorator in
+	// x/vaas/consumer/ante.
+	DefaultPhotonFeesEnabled = false
 )
 
 // NewConsumerParams creates new consumer parameters with provided arguments.
 // The downtime-window fields (SignedBlocksWindow, MinSignedPerWindow) are
 // provider-owned and always take their default values here; the provider
 // updates them directly on the stored ConsumerParams via VSC packets.
+// PhotonFeesEnabled stays at its default (off): the photon fee policy is a
+// consumer-local opt-in that the provider-authored genesis never enables. A
+// chain opts in through a hand-authored genesis or a later MsgUpdateParams
+// from its params authority, where the embedding app wires one.
 func NewConsumerParams(enabled bool,
 	vaasTimeoutPeriod time.Duration,
 	historicalEntries int64,
@@ -51,6 +61,7 @@ func NewConsumerParams(enabled bool,
 		SafeModeThreshold:  safeModeThreshold,
 		SignedBlocksWindow: DefaultSignedBlocksWindow,
 		MinSignedPerWindow: math.LegacyMustNewDecFromStr(DefaultMinSignedPerWindow),
+		PhotonFeesEnabled:  DefaultPhotonFeesEnabled,
 	}
 }
 

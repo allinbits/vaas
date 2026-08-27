@@ -72,8 +72,11 @@ func (k Keeper) InitGenesis(ctx sdk.Context, state *types.GenesisState) []abci.V
 		return []abci.ValidatorUpdate{}
 	}
 
-	// Restore the VSC staleness clock on a restart (see ExportGenesis); absent
-	// (new chain / never received a VSC) leaves the never-stale default.
+	// Restore the VSC staleness clock (see IsVSCStale) from a restart export.
+	// A genesis without the field is deliberately left unarmed here: the
+	// genesis block's timestamp is the genesis file's genesis_time, which may
+	// predate launch, so ArmVSCStalenessClock arms the clock at the first
+	// block that carries wall-clock time instead.
 	if state.LastVscRecvTime != nil {
 		k.SetLastVSCRecvTime(ctx, *state.LastVscRecvTime)
 	}
@@ -154,9 +157,11 @@ func (k Keeper) ExportGenesis(ctx sdk.Context) (genesis *types.GenesisState) {
 		genesis.ProviderChainId = chainId
 	}
 
-	// Preserve the VSC staleness clock across a restart (see IsVSCStale): export
-	// the last-VSC-recv time only when actually recorded, so a consumer that has
-	// not received a VSC keeps the absent-default (never stale) on import.
+	// Preserve the VSC staleness clock across a restart (see IsVSCStale). On a
+	// chain that launched as NewChain the clock is always set (armed at
+	// genesis), so a restart export always carries it; the conditional covers
+	// keepers where it was never armed (a PreVAAS chain still waiting for its
+	// first VSC), which keep the absent-default (never stale) on import.
 	has, err := k.LastVSCRecvTime.Has(ctx)
 	if err != nil {
 		panic(err)

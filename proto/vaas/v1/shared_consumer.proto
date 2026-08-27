@@ -63,6 +63,16 @@ message ConsumerParams {
     // the provider from the consumer's registered owner when it authors the
     // consumer genesis; empty leaves the pin to governance alone.
     string owner_address = 8 [(cosmos_proto.scalar) = "cosmos.AddressString"];
+
+    // Whether transaction fees must be paid exclusively in the one-hop photon
+    // voucher received from the provider (an AtomOne core-shard requirement).
+    // Consumer-local and off by default; the provider-authored consumer
+    // genesis always writes it off, so a chain opts in through a hand-authored
+    // genesis or a later MsgUpdateParams from its params authority, where the
+    // embedding app wires one (the reference consumer app wires none). The
+    // switch lives here, in consensus state, because the ante policy it drives
+    // also runs in FinalizeBlock.
+    bool photon_fees_enabled = 9;
 }
 
 // ConsumerGenesisState defines shared genesis information between provider and

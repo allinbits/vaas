@@ -13,10 +13,11 @@ zooms in on what keeps a `LAUNCHED` consumer healthy and what happens when it is
 The provider sends a Validator Set Change (VSC) packet to each launched consumer every
 epoch. Two facts about that delivery shape the design:
 
-1. **The packet timeout is effectively 24h.** VSC packets are sent with a timeout of
-   `min(VaasTimeoutPeriod, MaxTimeoutDelta)`, and IBC v2 hard-caps `MaxTimeoutDelta` at 24h.
-   A packet timeout is therefore a weak signal -- a 24h outage of a single relayer or RPC
-   produces one -- so removing a consumer must not hinge on a single delivery failure.
+1. **A packet timeout is a short, weak signal.** VSC packets are sent with a timeout of
+   `min(VaasTimeoutPeriod, MaxTimeoutDelta)`: 1h at the default `VaasTimeoutPeriod`, well
+   inside the 24h ceiling IBC v2 hard-caps `MaxTimeoutDelta` to. An hour of relayer or RPC
+   downtime is enough to produce a timeout, so removing a consumer must not hinge on a single
+   delivery failure.
 2. **VSC packets are diffs.** Each packet carries only the validators that changed since the
    previous one, applied on top of the consumer's current set. A lost diff is never re-sent
    on its own, so a departed validator could otherwise linger in the consumer's active set --
@@ -68,22 +69,29 @@ time of removal.
 ## 2. Snapshot resync (self-healing)
 
 Because VSC packets are diffs, a consumer that misses packets during an outage could diverge
-from the provider's true validator set. To prevent that, the provider tracks two per-consumer
-counters: the highest VSC id it has **sent** and the highest the consumer has **acked**. A
-consumer is **behind** when:
+from the provider's true validator set. To prevent that, the provider never stacks a diff on
+a set it cannot be sure the consumer holds. When queueing the epoch's packet it sends an
+**absolute snapshot** instead of a diff if any of three conditions holds:
 
-```
-highestAcked < highestSent
-```
+- **An earlier packet is unacknowledged.** The provider tracks two per-consumer counters: the
+  highest VSC id it has **sent** and the highest the consumer has **acked**. The consumer is
+  **behind** when `highestAcked < highestSent`.
+- **A packet is still queued locally.** A send that never went out -- a client not yet
+  discovered, or a prior send that failed -- leaves pending packets queued and `highestSent`
+  unadvanced, so the acked/sent comparison alone would not catch it.
+- **The stored consumer validator set is empty.** There is nothing to diff against: the
+  consumer's first epoch, or the first epoch after a state-export restart, since the provider
+  does not export the per-consumer set. Diffing the live bonded set against an empty stored
+  set would emit only additions, never the power-0 removal for a validator that unbonded in
+  between, leaving it with consensus power on the consumer.
 
-While a consumer is behind, the provider does not send a diff. It sends an **absolute
-snapshot**: the complete current validator set, flagged with `is_snapshot = true` on the
-packet. The consumer, on receiving a snapshot, **replaces** its set with it -- setting each
+A snapshot carries the complete current validator set, flagged with `is_snapshot = true` on
+the packet. The consumer, on receiving a snapshot, **replaces** its set with it -- setting each
 listed validator to its absolute power and removing (power 0) any validator it currently has
 that the snapshot omits. Applying a snapshot is idempotent: a behind consumer converges to
 exactly the provider's current set in one packet, regardless of which intermediate packets it
-missed. Once an ack catches `highestAcked` up to `highestSent`, the provider resumes sending
-ordinary diffs.
+missed. Once the acks have caught `highestAcked` up to `highestSent` and nothing is left
+queued, the provider resumes sending ordinary diffs.
 
 The wire format gains only a single boolean (`is_snapshot`); the validator-update list is
 reused (a diff when false, the full set when true). The global VSC id counter and the
@@ -121,8 +129,11 @@ gate restricts incoming transactions to `/ibc.core.*` and `/cosmos.gov.*` messag
 rejecting value-bearing application transactions. This bounds the damage of a possibly-stale
 set: the consumer refuses to do value-bearing work under a validator set it cannot trust,
 while keeping the recovery path open -- `/ibc.core.*` still admits the incoming VSC packets
-that let the consumer resync, and `/cosmos.gov.*` keeps governance available. A freshly
-launched consumer is never treated as stale before its first VSC.
+that let the consumer resync, and `/cosmos.gov.*` keeps governance available. The staleness
+clock is armed at genesis on a new chain, so a consumer that never receives a single VSC --
+say its relayer never materializes -- enters safe mode once the threshold elapses from chain
+start, instead of running on its genesis validator set unrestricted forever; the relayer
+traffic that would deliver the first VSC is `/ibc.core.*` and passes the gate throughout.
 
 ## 5. Parameters and bounds
 
@@ -156,15 +167,16 @@ safe mode engages before the provider's sweep removes it.
 
 ## 6. Operator guidance: the liveness query
 
-Operators can observe a consumer's liveness without waiting for removal:
+Operators can observe a consumer's liveness without waiting for removal through the
+provider's `QueryConsumerLiveness` gRPC query, exposed over REST as:
 
 ```
-providerd query provider consumer-liveness <consumer-id>
+/vaas/provider/consumer_liveness/<consumer-id>
 ```
 
-It returns, all derived (no stored extra state):
+It returns one stored value and three derived from it:
 
-- `last_ack_time` -- block time of the consumer's last successful VSC ack.
+- `last_ack_time` -- the stored block time of the consumer's last successful VSC ack.
 - `grace_period` -- the derived grace for this provider.
 - `removal_eta` -- `last_ack_time + grace_period`: when the sweep will remove the consumer
   if no further ack arrives.

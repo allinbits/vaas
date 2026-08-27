@@ -46,7 +46,17 @@ func NewAnteHandler(options HandlerOptions) (sdk.AnteHandler, error) {
 		ante.NewTxTimeoutHeightDecorator(),
 		ante.NewValidateMemoDecorator(options.AccountKeeper),
 		ante.NewConsumeGasForTxSizeDecorator(options.AccountKeeper),
-		ante.NewDeductFeeDecorator(options.AccountKeeper, options.BankKeeper, options.FeegrantKeeper, options.TxFeeChecker),
+		// The photon fee policy sits immediately before fee deduction, per the
+		// decorator's contract: it vets the fee denom that DeductFeeDecorator
+		// is about to collect. It self-gates on the photon_fees_enabled
+		// consumer param, so it is wired unconditionally and no-ops on chains
+		// that did not opt in.
+		consumerante.NewPhotonFeeDecorator(options.ConsumerKeeper),
+		// The infrastructure exemption must hold at the node fee floor too:
+		// with the SDK's default checker, a raised minimum-gas-prices would
+		// price the relayer traffic the photon exemption keeps flowing. An
+		// explicitly configured checker still wins.
+		ante.NewDeductFeeDecorator(options.AccountKeeper, options.BankKeeper, options.FeegrantKeeper, txFeeCheckerOrDefault(options.TxFeeChecker)),
 		// SetPubKeyDecorator must be called before all signature verification decorators
 		ante.NewSetPubKeyDecorator(options.AccountKeeper),
 		ante.NewValidateSigCountDecorator(options.AccountKeeper),
@@ -57,4 +67,13 @@ func NewAnteHandler(options HandlerOptions) (sdk.AnteHandler, error) {
 	}
 
 	return sdk.ChainAnteDecorators(anteDecorators...), nil
+}
+
+// txFeeCheckerOrDefault returns the explicitly configured checker, or the
+// consumer's infrastructure-exempt one when none is set.
+func txFeeCheckerOrDefault(checker ante.TxFeeChecker) ante.TxFeeChecker {
+	if checker != nil {
+		return checker
+	}
+	return consumerante.InfrastructureExemptTxFeeChecker
 }

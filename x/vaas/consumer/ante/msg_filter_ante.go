@@ -72,7 +72,8 @@ func (mfd MsgFilterDecorator) AnteHandle(ctx sdk.Context, tx sdk.Tx, simulate bo
 		// canonical /ibc. prefix), the pin message itself
 		// (MsgSetProviderClient -- a filter without it would deadlock the
 		// bootstrap, unpinned because unpinned), and /cosmos.gov.* so
-		// governance can pin when the seeded owner cannot or will not.
+		// governance, where the embedding app wires it, can pin when the
+		// seeded owner cannot or will not.
 		if !isAllowedBootstrapTx(tx.GetMsgs()) {
 			return ctx, fmt.Errorf("tx contains unsupported message types at height %d", ctx.BlockHeight())
 		}
@@ -94,7 +95,9 @@ func (mfd MsgFilterDecorator) AnteHandle(ctx sdk.Context, tx sdk.Tx, simulate bo
 	//
 	// /cosmos.gov.* keeps governance alive so the community can vote on
 	// recovery (e.g. emergency funding, param changes) without requiring
-	// off-chain coordination.
+	// off-chain coordination. That presumes the embedding app wires a
+	// governance module; the reference consumer app wires none, so there
+	// the allowance is inert.
 	if mfd.ConsumerKeeper.IsConsumerInDebt(ctx) || mfd.ConsumerKeeper.IsVSCStale(ctx) {
 		if isAllowedRestrictedTx(tx.GetMsgs()) {
 			return next(ctx, tx, simulate)
