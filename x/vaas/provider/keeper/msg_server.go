@@ -369,13 +369,16 @@ func (k msgServer) UpdateConsumer(goCtx context.Context, msg *types.MsgUpdateCon
 
 	consumerId := msg.ConsumerId
 
-	// A paused consumer is deliberately excluded, unlike everywhere else that
-	// asks IsConsumerActive: an update can rewrite the infraction parameters
-	// and initialization parameters that the challenge which caused the pause
-	// was judged under, and the resume path replays state built from them.
+	// The updatable phases are named here instead of asking IsConsumerActive,
+	// which counts a paused consumer as active. Paused is deliberately
+	// excluded: an update can rewrite the infraction parameters and
+	// initialization parameters that the challenge which caused the pause was
+	// judged under, and the resume path replays state built from them.
 	// Governance resumes or removes the consumer first, then updates it.
-	if !k.Keeper.IsConsumerActive(ctx, consumerId) ||
-		k.Keeper.GetConsumerPhase(ctx, consumerId) == types.CONSUMER_PHASE_PAUSED {
+	updatePhase := k.Keeper.GetConsumerPhase(ctx, consumerId)
+	if updatePhase != types.CONSUMER_PHASE_REGISTERED &&
+		updatePhase != types.CONSUMER_PHASE_INITIALIZED &&
+		updatePhase != types.CONSUMER_PHASE_LAUNCHED {
 		return &resp, errorsmod.Wrapf(types.ErrInvalidPhase,
 			"cannot update consumer chain that is not in the registered, initialized, or launched phase: %d", consumerId)
 	}
