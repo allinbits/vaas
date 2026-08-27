@@ -9,7 +9,6 @@ import (
 	"cosmossdk.io/math"
 
 	sdk "github.com/cosmos/cosmos-sdk/types"
-	sdkgov "github.com/cosmos/cosmos-sdk/x/gov/types"
 	stakingtypes "github.com/cosmos/cosmos-sdk/x/staking/types"
 )
 
@@ -18,10 +17,7 @@ type Hooks struct {
 	k *Keeper
 }
 
-var (
-	_ stakingtypes.StakingHooks = Hooks{}
-	_ sdkgov.GovHooks           = Hooks{}
-)
+var _ stakingtypes.StakingHooks = Hooks{}
 
 // Hooks returns new provider hooks
 func (k *Keeper) Hooks() Hooks {
@@ -99,29 +95,5 @@ func (h Hooks) BeforeDelegationRemoved(_ context.Context, _ sdk.AccAddress, _ sd
 }
 
 func (h Hooks) BeforeTokenizeShareRecordRemoved(_ context.Context, _ uint64) error {
-	return nil
-}
-
-//
-// gov hooks
-//
-
-func (h Hooks) AfterProposalSubmission(goCtx context.Context, proposalId uint64) error {
-	return nil
-}
-
-func (h Hooks) AfterProposalVotingPeriodEnded(goCtx context.Context, proposalId uint64) error {
-	return nil
-}
-
-func (h Hooks) AfterProposalDeposit(ctx context.Context, proposalID uint64, depositorAddr sdk.AccAddress) error {
-	return nil
-}
-
-func (h Hooks) AfterProposalVote(ctx context.Context, proposalID uint64, voterAddr sdk.AccAddress) error {
-	return nil
-}
-
-func (h Hooks) AfterProposalFailedMinDeposit(ctx context.Context, proposalID uint64) error {
 	return nil
 }
