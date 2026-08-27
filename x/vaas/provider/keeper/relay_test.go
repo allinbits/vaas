@@ -348,6 +348,11 @@ func TestQueueVSCPacketsSnapshotsWhileUndeliveredPacketQueued(t *testing.T) {
 	mocks.MockStakingKeeper.EXPECT().MaxValidators(gomock.Any()).Return(uint32(100), nil).AnyTimes()
 	mocks.MockStakingKeeper.EXPECT().GetBondedValidatorsByPower(gomock.Any()).Return([]stakingtypes.Validator{}, nil).AnyTimes()
 
+	// Seed a stored consumer valset, as an epoch that already ran would have
+	// left behind, so that the queued packet below is the only thing that can
+	// make this a snapshot.
+	require.NoError(t, k.SetConsumerValSet(ctx, cid, []providertypes.ConsensusValidator{makeConsensusValidator(t, 10)}))
+
 	// Simulate a failed local send from a prior epoch: the packet stays
 	// queued and highestSent/highestAcked are both left at 0, so a naive
 	// acked < sent check would read as caught up.

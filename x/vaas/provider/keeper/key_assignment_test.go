@@ -2,6 +2,7 @@ package keeper_test
 
 import (
 	"bytes"
+	"errors"
 	"math/rand"
 	"sort"
 	"testing"
@@ -763,13 +764,13 @@ func TestSimulatedAssignmentsAndUpdateApplication(t *testing.T) {
 		mocks.MockStakingKeeper.EXPECT().GetValidatorByConsAddr(
 			gomock.Any(),
 			gomock.Any(),
-		).DoAndReturn(func(_ any, consP sdk.ConsAddress) (stakingtypes.Validator, bool) {
+		).DoAndReturn(func(_ any, consP sdk.ConsAddress) (stakingtypes.Validator, error) {
 			for _, id := range providerIDS {
 				if id.SDKValConsAddress().Equals(consP) {
-					return id.SDKStakingValidator(), true
+					return id.SDKStakingValidator(), nil
 				}
 			}
-			return stakingtypes.Validator{}, false
+			return stakingtypes.Validator{}, stakingtypes.ErrNoValidatorFound
 		}).AnyTimes()
 
 		// Helper: apply some updates to both the provider and consumer valsets
@@ -803,8 +804,19 @@ func TestSimulatedAssignmentsAndUpdateApplication(t *testing.T) {
 		// Helper: apply some key assignment transactions to the system
 		applyAssignments := func(assignments []Assignment) {
 			for _, a := range assignments {
-				// ignore err return, it can be possible for an error to occur
-				_ = k.AssignConsumerKey(ctx, CONSUMERID, a.val, a.ck)
+				err := k.AssignConsumerKey(ctx, CONSUMERID, a.val, a.ck)
+				if err == nil {
+					continue
+				}
+				// The generator deliberately produces assignments that must be
+				// rejected: a key some validator has or had assigned on this
+				// consumer, and a validator's own provider key offered as its
+				// consumer key. Any other error is a defect in the assignment
+				// path.
+				require.True(t,
+					errors.Is(err, types.ErrConsumerKeyInUse) ||
+						errors.Is(err, types.ErrCannotAssignDefaultKeyAssignment),
+					"unexpected key assignment error: %v", err)
 			}
 		}
 
@@ -812,7 +824,11 @@ func TestSimulatedAssignmentsAndUpdateApplication(t *testing.T) {
 		unbondingTimeInNs := 60 * time.Second // 60 seconds
 		mocks.MockStakingKeeper.EXPECT().UnbondingTime(gomock.Any()).Return(unbondingTimeInNs, nil).AnyTimes()
 
-		// The consumer chain has not yet been registered
+		// The consumer chain has not yet launched, so an assignment that
+		// replaces an earlier one drops the superseded consumer address right
+		// away instead of queueing it for pruning.
+		k.SetConsumerPhase(ctx, CONSUMERID, types.CONSUMER_PHASE_REGISTERED)
+
 		// Apply some randomly generated key assignments
 		assignments := getAssignments()
 
@@ -823,8 +839,11 @@ func TestSimulatedAssignmentsAndUpdateApplication(t *testing.T) {
 
 		applyUpdatesAndIncrementVSCID(stakingUpdates)
 
-		// Register the consumer chain
+		// Launch the consumer chain: from here on a superseded consumer address
+		// stays reachable for slash lookups until the unbonding period elapses,
+		// so assignments feed the pruning queue instead.
 		k.SetConsumerClientId(ctx, CONSUMER_ID, "")
+		k.SetConsumerPhase(ctx, CONSUMERID, types.CONSUMER_PHASE_LAUNCHED)
 
 		// Set the greatest block time up to which keys have been pruned. At the beginning, no pruning has taken
 		// place, so we set `greatestPrunedBlockTime` to 0, and set the current block time to 1.
