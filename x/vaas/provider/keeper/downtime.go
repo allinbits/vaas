@@ -56,8 +56,9 @@ func (k Keeper) HandleConsumerEvidencePacket(ctx sdk.Context, consumerId uint64,
 //  2. The reported missed-block count exceeds the infraction threshold
 //     computed from those echoed params (EvidencePacketData.MaxMissed).
 //  3. The window-end height is not older than the minimum evidence height
-//     for this consumer, and the validator was part of the consumer's
-//     validator set.
+//     for this consumer, and the validator is in the consumer's validator
+//     set -- under the address the accusation resolves to, or the one the
+//     validator has since rotated to (see accusedConsumerValidatorAddr).
 //  4. The window-end time -- anchored to an IBC consensus state proving the
 //     consumer chain actually reached that height, see windowEndTimestamp --
 //     is past the consumer's downtime grace period and not older than
@@ -121,7 +122,8 @@ func (k Keeper) HandleConsumerDowntime(ctx sdk.Context, consumerId uint64, evide
 	// Verify the validator was part of the consumer's validator set. Join-time
 	// trimming of the bitmap happens consumer-side, so there is no join-height
 	// comparison here.
-	if _, found := k.GetConsumerValidator(ctx, consumerId, providerAddr); !found {
+	setAddr, inSet := k.accusedConsumerValidatorAddr(ctx, consumerId, providerAddr)
+	if !inSet {
 		return errorsmod.Wrapf(
 			vaastypes.ErrInvalidPacketData,
 			"validator %s is not in the validator set of consumer chain %d",
@@ -237,8 +239,11 @@ func (k Keeper) HandleConsumerDowntime(ctx sdk.Context, consumerId uint64, evide
 	}
 
 	// Record downtime for epoch reward exclusion. This takes effect
-	// immediately, independent of the slash challenge window below.
-	k.MarkEpochDowntime(ctx, consumerId, providerAddr.ToSdkConsAddr())
+	// immediately, independent of the slash challenge window below. It is
+	// marked under the address the consumer's set holds the validator under,
+	// which is the live consensus address fee distribution reads the mark back
+	// under, rather than the pre-rotation address the accusation may name.
+	k.MarkEpochDowntime(ctx, consumerId, setAddr.ToSdkConsAddr())
 
 	maturesAt := ctx.BlockTime().Add(infractionParams.DowntimeChallengeWindow)
 	pending := types.PendingDowntimeSlash{
@@ -292,6 +297,41 @@ func (k Keeper) HandleConsumerDowntime(ctx sdk.Context, consumerId uint64, evide
 	)
 
 	return nil
+}
+
+// accusedConsumerValidatorAddr returns the provider consensus address
+// consumerId's stored validator set holds the accused validator under, given
+// the address the accusation resolves to (GetProviderAddrFromConsumerAddr),
+// and whether the accused is in that set at all.
+//
+// The two addresses differ after a consensus-key rotation by a validator with
+// no assigned consumer key there. The set is rebuilt from the bonded
+// validators, so it holds each of them under the provider consensus address it
+// currently runs, while an accusation about a window that ended before the
+// rotation names the identity the consumer validated under back then -- and,
+// with no key assignment to resolve through, that address is the one it
+// resolves to. So the accused is looked up again under the address x/staking
+// says it holds now (liveProviderConsAddr). Without that second lookup a
+// rotation would silently discard every accusation about a pre-rotation window
+// that has not been accepted yet: those still in flight, those the consumer has
+// queued but not sent, and those whose window the consumer had not closed at
+// rotation time -- up to DowntimeEvidenceMaxAge worth of offences, shed for the
+// price of a rotation.
+//
+// It cannot admit a validator that never validated this consumer: the second
+// lookup follows nothing but the rotation x/staking recorded for the accused
+// itself, and the address it resolves to must still hold an entry in this
+// consumer's set.
+func (k Keeper) accusedConsumerValidatorAddr(
+	ctx sdk.Context, consumerId uint64, accusedAddr types.ProviderConsAddress,
+) (types.ProviderConsAddress, bool) {
+	if k.IsConsumerValidator(ctx, consumerId, accusedAddr) {
+		return accusedAddr, true
+	}
+
+	rotatedAddr := k.liveProviderConsAddr(ctx, accusedAddr)
+
+	return rotatedAddr, k.IsConsumerValidator(ctx, consumerId, rotatedAddr)
 }
 
 // checkAcceptedDowntimeWindowIntersection rejects a downtime evidence window

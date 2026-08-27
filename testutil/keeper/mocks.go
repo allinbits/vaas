@@ -81,6 +81,21 @@ func (mr *MockStakingKeeperMockRecorder) BondedRatio(ctx any) *gomock.Call {
 	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "BondedRatio", reflect.TypeOf((*MockStakingKeeper)(nil).BondedRatio), ctx)
 }
 
+// GetBlockConsPubKeyRotationHistory mocks base method.
+func (m *MockStakingKeeper) GetBlockConsPubKeyRotationHistory(ctx context.Context) ([]types1.ConsPubKeyRotationHistory, error) {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "GetBlockConsPubKeyRotationHistory", ctx)
+	ret0, _ := ret[0].([]types1.ConsPubKeyRotationHistory)
+	ret1, _ := ret[1].(error)
+	return ret0, ret1
+}
+
+// GetBlockConsPubKeyRotationHistory indicates an expected call of GetBlockConsPubKeyRotationHistory.
+func (mr *MockStakingKeeperMockRecorder) GetBlockConsPubKeyRotationHistory(ctx any) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "GetBlockConsPubKeyRotationHistory", reflect.TypeOf((*MockStakingKeeper)(nil).GetBlockConsPubKeyRotationHistory), ctx)
+}
+
 // GetBondedValidatorsByPower mocks base method.
 func (m *MockStakingKeeper) GetBondedValidatorsByPower(ctx context.Context) ([]types1.Validator, error) {
 	m.ctrl.T.Helper()

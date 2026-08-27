@@ -1,10 +1,13 @@
 package keeper_test
 
 import (
+	"bytes"
 	"testing"
 
 	"github.com/stretchr/testify/require"
 	"go.uber.org/mock/gomock"
+
+	tmtypes "github.com/cometbft/cometbft/types"
 
 	cryptocodec "github.com/cosmos/cosmos-sdk/crypto/codec"
 	"github.com/cosmos/cosmos-sdk/crypto/keys/ed25519"
@@ -14,6 +17,7 @@ import (
 	testkeeper "github.com/allinbits/vaas/testutil/keeper"
 	keeper "github.com/allinbits/vaas/x/vaas/provider/keeper"
 	providertypes "github.com/allinbits/vaas/x/vaas/provider/types"
+	vaastypes "github.com/allinbits/vaas/x/vaas/types"
 )
 
 // makeConsensusValidator is a test helper that builds a ConsensusValidator
@@ -186,4 +190,87 @@ func TestDiffValidators_EmptyNextSet(t *testing.T) {
 func TestFullValSetUpdates_EmptyInput(t *testing.T) {
 	require.Empty(t, keeper.FullValSetUpdates(nil))
 	require.Empty(t, keeper.FullValSetUpdates([]providertypes.ConsensusValidator{}))
+}
+
+// TestCreateConsumerValidatorsDropsDuplicateConsumerConsAddr covers the state
+// where two bonded validators map to a single consumer consensus address: one
+// validator assigned a consumer key that is another validator's own provider
+// consensus key. Such a set is fatal on both sides -- the provider panics
+// hashing it, the consumer halts applying it -- so the assembled set must be
+// duplicate-free, with the documented tie-break (lowest provider consensus
+// address wins) and independent of the order the bonded validators arrive in.
+func TestCreateConsumerValidatorsDropsDuplicateConsumerConsAddr(t *testing.T) {
+	k, ctx, ctrl, mocks := testkeeper.GetProviderKeeperAndCtx(t, testkeeper.NewInMemKeeperParams(t))
+	defer ctrl.Finish()
+
+	consumerID := k.FetchAndIncrementConsumerId(ctx)
+	k.SetConsumerPhase(ctx, consumerID, providertypes.CONSUMER_PHASE_LAUNCHED)
+
+	// contested runs the disputed key as its own provider consensus key; assigner
+	// has the same key assigned as its consumer key on this consumer.
+	contested := testcrypto.NewCryptoIdentityFromIntSeed(31)
+	assigner := testcrypto.NewCryptoIdentityFromIntSeed(32)
+	k.SetValidatorConsumerPubKey(ctx, consumerID, assigner.ProviderConsAddress(), contested.TMProtoCryptoPublicKey())
+
+	const contestedPower, assignerPower = int64(5), int64(10)
+	mocks.MockStakingKeeper.EXPECT().GetLastValidatorPower(gomock.Any(), contested.SDKValOpAddress()).
+		Return(contestedPower, nil).AnyTimes()
+	mocks.MockStakingKeeper.EXPECT().GetLastValidatorPower(gomock.Any(), assigner.SDKValOpAddress()).
+		Return(assignerPower, nil).AnyTimes()
+
+	// The hazard being defended against: a set that kept both entries cannot even
+	// be turned into a CometBFT validator set.
+	require.Panics(t, func() {
+		tmtypes.NewValidatorSet([]*tmtypes.Validator{
+			contested.TMValidator(contestedPower),
+			contested.TMValidator(assignerPower),
+		})
+	}, "two entries at one consensus address must be fatal to CometBFT")
+
+	// Documented tie-break: the entry whose provider consensus address sorts first.
+	wantAddr, wantPower := assigner.SDKValConsAddress(), assignerPower
+	if bytes.Compare(contested.SDKValConsAddress(), wantAddr) < 0 {
+		wantAddr, wantPower = contested.SDKValConsAddress(), contestedPower
+	}
+
+	testCases := []struct {
+		name   string
+		bonded []stakingtypes.Validator
+	}{
+		{
+			name:   "assigned-key holder first",
+			bonded: []stakingtypes.Validator{assigner.SDKStakingValidator(), contested.SDKStakingValidator()},
+		},
+		{
+			name:   "default-key holder first",
+			bonded: []stakingtypes.Validator{contested.SDKStakingValidator(), assigner.SDKStakingValidator()},
+		},
+	}
+
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			var (
+				got []providertypes.ConsensusValidator
+				err error
+			)
+			require.NotPanics(t, func() {
+				got, err = k.CreateConsumerValidators(ctx, consumerID, tc.bonded)
+			})
+			require.NoError(t, err)
+
+			require.Len(t, got, 1, "the colliding entry must be dropped")
+			require.Equal(t, wantAddr.Bytes(), got[0].ProviderConsAddr,
+				"the surviving entry must be the one whose provider consensus address sorts first")
+			require.Equal(t, wantPower, got[0].Power,
+				"the surviving entry must keep its own power")
+
+			seen := map[string]bool{}
+			for _, val := range got {
+				consAddr, err := vaastypes.TMCryptoPublicKeyToConsAddr(*val.PublicKey)
+				require.NoError(t, err)
+				require.False(t, seen[consAddr.String()], "no consensus address may appear twice")
+				seen[consAddr.String()] = true
+			}
+		})
+	}
 }

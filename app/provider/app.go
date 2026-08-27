@@ -654,6 +654,7 @@ func New(
 				SignModeHandler: txConfig.SignModeHandler(),
 				SigGasConsumer:  ante.DefaultSigVerificationGasConsumer,
 			},
+			ProviderKeeper: app.ProviderKeeper,
 		},
 	)
 	if err != nil {
