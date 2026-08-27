@@ -211,7 +211,14 @@ func (ip InfractionParameters) Validate() error {
 // challenge window: evidenceMaxAge + challengeWindow < trustingFraction *
 // defaultConsumerUnbonding. Called wherever incoming infraction params are
 // validated together with Params, since InfractionParameters is stored
-// separately from Params.
+// separately from Params -- at genesis and from both governance handlers, each
+// checking the incoming half against the stored other half.
+//
+// The bound is the default consumer unbonding period, not the trusting period
+// of any client already adopted for a consumer. Consumer creation is
+// permissionless and its unbonding period only has an upper bound, so binding
+// a provider-wide policy change to the shortest-lived client in existence
+// would let one consumer veto it.
 func ValidateInfractionParamsAgainst(ip InfractionParameters, trustingPeriodFraction string) error {
 	frac, err := math.LegacyNewDecFromStr(trustingPeriodFraction)
 	if err != nil {

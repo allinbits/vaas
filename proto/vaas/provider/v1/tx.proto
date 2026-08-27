@@ -29,6 +29,7 @@ service Msg {
   rpc UpdateConsumer(MsgUpdateConsumer) returns (MsgUpdateConsumerResponse);
   rpc RemoveConsumer(MsgRemoveConsumer) returns (MsgRemoveConsumerResponse);
   rpc UpdateParams(MsgUpdateParams) returns (MsgUpdateParamsResponse);
+  rpc UpdateInfractionParams(MsgUpdateInfractionParams) returns (MsgUpdateInfractionParamsResponse);
   rpc SetConsumerFeesPerBlock(MsgSetConsumerFeesPerBlock) returns (MsgSetConsumerFeesPerBlockResponse);
   rpc FundConsumerFeePool(MsgFundConsumerFeePool) returns (MsgFundConsumerFeePoolResponse);
   rpc WithdrawConsumerFeePool(MsgWithdrawConsumerFeePool) returns (MsgWithdrawConsumerFeePoolResponse);
@@ -104,6 +105,41 @@ message MsgUpdateParams {
 }
 
 message MsgUpdateParamsResponse {}
+
+// MsgUpdateInfractionParams is the Msg/UpdateInfractionParams request type. It
+// replaces the provider's infraction parameters in full: the slash/jail policy
+// for consumer double-signs and downtime, the downtime SLA window, the
+// challenge window and the evidence max age.
+//
+// The infraction parameters are stored as their own state item rather than
+// inside Params, so they get their own governance message: a fee or epoch
+// change need not restate the whole slashing policy, and vice versa. Both
+// handlers enforce the cross-parameter constraint the two sides share (see
+// ValidateInfractionParamsAgainst), each against the stored other half.
+//
+// A proposal that widens downtime_evidence_max_age +
+// downtime_challenge_window past the trusting period of a consumer client the
+// provider has already adopted is rejected: challenges on that consumer would
+// no longer verify, so its pending slashes would execute undefended.
+// Narrowing is never blocked.
+//
+// A change to signed_blocks_window or min_signed_per_window redefines the
+// downtime SLA consumers compute their bitmaps against. Consumers learn the
+// new values from the next VSC packet and activate them at their next window
+// boundary, while evidence already in flight echoes the old values; the
+// provider keeps accepting those for downtime_evidence_max_age +
+// downtime_challenge_window after the change (see AcceptableDowntimeParams).
+message MsgUpdateInfractionParams {
+  option (cosmos.msg.v1.signer) = "authority";
+
+  // authority is the address of the governance account.
+  string authority = 1 [(cosmos_proto.scalar) = "cosmos.AddressString"];
+
+  // infraction_parameters replaces the stored set in full.
+  InfractionParameters infraction_parameters = 2 [(gogoproto.nullable) = false];
+}
+
+message MsgUpdateInfractionParamsResponse {}
 
 // MsgRemoveConsumer defines the message used to remove (and stop) a consumer chain.
 // If it passes, all the consumer chain's state is eventually removed from the provider chain.

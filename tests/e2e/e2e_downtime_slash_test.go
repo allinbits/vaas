@@ -49,7 +49,7 @@ const (
 	// downtimeChallengeWindow mirrors the provider genesis
 	// downtime_challenge_window: how long an accepted downtime slash stays
 	// pending (and challengeable) before the BeginBlock sweep executes it.
-	downtimeChallengeWindow = 30 * time.Second
+	downtimeChallengeWindow = 120 * time.Second
 	// downtimeEvidenceRelaySlack is the allowance for a window-close evidence
 	// packet to be relayed to and accepted by the provider, on top of the
 	// challenge window, when proving that no evidence ever arrived.

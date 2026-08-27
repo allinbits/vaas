@@ -667,6 +667,77 @@ func TestHandleConsumerEvidencePacketRejectsPausedConsumer(t *testing.T) {
 	require.Error(t, err)
 }
 
+// TestHandleConsumerDowntimeAcrossGovernanceSLAChange exercises the
+// change-tolerance machinery end to end from the governance path: after
+// MsgUpdateInfractionParams redefines the downtime SLA, evidence still in
+// flight -- computed and echoed under the superseded window -- keeps being
+// accepted and is judged against the threshold it was computed under, evidence
+// under the new window is accepted too, and once the tolerance horizon elapses
+// the superseded window is refused.
+func TestHandleConsumerDowntimeAcrossGovernanceSLAChange(t *testing.T) {
+	windowEndTime := time.Date(2025, 6, 1, 0, 0, 0, 0, time.UTC)
+	spawnTime := windowEndTime.Add(-30 * 24 * time.Hour)
+
+	oldSLA := types.DefaultInfractionParameters()
+	oldSLA.SignedBlocksWindow = 8
+	oldSLA.MinSignedPerWindow = math.LegacyMustNewDecFromStr("0.5")
+	oldSLA.DowntimeGracePeriod = 0
+
+	providerKeeper, ctx, ctrl, mocks, consumerId, providerAddr := setupDowntimeTest(t, oldSLA, spawnTime, windowEndTime)
+	defer ctrl.Finish()
+	ctx = ctx.WithBlockTime(windowEndTime)
+	consAddr := providerAddr.ToSdkConsAddr()
+
+	// Pricing inputs for every accepted window below.
+	providerKeeper.SetEpochShareRecord(ctx, consumerId, windowEndTime, math.NewInt(1000))
+	mocks.MockPhotonKeeper.EXPECT().ConversionRate(gomock.Any()).Return(math.LegacyNewDec(2), nil).AnyTimes()
+
+	// Governance doubles the SLA window, which also doubles the tolerated
+	// misses: maxMissed goes from 8 - ceil(0.5*8) = 4 to 16 - ceil(0.5*16) = 8.
+	newSLA := oldSLA
+	newSLA.SignedBlocksWindow = 16
+	msgSrv := providerkeeper.NewMsgServerImpl(&providerKeeper)
+	_, err := msgSrv.UpdateInfractionParams(ctx, &types.MsgUpdateInfractionParams{
+		Authority:            providerKeeper.GetAuthority(),
+		InfractionParameters: newSLA,
+	})
+	require.NoError(t, err)
+
+	// A window computed under the superseded SLA is still accepted, and is
+	// judged by the threshold it echoes: 6 missed of 8 exceeds the superseded
+	// maxMissed of 4, while the live maxMissed of 8 would have rejected it. So
+	// this asserts both halves -- acceptance of the superseded params, and that
+	// the packet's own echoed values drive the threshold.
+	inFlight := vaastypes.NewEvidencePacketData(
+		sdk.ConsAddress(consAddr), 93, []byte{0x3F}, 8, 8, math.LegacyMustNewDecFromStr("0.5"),
+	)
+	require.NoError(t, providerKeeper.HandleConsumerEvidencePacket(ctx, consumerId, inFlight))
+	has, err := providerKeeper.PendingDowntimeSlashes.Has(ctx, collections.Join3(consumerId, consAddr.Bytes(), inFlight.WindowEndHeight))
+	require.NoError(t, err)
+	require.True(t, has, "evidence echoing the superseded SLA must still queue a slash")
+
+	// A disjoint window computed under the new SLA is accepted as well: 9
+	// missed of 16 exceeds the new maxMissed of 8.
+	underNewSLA := vaastypes.NewEvidencePacketData(
+		sdk.ConsAddress(consAddr), 201, []byte{0xFF, 0x01}, 16, 16, math.LegacyMustNewDecFromStr("0.5"),
+	)
+	require.NoError(t, providerKeeper.HandleConsumerEvidencePacket(ctx, consumerId, underNewSLA))
+	has, err = providerKeeper.PendingDowntimeSlashes.Has(ctx, collections.Join3(consumerId, consAddr.Bytes(), underNewSLA.WindowEndHeight))
+	require.NoError(t, err)
+	require.True(t, has, "evidence echoing the live SLA must queue a slash")
+
+	// Once the tolerance horizon has elapsed the superseded SLA is no longer
+	// accepted: nothing computed under it can still be inside its challenge
+	// window, so a consumer echoing it is stating something impossible.
+	horizon := newSLA.DowntimeEvidenceMaxAge + newSLA.DowntimeChallengeWindow
+	stale := ctx.WithBlockTime(ctx.BlockTime().Add(horizon + time.Second))
+	late := vaastypes.NewEvidencePacketData(
+		sdk.ConsAddress(consAddr), 301, []byte{0x3F}, 8, 8, math.LegacyMustNewDecFromStr("0.5"),
+	)
+	err = providerKeeper.HandleConsumerEvidencePacket(stale, consumerId, late)
+	require.ErrorContains(t, err, "unacceptable downtime params")
+}
+
 func TestEvidencePacketDataJSONRoundTrip(t *testing.T) {
 	addr := sdk.ConsAddress([]byte{0x01, 0x02, 0x03, 0x04, 0x05})
 	packet := vaastypes.NewEvidencePacketData(addr, 42, []byte{0x01}, 1, 600, math.LegacyMustNewDecFromStr("0.5"))

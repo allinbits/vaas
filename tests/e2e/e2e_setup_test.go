@@ -126,11 +126,20 @@ func (s *IntegrationTestSuite) SetupSuite() {
 						"jail_duration":  "0s",
 						"tombstone":      false,
 					},
-					"downtime_grace_period":     "604800s",
-					"signed_blocks_window":      "30",
-					"min_signed_per_window":     "0.500000000000000000",
-					"downtime_challenge_window": "30s",
-					"downtime_evidence_max_age": "30s",
+					"downtime_grace_period": "604800s",
+					"signed_blocks_window":  "30",
+					"min_signed_per_window": "0.500000000000000000",
+					// Both are wide enough to absorb relay latency plus the
+					// window-end anchoring lag: the anchor is the newest
+					// consensus state at or below the window end, so a window's
+					// computed age includes however long the client went without
+					// an update before it. At 30s a slower run can push an
+					// otherwise-fresh window past the age check, and the
+					// consumer drops the error-acked evidence without retrying.
+					// Keep downtimeChallengeWindow in e2e_downtime_slash_test.go
+					// in step with the challenge window.
+					"downtime_challenge_window": "120s",
+					"downtime_evidence_max_age": "120s",
 				}
 			}
 

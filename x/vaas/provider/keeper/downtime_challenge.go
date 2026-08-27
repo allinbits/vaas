@@ -65,22 +65,28 @@ func (k Keeper) HandleChallengeConsumerDowntime(ctx sdk.Context, msg *types.MsgC
 	}
 
 	consumerAddr := types.NewConsumerConsAddress(sdk.ConsAddress(msg.ValidatorAddr))
-	providerAddr := k.GetProviderAddrFromConsumerAddr(ctx, msg.ConsumerId, consumerAddr)
 
 	// 1. among the (possibly several) pending slashes for this validator on
 	// this consumer, find the one whose window contains claimed_height, and
-	// check that its bitmap marks it missed.
-	pending, found, err := k.findPendingDowntimeSlashContaining(ctx, msg.ConsumerId, providerAddr.ToSdkConsAddr().Bytes(), msg.ClaimedHeight)
+	// check that its bitmap marks it missed. The lookup is by consumer
+	// consensus address so it survives key rotation/pruning of the
+	// consumer-addr to provider-addr mapping (see findPendingDowntimeSlashContaining).
+	pending, found, err := k.findPendingDowntimeSlashContaining(ctx, msg.ConsumerId, consumerAddr, msg.ClaimedHeight)
 	if err != nil {
 		return errorsmod.Wrapf(types.ErrDowntimeChallengeFailed,
 			"looking up pending downtime slash for validator %s on consumer chain %d: %s",
-			providerAddr.String(), msg.ConsumerId, err)
+			consumerAddr.String(), msg.ConsumerId, err)
 	}
 	if !found {
 		return errorsmod.Wrapf(types.ErrDowntimeChallengeFailed,
 			"no pending downtime slash for validator %s on consumer chain %d claims height %d missed",
-			providerAddr.String(), msg.ConsumerId, msg.ClaimedHeight)
+			consumerAddr.String(), msg.ConsumerId, msg.ClaimedHeight)
 	}
+
+	// The slash carries the provider consensus address it was keyed under at
+	// acceptance; use it for logging and events rather than re-resolving
+	// through key-assignment state that may have changed since.
+	providerAddr := types.NewProviderConsAddress(sdk.ConsAddress(pending.ProviderConsAddr))
 
 	index := msg.ClaimedHeight - pending.WindowStartHeight
 	if !vaastypes.BitmapIsSet(pending.MissedBlocksBitmap, index) {
@@ -146,15 +152,66 @@ func (k Keeper) HandleChallengeConsumerDowntime(ctx sdk.Context, msg *types.MsgC
 }
 
 // findPendingDowntimeSlashContaining searches the (possibly several) pending
-// downtime slashes for (consumerId, providerConsAddr) -- one per accepted
-// disjoint window -- for the one whose [WindowStartHeight,
-// WindowStartHeight+Span) range contains claimedHeight. Windows for a pair
-// are enforced disjoint at acceptance (see the AcceptedDowntimeWindows
-// intersection check in HandleConsumerDowntime), so at
-// most one match is expected; the sub-range is bounded by however many
-// windows are currently pending for this single validator on this single
-// consumer.
-func (k Keeper) findPendingDowntimeSlashContaining(ctx sdk.Context, consumerId uint64, providerConsAddr []byte, claimedHeight int64) (types.PendingDowntimeSlash, bool, error) {
+// downtime slashes for the validator identified by consumerAddr on consumerId
+// -- one per accepted disjoint window -- for the one whose [WindowStartHeight,
+// WindowStartHeight+Span) range contains claimedHeight. Windows for a
+// validator are enforced disjoint at acceptance (see the
+// AcceptedDowntimeWindows intersection check in HandleConsumerDowntime), so at
+// most one match is expected.
+//
+// It first resolves the validator's provider consensus address through the
+// live key-assignment mapping and scans the slashes keyed under it. This is
+// the common path -- and the only path a validator that never assigned a
+// custom consumer key ever needs, since its provider and consumer addresses
+// coincide. If that finds nothing it falls back to scanning the consumer's
+// pending slashes for one whose stored ConsumerConsAddr equals consumerAddr:
+// a slash accepted for an assigned consumer key is keyed under the provider
+// address resolved at acceptance, so once that mapping is pruned (a later key
+// rotation, or the validator leaving the staking set) the live resolution no
+// longer reaches it. The consumer address stored on the slash is
+// rotation-invariant, and the challenge's own signature check
+// self-authenticates it, so the fallback recovers a legit slash without
+// trusting current key-assignment state.
+func (k Keeper) findPendingDowntimeSlashContaining(ctx sdk.Context, consumerId uint64, consumerAddr types.ConsumerConsAddress, claimedHeight int64) (types.PendingDowntimeSlash, bool, error) {
+	providerAddr := k.GetProviderAddrFromConsumerAddr(ctx, consumerId, consumerAddr)
+	pending, found, err := k.findPendingDowntimeSlashUnderProviderAddr(ctx, consumerId, providerAddr.ToSdkConsAddr().Bytes(), claimedHeight)
+	if err != nil || found {
+		return pending, found, err
+	}
+
+	// Fallback: the provider address the slash was keyed under is no longer
+	// reachable from consumerAddr through live key-assignment state. Match on
+	// the consumer address captured on each slash at acceptance instead.
+	consumerAddrBz := consumerAddr.ToSdkConsAddr().Bytes()
+	iter, err := k.PendingDowntimeSlashes.Iterate(
+		ctx, collections.NewPrefixedTripleRange[uint64, []byte, int64](consumerId),
+	)
+	if err != nil {
+		return types.PendingDowntimeSlash{}, false, err
+	}
+	defer iter.Close()
+
+	for ; iter.Valid(); iter.Next() {
+		val, err := iter.Value()
+		if err != nil {
+			return types.PendingDowntimeSlash{}, false, err
+		}
+		if !bytes.Equal(val.ConsumerConsAddr, consumerAddrBz) {
+			continue
+		}
+		if claimedHeight >= val.WindowStartHeight && claimedHeight < val.WindowStartHeight+val.Span {
+			return val, true, nil
+		}
+	}
+	return types.PendingDowntimeSlash{}, false, nil
+}
+
+// findPendingDowntimeSlashUnderProviderAddr scans the pending downtime slashes
+// keyed under (consumerId, providerConsAddr) for the one whose
+// [WindowStartHeight, WindowStartHeight+Span) range contains claimedHeight.
+// The sub-range scanned is bounded by however many windows are currently
+// pending for this single validator on this single consumer.
+func (k Keeper) findPendingDowntimeSlashUnderProviderAddr(ctx sdk.Context, consumerId uint64, providerConsAddr []byte, claimedHeight int64) (types.PendingDowntimeSlash, bool, error) {
 	iter, err := k.PendingDowntimeSlashes.Iterate(
 		ctx, collections.NewSuperPrefixedTripleRange[uint64, []byte, int64](consumerId, providerConsAddr),
 	)

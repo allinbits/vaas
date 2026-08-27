@@ -1,6 +1,7 @@
 package keeper_test
 
 import (
+	"fmt"
 	"strconv"
 	"sync"
 	"testing"
@@ -607,6 +608,9 @@ func TestUpdateParams_ReconcilesFeesPerBlockOverrides(t *testing.T) {
 	k, ctx, ctrl, _ := testkeeper.GetProviderKeeperAndCtx(t, params)
 	defer ctrl.Finish()
 	k.SetParams(ctx, providertypes.DefaultParams()) // global default = 1000
+	// UpdateParams re-checks the stored infraction params against the incoming
+	// trusting-period fraction, so they must be seeded as InitGenesis does.
+	k.SetInfractionParams(ctx, providertypes.DefaultInfractionParameters())
 
 	// Three overrides, all above the current floor (1000).
 	below := k.FetchAndIncrementConsumerId(ctx) // 1500: below the new floor -> dropped
@@ -650,6 +654,283 @@ func TestUpdateParams_ReconcilesFeesPerBlockOverrides(t *testing.T) {
 	amtAbove, err = k.ConsumerFeesPerBlockOverride.Get(ctx, above)
 	require.NoError(t, err)
 	require.Equal(t, math.NewInt(2500), amtAbove)
+}
+
+// TestUpdateParamsRejectsTrustingFractionStrandingInfractionParams verifies the
+// other half of the cross-parameter constraint: lowering
+// trusting_period_fraction far enough that the stored evidence-age plus
+// challenge window no longer fits inside the derived trusting period is
+// rejected, so the pair genesis validates together cannot be broken one message
+// at a time.
+func TestUpdateParamsRejectsTrustingFractionStrandingInfractionParams(t *testing.T) {
+	k, ctx, ctrl, _ := testkeeper.GetProviderKeeperAndCtx(t, testkeeper.NewInMemKeeperParams(t))
+	defer ctrl.Finish()
+	k.SetParams(ctx, providertypes.DefaultParams())
+	k.SetInfractionParams(ctx, providertypes.DefaultInfractionParameters())
+
+	msgSrv := providerkeeper.NewMsgServerImpl(&k)
+
+	// Defaults leave 240h of evidence-age + challenge window against a
+	// 0.66 * 480h = 316.8h trusting period. At 0.5 the trusting period is
+	// exactly 240h, which the strict inequality rejects.
+	stranding := providertypes.DefaultParams()
+	stranding.TrustingPeriodFraction = "0.5"
+	_, err := msgSrv.UpdateParams(ctx, &providertypes.MsgUpdateParams{
+		Authority: k.GetAuthority(),
+		Params:    stranding,
+	})
+	require.ErrorContains(t, err, "must be below the default trusting period")
+	require.Equal(t, providertypes.DefaultTrustingPeriodFraction, k.GetParams(ctx).TrustingPeriodFraction,
+		"a rejected update must not have been applied")
+
+	// A fraction that still covers the stored horizon is accepted.
+	covering := providertypes.DefaultParams()
+	covering.TrustingPeriodFraction = "0.9"
+	_, err = msgSrv.UpdateParams(ctx, &providertypes.MsgUpdateParams{
+		Authority: k.GetAuthority(),
+		Params:    covering,
+	})
+	require.NoError(t, err)
+	require.Equal(t, "0.9", k.GetParams(ctx).TrustingPeriodFraction)
+}
+
+// TestUpdateInfractionParams covers the governance path for the infraction
+// parameters: authority gating, full validation (including the cross-parameter
+// constraint against the stored trusting-period fraction), and that an accepted
+// update replaces the stored set.
+func TestUpdateInfractionParams(t *testing.T) {
+	invalidPair := providertypes.DefaultInfractionParameters()
+	invalidPair.DowntimeEvidenceMaxAge = invalidPair.DowntimeChallengeWindow + time.Hour
+
+	overTrusting := providertypes.DefaultInfractionParameters()
+	// 200h + 200h = 400h against the default 0.66 * 480h = 316.8h trusting
+	// period: individually valid, jointly unverifiable.
+	overTrusting.DowntimeChallengeWindow = 200 * time.Hour
+	overTrusting.DowntimeEvidenceMaxAge = 200 * time.Hour
+
+	noDoubleSign := providertypes.DefaultInfractionParameters()
+	noDoubleSign.DoubleSign = nil
+
+	responsive := providertypes.DefaultInfractionParameters()
+	responsive.Downtime = &providertypes.SlashJailParameters{
+		JailDuration:  0,
+		SlashFraction: math.LegacyMustNewDecFromStr("0.001"),
+		Tombstone:     false,
+	}
+	responsive.SignedBlocksWindow = 1200
+	responsive.MinSignedPerWindow = math.LegacyMustNewDecFromStr("0.75")
+	responsive.DowntimeGracePeriod = 0
+
+	cases := []struct {
+		name      string
+		authority func(k providerkeeper.Keeper) string
+		params    providertypes.InfractionParameters
+		wantErr   string
+	}{
+		{
+			name:      "non-authority signer is rejected",
+			authority: func(providerkeeper.Keeper) string { return authtypes.NewModuleAddress("nobody").String() },
+			params:    responsive,
+			wantErr:   "invalid authority",
+		},
+		{
+			name:      "evidence max age above the challenge window is rejected",
+			authority: providerkeeper.Keeper.GetAuthority,
+			params:    invalidPair,
+			wantErr:   "must not exceed downtime_challenge_window",
+		},
+		{
+			name:      "horizon exceeding the trusting period is rejected",
+			authority: providerkeeper.Keeper.GetAuthority,
+			params:    overTrusting,
+			wantErr:   "must be below the default trusting period",
+		},
+		{
+			name:      "missing double-sign parameters are rejected",
+			authority: providerkeeper.Keeper.GetAuthority,
+			params:    noDoubleSign,
+			wantErr:   "double_sign infraction parameters must be set",
+		},
+		{
+			name:      "a valid tightening is applied",
+			authority: providerkeeper.Keeper.GetAuthority,
+			params:    responsive,
+		},
+	}
+
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			k, ctx, ctrl, _ := testkeeper.GetProviderKeeperAndCtx(t, testkeeper.NewInMemKeeperParams(t))
+			defer ctrl.Finish()
+			k.SetParams(ctx, providertypes.DefaultParams())
+			k.SetInfractionParams(ctx, providertypes.DefaultInfractionParameters())
+
+			msgSrv := providerkeeper.NewMsgServerImpl(&k)
+			_, err := msgSrv.UpdateInfractionParams(ctx, &providertypes.MsgUpdateInfractionParams{
+				Authority:            tc.authority(k),
+				InfractionParameters: tc.params,
+			})
+
+			if tc.wantErr != "" {
+				require.ErrorContains(t, err, tc.wantErr)
+				require.Equal(t, providertypes.DefaultInfractionParameters(), k.GetInfractionParams(ctx),
+					"a rejected update must not have been applied")
+				return
+			}
+			require.NoError(t, err)
+			require.Equal(t, tc.params, k.GetInfractionParams(ctx))
+		})
+	}
+}
+
+// TestUpdateInfractionParamsAgainstAdoptedClients verifies that widening the
+// challengeable interval (evidence max age + challenge window) past the trusting
+// period of an already-adopted consumer client is rejected -- such an interval
+// would leave the oldest challengeable header unverifiable, so pending slashes
+// on that consumer would execute undefended -- while a widening that still fits
+// every adopted client, and any narrowing, are accepted. The narrowing case is
+// checked with a client too short even for the current interval: a chain in that
+// state must still be able to correct itself.
+func TestUpdateInfractionParamsAgainstAdoptedClients(t *testing.T) {
+	// The stored starting point: 72h + 168h = 240h.
+	current := providertypes.DefaultInfractionParameters()
+
+	widenPast := providertypes.DefaultInfractionParameters()
+	widenPast.DowntimeEvidenceMaxAge = 100 * time.Hour
+	widenPast.DowntimeChallengeWindow = 160 * time.Hour // 260h
+
+	widenWithin := providertypes.DefaultInfractionParameters()
+	widenWithin.DowntimeEvidenceMaxAge = 85 * time.Hour
+	widenWithin.DowntimeChallengeWindow = 160 * time.Hour // 245h
+
+	narrow := providertypes.DefaultInfractionParameters()
+	narrow.DowntimeEvidenceMaxAge = 50 * time.Hour
+	narrow.DowntimeChallengeWindow = 100 * time.Hour // 150h
+
+	cases := []struct {
+		name            string
+		trustingPeriods map[uint64]time.Duration
+		params          providertypes.InfractionParameters
+		wantErr         string
+	}{
+		{
+			name:            "widening past the shortest adopted client is rejected",
+			trustingPeriods: map[uint64]time.Duration{0: 300 * time.Hour, 1: 250 * time.Hour},
+			params:          widenPast,
+			wantErr:         "must be below the trusting period (250h0m0s) of client 07-tendermint-1, already adopted for consumer 1",
+		},
+		{
+			name:            "widening that still fits every adopted client is accepted",
+			trustingPeriods: map[uint64]time.Duration{0: 300 * time.Hour, 1: 250 * time.Hour},
+			params:          widenWithin,
+		},
+		{
+			name:            "widening is unconstrained when no client is adopted yet",
+			trustingPeriods: nil,
+			params:          widenPast,
+		},
+		{
+			// 240h down to 150h, against a client that trusts only 100h: still
+			// wider than that client can support, but strictly better than what
+			// it replaces, so it must go through. A chain that reaches this state
+			// has to be able to walk itself back out of it.
+			name:            "narrowing is allowed even when it stays above an adopted client's trusting period",
+			trustingPeriods: map[uint64]time.Duration{0: 100 * time.Hour},
+			params:          narrow,
+		},
+	}
+
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			k, ctx, ctrl, mocks := testkeeper.GetProviderKeeperAndCtx(t, testkeeper.NewInMemKeeperParams(t))
+			defer ctrl.Finish()
+			k.SetParams(ctx, providertypes.DefaultParams())
+			k.SetInfractionParams(ctx, current)
+
+			for consumerId, trustingPeriod := range tc.trustingPeriods {
+				clientId := fmt.Sprintf("07-tendermint-%d", consumerId)
+				k.SetConsumerClientId(ctx, consumerId, clientId)
+				mocks.MockClientKeeper.EXPECT().GetClientState(ctx, clientId).
+					Return(&ibctmtypes.ClientState{TrustingPeriod: trustingPeriod}, true).AnyTimes()
+			}
+
+			msgSrv := providerkeeper.NewMsgServerImpl(&k)
+			_, err := msgSrv.UpdateInfractionParams(ctx, &providertypes.MsgUpdateInfractionParams{
+				Authority:            k.GetAuthority(),
+				InfractionParameters: tc.params,
+			})
+
+			if tc.wantErr != "" {
+				require.ErrorContains(t, err, tc.wantErr)
+				require.Equal(t, current, k.GetInfractionParams(ctx),
+					"a rejected update must not have been applied")
+				return
+			}
+			require.NoError(t, err)
+			require.Equal(t, tc.params, k.GetInfractionParams(ctx))
+		})
+	}
+}
+
+// TestUpdateInfractionParamsRecordsPreviousDowntimeParams verifies that the
+// governance path drives the change-tolerance machinery: a change to the
+// downtime SLA records the superseded pair in PreviousDowntimeParams stamped
+// with the block time of the change, while a change that leaves the SLA alone
+// records nothing. Without a runtime caller of SetInfractionParams neither
+// PreviousDowntimeParams nor AcceptableDowntimeParams could ever fire outside
+// genesis.
+func TestUpdateInfractionParamsRecordsPreviousDowntimeParams(t *testing.T) {
+	k, ctx, ctrl, _ := testkeeper.GetProviderKeeperAndCtx(t, testkeeper.NewInMemKeeperParams(t))
+	defer ctrl.Finish()
+	k.SetParams(ctx, providertypes.DefaultParams())
+	k.SetInfractionParams(ctx, providertypes.DefaultInfractionParameters())
+	beforeSLA := k.CurrentDowntimeParams(ctx)
+
+	msgSrv := providerkeeper.NewMsgServerImpl(&k)
+
+	// A change that leaves signed_blocks_window / min_signed_per_window alone
+	// does not supersede any SLA, so nothing is recorded.
+	slashOnly := providertypes.DefaultInfractionParameters()
+	slashOnly.Downtime.SlashFraction = math.LegacyMustNewDecFromStr("0.002")
+	_, err := msgSrv.UpdateInfractionParams(ctx, &providertypes.MsgUpdateInfractionParams{
+		Authority:            k.GetAuthority(),
+		InfractionParameters: slashOnly,
+	})
+	require.NoError(t, err)
+	has, err := k.PreviousDowntimeParams.Has(ctx)
+	require.NoError(t, err)
+	require.False(t, has, "a non-SLA change must not record a previous downtime params entry")
+
+	// An SLA change records the superseded pair, stamped with the block time of
+	// the change -- the instant AcceptableDowntimeParams measures its tolerance
+	// horizon from.
+	changedAt := ctx.BlockTime().Add(time.Hour)
+	slaCtx := ctx.WithBlockTime(changedAt)
+	slaChange := slashOnly
+	slaChange.SignedBlocksWindow = 1200
+	slaChange.MinSignedPerWindow = math.LegacyMustNewDecFromStr("0.75")
+	_, err = msgSrv.UpdateInfractionParams(slaCtx, &providertypes.MsgUpdateInfractionParams{
+		Authority:            k.GetAuthority(),
+		InfractionParameters: slaChange,
+	})
+	require.NoError(t, err)
+
+	previous, err := k.PreviousDowntimeParams.Get(slaCtx)
+	require.NoError(t, err)
+	require.Equal(t, beforeSLA, previous.Params)
+	require.True(t, changedAt.Equal(previous.ChangedAt), "expected %s, got %s", changedAt, previous.ChangedAt)
+
+	// The stored SLA is what consumers now receive in VSC packets and genesis.
+	require.Equal(t, slaChange.SignedBlocksWindow, k.CurrentDowntimeParams(slaCtx).SignedBlocksWindow)
+	require.True(t, slaChange.MinSignedPerWindow.Equal(k.CurrentDowntimeParams(slaCtx).MinSignedPerWindow))
+
+	// Evidence echoing either the superseded or the new SLA is acceptable while
+	// the tolerance horizon holds; anything else never is.
+	require.True(t, k.AcceptableDowntimeParams(slaCtx, beforeSLA))
+	require.True(t, k.AcceptableDowntimeParams(slaCtx, k.CurrentDowntimeParams(slaCtx)))
+
+	horizon := slaChange.DowntimeEvidenceMaxAge + slaChange.DowntimeChallengeWindow
+	require.False(t, k.AcceptableDowntimeParams(slaCtx.WithBlockTime(changedAt.Add(horizon+time.Second)), beforeSLA))
 }
 
 func TestRemoveConsumerGovAuth(t *testing.T) {
