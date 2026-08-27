@@ -182,6 +182,9 @@ func (s *IntegrationTestSuite) SetupSuite() {
 	s.T().Log("step 5: starting ts-relayer and creating IBC v2 path...")
 	s.setupTSRelayer()
 
+	s.T().Log("step 5b: declaring the relayer-created clients (owner, both chains)...")
+	s.declareConsumerClients("0")
+
 	s.T().Log("step 6: checking IBC counterparty registration...")
 	s.collectIBCDiagnosticsLog()
 

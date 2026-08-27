@@ -14,7 +14,6 @@ import (
 	ibctransferkeeper "github.com/cosmos/ibc-go/v10/modules/apps/transfer/keeper"
 	ibctransfertypes "github.com/cosmos/ibc-go/v10/modules/apps/transfer/types"
 	transferv2 "github.com/cosmos/ibc-go/v10/modules/apps/transfer/v2"
-	ibc "github.com/cosmos/ibc-go/v10/modules/core"
 	ibcconnectiontypes "github.com/cosmos/ibc-go/v10/modules/core/03-connection/types"
 	porttypes "github.com/cosmos/ibc-go/v10/modules/core/05-port/types"
 	ibcapi "github.com/cosmos/ibc-go/v10/modules/core/api"
@@ -101,6 +100,7 @@ import (
 	tmjson "github.com/cometbft/cometbft/libs/json"
 	tmos "github.com/cometbft/cometbft/libs/os"
 
+	"github.com/allinbits/vaas/app/ibcshim"
 	no_valupdates_genutil "github.com/allinbits/vaas/x/vaas/no_valupdates_genutil"
 	no_valupdates_staking "github.com/allinbits/vaas/x/vaas/no_valupdates_staking"
 
@@ -481,7 +481,10 @@ func New(
 		no_valupdates_staking.NewAppModule(appCodec, app.StakingKeeper, app.AccountKeeper, app.BankKeeper, app.GetSubspace(stakingtypes.ModuleName)),
 		params.NewAppModule(app.ParamsKeeper),
 		upgrade.NewAppModule(&app.UpgradeKeeper, app.AccountKeeper.AddressCodec()),
-		ibc.NewAppModule(app.IBCKeeper),
+		// ibcshim, not ibc directly: works around ibc-go's clientv2 genesis
+		// Validate rejecting colliding cross-chain client ids, which makes a
+		// restart-from-export panic at InitChain. See app/ibcshim.
+		ibcshim.NewAppModule(app.IBCKeeper),
 		ibctm.NewAppModule(tmLightClientModule),
 		transfer.NewAppModule(app.TransferKeeper),
 		providerModule,

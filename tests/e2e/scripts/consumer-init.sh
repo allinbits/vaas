@@ -21,10 +21,16 @@ $BINARY config set client keyring-backend test --home "$HOME_DIR"
 # Add keys
 $BINARY keys add user --home "$HOME_DIR" --keyring-backend test
 echo "$MNEMONIC" | $BINARY keys add relayer --recover --home "$HOME_DIR" --keyring-backend test
+# The owner key: HD index 1 of the same mnemonic, so its address bytes exist
+# on both chains (it registers the consumer and declares/pins the IBC clients)
+# while staying off the relayer's account, whose sequence the ts-relayer is
+# constantly consuming with its own transactions.
+echo "$MNEMONIC" | $BINARY keys add owner --recover --index 1 --home "$HOME_DIR" --keyring-backend test
 
 # Add genesis accounts
 $BINARY genesis add-genesis-account user "1000000000${DENOM}" --home "$HOME_DIR" --keyring-backend test
 $BINARY genesis add-genesis-account relayer "100000000${DENOM}" --home "$HOME_DIR" --keyring-backend test
+$BINARY genesis add-genesis-account owner "100000000${DENOM}" --home "$HOME_DIR" --keyring-backend test
 
 # Enable REST API
 $BINARY config set app api.enable true --home "$HOME_DIR"

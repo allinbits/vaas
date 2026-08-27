@@ -195,6 +195,7 @@ message ConsumerState {
   // re-derive the keeper's pause-expiration queue.
   google.protobuf.Timestamp pause_expiration_time = 16
       [ (gogoproto.stdtime) = true ];
+
 }
 
 // ValsetUpdateIdToHeight defines the genesis information for the mapping

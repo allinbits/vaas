@@ -206,6 +206,17 @@ func (ip InfractionParameters) Validate() error {
 	return nil
 }
 
+// ChallengeableInterval is how long an accepted downtime accusation must stay
+// disprovable: evidence may name a window up to DowntimeEvidenceMaxAge old,
+// and its slash then waits out DowntimeChallengeWindow. A challenge proves
+// innocence with a header verified against the consumer client, so any client
+// backing challenges must have a trusting period strictly above this, or the
+// oldest still-challengeable headers stop verifying and the optimistic slash
+// silently becomes unconditional.
+func (ip InfractionParameters) ChallengeableInterval() time.Duration {
+	return ip.DowntimeEvidenceMaxAge + ip.DowntimeChallengeWindow
+}
+
 // ValidateInfractionParamsAgainst enforces the cross-param constraint that
 // the oldest challengeable header stays light-client verifiable through its
 // challenge window: evidenceMaxAge + challengeWindow < trustingFraction *

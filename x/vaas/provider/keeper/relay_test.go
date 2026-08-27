@@ -49,17 +49,23 @@ func TestOnAcknowledgementPacketV2(t *testing.T) {
 	require.Equal(t, providertypes.CONSUMER_PHASE_LAUNCHED, phase)
 }
 
-// TestOnAcknowledgementPacketV2UnknownClient tests error handling for unknown clients.
-func TestOnAcknowledgementPacketV2UnknownClient(t *testing.T) {
+// TestOnAcknowledgementPacketV2UnknownClientIsLogOnly verifies that an
+// acknowledgement arriving on a client no consumer tracks -- a stale-but-honest
+// delivery for a packet sent before its consumer was removed -- is ignored
+// without error, so the relayer's tx does not fail over it.
+func TestOnAcknowledgementPacketV2UnknownClientIsLogOnly(t *testing.T) {
 	providerKeeper, ctx, ctrl, _ := testkeeper.GetProviderKeeperAndCtx(t, testkeeper.NewInMemKeeperParams(t))
 	defer ctrl.Finish()
 
 	unknownClientId := "07-tendermint-999"
 
-	// Error ack with unknown client should return error
 	err := providerKeeper.OnAcknowledgementPacketV2(ctx, unknownClientId, 0, "some error")
-	require.Error(t, err)
-	require.Contains(t, err.Error(), "unknown client")
+	require.NoError(t, err)
+
+	// A success ack on an unknown client is equally ignored, without
+	// recording any liveness state for a consumer that does not exist.
+	err = providerKeeper.OnAcknowledgementPacketV2(ctx, unknownClientId, 7, "")
+	require.NoError(t, err)
 }
 
 // TestOnTimeoutPacketV2 tests the IBC v2 timeout handler.
@@ -88,17 +94,17 @@ func TestOnTimeoutPacketV2(t *testing.T) {
 	require.Equal(t, providertypes.CONSUMER_PHASE_LAUNCHED, phase)
 }
 
-// TestOnTimeoutPacketV2UnknownClient tests error handling for unknown clients.
-func TestOnTimeoutPacketV2UnknownClient(t *testing.T) {
+// TestOnTimeoutPacketV2UnknownClientIsLogOnly verifies that a timeout proven
+// for a client no consumer tracks is ignored without error, mirroring the
+// acknowledgement path: the relayer's tx must not fail over a stale delivery.
+func TestOnTimeoutPacketV2UnknownClientIsLogOnly(t *testing.T) {
 	providerKeeper, ctx, ctrl, _ := testkeeper.GetProviderKeeperAndCtx(t, testkeeper.NewInMemKeeperParams(t))
 	defer ctrl.Finish()
 
 	unknownClientId := "07-tendermint-999"
 
-	// Timeout with unknown client should return error
 	err := providerKeeper.OnTimeoutPacketV2(ctx, unknownClientId)
-	require.Error(t, err)
-	require.Contains(t, err.Error(), "unknown client")
+	require.NoError(t, err)
 }
 
 // TestClientIdToConsumerIdMapping tests the client ID to consumer ID mapping used in IBC v2.

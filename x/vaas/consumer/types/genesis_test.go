@@ -308,9 +308,9 @@ func TestValidateRestartConsumerGenesisState(t *testing.T) {
 			false,
 		},
 		{
-			"invalid restart consumer genesis state: provider id is empty",
+			"valid restart consumer genesis state: not yet pinned (empty provider client id)",
 			types.NewRestartGenesisState("", valUpdates, heightToValsetUpdateID, params),
-			true,
+			false,
 		},
 		{
 			"invalid restart consumer genesis: client state defined",

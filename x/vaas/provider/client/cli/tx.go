@@ -351,7 +351,8 @@ where update_consumer.json has the following structure:
     "ccv_timeout_period": 2419200000000000,
     "historical_entries": 10000
    },
-   "new_chain_id": "newConsumer-1" // is optional and can be empty (i.e., "new_chain_id": "")
+   "new_chain_id": "newConsumer-1", // is optional and can be empty (i.e., "new_chain_id": "")
+   "client_id": "07-tendermint-0" // optional; declares the consumer's IBC client, exactly once, after the relayer creates it
 }
 
 Note that only 'consumer_id' is mandatory. The others are optional.
@@ -386,7 +387,7 @@ If one of the fields is missing, it will be set to its zero value.
 			}
 
 			msg, err := types.NewMsgUpdateConsumer(owner, consUpdate.ConsumerId, consUpdate.NewOwnerAddress, consUpdate.Metadata,
-				consUpdate.InitializationParameters, consUpdate.NewChainId)
+				consUpdate.InitializationParameters, consUpdate.NewChainId, consUpdate.ClientId)
 			if err != nil {
 				return err
 			}

@@ -3,9 +3,9 @@ package e2e
 // e2e_liveness_suite_test.go contains the LivenessIntegrationTestSuite, a
 // Docker-based e2e suite that exercises liveness behaviour. The liveness grace
 // period is unbonding * LivenessGraceFraction; this suite sets the fraction to
-// 0.75 in provider genesis so the grace (~150s) is observable within a CI run,
-// while keeping a long-enough provider/consumer unbonding (200s) that the
-// relayer-derived IBC client trusting period (unbonding * 0.66 = ~132s) stays
+// 0.375 in provider genesis so the grace (~150s) is observable within a CI run,
+// while keeping a long-enough provider/consumer unbonding (400s) that the
+// relayer-derived IBC client trusting period (unbonding * 0.66 = ~264s) stays
 // viable. Shrinking the grace via a short unbonding instead would collapse the
 // trusting period and the relayer could never establish the clients.
 //
@@ -25,7 +25,7 @@ package e2e
 // liveness sweep untestable in real time. This suite launches its own isolated
 // set of containers (distinct chain IDs, Docker network, and host ports) and
 // registers a single consumer via create_consumer_short_unbonding.json which
-// carries a 200s consumer unbonding (200000000000 ns), 10m vaas_timeout
+// carries a 400s consumer unbonding (400000000000 ns), 10m vaas_timeout
 // (600000000000 ns), and 5s safe_mode_threshold (5000000000 ns).
 //
 // Test ordering within TestLivenessVAAS:
@@ -78,10 +78,10 @@ const (
 
 // LivenessIntegrationTestSuite mirrors IntegrationTestSuite with two key
 // differences:
-//   - provider genesis is patched with unbonding_time "200s" and
-//     liveness_grace_fraction "0.75" (grace ~150s, trusting period ~132s)
+//   - provider genesis is patched with unbonding_time "400s" and
+//     liveness_grace_fraction "0.375" (grace ~150s, trusting period ~264s)
 //   - consumer is registered via create_consumer_short_unbonding.json
-//     (200s unbonding, 10m vaas_timeout, 5s safe_mode_threshold)
+//     (400s unbonding, 10m vaas_timeout, 5s safe_mode_threshold)
 type LivenessIntegrationTestSuite struct {
 	baseTestSuite
 }
@@ -138,10 +138,12 @@ func (s *LivenessIntegrationTestSuite) SetupSuite() {
 					// other liveness tests.
 					params["vaas_timeout_period"] = "20s"
 					// Shrink the liveness grace fraction so the grace period
-					// (unbonding * fraction = 200s * 0.75 = ~150s) is observable in
+					// (unbonding * fraction = 400s * 0.375 = ~150s) is observable in
 					// a CI run, while keeping the unbonding itself long enough that
 					// the relayer-derived IBC client trusting period (unbonding *
-					// 0.66 = ~132s) survives the relayer add-path window.
+					// 0.66 = ~264s) clears the declaration check: the declared
+					// consumer client's trusting period must exceed the downtime
+					// challenge horizon (60s + 120s below).
 					//
 					// The grace must exceed the time from consumer launch to first
 					// VSC sync (the provider seeds lastAck at launch, so the clock
@@ -149,7 +151,36 @@ func (s *LivenessIntegrationTestSuite) SetupSuite() {
 					// blocks that first sync is ~60-90s; 150s leaves margin. The
 					// suite also waits for that first sync explicitly before
 					// asserting (see waitForConsumerSync).
-					params["liveness_grace_fraction"] = "0.75"
+					params["liveness_grace_fraction"] = "0.375"
+				}
+			}
+
+			if provider, ok := appState["provider"].(map[string]any); ok {
+				// The suite's whole clock is the 400s unbonding, and consumer
+				// registration requires the unbonding period to exceed the
+				// downtime challenge horizon (evidence max age + challenge
+				// window) -- at the shipped defaults that horizon is 10 days, so
+				// this provider must carry proportionally short values or no
+				// consumer can be registered at all. Evidence age must not
+				// exceed the challenge window (InfractionParameters.Validate),
+				// and 60s absorbs the relayer's window-end anchoring lag during
+				// the requeue test's deliberate outages.
+				provider["infraction_parameters"] = map[string]any{
+					"double_sign": map[string]any{
+						"slash_fraction": "0.050000000000000000",
+						"jail_duration":  "315360000s",
+						"tombstone":      true,
+					},
+					"downtime": map[string]any{
+						"slash_fraction": "0.010000000000000000",
+						"jail_duration":  "0s",
+						"tombstone":      false,
+					},
+					"downtime_grace_period":     "0s",
+					"signed_blocks_window":      "30",
+					"min_signed_per_window":     "0.500000000000000000",
+					"downtime_challenge_window": "120s",
+					"downtime_evidence_max_age": "60s",
 				}
 			}
 
@@ -158,7 +189,7 @@ func (s *LivenessIntegrationTestSuite) SetupSuite() {
 			// the fraction, not from a short unbonding.
 			if staking, ok := appState["staking"].(map[string]any); ok {
 				if params, ok := staking["params"].(map[string]any); ok {
-					params["unbonding_time"] = "200s"
+					params["unbonding_time"] = "400s"
 				}
 			}
 		},
@@ -196,6 +227,9 @@ func (s *LivenessIntegrationTestSuite) SetupSuite() {
 
 	s.T().Log("step 5: starting ts-relayer for liveness suite...")
 	s.setupTSRelayer()
+
+	s.T().Log("step 5b: declaring the relayer-created clients (owner, both chains)...")
+	s.declareConsumerClients("0")
 
 	s.T().Log("step 6: waiting for the consumer to sync its first VSC...")
 	s.waitForConsumerSync("0")
@@ -523,7 +557,7 @@ func (s *LivenessIntegrationTestSuite) testAutoSweepRemoval() {
 		s.Require().NoError(err, "failed to pause consumer container for sweep test")
 
 		// The grace period is provider_unbonding * liveness_grace_fraction =
-		// 200s * 0.75 = ~150s. Wait for the grace period to elapse before polling,
+		// 400s * 0.375 = ~150s. Wait for the grace period to elapse before polling,
 		// so that the sweep has had time to fire by the first poll iteration.
 		const gracePlusBuffer = 160 * time.Second
 		s.T().Logf("outage started; waiting %s for grace period to elapse...", gracePlusBuffer)
@@ -545,8 +579,8 @@ func (s *LivenessIntegrationTestSuite) testAutoSweepRemoval() {
 
 // Note on STOPPED -> DELETED: the sweep schedules deletion at
 // blockTime + providerUnbonding, the same path a governance removal takes.
-// With a viable (relayer-survivable) ~200s unbonding, the real DELETED edge
-// would only fire ~200s after STOPPED and so is deliberately not exercised
+// With a viable (relayer-survivable) ~400s unbonding, the real DELETED edge
+// would only fire ~400s after STOPPED and so is deliberately not exercised
 // here -- it is covered by TestSweepRemovesStaleConsumer, which asserts the
 // removal_time scheduling directly. This e2e suite's contribution is proving
 // the LAUNCHED -> STOPPED sweep fires end-to-end under real IBC silence.

@@ -243,6 +243,17 @@ func (k Keeper) validateConsumerInitParams(ctx sdk.Context, p types.ConsumerInit
 		return errorsmod.Wrapf(types.ErrInvalidConsumerInitializationParameters,
 			"unbonding period %s must not exceed provider unbonding %s", p.UnbondingPeriod, providerUnbonding)
 	}
+	// A light client's trusting period must sit below its chain's unbonding
+	// period, and the declared consumer client's trusting period must exceed
+	// the downtime challenge horizon (see SetConsumerClient) so accepted
+	// accusations stay disprovable. An unbonding period at or below the
+	// horizon therefore admits no valid client at all: reject the consumer at
+	// registration instead of letting every later declaration fail.
+	if horizon := k.GetInfractionParams(ctx).ChallengeableInterval(); p.UnbondingPeriod <= horizon {
+		return errorsmod.Wrapf(types.ErrInvalidConsumerInitializationParameters,
+			"unbonding period %s must exceed the downtime challenge horizon %s (evidence max age + challenge window): no IBC client of this consumer could otherwise keep challenge headers verifiable",
+			p.UnbondingPeriod, horizon)
+	}
 	grace, err := vaastypes.CalculateTrustPeriod(providerUnbonding, k.GetParams(ctx).LivenessGraceFraction)
 	if err != nil {
 		return err
@@ -390,6 +401,16 @@ func (k msgServer) UpdateConsumer(goCtx context.Context, msg *types.MsgUpdateCon
 
 	if msg.Owner != ownerAddress {
 		return &resp, errorsmod.Wrapf(types.ErrUnauthorized, "expected owner address %s, got %s", ownerAddress, msg.Owner)
+	}
+
+	// The optional client declaration: the owner names the IBC client the
+	// provider uses to reach the consumer, exactly once (see SetConsumerClient
+	// for the trust model and every validation).
+	if strings.TrimSpace(msg.ClientId) != "" {
+		if err := k.Keeper.SetConsumerClient(ctx, consumerId, msg.ClientId); err != nil {
+			return &resp, err
+		}
+		eventAttributes = append(eventAttributes, sdk.NewAttribute(types.AttributeConsumerClientID, msg.ClientId))
 	}
 
 	chainId, err := k.GetConsumerChainId(ctx, consumerId)

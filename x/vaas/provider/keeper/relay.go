@@ -11,10 +11,6 @@ import (
 
 	clienttypes "github.com/cosmos/ibc-go/v10/modules/core/02-client/types"
 	channeltypesv2 "github.com/cosmos/ibc-go/v10/modules/core/04-channel/v2/types"
-	ibcexported "github.com/cosmos/ibc-go/v10/modules/core/exported"
-	ibctmtypes "github.com/cosmos/ibc-go/v10/modules/light-clients/07-tendermint"
-
-	errorsmod "cosmossdk.io/errors"
 
 	sdk "github.com/cosmos/cosmos-sdk/types"
 )
@@ -22,7 +18,16 @@ import (
 func (k Keeper) OnAcknowledgementPacketV2(ctx sdk.Context, sourceClientID string, ackVscId uint64, ackError string) error {
 	consumerId, found := k.GetClientIdToConsumerId(ctx, sourceClientID)
 	if !found {
-		return errorsmod.Wrapf(providertypes.ErrInvalidConsumerClient, "recv acknowledgement on unknown client %s", sourceClientID)
+		// ibc-go only delivers acknowledgements for packets this chain actually
+		// sent (the stored packet commitment is checked before the callback
+		// runs), and the provider only ever sends over tracked clients. An
+		// unknown client here therefore means the consumer was removed after
+		// the packet went out: a stale-but-honest delivery. Log and succeed --
+		// failing would fail the relayer's whole tx over a packet nobody
+		// tracks anymore.
+		k.Logger(ctx).Info("recv acknowledgement on unknown client, ignoring",
+			"clientID", sourceClientID, "error", ackError)
+		return nil
 	}
 
 	if ackError != "" {
@@ -43,8 +48,12 @@ func (k Keeper) OnAcknowledgementPacketV2(ctx sdk.Context, sourceClientID string
 func (k Keeper) OnTimeoutPacketV2(ctx sdk.Context, sourceClientID string) error {
 	consumerId, found := k.GetClientIdToConsumerId(ctx, sourceClientID)
 	if !found {
-		k.Logger(ctx).Error("packet timeout, unknown client:", "clientID", sourceClientID)
-		return errorsmod.Wrapf(providertypes.ErrInvalidConsumerClient, "timeout on unknown client %s", sourceClientID)
+		// Same reasoning as OnAcknowledgementPacketV2: a timeout can only be
+		// proven for a packet this chain sent, so an unknown client means the
+		// consumer is gone. Log-only, so the relayer's tx is not failed over a
+		// stale delivery.
+		k.Logger(ctx).Info("packet timeout on unknown client, ignoring", "clientID", sourceClientID)
+		return nil
 	}
 	k.Logger(ctx).Info("packet timeout, retrying next epoch; liveness sweep owns removal",
 		"consumerId", consumerId, "clientId", sourceClientID)
@@ -128,9 +137,13 @@ func (k Keeper) BlocksUntilNextEpoch(ctx sdk.Context) int64 {
 
 func (k Keeper) SendVSCPackets(ctx sdk.Context) error {
 	for _, consumerId := range k.GetAllLaunchedConsumerIds(ctx) {
-		clientID, _ := k.GetConsumerClientId(ctx, consumerId)
-		clientID = k.discoverActiveConsumerClient(ctx, consumerId, clientID)
-		if clientID == "" {
+		// A consumer with no declared client keeps its packets queued: the
+		// owner declares the client once via MsgUpdateConsumer after the
+		// relayer has created it (see SetConsumerClient). Nothing is
+		// discovered or adopted here -- inferring which permissionlessly
+		// created client "is" the consumer is what the declaration replaced.
+		clientID, found := k.GetConsumerClientId(ctx, consumerId)
+		if !found || clientID == "" {
 			continue
 		}
 
@@ -139,61 +152,6 @@ func (k Keeper) SendVSCPackets(ctx sdk.Context) error {
 		}
 	}
 	return nil
-}
-
-// discoverActiveConsumerClient scans for IBC clients pointing to the consumer chain
-// and returns the one with the highest latest height that has a counterparty registered.
-// This allows the provider to use a client being actively updated by a relayer.
-// The current client is only replaced if it is expired, frozen, or has no counterparty.
-func (k Keeper) discoverActiveConsumerClient(ctx sdk.Context, consumerId uint64, currentClientID string) string {
-	if currentClientID != "" {
-		currentStatus := k.clientKeeper.GetClientStatus(ctx, currentClientID)
-		if currentStatus == ibcexported.Active {
-			cp, found := k.clientV2Keeper.GetClientCounterparty(ctx, currentClientID)
-			if found && cp.ClientId != "" {
-				return currentClientID
-			}
-		}
-	}
-
-	chainID, err := k.GetConsumerChainId(ctx, consumerId)
-	if err != nil {
-		return currentClientID
-	}
-
-	var bestClient string
-	var bestHeight uint64
-
-	k.clientKeeper.IterateClientStates(ctx, nil, func(clientID string, cs ibcexported.ClientState) bool {
-		tmCS, ok := cs.(*ibctmtypes.ClientState)
-		if !ok || tmCS.ChainId != chainID {
-			return false
-		}
-		if k.clientKeeper.GetClientStatus(ctx, clientID) != ibcexported.Active {
-			return false
-		}
-		cp, found := k.clientV2Keeper.GetClientCounterparty(ctx, clientID)
-		if !found || cp.ClientId == "" {
-			return false
-		}
-		height := tmCS.LatestHeight.RevisionHeight
-		if height > bestHeight {
-			bestHeight = height
-			bestClient = clientID
-		}
-		return false
-	})
-
-	if bestClient != "" {
-		k.Logger(ctx).Info("switching to discovered active client",
-			"consumerId", consumerId,
-			"oldClient", currentClientID,
-			"newClient", bestClient,
-		)
-		k.SetConsumerClientId(ctx, consumerId, bestClient)
-		return bestClient
-	}
-	return currentClientID
 }
 
 func (k Keeper) SendVSCPacketsToChain(ctx sdk.Context, consumerId uint64, clientId string) error {

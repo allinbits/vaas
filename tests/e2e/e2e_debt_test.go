@@ -108,6 +108,13 @@ func (s *baseTestSuite) providerFundConsumerFeePool(consumerID, amount string) {
 // the call site with the on-chain raw_log, instead of as a distant downstream
 // timeout.
 func (s *baseTestSuite) requireTxCommitted(broadcastOut []byte) {
+	s.requireTxCommittedOn(s.providerValRes[0].Container.ID, providerBinary, providerHomePath, broadcastOut)
+}
+
+// requireTxCommittedOn is requireTxCommitted against an explicit chain: the
+// consumer-side transactions of the client-declaration flow commit on the
+// consumer, and polling the provider for their hashes waits forever.
+func (s *baseTestSuite) requireTxCommittedOn(containerID, binary, homePath string, broadcastOut []byte) {
 	var bres struct {
 		TxHash string `json:"txhash"`
 		Code   int    `json:"code"`
@@ -121,9 +128,9 @@ func (s *baseTestSuite) requireTxCommitted(broadcastOut []byte) {
 	var code int
 	var rawLog, lastOut string
 	s.Require().Eventuallyf(func() bool {
-		out, _, qerr := s.dockerExec(s.providerValRes[0].Container.ID, []string{
-			providerBinary, "query", "tx", bres.TxHash,
-			"--home", providerHomePath,
+		out, _, qerr := s.dockerExec(containerID, []string{
+			binary, "query", "tx", bres.TxHash,
+			"--home", homePath,
 			"--output", "json",
 		})
 		if qerr != nil || out.Len() == 0 {

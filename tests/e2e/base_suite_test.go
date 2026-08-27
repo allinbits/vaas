@@ -276,7 +276,13 @@ func (s *baseTestSuite) registerConsumerOnProvider() {
 
 	stdout, stderr, err := s.dockerExec(s.providerValRes[0].Container.ID, []string{
 		providerBinary, "tx", "provider", "create-consumer", "/tmp/create_consumer.json",
-		"--from", "val",
+		// The submitter becomes the consumer's owner, and the owner is also
+		// the account allowed to pin the provider client on the consumer
+		// side. The owner key (HD index 1 of the shared mnemonic) exists on
+		// both chains with the same address bytes, and unlike the relayer
+		// key its account sequence is not being consumed concurrently by the
+		// ts-relayer's own transactions.
+		"--from", "owner",
 		"--home", providerHomePath,
 		"--keyring-backend", "test",
 		"--chain-id", s.cfg.providerChainID,
@@ -546,4 +552,114 @@ func (s *baseTestSuite) consumerLogs() string {
 		Stderr:       true,
 	})
 	return buf.String()
+}
+
+// tendermintClientTracking polls the given chain until an IBC tendermint
+// client tracking counterpartyChainID exists, and returns its client id. The
+// ts-relayer creates the clients shortly after add-path; a fresh chain has no
+// other clients, but the filter keys on the tracked chain id rather than
+// assuming an index.
+func (s *baseTestSuite) tendermintClientTracking(containerID, binary, homePath, counterpartyChainID string) string {
+	var clientID string
+	s.Require().Eventually(func() bool {
+		stdout, _, err := s.dockerExec(containerID, []string{
+			binary, "query", "ibc", "client", "states",
+			"--home", homePath,
+			"-o", "json",
+		})
+		if err != nil {
+			return false
+		}
+		var res struct {
+			ClientStates []struct {
+				ClientId    string `json:"client_id"`
+				ClientState struct {
+					ChainId string `json:"chain_id"`
+				} `json:"client_state"`
+			} `json:"client_states"`
+		}
+		if err := json.Unmarshal(stdout.Bytes(), &res); err != nil {
+			return false
+		}
+		for _, cs := range res.ClientStates {
+			if cs.ClientState.ChainId == counterpartyChainID {
+				clientID = cs.ClientId
+				return true
+			}
+		}
+		return false
+	}, 2*time.Minute, 2*time.Second,
+		"no IBC client tracking %s appeared on %s", counterpartyChainID, binary)
+	return clientID
+}
+
+// declareConsumerClients performs the two owner declarations that connect a
+// launched consumer to its relayer-created IBC clients. Nothing is discovered
+// on-chain: the provider learns its consumer client from the owner's
+// update-consumer, and the consumer learns its provider client from the
+// owner's set-provider-client. Until both land, VSC packets stay queued on the
+// provider and rejected by the consumer.
+func (s *baseTestSuite) declareConsumerClients(consumerID string) {
+	providerClientID := s.tendermintClientTracking(
+		s.providerValRes[0].Container.ID, providerBinary, providerHomePath, s.cfg.consumerChainID)
+	s.T().Logf("declaring consumer client on the provider: %s", providerClientID)
+
+	updateJSON := fmt.Sprintf(`{"consumer_id": %s, "client_id": %q}`, consumerID, providerClientID)
+	s.dockerExecMust(s.providerValRes[0].Container.ID, []string{
+		"sh", "-c", fmt.Sprintf("echo '%s' > /tmp/declare_client.json", updateJSON),
+	})
+	// The declaration validates the client against live IBC state during the
+	// --gas auto simulation, and the relayer registers the counterparty in its
+	// own time shortly after creating the client -- so a too-early attempt
+	// fails simulation with an empty stdout. Retry until it broadcasts, and
+	// log each failed attempt, since a simulation error only reaches stderr.
+	s.Require().Eventuallyf(func() bool {
+		stdout, stderr, err := s.dockerExec(s.providerValRes[0].Container.ID, []string{
+			providerBinary, "tx", "provider", "update-consumer", "/tmp/declare_client.json",
+			"--from", "owner",
+			"--home", providerHomePath,
+			"--keyring-backend", "test",
+			"--chain-id", s.cfg.providerChainID,
+			"--gas", "auto",
+			"--gas-adjustment", "1.5",
+			"--fees", "10000" + bondDenom,
+			"--broadcast-mode", "sync",
+			"-y",
+			"-o", "json",
+		})
+		if err != nil || stdout.Len() == 0 {
+			s.T().Logf("declare attempt not broadcast yet: err=%v stderr=%s", err, stderr.String())
+			return false
+		}
+		s.requireTxCommitted(stdout.Bytes())
+		return true
+	}, 2*time.Minute, 3*time.Second,
+		"declaring the consumer client never broadcast; see the attempt logs above")
+
+	consumerClientID := s.tendermintClientTracking(
+		s.consumerValRes[0].Container.ID, consumerBinary, consumerHomePath, s.cfg.providerChainID)
+	s.T().Logf("pinning provider client on the consumer: %s", consumerClientID)
+
+	s.Require().Eventuallyf(func() bool {
+		stdout, stderr, err := s.dockerExec(s.consumerValRes[0].Container.ID, []string{
+			consumerBinary, "tx", "vaasconsumer", "set-provider-client", consumerClientID,
+			"--from", "owner",
+			"--home", consumerHomePath,
+			"--keyring-backend", "test",
+			"--chain-id", s.cfg.consumerChainID,
+			"--gas", "auto",
+			"--gas-adjustment", "1.5",
+			"--fees", "10000" + bondDenom,
+			"--broadcast-mode", "sync",
+			"-y",
+			"-o", "json",
+		})
+		if err != nil || stdout.Len() == 0 {
+			s.T().Logf("pin attempt not broadcast yet: err=%v stderr=%s", err, stderr.String())
+			return false
+		}
+		s.requireTxCommittedOn(s.consumerValRes[0].Container.ID, consumerBinary, consumerHomePath, stdout.Bytes())
+		return true
+	}, 2*time.Minute, 3*time.Second,
+		"pinning the provider client never broadcast; see the attempt logs above")
 }

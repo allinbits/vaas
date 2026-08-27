@@ -6,7 +6,6 @@ import (
 	"time"
 
 	"github.com/stretchr/testify/require"
-	"go.uber.org/mock/gomock"
 
 	clienttypes "github.com/cosmos/ibc-go/v10/modules/core/02-client/types"
 	commitmenttypes "github.com/cosmos/ibc-go/v10/modules/core/23-commitment/types"
@@ -35,7 +34,6 @@ import (
 func TestInitGenesis(t *testing.T) {
 	// mock the consumer genesis state values
 	provClientID := "tendermint-07"
-	provClientType := "07-tendermint"
 
 	vscID := uint64(0)
 	blockHeight := uint64(0)
@@ -81,14 +79,8 @@ func TestInitGenesis(t *testing.T) {
 		{
 			"start a new chain",
 			func(ctx sdk.Context, mocks testkeeper.MockedKeepers) {
-				clientStateBytes, err := provClientState.Marshal()
-				require.NoError(t, err)
-				consStateBytes, err := provConsState.Marshal()
-				require.NoError(t, err)
-				gomock.InOrder(
-					testkeeper.ExpectCreateClientMock(ctx, mocks, provClientType, provClientID, clientStateBytes,
-						consStateBytes),
-				)
+				// No client is created at genesis; an unexpected CreateClient
+				// call fails the test through the mock controller.
 			},
 			consumertypes.NewInitialGenesisState(
 				provClientState,
@@ -97,7 +89,11 @@ func TestInitGenesis(t *testing.T) {
 				params,
 			),
 			func(ctx sdk.Context, ck consumerkeeper.Keeper, gs *consumertypes.GenesisState) {
-				assertProviderClientID(t, ctx, &ck, provClientID)
+				_, found := ck.GetProviderClientID(ctx)
+				require.False(t, found, "a new chain starts with no provider client pinned")
+				gotChainID, ok := ck.GetProviderChainId(ctx)
+				require.True(t, ok)
+				require.Equal(t, provClientState.ChainId, gotChainID)
 				assertHeightValsetUpdateIDs(t, ctx, &ck, defaultHeightValsetUpdateIDs)
 
 				require.Equal(t, validator.Address.Bytes(), ck.GetAllCCValidator(ctx)[0].Address)
@@ -464,4 +460,81 @@ func TestInitGenesisAcceptsDefaultGenesis(t *testing.T) {
 	defer ctrl.Finish()
 
 	require.NotPanics(t, func() { consumerKeeper.InitGenesis(ctx, consumertypes.DefaultGenesisState()) })
+}
+
+// TestInitGenesisNewChainCreatesNoClient pins the bootstrap model: a new chain
+// starts with no provider client at all.
+//
+// The client the consumer used to create for itself here could never carry a
+// packet -- created outside a MsgCreateClient it has no recorded creator, so
+// its IBC v2 counterparty could never be registered -- and its existence forced
+// the pin to be movable, which is what made the bootstrap front-runnable. Now
+// the provider-authored client state seeds only the provider chain id, every
+// VSC packet is rejected while no pin exists, and the owner (or governance)
+// pins the relayer-created client explicitly via MsgSetProviderClient.
+func TestInitGenesisNewChainCreatesNoClient(t *testing.T) {
+	ck, ctx, ctrl, _ := testkeeper.GetConsumerKeeperAndCtx(t, testkeeper.NewInMemKeeperParams(t))
+	defer ctrl.Finish()
+	// No CreateClient expectation on the mock: any attempt to create a client
+	// fails the test as an unexpected call.
+
+	provClientState := ibctmtypes.NewClientState(
+		"provider-chain-7", ibctmtypes.DefaultTrustLevel,
+		stakingtypes.DefaultUnbondingTime/2, stakingtypes.DefaultUnbondingTime,
+		time.Second*10, clienttypes.NewHeight(7, 5),
+		commitmenttypes.GetSDKSpecs(), []string{"upgrade", "upgradedIBCState"},
+	)
+	provConsState := ibctmtypes.NewConsensusState(
+		time.Unix(1_700_000_000, 0).UTC(),
+		commitmenttypes.NewMerkleRoot([]byte("apphash")),
+		[]byte("next_vals_hash"),
+	)
+
+	params := vaastypes.DefaultConsumerParams()
+	params.Enabled = true
+	genesis := consumertypes.NewInitialGenesisState(provClientState, provConsState, nil, params)
+	ck.InitGenesis(ctx, genesis)
+
+	_, found := ck.GetProviderClientID(ctx)
+	require.False(t, found, "a new chain must start with no provider client pinned")
+
+	chainID, found := ck.GetProviderChainId(ctx)
+	require.True(t, found, "the provider chain id must still be seeded from the genesis client state")
+	require.Equal(t, "provider-chain-7", chainID)
+}
+
+// TestGenesisRoundTripBeforePinKeepsState pins the bootstrap phase across a
+// restart: a chain that has not pinned its provider client yet is in a
+// legitimate state (genesis creates no client; the owner pins one later), so
+// exporting it must not collapse to a default genesis. Everything already
+// established -- the provider chain id, the armed safe-mode clock, the params
+// -- survives the round-trip, and the chain comes back still unpinned.
+func TestGenesisRoundTripBeforePinKeepsState(t *testing.T) {
+	ck, ctx, ctrl, _ := testkeeper.GetConsumerKeeperAndCtx(t, testkeeper.NewInMemKeeperParams(t))
+	defer ctrl.Finish()
+
+	params := vaastypes.DefaultConsumerParams()
+	params.Enabled = true
+	ck.SetParams(ctx, params)
+	ck.SetProviderChainId(ctx, "provider-boot-1")
+	armedAt := time.Unix(1_850_000_000, 0).UTC()
+	ck.SetLastVSCRecvTime(ctx, armedAt)
+
+	exported := ck.ExportGenesis(ctx)
+	require.Equal(t, "provider-boot-1", exported.ProviderChainId,
+		"an unpinned chain's export must not collapse to the default genesis")
+	require.NotNil(t, exported.LastVscRecvTime, "the armed safe-mode clock must survive")
+	require.Equal(t, armedAt, *exported.LastVscRecvTime)
+	require.Empty(t, exported.ProviderClientId)
+
+	ck2, ctx2, ctrl2, _ := testkeeper.GetConsumerKeeperAndCtx(t, testkeeper.NewInMemKeeperParams(t))
+	defer ctrl2.Finish()
+	ck2.InitGenesis(ctx2, exported)
+
+	_, found := ck2.GetProviderClientID(ctx2)
+	require.False(t, found, "the restart must come back unpinned, not pinned to an empty id")
+	chainID, ok := ck2.GetProviderChainId(ctx2)
+	require.True(t, ok)
+	require.Equal(t, "provider-boot-1", chainID)
+	require.Equal(t, armedAt, ck2.GetLastVSCRecvTime(ctx2))
 }

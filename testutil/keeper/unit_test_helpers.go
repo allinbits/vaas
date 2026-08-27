@@ -83,9 +83,13 @@ type MockedKeepers struct {
 	*MockBankKeeper
 	*MockDistributionKeeper
 
-	// counterparties holds the client ids that report a registered IBC v2
-	// counterparty. Default is none; StubClientCounterparty opts a client in.
-	counterparties map[string]bool
+	// ClientCounterparties backs the mocked ClientV2Keeper's
+	// GetClientCounterparty: a client id present in the map has a registered
+	// counterparty, any other id does not. Tests exercising client
+	// authentication (the provider's discovery content check, the consumer's
+	// provider-client pin) populate it to mark specific clients routable;
+	// the empty default preserves the historical "no counterparty" behavior.
+	ClientCounterparties map[string]clientv2types.CounterpartyInfo
 
 	// pendingRotations holds what GetBlockConsPubKeyRotationHistory reports:
 	// the consensus-key rotations recorded in the current block, not yet
@@ -109,7 +113,7 @@ func (m MockedKeepers) StubPendingRotation(t *testing.T, newConsPubKey cryptotyp
 // counterparty, which is what marks a client as routable: packets can be
 // delivered over it, and the registration cannot be undone.
 func (m MockedKeepers) StubClientCounterparty(clientID string) {
-	m.counterparties[clientID] = true
+	m.ClientCounterparties[clientID] = clientv2types.CounterpartyInfo{ClientId: clientID}
 }
 
 // NewMockedKeepers instantiates a struct with pointers to properly instantiated mocked keepers.
@@ -124,21 +128,19 @@ func NewMockedKeepers(ctrl *gomock.Controller) MockedKeepers {
 		MockAccountKeeper:      NewMockAccountKeeper(ctrl),
 		MockBankKeeper:         NewMockBankKeeper(ctrl),
 		MockDistributionKeeper: NewMockDistributionKeeper(ctrl),
+		ClientCounterparties:   map[string]clientv2types.CounterpartyInfo{},
 	}
-	mocks.counterparties = map[string]bool{}
+	mocks.ClientCounterparties = map[string]clientv2types.CounterpartyInfo{}
 	mocks.pendingRotations = &[]stakingtypes.ConsPubKeyRotationHistory{}
 	pendingRotations := mocks.pendingRotations
 	mocks.MockStakingKeeper.EXPECT().GetBlockConsPubKeyRotationHistory(gomock.Any()).
 		DoAndReturn(func(context.Context) ([]stakingtypes.ConsPubKeyRotationHistory, error) {
 			return *pendingRotations, nil
 		}).AnyTimes()
-	counterparties := mocks.counterparties
-	mocks.MockClientV2Keeper.EXPECT().GetClientCounterparty(gomock.Any(), gomock.Any()).
-		DoAndReturn(func(_ sdk.Context, clientID string) (clientv2types.CounterpartyInfo, bool) {
-			if counterparties[clientID] {
-				return clientv2types.CounterpartyInfo{ClientId: clientID}, true
-			}
-			return clientv2types.CounterpartyInfo{}, false
+	mocks.MockClientV2Keeper.EXPECT().GetClientCounterparty(gomock.Any(), gomock.Any()).DoAndReturn(
+		func(_ sdk.Context, clientID string) (clientv2types.CounterpartyInfo, bool) {
+			cp, found := mocks.ClientCounterparties[clientID]
+			return cp, found
 		}).AnyTimes()
 	mocks.MockClientV2Keeper.EXPECT().SetClientCounterparty(gomock.Any(), gomock.Any(), gomock.Any()).AnyTimes()
 	return mocks

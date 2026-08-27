@@ -16,85 +16,78 @@ import (
 	channeltypesv2 "github.com/cosmos/ibc-go/v10/modules/core/04-channel/v2/types"
 )
 
-// TestIBCModuleOnRecvPacketStoresDestinationClientAsProviderClient guards
-// against regressing to storing the packet's SourceClient (the provider's
-// own client, meaningless to the consumer for outbound sends) as the
-// consumer's ProviderClientID. It must store DestinationClient: the
-// consumer's own client that received the packet, which ibc-go's RecvPacket
-// handler has already verified carries a registered counterparty, and which
-// SendEvidencePackets later needs to address packets back to the provider.
-func TestIBCModuleOnRecvPacketStoresDestinationClientAsProviderClient(t *testing.T) {
-	consumerKeeper, ctx, ctrl, mocks := testkeeper.GetConsumerKeeperAndCtx(t, testkeeper.NewInMemKeeperParams(t))
-	defer ctrl.Finish()
-	testkeeper.StubClientState(mocks, "provider-0")
-	// Start from the genesis placeholder: it has no registered counterparty, so
-	// it is the one pin the first delivered packet is allowed to replace. That
-	// is what makes which id gets stored observable.
-	consumerKeeper.SetProviderClientID(ctx, "07-tendermint-genesis")
-
-	module := consumer.NewIBCModule(&consumerKeeper)
-
-	pk, err := cryptocodec.ToCmtProtoPublicKey(ed25519.GenPrivKey().PubKey())
-	require.NoError(t, err)
-	valUpdates := []abci.ValidatorUpdate{{PubKey: pk, Power: 100}}
-	vsc := vaastypes.NewValidatorSetChangePacketData(valUpdates, 1)
-
-	payload := channeltypesv2.Payload{
-		SourcePort:      vaastypes.ProviderAppID,
-		DestinationPort: vaastypes.ConsumerAppID,
-		Value:           vsc.GetBytes(),
-	}
-
+// TestIBCModuleOnRecvPacketMatchesPinAgainstDestinationClient guards against
+// regressing to comparing the packet's SourceClient (the provider's own
+// client, meaningless on the consumer) against the provider-client pin. The
+// pin names the consumer's OWN client of the provider, so it is the packet's
+// DestinationClient that must match it: a packet delivered over the pinned
+// client is accepted, and the same packet is rejected when only its
+// SourceClient happens to equal the pin.
+func TestIBCModuleOnRecvPacketMatchesPinAgainstDestinationClient(t *testing.T) {
 	const providerOwnClientID = "07-tendermint-0" // packet.SourceClient: the provider's own client
 	const consumerOwnClientID = "07-tendermint-1" // packet.DestinationClient: the consumer's own client
 
-	result := module.OnRecvPacket(ctx, providerOwnClientID, consumerOwnClientID, 1, payload, sdk.AccAddress{})
-	require.Equal(t, channeltypesv2.PacketStatus_Success, result.Status)
+	newPacket := func() channeltypesv2.Payload {
+		pk, err := cryptocodec.ToCmtProtoPublicKey(ed25519.GenPrivKey().PubKey())
+		require.NoError(t, err)
+		vsc := vaastypes.NewValidatorSetChangePacketData([]abci.ValidatorUpdate{{PubKey: pk, Power: 100}}, 1)
+		return channeltypesv2.Payload{
+			SourcePort:      vaastypes.ProviderAppID,
+			DestinationPort: vaastypes.ConsumerAppID,
+			Value:           vsc.GetBytes(),
+		}
+	}
 
-	clientID, found := consumerKeeper.GetProviderClientID(ctx)
-	require.True(t, found)
-	require.Equal(t, consumerOwnClientID, clientID,
-		"ProviderClientID must be the consumer's own (destination) client, not the provider's own (source) client")
+	t.Run("packet over the pinned (destination) client is accepted", func(t *testing.T) {
+		consumerKeeper, ctx, ctrl, mocks := testkeeper.GetConsumerKeeperAndCtx(t, testkeeper.NewInMemKeeperParams(t))
+		defer ctrl.Finish()
+		testkeeper.StubClientState(mocks, "provider-0")
+		consumerKeeper.SetProviderClientID(ctx, consumerOwnClientID)
+
+		module := consumer.NewIBCModule(&consumerKeeper)
+		result := module.OnRecvPacket(ctx, providerOwnClientID, consumerOwnClientID, 1, newPacket(), sdk.AccAddress{})
+		require.Equal(t, channeltypesv2.PacketStatus_Success, result.Status)
+	})
+
+	t.Run("packet whose source client merely equals the pin is rejected", func(t *testing.T) {
+		consumerKeeper, ctx, ctrl, mocks := testkeeper.GetConsumerKeeperAndCtx(t, testkeeper.NewInMemKeeperParams(t))
+		defer ctrl.Finish()
+		testkeeper.StubClientState(mocks, "provider-0")
+		consumerKeeper.SetProviderClientID(ctx, providerOwnClientID)
+
+		module := consumer.NewIBCModule(&consumerKeeper)
+		result := module.OnRecvPacket(ctx, providerOwnClientID, consumerOwnClientID, 1, newPacket(), sdk.AccAddress{})
+		require.Equal(t, channeltypesv2.PacketStatus_Failure, result.Status,
+			"the pin names the consumer's own client, so only DestinationClient may satisfy it")
+	})
 }
 
-// TestIBCModuleOnRecvPacketHealsStaleProviderClient guards against the
-// consumer latching onto a genesis-time placeholder client (self-created
-// before any relayer-established, counterparty-linked client exists) and
-// never correcting it: every accepted VSC packet must resync ProviderClientID
-// to whichever client actually delivered it.
-func TestIBCModuleOnRecvPacketHealsStaleProviderClient(t *testing.T) {
+// TestIBCModuleOnRecvPacketRejectsWhileUnpinned covers the bootstrap surface
+// through the full IBC module callback: with no provider client pinned -- the
+// state every new chain starts in, since genesis creates no client -- a VSC
+// packet is error-acked, whatever client delivers it. The pin only ever comes
+// from MsgSetProviderClient.
+func TestIBCModuleOnRecvPacketRejectsWhileUnpinned(t *testing.T) {
 	consumerKeeper, ctx, ctrl, mocks := testkeeper.GetConsumerKeeperAndCtx(t, testkeeper.NewInMemKeeperParams(t))
 	defer ctrl.Finish()
 	testkeeper.StubClientState(mocks, "provider-0")
-	// Start from the genesis placeholder: it has no registered counterparty, so
-	// it is the one pin the first delivered packet is allowed to replace. That
-	// is what makes which id gets stored observable.
-	consumerKeeper.SetProviderClientID(ctx, "07-tendermint-genesis")
-
-	staleGenesisClientID := "07-tendermint-0"
-	consumerKeeper.SetProviderClientID(ctx, staleGenesisClientID)
 
 	module := consumer.NewIBCModule(&consumerKeeper)
 
 	pk, err := cryptocodec.ToCmtProtoPublicKey(ed25519.GenPrivKey().PubKey())
 	require.NoError(t, err)
-	valUpdates := []abci.ValidatorUpdate{{PubKey: pk, Power: 100}}
-	vsc := vaastypes.NewValidatorSetChangePacketData(valUpdates, 1)
-
+	vsc := vaastypes.NewValidatorSetChangePacketData([]abci.ValidatorUpdate{{PubKey: pk, Power: 100}}, 1)
 	payload := channeltypesv2.Payload{
 		SourcePort:      vaastypes.ProviderAppID,
 		DestinationPort: vaastypes.ConsumerAppID,
 		Value:           vsc.GetBytes(),
 	}
 
-	liveClientID := "07-tendermint-1"
-	result := module.OnRecvPacket(ctx, "07-tendermint-0", liveClientID, 1, payload, sdk.AccAddress{})
-	require.Equal(t, channeltypesv2.PacketStatus_Success, result.Status)
+	result := module.OnRecvPacket(ctx, "07-tendermint-0", "07-tendermint-1", 1, payload, sdk.AccAddress{})
+	require.Equal(t, channeltypesv2.PacketStatus_Failure, result.Status)
 
-	clientID, found := consumerKeeper.GetProviderClientID(ctx)
-	require.True(t, found)
-	require.Equal(t, liveClientID, clientID,
-		"ProviderClientID must heal to the client actually delivering VSC packets, not stay stuck on the stale genesis client")
+	_, found := consumerKeeper.GetProviderClientID(ctx)
+	require.False(t, found, "a rejected packet must not establish the pin")
 }
 
 // TestIBCModuleOnRecvPacketRejectsWrongSourcePort guards against accepting a
