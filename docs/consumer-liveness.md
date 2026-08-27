@@ -156,11 +156,14 @@ safe mode engages before the provider's sweep removes it.
 
 ## 6. Operator guidance: the liveness query
 
-Operators can observe a consumer's liveness without waiting for removal:
+Operators can observe a consumer's liveness without waiting for removal
+through the provider's `QueryConsumerLiveness` query, via the CLI:
 
 ```
 providerd query provider consumer-liveness <consumer-id>
 ```
+
+or over REST as `/vaas/provider/consumer_liveness/<consumer-id>`.
 
 It returns, all derived (no stored extra state):
 

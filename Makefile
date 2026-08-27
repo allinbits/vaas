@@ -81,11 +81,17 @@ provider-start: build-apps
 	$(providerd) genesis add-genesis-account val 1000000000000uatone,1000000000000uphoton
 	$(providerd) keys add user
 	$(providerd) genesis add-genesis-account user 1000000000uatone
+	# Fund the IBC relayer account so it can pay fees to create the client on the provider
+	@chmod +x ./scripts/add-relayer-key.sh
+	@./scripts/add-relayer-key.sh ./build/provider $(provider_home)
+	$(providerd) genesis add-genesis-account relayer 1000000000uatone
 	$(providerd) genesis gentx val 1000000000uatone
 	$(providerd) genesis collect-gentxs
 
 	# Set validator gas prices
 	sed -i.bak 's#^minimum-gas-prices = .*#minimum-gas-prices = "0.01uatone,0.01uphoton"#g' $(provider_home)/config/app.toml
+	# Bind the RPC to all interfaces so the containerized ts-relayer can reach it
+	sed -i.bak 's#tcp://127.0.0.1:26657#tcp://0.0.0.0:26657#g' $(provider_home)/config/config.toml
 	# enable REST API
 	$(providerd) config set app api.enable true
 	# Decrease voting period to 5min
@@ -114,8 +120,10 @@ consumer-init: build-apps
 	$(consumerd) genesis add-genesis-account relayer 100000000uatone
 	# Set gas prices
 	sed -i.bak 's#^minimum-gas-prices = .*#minimum-gas-prices = "0.01uatone,0.01uphoton"#g' $(consumer_home)/config/app.toml
-	# Use different ports to avoid conflicts with provider
-	sed -i.bak 's#tcp://127.0.0.1:26657#tcp://127.0.0.1:26667#g' $(consumer_home)/config/config.toml
+	# Use different ports to avoid conflicts with provider. Bind the RPC to
+	# 0.0.0.0 (not just loopback) so the containerized ts-relayer can dial it
+	# via host.docker.internal.
+	sed -i.bak 's#tcp://127.0.0.1:26657#tcp://0.0.0.0:26667#g' $(consumer_home)/config/config.toml
 	sed -i.bak 's#tcp://0.0.0.0:26656#tcp://0.0.0.0:26666#g' $(consumer_home)/config/config.toml
 	sed -i.bak 's#tcp://127.0.0.1:26658#tcp://127.0.0.1:26668#g' $(consumer_home)/config/config.toml
 	sed -i.bak 's#tcp://localhost:26657#tcp://localhost:26667#g' $(consumer_home)/config/client.toml
@@ -128,7 +136,7 @@ consumer-init: build-apps
 consumer-create:
 	@echo "Creating consumer chain on provider..."
 	@mkdir -p /tmp/vaas-test
-	@echo '{"chain_id": "consumer-localnet", "metadata": {"name": "consumer", "description": "test consumer chain", "metadata": "{}"}, "initialization_parameters": {"initial_height": {"revision_number": 0, "revision_height": 1}, "genesis_hash": "", "binary_hash": "", "spawn_time": "2024-01-01T00:00:00Z", "unbonding_period": 1728000000000000, "vaas_timeout_period": 2419200000000000, "historical_entries": 10000, "connection_id": ""}}' > /tmp/vaas-test/create_consumer.json
+	@echo '{"chain_id": "consumer-localnet", "metadata": {"name": "consumer", "description": "test consumer chain", "metadata": "{}"}, "initialization_parameters": {"initial_height": {"revision_number": 0, "revision_height": 1}, "genesis_hash": "", "binary_hash": "", "spawn_time": "2024-01-01T00:00:00Z", "unbonding_period": 1728000000000000, "vaas_timeout_period": 3600000000000, "safe_mode_threshold": 10800000000000, "historical_entries": 10000}}' > /tmp/vaas-test/create_consumer.json
 	$(providerd) tx provider create-consumer /tmp/vaas-test/create_consumer.json --from val --gas auto --gas-adjustment 1.5 --fees 10000uatone -y
 	@echo "Consumer chain created. Wait for spawn time, then run 'make consumer-genesis' to fetch the genesis."
 
@@ -189,7 +197,8 @@ TS_RELAYER ?= ghcr.io/allinbits/ibc-v2-ts-relayer:latest
 ts-relayer-start:
 	@echo "Starting ts-relayer..."
 	@docker rm -f vaas-ts-relayer 2>/dev/null || true
-	@docker run -d --name vaas-ts-relayer --network host \
+	@docker run -d --name vaas-ts-relayer \
+		--add-host=host.docker.internal:host-gateway \
 		--cap-add IPC_LOCK \
 		$(TS_RELAYER)
 	@sleep 3
@@ -208,8 +217,8 @@ ts-relayer-start:
 	@docker exec vaas-ts-relayer /bin/with_keyring ibc-v2-ts-relayer add-path \
 		-s provider-localnet \
 		-d consumer-localnet \
-		--surl http://127.0.0.1:26657 \
-		--durl http://127.0.0.1:26667 \
+		--surl http://host.docker.internal:26657 \
+		--durl http://host.docker.internal:26667 \
 		--ibc-version 2
 	@echo "ts-relayer configured and running (log: /tmp/vaas-ts-relayer.log)"
 

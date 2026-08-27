@@ -48,6 +48,7 @@ func NewQueryCmd() *cobra.Command {
 	cmd.AddCommand(CmdAllConsumerFeesPerBlockOverrides())
 	cmd.AddCommand(CmdConsumerFeePoolClaim())
 	cmd.AddCommand(CmdConsumerFeePoolClaims())
+	cmd.AddCommand(CmdConsumerLiveness())
 	cmd.AddCommand(CmdPendingDowntimeSlashes())
 	cmd.AddCommand(CmdWithheldFeeRecords())
 	return cmd
@@ -135,7 +136,6 @@ func CmdConsumerChains() *cobra.Command {
 	return cmd
 }
 
-// TODO: fix naming
 func CmdConsumerValidatorKeyAssignment() *cobra.Command {
 	bech32PrefixConsAddr := sdk.GetConfig().GetBech32ConsensusAddrPrefix()
 	cmd := &cobra.Command{
@@ -186,7 +186,6 @@ $ %s query provider validator-consumer-key 3 %s1gghjut3ccd8ay0zduzj64hwre2fxs9ld
 	return cmd
 }
 
-// TODO: fix naming
 func CmdProviderValidatorKey() *cobra.Command {
 	bech32PrefixConsAddr := sdk.GetConfig().GetBech32ConsensusAddrPrefix()
 	cmd := &cobra.Command{
@@ -571,7 +570,11 @@ func CmdConsumerFeePoolClaims() *cobra.Command {
 			if err != nil {
 				return err
 			}
-			pageReq, err := client.ReadPageRequest(cmd.Flags())
+			fs, err := client.FlagSetWithPageKeyDecoded(cmd.Flags())
+			if err != nil {
+				return err
+			}
+			pageReq, err := client.ReadPageRequest(fs)
 			if err != nil {
 				return err
 			}
@@ -588,6 +591,39 @@ func CmdConsumerFeePoolClaims() *cobra.Command {
 	}
 	flags.AddPaginationFlagsToCmd(cmd, "consumer-fee-pool-claims")
 	flags.AddQueryFlagsToCmd(cmd)
+	return cmd
+}
+
+// CmdConsumerLiveness queries the liveness status of a consumer chain: the last
+// VSC-ack time, the grace period, the removal ETA, and whether it is degraded.
+func CmdConsumerLiveness() *cobra.Command {
+	cmd := &cobra.Command{
+		Use:   "consumer-liveness [consumer-id]",
+		Short: "Query the liveness status of a consumer chain",
+		Args:  cobra.ExactArgs(1),
+		RunE: func(cmd *cobra.Command, args []string) error {
+			clientCtx, err := client.GetClientQueryContext(cmd)
+			if err != nil {
+				return err
+			}
+			queryClient := types.NewQueryClient(clientCtx)
+
+			consumerId, err := parseConsumerIdArg(args[0])
+			if err != nil {
+				return err
+			}
+			req := &types.QueryConsumerLivenessRequest{ConsumerId: consumerId}
+			res, err := queryClient.QueryConsumerLiveness(cmd.Context(), req)
+			if err != nil {
+				return err
+			}
+
+			return clientCtx.PrintProto(res)
+		},
+	}
+
+	flags.AddQueryFlagsToCmd(cmd)
+
 	return cmd
 }
 

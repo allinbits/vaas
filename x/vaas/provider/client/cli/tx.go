@@ -267,7 +267,8 @@ where create_consumer.json has the following structure:
     "binary_hash": "",
     "spawn_time": "2024-08-29T12:26:16.529913Z",
     "unbonding_period": 1728000000000000,
-    "ccv_timeout_period": 2419200000000000,
+    "vaas_timeout_period": 3600000000000,
+    "safe_mode_threshold": 10800000000000,
     "historical_entries": 10000
   }
 }
@@ -348,7 +349,8 @@ where update_consumer.json has the following structure:
     "binary_hash": "",
     "spawn_time": "2024-08-29T12:26:16.529913Z",
     "unbonding_period": 1728000000000000,
-    "ccv_timeout_period": 2419200000000000,
+    "vaas_timeout_period": 3600000000000,
+    "safe_mode_threshold": 10800000000000,
     "historical_entries": 10000
    },
    "new_chain_id": "newConsumer-1" // is optional and can be empty (i.e., "new_chain_id": "")
