@@ -3,6 +3,10 @@ package keeper
 import (
 	"time"
 
+	"github.com/allinbits/vaas/x/vaas/provider/types"
+
+	tmtypes "github.com/cometbft/cometbft/types"
+
 	ibctmtypes "github.com/cosmos/ibc-go/v10/modules/light-clients/07-tendermint"
 
 	sdk "github.com/cosmos/cosmos-sdk/types"
@@ -43,4 +47,12 @@ func (k Keeper) WindowEndTimestampForTest(ctx sdk.Context, clientId string, wind
 // verifyDowntimeChallengeHeader itself.
 func (k Keeper) VerifyDowntimeChallengeHeaderForTest(ctx sdk.Context, clientId string, header *ibctmtypes.Header) error {
 	return k.verifyDowntimeChallengeHeader(ctx, clientId, header)
+}
+
+// SlashOrEscalateLightClientAttackForTest exposes slashOrEscalateLightClientAttack
+// so unit tests can exercise the confirmed-light-client-attack punishment and
+// chain-escalation policy directly, without fabricating a real IBC light-client
+// misbehaviour proof for CheckMisbehaviour and GetByzantineValidators to verify.
+func (k Keeper) SlashOrEscalateLightClientAttackForTest(ctx sdk.Context, consumerId uint64, byzantineValidators []*tmtypes.Validator) ([]types.ProviderConsAddress, error) {
+	return k.slashOrEscalateLightClientAttack(ctx, consumerId, byzantineValidators)
 }
