@@ -650,8 +650,14 @@ func (k Keeper) RetireConsumerChain(ctx sdk.Context, consumerId uint64) error {
 // BeginBlockRemoveConsumers has waited out the unbonding delay, or a pre-launch
 // phase, reached via RetireConsumerChain, which needs no such delay (see there).
 func (k Keeper) DeleteConsumerChain(ctx sdk.Context, consumerId uint64) (err error) {
+	// The three deletable phases are named positively: STOPPED (the deferred
+	// route, its unbonding delay already served by BeginBlockRemoveConsumers)
+	// and the two pre-launch phases (the immediate route, see
+	// RetireConsumerChain).
 	phase := k.GetConsumerPhase(ctx, consumerId)
-	if phase != types.CONSUMER_PHASE_STOPPED && !k.IsConsumerPrelaunched(ctx, consumerId) {
+	if phase != types.CONSUMER_PHASE_STOPPED &&
+		phase != types.CONSUMER_PHASE_REGISTERED &&
+		phase != types.CONSUMER_PHASE_INITIALIZED {
 		return fmt.Errorf("cannot delete chain %d in phase %s", consumerId, phase)
 	}
 
