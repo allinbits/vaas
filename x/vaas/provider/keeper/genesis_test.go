@@ -119,11 +119,13 @@ func TestExportGenesisIncludesNewFields(t *testing.T) {
 	require.NoError(t, pk.SetConsumerGenesis(ctx, 3, cg))
 	require.NoError(t, pk.SetConsumerRemovalTime(ctx, 3, removalTime))
 
-	// id 4 DELETED.
+	// id 4 DELETED: the teardown released its chain id (see
+	// DeleteConsumerChain), so the exported tombstone carries none.
 	pk.SetConsumerPhase(ctx, 4, providertypes.CONSUMER_PHASE_DELETED)
 	pk.SetConsumerOwnerAddress(ctx, 4, owner)
 	require.NoError(t, pk.SetConsumerMetadata(ctx, 4, metadata))
 	require.NoError(t, pk.SetConsumerInitializationParameters(ctx, 4, initParams))
+	pk.DeleteConsumerChainId(ctx, 4)
 
 	pk.SetParams(ctx, providertypes.DefaultParams())
 	pk.SetValidatorSetUpdateId(ctx, 1)
@@ -138,7 +140,8 @@ func TestExportGenesisIncludesNewFields(t *testing.T) {
 		byID[cs.ChainId] = cs
 	}
 
-	for _, id := range chainIDs {
+	// The deleted consumer no longer has a chain id, so it is keyed by "".
+	for _, id := range chainIDs[:4] {
 		cs, ok := byID[id]
 		require.True(t, ok, "consumer %s missing from export", id)
 		require.Equal(t, owner, cs.OwnerAddress, "owner missing on consumer %s", id)
@@ -150,7 +153,14 @@ func TestExportGenesisIncludesNewFields(t *testing.T) {
 	require.Equal(t, "07-tendermint-0", byID["consumer-gamma"].ClientId, "LAUNCHED must have client_id")
 	require.NotNil(t, byID["consumer-delta"].RemovalTime, "STOPPED must carry removal_time")
 	require.Equal(t, removalTime, *byID["consumer-delta"].RemovalTime)
-	require.Equal(t, providertypes.CONSUMER_PHASE_DELETED, byID["consumer-epsilon"].Phase)
+
+	deleted, ok := byID[""]
+	require.True(t, ok, "DELETED consumer missing from export")
+	require.Equal(t, uint64(4), deleted.ConsumerId)
+	require.Equal(t, providertypes.CONSUMER_PHASE_DELETED, deleted.Phase)
+	require.Equal(t, owner, deleted.OwnerAddress, "DELETED must keep its owner")
+	require.NotNil(t, deleted.Metadata, "DELETED must keep its metadata")
+	require.NotNil(t, deleted.InitParams, "DELETED must keep its init_params")
 
 	// LAUNCHED consumer carries the liveness clock (last-ack + resync counters).
 	require.NotNil(t, byID["consumer-gamma"].LastAckTime, "LAUNCHED must carry last_ack_time")
@@ -204,7 +214,10 @@ func TestInitGenesisRestoresPerConsumerStateAndDerivedQueues(t *testing.T) {
 			{ConsumerId: 3, ChainId: "consumer-delta", Phase: providertypes.CONSUMER_PHASE_STOPPED,
 				OwnerAddress: owner, Metadata: &md, InitParams: &ip,
 				ClientId: "07-tendermint-1", ConsumerGenesis: cg, RemovalTime: &removeAt},
-			{ConsumerId: 4, ChainId: "consumer-epsilon", Phase: providertypes.CONSUMER_PHASE_DELETED,
+			// A deleted consumer is imported without a chain id: its teardown
+			// released it (see DeleteConsumerChain) and importing one back would
+			// reserve that chain id again.
+			{ConsumerId: 4, Phase: providertypes.CONSUMER_PHASE_DELETED,
 				OwnerAddress: owner, Metadata: &md, InitParams: &ip},
 		},
 	}
@@ -221,11 +234,11 @@ func TestInitGenesisRestoresPerConsumerStateAndDerivedQueues(t *testing.T) {
 
 	// ConsumerStates are imported in order; InitGenesis allocates numeric ids
 	// starting at "0":
-	//   "0" → consumer-alpha  (REGISTERED)
-	//   "1" → consumer-beta   (INITIALIZED)
-	//   "2" → consumer-gamma  (LAUNCHED)
-	//   "3" → consumer-delta  (STOPPED)
-	//   "4" → consumer-epsilon (DELETED)
+	//   "0" -> consumer-alpha  (REGISTERED)
+	//   "1" -> consumer-beta   (INITIALIZED)
+	//   "2" -> consumer-gamma  (LAUNCHED)
+	//   "3" -> consumer-delta  (STOPPED)
+	//   "4" -> no chain id     (DELETED)
 	idChain := []struct {
 		consumerId uint64
 		chainId    string
@@ -234,10 +247,10 @@ func TestInitGenesisRestoresPerConsumerStateAndDerivedQueues(t *testing.T) {
 		{1, "consumer-beta"},
 		{2, "consumer-gamma"},
 		{3, "consumer-delta"},
-		{4, "consumer-epsilon"},
 	}
 
-	// Per-consumer fields: chain id, owner, metadata must be present on all five.
+	// Per-consumer fields: chain id, owner, metadata must be present on all
+	// four consumers that still hold a chain id.
 	for _, entry := range idChain {
 		gotChain, err := pk.GetConsumerChainId(ctx, entry.consumerId)
 		require.NoError(t, err, "chain id missing for consumer %d", entry.consumerId)
@@ -251,6 +264,16 @@ func TestInitGenesisRestoresPerConsumerStateAndDerivedQueues(t *testing.T) {
 		require.NoError(t, err, "metadata missing for consumer %d", entry.consumerId)
 		require.Equal(t, md, gotMd)
 	}
+
+	// The deleted consumer keeps owner and metadata but no chain id.
+	_, err := pk.GetConsumerChainId(ctx, 4)
+	require.ErrorIs(t, err, collections.ErrNotFound, "DELETED must not hold a chain id")
+	gotOwner, err := pk.GetConsumerOwnerAddress(ctx, 4)
+	require.NoError(t, err)
+	require.Equal(t, owner, gotOwner)
+	gotMd, err := pk.GetConsumerMetadata(ctx, 4)
+	require.NoError(t, err)
+	require.Equal(t, md, gotMd)
 
 	// init_params are set on INITIALIZED, LAUNCHED, STOPPED, DELETED (ids 1–4).
 	for _, consumerId := range []uint64{1, 2, 3, 4} {
@@ -336,6 +359,11 @@ func TestGenesisRoundTrip(t *testing.T) {
 		// init_params present for INITIALIZED..DELETED (every phase except REGISTERED).
 		if s.phase != providertypes.CONSUMER_PHASE_REGISTERED {
 			require.NoError(t, pkA.SetConsumerInitializationParameters(ctxA, id, ip))
+		}
+		// A deleted consumer holds no chain id: its teardown released it (see
+		// DeleteConsumerChain), so seed the state deletion actually leaves.
+		if s.phase == providertypes.CONSUMER_PHASE_DELETED {
+			pkA.DeleteConsumerChainId(ctxA, id)
 		}
 		if s.clientId != "" {
 			pkA.SetConsumerClientId(ctxA, id, s.clientId)

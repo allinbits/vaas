@@ -681,7 +681,7 @@ func TestRemoveConsumerGovAuth(t *testing.T) {
 	// non-authority should be rejected
 	_, err = msgServer.RemoveConsumer(ctx,
 		&providertypes.MsgRemoveConsumer{
-			Authority:  "cosmos1notthegovauth000000000000000000000000",
+			Signer:     "cosmos1notthegovauth000000000000000000000000",
 			ConsumerId: consumerId,
 		})
 	require.Error(t, err)
@@ -690,7 +690,7 @@ func TestRemoveConsumerGovAuth(t *testing.T) {
 	// correct authority succeeds
 	_, err = msgServer.RemoveConsumer(ctx,
 		&providertypes.MsgRemoveConsumer{
-			Authority:  providerKeeper.GetAuthority(),
+			Signer:     providerKeeper.GetAuthority(),
 			ConsumerId: consumerId,
 		})
 	require.NoError(t, err)
@@ -698,38 +698,6 @@ func TestRemoveConsumerGovAuth(t *testing.T) {
 	// verify the chain is stopped
 	phase := providerKeeper.GetConsumerPhase(ctx, consumerId)
 	require.Equal(t, providertypes.CONSUMER_PHASE_STOPPED, phase)
-}
-
-func TestRemoveConsumerNonLaunchedRejected(t *testing.T) {
-	providerKeeper, ctx, ctrl, mocks := testkeeper.GetProviderKeeperAndCtx(t, testkeeper.NewInMemKeeperParams(t))
-	defer ctrl.Finish()
-
-	mocks.MockStakingKeeper.EXPECT().UnbondingTime(gomock.Any()).Return(21*24*time.Hour, nil).Times(1)
-
-	msgServer := providerkeeper.NewMsgServerImpl(&providerKeeper)
-
-	// create a consumer chain (stays in REGISTERED phase)
-	createResp, err := msgServer.CreateConsumer(ctx,
-		&providertypes.MsgCreateConsumer{
-			Submitter: "submitter", ChainId: "chainId",
-			Metadata: providertypes.ConsumerMetadata{
-				Name:        "name",
-				Description: "description",
-			},
-			InitializationParameters: &providertypes.ConsumerInitializationParameters{
-				UnbondingPeriod: 21 * 24 * time.Hour,
-			},
-		})
-	require.NoError(t, err)
-
-	// gov authority cannot remove a non-launched chain
-	_, err = msgServer.RemoveConsumer(ctx,
-		&providertypes.MsgRemoveConsumer{
-			Authority:  providerKeeper.GetAuthority(),
-			ConsumerId: createResp.ConsumerId,
-		})
-	require.Error(t, err)
-	require.ErrorIs(t, err, providertypes.ErrInvalidPhase)
 }
 
 // TestRemoveConsumerFromPaused verifies that MsgRemoveConsumer accepts a
@@ -765,7 +733,7 @@ func TestRemoveConsumerFromPaused(t *testing.T) {
 
 	_, err = msgServer.RemoveConsumer(ctx,
 		&providertypes.MsgRemoveConsumer{
-			Authority:  providerKeeper.GetAuthority(),
+			Signer:     providerKeeper.GetAuthority(),
 			ConsumerId: consumerId,
 		})
 	require.NoError(t, err)

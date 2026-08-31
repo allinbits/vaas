@@ -291,17 +291,20 @@ func (msg MsgUpdateConsumer) ValidateBasic() error {
 }
 
 // NewMsgRemoveConsumer creates a new MsgRemoveConsumer instance
-func NewMsgRemoveConsumer(authority string, consumerId uint64) (*MsgRemoveConsumer, error) {
+func NewMsgRemoveConsumer(signer string, consumerId uint64) (*MsgRemoveConsumer, error) {
 	return &MsgRemoveConsumer{
-		Authority:  authority,
+		Signer:     signer,
 		ConsumerId: consumerId,
 	}, nil
 }
 
 // ValidateBasic implements the sdk.HasValidateBasic interface.
 func (msg MsgRemoveConsumer) ValidateBasic() error {
-	if _, err := sdk.AccAddressFromBech32(msg.Authority); err != nil {
-		return errorsmod.Wrapf(sdkerrors.ErrInvalidAddress, "invalid authority address: %s", err)
+	// The signer is the consumer owner (pre-launch) or the gov authority;
+	// which one is acceptable depends on the consumer's phase, so
+	// RemoveConsumer decides against state.
+	if _, err := sdk.AccAddressFromBech32(msg.Signer); err != nil {
+		return errorsmod.Wrapf(sdkerrors.ErrInvalidAddress, "invalid signer: %s", err)
 	}
 	return nil
 }
