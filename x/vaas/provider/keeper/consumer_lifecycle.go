@@ -653,7 +653,9 @@ func (k Keeper) DeleteConsumerChain(ctx sdk.Context, consumerId uint64) (err err
 	// The three deletable phases are named positively: STOPPED (the deferred
 	// route, its unbonding delay already served by BeginBlockRemoveConsumers)
 	// and the two pre-launch phases (the immediate route, see
-	// RetireConsumerChain).
+	// RetireConsumerChain). Both existing callers gate their phase before
+	// calling; this check is the teardown's own contract, independent of
+	// caller discipline, so no future caller can erase a launched consumer.
 	phase := k.GetConsumerPhase(ctx, consumerId)
 	if phase != types.CONSUMER_PHASE_STOPPED &&
 		phase != types.CONSUMER_PHASE_REGISTERED &&
