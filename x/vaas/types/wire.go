@@ -5,11 +5,11 @@ import (
 	"fmt"
 
 	abci "github.com/cometbft/cometbft/abci/types"
+	"github.com/cometbft/cometbft/crypto/encoding"
 
 	errorsmod "cosmossdk.io/errors"
 	"cosmossdk.io/math"
 
-	cryptocodec "github.com/cosmos/cosmos-sdk/crypto/codec"
 	sdk "github.com/cosmos/cosmos-sdk/types"
 	stakingtypes "github.com/cosmos/cosmos-sdk/x/staking/types"
 )
@@ -38,7 +38,11 @@ func (vsc ValidatorSetChangePacketData) Validate() error {
 	// that deferred, chain-halting panic into an error acknowledgement.
 	for i := range vsc.ValidatorUpdates {
 		update := vsc.ValidatorUpdates[i]
-		if _, err := cryptocodec.FromCmtProtoPublicKey(update.PubKey); err != nil {
+		// encoding.PubKeyFromProto (CometBFT) asserts the key type AND its
+		// length; the SDK's FromCmtProtoPublicKey only wraps the bytes, so a
+		// wrong-length key would pass here and still panic EndBlock later at
+		// PubKey.Address().
+		if _, err := encoding.PubKeyFromProto(update.PubKey); err != nil {
 			return errorsmod.Wrapf(ErrInvalidPacketData, "validator update %d has an undecodable consensus pubkey: %s", i, err)
 		}
 		if update.Power < 0 {

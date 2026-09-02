@@ -189,7 +189,7 @@ func (im IBCModule) OnAcknowledgementPacket(
 	relayer sdk.AccAddress,
 ) error {
 	if bytes.Equal(acknowledgement, channeltypesv2.ErrorAcknowledgement[:]) {
-		im.keeper.DropRejectedEvidencePacket(ctx, payload.Value, acknowledgement)
+		im.keeper.ReportRejectedEvidencePacket(ctx, payload.Value)
 		return nil
 	}
 

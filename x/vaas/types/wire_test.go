@@ -62,6 +62,20 @@ func TestValidatorSetChangePacketDataValidateValidatorUpdates(t *testing.T) {
 		require.Contains(t, err.Error(), "undecodable consensus pubkey")
 	})
 
+	t.Run("wrong-length pubkey is rejected", func(t *testing.T) {
+		// A 31-byte ed25519 key decodes under the SDK's permissive
+		// conversion but panics later at PubKey.Address(); the validation
+		// must reject it at receipt.
+		short := cmtprotocrypto.PublicKey{Sum: &cmtprotocrypto.PublicKey_Ed25519{Ed25519: make([]byte, 31)}}
+		pkt := types.NewValidatorSetChangePacketData(
+			[]abci.ValidatorUpdate{{PubKey: short, Power: 5}},
+			1,
+		)
+		err := pkt.Validate()
+		require.Error(t, err)
+		require.Contains(t, err.Error(), "undecodable consensus pubkey")
+	})
+
 	t.Run("negative power is rejected", func(t *testing.T) {
 		pkt := types.NewValidatorSetChangePacketData(
 			[]abci.ValidatorUpdate{{PubKey: goodPK, Power: -1}},
