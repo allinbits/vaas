@@ -322,9 +322,7 @@ func (k Keeper) QueueVSCPackets(ctx sdk.Context) error {
 		// set against an empty stored set and emit only additions, never the
 		// power-0 removal for a validator that unbonded during the outage --
 		// leaving it with consensus power on the consumer indefinitely. A
-		// snapshot reconciles the consumer's set regardless. This also covers
-		// a consumer's very first epoch, where a snapshot is equivalent to the
-		// all-additions diff it would otherwise produce.
+		// snapshot reconciles the consumer's set regardless.
 		isSnapshot := len(currentValSet) == 0 ||
 			k.GetConsumerHighestAckedVscId(ctx, consumerId) < k.GetConsumerHighestSentVscId(ctx, consumerId) ||
 			len(k.GetPendingVSCPackets(ctx, consumerId)) > 0
@@ -393,9 +391,9 @@ func (k Keeper) QueueImmediateSnapshotVSCPacket(ctx sdk.Context, consumerId uint
 	return nil
 }
 
-// EndBlockTrackValsetUpdates prunes per-consumer key-assignment entries that
+// EndBlockPruneKeyAssignments prunes per-consumer key-assignment entries that
 // are no longer reachable.
-func (k Keeper) EndBlockTrackValsetUpdates(ctx sdk.Context) {
+func (k Keeper) EndBlockPruneKeyAssignments(ctx sdk.Context) {
 	// prune previous consumer validator addresses that are no longer needed
 	for _, consumerId := range k.GetAllLaunchedConsumerIds(ctx) {
 		k.PruneKeyAssignments(ctx, consumerId)

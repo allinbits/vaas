@@ -303,13 +303,19 @@ func validateWithheldFeeRecords(records []WithheldFeeRecord, knownConsumerIds ma
 		if len(r.ProviderConsAddr) == 0 {
 			return fmt.Errorf("withheld fee record: provider cons addr cannot be empty")
 		}
-		if r.Amount.Amount.IsNil() || r.Amount.Amount.IsNegative() {
-			return fmt.Errorf("withheld fee record: amount cannot be nil or negative (consumer=%d, validator=%x)",
+		// The nil check stays separate: sdk.Coin.Validate panics on a nil
+		// amount rather than returning an error.
+		if r.Amount.Amount.IsNil() {
+			return fmt.Errorf("withheld fee record: amount cannot be nil (consumer=%d, validator=%x)",
 				r.ConsumerId, r.ProviderConsAddr)
 		}
-		if err := sdk.ValidateDenom(r.Amount.Denom); err != nil {
-			return fmt.Errorf("withheld fee record: invalid denom %q (consumer=%d, validator=%x): %w",
-				r.Amount.Denom, r.ConsumerId, r.ProviderConsAddr, err)
+		if err := r.Amount.Validate(); err != nil {
+			return fmt.Errorf("withheld fee record: invalid amount (consumer=%d, validator=%x): %w",
+				r.ConsumerId, r.ProviderConsAddr, err)
+		}
+		if r.ExpiresAt.IsZero() {
+			return fmt.Errorf("withheld fee record: expires_at cannot be zero (consumer=%d, validator=%x)",
+				r.ConsumerId, r.ProviderConsAddr)
 		}
 		if _, ok := knownConsumerIds[r.ConsumerId]; !ok {
 			return fmt.Errorf("withheld fee record references unknown consumer %d", r.ConsumerId)

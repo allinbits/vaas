@@ -875,3 +875,35 @@ func TestInitGenesisAcceptsDefaultGenesis(t *testing.T) {
 
 	require.NotPanics(t, func() { k.InitGenesis(ctx, providertypes.DefaultGenesisState()) })
 }
+
+// TestInitGenesisPanicsOnWithheldFeeDenomMismatch: the record denom is fixed
+// by the module wiring, so a genesis record in any other denom would panic
+// sdk.Coin.Add the first time BeginBlock accumulates onto it. InitChain fails
+// instead.
+func TestInitGenesisPanicsOnWithheldFeeDenomMismatch(t *testing.T) {
+	pk, ctx, ctrl, mocks := testkeeper.GetProviderKeeperAndCtx(t, testkeeper.NewInMemKeeperParams(t))
+	defer ctrl.Finish()
+	mocks.MockBankKeeper.EXPECT().GetAllBalances(gomock.Any(), gomock.Any()).
+		Return(sdk.NewCoins()).AnyTimes()
+
+	owner := sdk.AccAddress([]byte("consumer-owner-addr1")).String()
+	md := providertypes.ConsumerMetadata{Name: "n", Description: "d", Metadata: "{}"}
+	gs := &providertypes.GenesisState{
+		ValsetUpdateId: 1,
+		Params:         providertypes.DefaultParams(),
+		ConsumerStates: []providertypes.ConsumerState{
+			{ConsumerId: 0, ChainId: "consumer-alpha", Phase: providertypes.CONSUMER_PHASE_REGISTERED,
+				OwnerAddress: owner, Metadata: &md},
+		},
+		WithheldFeeRecords: []providertypes.WithheldFeeRecord{{
+			ConsumerId:       0,
+			ProviderConsAddr: []byte("provider-cons-addr-1"),
+			Amount:           sdk.NewInt64Coin("notthefee", 5),
+			ExpiresAt:        ctx.BlockTime().Add(time.Hour),
+		}},
+	}
+	require.NoError(t, gs.Validate(), "fixture must pass stateless validation")
+
+	require.Panics(t, func() { pk.InitGenesis(ctx, gs) },
+		"a withheld record in a denom the module does not charge must fail InitChain")
+}

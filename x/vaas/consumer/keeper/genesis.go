@@ -61,6 +61,20 @@ func (k Keeper) InitGenesis(ctx sdk.Context, state *types.GenesisState) []abci.V
 			"client id", cid,
 		)
 	} else {
+		// The exporting chain had a working provider client, so a restart
+		// genesis naming one that does not exist here means the VAAS and IBC
+		// genesis fragments came from different exports, or were hand-edited.
+		// Fail at InitChain rather than pinning a dead id:
+		// authenticateProviderChainID would reject every inbound packet and
+		// the consumer would run on its genesis valset forever, with no error
+		// on either side. Safe to look up: the app initializes the ibc module
+		// before this one.
+		if _, found := k.clientKeeper.GetClientState(ctx, state.ProviderClientId); !found {
+			panic(fmt.Errorf(
+				"init: genesis pins provider client %q, which does not exist in the IBC client store",
+				state.ProviderClientId,
+			))
+		}
 		k.SetProviderClientID(ctx, state.ProviderClientId)
 
 		// Restore the pinned provider chain id on restart (see ExportGenesis):
@@ -72,6 +86,27 @@ func (k Keeper) InitGenesis(ctx sdk.Context, state *types.GenesisState) []abci.V
 		if state.ProviderChainId != "" {
 			k.SetProviderChainId(ctx, state.ProviderChainId)
 		}
+
+		// Restore the debt flag on a restart (see ExportGenesis): the other arm of
+		// the tx-admission gate LastVSCRecvTime drives. Without this a debt-gated
+		// consumer comes back ungated until the next VSC packet re-asserts the
+		// flag. False is the absent case and matches a fresh keeper exactly, since
+		// IsConsumerInDebt reads an unset flag as not in debt.
+		if state.ConsumerInDebt {
+			k.SetConsumerInDebt(ctx, true)
+		}
+
+		// Restore the out-of-order dedup watermark on a restart (see ExportGenesis
+		// and OnRecvVSCPacketV2). Without this a state-export restart resets the
+		// watermark to found=false, so a stale diff VSC still sitting in IBC state
+		// would be accepted and applied over a newer set. A watermark of 0 is the
+		// absent case (new chain / no VSC applied yet); VSC ids are strictly
+		// positive, so leaving it unset there matches a fresh keeper exactly.
+		if state.HighestValsetUpdateId != 0 {
+			if err := k.SetHighestValsetUpdateID(ctx, state.HighestValsetUpdateId); err != nil {
+				panic(fmt.Errorf("init: set highest valset update id: %w", err))
+			}
+		}
 	}
 
 	if state.PreVAAS {
@@ -82,27 +117,6 @@ func (k Keeper) InitGenesis(ctx sdk.Context, state *types.GenesisState) []abci.V
 	// (new chain / never received a VSC) leaves the never-stale default.
 	if state.LastVscRecvTime != nil {
 		k.SetLastVSCRecvTime(ctx, *state.LastVscRecvTime)
-	}
-
-	// Restore the debt flag on a restart (see ExportGenesis): the other arm of
-	// the tx-admission gate LastVSCRecvTime drives. Without this a debt-gated
-	// consumer comes back ungated until the next VSC packet re-asserts the
-	// flag. False is the absent case and matches a fresh keeper exactly, since
-	// IsConsumerInDebt reads an unset flag as not in debt.
-	if state.ConsumerInDebt {
-		k.SetConsumerInDebt(ctx, true)
-	}
-
-	// Restore the out-of-order dedup watermark on a restart (see ExportGenesis
-	// and OnRecvVSCPacketV2). Without this a state-export restart resets the
-	// watermark to found=false, so a stale diff VSC still sitting in IBC state
-	// would be accepted and applied over a newer set. A watermark of 0 is the
-	// absent case (new chain / no VSC applied yet); VSC ids are strictly
-	// positive, so leaving it unset there matches a fresh keeper exactly.
-	if state.HighestValsetUpdateId != 0 {
-		if err := k.SetHighestValsetUpdateID(ctx, state.HighestValsetUpdateId); err != nil {
-			panic(fmt.Errorf("init: set highest valset update id: %w", err))
-		}
 	}
 
 	// Restore downtime-detection state for the window currently in progress

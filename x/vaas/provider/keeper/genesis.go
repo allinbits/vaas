@@ -293,6 +293,15 @@ func (k Keeper) InitGenesis(ctx sdk.Context, genState *types.GenesisState) []abc
 	// restart preserves them exactly as the other downtime-detection state
 	// above is preserved.
 	for _, rec := range genState.WithheldFeeRecords {
+		// The record denom is fixed by the module wiring, not by genesis:
+		// accumulating a mismatched record onto a runtime withhold would
+		// panic sdk.Coin.Add in BeginBlock (see withholdValidatorFeeShare).
+		// Genesis validation cannot see the wired denom, so the guard lives
+		// here and fails at InitChain instead.
+		if rec.Amount.Denom != k.feeDenom {
+			panic(fmt.Errorf("init: withheld fee record for consumer %d has denom %q, the module charges %q",
+				rec.ConsumerId, rec.Amount.Denom, k.feeDenom))
+		}
 		key := collections.Join(rec.ConsumerId, rec.ProviderConsAddr)
 		if err := k.WithheldFeeRecords.Set(ctx, key, rec); err != nil {
 			panic(fmt.Errorf("init: set withheld fee record for consumer %d: %w", rec.ConsumerId, err))
