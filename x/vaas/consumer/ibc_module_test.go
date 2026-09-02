@@ -1,7 +1,6 @@
 package consumer_test
 
 import (
-	"encoding/hex"
 	"strconv"
 	"testing"
 
@@ -245,9 +244,10 @@ func TestIBCModuleEvidenceAckAndTimeoutHandling(t *testing.T) {
 		require.True(t, ok)
 		require.Equal(t, strconv.FormatInt(packet.WindowEndHeight, 10), gotWindow)
 
-		gotAckErr, ok := attrValue(evs[0], vaastypes.AttributeKeyAckError)
-		require.True(t, ok)
-		require.Equal(t, hex.EncodeToString(errAck), gotAckErr)
+		// No ack-bytes attribute: an IBC v2 error acknowledgement is a
+		// sentinel constant carrying no application error.
+		_, ok = attrValue(evs[0], vaastypes.AttributeKeyAckError)
+		require.False(t, ok)
 	})
 
 	t.Run("success acknowledgement does not requeue or emit a rejection", func(t *testing.T) {

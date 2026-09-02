@@ -1,7 +1,6 @@
 package keeper
 
 import (
-	"encoding/hex"
 	"encoding/json"
 	"fmt"
 	"strconv"
@@ -103,33 +102,32 @@ func (k Keeper) RequeueEvidencePacket(ctx sdk.Context, payload []byte) error {
 	return k.QueueEvidencePacket(ctx, packet)
 }
 
-// DropRejectedEvidencePacket surfaces and discards a provider rejection of a
+// ReportRejectedEvidencePacket surfaces a provider rejection of a
 // previously-sent evidence packet, used when the packet came back with an
 // error acknowledgement. The provider error-acks only after evaluating and
 // rejecting that exact packet (unacceptable echoed params, missed count below
 // threshold, unknown or renamed validator, window too old, window already
 // accepted, or below the pruned acceptance floor); every one of those is
 // permanent for a given packet, so re-sending the identical evidence could
-// never be accepted and would loop forever. The packet was already removed
-// from the queue when it was sent, so this only emits an event surfacing the
-// rejection (validator, window-end height, ack error) and deliberately does
-// not re-queue.
-func (k Keeper) DropRejectedEvidencePacket(ctx sdk.Context, payload []byte, ackErr []byte) {
+// never be accepted and would loop forever. The packet left the queue when it
+// was sent, so there is nothing to remove: this emits the event surfacing the
+// rejection (validator, window-end height) and deliberately does not
+// re-queue. The ack bytes themselves are not reported: an IBC v2 error
+// acknowledgement is a sentinel constant carrying no application error.
+func (k Keeper) ReportRejectedEvidencePacket(ctx sdk.Context, payload []byte) {
 	validatorAddr := ""
 	windowEndHeight := int64(0)
 	var packet vaastypes.EvidencePacketData
 	if err := json.Unmarshal(payload, &packet); err != nil {
-		k.Logger(ctx).Error("evidence packet rejected by provider (undecodable payload); dropping",
+		k.Logger(ctx).Error("evidence packet rejected by provider (undecodable payload)",
 			"error", err,
-			"ack_error", hex.EncodeToString(ackErr),
 		)
 	} else {
 		validatorAddr = packet.ValidatorAddr.String()
 		windowEndHeight = packet.WindowEndHeight
-		k.Logger(ctx).Error("evidence packet rejected by provider; dropping without retry",
+		k.Logger(ctx).Error("evidence packet rejected by provider; not retried",
 			"validator", validatorAddr,
 			"window_end_height", windowEndHeight,
-			"ack_error", hex.EncodeToString(ackErr),
 		)
 	}
 
@@ -139,7 +137,6 @@ func (k Keeper) DropRejectedEvidencePacket(ctx sdk.Context, payload []byte, ackE
 			sdk.NewAttribute(sdk.AttributeKeyModule, types.ModuleName),
 			sdk.NewAttribute(vaastypes.AttributeValidatorAddress, validatorAddr),
 			sdk.NewAttribute(vaastypes.AttributeWindowEndHeight, strconv.FormatInt(windowEndHeight, 10)),
-			sdk.NewAttribute(vaastypes.AttributeKeyAckError, hex.EncodeToString(ackErr)),
 		),
 	)
 }
@@ -151,7 +148,7 @@ func (k Keeper) DropRejectedEvidencePacket(ctx sdk.Context, payload []byte, ackE
 // OnTimeoutPacket re-queues it for another attempt (see RequeueEvidencePacket),
 // whereas a provider error acknowledgement -- a permanent rejection of that
 // exact evidence -- is surfaced as an event and dropped rather than retried
-// (see DropRejectedEvidencePacket). A SendPacket error (e.g. an expired
+// (see ReportRejectedEvidencePacket). A SendPacket error (e.g. an expired
 // provider client) leaves the packet queued so it is retried on a later block.
 func (k Keeper) SendEvidencePackets(ctx sdk.Context) error {
 	providerClientID, found := k.GetProviderClientID(ctx)
@@ -193,6 +190,7 @@ func (k Keeper) SendEvidencePackets(ctx sdk.Context) error {
 		}
 		kv, err := iter.KeyValue()
 		if err != nil {
+			k.Logger(ctx).Error("failed to read pending evidence packet entry", "error", err)
 			continue
 		}
 
