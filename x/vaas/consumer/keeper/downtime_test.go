@@ -14,6 +14,7 @@ import (
 	abci "github.com/cometbft/cometbft/abci/types"
 	cmtproto "github.com/cometbft/cometbft/proto/tendermint/types"
 	channeltypesv2 "github.com/cosmos/ibc-go/v10/modules/core/04-channel/v2/types"
+	ibcexported "github.com/cosmos/ibc-go/v10/modules/core/exported"
 
 	"cosmossdk.io/math"
 
@@ -234,6 +235,9 @@ func TestCloseWindowReportsBothWindowsWhenSendStalled(t *testing.T) {
 
 	// once the provider client recovers, both windows are sent and cleared
 	consumerKeeper.SetProviderClientID(ctx, "07-tendermint-1")
+	mocks.MockClientKeeper.EXPECT().GetClientStatus(gomock.Any(), "07-tendermint-1").
+		Return(ibcexported.Active).AnyTimes()
+	mocks.StubClientCounterparty("07-tendermint-1")
 	mocks.MockChannelV2Keeper.EXPECT().
 		SendPacket(gomock.Any(), gomock.Any()).
 		Return(&channeltypesv2.MsgSendPacketResponse{Sequence: 1}, nil).
