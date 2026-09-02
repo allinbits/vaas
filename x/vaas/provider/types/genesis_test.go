@@ -521,7 +521,7 @@ func TestValidateGenesisState_DowntimeLists(t *testing.T) {
 		require.NotPanics(t, func() { err = gs.Validate() },
 			"Validate must reject a nil amount rather than panic on it")
 		require.Error(t, err)
-		require.Contains(t, err.Error(), "amount cannot be nil or negative")
+		require.Contains(t, err.Error(), "amount cannot be nil")
 	})
 
 	t.Run("withheld fee record with an entirely absent amount", func(t *testing.T) {
@@ -533,7 +533,17 @@ func TestValidateGenesisState_DowntimeLists(t *testing.T) {
 		var err error
 		require.NotPanics(t, func() { err = gs.Validate() })
 		require.Error(t, err)
-		require.Contains(t, err.Error(), "amount cannot be nil or negative")
+		require.Contains(t, err.Error(), "amount cannot be nil")
+	})
+
+	t.Run("withheld fee record with zero expiry", func(t *testing.T) {
+		gs := build()
+		bad := validWithheld(addr1)
+		bad.ExpiresAt = time.Time{}
+		gs.WithheldFeeRecords = []types.WithheldFeeRecord{bad}
+		err := gs.Validate()
+		require.Error(t, err)
+		require.Contains(t, err.Error(), "expires_at cannot be zero")
 	})
 
 	t.Run("withheld fee record with negative amount", func(t *testing.T) {
@@ -543,7 +553,7 @@ func TestValidateGenesisState_DowntimeLists(t *testing.T) {
 		gs.WithheldFeeRecords = []types.WithheldFeeRecord{bad}
 		err := gs.Validate()
 		require.Error(t, err)
-		require.Contains(t, err.Error(), "amount cannot be nil or negative")
+		require.Contains(t, err.Error(), "invalid amount")
 	})
 
 	t.Run("withheld fee record with invalid denom", func(t *testing.T) {

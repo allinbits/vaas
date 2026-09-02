@@ -6,6 +6,7 @@ import (
 	"time"
 
 	"github.com/stretchr/testify/require"
+	"go.uber.org/mock/gomock"
 
 	clienttypes "github.com/cosmos/ibc-go/v10/modules/core/02-client/types"
 	commitmenttypes "github.com/cosmos/ibc-go/v10/modules/core/23-commitment/types"
@@ -32,6 +33,13 @@ import (
 // TestInitGenesis tests that a consumer chain is correctly initialised from genesis.
 // It covers the start of a new chain, the restart of a chain during the CCV channel handshake
 // and finally the restart of chain when the CCV channel is already established.
+
+// expectProviderClientExists satisfies the restart-arm guard that the pinned
+// provider client must exist in the IBC client store.
+func expectProviderClientExists(mocks testkeeper.MockedKeepers) {
+	mocks.MockClientKeeper.EXPECT().GetClientState(gomock.Any(), gomock.Any()).Return(nil, true).AnyTimes()
+}
+
 func TestInitGenesis(t *testing.T) {
 	// mock the consumer genesis state values
 	provClientID := "tendermint-07"
@@ -113,6 +121,7 @@ func TestInitGenesis(t *testing.T) {
 			keeperParams := testkeeper.NewInMemKeeperParams(t)
 			consumerKeeper, ctx, ctrl, mocks := testkeeper.GetConsumerKeeperAndCtx(t, keeperParams)
 			defer ctrl.Finish()
+			expectProviderClientExists(mocks)
 
 			tc.malleate(ctx, mocks)
 
@@ -197,7 +206,6 @@ func TestGenesisRoundTripLastVSCRecvTime(t *testing.T) {
 	cVal, err := consumertypes.NewCCValidator(validator.Address.Bytes(), 1, pubKey)
 	require.NoError(t, err)
 	ck.SetCCValidator(ctx, cVal)
-	ck.SetHeightValsetUpdateID(ctx, 0, 0)
 	ck.SetLastVSCRecvTime(ctx, lastRecv)
 
 	exported := ck.ExportGenesis(ctx)
@@ -205,7 +213,8 @@ func TestGenesisRoundTripLastVSCRecvTime(t *testing.T) {
 	require.Equal(t, lastRecv, *exported.LastVscRecvTime)
 
 	// Import half: a fresh keeper restores the exact time, not the block-time fallback.
-	ck2, ctx2, ctrl2, _ := testkeeper.GetConsumerKeeperAndCtx(t, testkeeper.NewInMemKeeperParams(t))
+	ck2, ctx2, ctrl2, mocks2 := testkeeper.GetConsumerKeeperAndCtx(t, testkeeper.NewInMemKeeperParams(t))
+	expectProviderClientExists(mocks2)
 	defer ctrl2.Finish()
 	ck2.InitGenesis(ctx2, exported)
 	require.Equal(t, lastRecv, ck2.GetLastVSCRecvTime(ctx2))
@@ -285,8 +294,9 @@ func TestVSCStalenessClockArmsAtFirstWallClockBlock(t *testing.T) {
 	})
 
 	t.Run("a clock restored from a restart genesis is never re-armed", func(t *testing.T) {
-		ck, ctx, ctrl, _ := testkeeper.GetConsumerKeeperAndCtx(t, testkeeper.NewInMemKeeperParams(t))
+		ck, ctx, ctrl, mocks := testkeeper.GetConsumerKeeperAndCtx(t, testkeeper.NewInMemKeeperParams(t))
 		defer ctrl.Finish()
+		testkeeper.StubClientState(mocks, "provider-1")
 
 		armedAt := time.Unix(1_850_000_000, 0).UTC()
 		genesis := consumertypes.NewRestartGenesisState(
@@ -304,8 +314,9 @@ func TestVSCStalenessClockArmsAtFirstWallClockBlock(t *testing.T) {
 	})
 
 	t.Run("restart genesis without the field arms at the next block", func(t *testing.T) {
-		ck, ctx, ctrl, _ := testkeeper.GetConsumerKeeperAndCtx(t, testkeeper.NewInMemKeeperParams(t))
+		ck, ctx, ctrl, mocks := testkeeper.GetConsumerKeeperAndCtx(t, testkeeper.NewInMemKeeperParams(t))
 		defer ctrl.Finish()
+		testkeeper.StubClientState(mocks, "provider-1")
 
 		genesis := consumertypes.NewRestartGenesisState(
 			provClientID,
@@ -370,7 +381,8 @@ func TestGenesisRoundTripConsumerInDebt(t *testing.T) {
 	require.True(t, exported.ConsumerInDebt, "export must carry the debt flag")
 
 	// Import half: a fresh keeper comes back gated.
-	ck2, ctx2, ctrl2, _ := testkeeper.GetConsumerKeeperAndCtx(t, testkeeper.NewInMemKeeperParams(t))
+	ck2, ctx2, ctrl2, mocks2 := testkeeper.GetConsumerKeeperAndCtx(t, testkeeper.NewInMemKeeperParams(t))
+	expectProviderClientExists(mocks2)
 	defer ctrl2.Finish()
 	ck2.InitGenesis(ctx2, exported)
 	require.True(t, ck2.IsConsumerInDebt(ctx2), "debt flag lost across the restart round-trip")
@@ -384,7 +396,8 @@ func TestGenesisRoundTripConsumerInDebt(t *testing.T) {
 	cleared := ck.ExportGenesis(ctx)
 	require.False(t, cleared.ConsumerInDebt)
 
-	ck3, ctx3, ctrl3, _ := testkeeper.GetConsumerKeeperAndCtx(t, testkeeper.NewInMemKeeperParams(t))
+	ck3, ctx3, ctrl3, mocks3 := testkeeper.GetConsumerKeeperAndCtx(t, testkeeper.NewInMemKeeperParams(t))
+	expectProviderClientExists(mocks3)
 	defer ctrl3.Finish()
 	ck3.InitGenesis(ctx3, cleared)
 	require.False(t, ck3.IsConsumerInDebt(ctx3))
@@ -424,7 +437,6 @@ func TestGenesisRoundTripDowntimeState(t *testing.T) {
 	cVal, err := consumertypes.NewCCValidator(validator.Address.Bytes(), 1, pubKey)
 	require.NoError(t, err)
 	ck.SetCCValidator(ctx, cVal)
-	ck.SetHeightValsetUpdateID(ctx, 0, 0)
 
 	require.NoError(t, ck.MissedBlockBitmaps.Set(ctx, addr1, bitmap1))
 	require.NoError(t, ck.MissedBlockBitmaps.Set(ctx, addr2, bitmap2))
@@ -442,7 +454,8 @@ func TestGenesisRoundTripDowntimeState(t *testing.T) {
 	require.Equal(t, addr1, exported.PendingEvidencePackets[0].Addr)
 	require.Equal(t, evPacket.GetBytes(), exported.PendingEvidencePackets[0].Packet)
 
-	ck2, ctx2, ctrl2, _ := testkeeper.GetConsumerKeeperAndCtx(t, testkeeper.NewInMemKeeperParams(t))
+	ck2, ctx2, ctrl2, mocks2 := testkeeper.GetConsumerKeeperAndCtx(t, testkeeper.NewInMemKeeperParams(t))
+	expectProviderClientExists(mocks2)
 	defer ctrl2.Finish()
 	ck2.InitGenesis(ctx2, exported)
 
@@ -476,7 +489,6 @@ func TestGenesisRoundTripDowntimeState(t *testing.T) {
 	corrupt := consumertypes.NewRestartGenesisState(
 		provClientID,
 		exported.Provider.InitialValSet,
-		exported.HeightToValsetUpdateId,
 		params,
 	)
 	corrupt.PendingEvidencePackets = []consumertypes.PendingEvidencePacketEntry{
@@ -514,14 +526,14 @@ func TestGenesisRoundTripProviderChainId(t *testing.T) {
 	cVal, err := consumertypes.NewCCValidator(validator.Address.Bytes(), 1, pubKey)
 	require.NoError(t, err)
 	ck.SetCCValidator(ctx, cVal)
-	ck.SetHeightValsetUpdateID(ctx, 0, 0)
 	ck.SetProviderChainId(ctx, providerChainId)
 
 	exported := ck.ExportGenesis(ctx)
 	require.Equal(t, providerChainId, exported.ProviderChainId, "export must carry provider_chain_id")
 	require.False(t, exported.NewChain, "restart export must not be a new-chain genesis")
 
-	ck2, ctx2, ctrl2, _ := testkeeper.GetConsumerKeeperAndCtx(t, testkeeper.NewInMemKeeperParams(t))
+	ck2, ctx2, ctrl2, mocks2 := testkeeper.GetConsumerKeeperAndCtx(t, testkeeper.NewInMemKeeperParams(t))
+	expectProviderClientExists(mocks2)
 	defer ctrl2.Finish()
 	ck2.InitGenesis(ctx2, exported)
 
@@ -551,8 +563,9 @@ func TestGenesisRoundTripPhotonFeesEnabled(t *testing.T) {
 	cVal, err := consumertypes.NewCCValidator(validator.Address.Bytes(), 1, pubKey)
 	require.NoError(t, err)
 
-	ck, ctx, ctrl, _ := testkeeper.GetConsumerKeeperAndCtx(t, testkeeper.NewInMemKeeperParams(t))
+	ck, ctx, ctrl, mocks := testkeeper.GetConsumerKeeperAndCtx(t, testkeeper.NewInMemKeeperParams(t))
 	defer ctrl.Finish()
+	testkeeper.StubClientState(mocks, "provider-1")
 	ck.InitGenesis(ctx, consumertypes.NewRestartGenesisState(
 		provClientID,
 		nil,
@@ -564,8 +577,9 @@ func TestGenesisRoundTripPhotonFeesEnabled(t *testing.T) {
 	exported := ck.ExportGenesis(ctx)
 	require.True(t, exported.Params.PhotonFeesEnabled, "export must carry photon_fees_enabled")
 
-	ck2, ctx2, ctrl2, _ := testkeeper.GetConsumerKeeperAndCtx(t, testkeeper.NewInMemKeeperParams(t))
+	ck2, ctx2, ctrl2, mocks2 := testkeeper.GetConsumerKeeperAndCtx(t, testkeeper.NewInMemKeeperParams(t))
 	defer ctrl2.Finish()
+	testkeeper.StubClientState(mocks2, "provider-1")
 	ck2.InitGenesis(ctx2, exported)
 	require.True(t, ck2.PhotonFeesEnabled(ctx2), "photon_fees_enabled lost across round-trip")
 
@@ -614,8 +628,9 @@ func TestHighestValsetUpdateID(t *testing.T) {
 // to -- instead of storing them for applyStagedDowntimeParams to copy into
 // the consumer params at the next window close.
 func TestInitGenesisPanicsOnInvalidStagedDowntimeParams(t *testing.T) {
-	consumerKeeper, ctx, ctrl, _ := testkeeper.GetConsumerKeeperAndCtx(t, testkeeper.NewInMemKeeperParams(t))
+	consumerKeeper, ctx, ctrl, mocks := testkeeper.GetConsumerKeeperAndCtx(t, testkeeper.NewInMemKeeperParams(t))
 	defer ctrl.Finish()
+	expectProviderClientExists(mocks)
 
 	cId := crypto.NewCryptoIdentityFromIntSeed(738294)
 	validator := tmtypes.NewValidator(cId.TMCryptoPubKey(), 1)
@@ -726,4 +741,26 @@ func TestGenesisRoundTripBeforePinKeepsState(t *testing.T) {
 	require.True(t, ok)
 	require.Equal(t, "provider-boot-1", chainID)
 	require.Equal(t, armedAt, ck2.GetLastVSCRecvTime(ctx2))
+}
+
+// TestInitGenesisPanicsWhenPinnedClientMissing: a restart genesis naming a
+// provider client that does not exist in the IBC client store means the VAAS
+// and IBC genesis fragments came from different exports; InitChain must fail
+// rather than pin a dead id that would silently reject every inbound packet.
+func TestInitGenesisPanicsWhenPinnedClientMissing(t *testing.T) {
+	ck, ctx, ctrl, mocks := testkeeper.GetConsumerKeeperAndCtx(t, testkeeper.NewInMemKeeperParams(t))
+	defer ctrl.Finish()
+
+	mocks.MockClientKeeper.EXPECT().GetClientState(gomock.Any(), "07-tendermint-9").Return(nil, false)
+
+	cId := crypto.NewCryptoIdentityFromIntSeed(772934)
+	validator := tmtypes.NewValidator(cId.TMCryptoPubKey(), 1)
+	valset := []abci.ValidatorUpdate{tmtypes.TM2PB.ValidatorUpdate(validator)}
+	params := vaastypes.DefaultConsumerParams()
+	params.Enabled = true
+	genesis := consumertypes.NewRestartGenesisState("07-tendermint-9", valset, params)
+
+	require.PanicsWithError(t,
+		`init: genesis pins provider client "07-tendermint-9", which does not exist in the IBC client store`,
+		func() { ck.InitGenesis(ctx, genesis) })
 }
