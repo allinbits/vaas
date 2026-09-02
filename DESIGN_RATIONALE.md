@@ -1,14 +1,8 @@
 # VAAS Design Rationale
 
-> This document supersedes [`PLAN.old.md`](PLAN.old.md), the original rewrite
-> plan drafted before the port from `interchain-security`. `PLAN.old.md` is
-> kept for historical reference only; the present document is the
-> authoritative statement of why VAAS is shaped the way it is.
-
-This is a forward-facing reference for contributors. For the per-feature
-historical diff against the `interchain-security` codebase VAAS was ported
-from, see [`REWRITE_SUMMARY.md`](REWRITE_SUMMARY.md); for protocol-level
-mechanics, see [`docs/consumer-lifecycle.md`](docs/consumer-lifecycle.md) and
+This is a forward-facing reference for contributors: the authoritative
+statement of why VAAS is shaped the way it is. For protocol-level mechanics,
+see [`docs/consumer-lifecycle.md`](docs/consumer-lifecycle.md) and
 [`AGENTS.md`](AGENTS.md).
 
 VAAS is a **simplified** Interchain Security: a Cosmos provider chain lends
@@ -22,25 +16,37 @@ work-in-progress.
 
 1. **All validators validate everything.** There is no per-consumer
    selection. The full active provider set is the consumer set.
-2. **No cross-chain economics inside the protocol.** No reward distribution,
-   no per-consumer commission rates, no slash throttling, no slash meters.
-   Consumers stand up their own fee/reward models; the protocol carries only
-   validator-set state and security signals.
+2. **Economics stay minimal and provider-side.** There is no ICS-style
+   cross-chain reward pipe, no per-consumer commission rates, no slash
+   throttling, and no slash meters. What VAAS does carry is a per-consumer
+   provider-side fee pool: consumers prepay `fees_per_block`, and once per
+   epoch the provider collects `fees_per_block * blocks_per_epoch` and
+   distributes it to the bonded validators.
 3. **IBC v2 only.** No channel handshake, no ordered channels, no port
    reservations. VAAS modules register on `ibcRouterV2` under the application
    IDs `vaasprovider` and `vaasconsumer`; consumer launch relies on a relayer
-   creating the IBC v2 clients and the provider discovering its consumer
-   client at the next epoch boundary.
-4. **Forward-only consumer lifecycle.** `REGISTERED → INITIALIZED → LAUNCHED
-   → STOPPED → DELETED`, with a single rollback path (failed launch → back to
-   `REGISTERED`). Standalone-to-consumer changeover is not currently
-   supported; see [`docs/consumer-transition.md`](docs/consumer-transition.md)
-   for the future-work considerations.
-5. **Provider authority for control-plane messages.** `OnSendPacket` requires
-   the keeper's authority as signer; consumers never send packets back
-   (`OnRecvPacket` on the provider is a failure path; `OnSendPacket` on the
-   consumer is rejected). Misbehaviour reports travel as ordinary provider
-   transactions, not IBC packets.
+   creating the IBC v2 clients and the consumer's owner declaring them on
+   each chain.
+4. **Almost-forward-only consumer lifecycle.** `REGISTERED -> INITIALIZED ->
+   LAUNCHED -> STOPPED -> DELETED`, with three exceptions: a failed launch rolls
+   back to `REGISTERED`; a successful downtime challenge moves a `LAUNCHED`
+   consumer to `PAUSED`, from which governance either resumes it to `LAUNCHED`
+   or removes it to `STOPPED`; and `MsgRetireConsumer` takes a consumer that
+   never launched straight to `DELETED`, since a chain no validator ever
+   validated needs no unbonding delay before its state can be erased. Deletion
+   releases the consumer's chain id, so a registration does not tie up a chain
+   id permanently. Standalone-to-consumer changeover is not
+   currently supported; see
+   [`docs/consumer-transition.md`](docs/consumer-transition.md) for the
+   future-work considerations.
+5. **Authority-gated packet emission.** Both modules' `OnSendPacket` require
+   the module authority as signer, so only a chain's own module can emit VAAS
+   packets. The provider sends VSC packets to consumers; a consumer sends
+   downtime evidence back to the provider (`EvidencePacketData`), which the
+   provider's `OnRecvPacket` verifies and prices into a pending slash.
+   Equivocation and light-client misbehaviour, by contrast, are reported as
+   ordinary provider transactions (`MsgSubmitConsumerDoubleVoting`,
+   `MsgSubmitConsumerMisbehaviour`), not IBC packets.
 
 ---
 
@@ -67,26 +73,40 @@ complexity of the system.
 
 ICS throttles slash packets to bound the impact of a misbehaving or
 adversarial consumer on the provider's validator set. VAAS removes the
-throttle, the meter, and the retry queue. Consumer-initiated slashing for
-downtime is *not currently performed by the provider*; equivocation evidence
-(double-sign, light-client) is submitted as a provider transaction
-(`MsgSubmitConsumerDoubleVoting`, `MsgSubmitConsumerMisbehaviour`) and
-slashed using per-consumer infraction parameters. Downtime slashing via slash
-packets is an open design question (see open issues / PRs).
+throttle, the meter, and the retry queue. Downtime is handled without any of
+them: a consumer reports offline validators to the provider as falsifiable
+`EvidencePacketData` (not an ICS slash packet), and the provider queues a
+priced slash behind a challenge window instead of slashing on receipt. A
+successful `MsgChallengeConsumerDowntime` -- a cryptographic proof that the
+evidence was false -- cancels the queued slash and moves the consumer to
+`PAUSED`. Equivocation evidence (double-sign, light-client) is submitted as a
+provider transaction (`MsgSubmitConsumerDoubleVoting`,
+`MsgSubmitConsumerMisbehaviour`) and slashed using the infraction parameters.
+See [`docs/consumer-downtime.md`](docs/consumer-downtime.md).
 
-### Removed: Consumer Reward Distribution
+### Removed: ICS Cross-Chain Reward Distribution
 
 ICS pipes a fraction of consumer fees back to the provider as validator
-rewards. VAAS leaves the consumer fee model entirely to the consumer chain.
-This eliminates a category of cross-chain accounting and the related
-provider-side state (reward denom registration, fee pool addressing, etc.).
+rewards, through a cross-chain reward denom and the provider-side registration
+state that supports it. VAAS drops that cross-chain pipe. In its place it runs
+a simpler provider-side model: each consumer prepays a fee pool
+(`fees_per_block`), and once per epoch the provider collects
+`fees_per_block * blocks_per_epoch` from the pool and distributes it to the
+bonded validators. See [`docs/consumer-fee-pool.md`](docs/consumer-fee-pool.md).
 
-### Kept: Per-Consumer Infraction Parameters
+### Removed: Per-Consumer Infraction Parameters
 
-Each consumer carries its own `infraction_parameters` (double-sign and
-downtime slash fractions, jail durations, tombstone flag). This is the one
-place per-consumer customisation survives — the protocol cannot decide
-slash severity centrally because consumers vary in security profile.
+ICS stores `infraction_parameters` (double-sign and downtime slash fractions,
+jail durations, tombstone flag) per consumer. VAAS collapses them into a
+single module-wide set applied uniformly to every consumer -- the protocol
+slashes every consumer's infractions at the same severity.
+
+Per-consumer infraction parameters are a plausible **future** addition -- a
+consumer with a different security profile could warrant a different slash
+severity -- and nothing in the current design precludes reintroducing them.
+Treat the module-wide set as the present behavior, not a permanent guarantee:
+docs and integrations should not assume infraction parameters will always be
+global.
 
 ### Kept: Key Assignment
 
@@ -95,29 +115,6 @@ Validators may assign per-consumer consensus keys via
 checks that prevent key reuse across consumers.
 
 ---
-
-## Active Work and Open Questions
-
-Live work is tracked in GitHub issues and pull requests, not in this file —
-this list points to the rough areas, not the specific tickets.
-
-- **Genesis import/export**. Several entry points in the provider and
-  consumer modules still need correct round-trip support. The provider
-  `InitGenesis` path uses the chain-ID field as the consumer-id key, which
-  needs cleaning up.
-- **Per-consumer infraction parameters at runtime**. The parameters are
-  stored per consumer but the equivocation handling path needs to consume
-  them consistently.
-- **Provider-side downtime slashing.** Whether (and how) consumers should be
-  able to request downtime slashing on the provider is an open design
-  question; a draft PR proposes a slash-packet-based path.
-- **Timeout policy.** A VSC packet timeout currently has heavy consequences
-  (consumer removal); whether this is the right default is open.
-- **Standalone-to-consumer transition.** The `PreVAAS` / `PrevStandaloneChain`
-  collections and the `standaloneStakingKeeper` plumbing in the consumer
-  module are dead today but preserved deliberately as a reference for a
-  future transition implementation; see
-  [`docs/consumer-transition.md`](docs/consumer-transition.md).
 
 ## Explicit Non-Goals
 
