@@ -840,3 +840,77 @@ func TestPruneAcceptedDowntimeWindowsKeepsRecordWhilePendingSlashMatures(t *test
 	require.Equal(t, int64(100), floor)
 	require.NoError(t, k.ExportGenesis(maturedCtx).Validate())
 }
+
+// TestPruneAcceptedDowntimeWindowsPrunesLowestFirst reproduces the
+// out-of-order retention hole: windows are accepted in any height order
+// (delivery is unordered and relaying permissionless) but age out by
+// AcceptedAt, so an earlier-accepted higher window can expire while a lower
+// one is still retained. Advancing the scalar floor to the higher window's
+// end would vault the retained record, making the pair's own export
+// unimportable (validateAcceptedDowntimeWindows rejects a record at or below
+// the floor) and permanently rejecting the never-accused heights in between.
+// The sweep must instead hold the higher window until the lower one goes.
+func TestPruneAcceptedDowntimeWindowsPrunesLowestFirst(t *testing.T) {
+	windowEndTime := time.Date(2025, 6, 1, 0, 0, 0, 0, time.UTC)
+	spawnTime := windowEndTime.Add(-30 * 24 * time.Hour)
+	infractionParams := downtimeParams(8, "0.5", 0, 7*24*time.Hour, 72*time.Hour)
+	horizon := infractionParams.DowntimeChallengeWindow + infractionParams.DowntimeEvidenceMaxAge
+
+	k, ctx, ctrl, _, consumerId, providerAddr := setupDowntimeTest(t, infractionParams, spawnTime, windowEndTime)
+	defer ctrl.Finish()
+	ctx = ctx.WithBlockTime(windowEndTime)
+	consAddr := providerAddr.ToSdkConsAddr()
+
+	// The higher window [293, 300] is accepted first, the lower [93, 100]
+	// ten minutes later; both slashes have long executed.
+	highKey := collections.Join3(consumerId, consAddr.Bytes(), int64(300))
+	require.NoError(t, k.AcceptedDowntimeWindows.Set(ctx, highKey,
+		types.AcceptedDowntimeWindow{WindowStart: 293, AcceptedAt: windowEndTime}))
+	lowKey := collections.Join3(consumerId, consAddr.Bytes(), int64(100))
+	require.NoError(t, k.AcceptedDowntimeWindows.Set(ctx, lowKey,
+		types.AcceptedDowntimeWindow{WindowStart: 93, AcceptedAt: windowEndTime.Add(10 * time.Minute)}))
+
+	// Only the higher window is past the horizon: it must be held, not
+	// pruned, and the floor must not move.
+	interleaved := ctx.WithBlockTime(windowEndTime.Add(horizon + time.Minute))
+	k.PruneAcceptedDowntimeWindows(interleaved, infractionParams)
+
+	has, err := k.AcceptedDowntimeWindows.Has(interleaved, highKey)
+	require.NoError(t, err)
+	require.True(t, has, "an expired window must be held while a lower window is retained")
+	pairKey := collections.Join(consumerId, consAddr.Bytes())
+	_, err = k.DowntimeWindowFloors.Get(interleaved, pairKey)
+	require.ErrorIs(t, err, collections.ErrNotFound,
+		"the floor must not vault a retained lower window")
+
+	// The interleaved state must survive its own export round-trip. (The
+	// fixture neither bumps the global consumer-id counter nor touches the
+	// valset-update id; seed both so the export is valid for reasons
+	// unrelated to the windows.)
+	require.Equal(t, consumerId, k.FetchAndIncrementConsumerId(interleaved))
+	k.SetValidatorSetUpdateId(interleaved, 1)
+	k.SetConsumerOwnerAddress(interleaved, consumerId, sdk.AccAddress([]byte("consumer-owner-addr1")).String())
+	fullParams := types.DefaultInfractionParameters()
+	fullParams.SignedBlocksWindow = infractionParams.SignedBlocksWindow
+	fullParams.MinSignedPerWindow = infractionParams.MinSignedPerWindow
+	fullParams.DowntimeGracePeriod = infractionParams.DowntimeGracePeriod
+	fullParams.DowntimeChallengeWindow = infractionParams.DowntimeChallengeWindow
+	fullParams.DowntimeEvidenceMaxAge = infractionParams.DowntimeEvidenceMaxAge
+	k.SetInfractionParams(interleaved, fullParams)
+	exported := k.ExportGenesis(interleaved)
+	require.NoError(t, exported.Validate(),
+		"an exported genesis must re-import: no retained window below the floor")
+
+	// Once the lower window also ages out, both prune, in height order, and
+	// the floor lands on the highest pruned end.
+	final := ctx.WithBlockTime(windowEndTime.Add(10*time.Minute + horizon + time.Minute))
+	k.PruneAcceptedDowntimeWindows(final, infractionParams)
+	for _, key := range []collections.Triple[uint64, []byte, int64]{lowKey, highKey} {
+		has, err := k.AcceptedDowntimeWindows.Has(final, key)
+		require.NoError(t, err)
+		require.False(t, has)
+	}
+	floor, err := k.DowntimeWindowFloors.Get(final, pairKey)
+	require.NoError(t, err)
+	require.Equal(t, int64(300), floor)
+}
