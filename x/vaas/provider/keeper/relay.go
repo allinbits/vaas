@@ -315,7 +315,16 @@ func (k Keeper) QueueVSCPackets(ctx sdk.Context) error {
 		// the consumer already applied everything before it, which may never
 		// hold once packets can be dropped or reordered; a snapshot converges
 		// regardless of arrival order.
-		isSnapshot := k.GetConsumerHighestAckedVscId(ctx, consumerId) < k.GetConsumerHighestSentVscId(ctx, consumerId) ||
+		//
+		// Also force a snapshot when the stored ConsumerValSet is empty: the
+		// provider does not export the per-consumer valset, so the first epoch
+		// after a state-export restart would otherwise diff the live bonded
+		// set against an empty stored set and emit only additions, never the
+		// power-0 removal for a validator that unbonded during the outage --
+		// leaving it with consensus power on the consumer indefinitely. A
+		// snapshot reconciles the consumer's set regardless.
+		isSnapshot := len(currentValSet) == 0 ||
+			k.GetConsumerHighestAckedVscId(ctx, consumerId) < k.GetConsumerHighestSentVscId(ctx, consumerId) ||
 			len(k.GetPendingVSCPackets(ctx, consumerId)) > 0
 
 		valUpdates, err := k.ComputeConsumerNextValSet(ctx, bondedValidators, consumerId, currentValSet, isSnapshot)
@@ -382,16 +391,9 @@ func (k Keeper) QueueImmediateSnapshotVSCPacket(ctx sdk.Context, consumerId uint
 	return nil
 }
 
-// EndBlockTrackValsetUpdates records the height-to-VSC-ID mapping for the
-// next block and prunes per-consumer key-assignment entries that are no
-// longer reachable.
-func (k Keeper) EndBlockTrackValsetUpdates(ctx sdk.Context) {
-	// set the ValsetUpdateBlockHeight
-	blockHeight := uint64(ctx.BlockHeight()) + 1
-	valUpdateID := k.GetValidatorSetUpdateId(ctx)
-	k.SetValsetUpdateBlockHeight(ctx, valUpdateID, blockHeight)
-	k.Logger(ctx).Debug("vscID was mapped to block height", "vscID", valUpdateID, "height", blockHeight)
-
+// EndBlockPruneKeyAssignments prunes per-consumer key-assignment entries that
+// are no longer reachable.
+func (k Keeper) EndBlockPruneKeyAssignments(ctx sdk.Context) {
 	// prune previous consumer validator addresses that are no longer needed
 	for _, consumerId := range k.GetAllLaunchedConsumerIds(ctx) {
 		k.PruneKeyAssignments(ctx, consumerId)

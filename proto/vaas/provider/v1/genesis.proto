@@ -20,72 +20,69 @@ message GenesisState {
     (gogoproto.nullable) = false,
     (gogoproto.moretags) = "yaml:\"consumer_states\""
   ];
+  Params params = 3 [ (gogoproto.nullable) = false ];
   // empty for a new chain
-  repeated ValsetUpdateIdToHeight valset_update_id_to_height = 3
-      [ (gogoproto.nullable) = false ];
-  Params params = 4 [ (gogoproto.nullable) = false ];
-  // empty for a new chain
-  repeated ValidatorConsumerPubKey validator_consumer_pubkeys = 5
+  repeated ValidatorConsumerPubKey validator_consumer_pubkeys = 4
       [ (gogoproto.nullable) = false ];
   // empty for a new chain
-  repeated ValidatorByConsumerAddr validators_by_consumer_addr = 6
+  repeated ValidatorByConsumerAddr validators_by_consumer_addr = 5
       [ (gogoproto.nullable) = false ];
 
   // empty for a new chain
-  repeated ConsumerAddrsToPrune consumer_addrs_to_prune = 7
+  repeated ConsumerAddrsToPrune consumer_addrs_to_prune = 6
       [ (gogoproto.nullable) = false ];
 
   // Per-consumer fees_per_block amount overrides. Empty for a new chain.
   // Each entry's consumer_id MUST appear in consumer_states.
-  repeated ConsumerFeesPerBlockOverride consumer_fees_per_block_overrides = 8
+  repeated ConsumerFeesPerBlockOverride consumer_fees_per_block_overrides = 7
       [ (gogoproto.nullable) = false ];
 
   // empty for a new chain
-  repeated ConsumerFeePoolShare consumer_fee_pool_shares = 9
+  repeated ConsumerFeePoolShare consumer_fee_pool_shares = 8
       [ (gogoproto.nullable) = false ];
 
   // Downtime slashes accepted from consumers but not yet executed. Empty for
   // a new chain.
-  repeated PendingDowntimeSlash pending_downtime_slashes = 10
+  repeated PendingDowntimeSlash pending_downtime_slashes = 9
       [ (gogoproto.nullable) = false ];
 
   // The downtime params in effect immediately before the last change to
   // InfractionParams, if any. Absent means the downtime params have never
   // changed.
-  PreviousDowntimeParams previous_downtime_params = 11;
+  PreviousDowntimeParams previous_downtime_params = 10;
 
   // Per-validator fee-share records from each consumer's fee distribution
   // runs. Empty for a new chain.
-  repeated EpochShareRecord epoch_share_records = 12
+  repeated EpochShareRecord epoch_share_records = 11
       [ (gogoproto.nullable) = false ];
 
   // Optional override for the module's infraction parameters (double-sign /
   // downtime slash+jail settings, the downtime detection window, and the
   // downtime challenge window / evidence max age). Absent means
   // DefaultInfractionParameters().
-  InfractionParameters infraction_parameters = 13;
+  InfractionParameters infraction_parameters = 12;
 
   // Fee shares withheld from validators pending a downtime challenge window,
   // or already forfeited. Empty for a new chain.
-  repeated WithheldFeeRecord withheld_fee_records = 14
+  repeated WithheldFeeRecord withheld_fee_records = 13
       [ (gogoproto.nullable) = false ];
 
   // Per-(consumer, validator) downtime-detection windows already accepted,
   // one record per window, preventing re-acceptance of intersecting
   // evidence. Empty for a new chain.
-  repeated AcceptedDowntimeWindowRecord accepted_downtime_windows = 15
+  repeated AcceptedDowntimeWindowRecord accepted_downtime_windows = 14
       [ (gogoproto.nullable) = false ];
 
   // Per-(consumer, validator) downtime marks for the epoch fee distribution
   // currently in progress. Empty for a new chain.
-  repeated EpochDowntimeEntry epoch_downtime_entries = 16
+  repeated EpochDowntimeEntry epoch_downtime_entries = 15
       [ (gogoproto.nullable) = false ];
 
   // Per-(consumer, validator) pruned acceptance floors: the window-end
   // height at or below which downtime evidence is rejected outright because
   // the accepted-window records covering it have been pruned. Empty for a
   // new chain.
-  repeated DowntimeWindowFloor downtime_window_floors = 17
+  repeated DowntimeWindowFloor downtime_window_floors = 16
       [ (gogoproto.nullable) = false ];
 }
 
@@ -195,13 +192,15 @@ message ConsumerState {
   // re-derive the keeper's pause-expiration queue.
   google.protobuf.Timestamp pause_expiration_time = 16
       [ (gogoproto.stdtime) = true ];
-}
 
-// ValsetUpdateIdToHeight defines the genesis information for the mapping
-// of each valset update id to a block height
-message ValsetUpdateIdToHeight {
-  uint64 valset_update_id = 1;
-  uint64 height = 2;
+  // InDebt is the provider's record of whether this consumer's fee pool
+  // failed to cover an epoch fee. It is the value stamped onto every VSC
+  // packet the consumer receives (see buildVSCPacket), which in turn drives
+  // the consumer's tx-admission gate, so it is round-tripped rather than left
+  // to the next fee distribution: a PAUSED consumer resumed before its first
+  // post-restart distribution would otherwise be sent a snapshot clearing a
+  // debt it still owes. False for a consumer that is not in debt.
+  bool in_debt = 17;
 }
 
 // ConsumerFeesPerBlockOverride is a single per-consumer override entry for

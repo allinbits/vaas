@@ -18,7 +18,6 @@ import (
 func NewRestartGenesisState(
 	clientID string,
 	initValSet []abci.ValidatorUpdate,
-	heightToValsetUpdateIDs []HeightToValsetUpdateID,
 	params vaastypes.ConsumerParams,
 ) *GenesisState {
 	return &GenesisState{
@@ -27,8 +26,7 @@ func NewRestartGenesisState(
 		Provider: vaastypes.ProviderInfo{
 			InitialValSet: initValSet,
 		},
-		HeightToValsetUpdateId: heightToValsetUpdateIDs,
-		ProviderClientId:       clientID,
+		ProviderClientId: clientID,
 	}
 }
 
@@ -84,8 +82,8 @@ func (gs GenesisState) Validate() error {
 		if gs.ProviderClientId != "" {
 			return errorsmod.Wrap(vaastypes.ErrInvalidGenesis, "provider client id cannot be set for new chain. It must be established on handshake")
 		}
-		if len(gs.HeightToValsetUpdateId) != 0 {
-			return errorsmod.Wrap(vaastypes.ErrInvalidGenesis, "HeightToValsetUpdateId must be nil for new chain")
+		if gs.ConsumerInDebt {
+			return errorsmod.Wrap(vaastypes.ErrInvalidGenesis, "a new chain cannot start in debt: the flag is provider-relayed state")
 		}
 	} else {
 		if gs.ProviderClientId == "" {

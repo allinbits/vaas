@@ -27,7 +27,6 @@ var (
 	PreVAASPrefix                = collections.NewPrefix(4)
 	InitialValSetPrefix          = collections.NewPrefix(5)
 	HistoricalInfoPrefix         = collections.NewPrefix(6)
-	HeightValsetUpdateIDPrefix   = collections.NewPrefix(7)
 	CrossChainValidatorPrefix    = collections.NewPrefix(8)
 	InitGenesisHeightPrefix      = collections.NewPrefix(9)
 	PrevStandaloneChainPrefix    = collections.NewPrefix(10)

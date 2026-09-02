@@ -113,7 +113,10 @@ func (k Keeper) SweepPendingDowntimeSlashes(ctx sdk.Context) {
 // has window_start <= that record's window end <= the pair's floor, so the
 // floor check rejects it outright, regardless of timestamps or parameter
 // configuration. Ancient windows hit the floor, live windows hit the
-// retained records; no window is ever accepted twice.
+// retained records; no window is ever accepted twice. Within a pair the
+// sweep prunes lowest-first: an expired window whose pair still retains a
+// lower window is held (its own record keeps guarding it), so the floor
+// never vaults a retained record.
 func (k Keeper) PruneAcceptedDowntimeWindows(ctx sdk.Context, ip types.InfractionParameters) {
 	horizon := ip.DowntimeChallengeWindow + ip.DowntimeEvidenceMaxAge
 
@@ -150,6 +153,23 @@ func (k Keeper) PruneAcceptedDowntimeWindows(ctx sdk.Context, ip types.Infractio
 	iter.Close()
 
 	for _, key := range prunedKeys {
+		// Prune lowest-first per pair. Windows are accepted in any height
+		// order but age out by AcceptedAt, so an expired higher window can
+		// coexist with a retained lower one; advancing the scalar floor to
+		// the higher end would vault the retained record, making the pair's
+		// own export unimportable (a retained record at or below the floor
+		// fails genesis validation) and rejecting the never-accused heights
+		// in between. A held window stays guarded by its own retained record
+		// until every lower window has been pruned.
+		lowestEnd, found, err := k.lowestAcceptedWindowEnd(ctx, key.K1(), key.K2())
+		if err != nil {
+			k.Logger(ctx).Error("failed to read lowest accepted downtime window", "error", err)
+			continue
+		}
+		if found && lowestEnd < key.K3() {
+			continue
+		}
+
 		pairKey := collections.Join(key.K1(), key.K2())
 		floor, err := k.DowntimeWindowFloors.Get(ctx, pairKey)
 		if err != nil && !errors.Is(err, collections.ErrNotFound) {
@@ -169,6 +189,26 @@ func (k Keeper) PruneAcceptedDowntimeWindows(ctx sdk.Context, ip types.Infractio
 			k.Logger(ctx).Error("failed to delete pruned accepted downtime window", "error", err)
 		}
 	}
+}
+
+// lowestAcceptedWindowEnd returns the smallest window-end key among the
+// pair's retained accepted windows, with found=false when none remain.
+func (k Keeper) lowestAcceptedWindowEnd(ctx sdk.Context, consumerId uint64, providerConsAddr []byte) (int64, bool, error) {
+	iter, err := k.AcceptedDowntimeWindows.Iterate(
+		ctx, collections.NewSuperPrefixedTripleRange[uint64, []byte, int64](consumerId, providerConsAddr),
+	)
+	if err != nil {
+		return 0, false, err
+	}
+	defer iter.Close()
+	if !iter.Valid() {
+		return 0, false, nil
+	}
+	key, err := iter.Key()
+	if err != nil {
+		return 0, false, err
+	}
+	return key.K3(), true, nil
 }
 
 // hasPendingDowntimeSlash reports whether (consumerId, providerConsAddr) has

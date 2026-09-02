@@ -93,10 +93,6 @@ func (k Keeper) OnRecvVSCPacketV2(ctx sdk.Context, consumerClientID string, newC
 		ValidatorUpdates: pendingChanges,
 	})
 
-	blockHeight := uint64(ctx.BlockHeight()) + 1
-	k.SetHeightValsetUpdateID(ctx, blockHeight, newChanges.ValsetUpdateId)
-	k.Logger(ctx).Debug("block height was mapped to vscID", "height", blockHeight, "vscID", newChanges.ValsetUpdateId)
-
 	if err := k.SetHighestValsetUpdateID(ctx, newChanges.ValsetUpdateId); err != nil {
 		return errorsmod.Wrapf(err, "error setting highest valset update ID")
 	}

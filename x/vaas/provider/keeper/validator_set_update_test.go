@@ -6,6 +6,8 @@ import (
 	"github.com/stretchr/testify/require"
 	"go.uber.org/mock/gomock"
 
+	abci "github.com/cometbft/cometbft/abci/types"
+
 	cryptocodec "github.com/cosmos/cosmos-sdk/crypto/codec"
 	"github.com/cosmos/cosmos-sdk/crypto/keys/ed25519"
 	stakingtypes "github.com/cosmos/cosmos-sdk/x/staking/types"
@@ -14,6 +16,7 @@ import (
 	testkeeper "github.com/allinbits/vaas/testutil/keeper"
 	keeper "github.com/allinbits/vaas/x/vaas/provider/keeper"
 	providertypes "github.com/allinbits/vaas/x/vaas/provider/types"
+	vaastypes "github.com/allinbits/vaas/x/vaas/types"
 )
 
 // makeConsensusValidator is a test helper that builds a ConsensusValidator
@@ -66,6 +69,12 @@ func TestQueueVSCPacketsDiffWhenCaughtUp(t *testing.T) {
 	// acked == sent == 0: caught up
 	k.SetConsumerHighestSentVscId(ctx, cid, 0)
 	k.SetConsumerHighestAckedVscId(ctx, cid, 0)
+
+	// A diff (not a snapshot) is only produced when there is already a stored
+	// consumer valset to diff against; an empty stored set forces a snapshot
+	// (see QueueVSCPackets). Seed a non-empty stored set so this exercises the
+	// caught-up diff path rather than the empty-set snapshot path.
+	require.NoError(t, k.SetConsumerValSet(ctx, cid, []providertypes.ConsensusValidator{makeConsensusValidator(t, 10)}))
 
 	mocks.MockStakingKeeper.EXPECT().MaxValidators(gomock.Any()).Return(uint32(100), nil).AnyTimes()
 	mocks.MockStakingKeeper.EXPECT().GetBondedValidatorsByPower(gomock.Any()).Return([]stakingtypes.Validator{}, nil).AnyTimes()
@@ -148,6 +157,85 @@ func TestSnapshotAfterLostDiff(t *testing.T) {
 		require.NotEqual(t, bKeyStr, u.PubKey.String(),
 			"departed validator B must not appear in the snapshot")
 	}
+}
+
+// TestQueueVSCPacketsEmptyStoredValSetForcesSnapshot: a state-export restart
+// must force a snapshot. Such a restart does NOT carry the per-consumer
+// ConsumerValSet, so on the first post-restart epoch the stored set is empty
+// even though the consumer looks "caught up" (acked == sent, nothing pending) --
+// the exact state that would otherwise select a diff. Diffing the live bonded
+// set against an empty stored set emits only additions and never the power-0
+// removal for a validator that unbonded during the outage, leaving it with
+// consensus power on the consumer indefinitely. This test proves QueueVSCPackets
+// forces a snapshot in that state, and that delivering the snapshot to a
+// consumer that still has the departed validator removes it with a power-0
+// update.
+func TestQueueVSCPacketsEmptyStoredValSetForcesSnapshot(t *testing.T) {
+	k, ctx, ctrl, mocks := testkeeper.GetProviderKeeperAndCtx(t, testkeeper.NewInMemKeeperParams(t))
+	defer ctrl.Finish()
+	k.SetInfractionParams(ctx, providertypes.DefaultInfractionParameters())
+
+	// identityA survives the outage; identityB unbonded and left the set.
+	identityA := testcrypto.NewCryptoIdentityFromIntSeed(20)
+	identityB := testcrypto.NewCryptoIdentityFromIntSeed(21)
+	tmPkA := identityA.TMProtoCryptoPublicKey()
+	tmPkB := identityB.TMProtoCryptoPublicKey()
+
+	cid := k.FetchAndIncrementConsumerId(ctx)
+	k.SetConsumerPhase(ctx, cid, providertypes.CONSUMER_PHASE_LAUNCHED)
+
+	// A restarted provider carries a positive valset-update-id (see InitGenesis);
+	// set one so the queued packet has a non-zero id the consumer will accept.
+	k.SetValidatorSetUpdateId(ctx, 7)
+
+	// Post-restart: caught up and nothing pending (the state that would
+	// select a diff), and -- crucially -- the per-consumer valset was not
+	// restored.
+	k.SetConsumerHighestSentVscId(ctx, cid, 5)
+	k.SetConsumerHighestAckedVscId(ctx, cid, 5)
+	stored, err := k.GetConsumerValSet(ctx, cid)
+	require.NoError(t, err)
+	require.Empty(t, stored, "precondition: stored consumer valset is empty after a state-export restart")
+
+	// Only A remains bonded; B has departed from the bonded set.
+	stakingValA := identityA.SDKStakingValidator()
+	const powerA = int64(10)
+	mocks.MockStakingKeeper.EXPECT().MaxValidators(gomock.Any()).Return(uint32(100), nil).AnyTimes()
+	mocks.MockStakingKeeper.EXPECT().GetBondedValidatorsByPower(gomock.Any()).Return([]stakingtypes.Validator{stakingValA}, nil).AnyTimes()
+	mocks.MockStakingKeeper.EXPECT().GetLastValidatorPower(gomock.Any(), identityA.SDKValOpAddress()).Return(powerA, nil).AnyTimes()
+
+	require.NoError(t, k.QueueVSCPackets(ctx))
+
+	pending := k.GetPendingVSCPackets(ctx, cid)
+	require.Len(t, pending, 1)
+	require.True(t, pending[0].IsSnapshot,
+		"an empty stored valset after restart must force a snapshot, not a diff")
+	for _, u := range pending[0].ValidatorUpdates {
+		require.NotEqual(t, tmPkB.String(), u.PubKey.String(),
+			"departed validator B must not appear in the snapshot")
+	}
+
+	// Deliver the provider's snapshot to a consumer that still knows {A, B}:
+	// applying the snapshot must emit a power-0 update removing the departed
+	// validator B.
+	ck, cctx, cctrl, cmocks := testkeeper.GetConsumerKeeperAndCtx(t, testkeeper.NewInMemKeeperParams(t))
+	defer cctrl.Finish()
+	testkeeper.StubClientState(cmocks, "provider-0")
+	ck.SetParams(cctx, vaastypes.DefaultConsumerParams())
+	// Pin the provider client the snapshot arrives over up front, as a real
+	// consumer does at genesis.
+	ck.SetProviderClientID(cctx, "07-tendermint-0")
+	ck.ApplyCCValidatorChanges(cctx, []abci.ValidatorUpdate{{PubKey: tmPkA, Power: powerA}, {PubKey: tmPkB, Power: 5}})
+
+	require.NoError(t, ck.OnRecvVSCPacketV2(cctx, "07-tendermint-0", pending[0]))
+	consumerPending, ok := ck.GetPendingChanges(cctx)
+	require.True(t, ok)
+	powers := map[string]int64{}
+	for _, u := range consumerPending.ValidatorUpdates {
+		powers[u.PubKey.String()] = u.Power
+	}
+	require.Equal(t, powerA, powers[tmPkA.String()], "surviving validator A keeps its power")
+	require.Equal(t, int64(0), powers[tmPkB.String()], "departed validator B is removed with a power-0 update")
 }
 
 // TestDiffValidators_RemoveDeparted verifies that a validator present in the
