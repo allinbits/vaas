@@ -60,7 +60,7 @@ func (s *baseTestSuite) consumerBankSendDryRun() (string, error) {
 // providerFundAddress sends `amount` from val to `addr` on the provider chain
 // and blocks until the recipient's balance for the funded denom has grown,
 // so callers can immediately issue txs from `addr`.
-func (s *IntegrationTestSuite) providerFundAddress(addr, amount string) {
+func (s *baseTestSuite) providerFundAddress(addr, amount string) {
 	coin, err := sdk.ParseCoinNormalized(amount)
 	s.Require().NoError(err, "invalid amount %q", amount)
 	before := s.providerQueryBalance(addr, coin.Denom)
@@ -70,7 +70,7 @@ func (s *IntegrationTestSuite) providerFundAddress(addr, amount string) {
 		"--from", "val",
 		"--home", providerHomePath,
 		"--keyring-backend", "test",
-		"--chain-id", providerChainID,
+		"--chain-id", s.cfg.providerChainID,
 		"--fees", "10000" + bondDenom,
 		"-y",
 	})

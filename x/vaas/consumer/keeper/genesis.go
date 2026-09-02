@@ -1,10 +1,12 @@
 package keeper
 
 import (
+	"encoding/json"
 	"errors"
 	"fmt"
 
 	"github.com/allinbits/vaas/x/vaas/consumer/types"
+	vaastypes "github.com/allinbits/vaas/x/vaas/types"
 
 	abci "github.com/cometbft/cometbft/abci/types"
 
@@ -103,9 +105,17 @@ func (k Keeper) InitGenesis(ctx sdk.Context, state *types.GenesisState) []abci.V
 	}
 	// Restore downtime evidence packets queued but not yet sent to the
 	// provider (see ExportGenesis); closing a window clears the source
-	// bitmaps, so the queue is the only remaining copy of the evidence.
+	// bitmaps, so the queue is the only remaining copy of the evidence. The
+	// store key is (validator, window-end height); the window-end height lives
+	// only inside the packet, so it is recovered by decoding the packet
+	// (GenesisState.Validate already rejects an entry whose packet does not
+	// decode or whose validator address disagrees with entry.Addr).
 	for _, entry := range state.PendingEvidencePackets {
-		if err := k.PendingEvidencePackets.Set(ctx, entry.Addr, entry.Packet); err != nil {
+		var packet vaastypes.EvidencePacketData
+		if err := json.Unmarshal(entry.Packet, &packet); err != nil {
+			panic(fmt.Errorf("init: unmarshal pending evidence packet for %x: %w", entry.Addr, err))
+		}
+		if err := k.PendingEvidencePackets.Set(ctx, pendingEvidenceKey(packet), entry.Packet); err != nil {
 			panic(fmt.Errorf("init: set pending evidence packet for %x: %w", entry.Addr, err))
 		}
 	}
@@ -232,9 +242,11 @@ func (k Keeper) exportFirstTrackedHeights(ctx sdk.Context) []types.FirstTrackedH
 	return entries
 }
 
-// exportPendingEvidencePackets walks PendingEvidencePackets into the flat
-// list carried by genesis, each entry holding the store key (validator
-// consensus address) and the JSON-encoded packet value verbatim.
+// exportPendingEvidencePackets walks PendingEvidencePackets into the flat list
+// carried by genesis. Each entry holds the validator consensus address (the
+// first component of the composite store key) and the JSON-encoded packet
+// value verbatim; the window-end height (the second key component) is carried
+// inside the packet and rebuilt on import.
 func (k Keeper) exportPendingEvidencePackets(ctx sdk.Context) []types.PendingEvidencePacketEntry {
 	var entries []types.PendingEvidencePacketEntry
 	iter, err := k.PendingEvidencePackets.Iterate(ctx, nil)
@@ -247,7 +259,7 @@ func (k Keeper) exportPendingEvidencePackets(ctx sdk.Context) []types.PendingEvi
 		if err != nil {
 			panic(fmt.Errorf("export: failed to read pending evidence packet: %w", err))
 		}
-		entries = append(entries, types.PendingEvidencePacketEntry{Addr: kv.Key, Packet: kv.Value})
+		entries = append(entries, types.PendingEvidencePacketEntry{Addr: kv.Key.K1(), Packet: kv.Value})
 	}
 	return entries
 }

@@ -12,6 +12,7 @@ import (
 	commitmenttypes "github.com/cosmos/ibc-go/v10/modules/core/23-commitment/types"
 	ibctmtypes "github.com/cosmos/ibc-go/v10/modules/light-clients/07-tendermint"
 
+	"cosmossdk.io/collections"
 	"cosmossdk.io/math"
 
 	cryptocodec "github.com/cosmos/cosmos-sdk/crypto/codec"
@@ -307,7 +308,7 @@ func TestGenesisRoundTripDowntimeState(t *testing.T) {
 	require.NoError(t, err, "StagedDowntimeParams lost across round-trip")
 	require.Equal(t, staged, gotStaged)
 
-	gotPacket, err := ck2.PendingEvidencePackets.Get(ctx2, addr1)
+	gotPacket, err := ck2.PendingEvidencePackets.Get(ctx2, collections.Join(addr1, evPacket.WindowEndHeight))
 	require.NoError(t, err, "PendingEvidencePackets lost across round-trip")
 	require.Equal(t, evPacket.GetBytes(), gotPacket)
 

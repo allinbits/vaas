@@ -21,6 +21,8 @@ import (
 	"github.com/ory/dockertest/v3"
 	"github.com/ory/dockertest/v3/docker"
 	"github.com/stretchr/testify/suite"
+
+	"github.com/cosmos/cosmos-sdk/codec"
 )
 
 // baseSuiteConfig captures everything that differs between the main and
@@ -72,6 +74,7 @@ type baseTestSuite struct {
 	suite.Suite
 
 	cfg baseSuiteConfig
+	cdc codec.Codec
 
 	tmpDirs           []string
 	provider          *chain

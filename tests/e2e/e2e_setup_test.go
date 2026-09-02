@@ -27,8 +27,6 @@ const (
 // provider chain and consumer chain containers.
 type IntegrationTestSuite struct {
 	baseTestSuite
-
-	cdc codec.Codec
 }
 
 // makeCodec creates a proto codec with the standard cosmos SDK interfaces registered.
