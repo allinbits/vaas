@@ -442,3 +442,29 @@ func TestValidatePendingEvidencePackets(t *testing.T) {
 		require.Contains(t, err.Error(), "does not match packet validator addr")
 	})
 }
+
+// TestValidateNewChainRejectsConsumerInDebt: the debt flag is provider-relayed
+// state, so a chain that never launched cannot carry it; a restart genesis
+// legitimately can, preserving the debt gate until the next VSC re-asserts it.
+func TestValidateNewChainRejectsConsumerInDebt(t *testing.T) {
+	cId := crypto.NewCryptoIdentityFromIntSeed(882641)
+	pubKey := cId.TMCryptoPubKey()
+	validator := tmtypes.NewValidator(pubKey, 1)
+	valSet := tmtypes.NewValidatorSet([]*tmtypes.Validator{validator})
+	valUpdates := tmtypes.TM2PB.ValidatorUpdates(valSet)
+
+	cs := ibctmtypes.NewClientState(chainID, ibctmtypes.DefaultTrustLevel, trustingPeriod, ubdPeriod, maxClockDrift, height, commitmenttypes.GetSDKSpecs(), upgradePath)
+	consensusState := ibctmtypes.NewConsensusState(time.Now(), commitmenttypes.NewMerkleRoot([]byte("apphash")), valSet.Hash())
+	params := vaastypes.DefaultConsumerParams()
+	params.Enabled = true
+
+	newChain := types.NewInitialGenesisState(cs, consensusState, valUpdates, params)
+	newChain.ConsumerInDebt = true
+	err := newChain.Validate()
+	require.Error(t, err)
+	require.Contains(t, err.Error(), "cannot start in debt")
+
+	restart := types.NewRestartGenesisState("07-tendermint-0", valUpdates, params)
+	restart.ConsumerInDebt = true
+	require.NoError(t, restart.Validate(), "a restart genesis may carry the debt flag")
+}

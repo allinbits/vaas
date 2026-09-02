@@ -56,10 +56,7 @@ still fail (or panic) at `InitChain`.
 - every consumer's `ConsumerState`: phase, owner, metadata, init params,
   client id, consumer genesis, pending VSC packets, removal / pause-expiration
   times, the liveness clock (`LastAckTime`, `HighestSentVscId`,
-  `HighestAckedVscId`), the previous consumer valset hash (the hash client
-  discovery accepts alongside the current set's, covering the set still running
-  on the consumer while the latest VSC packet is in flight), and the in-debt
-  flag;
+  `HighestAckedVscId`), and the in-debt flag;
 - key-assignment state (per-consumer consensus keys, the reverse address index,
   and the addresses-to-prune queue);
 - params, per-consumer `fees_per_block` overrides, and fee-pool shares;

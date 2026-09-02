@@ -82,6 +82,9 @@ func (gs GenesisState) Validate() error {
 		if gs.ProviderClientId != "" {
 			return errorsmod.Wrap(vaastypes.ErrInvalidGenesis, "provider client id cannot be set for new chain. It must be established on handshake")
 		}
+		if gs.ConsumerInDebt {
+			return errorsmod.Wrap(vaastypes.ErrInvalidGenesis, "a new chain cannot start in debt: the flag is provider-relayed state")
+		}
 	} else if gs.Provider.ClientState != nil || gs.Provider.ConsensusState != nil {
 		// Note that an empty provider client id is valid on restart: it is the
 		// export of a chain that had not been pinned yet (genesis creates no
