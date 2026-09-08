@@ -441,6 +441,45 @@ func (mr *MockSlashingKeeperMockRecorder) Tombstone(arg0, arg1 any) *gomock.Call
 	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "Tombstone", reflect.TypeOf((*MockSlashingKeeper)(nil).Tombstone), arg0, arg1)
 }
 
+// MockPhotonKeeper is a mock of PhotonKeeper interface.
+type MockPhotonKeeper struct {
+	ctrl     *gomock.Controller
+	recorder *MockPhotonKeeperMockRecorder
+	isgomock struct{}
+}
+
+// MockPhotonKeeperMockRecorder is the mock recorder for MockPhotonKeeper.
+type MockPhotonKeeperMockRecorder struct {
+	mock *MockPhotonKeeper
+}
+
+// NewMockPhotonKeeper creates a new mock instance.
+func NewMockPhotonKeeper(ctrl *gomock.Controller) *MockPhotonKeeper {
+	mock := &MockPhotonKeeper{ctrl: ctrl}
+	mock.recorder = &MockPhotonKeeperMockRecorder{mock}
+	return mock
+}
+
+// EXPECT returns an object that allows the caller to indicate expected use.
+func (m *MockPhotonKeeper) EXPECT() *MockPhotonKeeperMockRecorder {
+	return m.recorder
+}
+
+// ConversionRate mocks base method.
+func (m *MockPhotonKeeper) ConversionRate(ctx context.Context) (math.LegacyDec, error) {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "ConversionRate", ctx)
+	ret0, _ := ret[0].(math.LegacyDec)
+	ret1, _ := ret[1].(error)
+	return ret0, ret1
+}
+
+// ConversionRate indicates an expected call of ConversionRate.
+func (mr *MockPhotonKeeperMockRecorder) ConversionRate(ctx any) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "ConversionRate", reflect.TypeOf((*MockPhotonKeeper)(nil).ConversionRate), ctx)
+}
+
 // MockClientKeeper is a mock of ClientKeeper interface.
 type MockClientKeeper struct {
 	ctrl     *gomock.Controller

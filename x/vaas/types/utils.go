@@ -99,3 +99,19 @@ func GetLastBondedValidatorsUtil(ctx sdk.Context, stakingKeeper StakingKeeper, m
 
 	return bondedValidators, nil
 }
+
+// BitmapIsSet reports whether bit i of bitmap is set, treating bits outside
+// the bitmap as unset.
+func BitmapIsSet(bitmap []byte, i int64) bool {
+	byteIdx := i / 8
+	if i < 0 || byteIdx >= int64(len(bitmap)) {
+		return false
+	}
+	return bitmap[byteIdx]&(byte(1)<<uint(i%8)) != 0
+}
+
+// BitmapSet sets bit i of bitmap in place. The caller must ensure the bitmap
+// is long enough to hold bit i.
+func BitmapSet(bitmap []byte, i int64) {
+	bitmap[i/8] |= byte(1) << uint(i%8)
+}

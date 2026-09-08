@@ -5,8 +5,12 @@ import (
 	"testing"
 	"time"
 
+	"github.com/cometbft/cometbft/crypto/ed25519"
+	tmproto "github.com/cometbft/cometbft/proto/tendermint/types"
+
 	clienttypes "github.com/cosmos/ibc-go/v10/modules/core/02-client/types"
 	channeltypesv2 "github.com/cosmos/ibc-go/v10/modules/core/04-channel/v2/types"
+	ibctmtypes "github.com/cosmos/ibc-go/v10/modules/light-clients/07-tendermint"
 	"github.com/stretchr/testify/require"
 
 	"cosmossdk.io/math"
@@ -162,98 +166,98 @@ func TestValidateInitializationParameters(t *testing.T) {
 		{
 			name: "valid",
 			params: types.ConsumerInitializationParameters{
-				InitialHeight:      clienttypes.NewHeight(3, 4),
-				GenesisHash:        []byte{0x01},
-				BinaryHash:         []byte{0x01},
-				SpawnTime:          now,
-				UnbondingPeriod:    time.Duration(100000000000),
-				VaasTimeoutPeriod:  15 * time.Minute,
-				HistoricalEntries:  10000,
-				SafeModeThreshold:  vaastypes.DefaultSafeModeThreshold,
+				InitialHeight:     clienttypes.NewHeight(3, 4),
+				GenesisHash:       []byte{0x01},
+				BinaryHash:        []byte{0x01},
+				SpawnTime:         now,
+				UnbondingPeriod:   time.Duration(100000000000),
+				VaasTimeoutPeriod: 15 * time.Minute,
+				HistoricalEntries: 10000,
+				SafeModeThreshold: vaastypes.DefaultSafeModeThreshold,
 			},
 			valid: true,
 		},
 		{
 			name: "invalid - zero height",
 			params: types.ConsumerInitializationParameters{
-				InitialHeight:      clienttypes.ZeroHeight(),
-				GenesisHash:        []byte{0x01},
-				BinaryHash:         []byte{0x01},
-				SpawnTime:          now,
-				UnbondingPeriod:    time.Duration(100000000000),
-				VaasTimeoutPeriod:  15 * time.Minute,
-				HistoricalEntries:  10000,
-				SafeModeThreshold:  vaastypes.DefaultSafeModeThreshold,
+				InitialHeight:     clienttypes.ZeroHeight(),
+				GenesisHash:       []byte{0x01},
+				BinaryHash:        []byte{0x01},
+				SpawnTime:         now,
+				UnbondingPeriod:   time.Duration(100000000000),
+				VaasTimeoutPeriod: 15 * time.Minute,
+				HistoricalEntries: 10000,
+				SafeModeThreshold: vaastypes.DefaultSafeModeThreshold,
 			},
 			valid: false,
 		},
 		{
 			name: "invalid - hash too long",
 			params: types.ConsumerInitializationParameters{
-				InitialHeight:      clienttypes.NewHeight(3, 4),
-				GenesisHash:        tooLongHash,
-				BinaryHash:         []byte{0x01},
-				SpawnTime:          now,
-				UnbondingPeriod:    time.Duration(100000000000),
-				VaasTimeoutPeriod:  15 * time.Minute,
-				HistoricalEntries:  10000,
-				SafeModeThreshold:  vaastypes.DefaultSafeModeThreshold,
+				InitialHeight:     clienttypes.NewHeight(3, 4),
+				GenesisHash:       tooLongHash,
+				BinaryHash:        []byte{0x01},
+				SpawnTime:         now,
+				UnbondingPeriod:   time.Duration(100000000000),
+				VaasTimeoutPeriod: 15 * time.Minute,
+				HistoricalEntries: 10000,
+				SafeModeThreshold: vaastypes.DefaultSafeModeThreshold,
 			},
 			valid: false,
 		},
 		{
 			name: "invalid - zero spawn time",
 			params: types.ConsumerInitializationParameters{
-				InitialHeight:      clienttypes.NewHeight(3, 4),
-				GenesisHash:        []byte{0x01},
-				BinaryHash:         []byte{0x01},
-				SpawnTime:          time.Time{},
-				UnbondingPeriod:    time.Duration(100000000000),
-				VaasTimeoutPeriod:  15 * time.Minute,
-				HistoricalEntries:  10000,
-				SafeModeThreshold:  vaastypes.DefaultSafeModeThreshold,
+				InitialHeight:     clienttypes.NewHeight(3, 4),
+				GenesisHash:       []byte{0x01},
+				BinaryHash:        []byte{0x01},
+				SpawnTime:         time.Time{},
+				UnbondingPeriod:   time.Duration(100000000000),
+				VaasTimeoutPeriod: 15 * time.Minute,
+				HistoricalEntries: 10000,
+				SafeModeThreshold: vaastypes.DefaultSafeModeThreshold,
 			},
 			valid: true,
 		},
 		{
 			name: "invalid - zero duration",
 			params: types.ConsumerInitializationParameters{
-				InitialHeight:      clienttypes.NewHeight(3, 4),
-				GenesisHash:        []byte{0x01},
-				BinaryHash:         []byte{0x01},
-				SpawnTime:          now,
-				UnbondingPeriod:    0,
-				VaasTimeoutPeriod:  15 * time.Minute,
-				HistoricalEntries:  10000,
-				SafeModeThreshold:  vaastypes.DefaultSafeModeThreshold,
+				InitialHeight:     clienttypes.NewHeight(3, 4),
+				GenesisHash:       []byte{0x01},
+				BinaryHash:        []byte{0x01},
+				SpawnTime:         now,
+				UnbondingPeriod:   0,
+				VaasTimeoutPeriod: 15 * time.Minute,
+				HistoricalEntries: 10000,
+				SafeModeThreshold: vaastypes.DefaultSafeModeThreshold,
 			},
 			valid: false,
 		},
 		{
 			name: "invalid - HistoricalEntries zero",
 			params: types.ConsumerInitializationParameters{
-				InitialHeight:      clienttypes.NewHeight(3, 4),
-				GenesisHash:        []byte{0x01},
-				BinaryHash:         []byte{0x01},
-				SpawnTime:          now,
-				UnbondingPeriod:    time.Duration(100000000000),
-				VaasTimeoutPeriod:  15 * time.Minute,
-				HistoricalEntries:  0,
-				SafeModeThreshold:  vaastypes.DefaultSafeModeThreshold,
+				InitialHeight:     clienttypes.NewHeight(3, 4),
+				GenesisHash:       []byte{0x01},
+				BinaryHash:        []byte{0x01},
+				SpawnTime:         now,
+				UnbondingPeriod:   time.Duration(100000000000),
+				VaasTimeoutPeriod: 15 * time.Minute,
+				HistoricalEntries: 0,
+				SafeModeThreshold: vaastypes.DefaultSafeModeThreshold,
 			},
 			valid: false,
 		},
 		{
 			name: "invalid - zero safe mode threshold",
 			params: types.ConsumerInitializationParameters{
-				InitialHeight:      clienttypes.NewHeight(3, 4),
-				GenesisHash:        []byte{0x01},
-				BinaryHash:         []byte{0x01},
-				SpawnTime:          now,
-				UnbondingPeriod:    time.Duration(100000000000),
-				VaasTimeoutPeriod:  15 * time.Minute,
-				HistoricalEntries:  10000,
-				SafeModeThreshold:  0,
+				InitialHeight:     clienttypes.NewHeight(3, 4),
+				GenesisHash:       []byte{0x01},
+				BinaryHash:        []byte{0x01},
+				SpawnTime:         now,
+				UnbondingPeriod:   time.Duration(100000000000),
+				VaasTimeoutPeriod: 15 * time.Minute,
+				HistoricalEntries: 10000,
+				SafeModeThreshold: 0,
 			},
 			valid: false,
 		},
@@ -830,6 +834,124 @@ func TestValidateInitParams_VaasTimeoutBounds(t *testing.T) {
 			if tc.wantErr {
 				require.Error(t, err)
 				require.ErrorIs(t, err, types.ErrInvalidConsumerInitializationParameters)
+			} else {
+				require.NoError(t, err)
+			}
+		})
+	}
+}
+
+func TestMsgChallengeConsumerDowntime_ValidateBasic(t *testing.T) {
+	validSigner := sdk.AccAddress([]byte("alice___________")).String()
+	validHeader := &ibctmtypes.Header{
+		SignedHeader: &tmproto.SignedHeader{
+			Header: &tmproto.Header{},
+		},
+	}
+	validCommit := &tmproto.Commit{}
+
+	base := func() types.MsgChallengeConsumerDowntime {
+		return types.MsgChallengeConsumerDowntime{
+			Signer:          validSigner,
+			ConsumerId:      1,
+			ValidatorAddr:   []byte{0x01},
+			ClaimedHeight:   10,
+			Header:          validHeader,
+			LastCommit:      validCommit,
+			ValidatorPubkey: make([]byte, ed25519.PubKeySize),
+		}
+	}
+
+	tests := []struct {
+		name    string
+		mutate  func(msg *types.MsgChallengeConsumerDowntime)
+		wantErr bool
+	}{
+		{"valid", func(msg *types.MsgChallengeConsumerDowntime) {}, false},
+		{"invalid signer", func(msg *types.MsgChallengeConsumerDowntime) {
+			msg.Signer = "not-bech32"
+		}, true},
+		{"empty validator_addr", func(msg *types.MsgChallengeConsumerDowntime) {
+			msg.ValidatorAddr = nil
+		}, true},
+		{"zero claimed_height", func(msg *types.MsgChallengeConsumerDowntime) {
+			msg.ClaimedHeight = 0
+		}, true},
+		{"negative claimed_height", func(msg *types.MsgChallengeConsumerDowntime) {
+			msg.ClaimedHeight = -1
+		}, true},
+		{"nil header", func(msg *types.MsgChallengeConsumerDowntime) {
+			msg.Header = nil
+		}, true},
+		{"empty header (nil signed_header)", func(msg *types.MsgChallengeConsumerDowntime) {
+			// Crafted input: &ibctmtypes.Header{} with no SignedHeader at all.
+			// The handler dereferences msg.Header.Header.ChainID (the
+			// SignedHeader's promoted field), which would nil-pointer panic
+			// on this shape if ValidateBasic let it through.
+			msg.Header = &ibctmtypes.Header{}
+		}, true},
+		{"header with nil signed_header.header", func(msg *types.MsgChallengeConsumerDowntime) {
+			// SignedHeader is present but its own Header is nil -- the same
+			// panic-on-dereference shape, one level deeper.
+			msg.Header = &ibctmtypes.Header{
+				SignedHeader: &tmproto.SignedHeader{},
+			}
+		}, true},
+		{"nil last_commit", func(msg *types.MsgChallengeConsumerDowntime) {
+			msg.LastCommit = nil
+		}, true},
+		{"empty validator_pubkey", func(msg *types.MsgChallengeConsumerDowntime) {
+			msg.ValidatorPubkey = nil
+		}, true},
+		{"31-byte validator_pubkey", func(msg *types.MsgChallengeConsumerDowntime) {
+			// One byte short of ed25519.PubKeySize; the handler's
+			// ed25519.PubKey(...).Address() call panics on this length.
+			msg.ValidatorPubkey = make([]byte, ed25519.PubKeySize-1)
+		}, true},
+		{"33-byte validator_pubkey", func(msg *types.MsgChallengeConsumerDowntime) {
+			// One byte past ed25519.PubKeySize; same panic shape as above.
+			msg.ValidatorPubkey = make([]byte, ed25519.PubKeySize+1)
+		}, true},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			msg := base()
+			tc.mutate(&msg)
+			err := msg.ValidateBasic()
+			if tc.wantErr {
+				require.Error(t, err)
+			} else {
+				require.NoError(t, err)
+			}
+		})
+	}
+}
+
+func TestMsgResumeConsumer_ValidateBasic(t *testing.T) {
+	validAuthority := authtypes.NewModuleAddress(govtypes.ModuleName).String()
+	tests := []struct {
+		name    string
+		msg     types.MsgResumeConsumer
+		wantErr bool
+	}{
+		{"valid", types.MsgResumeConsumer{
+			Authority:  validAuthority,
+			ConsumerId: 1,
+		}, false},
+		{"invalid authority", types.MsgResumeConsumer{
+			Authority:  "not-bech32",
+			ConsumerId: 1,
+		}, true},
+		{"empty authority", types.MsgResumeConsumer{
+			Authority:  "",
+			ConsumerId: 1,
+		}, true},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			err := tc.msg.ValidateBasic()
+			if tc.wantErr {
+				require.Error(t, err)
 			} else {
 				require.NoError(t, err)
 			}

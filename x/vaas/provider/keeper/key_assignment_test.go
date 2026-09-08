@@ -961,3 +961,111 @@ func TestSimulatedAssignmentsAndUpdateApplication(t *testing.T) {
 		runRandomExecution()
 	}
 }
+
+// TestValidatorConsensusKeyInUseSeesPausedConsumers verifies that the
+// collision guard covering validator creation also looks at consumers in the
+// PAUSED phase.
+//
+// The guard exists to stop a new provider validator from taking a consensus
+// key that some other validator already runs as its assigned key on a
+// consumer: on that consumer both would resolve to the same consensus address,
+// and a validator set carrying one address twice is not something a chain can
+// apply. A pause does not release those assignments -- they are exactly what
+// the resume snapshot is rebuilt from -- so a paused consumer's keys have to
+// stay visible here. Missing them lets the colliding validator be created
+// during the pause and delivers the duplicate at resume.
+func TestValidatorConsensusKeyInUseSeesPausedConsumers(t *testing.T) {
+	k, ctx, ctrl, mocks := testkeeper.GetProviderKeeperAndCtx(t, testkeeper.NewInMemKeeperParams(t))
+	defer ctrl.Finish()
+
+	assigned := cryptotestutil.NewCryptoIdentityFromIntSeed(4820)
+	incumbent := cryptotestutil.NewCryptoIdentityFromIntSeed(4821)
+
+	consumerId := k.FetchAndIncrementConsumerId(ctx)
+	k.SetConsumerPhase(ctx, consumerId, types.CONSUMER_PHASE_PAUSED)
+	k.SetValidatorByConsumerAddr(ctx, consumerId,
+		assigned.ConsumerConsAddress(), incumbent.ProviderConsAddress())
+
+	// A brand-new provider validator whose own consensus key is the one already
+	// serving as the incumbent's assigned key on the paused consumer.
+	newVal := assigned.SDKStakingValidator()
+	valAddr, err := sdk.ValAddressFromBech32(newVal.GetOperator())
+	require.NoError(t, err)
+	mocks.MockStakingKeeper.EXPECT().GetValidator(gomock.Any(), valAddr).Return(newVal, nil).AnyTimes()
+
+	require.True(t, k.ValidatorConsensusKeyInUse(ctx, valAddr),
+		"a consensus key assigned on a PAUSED consumer must still count as in use")
+}
+
+// TestAssignConsumerKeyOnPausedConsumer verifies that key assignment is
+// available while a consumer is paused.
+//
+// A pause resolves either into LAUNCHED again or into STOPPED, and it lasts up
+// to MaxPauseDuration. Rejecting assignment throughout would leave a validator
+// that needs to change its consumer key -- a compromised key being the case
+// that matters -- waiting for someone else's governance decision before it can
+// act.
+func TestAssignConsumerKeyOnPausedConsumer(t *testing.T) {
+	k, ctx, ctrl, mocks := testkeeper.GetProviderKeeperAndCtx(t, testkeeper.NewInMemKeeperParams(t))
+	defer ctrl.Finish()
+
+	provider := cryptotestutil.NewCryptoIdentityFromIntSeed(4830)
+	consumerKey := cryptotestutil.NewCryptoIdentityFromIntSeed(4831)
+
+	consumerId := k.FetchAndIncrementConsumerId(ctx)
+	k.SetConsumerPhase(ctx, consumerId, types.CONSUMER_PHASE_PAUSED)
+
+	mocks.MockStakingKeeper.EXPECT().
+		GetValidatorByConsAddr(gomock.Any(), consumerKey.SDKValConsAddress()).
+		Return(stakingtypes.Validator{}, stakingtypes.ErrNoValidatorFound)
+
+	require.NoError(t, k.AssignConsumerKey(ctx, consumerId,
+		provider.SDKStakingValidator(), consumerKey.TMProtoCryptoPublicKey()))
+
+	got, found := k.GetValidatorByConsumerAddr(ctx, consumerId, consumerKey.ConsumerConsAddress())
+	require.True(t, found, "the assignment must be recorded on a paused consumer")
+	require.Equal(t, provider.ProviderConsAddress(), got)
+}
+
+// TestAssignConsumerKeyOnPausedConsumerPrunesRatherThanDeletes verifies that
+// replacing a key on a paused consumer schedules the old consumer address for
+// pruning instead of deleting the mapping outright.
+//
+// The delete-immediately branch is for consumers that never launched, where no
+// evidence can name the old address. A paused consumer has launched and is the
+// one case guaranteed to have downtime state in flight -- a pause is entered by
+// a successful downtime challenge -- and both the challenge lookup and the
+// re-submission defence resolve an accused consumer address through this
+// mapping. Dropping it at assignment time would strand that state.
+func TestAssignConsumerKeyOnPausedConsumerPrunesRatherThanDeletes(t *testing.T) {
+	k, ctx, ctrl, mocks := testkeeper.GetProviderKeeperAndCtx(t, testkeeper.NewInMemKeeperParams(t))
+	defer ctrl.Finish()
+
+	provider := cryptotestutil.NewCryptoIdentityFromIntSeed(4840)
+	oldKey := cryptotestutil.NewCryptoIdentityFromIntSeed(4841)
+	newKey := cryptotestutil.NewCryptoIdentityFromIntSeed(4842)
+
+	consumerId := k.FetchAndIncrementConsumerId(ctx)
+	k.SetConsumerPhase(ctx, consumerId, types.CONSUMER_PHASE_PAUSED)
+
+	unbonding := 3 * 7 * 24 * time.Hour
+	mocks.MockStakingKeeper.EXPECT().
+		GetValidatorByConsAddr(gomock.Any(), gomock.Any()).
+		Return(stakingtypes.Validator{}, stakingtypes.ErrNoValidatorFound).AnyTimes()
+	mocks.MockStakingKeeper.EXPECT().UnbondingTime(gomock.Any()).Return(unbonding, nil)
+
+	require.NoError(t, k.AssignConsumerKey(ctx, consumerId,
+		provider.SDKStakingValidator(), oldKey.TMProtoCryptoPublicKey()))
+	require.NoError(t, k.AssignConsumerKey(ctx, consumerId,
+		provider.SDKStakingValidator(), newKey.TMProtoCryptoPublicKey()))
+
+	_, found := k.GetValidatorByConsumerAddr(ctx, consumerId, oldKey.ConsumerConsAddress())
+	require.True(t, found,
+		"the replaced consumer address must stay resolvable until pruning, not be deleted")
+
+	pruneTime := ctx.BlockTime().Add(unbonding)
+	oldConsumerAddr := oldKey.ConsumerConsAddress()
+	require.Contains(t, k.GetConsumerAddrsToPrune(ctx, consumerId, pruneTime).Addresses,
+		oldConsumerAddr.ToSdkConsAddr().Bytes(),
+		"the replaced consumer address must be queued for pruning after the unbonding period")
+}

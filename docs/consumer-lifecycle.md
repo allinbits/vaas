@@ -8,10 +8,16 @@ For how an unresponsive or lagging launched consumer is handled -- the liveness 
 
 ```
 REGISTERED → INITIALIZED → LAUNCHED → STOPPED → DELETED
+                               |  ^
+                               v  |
+                              PAUSED
 ```
 
-A consumer always progresses forward through these phases. The only exception is a failed
-launch, which resets the consumer back to REGISTERED so the owner can retry.
+A consumer always progresses forward through these phases, with two exceptions: a failed
+launch resets the consumer back to REGISTERED so the owner can retry, and a successful
+downtime challenge moves a LAUNCHED consumer to PAUSED, from which governance can either
+resume it back to LAUNCHED or remove it (see
+[consumer-downtime.md](consumer-downtime.md)).
 
 ---
 
@@ -110,13 +116,37 @@ VSC packets are diffs by default. If a consumer falls behind on acknowledgements
 
 ---
 
-## Phase 4: STOPPED
+## Phase 4: PAUSED
+
+**Trigger:** a successful `MsgChallengeConsumerDowntime` -- a cryptographic proof that the
+consumer reported false downtime evidence (see [consumer-downtime.md](consumer-downtime.md)).
+
+**Requirements:** consumer must be in `LAUNCHED` phase.
+
+**What happens on-chain:**
+1. Withheld fee shares from the false accusations are paid back from the consumer's fee pool.
+2. Phase is set to `PAUSED`.
+3. All pending downtime slashes from this consumer are cancelled and its epoch downtime
+   marks cleared.
+4. An automatic stop is scheduled at `block_time + MaxPauseDuration` (default 30 days).
+5. No further VSC packets are queued or sent; fee distribution and downtime evidence from
+   this consumer stop; the liveness sweep skips it.
+
+**Exits:** `MsgResumeConsumer` (gov) returns the consumer to `LAUNCHED` with an immediate
+snapshot resync (the resume pre-flights the IBC client and fails with `MsgRecoverClient`
+guidance if the client expired during the pause); `MsgRemoveConsumer` (gov) or the scheduled
+auto-stop moves it to `STOPPED`.
+
+---
+
+## Phase 5: STOPPED
 
 **Triggers:** either
 - `MsgRemoveConsumer` submitted by the governance authority (removing a consumer requires the gov authority), or
-- the automatic liveness sweep, when a launched consumer has produced no successful VSC acknowledgement for longer than the liveness grace period (see [consumer-liveness.md](consumer-liveness.md)).
+- the automatic liveness sweep, when a launched consumer has produced no successful VSC acknowledgement for longer than the liveness grace period (see [consumer-liveness.md](consumer-liveness.md)), or
+- the pause auto-stop, when a paused consumer's `MaxPauseDuration` elapses without a governance resume (see [consumer-downtime.md](consumer-downtime.md)).
 
-**Requirements:** consumer must be in `LAUNCHED` phase.
+**Requirements:** consumer must be in `LAUNCHED` or `PAUSED` phase.
 
 **What happens on-chain:**
 1. Phase is set to `STOPPED`.
@@ -126,7 +156,7 @@ VSC packets are diffs by default. If a consumer falls behind on acknowledgements
 
 ---
 
-## Phase 5: DELETED
+## Phase 6: DELETED
 
 **Trigger:** automatic, at the first `BeginBlock` where
 `block_time >= stopped_time + provider_unbonding_period`.
@@ -135,8 +165,10 @@ VSC packets are diffs by default. If a consumer falls behind on acknowledgements
 1. Up to 200 due consumers are dequeued per block.
 2. For each consumer, `DeleteConsumerChain` runs:
    - Deletes: IBC client ID mapping, consumer genesis, key assignments, equivocation
-     evidence minimum height, pending VSC packets, validator set, removal time, and the
-     liveness state (last-ack time and the sent/acked VSC-id counters).
+     evidence minimum height, pending VSC packets, validator set, removal time, the
+     liveness state (last-ack time and the sent/acked VSC-id counters), and the downtime
+     state (pending downtime slashes, epoch downtime marks, withheld fee records, and
+     punished-window bookkeeping).
    - **Preserves** (for block explorer use): chain ID, phase, owner address, metadata,
      initialization parameters.
 3. Phase is set to `DELETED`.
@@ -150,5 +182,6 @@ VSC packets are diffs by default. If a consumer falls behind on acknowledgements
 | `REGISTERED` | `MsgCreateConsumer` | Any account | Consumer created, owner assigned |
 | `INITIALIZED` | `spawn_time` set | On-chain (automatic) | Queued for launch at spawn_time |
 | `LAUNCHED` | `spawn_time` elapsed | On-chain (BeginBlock) | Genesis built; operator starts consumer; relayer creates IBC path |
-| `STOPPED` | `MsgRemoveConsumer` (gov) or liveness sweep | Governance / on-chain | Queued for deletion after unbonding period |
+| `PAUSED` | Successful downtime challenge | Any account (with proof) | Pending slashes cancelled, withheld fees repaid, auto-stop scheduled |
+| `STOPPED` | `MsgRemoveConsumer` (gov), liveness sweep, or pause auto-stop | Governance / on-chain | Queued for deletion after unbonding period |
 | `DELETED` | Unbonding period elapsed | On-chain (BeginBlock) | State cleaned up |

@@ -1,6 +1,9 @@
 package types
 
 import (
+	"bytes"
+	"encoding/json"
+
 	vaastypes "github.com/allinbits/vaas/x/vaas/types"
 
 	abci "github.com/cometbft/cometbft/abci/types"
@@ -8,6 +11,7 @@ import (
 	ibctmtypes "github.com/cosmos/ibc-go/v10/modules/light-clients/07-tendermint"
 
 	errorsmod "cosmossdk.io/errors"
+	"cosmossdk.io/math"
 )
 
 // NewRestartGenesisState returns a consumer GenesisState that has already been established.
@@ -91,5 +95,71 @@ func (gs GenesisState) Validate() error {
 			return errorsmod.Wrap(vaastypes.ErrInvalidGenesis, "provider client state and consensus state must be nil for a restarting genesis state")
 		}
 	}
+
+	// A bitmap imported at a length other than what the current
+	// SignedBlocksWindow requires would let TrackMissedBlocks index past the
+	// end of the slice (x/vaas/consumer/keeper/downtime.go), panicking
+	// BeginBlock and halting the chain.
+	wantBitmapLen := int((gs.Params.SignedBlocksWindow + 7) / 8)
+	for _, e := range gs.MissedBlockBitmaps {
+		if len(e.Addr) == 0 {
+			return errorsmod.Wrap(vaastypes.ErrInvalidGenesis, "missed block bitmap: addr cannot be empty")
+		}
+		if len(e.Bitmap) != wantBitmapLen {
+			return errorsmod.Wrapf(vaastypes.ErrInvalidGenesis,
+				"missed block bitmap: length %d does not match signed_blocks_window %d (want %d bytes)",
+				len(e.Bitmap), gs.Params.SignedBlocksWindow, wantBitmapLen)
+		}
+	}
+	for _, e := range gs.FirstTrackedHeights {
+		if len(e.Addr) == 0 {
+			return errorsmod.Wrap(vaastypes.ErrInvalidGenesis, "first tracked height: addr cannot be empty")
+		}
+		if e.Height <= 0 {
+			return errorsmod.Wrap(vaastypes.ErrInvalidGenesis, "first tracked height: height must be positive")
+		}
+	}
+
+	// A pending evidence packet is the only remaining copy of the downtime
+	// evidence once the window closes, and SendEvidencePackets
+	// (x/vaas/consumer/keeper/evidence_packet.go) deletes any stored entry it
+	// cannot unmarshal (leaving only an operator log line), so a corrupt
+	// import would discard the evidence with no on-chain trace.
+	for _, e := range gs.PendingEvidencePackets {
+		if len(e.Addr) == 0 {
+			return errorsmod.Wrap(vaastypes.ErrInvalidGenesis, "pending evidence packet: addr cannot be empty")
+		}
+		var packet vaastypes.EvidencePacketData
+		if err := json.Unmarshal(e.Packet, &packet); err != nil {
+			return errorsmod.Wrapf(vaastypes.ErrInvalidGenesis,
+				"pending evidence packet for %x: cannot unmarshal packet: %s", e.Addr, err)
+		}
+		if err := packet.Validate(); err != nil {
+			return errorsmod.Wrapf(vaastypes.ErrInvalidGenesis,
+				"pending evidence packet for %x: %s", e.Addr, err)
+		}
+		if !bytes.Equal(e.Addr, packet.ValidatorAddr) {
+			return errorsmod.Wrapf(vaastypes.ErrInvalidGenesis,
+				"pending evidence packet: addr %x does not match packet validator addr %x", e.Addr, packet.ValidatorAddr)
+		}
+	}
+
+	// StagedDowntimeParams bypasses the keeper's validDowntimeParams filter on
+	// import, so an invalid entry (e.g. nil MinSignedPerWindow) must be
+	// rejected here: applyStagedDowntimeParams copies whatever is staged into
+	// the consumer params at the next window close, where the store
+	// round-trip turns a nil dec into an explicit zero and silently disables
+	// downtime detection.
+	if p := gs.StagedDowntimeParams; p != nil {
+		if p.SignedBlocksWindow <= 0 {
+			return errorsmod.Wrap(vaastypes.ErrInvalidGenesis,
+				"staged downtime params: signed_blocks_window must be positive")
+		}
+		if p.MinSignedPerWindow.IsNil() || !p.MinSignedPerWindow.IsPositive() || !p.MinSignedPerWindow.LT(math.LegacyOneDec()) {
+			return errorsmod.Wrap(vaastypes.ErrInvalidGenesis,
+				"staged downtime params: min_signed_per_window must be in (0, 1)")
+		}
+	}
+
 	return nil
 }

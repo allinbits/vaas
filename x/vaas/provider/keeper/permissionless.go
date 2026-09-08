@@ -186,10 +186,22 @@ func (k Keeper) IsConsumerPrelaunched(ctx context.Context, consumerId uint64) bo
 		phase == types.CONSUMER_PHASE_INITIALIZED
 }
 
-// IsConsumerActive checks if a consumer chain is either registered, initialized, or launched.
+// IsConsumerActive reports whether a consumer chain is still live from the
+// provider's point of view: registered, initialized, launched, or paused.
+//
+// PAUSED belongs here even though a paused consumer receives no VSC packets and
+// is excluded from fee distribution and evidence handling. A pause is a
+// temporary state that resolves back into LAUNCHED or on into STOPPED, and
+// while it lasts the consumer keeps all of its state -- its key assignments in
+// particular, which is what the resume snapshot is rebuilt from. Anything
+// asking "does this consumer still exist and hold state" has to see it; only
+// the phase-specific paths (QueueVSCPackets, fee distribution, evidence) filter
+// down to LAUNCHED, and they do so by naming the phase rather than by asking
+// this.
 func (k Keeper) IsConsumerActive(ctx context.Context, consumerId uint64) bool {
 	phase := k.GetConsumerPhase(ctx, consumerId)
 	return phase == types.CONSUMER_PHASE_REGISTERED ||
 		phase == types.CONSUMER_PHASE_INITIALIZED ||
-		phase == types.CONSUMER_PHASE_LAUNCHED
+		phase == types.CONSUMER_PHASE_LAUNCHED ||
+		phase == types.CONSUMER_PHASE_PAUSED
 }

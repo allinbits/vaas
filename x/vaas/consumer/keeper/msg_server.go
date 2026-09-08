@@ -34,7 +34,16 @@ func (k msgServer) UpdateParams(goCtx context.Context, msg *types.MsgUpdateParam
 	}
 
 	ctx := sdk.UnwrapSDKContext(goCtx)
-	k.Keeper.SetParams(ctx, msg.Params)
+
+	// SignedBlocksWindow/MinSignedPerWindow are provider-owned: distributed
+	// via consumer genesis and VSC packets, not locally updatable through
+	// this message. Preserve the stored values over whatever the message
+	// carries.
+	current := k.Keeper.GetConsumerParams(ctx)
+	params := msg.Params
+	params.SignedBlocksWindow = current.SignedBlocksWindow
+	params.MinSignedPerWindow = current.MinSignedPerWindow
+	k.Keeper.SetParams(ctx, params)
 
 	return &types.MsgUpdateParamsResponse{}, nil
 }

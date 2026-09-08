@@ -81,6 +81,16 @@ func (im IBCModule) OnRecvPacket(
 		}
 	}
 
+	if payload.SourcePort != vaastypes.ProviderAppID {
+		logger.Error("invalid source port",
+			"expected", vaastypes.ProviderAppID,
+			"got", payload.SourcePort,
+		)
+		return channeltypesv2.RecvPacketResult{
+			Status: channeltypesv2.PacketStatus_Failure,
+		}
+	}
+
 	var data vaastypes.ValidatorSetChangePacketData
 	if err := vaastypes.ModuleCdc.UnmarshalJSON(payload.Value, &data); err != nil {
 		ackErr := errorsmod.Wrapf(sdkerrors.ErrInvalidType, "cannot unmarshal VSCPacket data")
@@ -90,7 +100,11 @@ func (im IBCModule) OnRecvPacket(
 		}
 	}
 
-	if err := im.keeper.OnRecvVSCPacketV2(ctx, sourceClient, data); err != nil {
+	// destinationClient is the consumer's own client that received this
+	// packet; ibc-go's RecvPacket handler already verified it has a
+	// registered counterparty before this callback runs, so it is the
+	// correct, currently-live client to address packets back to the provider.
+	if err := im.keeper.OnRecvVSCPacketV2(ctx, destinationClient, data); err != nil {
 		logger.Error(fmt.Sprintf("%s sequence %d", err.Error(), sequence))
 		return channeltypesv2.RecvPacketResult{
 			Status: channeltypesv2.PacketStatus_Failure,

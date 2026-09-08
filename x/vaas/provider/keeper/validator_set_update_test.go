@@ -40,6 +40,7 @@ func TestFullValSetUpdatesReturnsCompleteSet(t *testing.T) {
 func TestQueueVSCPacketsSnapshotWhenBehind(t *testing.T) {
 	k, ctx, ctrl, mocks := testkeeper.GetProviderKeeperAndCtx(t, testkeeper.NewInMemKeeperParams(t))
 	defer ctrl.Finish()
+	k.SetInfractionParams(ctx, providertypes.DefaultInfractionParameters())
 
 	cid := k.FetchAndIncrementConsumerId(ctx)
 	k.SetConsumerPhase(ctx, cid, providertypes.CONSUMER_PHASE_LAUNCHED)
@@ -58,6 +59,7 @@ func TestQueueVSCPacketsSnapshotWhenBehind(t *testing.T) {
 func TestQueueVSCPacketsDiffWhenCaughtUp(t *testing.T) {
 	k, ctx, ctrl, mocks := testkeeper.GetProviderKeeperAndCtx(t, testkeeper.NewInMemKeeperParams(t))
 	defer ctrl.Finish()
+	k.SetInfractionParams(ctx, providertypes.DefaultInfractionParameters())
 
 	cid := k.FetchAndIncrementConsumerId(ctx)
 	k.SetConsumerPhase(ctx, cid, providertypes.CONSUMER_PHASE_LAUNCHED)
@@ -87,6 +89,7 @@ func TestQueueVSCPacketsDiffWhenCaughtUp(t *testing.T) {
 func TestSnapshotAfterLostDiff(t *testing.T) {
 	k, ctx, ctrl, mocks := testkeeper.GetProviderKeeperAndCtx(t, testkeeper.NewInMemKeeperParams(t))
 	defer ctrl.Finish()
+	k.SetInfractionParams(ctx, providertypes.DefaultInfractionParameters())
 
 	// identityA is the surviving validator; identityB has departed.
 	identityA := testcrypto.NewCryptoIdentityFromIntSeed(0)

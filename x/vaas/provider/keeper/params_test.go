@@ -6,6 +6,7 @@ import (
 
 	testkeeper "github.com/allinbits/vaas/testutil/keeper"
 	providertypes "github.com/allinbits/vaas/x/vaas/provider/types"
+	vaastypes "github.com/allinbits/vaas/x/vaas/types"
 	"github.com/stretchr/testify/require"
 
 	"cosmossdk.io/math"
@@ -32,6 +33,7 @@ func TestParams(t *testing.T) {
 		600,
 		math.NewInt(50),
 		providertypes.DefaultMinDepositBlocks,
+		providertypes.DefaultMaxPauseDuration,
 	)
 	providerKeeper.SetParams(ctx, newParams)
 	params = providerKeeper.GetParams(ctx)
@@ -94,4 +96,50 @@ func TestGetEffectiveFeesPerBlock(t *testing.T) {
 			require.Equal(t, tc.wantCoin, coin)
 		})
 	}
+}
+
+// TestAcceptableDowntimeParams verifies that evidence echoing the current
+// downtime params is always accepted, evidence echoing the immediately-prior
+// params is accepted only within the evidence-max-age + challenge-window
+// grace horizon, and evidence echoing anything else is rejected.
+func TestAcceptableDowntimeParams(t *testing.T) {
+	k, ctx, ctrl, _ := testkeeper.GetProviderKeeperAndCtx(t, testkeeper.NewInMemKeeperParams(t))
+	defer ctrl.Finish()
+
+	initial := providertypes.DefaultInfractionParameters()
+	k.SetInfractionParams(ctx, initial)
+
+	oldDowntimeParams := k.CurrentDowntimeParams(ctx)
+
+	// current accepted
+	require.True(t, k.AcceptableDowntimeParams(ctx, oldDowntimeParams))
+
+	// change the downtime window; the old values move into PreviousDowntimeParams
+	// stamped with the current block time.
+	changed := initial
+	changed.SignedBlocksWindow = 1000
+	k.SetInfractionParams(ctx, changed)
+
+	newDowntimeParams := k.CurrentDowntimeParams(ctx)
+	require.NotEqual(t, oldDowntimeParams.SignedBlocksWindow, newDowntimeParams.SignedBlocksWindow)
+
+	// new current still accepted
+	require.True(t, k.AcceptableDowntimeParams(ctx, newDowntimeParams))
+
+	horizon := initial.DowntimeEvidenceMaxAge + initial.DowntimeChallengeWindow
+
+	// previous accepted within the grace horizon
+	withinHorizon := ctx.WithBlockTime(ctx.BlockTime().Add(horizon - time.Hour))
+	require.True(t, k.AcceptableDowntimeParams(withinHorizon, oldDowntimeParams))
+
+	// previous rejected once the grace horizon has elapsed
+	afterHorizon := ctx.WithBlockTime(ctx.BlockTime().Add(horizon + time.Hour))
+	require.False(t, k.AcceptableDowntimeParams(afterHorizon, oldDowntimeParams))
+
+	// an unrelated value is never accepted
+	unknown := vaastypes.DowntimeParams{
+		SignedBlocksWindow: 42,
+		MinSignedPerWindow: math.LegacyMustNewDecFromStr("0.5"),
+	}
+	require.False(t, k.AcceptableDowntimeParams(withinHorizon, unknown))
 }

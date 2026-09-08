@@ -8,6 +8,7 @@ import "tendermint/abci/types.proto";
 import "ibc/lightclients/tendermint/v1/tendermint.proto";
 import "google/protobuf/duration.proto";
 import "gogoproto/gogo.proto";
+import "cosmos_proto/cosmos.proto";
 
 //
 // Note any type defined in this file is referenced/persisted in both the
@@ -44,6 +45,18 @@ message ConsumerParams {
     // tx admission gate enters safe mode (only ibc.core and gov messages pass).
     google.protobuf.Duration safe_mode_threshold = 5
         [ (gogoproto.nullable) = false, (gogoproto.stdduration) = true ];
+
+    // Provider-owned downtime detection window size, in consumer blocks.
+    // Written by the provider into the consumer genesis and updated via
+    // VSC packets; not locally updatable.
+    int64 signed_blocks_window = 6;
+
+    // Provider-owned minimum signing fraction per window.
+    string min_signed_per_window = 7 [
+        (cosmos_proto.scalar) = "cosmos.Dec",
+        (gogoproto.customtype) = "cosmossdk.io/math.LegacyDec",
+        (gogoproto.nullable) = false
+    ];
 }
 
 // ConsumerGenesisState defines shared genesis information between provider and
