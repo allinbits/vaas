@@ -1,6 +1,7 @@
 package keeper
 
 import (
+	"errors"
 	"fmt"
 	"sort"
 	"strconv"
@@ -81,10 +82,21 @@ func (k Keeper) ComputeClaim(
 	shares, err := k.ConsumerFeePoolShares.Get(ctx,
 		collections.Join3(consumerId, denom, depositor))
 	if err != nil {
+		// Absent means no claim; anything else is store corruption and must
+		// not be misread as a zero claim.
+		if !errors.Is(err, collections.ErrNotFound) {
+			panic(fmt.Errorf("failed to read fee pool shares for consumer %d denom %s: %w", consumerId, denom, err))
+		}
 		return math.ZeroInt()
 	}
 	total, err := k.ConsumerFeePoolTotalShares.Get(ctx, collections.Join(consumerId, denom))
-	if err != nil || total.IsZero() {
+	if err != nil {
+		if !errors.Is(err, collections.ErrNotFound) {
+			panic(fmt.Errorf("failed to read fee pool total shares for consumer %d denom %s: %w", consumerId, denom, err))
+		}
+		return math.ZeroInt()
+	}
+	if total.IsZero() {
 		return math.ZeroInt()
 	}
 	// Nothing bounds the request, so the unreserved balance is the only limit.
@@ -150,6 +162,11 @@ func (k Keeper) MintShares(
 	totalKey := collections.Join(consumerId, amount.Denom)
 	total, err := k.ConsumerFeePoolTotalShares.Get(ctx, totalKey)
 	if err != nil {
+		// Absent means a first deposit; anything else must fail the tx, not
+		// silently reset the pool's share ledger.
+		if !errors.Is(err, collections.ErrNotFound) {
+			return fmt.Errorf("failed to read fee pool total shares: %w", err)
+		}
 		total = math.ZeroInt()
 	}
 
@@ -192,6 +209,9 @@ func (k Keeper) MintShares(
 	depKey := collections.Join3(consumerId, amount.Denom, depositor)
 	existing, err := k.ConsumerFeePoolShares.Get(ctx, depKey)
 	if err != nil {
+		if !errors.Is(err, collections.ErrNotFound) {
+			return fmt.Errorf("failed to read depositor's fee pool shares: %w", err)
+		}
 		existing = math.ZeroInt()
 	}
 	if err := k.ConsumerFeePoolShares.Set(ctx, depKey, existing.Add(shares)); err != nil {
@@ -307,6 +327,11 @@ func (k Keeper) SweepConsumerFeePoolDenom(
 	totalKey := collections.Join(consumerId, denom)
 	total, err := k.ConsumerFeePoolTotalShares.Get(ctx, totalKey)
 	if err != nil {
+		// Absent means nothing was ever minted; anything else is exactly the
+		// silent-abort this function's contract forbids.
+		if !errors.Is(err, collections.ErrNotFound) {
+			panic(fmt.Errorf("failed to read fee pool total shares for consumer %d denom %s: %w", consumerId, denom, err))
+		}
 		total = math.ZeroInt()
 	}
 

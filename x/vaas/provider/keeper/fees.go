@@ -302,6 +302,12 @@ func (k Keeper) DistributeConsumerFees(ctx sdk.Context) error {
 			//     (raise fees_per_block), not grounds for unpaid validation.
 			if consumerFeePerEpoch.Amount.IsPositive() {
 				k.UpdateConsumerDebtStatus(ctx, consumerId, true)
+				k.Logger(ctx).Warn("consumer epoch fee splits to a zero per-validator share; flagged in debt",
+					"consumerId", consumerId,
+					"epoch_fee", consumerFeePerEpoch.String(),
+					"bonded_validators", numBonded,
+					"resolution", "raise fees_per_block to at least the bonded validator count",
+				)
 			}
 			k.SetEpochShareRecord(ctx, consumerId, ctx.BlockTime(), share)
 			continue
@@ -324,7 +330,7 @@ func (k Keeper) DistributeConsumerFees(ctx sdk.Context) error {
 		if available.LT(consumerFeePerEpoch.Amount) {
 			k.UpdateConsumerDebtStatus(ctx, consumerId, true)
 			k.SetEpochShareRecord(ctx, consumerId, ctx.BlockTime(), math.ZeroInt())
-			k.Logger(ctx).Debug("consumer fee pool underfunded; skipping distribution",
+			k.Logger(ctx).Warn("consumer fee pool underfunded; skipping distribution",
 				"consumerId", consumerId,
 				"balance", balance.String(),
 				"outstandingWithheld", outstandingWithheld.String(),
