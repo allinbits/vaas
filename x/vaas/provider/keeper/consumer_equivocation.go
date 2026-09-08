@@ -433,7 +433,23 @@ func verifyLightBlockCommitSig(lightBlock tmtypes.LightBlock, sigIdx int) error 
 // Punish Validator section
 //
 
-// JailAndTombstoneValidator jails and tombstones the validator with the given provider consensus address
+// JailAndTombstoneValidator jails and tombstones the validator with the given
+// provider consensus address.
+//
+// providerAddr is the address the infraction's consumer-side identity resolves
+// to, which for a validator that has since rotated its provider consensus key
+// and holds no assigned consumer key on that consumer is the address it rotated
+// away from. x/staking answers for such an address, through the old-to-new
+// consensus address mapping a rotation records, but x/slashing does not: a
+// rotation moves the validator's ValidatorSigningInfo to the new address and
+// deletes the entry at the old one. So the address is resolved to the one the
+// validator runs now (liveConsAddrOf) before x/slashing is asked about it.
+//
+// Unresolved, IsTombstoned reads no signing info and reports a tombstoned
+// validator as punishable again, and JailUntil then fails outright on the
+// missing entry -- failing the whole submission after the slash has already
+// moved stake, so a rotated validator's equivocation cannot be punished at all
+// and the submitter only loses gas.
 func (k Keeper) JailAndTombstoneValidator(ctx sdk.Context, providerAddr types.ProviderConsAddress, jailingParams *types.SlashJailParameters) error {
 	validator, err := k.stakingKeeper.GetValidatorByConsAddr(ctx, providerAddr.ToSdkConsAddr())
 	if err != nil && errors.Is(err, stakingtypes.ErrNoValidatorFound) {
@@ -446,21 +462,24 @@ func (k Keeper) JailAndTombstoneValidator(ctx sdk.Context, providerAddr types.Pr
 		return errorsmod.Wrapf(stakingtypes.ErrNoUnbondingDelegation, "validator is unbonded. provider consensus address: %s", providerAddr.String())
 	}
 
-	if k.slashingKeeper.IsTombstoned(ctx, providerAddr.ToSdkConsAddr()) {
+	// The resolution reads nothing but the validator the lookup above already
+	// found, so an address x/staking knows no validator for is still rejected
+	// there and never reaches x/slashing.
+	liveAddr := liveConsAddrOf(validator, providerAddr)
+
+	if k.slashingKeeper.IsTombstoned(ctx, liveAddr) {
 		return errorsmod.Wrapf(slashingtypes.ErrValidatorTombstoned, "provider consensus address: %s", providerAddr.String())
 	}
 
 	// jail validator if not already
 	if !validator.IsJailed() {
-		err := k.stakingKeeper.Jail(ctx, providerAddr.ToSdkConsAddr())
-		if err != nil {
+		if err := k.stakingKeeper.Jail(ctx, liveAddr); err != nil {
 			return err
 		}
 	}
 
 	jailEndTime := ctx.BlockTime().Add(jailingParams.JailDuration)
-	err = k.slashingKeeper.JailUntil(ctx, providerAddr.ToSdkConsAddr(), jailEndTime)
-	if err != nil {
+	if err := k.slashingKeeper.JailUntil(ctx, liveAddr, jailEndTime); err != nil {
 		return fmt.Errorf("fail to set jail duration for validator: %s: %s", providerAddr.String(), err)
 	}
 
@@ -469,7 +488,7 @@ func (k Keeper) JailAndTombstoneValidator(ctx sdk.Context, providerAddr types.Pr
 		// Note that we cannot simply use the fact that a validator is jailed to avoid slashing more than once
 		// because then a validator could i) perform an equivocation, ii) get jailed (e.g., through downtime)
 		// and in such a case the validator would not get slashed when we call `SlashValidator`.
-		if err = k.slashingKeeper.Tombstone(ctx, providerAddr.ToSdkConsAddr()); err != nil {
+		if err := k.slashingKeeper.Tombstone(ctx, liveAddr); err != nil {
 			return fmt.Errorf("fail to tombstone validator: %s: %s", providerAddr.String(), err)
 		}
 	}
@@ -519,6 +538,10 @@ func (k Keeper) ComputePowerToSlash(ctx sdk.Context, validator stakingtypes.Vali
 // rejected under; callers that only care about rejecting those conditions
 // (rather than computing a fraction from tokens) can keep using
 // SlashValidator directly.
+//
+// The consensus address it returns -- the one to slash under -- is the address
+// the validator runs now, which is not providerAddr when providerAddr is one it
+// has rotated away from.
 func (k Keeper) slashableStake(ctx sdk.Context, providerAddr types.ProviderConsAddress) (
 	totalPower int64,
 	totalTokens math.Int,
@@ -536,7 +559,15 @@ func (k Keeper) slashableStake(ctx sdk.Context, providerAddr types.ProviderConsA
 		return 0, totalTokens, consAddr, errorsmod.Wrapf(stakingtypes.ErrNoUnbondingDelegation, "validator is unbonded. provider consensus address: %s", providerAddr.String())
 	}
 
-	if k.slashingKeeper.IsTombstoned(ctx, providerAddr.ToSdkConsAddr()) {
+	// The tombstone flag lives in x/slashing's signing info, which a rotation
+	// moves to the address the validator runs now, so the check names that
+	// address -- the same one the slash goes under -- rather than the one the
+	// caller passed. For a validator that never rotated the two are the same;
+	// for one that did, checking the address it rotated away from finds no
+	// signing info and reports a tombstoned validator as slashable again.
+	consAddr = liveConsAddrOf(validator, providerAddr)
+
+	if k.slashingKeeper.IsTombstoned(ctx, consAddr) {
 		return 0, totalTokens, consAddr, errorsmod.Wrapf(slashingtypes.ErrValidatorTombstoned, "validator is tombstoned. provider consensus address: %s", providerAddr.String())
 	}
 
@@ -561,11 +592,6 @@ func (k Keeper) slashableStake(ctx sdk.Context, providerAddr types.ProviderConsA
 	powerReduction := k.stakingKeeper.PowerReduction(ctx)
 	totalPower = k.ComputePowerToSlash(ctx, validator, undelegations, redelegations, lastPower, powerReduction)
 	totalTokens = sdk.TokensFromConsensusPower(totalPower, powerReduction)
-
-	consAddr, err = validator.GetConsAddr()
-	if err != nil {
-		return totalPower, totalTokens, consAddr, err
-	}
 
 	return totalPower, totalTokens, consAddr, nil
 }

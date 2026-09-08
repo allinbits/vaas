@@ -580,7 +580,7 @@ func TestHandleConsumerDowntimeRejectsNoClient(t *testing.T) {
 
 func TestHandleConsumerDowntimeRejectsValidatorNotInSet(t *testing.T) {
 	keeperParams := testkeeper.NewInMemKeeperParams(t)
-	providerKeeper, ctx, ctrl, _ := testkeeper.GetProviderKeeperAndCtx(t, keeperParams)
+	providerKeeper, ctx, ctrl, mocks := testkeeper.GetProviderKeeperAndCtx(t, keeperParams)
 	defer ctrl.Finish()
 
 	consumerId := uint64(0)
@@ -589,6 +589,12 @@ func TestHandleConsumerDowntimeRejectsValidatorNotInSet(t *testing.T) {
 	providerKeeper.SetConsumerClientId(ctx, consumerId, "07-tendermint-0")
 	providerKeeper.SetEquivocationEvidenceMinHeight(ctx, consumerId, 1)
 	providerKeeper.SetInfractionParams(ctx, downtimeParams(8, "0.5", 0, 7*24*time.Hour, 72*time.Hour))
+
+	// An address the accused could have rotated away from is looked up in
+	// x/staking, which here knows no validator for it -- so the rotation
+	// resolution cannot turn this into a member of the set.
+	mocks.MockStakingKeeper.EXPECT().GetValidatorByConsAddr(gomock.Any(), gomock.Any()).
+		Return(stakingtypes.Validator{}, stakingtypes.ErrNoValidatorFound).AnyTimes()
 
 	// The reporting validator is never registered in the consumer's
 	// validator set.
