@@ -260,7 +260,7 @@ func TestOnRecvVSCPacketV2DebtStatus(t *testing.T) {
 	// is rejected outright), so seed one as InitGenesis would.
 	pk, err := cryptocodec.ToCmtProtoPublicKey(ed25519.GenPrivKey().PubKey())
 	require.NoError(t, err)
-	consumerKeeper.ApplyCCValidatorChanges(ctx, []abci.ValidatorUpdate{{PubKey: pk, Power: 10}})
+	consumerKeeper.ApplyVaasValidatorChanges(ctx, []abci.ValidatorUpdate{{PubKey: pk, Power: 10}})
 
 	require.False(t, consumerKeeper.IsConsumerInDebt(ctx))
 
@@ -450,7 +450,7 @@ func TestOnRecvVSCPacketStagesDowntimeParams(t *testing.T) {
 	// is rejected outright), so seed one as InitGenesis would.
 	pk, err := cryptocodec.ToCmtProtoPublicKey(ed25519.GenPrivKey().PubKey())
 	require.NoError(t, err)
-	k.ApplyCCValidatorChanges(ctx, []abci.ValidatorUpdate{{PubKey: pk, Power: 10}})
+	k.ApplyVaasValidatorChanges(ctx, []abci.ValidatorUpdate{{PubKey: pk, Power: 10}})
 
 	initialParams := types.DefaultConsumerParams()
 	k.SetParams(ctx, initialParams)
@@ -692,7 +692,7 @@ func TestDiffCannotEmptyValidatorSet(t *testing.T) {
 	pkB, err := cryptocodec.ToCmtProtoPublicKey(ed25519.GenPrivKey().PubKey())
 	require.NoError(t, err)
 
-	k.ApplyCCValidatorChanges(ctx, []abci.ValidatorUpdate{{PubKey: pkA, Power: 10}})
+	k.ApplyVaasValidatorChanges(ctx, []abci.ValidatorUpdate{{PubKey: pkA, Power: 10}})
 	require.NoError(t, k.SetHighestValsetUpdateID(ctx, 1))
 	k.SetProviderClientID(ctx, "07-tendermint-0")
 

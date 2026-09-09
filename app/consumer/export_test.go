@@ -27,9 +27,9 @@ func TestGetValidatorSetCarriesPubKeysAndReloads(t *testing.T) {
 	ctx := app.NewContextLegacy(true, cmtproto.Header{Height: app.LastBlockHeight()})
 
 	pk := ed25519.GenPrivKey().PubKey()
-	cVal, err := consumertypes.NewCCValidator(pk.Address(), 10, pk)
+	vaasVal, err := consumertypes.NewVaasValidator(pk.Address(), 10, pk)
 	require.NoError(t, err)
-	app.ConsumerKeeper.SetCCValidator(ctx, cVal)
+	app.ConsumerKeeper.SetVaasValidator(ctx, vaasVal)
 
 	vals, err := app.GetValidatorSet(ctx)
 	require.NoError(t, err)

@@ -82,7 +82,7 @@ cannot bypass.
 ## 4a. Refuse a consumer on-chain, not by going dark
 
 If you vet a consumer binary and will not run it, say so on-chain:
-`providerd tx provider set-consumer-refusal <consumer-id> true --from <operator>`
+`providerd tx vaasprovider set-consumer-refusal <consumer-id> true --from <operator>`
 (see [consumer-refusal.md](consumer-refusal.md)). Downtime accusations keep
 coming while you are offline for that chain, but a refusal is a public,
 stake-weighted signal: at one third of the bonded power the consumer is paused
