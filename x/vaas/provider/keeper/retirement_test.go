@@ -41,6 +41,8 @@ func createRetirableConsumer(
 ) uint64 {
 	t.Helper()
 
+	k.SetInfractionParams(ctx, providertypes.DefaultInfractionParameters())
+
 	ip := retirementInitParams(spawnTime)
 	ms := providerkeeper.NewMsgServerImpl(&k)
 	resp, err := ms.CreateConsumer(ctx, &providertypes.MsgCreateConsumer{
