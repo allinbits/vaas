@@ -120,8 +120,8 @@ accepted and bounded rather than solved:
   about this, for the same reason the light-client path punishes nobody. The
   defenses are operational: run consumer nodes behind an external signer whose
   double-sign guard the binary cannot bypass (this closes the vector
-  completely), and vet the binary against the registered `binary_hash` before
-  validating. The fork-based flavor of binary griefing, by contrast, is
+  completely), and vet the binary and genesis against the registered
+  `binary_hash` and `genesis_hash` before validating. The fork-based flavor of binary griefing, by contrast, is
   contained on-chain: the fork evidence itself pauses the consumer and closes
   its evidence pipeline.
 - **The refusal dilemma.** A validator that vets a binary, finds it malicious,
@@ -155,6 +155,10 @@ it. See [consumer-fee-pool.md](consumer-fee-pool.md).
 
 ## Assumptions and out of scope
 
+- **The consumer binary is in the trust path.** Validators run code the
+  protocol never vets, and the two exposures that follow (direct key abuse
+  and the refusal dilemma) are accepted MVP posture, bounded operationally
+  rather than solved; see the dedicated section above.
 - **Provider validator honesty.** VAAS inherits the provider chain's
   2/3-honest assumption. Collusion of 2/3+ of the provider's own validators can
   forge a consumer light-client history; that is the provider's own security
