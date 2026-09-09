@@ -1333,7 +1333,7 @@ func (k Keeper) GetConsumerValSet(
 	return validators, nil
 }
 
-// SetConsumerValSet resets the current consumer validators with the `nextValidators`
+// SetConsumerValSet resets the current consumer validators with the `nextValidators`.
 func (k Keeper) SetConsumerValSet(ctx context.Context, consumerId uint64, nextValidators []types.ConsensusValidator) error {
 	// First delete existing validators
 	k.DeleteConsumerValSet(ctx, consumerId)

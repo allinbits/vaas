@@ -194,18 +194,28 @@ func TestInitGenesisRestoresPerConsumerStateAndDerivedQueues(t *testing.T) {
 		ValsetUpdateId: 1,
 		Params:         providertypes.DefaultParams(),
 		ConsumerStates: []providertypes.ConsumerState{
-			{ConsumerId: 0, ChainId: "consumer-alpha", Phase: providertypes.CONSUMER_PHASE_REGISTERED,
-				OwnerAddress: owner, Metadata: &md},
-			{ConsumerId: 1, ChainId: "consumer-beta", Phase: providertypes.CONSUMER_PHASE_INITIALIZED,
-				OwnerAddress: owner, Metadata: &md, InitParams: &ip},
-			{ConsumerId: 2, ChainId: "consumer-gamma", Phase: providertypes.CONSUMER_PHASE_LAUNCHED,
+			{
+				ConsumerId: 0, ChainId: "consumer-alpha", Phase: providertypes.CONSUMER_PHASE_REGISTERED,
+				OwnerAddress: owner, Metadata: &md,
+			},
+			{
+				ConsumerId: 1, ChainId: "consumer-beta", Phase: providertypes.CONSUMER_PHASE_INITIALIZED,
 				OwnerAddress: owner, Metadata: &md, InitParams: &ip,
-				ClientId: "07-tendermint-0", ConsumerGenesis: cg},
-			{ConsumerId: 3, ChainId: "consumer-delta", Phase: providertypes.CONSUMER_PHASE_STOPPED,
+			},
+			{
+				ConsumerId: 2, ChainId: "consumer-gamma", Phase: providertypes.CONSUMER_PHASE_LAUNCHED,
 				OwnerAddress: owner, Metadata: &md, InitParams: &ip,
-				ClientId: "07-tendermint-1", ConsumerGenesis: cg, RemovalTime: &removeAt},
-			{ConsumerId: 4, ChainId: "consumer-epsilon", Phase: providertypes.CONSUMER_PHASE_DELETED,
-				OwnerAddress: owner, Metadata: &md, InitParams: &ip},
+				ClientId: "07-tendermint-0", ConsumerGenesis: cg,
+			},
+			{
+				ConsumerId: 3, ChainId: "consumer-delta", Phase: providertypes.CONSUMER_PHASE_STOPPED,
+				OwnerAddress: owner, Metadata: &md, InitParams: &ip,
+				ClientId: "07-tendermint-1", ConsumerGenesis: cg, RemovalTime: &removeAt,
+			},
+			{
+				ConsumerId: 4, ChainId: "consumer-epsilon", Phase: providertypes.CONSUMER_PHASE_DELETED,
+				OwnerAddress: owner, Metadata: &md, InitParams: &ip,
+			},
 		},
 	}
 
@@ -517,6 +527,9 @@ func TestGenesisRoundTrip(t *testing.T) {
 	require.Equal(t, providertypes.CONSUMER_PHASE_PAUSED, zeta.Phase)
 	require.NotNil(t, zeta.PauseExpirationTime, "PAUSED consumer must carry pause_expiration_time")
 	require.Equal(t, pauseExpiresAt, *zeta.PauseExpirationTime)
+
+	_, ok = byChainId["consumer-gamma"]
+	require.True(t, ok, "consumer-gamma missing from export")
 
 	// Fresh keeper B.
 	pkB, ctxB, ctrlB, stakingB := testkeeper.GetProviderKeeperAndCtx(t, testkeeper.NewInMemKeeperParams(t))

@@ -7,6 +7,8 @@ import (
 
 	abci "github.com/cometbft/cometbft/abci/types"
 
+	clientv2types "github.com/cosmos/ibc-go/v10/modules/core/02-client/v2/types"
+
 	cryptocodec "github.com/cosmos/cosmos-sdk/crypto/codec"
 	"github.com/cosmos/cosmos-sdk/crypto/keys/ed25519"
 
@@ -15,7 +17,7 @@ import (
 )
 
 // TestIBCV2ConsumerFullVSCFlow tests the complete consumer-side IBC v2 VSC packet flow:
-// 1. Consumer receives first VSC packet and establishes provider client
+// 1. Consumer receives first VSC packet over the pinned provider client
 // 2. Consumer accumulates validator updates
 // 3. Consumer tracks highest valset update ID for out-of-order handling
 func TestIBCV2ConsumerFullVSCFlow(t *testing.T) {
@@ -32,7 +34,7 @@ func TestIBCV2ConsumerFullVSCFlow(t *testing.T) {
 	pk2, err := cryptocodec.ToCmtProtoPublicKey(ed25519.GenPrivKey().PubKey())
 	require.NoError(t, err)
 
-	// Step 1: Receive first VSC packet - should establish provider client
+	// Step 1: Receive first VSC packet over the pinned client
 	valUpdates1 := []abci.ValidatorUpdate{
 		{PubKey: pk1, Power: 100},
 	}
@@ -41,7 +43,7 @@ func TestIBCV2ConsumerFullVSCFlow(t *testing.T) {
 	err = consumerKeeper.OnRecvVSCPacketV2(ctx, providerClientID, vscPacket1)
 	require.NoError(t, err)
 
-	// Verify provider client was established
+	// Verify the pin is unchanged
 	clientID, found := consumerKeeper.GetProviderClientID(ctx)
 	require.True(t, found)
 	require.Equal(t, providerClientID, clientID)
@@ -136,8 +138,8 @@ func TestIBCV2ConsumerOutOfOrderHandling(t *testing.T) {
 	require.Len(t, pendingChanges.ValidatorUpdates, 2)
 }
 
-// TestIBCV2ConsumerRejectsUnknownProvider tests that packets from an unknown
-// provider client are rejected after the provider is established.
+// TestIBCV2ConsumerRejectsUnknownProvider tests that packets arriving over a
+// client other than the pinned, routable provider client are rejected.
 func TestIBCV2ConsumerRejectsUnknownProvider(t *testing.T) {
 	consumerKeeper, ctx, ctrl, mocks := testkeeper.GetConsumerKeeperAndCtx(t, testkeeper.NewInMemKeeperParams(t))
 	defer ctrl.Finish()
@@ -146,32 +148,37 @@ func TestIBCV2ConsumerRejectsUnknownProvider(t *testing.T) {
 	providerClientID := "07-tendermint-0"
 	consumerKeeper.SetProviderClientID(ctx, providerClientID)
 	unknownClientID := "07-tendermint-999"
+	consumerKeeper.SetProviderClientID(ctx, providerClientID)
+	mocks.ClientCounterparties[providerClientID] = clientv2types.CounterpartyInfo{ClientId: "07-tendermint-7"}
 
 	pk, err := cryptocodec.ToCmtProtoPublicKey(ed25519.GenPrivKey().PubKey())
 	require.NoError(t, err)
 
-	// Establish provider with first packet
+	// Traffic over the pinned client flows normally.
 	valUpdates := []abci.ValidatorUpdate{{PubKey: pk, Power: 100}}
 	vscPacket := types.NewValidatorSetChangePacketData(valUpdates, 1)
 
 	err = consumerKeeper.OnRecvVSCPacketV2(ctx, providerClientID, vscPacket)
 	require.NoError(t, err)
 
-	// Verify provider is established
 	clientID, found := consumerKeeper.GetProviderClientID(ctx)
 	require.True(t, found)
 	require.Equal(t, providerClientID, clientID)
 
-	// Try to send packet from different client - should succeed
-	// (IBC v2 layer handles counterparty validation)
+	// A packet over any other client is rejected: the pin is routable, so
+	// there is no legitimate reason for VSC traffic to arrive anywhere else.
 	vscPacket2 := types.NewValidatorSetChangePacketData(valUpdates, 2)
 	err = consumerKeeper.OnRecvVSCPacketV2(ctx, unknownClientID, vscPacket2)
-	require.NoError(t, err, "packet from different client should succeed (IBC v2 validates counterparties)")
+	require.Error(t, err, "packet over a non-pinned client must be rejected")
 
-	// Highest ID should be updated to 2
+	// Highest ID must still be 1, and the pin must not have moved.
 	highestID, _, err := consumerKeeper.GetHighestValsetUpdateID(ctx)
 	require.NoError(t, err)
-	require.Equal(t, uint64(2), highestID)
+	require.Equal(t, uint64(1), highestID)
+
+	clientID, found = consumerKeeper.GetProviderClientID(ctx)
+	require.True(t, found)
+	require.Equal(t, providerClientID, clientID)
 }
 
 // TestIBCV2ConsumerProviderInfoQuery tests the v2 provider info query.

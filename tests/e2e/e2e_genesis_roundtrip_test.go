@@ -71,8 +71,22 @@ func (s *IntegrationTestSuite) testGenesisRoundTrip() {
 		s.T().Log("waiting for restarted provider to produce blocks...")
 		waitCtx, waitCancel := context.WithTimeout(ctx, 2*time.Minute)
 		defer waitCancel()
-		s.Require().NoError(s.waitForChainHeight(waitCtx, "http://localhost:26657", 3),
-			"restarted provider failed to produce blocks")
+		if err := s.waitForChainHeight(waitCtx, "http://localhost:26657", 3); err != nil {
+			// A chain that never produces a block died in InitChain, and the
+			// reason exists only in the container log: surface it instead of
+			// failing on a silent timeout.
+			var logs bytes.Buffer
+			_ = s.dkrPool.Client.Logs(docker.LogsOptions{
+				Container:    newRes.Container.ID,
+				OutputStream: &logs,
+				ErrorStream:  &logs,
+				Stdout:       true,
+				Stderr:       true,
+				Tail:         "120",
+			})
+			s.T().Logf("restarted provider container log tail:\n%s", logs.String())
+			s.Require().NoError(err, "restarted provider failed to produce blocks")
+		}
 
 		// 8. Verify the consumer chain is still registered.
 		s.T().Log("verifying consumer chain is still registered after restart...")

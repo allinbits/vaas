@@ -55,6 +55,8 @@ func TestCreateConsumer(t *testing.T) {
 	providerKeeper, ctx, ctrl, mocks := testkeeper.GetProviderKeeperAndCtx(t, testkeeper.NewInMemKeeperParams(t))
 	defer ctrl.Finish()
 
+	providerKeeper.SetInfractionParams(ctx, providertypes.DefaultInfractionParameters())
+
 	mocks.MockStakingKeeper.EXPECT().UnbondingTime(gomock.Any()).Return(21*24*time.Hour, nil).AnyTimes()
 
 	msgServer := providerkeeper.NewMsgServerImpl(&providerKeeper)
@@ -109,6 +111,7 @@ func TestCreateConsumer(t *testing.T) {
 func TestCreateConsumerDuplicateChainId(t *testing.T) {
 	providerKeeper, ctx, ctrl, mocks := testkeeper.GetProviderKeeperAndCtx(t, testkeeper.NewInMemKeeperParams(t))
 	defer ctrl.Finish()
+	providerKeeper.SetInfractionParams(ctx, providertypes.DefaultInfractionParameters())
 
 	// only the first CreateConsumer reaches validateConsumerUnbonding; the duplicate is rejected earlier
 	mocks.MockStakingKeeper.EXPECT().UnbondingTime(gomock.Any()).Return(21*24*time.Hour, nil).Times(1)
@@ -146,6 +149,8 @@ func TestCreateConsumerDuplicateChainId(t *testing.T) {
 func TestUpdateConsumer(t *testing.T) {
 	providerKeeper, ctx, ctrl, mocks := testkeeper.GetProviderKeeperAndCtx(t, testkeeper.NewInMemKeeperParams(t))
 	defer ctrl.Finish()
+
+	providerKeeper.SetInfractionParams(ctx, providertypes.DefaultInfractionParameters())
 
 	mocks.MockStakingKeeper.EXPECT().UnbondingTime(gomock.Any()).Return(21*24*time.Hour, nil).Times(1)
 
@@ -220,6 +225,8 @@ func TestUpdateConsumer(t *testing.T) {
 func TestUpdateConsumerDuplicateChainId(t *testing.T) {
 	providerKeeper, ctx, ctrl, mocks := testkeeper.GetProviderKeeperAndCtx(t, testkeeper.NewInMemKeeperParams(t))
 	defer ctrl.Finish()
+
+	providerKeeper.SetInfractionParams(ctx, providertypes.DefaultInfractionParameters())
 
 	mocks.MockStakingKeeper.EXPECT().UnbondingTime(gomock.Any()).Return(21*24*time.Hour, nil).Times(2)
 
@@ -656,6 +663,8 @@ func TestRemoveConsumerGovAuth(t *testing.T) {
 	providerKeeper, ctx, ctrl, mocks := testkeeper.GetProviderKeeperAndCtx(t, testkeeper.NewInMemKeeperParams(t))
 	defer ctrl.Finish()
 
+	providerKeeper.SetInfractionParams(ctx, providertypes.DefaultInfractionParameters())
+
 	msgServer := providerkeeper.NewMsgServerImpl(&providerKeeper)
 
 	// CreateConsumer calls validateConsumerUnbonding; RemoveConsumer also calls UnbondingTime
@@ -704,6 +713,8 @@ func TestRemoveConsumerNonLaunchedRejected(t *testing.T) {
 	providerKeeper, ctx, ctrl, mocks := testkeeper.GetProviderKeeperAndCtx(t, testkeeper.NewInMemKeeperParams(t))
 	defer ctrl.Finish()
 
+	providerKeeper.SetInfractionParams(ctx, providertypes.DefaultInfractionParameters())
+
 	mocks.MockStakingKeeper.EXPECT().UnbondingTime(gomock.Any()).Return(21*24*time.Hour, nil).Times(1)
 
 	msgServer := providerkeeper.NewMsgServerImpl(&providerKeeper)
@@ -739,6 +750,8 @@ func TestRemoveConsumerNonLaunchedRejected(t *testing.T) {
 func TestRemoveConsumerFromPaused(t *testing.T) {
 	providerKeeper, ctx, ctrl, mocks := testkeeper.GetProviderKeeperAndCtx(t, testkeeper.NewInMemKeeperParams(t))
 	defer ctrl.Finish()
+
+	providerKeeper.SetInfractionParams(ctx, providertypes.DefaultInfractionParameters())
 
 	mocks.MockStakingKeeper.EXPECT().UnbondingTime(gomock.Any()).Return(21*24*time.Hour, nil).Times(2)
 
@@ -844,6 +857,8 @@ func TestResumeConsumerNonPausedRejected(t *testing.T) {
 	providerKeeper, ctx, ctrl, mocks := testkeeper.GetProviderKeeperAndCtx(t, testkeeper.NewInMemKeeperParams(t))
 	defer ctrl.Finish()
 
+	providerKeeper.SetInfractionParams(ctx, providertypes.DefaultInfractionParameters())
+
 	mocks.MockStakingKeeper.EXPECT().UnbondingTime(gomock.Any()).Return(21*24*time.Hour, nil).Times(1)
 
 	msgServer := providerkeeper.NewMsgServerImpl(&providerKeeper)
@@ -878,6 +893,8 @@ func TestResumeConsumerNonPausedRejected(t *testing.T) {
 func TestResumeConsumerRejectsInactiveClient(t *testing.T) {
 	providerKeeper, ctx, ctrl, mocks := testkeeper.GetProviderKeeperAndCtx(t, testkeeper.NewInMemKeeperParams(t))
 	defer ctrl.Finish()
+
+	providerKeeper.SetInfractionParams(ctx, providertypes.DefaultInfractionParameters())
 
 	mocks.MockStakingKeeper.EXPECT().UnbondingTime(gomock.Any()).Return(21*24*time.Hour, nil).Times(1)
 
@@ -917,6 +934,8 @@ func TestResumeConsumerRejectsInactiveClient(t *testing.T) {
 func TestUpdateConsumerLaunchedOnlyMetadata(t *testing.T) {
 	providerKeeper, ctx, ctrl, mocks := testkeeper.GetProviderKeeperAndCtx(t, testkeeper.NewInMemKeeperParams(t))
 	defer ctrl.Finish()
+
+	providerKeeper.SetInfractionParams(ctx, providertypes.DefaultInfractionParameters())
 
 	mocks.MockStakingKeeper.EXPECT().UnbondingTime(gomock.Any()).Return(21*24*time.Hour, nil).Times(1)
 
@@ -999,6 +1018,8 @@ func TestUpdateConsumerPreLaunchAllowsAll(t *testing.T) {
 	providerKeeper, ctx, ctrl, mocks := testkeeper.GetProviderKeeperAndCtx(t, testkeeper.NewInMemKeeperParams(t))
 	defer ctrl.Finish()
 
+	providerKeeper.SetInfractionParams(ctx, providertypes.DefaultInfractionParameters())
+
 	mocks.MockStakingKeeper.EXPECT().UnbondingTime(gomock.Any()).Return(21*24*time.Hour, nil).Times(1)
 
 	msgServer := providerkeeper.NewMsgServerImpl(&providerKeeper)
@@ -1045,6 +1066,8 @@ func TestUpdateConsumerPreLaunchAllowsAll(t *testing.T) {
 func TestCreateConsumerEventsIncludeInitParams(t *testing.T) {
 	providerKeeper, ctx, ctrl, mocks := testkeeper.GetProviderKeeperAndCtx(t, testkeeper.NewInMemKeeperParams(t))
 	defer ctrl.Finish()
+
+	providerKeeper.SetInfractionParams(ctx, providertypes.DefaultInfractionParameters())
 
 	mocks.MockStakingKeeper.EXPECT().UnbondingTime(gomock.Any()).Return(21*24*time.Hour, nil).Times(1)
 
@@ -1100,6 +1123,7 @@ func TestCreateConsumerEventsIncludeInitParams(t *testing.T) {
 func TestCreateConsumer_PopulatesReverseLookup(t *testing.T) {
 	k, ctx, ctrl, mocks := testkeeper.GetProviderKeeperAndCtx(t, testkeeper.NewInMemKeeperParams(t))
 	defer ctrl.Finish()
+	k.SetInfractionParams(ctx, providertypes.DefaultInfractionParameters())
 
 	mocks.MockStakingKeeper.EXPECT().UnbondingTime(gomock.Any()).Return(21*24*time.Hour, nil).Times(1)
 
@@ -1543,14 +1567,18 @@ func TestCreateConsumerUnbondingBounds(t *testing.T) {
 			wantErr:         false,
 		},
 		{
-			name:            "short value accepted (no lower floor)",
+			// Below the downtime challenge horizon (72h evidence age + 7d
+			// challenge window at the defaults): no client of this consumer
+			// could keep challenge headers verifiable, so registration
+			// refuses it outright.
+			name:            "too short: below the downtime challenge horizon",
 			unbondingPeriod: 1 * 24 * time.Hour,
-			wantErr:         false,
+			wantErr:         true,
 		},
 		{
-			name:            "very short value accepted (no lower floor)",
+			name:            "far too short: below the downtime challenge horizon",
 			unbondingPeriod: time.Hour,
-			wantErr:         false,
+			wantErr:         true,
 		},
 	}
 
@@ -1558,6 +1586,8 @@ func TestCreateConsumerUnbondingBounds(t *testing.T) {
 		t.Run(tc.name, func(t *testing.T) {
 			providerKeeper, ctx, ctrl, mocks := testkeeper.GetProviderKeeperAndCtx(t, testkeeper.NewInMemKeeperParams(t))
 			defer ctrl.Finish()
+
+			providerKeeper.SetInfractionParams(ctx, providertypes.DefaultInfractionParameters())
 
 			msgServer := providerkeeper.NewMsgServerImpl(&providerKeeper)
 
@@ -1610,6 +1640,8 @@ func TestCreateConsumerSafeModeThresholdBounds(t *testing.T) {
 		t.Run(tc.name, func(t *testing.T) {
 			providerKeeper, ctx, ctrl, mocks := testkeeper.GetProviderKeeperAndCtx(t, testkeeper.NewInMemKeeperParams(t))
 			defer ctrl.Finish()
+
+			providerKeeper.SetInfractionParams(ctx, providertypes.DefaultInfractionParameters())
 
 			msgServer := providerkeeper.NewMsgServerImpl(&providerKeeper)
 
@@ -1765,14 +1797,18 @@ func TestUpdateConsumerUnbondingBounds(t *testing.T) {
 			wantErr:         true,
 		},
 		{
-			name:            "short value accepted (no lower floor)",
+			// Below the downtime challenge horizon (72h evidence age + 7d
+			// challenge window at the defaults): no client of this consumer
+			// could keep challenge headers verifiable, so registration
+			// refuses it outright.
+			name:            "too short: below the downtime challenge horizon",
 			unbondingPeriod: 1 * 24 * time.Hour,
-			wantErr:         false,
+			wantErr:         true,
 		},
 		{
-			name:            "very short value accepted (no lower floor)",
+			name:            "far too short: below the downtime challenge horizon",
 			unbondingPeriod: time.Hour,
-			wantErr:         false,
+			wantErr:         true,
 		},
 		{
 			name:            "exactly provider unbonding: ok",
@@ -1785,6 +1821,8 @@ func TestUpdateConsumerUnbondingBounds(t *testing.T) {
 		t.Run(tc.name, func(t *testing.T) {
 			providerKeeper, ctx, ctrl, mocks := testkeeper.GetProviderKeeperAndCtx(t, testkeeper.NewInMemKeeperParams(t))
 			defer ctrl.Finish()
+
+			providerKeeper.SetInfractionParams(ctx, providertypes.DefaultInfractionParameters())
 
 			// CreateConsumer calls validateConsumerUnbonding once; UpdateConsumer
 			// calls it once more when InitializationParameters is non-nil.

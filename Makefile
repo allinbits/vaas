@@ -81,6 +81,11 @@ provider-start: build-apps
 	$(providerd) genesis add-genesis-account val 1000000000000uatone,1000000000000uphoton
 	$(providerd) keys add user
 	$(providerd) genesis add-genesis-account user 1000000000uatone
+	@chmod +x ./scripts/add-relayer-key.sh
+	@./scripts/add-relayer-key.sh ./build/provider $(provider_home)
+	$(providerd) genesis add-genesis-account relayer 100000000uatone
+	@./scripts/add-owner-key.sh ./build/provider $(provider_home)
+	$(providerd) genesis add-genesis-account owner 100000000uatone
 	$(providerd) genesis gentx val 1000000000uatone
 	$(providerd) genesis collect-gentxs
 
@@ -110,8 +115,11 @@ consumer-init: build-apps
 	$(consumerd) keys add user
 	@chmod +x ./scripts/add-relayer-key.sh
 	@./scripts/add-relayer-key.sh ./build/consumer $(consumer_home)
+	@chmod +x ./scripts/add-owner-key.sh
+	@./scripts/add-owner-key.sh ./build/consumer $(consumer_home)
 	$(consumerd) genesis add-genesis-account user 1000000000uatone
 	$(consumerd) genesis add-genesis-account relayer 100000000uatone
+	$(consumerd) genesis add-genesis-account owner 100000000uatone
 	# Set gas prices
 	sed -i.bak 's#^minimum-gas-prices = .*#minimum-gas-prices = "0.01uatone,0.01uphoton"#g' $(consumer_home)/config/app.toml
 	# Use different ports to avoid conflicts with provider
@@ -129,7 +137,11 @@ consumer-create:
 	@echo "Creating consumer chain on provider..."
 	@mkdir -p /tmp/vaas-test
 	@echo '{"chain_id": "consumer-localnet", "metadata": {"name": "consumer", "description": "test consumer chain", "metadata": "{}"}, "initialization_parameters": {"initial_height": {"revision_number": 0, "revision_height": 1}, "genesis_hash": "", "binary_hash": "", "spawn_time": "2024-01-01T00:00:00Z", "unbonding_period": 1728000000000000, "vaas_timeout_period": 2419200000000000, "historical_entries": 10000, "connection_id": ""}}' > /tmp/vaas-test/create_consumer.json
-	$(providerd) tx provider create-consumer /tmp/vaas-test/create_consumer.json --from val --gas auto --gas-adjustment 1.5 --fees 10000uatone -y
+	# Submitted by the owner key (HD index 1 of the shared mnemonic, present on
+	# both chains): the submitter becomes the consumer's owner, and the owner
+	# also pins the provider client on the consumer side. A dedicated key,
+	# because the relayer key's sequence is busy with the relayer's own txs.
+	$(providerd) tx provider create-consumer /tmp/vaas-test/create_consumer.json --from owner --gas auto --gas-adjustment 1.5 --fees 10000uatone -y
 	@echo "Consumer chain created. Wait for spawn time, then run 'make consumer-genesis' to fetch the genesis."
 
 # Fetch consumer genesis from provider and patch local genesis (consumer-id defaults to "0")
@@ -276,6 +288,9 @@ localnet-start: build-apps
 	@echo "Step 3/4: Starting ts-relayer..."
 	@$(MAKE) ts-relayer-start > /tmp/vaas-ts-relayer.log 2>&1
 	@echo ""
+	@echo "Step 3b/4: Declaring the relayer-created IBC clients (owner, both chains)..."
+	@$(MAKE) localnet-declare-clients
+	@echo ""
 	@echo "Step 4/4: Triggering valset change to send first VSC packet..."
 	@VALOPER=$$($(providerd) keys show val --bech val -a 2> /dev/null); \
 	$(providerd) tx staking delegate $$VALOPER 1000000uatone --from user --fees 5000uatone -y > /dev/null 2>&1
@@ -300,7 +315,29 @@ localnet-start: build-apps
 	@echo ""
 	@echo "  To stop: make localnet-clean"
 
-.PHONY: localnet-clean localnet-start
+# Declare the relayer-created IBC clients on both chains (owner-signed, once).
+# The provider learns its consumer client via update-consumer, the consumer
+# pins its provider client via set-provider-client; until both land, VSC
+# packets stay queued on the provider and rejected by the consumer.
+localnet-declare-clients:
+	@echo "  Waiting for the relayer-created clients..."
+	@for i in $$(seq 1 60); do \
+		PCID=$$($(providerd) query ibc client states -o json 2>/dev/null | jq -r '.client_states[] | select(.client_state.chain_id == "consumer-localnet") | .client_id' | head -1); \
+		CCID=$$($(consumerd) query ibc client states --node tcp://localhost:26667 -o json 2>/dev/null | jq -r '.client_states[] | select(.client_state.chain_id == "provider-localnet") | .client_id' | head -1); \
+		if [ -n "$$PCID" ] && [ -n "$$CCID" ]; then \
+			echo "  provider->consumer client: $$PCID ; consumer->provider client: $$CCID"; \
+			echo "{\"consumer_id\": 0, \"client_id\": \"$$PCID\"}" > /tmp/vaas-test/declare_client.json; \
+			$(providerd) tx provider update-consumer /tmp/vaas-test/declare_client.json --from owner --gas auto --gas-adjustment 1.5 --fees 10000uatone -y > /dev/null; \
+			sleep 3; \
+			$(consumerd) tx vaasconsumer set-provider-client $$CCID --node tcp://localhost:26667 --from owner --gas auto --gas-adjustment 1.5 --fees 10000uatone -y > /dev/null; \
+			sleep 3; \
+			break; \
+		fi; \
+		if [ $$i -eq 60 ]; then echo "  ERROR: relayer-created clients did not appear within 120s"; exit 1; fi; \
+		sleep 2; \
+	done
+
+.PHONY: localnet-clean localnet-start localnet-declare-clients
 
 ###############################################################################
 ###                            Docker E2E Tests                             ###

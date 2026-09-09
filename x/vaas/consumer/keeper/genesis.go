@@ -8,8 +8,6 @@ import (
 
 	abci "github.com/cometbft/cometbft/abci/types"
 
-	ibchost "github.com/cosmos/ibc-go/v10/modules/core/exported"
-
 	"cosmossdk.io/collections"
 
 	sdk "github.com/cosmos/cosmos-sdk/types"
@@ -35,37 +33,29 @@ func (k Keeper) InitGenesis(ctx sdk.Context, state *types.GenesisState) []abci.V
 	}
 
 	if state.NewChain {
-		clientStateBytes, err := state.Provider.ClientState.Marshal()
-		if err != nil {
-			panic(err)
-		}
-		consensusStateBytes, err := state.Provider.ConsensusState.Marshal()
-		if err != nil {
-			panic(err)
-		}
-
-		cid, err := k.clientKeeper.CreateClient(ctx, ibchost.Tendermint, clientStateBytes, consensusStateBytes)
-		if err != nil {
-			panic(err)
-		}
-
-		k.SetProviderClientID(ctx, cid)
+		// No client is created here. A client the chain creates for itself
+		// could never carry a packet: created outside a MsgCreateClient it has
+		// no recorded creator, so its IBC v2 counterparty could never be
+		// registered. Worse, its existence forced the provider-client pin to be
+		// movable at bootstrap, and a movable pin is front-runnable by whoever
+		// delivers a packet first. So a new chain starts with no pin, rejects
+		// every VSC packet (see enforcePinnedProviderClient), and waits for the
+		// owner seeded in the consumer params -- or governance -- to pin the
+		// relayer-created client explicitly via MsgSetProviderClient.
 		k.SetHeightValsetUpdateID(ctx, uint64(ctx.BlockHeight()), uint64(0))
 
-		// Pre-pin the provider chain id from the client state we were just
-		// handed at genesis, rather than waiting for the first VSC packet to
-		// establish it (see authenticateProviderChainID in relay.go). This
-		// narrows the window during which no pin exists at all.
+		// The provider-authored client state still seeds the provider chain
+		// id: it is what MsgSetProviderClient validates the declared client
+		// against, and what authenticateProviderChainID holds every later
+		// packet to.
 		k.SetProviderChainId(ctx, state.Provider.ClientState.ChainId)
-
-		k.Logger(ctx).Info("create new provider chain client",
-			"client id", cid,
-		)
 	} else {
 		for _, h2v := range state.HeightToValsetUpdateId {
 			k.SetHeightValsetUpdateID(ctx, h2v.Height, h2v.ValsetUpdateId)
 		}
-		k.SetProviderClientID(ctx, state.ProviderClientId)
+		if state.ProviderClientId != "" {
+			k.SetProviderClientID(ctx, state.ProviderClientId)
+		}
 
 		// Restore the pinned provider chain id on restart (see ExportGenesis):
 		// without this, a state-export restart drops the pin entirely until
@@ -142,10 +132,13 @@ func (k Keeper) ExportGenesis(ctx sdk.Context) (genesis *types.GenesisState) {
 	// export the current validator set
 	valset := k.MustGetCurrentValidatorsAsABCIUpdates(ctx)
 
-	clientID, ok := k.GetProviderClientID(ctx)
-	if !ok {
-		return types.DefaultGenesisState()
-	}
+	// An unpinned chain is a legitimate bootstrap state (genesis creates no
+	// client; the owner pins one via MsgSetProviderClient), so a missing pin
+	// must not collapse the export to a default genesis: the chain id pin, the
+	// armed safe-mode clock, and the params below all predate the pin and must
+	// survive a restart. The client id is simply exported empty and the chain
+	// comes back still waiting to be pinned.
+	clientID, _ := k.GetProviderClientID(ctx)
 
 	genesis = types.NewRestartGenesisState(
 		clientID,

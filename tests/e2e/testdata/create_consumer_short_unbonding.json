@@ -13,7 +13,7 @@
     "genesis_hash": "",
     "binary_hash": "",
     "spawn_time": "2024-01-01T00:00:00Z",
-    "unbonding_period": 200000000000,
+    "unbonding_period": 400000000000,
     "vaas_timeout_period": 600000000000,
     "safe_mode_threshold": 5000000000,
     "historical_entries": 10000

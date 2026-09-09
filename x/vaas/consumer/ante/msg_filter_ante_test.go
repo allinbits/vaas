@@ -211,3 +211,35 @@ func TestRestrictedWhenBothDebtAndStale(t *testing.T) {
 	require.True(t, errorsmod.IsOf(err, consumertypes.ErrConsumerInDebt))
 	require.False(t, nextCalled)
 }
+
+// Pre-pin, the message that establishes the pin must itself pass the filter:
+// a new chain starts with no provider client (genesis creates none) and stays
+// that way until the owner submits MsgSetProviderClient -- a filter admitting
+// only /ibc.* would deadlock the bootstrap, unpinned because unpinned.
+func TestMsgFilterDecoratorPrePinAllowsSetProviderClient(t *testing.T) {
+	k := mockConsumerKeeper{providerClientFound: false}
+	nextCalled, err := runDecorator(t, k, []sdk.Msg{&consumertypes.MsgSetProviderClient{
+		Signer:   testAccAddress(1).String(),
+		ClientId: "07-tendermint-0",
+	}})
+	require.NoError(t, err)
+	require.True(t, nextCalled)
+}
+
+// Pre-pin, governance must also work: the pin is otherwise gated on one owner
+// account, and a lost or hostile owner would leave governance unable to act.
+func TestMsgFilterDecoratorPrePinAllowsGov(t *testing.T) {
+	k := mockConsumerKeeper{providerClientFound: false}
+	nextCalled, err := runDecorator(t, k, []sdk.Msg{&govtypes.MsgVote{}})
+	require.NoError(t, err)
+	require.True(t, nextCalled)
+}
+
+// Pre-pin, everything else stays rejected: the chain has no synced validator
+// set yet, so value-bearing transactions must not execute.
+func TestMsgFilterDecoratorPrePinStillRejectsOtherMsgs(t *testing.T) {
+	k := mockConsumerKeeper{providerClientFound: false}
+	nextCalled, err := runDecorator(t, k, []sdk.Msg{bankSendMsg()})
+	require.Error(t, err)
+	require.False(t, nextCalled)
+}
