@@ -11,6 +11,8 @@ import (
 
 	"cosmossdk.io/math"
 
+	ibctmtypes "github.com/cosmos/ibc-go/v10/modules/light-clients/07-tendermint"
+
 	cryptocodec "github.com/cosmos/cosmos-sdk/crypto/codec"
 	cryptotypes "github.com/cosmos/cosmos-sdk/crypto/types"
 	sdk "github.com/cosmos/cosmos-sdk/types"
@@ -831,4 +833,90 @@ func getTestInfractionParameters() *types.InfractionParameters {
 			Tombstone:     false,
 		},
 	}
+}
+
+// TestConfirmedLightClientAttackPausesConsumerWithoutPunishment asserts the
+// containment policy: a confirmed attack with an identifiable byzantine set
+// pauses the consumer and punishes nobody. No staking or slashing calls are
+// mocked, so the controller also proves that no validator was slashed,
+// jailed, or tombstoned. The byzantine set is still attributed and returned.
+func TestConfirmedLightClientAttackPausesConsumerWithoutPunishment(t *testing.T) {
+	keeper, ctx, ctrl, _ := testkeeper.GetProviderKeeperAndCtx(t, testkeeper.NewInMemKeeperParams(t))
+	defer ctrl.Finish()
+
+	ctx = ctx.WithBlockTime(time.Now())
+
+	const consumerID = uint64(0)
+	keeper.SetConsumerPhase(ctx, consumerID, types.CONSUMER_PHASE_LAUNCHED)
+
+	// Build a byzantine validator. With no assigned consumer key, its consumer
+	// consensus address is its provider consensus address.
+	byzantinePV := tmtypes.NewMockPV()
+	byzantineVal := tmtypes.NewValidator(byzantinePV.PrivKey.PubKey(), 1)
+	sdkPubKey, err := cryptocodec.FromCmtPubKeyInterface(byzantineVal.PubKey)
+	require.NoError(t, err)
+	providerAddr := types.NewProviderConsAddress(sdk.ConsAddress(sdkPubKey.Address()))
+
+	maxPause := keeper.GetMaxPauseDuration(ctx)
+	attributed, err := keeper.ContainLightClientAttackForTest(ctx, consumerID, []*tmtypes.Validator{byzantineVal})
+	require.NoError(t, err)
+	require.Equal(t, []types.ProviderConsAddress{providerAddr}, attributed,
+		"the byzantine set must still be attributed for operators and governance")
+
+	// Contained, not punished: the consumer is paused with the auto-stop
+	// scheduled, and the deferred mock controller proves no slash, jail, or
+	// tombstone ever happened.
+	require.Equal(t, types.CONSUMER_PHASE_PAUSED, keeper.GetConsumerPhase(ctx, consumerID))
+	wantExpiration := ctx.BlockTime().Add(maxPause)
+	gotExpiration, err := keeper.GetConsumerPauseExpirationTime(ctx, consumerID)
+	require.NoError(t, err)
+	require.Equal(t, wantExpiration, gotExpiration)
+	queued, err := keeper.GetConsumersToBeAutoStopped(ctx, wantExpiration)
+	require.NoError(t, err)
+	require.Equal(t, []uint64{consumerID}, queued.Ids)
+}
+
+// TestUnattributableLightClientAttackStillPausesConsumer asserts that a
+// confirmed attack with no identifiable byzantine set (an amnesia attack) is
+// contained all the same: the fork is proven either way, only the attribution
+// is missing. A second containment attempt fails on the phase guard instead
+// of double-scheduling the auto-stop.
+func TestUnattributableLightClientAttackStillPausesConsumer(t *testing.T) {
+	keeper, ctx, ctrl, _ := testkeeper.GetProviderKeeperAndCtx(t, testkeeper.NewInMemKeeperParams(t))
+	defer ctrl.Finish()
+
+	ctx = ctx.WithBlockTime(time.Now())
+
+	const consumerID = uint64(0)
+	keeper.SetConsumerPhase(ctx, consumerID, types.CONSUMER_PHASE_LAUNCHED)
+
+	attributed, err := keeper.ContainLightClientAttackForTest(ctx, consumerID, nil)
+	require.NoError(t, err)
+	require.Empty(t, attributed)
+	require.Equal(t, types.CONSUMER_PHASE_PAUSED, keeper.GetConsumerPhase(ctx, consumerID))
+
+	_, err = keeper.ContainLightClientAttackForTest(ctx, consumerID, nil)
+	require.ErrorIs(t, err, types.ErrInvalidPhase,
+		"containing an already-paused consumer must fail on the phase guard")
+	wantExpiration := ctx.BlockTime().Add(keeper.GetMaxPauseDuration(ctx))
+	queued, err := keeper.GetConsumersToBeAutoStopped(ctx, wantExpiration)
+	require.NoError(t, err)
+	require.Len(t, queued.Ids, 1, "the auto-stop must not be scheduled twice")
+}
+
+// TestHandleConsumerMisbehaviourRejectsNotLaunched asserts the cheap up-front
+// gate: evidence against a consumer that is not launched (here: already
+// paused by earlier evidence) is rejected before any light-client
+// verification work, so re-submissions against a contained consumer cost
+// nothing. No client-keeper expectations are mocked, which also proves
+// CheckMisbehaviour was never reached.
+func TestHandleConsumerMisbehaviourRejectsNotLaunched(t *testing.T) {
+	keeper, ctx, ctrl, _ := testkeeper.GetProviderKeeperAndCtx(t, testkeeper.NewInMemKeeperParams(t))
+	defer ctrl.Finish()
+
+	const consumerID = uint64(0)
+	keeper.SetConsumerPhase(ctx, consumerID, types.CONSUMER_PHASE_PAUSED)
+
+	_, err := keeper.HandleConsumerMisbehaviour(ctx, consumerID, ibctmtypes.Misbehaviour{})
+	require.ErrorIs(t, err, types.ErrInvalidPhase)
 }

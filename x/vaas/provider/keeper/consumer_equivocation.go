@@ -76,24 +76,9 @@ func (k Keeper) HandleConsumerDoubleVoting(
 	// get infraction parameters
 	infractionParams := k.GetInfractionParams(ctx)
 
-	alreadyTombstoned := false
-	if err = k.SlashValidator(ctx, providerAddr, infractionParams.DoubleSign, stakingtypes.Infraction_INFRACTION_DOUBLE_SIGN); err != nil {
-		// Make repeated (already-processed) evidence submissions idempotent.
-		if errors.Is(err, slashingtypes.ErrValidatorTombstoned) {
-			alreadyTombstoned = true
-		} else {
-			return err
-		}
-	}
-
-	if !alreadyTombstoned {
-		if err = k.JailAndTombstoneValidator(ctx, providerAddr, infractionParams.DoubleSign); err != nil {
-			if errors.Is(err, slashingtypes.ErrValidatorTombstoned) {
-				alreadyTombstoned = true
-			} else {
-				return err
-			}
-		}
+	alreadyTombstoned, err := k.punishEquivocation(ctx, providerAddr, infractionParams.DoubleSign)
+	if err != nil {
+		return err
 	}
 
 	k.Logger(ctx).Info(
@@ -177,30 +162,54 @@ func (k Keeper) VerifyDoubleVotingEvidence(
 // Light Client Attack (IBC misbehavior) section
 //
 
-// HandleConsumerMisbehaviour checks if the given IBC misbehaviour corresponds to an equivocation light client attack.
+// HandleConsumerMisbehaviour verifies an IBC light-client misbehaviour for a
+// consumer chain and, when it is a confirmed light-client attack, contains it:
+// the consumer is paused (see containLightClientAttack) and no validator is
+// punished. Evidence for a consumer that is not launched is rejected up
+// front, which also makes re-submitting evidence against an already-paused
+// consumer a cheap no-op.
 //
-// VAAS deliberately treats light-client misbehaviour as detection-only: the
-// evidence is verified and the byzantine set is logged, but no slashing,
-// jailing, or tombstoning happens here. The README and DESIGN_RATIONALE
-// document this as the intended posture ("Light Client Misbehavior:
-// detection and logging"). Validator punishment for equivocation goes through
-// MsgSubmitConsumerDoubleVoting / HandleConsumerDoubleVoting, which slashes
-// against a cryptographically self-contained DuplicateVoteEvidence. Light-
-// client misbehaviour evidence is more involved to verify end-to-end against
-// a buggy or adversarial consumer chain, and double-vote evidence already
-// covers the same validator-equivocation case; punishing twice along two
-// different paths is unnecessary.
+// No validator is punished on this path, deliberately. Everything in the
+// evidence can be real: a malicious consumer binary can orchestrate an
+// application-level fork in which every honest validator signs each
+// conflicting header once, believing it legitimate. The per-node double-sign
+// protection never fires, and the resulting evidence is indistinguishable
+// on-chain from a genuine coalition attack, because the distinction does not
+// exist in the data. Any automatic punishment triggered by attacker-shaped
+// evidence becomes the attacker's tool: punishing the full byzantine set
+// lets one submission tombstone the provider's honest validator set, and
+// punishing only small sets is no better, since the binary chooses who signs
+// and turns the threshold into a targeting tool against chosen validators.
+// Do not reintroduce slashing, jailing, or tombstoning here, at any
+// threshold, without revisiting this design. Governance-gated punishment was
+// considered and rejected too: it moves a decision the data cannot ground
+// into politics.
 //
-// Do not "fix" this back to slash/jail/tombstone without revisiting that
-// design choice.
+// Pausing the consumer is the containment that stays safe under
+// attacker-shaped evidence, because it touches only the chain that provably
+// forked and no validator's stake. It is also not redundant: nothing else
+// would end the relationship on its own. This module never freezes the IBC
+// client, and a forked consumer keeps producing acks on whichever branch the
+// relayer follows, so under detection alone the provider would keep serving
+// VSCs to a compromised chain indefinitely. What happens after containment
+// is a human decision in the right place: governance resumes the consumer
+// (MsgResumeConsumer, with a forced snapshot) once the fork is understood
+// and fixed, or lets the pause expire into STOPPED via MaxPauseDuration. A
+// resume does not bury the evidence: while the conflicting headers remain
+// verifiable within the client's trusting period, re-submission pauses the
+// consumer again, which is correct while the fork still stands.
 //
-// Returns the byzantine validators identified from the conflicting headers
-// (provider-side consensus addresses). The slice may be empty: for amnesia
-// attacks the byzantine set is unidentifiable by construction (see
-// GetByzantineValidators). Callers should still surface that result to the
-// submitter rather than treating it as a silent no-op.
+// Returns the byzantine set mapped to provider consensus addresses.
+// Attribution is deliberately informational: it is logged and carried on the
+// submission event so operators and governance can see exactly who signed
+// the conflicting headers while they decide, but nothing acts on it.
 func (k Keeper) HandleConsumerMisbehaviour(ctx sdk.Context, consumerId uint64, misbehaviour ibctmtypes.Misbehaviour) ([]types.ProviderConsAddress, error) {
 	logger := k.Logger(ctx)
+
+	if phase := k.GetConsumerPhase(ctx, consumerId); phase != types.CONSUMER_PHASE_LAUNCHED {
+		return nil, errorsmod.Wrapf(types.ErrInvalidPhase,
+			"cannot handle misbehaviour for consumer %d: expected phase launched, got %s", consumerId, phase)
+	}
 
 	// Check that the misbehaviour is valid and that the client consensus states at trusted heights are within trusting period
 	if err := k.CheckMisbehaviour(ctx, consumerId, misbehaviour); err != nil {
@@ -219,36 +228,50 @@ func (k Keeper) HandleConsumerMisbehaviour(ctx sdk.Context, consumerId uint64, m
 		return nil, err
 	}
 
-	provAddrs := make([]types.ProviderConsAddress, 0, len(byzantineValidators))
+	return k.containLightClientAttack(ctx, consumerId, byzantineValidators)
+}
+
+// containLightClientAttack is the containment response to a verified
+// light-client attack: it maps the byzantine set to provider consensus
+// addresses for attribution and pauses the consumer whose fork the evidence
+// proves. It punishes nobody; HandleConsumerMisbehaviour's contract explains
+// why. An amnesia attack has no identifiable byzantine set by construction
+// (GetByzantineValidators returns none), and containment applies all the
+// same: the fork is proven either way, only the attribution is missing.
+//
+// The pause does the whole job. A paused consumer receives no further VSC
+// packets (QueueVSCPackets serves only launched consumers), both evidence
+// paths reject it (HandleConsumerDoubleVoting and this handler gate on
+// launched, closing the pipeline a malicious binary would keep feeding), its
+// pending downtime accusations are cancelled (a forked chain's accusations
+// are no more trustworthy than its headers; see PauseConsumerChain), and an
+// auto-stop at MaxPauseDuration guarantees governance silence converges to
+// STOPPED.
+func (k Keeper) containLightClientAttack(
+	ctx sdk.Context,
+	consumerId uint64,
+	byzantineValidators []*tmtypes.Validator,
+) ([]types.ProviderConsAddress, error) {
+	byzantineAddrs := make([]types.ProviderConsAddress, 0, len(byzantineValidators))
 	for _, v := range byzantineValidators {
-		providerAddr := k.GetProviderAddrFromConsumerAddr(
+		byzantineAddrs = append(byzantineAddrs, k.GetProviderAddrFromConsumerAddr(
 			ctx,
 			consumerId,
 			types.NewConsumerConsAddress(sdk.ConsAddress(v.Address.Bytes())),
-		)
-		provAddrs = append(provAddrs, providerAddr)
+		))
 	}
 
-	if len(provAddrs) == 0 {
-		// Either the conflict is an amnesia attack (different commit rounds,
-		// no state-transition conflict — byzantine set is unknowable) or the
-		// two header signatures had no overlapping signer (very unusual given
-		// CheckMisbehaviour just verified both headers).
-		logger.Info(
-			"confirmed light client attack with unidentifiable byzantine validators (no slashing applied)",
-			"consumerId", consumerId,
-			"chainId", misbehaviour.Header1.Header.ChainID,
-		)
-	} else {
-		logger.Info(
-			"confirmed equivocation light client attack (no slashing applied)",
-			"consumerId", consumerId,
-			"chainId", misbehaviour.Header1.Header.ChainID,
-			"byzantine_validators", provAddrs,
-		)
+	if err := k.PauseConsumerChain(ctx, consumerId); err != nil {
+		return nil, fmt.Errorf("containing light client attack for consumer %d: %w", consumerId, err)
 	}
 
-	return provAddrs, nil
+	k.Logger(ctx).Info(
+		"confirmed light client attack: consumer paused pending a governance decision",
+		"consumerId", consumerId,
+		"byzantine_validators", byzantineAddrs,
+	)
+
+	return byzantineAddrs, nil
 }
 
 // GetByzantineValidators returns the validators that signed both headers.
@@ -432,6 +455,34 @@ func verifyLightBlockCommitSig(lightBlock tmtypes.LightBlock, sigIdx int) error 
 //
 // Punish Validator section
 //
+
+// punishEquivocation slashes, jails, and tombstones the validator identified by
+// providerAddr at the given (DoubleSign) infraction severity. It is the
+// punishment primitive behind vote-level double signing
+// (HandleConsumerDoubleVoting). Header-level light-client attacks deliberately
+// do not use it: that path contains the consumer instead of punishing
+// validators (see HandleConsumerMisbehaviour).
+//
+// Re-submitted evidence for an already-tombstoned validator is idempotent: the
+// validator is not punished twice and no error is returned. The returned bool
+// reports whether the validator was already tombstoned.
+func (k Keeper) punishEquivocation(ctx sdk.Context, providerAddr types.ProviderConsAddress, params *types.SlashJailParameters) (bool, error) {
+	if err := k.SlashValidator(ctx, providerAddr, params, stakingtypes.Infraction_INFRACTION_DOUBLE_SIGN); err != nil {
+		if errors.Is(err, slashingtypes.ErrValidatorTombstoned) {
+			return true, nil
+		}
+		return false, err
+	}
+
+	if err := k.JailAndTombstoneValidator(ctx, providerAddr, params); err != nil {
+		if errors.Is(err, slashingtypes.ErrValidatorTombstoned) {
+			return true, nil
+		}
+		return false, err
+	}
+
+	return false, nil
+}
 
 // JailAndTombstoneValidator jails and tombstones the validator with the given
 // provider consensus address.
