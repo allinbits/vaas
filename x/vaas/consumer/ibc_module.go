@@ -1,6 +1,7 @@
 package consumer
 
 import (
+	"bytes"
 	"fmt"
 	"strconv"
 
@@ -133,6 +134,11 @@ func (im IBCModule) OnRecvPacket(
 	}
 }
 
+// OnTimeoutPacket handles a timed-out consumer-sent packet. The only packets
+// the consumer sends are downtime evidence packets, so a timeout means that
+// evidence was never delivered within its timeout window. The evidence is
+// re-queued from the payload rather than dropped, so it is retried on a later
+// block instead of being silently lost.
 func (im IBCModule) OnTimeoutPacket(
 	ctx sdk.Context,
 	sourceClient string,
@@ -141,10 +147,18 @@ func (im IBCModule) OnTimeoutPacket(
 	payload channeltypesv2.Payload,
 	relayer sdk.AccAddress,
 ) error {
-	im.keeper.Logger(ctx).Error("unexpected timeout on consumer",
-		"sourceClient", sourceClient,
-		"sequence", sequence,
-	)
+	if err := im.keeper.RequeueEvidencePacket(ctx, payload.Value); err != nil {
+		im.keeper.Logger(ctx).Error("failed to requeue timed-out evidence packet",
+			"sourceClient", sourceClient,
+			"sequence", sequence,
+			"error", err,
+		)
+	} else {
+		im.keeper.Logger(ctx).Info("requeued timed-out evidence packet",
+			"sourceClient", sourceClient,
+			"sequence", sequence,
+		)
+	}
 
 	ctx.EventManager().EmitEvent(
 		sdk.NewEvent(
@@ -158,6 +172,13 @@ func (im IBCModule) OnTimeoutPacket(
 	return nil
 }
 
+// OnAcknowledgementPacket handles the acknowledgement of a consumer-sent
+// evidence packet. A success acknowledgement means the provider recorded the
+// evidence, so the (already-removed) packet stays gone. An error
+// acknowledgement means the provider evaluated and rejected that exact packet;
+// such rejections are permanent for a given packet, so it is surfaced as an
+// event and dropped rather than re-queued (re-sending the identical evidence
+// could never be accepted and would loop forever).
 func (im IBCModule) OnAcknowledgementPacket(
 	ctx sdk.Context,
 	sourceClient string,
@@ -167,7 +188,12 @@ func (im IBCModule) OnAcknowledgementPacket(
 	payload channeltypesv2.Payload,
 	relayer sdk.AccAddress,
 ) error {
-	im.keeper.Logger(ctx).Error("unexpected acknowledgement on consumer",
+	if bytes.Equal(acknowledgement, channeltypesv2.ErrorAcknowledgement[:]) {
+		im.keeper.ReportRejectedEvidencePacket(ctx, payload.Value)
+		return nil
+	}
+
+	im.keeper.Logger(ctx).Debug("evidence packet acknowledged by provider",
 		"sourceClient", sourceClient,
 		"sequence", sequence,
 	)
