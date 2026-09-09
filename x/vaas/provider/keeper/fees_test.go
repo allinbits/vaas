@@ -11,6 +11,7 @@ import (
 	testkeeper "github.com/allinbits/vaas/testutil/keeper"
 	providerkeeper "github.com/allinbits/vaas/x/vaas/provider/keeper"
 	providertypes "github.com/allinbits/vaas/x/vaas/provider/types"
+	vaastypes "github.com/allinbits/vaas/x/vaas/types"
 	"github.com/cosmos/cosmos-sdk/codec/address"
 	"github.com/cosmos/cosmos-sdk/crypto/keys/ed25519"
 	sdk "github.com/cosmos/cosmos-sdk/types"
@@ -447,10 +448,18 @@ func TestDistributeConsumerFeesWithheldFeeRecordExtendsOnRepeatedExclusion(t *te
 		GetBondedValidatorsByPower(gomock.Any()).
 		Return([]stakingtypes.Validator{val1, val2}, nil).
 		Times(2)
-	mocks.MockBankKeeper.EXPECT().
-		GetBalance(gomock.Any(), consumer0Pool, "uphoton").
-		Return(feesPerEpoch).
-		Times(2)
+	// The first run's exclusion escrows one share; the second run must reserve
+	// it, so it needs feePerEpoch on top of that outstanding escrow to still
+	// distribute. Balances: run 1 holds feePerEpoch; run 2 is topped up to
+	// feePerEpoch + one share so the unreserved balance still covers the epoch.
+	gomock.InOrder(
+		mocks.MockBankKeeper.EXPECT().
+			GetBalance(gomock.Any(), consumer0Pool, "uphoton").
+			Return(feesPerEpoch),
+		mocks.MockBankKeeper.EXPECT().
+			GetBalance(gomock.Any(), consumer0Pool, "uphoton").
+			Return(sdk.NewCoin("uphoton", feesPerEpoch.Amount.Add(share))),
+	)
 	mocks.MockBankKeeper.EXPECT().
 		InputOutputCoins(gomock.Any(),
 			banktypes.Input{Address: consumer0Pool.String(), Coins: sdk.NewCoins(sdk.NewCoin("uphoton", share))},
@@ -653,8 +662,11 @@ func TestDistributeConsumerFeesPropagatesBondedFetchError(t *testing.T) {
 	require.ErrorContains(t, err, "boom")
 }
 
-// TestDistributeConsumerFeesShareTooSmall: when fees_per_epoch / num_bonded
-// floors to zero, nothing is sent.
+// TestDistributeConsumerFeesShareTooSmall: when a positive fees_per_epoch is
+// smaller than num_bonded, the per-validator share floors to zero. Nothing can
+// be paid out to anyone, but the consumer still owes for the validation it
+// receives, so it is flagged in debt rather than handed a free epoch (no bank
+// call is made -- the debt-flag path is reached before the balance check).
 func TestDistributeConsumerFeesShareTooSmall(t *testing.T) {
 	params := testkeeper.NewInMemKeeperParams(t)
 	k, ctx, ctrl, mocks := testkeeper.GetProviderKeeperAndCtx(t, params)
@@ -678,8 +690,47 @@ func TestDistributeConsumerFeesShareTooSmall(t *testing.T) {
 		GetBondedValidatorsByPower(gomock.Any()).
 		Return([]stakingtypes.Validator{val1, val2}, nil)
 
-	// share = 1 / 2 = 0 -> nothing sent
+	// feePerEpoch = 1, numBonded = 2 -> share = 0 with a positive fee: no bank
+	// call, consumer flagged in debt, and the run records a zero share.
 	require.NoError(t, k.DistributeConsumerFees(ctx))
+	require.True(t, k.IsConsumerInDebt(ctx, consumer0),
+		"a sub-unit share on a positive fee must flag debt, not grant a free epoch")
+
+	recorded, found := k.ResolveEpochShare(ctx, consumer0, ctx.BlockTime())
+	require.True(t, found)
+	require.True(t, recorded.IsZero(), "want zero, got %s", recorded)
+}
+
+// TestDistributeConsumerFeesZeroFeeNoDebt: a genuinely zero epoch fee (fees
+// disabled) also floors the share to zero, but the consumer owes nothing, so
+// it must NOT be flagged in debt -- distinguishing it from the sub-unit-share
+// misconfiguration above.
+func TestDistributeConsumerFeesZeroFeeNoDebt(t *testing.T) {
+	params := testkeeper.NewInMemKeeperParams(t)
+	k, ctx, ctrl, mocks := testkeeper.GetProviderKeeperAndCtx(t, params)
+	defer ctrl.Finish()
+
+	valAddrCodec := address.NewBech32Codec("cosmosvaloper")
+	mocks.MockStakingKeeper.EXPECT().ValidatorAddressCodec().Return(valAddrCodec).AnyTimes()
+
+	val1, _ := newBondedValidator(t, valAddrCodec, 1)
+	val2, _ := newBondedValidator(t, valAddrCodec, 2)
+
+	consumer0 := k.FetchAndIncrementConsumerId(ctx)
+	k.SetConsumerPhase(ctx, consumer0, providertypes.CONSUMER_PHASE_LAUNCHED)
+
+	providerParams := providertypes.DefaultParams()
+	providerParams.FeesPerBlockAmount = math.ZeroInt()
+	k.SetParams(ctx, providerParams)
+
+	mocks.MockStakingKeeper.EXPECT().
+		GetBondedValidatorsByPower(gomock.Any()).
+		Return([]stakingtypes.Validator{val1, val2}, nil)
+
+	// feePerEpoch = 0 -> share = 0, but nothing is owed: no bank call, no debt.
+	require.NoError(t, k.DistributeConsumerFees(ctx))
+	require.False(t, k.IsConsumerInDebt(ctx, consumer0),
+		"a zero fee owes nothing and must not flag debt")
 }
 
 // TestDistributeConsumerFeesZeroBalance: empty pool -> in debt, no bank send.
@@ -957,6 +1008,38 @@ func TestPayWithheldFeesPaysAndDeletes(t *testing.T) {
 	require.False(t, has, "paid record should be deleted")
 }
 
+// TestPayWithheldFeesSkipsExpiredRecords: a record whose challenge window has
+// already elapsed backs a downtime slash that has since matured and executed;
+// PayWithheldFees must clear the record but never pay it out. No bank/staking
+// payment expectations are set, so gomock fails the test if a payout is made.
+func TestPayWithheldFeesSkipsExpiredRecords(t *testing.T) {
+	params := testkeeper.NewInMemKeeperParams(t)
+	k, ctx, ctrl, mocks := testkeeper.GetProviderKeeperAndCtx(t, params)
+	defer ctrl.Finish()
+
+	valAddrCodec := address.NewBech32Codec("cosmosvaloper")
+	mocks.MockStakingKeeper.EXPECT().ValidatorAddressCodec().Return(valAddrCodec).AnyTimes()
+
+	val1, _ := newBondedValidator(t, valAddrCodec, 1)
+	consAddr1, err := val1.GetConsAddr()
+	require.NoError(t, err)
+
+	// Anchor to a real instant so the past ExpiresAt below stays a valid timestamp.
+	now := time.Unix(1_700_000_000, 0).UTC()
+	ctx = ctx.WithBlockTime(now)
+
+	consumer0 := k.FetchAndIncrementConsumerId(ctx)
+	amount := sdk.NewInt64Coin("uphoton", 500)
+	// ExpiresAt already in the past: the challenge window is closed.
+	putWithheldFeeRecord(t, k, ctx, consumer0, consAddr1, amount, now.Add(-time.Hour))
+
+	require.NoError(t, k.PayWithheldFees(ctx, consumer0))
+
+	has, err := k.WithheldFeeRecords.Has(ctx, collections.Join(consumer0, consAddr1))
+	require.NoError(t, err)
+	require.False(t, has, "expired record should be cleared without payment")
+}
+
 // TestPayWithheldFeesBestEffortUnderfundedPool: when the pool balance is less
 // than the recorded amount (e.g. the consumer was stopped through an
 // unrelated path while the record was pending), PayWithheldFees pays only
@@ -1135,4 +1218,182 @@ func TestPayWithheldFeesMultipleRecordsUnderfundedPool(t *testing.T) {
 	has, err = k.WithheldFeeRecords.Has(ctx, collections.Join(consumer0, []byte(consAddrSecond)))
 	require.NoError(t, err)
 	require.False(t, has, "second record should be deleted")
+}
+
+// TestDistributeConsumerFeesReservesWithheldEscrow: a pre-existing withheld-fee
+// record reserves part of the pool. When the balance covers the epoch fee on
+// its own but NOT on top of that reserved escrow, distribution is skipped and
+// the consumer is flagged in debt rather than drawing into the escrow -- so a
+// later top-up cannot let ordinary distribution drain a pending challenge's
+// payout.
+func TestDistributeConsumerFeesReservesWithheldEscrow(t *testing.T) {
+	params := testkeeper.NewInMemKeeperParams(t)
+	k, ctx, ctrl, mocks := testkeeper.GetProviderKeeperAndCtx(t, params)
+	defer ctrl.Finish()
+	blockTime := time.Date(2026, 7, 13, 12, 0, 0, 0, time.UTC)
+	ctx = ctx.WithBlockTime(blockTime)
+
+	valAddrCodec := address.NewBech32Codec("cosmosvaloper")
+	mocks.MockStakingKeeper.EXPECT().ValidatorAddressCodec().Return(valAddrCodec).AnyTimes()
+
+	val1, _ := newBondedValidator(t, valAddrCodec, 1)
+	val2, _ := newBondedValidator(t, valAddrCodec, 2)
+	consAddr2, err := val2.GetConsAddr()
+	require.NoError(t, err)
+
+	feesPerBlock := sdk.NewInt64Coin("uphoton", 10)
+	feesPerEpoch := sdk.NewCoin("uphoton", feesPerBlock.Amount.MulRaw(epochMultiplier)) // 6000
+	share := feesPerEpoch.Amount.QuoRaw(2)                                              // 3000
+
+	consumer0 := k.FetchAndIncrementConsumerId(ctx)
+	k.SetConsumerPhase(ctx, consumer0, providertypes.CONSUMER_PHASE_LAUNCHED)
+	providerParams := providertypes.DefaultParams()
+	providerParams.FeesPerBlockAmount = feesPerBlock.Amount
+	k.SetParams(ctx, providerParams)
+	k.SetInfractionParams(ctx, providertypes.DefaultInfractionParameters())
+
+	// Escrow one share against a pending (unexpired) challenge for val2.
+	escrow := sdk.NewCoin("uphoton", share)
+	putWithheldFeeRecord(t, k, ctx, consumer0, consAddr2, escrow, blockTime.Add(time.Hour))
+
+	consumer0Pool := k.GetConsumerFeePoolAddress(consumer0)
+
+	mocks.MockStakingKeeper.EXPECT().
+		GetBondedValidatorsByPower(gomock.Any()).
+		Return([]stakingtypes.Validator{val1, val2}, nil)
+	// Pool holds exactly the epoch fee -- enough on its own, but not once the
+	// escrowed share is reserved (available = 6000 - 3000 = 3000 < 6000). No
+	// InputOutputCoins call: distribution is skipped and the escrow untouched.
+	mocks.MockBankKeeper.EXPECT().
+		GetBalance(gomock.Any(), consumer0Pool, "uphoton").
+		Return(feesPerEpoch)
+
+	require.NoError(t, k.DistributeConsumerFees(ctx))
+	require.True(t, k.IsConsumerInDebt(ctx, consumer0),
+		"an unreserved balance below the epoch fee must flag debt")
+
+	rec, err := k.WithheldFeeRecords.Get(ctx, collections.Join(consumer0, []byte(consAddr2)))
+	require.NoError(t, err)
+	require.True(t, escrow.Equal(rec.Amount), "escrow record must be untouched")
+}
+
+// TestWithheldEscrowSurvivesDistributionAndPaidInFull is the end-to-end escrow
+// guarantee: a validator excluded in epoch N has its share withheld; the
+// consumer is topped up and epoch N+1 distributes WITHOUT drawing that escrow;
+// a later successful challenge then pays the withheld share back in full.
+func TestWithheldEscrowSurvivesDistributionAndPaidInFull(t *testing.T) {
+	params := testkeeper.NewInMemKeeperParams(t)
+	k, ctx, ctrl, mocks := testkeeper.GetProviderKeeperAndCtx(t, params)
+	defer ctrl.Finish()
+	epochN := time.Date(2026, 7, 13, 12, 0, 0, 0, time.UTC)
+	ctx = ctx.WithBlockTime(epochN)
+
+	valAddrCodec := address.NewBech32Codec("cosmosvaloper")
+	mocks.MockStakingKeeper.EXPECT().ValidatorAddressCodec().Return(valAddrCodec).AnyTimes()
+
+	val1, val1Bytes := newBondedValidator(t, valAddrCodec, 1)
+	val2, val2Bytes := newBondedValidator(t, valAddrCodec, 2)
+	consAddr2, err := val2.GetConsAddr()
+	require.NoError(t, err)
+
+	feesPerBlock := sdk.NewInt64Coin("uphoton", 10)
+	feesPerEpoch := sdk.NewCoin("uphoton", feesPerBlock.Amount.MulRaw(epochMultiplier)) // 6000
+	share := feesPerEpoch.Amount.QuoRaw(2)                                              // 3000
+	shareCoin := sdk.NewCoin("uphoton", share)
+
+	consumer0 := k.FetchAndIncrementConsumerId(ctx)
+	k.SetConsumerPhase(ctx, consumer0, providertypes.CONSUMER_PHASE_LAUNCHED)
+	providerParams := providertypes.DefaultParams()
+	providerParams.FeesPerBlockAmount = feesPerBlock.Amount
+	k.SetParams(ctx, providerParams)
+	k.SetInfractionParams(ctx, providertypes.DefaultInfractionParameters())
+
+	consumer0Pool := k.GetConsumerFeePoolAddress(consumer0)
+
+	// GetBalance across the three steps, in order: epoch N holds feePerEpoch;
+	// epoch N+1 is topped up to feePerEpoch + one share (so the unreserved
+	// balance still covers the epoch); at challenge time only the escrowed
+	// share remains in the pool.
+	gomock.InOrder(
+		mocks.MockBankKeeper.EXPECT().GetBalance(gomock.Any(), consumer0Pool, "uphoton").Return(feesPerEpoch),
+		mocks.MockBankKeeper.EXPECT().GetBalance(gomock.Any(), consumer0Pool, "uphoton").
+			Return(sdk.NewCoin("uphoton", feesPerEpoch.Amount.Add(share))),
+		mocks.MockBankKeeper.EXPECT().GetBalance(gomock.Any(), consumer0Pool, "uphoton").Return(shareCoin),
+	)
+	mocks.MockStakingKeeper.EXPECT().GetBondedValidatorsByPower(gomock.Any()).
+		Return([]stakingtypes.Validator{val1, val2}, nil).Times(2)
+
+	// Epoch N: val2 excluded -> only val1 paid, val2's share escrowed.
+	mocks.MockBankKeeper.EXPECT().InputOutputCoins(gomock.Any(),
+		banktypes.Input{Address: consumer0Pool.String(), Coins: sdk.NewCoins(shareCoin)},
+		[]banktypes.Output{{Address: accAddr(val1Bytes), Coins: sdk.NewCoins(shareCoin)}},
+	).Return(nil)
+	// Epoch N+1: both eligible -> the full epoch fee is drawn, escrow left in place.
+	mocks.MockBankKeeper.EXPECT().InputOutputCoins(gomock.Any(),
+		banktypes.Input{Address: consumer0Pool.String(), Coins: sdk.NewCoins(sdk.NewCoin("uphoton", share.MulRaw(2)))},
+		[]banktypes.Output{
+			{Address: accAddr(val1Bytes), Coins: sdk.NewCoins(shareCoin)},
+			{Address: accAddr(val2Bytes), Coins: sdk.NewCoins(shareCoin)},
+		},
+	).Return(nil)
+	// Challenge: val2's withheld share is paid back in full.
+	mocks.MockStakingKeeper.EXPECT().GetValidatorByConsAddr(gomock.Any(), sdk.ConsAddress(consAddr2)).Return(val2, nil)
+	mocks.MockBankKeeper.EXPECT().InputOutputCoins(gomock.Any(),
+		banktypes.Input{Address: consumer0Pool.String(), Coins: sdk.NewCoins(shareCoin)},
+		[]banktypes.Output{{Address: accAddr(val2Bytes), Coins: sdk.NewCoins(shareCoin)}},
+	).Return(nil)
+
+	// Epoch N: exclude val2.
+	k.MarkEpochDowntime(ctx, consumer0, consAddr2)
+	require.NoError(t, k.DistributeConsumerFees(ctx))
+	rec, err := k.WithheldFeeRecords.Get(ctx, collections.Join(consumer0, []byte(consAddr2)))
+	require.NoError(t, err)
+	require.True(t, shareCoin.Equal(rec.Amount), "epoch N must escrow val2's share")
+
+	// Epoch boundary clears marks; epoch N+1 has val2 back online and funded.
+	k.ClearEpochDowntime(ctx)
+	ctx = ctx.WithBlockTime(epochN.Add(time.Hour))
+	require.NoError(t, k.DistributeConsumerFees(ctx))
+	require.False(t, k.IsConsumerInDebt(ctx, consumer0))
+	rec, err = k.WithheldFeeRecords.Get(ctx, collections.Join(consumer0, []byte(consAddr2)))
+	require.NoError(t, err)
+	require.True(t, shareCoin.Equal(rec.Amount), "epoch N+1 distribution must not draw the escrow")
+
+	// Successful challenge pays val2 the withheld share in full and clears it.
+	require.NoError(t, k.PayWithheldFees(ctx, consumer0))
+	has, err := k.WithheldFeeRecords.Has(ctx, collections.Join(consumer0, []byte(consAddr2)))
+	require.NoError(t, err)
+	require.False(t, has, "record cleared after full payout")
+}
+
+// TestResolveDowntimeSlashTokensRejectsNonPositiveConversionRate: a zero OR
+// negative photon conversion rate is rejected, since a negative rate would
+// otherwise yield a negative slash.
+func TestResolveDowntimeSlashTokensRejectsNonPositiveConversionRate(t *testing.T) {
+	windowEndTime := time.Date(2025, 6, 1, 0, 0, 0, 0, time.UTC)
+	k, ctx, ctrl, mocks := testkeeper.GetProviderKeeperAndCtx(t, testkeeper.NewInMemKeeperParams(t))
+	defer ctrl.Finish()
+	ctx = ctx.WithBlockTime(windowEndTime)
+
+	const consumerId uint64 = 0
+	consAddr := sdk.ConsAddress([]byte("validator-address-1"))
+	// A recorded epoch share resolves P deterministically (found=true), so the
+	// test isolates the conversion-rate guard from live-share pricing.
+	k.SetEpochShareRecord(ctx, consumerId, windowEndTime, math.NewInt(1000))
+
+	packet := vaastypes.NewEvidencePacketData(consAddr, 93, []byte{0x3F}, 8, 8, math.LegacyMustNewDecFromStr("0.5"))
+
+	for _, tc := range []struct {
+		name string
+		rate math.LegacyDec
+	}{
+		{"zero", math.LegacyZeroDec()},
+		{"negative", math.LegacyNewDec(-2)},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			mocks.MockPhotonKeeper.EXPECT().ConversionRate(ctx).Return(tc.rate, nil)
+			_, err := k.ResolveDowntimeSlashTokens(ctx, consumerId, packet, windowEndTime)
+			require.ErrorContains(t, err, "conversion rate must be positive")
+		})
+	}
 }
