@@ -227,7 +227,7 @@ func TestQueueVSCPacketsEmptyStoredValSetForcesSnapshot(t *testing.T) {
 	// Pin the provider client the snapshot arrives over up front, as a real
 	// consumer does at genesis.
 	ck.SetProviderClientID(cctx, "07-tendermint-0")
-	ck.ApplyCCValidatorChanges(cctx, []abci.ValidatorUpdate{{PubKey: tmPkA, Power: powerA}, {PubKey: tmPkB, Power: 5}})
+	ck.ApplyVaasValidatorChanges(cctx, []abci.ValidatorUpdate{{PubKey: tmPkA, Power: powerA}, {PubKey: tmPkB, Power: 5}})
 
 	require.NoError(t, ck.OnRecvVSCPacketV2(cctx, "07-tendermint-0", pending[0]))
 	consumerPending, ok := ck.GetPendingChanges(cctx)

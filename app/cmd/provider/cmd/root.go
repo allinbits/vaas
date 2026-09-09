@@ -5,8 +5,6 @@ import (
 	"io"
 	"os"
 
-	providerApp "github.com/allinbits/vaas/app/provider"
-	appEncoding "github.com/allinbits/vaas/app/provider/encoding"
 	"github.com/spf13/cobra"
 	"github.com/spf13/viper"
 
@@ -38,6 +36,9 @@ import (
 	txmodule "github.com/cosmos/cosmos-sdk/x/auth/tx/config"
 	"github.com/cosmos/cosmos-sdk/x/auth/types"
 	genutilcli "github.com/cosmos/cosmos-sdk/x/genutil/client/cli"
+
+	providerApp "github.com/allinbits/vaas/app/provider"
+	appEncoding "github.com/allinbits/vaas/app/provider/encoding"
 )
 
 // NewRootCmd creates a new root command for the provider daemon. It is called

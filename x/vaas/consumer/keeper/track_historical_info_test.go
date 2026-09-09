@@ -41,7 +41,7 @@ func TestTrackHistoricalInfoPrunesAndStoresLatest(t *testing.T) {
 	ctx = ctx.WithBlockHeight(blockHeight)
 
 	validators := GenerateValidators(t)
-	SetCCValidators(t, consumerKeeper, ctx, validators)
+	SetVaasValidators(t, consumerKeeper, ctx, validators)
 
 	// Seed a contiguous run of historical entries below the current height so
 	// the pruning loop has something to walk (it stops at the first gap).
@@ -101,7 +101,7 @@ func TestTrackHistoricalInfoStoresNothingWithZeroEntries(t *testing.T) {
 	consumerKeeper.SetParams(ctx, params)
 
 	ctx = ctx.WithBlockHeight(blockHeight)
-	SetCCValidators(t, consumerKeeper, ctx, GenerateValidators(t))
+	SetVaasValidators(t, consumerKeeper, ctx, GenerateValidators(t))
 
 	hi := stakingtypes.NewHistoricalInfo(
 		ctx.BlockHeader(),

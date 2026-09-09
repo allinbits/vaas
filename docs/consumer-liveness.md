@@ -172,7 +172,7 @@ Operators can observe a consumer's liveness without waiting for removal
 through the provider's `QueryConsumerLiveness` query, via the CLI:
 
 ```
-providerd query provider consumer-liveness <consumer-id>
+providerd query vaasprovider consumer-liveness <consumer-id>
 ```
 
 or over REST as `/vaas/provider/consumer_liveness/<consumer-id>`.

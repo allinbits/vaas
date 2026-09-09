@@ -5,8 +5,6 @@ import (
 	"io"
 	"os"
 
-	consumerApp "github.com/allinbits/vaas/app/consumer"
-	appEncoding "github.com/allinbits/vaas/app/consumer/encoding"
 	"github.com/spf13/cobra"
 	"github.com/spf13/viper"
 
@@ -38,6 +36,9 @@ import (
 	txmodule "github.com/cosmos/cosmos-sdk/x/auth/tx/config"
 	"github.com/cosmos/cosmos-sdk/x/auth/types"
 	genutilcli "github.com/cosmos/cosmos-sdk/x/genutil/client/cli"
+
+	consumerApp "github.com/allinbits/vaas/app/consumer"
+	appEncoding "github.com/allinbits/vaas/app/consumer/encoding"
 )
 
 // NewRootCmd creates a new root command for the consumer daemon. It is called

@@ -8,11 +8,6 @@ import (
 	"path/filepath"
 	"slices"
 
-	"github.com/allinbits/vaas/app/ibcshim"
-	ibcconsumer "github.com/allinbits/vaas/x/vaas/consumer"
-	ibcconsumerkeeper "github.com/allinbits/vaas/x/vaas/consumer/keeper"
-	ibcconsumertypes "github.com/allinbits/vaas/x/vaas/consumer/types"
-	vaastypes "github.com/allinbits/vaas/x/vaas/types"
 	"github.com/spf13/cast"
 
 	abci "github.com/cometbft/cometbft/abci/types"
@@ -93,6 +88,12 @@ import (
 	"github.com/cosmos/cosmos-sdk/x/slashing"
 	slashingkeeper "github.com/cosmos/cosmos-sdk/x/slashing/keeper"
 	slashingtypes "github.com/cosmos/cosmos-sdk/x/slashing/types"
+
+	"github.com/allinbits/vaas/app/ibcshim"
+	ibcconsumer "github.com/allinbits/vaas/x/vaas/consumer"
+	ibcconsumerkeeper "github.com/allinbits/vaas/x/vaas/consumer/keeper"
+	ibcconsumertypes "github.com/allinbits/vaas/x/vaas/consumer/types"
+	vaastypes "github.com/allinbits/vaas/x/vaas/types"
 )
 
 const (

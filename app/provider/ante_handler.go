@@ -1,9 +1,6 @@
 package app
 
 import (
-	providerante "github.com/allinbits/vaas/x/vaas/provider/ante"
-	ibcproviderkeeper "github.com/allinbits/vaas/x/vaas/provider/keeper"
-
 	ibcante "github.com/cosmos/ibc-go/v10/modules/core/ante"
 	ibckeeper "github.com/cosmos/ibc-go/v10/modules/core/keeper"
 
@@ -12,6 +9,9 @@ import (
 	sdk "github.com/cosmos/cosmos-sdk/types"
 	sdkerrors "github.com/cosmos/cosmos-sdk/types/errors"
 	"github.com/cosmos/cosmos-sdk/x/auth/ante"
+
+	providerante "github.com/allinbits/vaas/x/vaas/provider/ante"
+	ibcproviderkeeper "github.com/allinbits/vaas/x/vaas/provider/keeper"
 )
 
 // HandlerOptions extend the SDK's AnteHandler options by requiring the VAAS
