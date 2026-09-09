@@ -545,10 +545,14 @@ func (s *LivenessIntegrationTestSuite) testForcedTimeoutSnapshotResync() {
 		s.T().Log("consumer remained LAUNCHED through the timeouts")
 
 		// (b) Prove a real timeout actually fired -- otherwise (a) is vacuous.
-		// The provider logs the log-only OnTimeout handler.
+		// The provider logs the log-only OnTimeout handler. The wait must
+		// absorb the relayer's whole post-unpause reconciliation: it first
+		// retries the expired deliveries against the consumer and only then
+		// submits MsgTimeout to the provider, which can take well over 30s
+		// after a 35s pause.
 		s.Require().Eventuallyf(func() bool {
 			return strings.Contains(s.providerLogs(), "packet timeout, retrying next epoch")
-		}, 30*time.Second, 3*time.Second,
+		}, 2*time.Minute, 3*time.Second,
 			"provider never logged a VSC packet timeout; the timeout path was not exercised")
 		s.T().Log("provider processed a VSC timeout (OnTimeout is log-only)")
 
