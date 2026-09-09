@@ -31,6 +31,7 @@ import (
 	authtypes "github.com/cosmos/cosmos-sdk/x/auth/types"
 	govkeeper "github.com/cosmos/cosmos-sdk/x/gov/keeper"
 	govtypes "github.com/cosmos/cosmos-sdk/x/gov/types"
+	stakingtypes "github.com/cosmos/cosmos-sdk/x/staking/types"
 
 	consumerkeeper "github.com/allinbits/vaas/x/vaas/consumer/keeper"
 	consumertypes "github.com/allinbits/vaas/x/vaas/consumer/types"

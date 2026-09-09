@@ -13,8 +13,7 @@ const (
 
 	AttributeProviderValidatorAddress = "provider_validator_address"
 	// AttributeConsumerClientID carries the IBC client id declared for a
-	// consumer; defined here so the wholesale rewrite of this block does not
-	// drop it out from under its user. Harmless ahead of that user.
+	// consumer via MsgUpdateConsumer.
 	AttributeConsumerClientID        = "consumer_client_id"
 	AttributeConsumerConsensusPubKey = "consumer_consensus_pub_key"
 	AttributeSubmitterAddress        = "submitter_address"
@@ -37,10 +36,4 @@ const (
 	// AttributeWithdrawPath values
 	WithdrawPathDirect        = "direct"
 	WithdrawPathCommunityPool = "community_pool"
-)
-
-const (
-	// AttributeConsumerClientID carries the IBC client id declared for a
-	// consumer via MsgUpdateConsumer.
-	AttributeConsumerClientID = "consumer_client_id"
 )
