@@ -331,7 +331,7 @@ localnet-declare-clients:
 		if [ -n "$$PCID" ] && [ -n "$$CCID" ]; then \
 			echo "  provider->consumer client: $$PCID ; consumer->provider client: $$CCID"; \
 			echo "{\"consumer_id\": 0, \"client_id\": \"$$PCID\"}" > /tmp/vaas-test/declare_client.json; \
-			$(providerd) tx provider update-consumer /tmp/vaas-test/declare_client.json --from owner --gas auto --gas-adjustment 1.5 --fees 10000uatone -y > /dev/null; \
+			$(providerd) tx vaasprovider update-consumer /tmp/vaas-test/declare_client.json --from owner --gas auto --gas-adjustment 1.5 --fees 10000uatone -y > /dev/null; \
 			sleep 3; \
 			$(consumerd) tx vaasconsumer set-provider-client $$CCID --node tcp://localhost:26667 --from owner --gas auto --gas-adjustment 1.5 --fees 10000uatone -y > /dev/null; \
 			sleep 3; \
