@@ -128,7 +128,7 @@ func TestIBCModuleOnRecvPacketRejectsWrongSourcePort(t *testing.T) {
 // a VSC packet carrying a validator update whose consensus pubkey cannot be
 // decoded is rejected with an error acknowledgement on receipt, rather than
 // being accepted, staged into pending changes, and then panicking the consumer
-// at EndBlock when ApplyCCValidatorChanges decodes the pubkey (which would halt
+// at EndBlock when ApplyVaasValidatorChanges decodes the pubkey (which would halt
 // block production).
 func TestIBCModuleOnRecvPacketRejectsBadPubkeyInsteadOfPanicking(t *testing.T) {
 	consumerKeeper, ctx, ctrl, mocks := testkeeper.GetConsumerKeeperAndCtx(t, testkeeper.NewInMemKeeperParams(t))
@@ -156,11 +156,11 @@ func TestIBCModuleOnRecvPacketRejectsBadPubkeyInsteadOfPanicking(t *testing.T) {
 	_, ok := consumerKeeper.GetPendingChanges(ctx)
 	require.False(t, ok, "a rejected packet must not stage any pending validator changes")
 
-	// ApplyCCValidatorChanges is still the defensive backstop: it would panic
+	// ApplyVaasValidatorChanges is still the defensive backstop: it would panic
 	// on the bad update, which is exactly the EndBlock halt the recv-path
 	// validation now keeps unreachable.
 	require.Panics(t, func() {
-		consumerKeeper.ApplyCCValidatorChanges(ctx, []abci.ValidatorUpdate{badUpdate})
+		consumerKeeper.ApplyVaasValidatorChanges(ctx, []abci.ValidatorUpdate{badUpdate})
 	})
 }
 

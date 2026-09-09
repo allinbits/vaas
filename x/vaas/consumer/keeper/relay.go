@@ -132,7 +132,7 @@ func (k Keeper) OnRecvVSCPacketV2(ctx sdk.Context, consumerClientID string, newC
 // a diff the answer depends on state: the set EndBlock will apply is the
 // current cross-chain set overlaid with the already-accumulated pending
 // changes and then with this packet's updates, latest write per key winning --
-// the same per-pubkey overwrite AccumulateChanges and ApplyCCValidatorChanges
+// the same per-pubkey overwrite AccumulateChanges and ApplyVaasValidatorChanges
 // perform. Both checks reuse the existing helpers and cost one walk of the
 // current set, so the diff case (a diff removing every validator is exactly as
 // fatal as an empty snapshot) is guarded rather than only the snapshot resync

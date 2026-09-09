@@ -151,11 +151,10 @@ func (k Keeper) ExportGenesis(ctx sdk.Context) (genesis *types.GenesisState) {
 		genesis.ProviderChainId = chainId
 	}
 
-	// Preserve the VSC staleness clock across a restart (see IsVSCStale). On a
-	// chain that launched as NewChain the clock is always set (armed at
-	// genesis), so a restart export always carries it; the conditional covers
-	// keepers where it was never armed (a PreVAAS chain still waiting for its
-	// first VSC), which keep the absent-default (never stale) on import.
+	// Preserve the VSC staleness clock across a restart (see IsVSCStale). The
+	// clock is armed at the first post-genesis block, so a restart export
+	// always carries it; the conditional covers an export taken before that
+	// first block, which keeps the absent-default (never stale) on import.
 	has, err := k.LastVSCRecvTime.Has(ctx)
 	if err != nil {
 		panic(err)

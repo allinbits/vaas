@@ -349,18 +349,6 @@ func TestVSCStalenessClockArmsAtFirstWallClockBlock(t *testing.T) {
 		ck.ArmVSCStalenessClock(ctx.WithBlockHeight(101).WithBlockTime(nextBlock))
 		require.Equal(t, nextBlock, ck.GetLastVSCRecvTime(ctx))
 	})
-
-	t.Run("preVAAS chains stay unarmed", func(t *testing.T) {
-		ck, ctx, ctrl, _ := testkeeper.GetConsumerKeeperAndCtx(t, testkeeper.NewInMemKeeperParams(t))
-		defer ctrl.Finish()
-
-		ck.SetPreVAASTrue(ctx)
-
-		ck.ArmVSCStalenessClock(ctx.WithBlockHeight(2).WithBlockTime(time.Unix(1_850_000_000, 0).UTC()))
-		has, err := ck.LastVSCRecvTime.Has(ctx)
-		require.NoError(t, err)
-		require.False(t, has, "standalone staking still runs a preVAAS chain; VSC staleness is not meaningful yet")
-	})
 }
 
 // TestGenesisRoundTripDowntimeState verifies that the consumer's
@@ -520,7 +508,7 @@ func TestGenesisRoundTripPhotonFeesEnabled(t *testing.T) {
 	tmPK, err := cryptocodec.ToCmtPubKeyInterface(pubKey)
 	require.NoError(t, err)
 	validator := tmtypes.NewValidator(tmPK, 1)
-	cVal, err := consumertypes.NewCCValidator(validator.Address.Bytes(), 1, pubKey)
+	cVal, err := consumertypes.NewVaasValidator(validator.Address.Bytes(), 1, pubKey)
 	require.NoError(t, err)
 
 	ck, ctx, ctrl, _ := testkeeper.GetConsumerKeeperAndCtx(t, testkeeper.NewInMemKeeperParams(t))
@@ -532,7 +520,7 @@ func TestGenesisRoundTripPhotonFeesEnabled(t *testing.T) {
 		params,
 	))
 	require.True(t, ck.PhotonFeesEnabled(ctx), "genesis opt-in must reach the stored params")
-	ck.SetCCValidator(ctx, cVal)
+	ck.SetVaasValidator(ctx, cVal)
 
 	exported := ck.ExportGenesis(ctx)
 	require.True(t, exported.Params.PhotonFeesEnabled, "export must carry photon_fees_enabled")
