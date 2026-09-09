@@ -9,4 +9,5 @@ var (
 	ErrInvalidProviderClient = errorsmod.Register(ModuleName, 2, "invalid provider client")
 	ErrConsumerInDebt        = errorsmod.Register(ModuleName, 3, "consumer chain is in debt")
 	ErrInvalidFeeDenom       = errorsmod.Register(ModuleName, 4, "invalid fee denom: consumer requires photon")
+	ErrEmptyValidatorSet     = errorsmod.Register(ModuleName, 5, "validator set would be empty")
 )

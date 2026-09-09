@@ -46,6 +46,15 @@ func (k Keeper) GetEnabled(ctx context.Context) bool {
 	return params.Enabled
 }
 
+// PhotonFeesEnabled reports whether this consumer requires transaction fees to
+// be paid in the one-hop photon voucher from the provider. It is read from the
+// module params on every transaction so that all nodes reach the same verdict,
+// see PhotonFeeDecorator in x/vaas/consumer/ante.
+func (k Keeper) PhotonFeesEnabled(ctx context.Context) bool {
+	params := k.GetConsumerParams(ctx)
+	return params.PhotonFeesEnabled
+}
+
 // GetVAASTimeoutPeriod returns the timeout period for sent VAAS related ibc packets
 func (k Keeper) GetVAASTimeoutPeriod(ctx context.Context) time.Duration {
 	params := k.GetConsumerParams(ctx)

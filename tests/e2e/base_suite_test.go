@@ -64,6 +64,14 @@ type baseSuiteConfig struct {
 	// step.
 	patchProviderConfigToml func(path string)
 	patchConsumerConfigToml func(path string)
+
+	// enableConsumerPhotonFees switches the consumer's photon-only fee policy
+	// on in its genesis (the reference consumer app wires no governance, so
+	// the flag cannot be flipped later) and launches the consumer node with
+	// zero min-gas-prices, the launch configuration the policy assumes: the
+	// photon ante polices the fee denom in consensus, while the relayer's
+	// exempt traffic must stay admissible whatever it pays.
+	enableConsumerPhotonFees bool
 }
 
 // baseTestSuite carries the shared Docker state and helper methods. Concrete
@@ -349,18 +357,37 @@ func (s *baseTestSuite) initAndStartConsumer(consumerGenesisJSON []byte) {
 
 	// Run init script in a temporary container
 	scriptPath := filepath.Join(testDir(), "scripts", "consumer-init.sh")
-	s.runInitContainer(s.cfg.consumerInitName, scriptPath, "/scripts/consumer-init.sh", consumerDir, consumerHomePath, []string{
+	initEnv := []string{
 		"BINARY=" + consumerBinary,
 		"HOME_DIR=" + consumerHomePath,
 		"CHAIN_ID=" + s.cfg.consumerChainID,
 		"DENOM=" + bondDenom,
 		"MNEMONIC=" + relayerMnemonic,
-	})
+	}
+	if s.cfg.enableConsumerPhotonFees {
+		initEnv = append(initEnv, "MIN_GAS_PRICE=0"+bondDenom)
+	}
+	s.runInitContainer(s.cfg.consumerInitName, scriptPath, "/scripts/consumer-init.sh", consumerDir, consumerHomePath, initEnv)
 
 	// Patch consumer genesis with provider's consumer-genesis data on the host
 	genesisFile := filepath.Join(consumerDir, "config", "genesis.json")
 	err = patchConsumerGenesisWithProviderData(genesisFile, consumerGenesisJSON)
 	s.Require().NoError(err, "failed to patch consumer genesis")
+
+	// The provider-authored consumer genesis always writes photon_fees_enabled
+	// off; enabling it is a consumer-local genesis choice, made here the same
+	// way a real core shard's operator would make it.
+	if s.cfg.enableConsumerPhotonFees {
+		s.patchGenesisJSON(genesisFile, func(genesis map[string]any) {
+			appState, ok := genesis["app_state"].(map[string]any)
+			s.Require().True(ok, "app_state not found in consumer genesis")
+			vaasconsumer, ok := appState["vaasconsumer"].(map[string]any)
+			s.Require().True(ok, "vaasconsumer not found in consumer genesis")
+			params, ok := vaasconsumer["params"].(map[string]any)
+			s.Require().True(ok, "vaasconsumer params not found in consumer genesis")
+			params["photon_fees_enabled"] = true
+		})
+	}
 
 	// Patch consumer slashing params for aggressive downtime detection
 	s.patchConsumerSlashingParams()

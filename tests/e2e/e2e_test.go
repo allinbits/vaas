@@ -10,6 +10,11 @@ func (s *IntegrationTestSuite) TestVAAS() {
 	// LAUNCHED and re-converges via snapshot resync after recovery.
 	s.testLivenessTransientOutage()
 	s.testConsumerDebtFlow()
+	// Runs after the debt flow on purpose: that test both needs the consumer
+	// to enter debt naturally (pre-funding the pool would stall it) and leaves
+	// the pool funded, so the photon test observes the fee policy rather than
+	// the debt gate.
+	s.testPhotonFeeEnforcement()
 	s.testDowntimeSlash()
 	s.testFeePoolSendRestriction()
 	s.testFeePoolFundAndLockEnforcement()

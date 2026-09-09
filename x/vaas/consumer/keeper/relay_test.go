@@ -16,6 +16,7 @@ import (
 	clientv2types "github.com/cosmos/ibc-go/v10/modules/core/02-client/v2/types"
 	ibctmtypes "github.com/cosmos/ibc-go/v10/modules/light-clients/07-tendermint"
 
+	errorsmod "cosmossdk.io/errors"
 	"cosmossdk.io/math"
 
 	testcrypto "github.com/allinbits/vaas/testutil/crypto"
@@ -255,6 +256,12 @@ func TestOnRecvVSCPacketV2DebtStatus(t *testing.T) {
 	testkeeper.StubClientState(mocks, "provider-0")
 	consumerKeeper.SetProviderClientID(ctx, providerClientID)
 
+	// Heartbeat packets presuppose a live validator set (a set-emptying packet
+	// is rejected outright), so seed one as InitGenesis would.
+	pk, err := cryptocodec.ToCmtProtoPublicKey(ed25519.GenPrivKey().PubKey())
+	require.NoError(t, err)
+	consumerKeeper.ApplyCCValidatorChanges(ctx, []abci.ValidatorUpdate{{PubKey: pk, Power: 10}})
+
 	require.False(t, consumerKeeper.IsConsumerInDebt(ctx))
 
 	pd1 := types.NewValidatorSetChangePacketData(nil, 1)
@@ -439,6 +446,12 @@ func TestOnRecvVSCPacketStagesDowntimeParams(t *testing.T) {
 	testkeeper.StubClientState(mocks, "provider-0")
 	k.SetProviderClientID(ctx, providerClientID)
 
+	// Heartbeat packets presuppose a live validator set (a set-emptying packet
+	// is rejected outright), so seed one as InitGenesis would.
+	pk, err := cryptocodec.ToCmtProtoPublicKey(ed25519.GenPrivKey().PubKey())
+	require.NoError(t, err)
+	k.ApplyCCValidatorChanges(ctx, []abci.ValidatorUpdate{{PubKey: pk, Power: 10}})
+
 	initialParams := types.DefaultConsumerParams()
 	k.SetParams(ctx, initialParams)
 
@@ -614,10 +627,11 @@ func TestSnapshotMultipleRemovals(t *testing.T) {
 	require.Equal(t, int64(0), powers[pkC.String()])
 }
 
-// TestSnapshotEmptyRemovesAll seeds {A, B} and delivers a snapshot with zero
-// validator updates (IsSnapshot=true, empty list). PendingChanges must contain
-// exactly two entries: A=0 and B=0.
-func TestSnapshotEmptyRemovesAll(t *testing.T) {
+// TestEmptySnapshotRejected seeds {A, B} and delivers snapshots whose target
+// set is empty -- one with zero updates, one with only zero-power updates.
+// Both must be rejected before any state change: applying them would remove
+// every validator and halt the chain at the next EndBlock flush.
+func TestEmptySnapshotRejected(t *testing.T) {
 	k, ctx, ctrl, mocks := testkeeper.GetConsumerKeeperAndCtx(t, testkeeper.NewInMemKeeperParams(t))
 	defer ctrl.Finish()
 	testkeeper.StubClientState(mocks, "provider-0")
@@ -633,18 +647,87 @@ func TestSnapshotEmptyRemovesAll(t *testing.T) {
 	})
 	require.NoError(t, k.SetHighestValsetUpdateID(ctx, 1))
 	k.SetProviderClientID(ctx, "07-tendermint-0")
+	k.SetLastVSCRecvTime(ctx, ctx.BlockTime())
 
-	snap := types.NewValidatorSetChangePacketData(nil, 2)
-	snap.IsSnapshot = true
-	require.NoError(t, k.OnRecvVSCPacketV2(ctx, "07-tendermint-0", snap))
+	// Advance block time so a mutation to LastVSCRecvTime would be observable.
+	laterCtx := ctx.WithBlockTime(ctx.BlockTime().Add(time.Hour))
 
-	pending, ok := k.GetPendingChanges(ctx)
-	require.True(t, ok)
-	require.Len(t, pending.ValidatorUpdates, 2)
+	snapNoUpdates := types.NewValidatorSetChangePacketData(nil, 2)
+	snapNoUpdates.IsSnapshot = true
+	err = k.OnRecvVSCPacketV2(laterCtx, "07-tendermint-0", snapNoUpdates)
+	require.Error(t, err, "a snapshot with no updates must be rejected")
+	require.True(t, errorsmod.IsOf(err, consumertypes.ErrEmptyValidatorSet))
 
-	for _, u := range pending.ValidatorUpdates {
-		require.Equal(t, int64(0), u.Power, "all validators should be removed by empty snapshot")
-	}
+	snapAllZero := types.NewValidatorSetChangePacketData([]abci.ValidatorUpdate{
+		{PubKey: pkA, Power: 0},
+		{PubKey: pkB, Power: 0},
+	}, 2)
+	snapAllZero.IsSnapshot = true
+	err = k.OnRecvVSCPacketV2(laterCtx, "07-tendermint-0", snapAllZero)
+	require.Error(t, err, "a snapshot with only zero-power updates must be rejected")
+	require.True(t, errorsmod.IsOf(err, consumertypes.ErrEmptyValidatorSet))
+
+	// The rejection happens before any state change.
+	_, ok := k.GetPendingChanges(ctx)
+	require.False(t, ok, "a rejected packet must not stage pending changes")
+	highestID, _, err := k.GetHighestValsetUpdateID(ctx)
+	require.NoError(t, err)
+	require.Equal(t, uint64(1), highestID, "a rejected packet must not advance the highest vsc id")
+	require.Equal(t, ctx.BlockTime(), k.GetLastVSCRecvTime(laterCtx),
+		"a rejected packet must not advance the staleness clock")
+}
+
+// TestDiffCannotEmptyValidatorSet exercises the same guard for diff packets:
+// a diff that would remove every validator (alone or combined with the
+// already-accumulated pending changes) is exactly as fatal as an empty
+// snapshot and must be rejected, while an empty heartbeat diff and a diff
+// that leaves at least one validator standing keep flowing.
+func TestDiffCannotEmptyValidatorSet(t *testing.T) {
+	k, ctx, ctrl, mocks := testkeeper.GetConsumerKeeperAndCtx(t, testkeeper.NewInMemKeeperParams(t))
+	defer ctrl.Finish()
+	testkeeper.StubClientState(mocks, "provider-0")
+
+	pkA, err := cryptocodec.ToCmtProtoPublicKey(ed25519.GenPrivKey().PubKey())
+	require.NoError(t, err)
+	pkB, err := cryptocodec.ToCmtProtoPublicKey(ed25519.GenPrivKey().PubKey())
+	require.NoError(t, err)
+
+	k.ApplyCCValidatorChanges(ctx, []abci.ValidatorUpdate{{PubKey: pkA, Power: 10}})
+	require.NoError(t, k.SetHighestValsetUpdateID(ctx, 1))
+	k.SetProviderClientID(ctx, "07-tendermint-0")
+
+	// An empty heartbeat diff over a live set is untouched by the guard.
+	heartbeat := types.NewValidatorSetChangePacketData(nil, 2)
+	require.NoError(t, k.OnRecvVSCPacketV2(ctx, "07-tendermint-0", heartbeat),
+		"an empty heartbeat diff over a non-empty set must be accepted")
+
+	// A diff removing the only validator would empty the set: rejected.
+	removeAll := types.NewValidatorSetChangePacketData([]abci.ValidatorUpdate{{PubKey: pkA, Power: 0}}, 3)
+	err = k.OnRecvVSCPacketV2(ctx, "07-tendermint-0", removeAll)
+	require.Error(t, err, "a diff removing every validator must be rejected")
+	require.True(t, errorsmod.IsOf(err, consumertypes.ErrEmptyValidatorSet))
+	highestID, _, err := k.GetHighestValsetUpdateID(ctx)
+	require.NoError(t, err)
+	require.Equal(t, uint64(2), highestID, "a rejected diff must not advance the highest vsc id")
+
+	// Pending changes count: a diff adding B, followed by a diff zeroing both
+	// A and B, would still empty the resulting set even though B never made it
+	// into the applied cross-chain set.
+	addB := types.NewValidatorSetChangePacketData([]abci.ValidatorUpdate{{PubKey: pkB, Power: 5}}, 3)
+	require.NoError(t, k.OnRecvVSCPacketV2(ctx, "07-tendermint-0", addB))
+
+	removeBoth := types.NewValidatorSetChangePacketData([]abci.ValidatorUpdate{
+		{PubKey: pkA, Power: 0},
+		{PubKey: pkB, Power: 0},
+	}, 4)
+	err = k.OnRecvVSCPacketV2(ctx, "07-tendermint-0", removeBoth)
+	require.Error(t, err, "a diff emptying the set together with pending changes must be rejected")
+	require.True(t, errorsmod.IsOf(err, consumertypes.ErrEmptyValidatorSet))
+
+	// Removing A alone leaves the pending B standing: accepted.
+	removeA := types.NewValidatorSetChangePacketData([]abci.ValidatorUpdate{{PubKey: pkA, Power: 0}}, 4)
+	require.NoError(t, k.OnRecvVSCPacketV2(ctx, "07-tendermint-0", removeA),
+		"a diff leaving at least one validator standing must be accepted")
 }
 
 // TestSnapshotReplacesEarlierPendingChanges delivers a diff packet to populate
