@@ -13,7 +13,7 @@ punish anyone:
 | Evidence | Message | Consequence |
 |---|---|---|
 | Double-sign (duplicate vote) | `MsgSubmitConsumerDoubleVoting` | slash + jail + tombstone |
-| Light-client attack (IBC misbehaviour) | `MsgSubmitConsumerMisbehaviour` | byzantine signers slashed + jailed + tombstoned; an attack that leaves no punishable validator stops the consumer instead |
+| Light-client attack (IBC misbehaviour) | `MsgSubmitConsumerMisbehaviour` | the consumer is paused; nobody is punished; the byzantine set is attributed on the event |
 
 Both messages are permissionless -- any account can submit them as an ordinary
 provider transaction. This is distinct from downtime, which flows automatically
@@ -93,50 +93,43 @@ providerd tx vaasprovider submit-consumer-misbehaviour \
 headers). CLI source: `NewSubmitConsumerMisbehaviourCmd` in
 [tx.go](../x/vaas/provider/client/cli/tx.go).
 
-### Verification and punishment
+### Verification and containment
 
 `HandleConsumerMisbehaviour`
 ([consumer_equivocation.go](../x/vaas/provider/keeper/consumer_equivocation.go))
-punishes an identifiable light-client attack at the same severity as
-double-signing:
+verifies a light-client attack and contains it. No validator is punished on
+this path:
 
-1. `CheckMisbehaviour` verifies the chain id and client id match the consumer,
+1. Evidence for a consumer that is not `LAUNCHED` is rejected up front, so
+   re-submitting evidence against an already-paused consumer is a cheap no-op.
+2. `CheckMisbehaviour` verifies the chain id and client id match the consumer,
    that the two headers are at the same height and within the client trusting
    period, and that they genuinely conflict (different block id hashes, each
    valid against its trusted consensus state).
-2. `GetByzantineValidators` extracts the validators that signed both conflicting
-   headers -- the byzantine set.
-3. Each byzantine validator is punished through the shared equivocation path
-   (`punishEquivocation`, the same primitive double-voting uses), applying the
-   global `InfractionParameters.DoubleSign`: **slash**, **jail**, and
-   **tombstone**. An already-tombstoned validator is a no-op, so repeated
-   submissions are idempotent.
+3. `GetByzantineValidators` extracts the validators that signed both
+   conflicting headers. The attribution is informational only: it is logged and
+   carried on the submission event so operators and governance can see who
+   signed what. An amnesia attack has no attributable set by construction and
+   the extraction returns none; containment applies all the same.
+4. The consumer is **paused** (`containLightClientAttack` calling
+   `PauseConsumerChain`): VSC service stops, both evidence paths reject the
+   consumer (they gate on `LAUNCHED`), its pending downtime accusations are
+   cancelled, and an auto-stop is scheduled at `MaxPauseDuration` so governance
+   silence converges to `STOPPED`.
 
-### When nobody can be punished: terminal escalation
+Nobody is slashed, jailed, or tombstoned, deliberately. A malicious consumer
+binary can orchestrate a fork in which every honest validator signs each
+conflicting header once, so the byzantine set of a verified attack is exactly
+as likely to be the victim set; punishing it, at any threshold, hands the
+attacker a targeting tool. The full rationale, including why this must not be
+"fixed" back to slashing, lives on `HandleConsumerMisbehaviour`'s contract.
 
-The escalation does not trigger on amnesia specifically. It triggers whenever a
-*verified* light-client attack produces **no punished validator at all**
-(`len(punished) == 0` in `HandleConsumerMisbehaviour`). Two ways to get there:
-
-- An **amnesia** attack has no byzantine set by construction
-  (`GetByzantineValidators` returns empty), so there is nobody to attribute.
-- A non-empty byzantine set whose members cannot be punished -- most plainly,
-  validators that have all since **unbonded**. `JailAndTombstoneValidator`
-  refuses an unbonded validator, the error is logged, and that validator is not
-  counted as punished. An already-tombstoned validator, by contrast, *does*
-  count as punished, which is what keeps repeat submissions idempotent.
-
-In either case the provider stops the consumer and schedules it for removal
-(`escalateUnpunishableLightClientAttack` calling
-`StopAndPrepareForConsumerRemoval`). **This is terminal.** No code path leaves
-`CONSUMER_PHASE_STOPPED`: `MsgResumeConsumer` requires `PAUSED`,
-`MsgRemoveConsumer` requires `LAUNCHED` or `PAUSED`, and no cancel or veto
-message exists. The consumer is deleted once the provider unbonding period
-elapses, and a chain that wants to run again must register a new consumer.
-
-The escalation is a no-op if the consumer has already left `LAUNCHED`, so
-re-submitting the same evidence does not schedule the removal twice. Either way
-the submission surfaces the outcome.
+What happens after containment is a governance decision: `MsgResumeConsumer`
+resumes the chain (with a forced snapshot) once the fork is understood and
+fixed, or the pause expires into `STOPPED`. A resume does not bury the
+evidence: while the conflicting headers remain verifiable within the client's
+trusting period, re-submission pauses the consumer again, which is correct
+while the fork still stands.
 
 ---
 
