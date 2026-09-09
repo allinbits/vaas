@@ -3,9 +3,6 @@ package keeper
 import (
 	"strconv"
 
-	"github.com/allinbits/vaas/x/vaas/consumer/types"
-	vaastypes "github.com/allinbits/vaas/x/vaas/types"
-
 	abci "github.com/cometbft/cometbft/abci/types"
 
 	ibctmtypes "github.com/cosmos/ibc-go/v10/modules/light-clients/07-tendermint"
@@ -13,6 +10,9 @@ import (
 	errorsmod "cosmossdk.io/errors"
 
 	sdk "github.com/cosmos/cosmos-sdk/types"
+
+	"github.com/allinbits/vaas/x/vaas/consumer/types"
+	vaastypes "github.com/allinbits/vaas/x/vaas/types"
 )
 
 // OnRecvVSCPacketV2 handles a validator-set-change packet from the provider.
@@ -132,7 +132,7 @@ func (k Keeper) OnRecvVSCPacketV2(ctx sdk.Context, consumerClientID string, newC
 // a diff the answer depends on state: the set EndBlock will apply is the
 // current cross-chain set overlaid with the already-accumulated pending
 // changes and then with this packet's updates, latest write per key winning --
-// the same per-pubkey overwrite AccumulateChanges and ApplyCCValidatorChanges
+// the same per-pubkey overwrite AccumulateChanges and ApplyVaasValidatorChanges
 // perform. Both checks reuse the existing helpers and cost one walk of the
 // current set, so the diff case (a diff removing every validator is exactly as
 // fatal as an empty snapshot) is guarded rather than only the snapshot resync

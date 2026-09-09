@@ -30,7 +30,7 @@ message ValidatorSetChangePacketData {
   ];
   // valset_update_id is the provider's monotonically increasing counter
   // identifying this update. The consumer uses it to detect and drop
-  // out-of-order packets delivered over IBC v2's unordered channel.
+  // out-of-order packets delivered over IBC v2.
   uint64 valset_update_id = 2;
   // consumer_in_debt signals whether the consumer chain has fallen behind
   // on its per-block fee payments to the provider. The provider stamps the

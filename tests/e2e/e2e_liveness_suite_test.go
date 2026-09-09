@@ -133,7 +133,7 @@ func (s *LivenessIntegrationTestSuite) SetupSuite() {
 				}
 			}
 
-			if provider, ok := appState["provider"].(map[string]any); ok {
+			if provider, ok := appState["vaasprovider"].(map[string]any); ok {
 				if params, ok := provider["params"].(map[string]any); ok {
 					// One block per epoch so a VSC packet (and its ack) flows every
 					// block. Combined with the fast block time (see patchConfigToml)
@@ -166,7 +166,7 @@ func (s *LivenessIntegrationTestSuite) SetupSuite() {
 				}
 			}
 
-			if provider, ok := appState["provider"].(map[string]any); ok {
+			if provider, ok := appState["vaasprovider"].(map[string]any); ok {
 				// The suite's whole clock is the 600s unbonding: consumer
 				// registration requires the unbonding period to exceed the
 				// downtime challenge horizon (evidence max age + challenge

@@ -4,12 +4,12 @@ import (
 	"fmt"
 	"time"
 
-	vaastypes "github.com/allinbits/vaas/x/vaas/types"
-
 	clienttypes "github.com/cosmos/ibc-go/v10/modules/core/02-client/types"
 	channeltypesv2 "github.com/cosmos/ibc-go/v10/modules/core/04-channel/v2/types"
 
 	"cosmossdk.io/math"
+
+	vaastypes "github.com/allinbits/vaas/x/vaas/types"
 )
 
 const (

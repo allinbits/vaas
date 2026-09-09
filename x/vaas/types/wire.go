@@ -33,7 +33,7 @@ func (vsc ValidatorSetChangePacketData) Validate() error {
 	// Every validator update must carry a consensus pubkey that decodes to a
 	// supported key type and a non-negative power. The consumer decodes each
 	// pubkey when it flushes these updates to CometBFT in
-	// ApplyCCValidatorChanges (consumer EndBlock); an undecodable pubkey there
+	// ApplyVaasValidatorChanges (consumer EndBlock); an undecodable pubkey there
 	// panics and halts block production. Rejecting the packet here converts
 	// that deferred, chain-halting panic into an error acknowledgement.
 	for i := range vsc.ValidatorUpdates {

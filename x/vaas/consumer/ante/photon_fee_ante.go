@@ -4,14 +4,14 @@ import (
 	"context"
 	"strings"
 
-	consumertypes "github.com/allinbits/vaas/x/vaas/consumer/types"
-
 	transfertypes "github.com/cosmos/ibc-go/v10/modules/apps/transfer/types"
 	channeltypesv2 "github.com/cosmos/ibc-go/v10/modules/core/04-channel/v2/types"
 
 	errorsmod "cosmossdk.io/errors"
 
 	sdk "github.com/cosmos/cosmos-sdk/types"
+
+	consumertypes "github.com/allinbits/vaas/x/vaas/consumer/types"
 )
 
 // This file implements the PhotonFeeDecorator, an ante decorator that enforces

@@ -4,14 +4,14 @@ import (
 	"bytes"
 	"encoding/json"
 
-	vaastypes "github.com/allinbits/vaas/x/vaas/types"
-
 	abci "github.com/cometbft/cometbft/abci/types"
 
 	ibctmtypes "github.com/cosmos/ibc-go/v10/modules/light-clients/07-tendermint"
 
 	errorsmod "cosmossdk.io/errors"
 	"cosmossdk.io/math"
+
+	vaastypes "github.com/allinbits/vaas/x/vaas/types"
 )
 
 // NewRestartGenesisState returns a consumer GenesisState that has already been established.
@@ -82,7 +82,7 @@ func (gs GenesisState) Validate() error {
 		}
 
 		if gs.ProviderClientId != "" {
-			return errorsmod.Wrap(vaastypes.ErrInvalidGenesis, "provider client id cannot be set for new chain. It must be established on handshake")
+			return errorsmod.Wrap(vaastypes.ErrInvalidGenesis, "provider client id cannot be set for new chain; it is established by the relayer after launch")
 		}
 		if len(gs.HeightToValsetUpdateId) != 0 {
 			return errorsmod.Wrap(vaastypes.ErrInvalidGenesis, "HeightToValsetUpdateId must be nil for new chain")

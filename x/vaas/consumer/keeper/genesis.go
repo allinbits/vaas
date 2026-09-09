@@ -5,28 +5,17 @@ import (
 	"errors"
 	"fmt"
 
-	"github.com/allinbits/vaas/x/vaas/consumer/types"
-	vaastypes "github.com/allinbits/vaas/x/vaas/types"
-
 	abci "github.com/cometbft/cometbft/abci/types"
 
 	"cosmossdk.io/collections"
 
 	sdk "github.com/cosmos/cosmos-sdk/types"
+
+	"github.com/allinbits/vaas/x/vaas/consumer/types"
+	vaastypes "github.com/allinbits/vaas/x/vaas/types"
 )
 
 func (k Keeper) InitGenesis(ctx sdk.Context, state *types.GenesisState) []abci.ValidatorUpdate {
-	// PreVAAS is true during the process of a standalone to consumer changeover.
-	// At the PreVAAS point in the process, the standalone chain has just been upgraded to include
-	// the consumer VAAS module, but the standalone staking keeper is still managing the validator set.
-	// Once the provider validator set starts validating blocks, the consumer VAAS module
-	// will take over proof of stake capabilities, but the standalone staking keeper will
-	// stick around for slashing/jailing purposes.
-	if state.PreVAAS {
-		k.SetPreVAASTrue(ctx)
-		k.MarkAsPrevStandaloneChain(ctx)
-		k.SetInitialValSet(ctx, state.Provider.InitialValSet)
-	}
 	k.SetInitGenesisHeight(ctx, ctx.BlockHeight())
 
 	k.SetParams(ctx, state.Params)
@@ -68,10 +57,6 @@ func (k Keeper) InitGenesis(ctx sdk.Context, state *types.GenesisState) []abci.V
 		if state.ProviderChainId != "" {
 			k.SetProviderChainId(ctx, state.ProviderChainId)
 		}
-	}
-
-	if state.PreVAAS {
-		return []abci.ValidatorUpdate{}
 	}
 
 	// Restore the VSC staleness clock (see IsVSCStale) from a restart export.
@@ -130,12 +115,12 @@ func (k Keeper) InitGenesis(ctx sdk.Context, state *types.GenesisState) []abci.V
 		}
 	}
 
-	// populate cross chain validators states with initial valset
-	k.ApplyCCValidatorChanges(ctx, state.Provider.InitialValSet)
+	// populate VAAS validators states with initial valset
+	k.ApplyVaasValidatorChanges(ctx, state.Provider.InitialValSet)
 	return state.Provider.InitialValSet
 }
 
-// ExportGenesis returns the CCV consumer module's exported genesis
+// ExportGenesis returns the VAAS consumer module's exported genesis
 func (k Keeper) ExportGenesis(ctx sdk.Context) (genesis *types.GenesisState) {
 	params := k.GetConsumerParams(ctx)
 	if !params.Enabled {
@@ -161,17 +146,15 @@ func (k Keeper) ExportGenesis(ctx sdk.Context) (genesis *types.GenesisState) {
 	)
 
 	// Preserve the pinned provider chain id across a restart (see
-	// InitGenesis); absent when no pin has ever been established (e.g. a
-	// PreVAAS chain that has not launched yet).
+	// InitGenesis); absent when no pin has ever been established.
 	if chainId, ok := k.GetProviderChainId(ctx); ok {
 		genesis.ProviderChainId = chainId
 	}
 
-	// Preserve the VSC staleness clock across a restart (see IsVSCStale). On a
-	// chain that launched as NewChain the clock is always set (armed at
-	// genesis), so a restart export always carries it; the conditional covers
-	// keepers where it was never armed (a PreVAAS chain still waiting for its
-	// first VSC), which keep the absent-default (never stale) on import.
+	// Preserve the VSC staleness clock across a restart (see IsVSCStale). The
+	// clock is armed at the first post-genesis block, so a restart export
+	// always carries it; the conditional covers an export taken before that
+	// first block, which keeps the absent-default (never stale) on import.
 	has, err := k.LastVSCRecvTime.Has(ctx)
 	if err != nil {
 		panic(err)

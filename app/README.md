@@ -88,10 +88,10 @@ both chains, and creates the IBC v2 path. Stop it later with
 
 ```bash
 # List consumer chains
-./build/provider --home ~/.provider-localnet query provider list-consumer-chains
+./build/provider --home ~/.provider-localnet query vaasprovider list-consumer-chains
 
 # Get consumer genesis (built by the provider at launch)
-./build/provider --home ~/.provider-localnet query provider consumer-genesis 0
+./build/provider --home ~/.provider-localnet query vaasprovider consumer-genesis 0
 ```
 
 ### Query Consumer
@@ -135,7 +135,7 @@ reach the consumer's `spawn_time`. `make consumer-start` already includes a
 retry loop; if it still fails, check that the consumer was registered:
 
 ```bash
-./build/provider --home ~/.provider-localnet query provider list-consumer-chains
+./build/provider --home ~/.provider-localnet query vaasprovider list-consumer-chains
 
 # Re-fetch and re-run manually
 make consumer-genesis CONSUMER_ID=0

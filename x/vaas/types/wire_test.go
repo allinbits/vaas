@@ -33,7 +33,7 @@ func TestValidatorSetChangePacketData_IsSnapshotRoundTrip(t *testing.T) {
 // rejects a validator update whose consensus pubkey cannot be decoded or whose
 // power is negative, so a malformed VSC packet is rejected on receipt (an
 // error acknowledgement) instead of being accepted and later panicking the
-// consumer at EndBlock when ApplyCCValidatorChanges decodes the pubkey.
+// consumer at EndBlock when ApplyVaasValidatorChanges decodes the pubkey.
 func TestValidatorSetChangePacketDataValidateValidatorUpdates(t *testing.T) {
 	goodPK, err := cryptocodec.ToCmtProtoPublicKey(ed25519.GenPrivKey().PubKey())
 	require.NoError(t, err)
