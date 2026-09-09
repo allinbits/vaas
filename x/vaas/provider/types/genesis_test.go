@@ -756,18 +756,28 @@ func TestConsumerStateValidatePerPhase(t *testing.T) {
 			cs.RemovalTime = &rt
 		}, "removal time must be empty"},
 
-		// DELETED: chain_id + owner + init_params + metadata preserved; everything else cleared.
+		// DELETED: owner + init_params + metadata preserved; everything else
+		// cleared, including the chain id, which the teardown released so it can
+		// be registered again.
 		{"DELETED valid", func(cs *types.ConsumerState) {
 			*cs = base(types.CONSUMER_PHASE_DELETED)
+			cs.ChainId = ""
 			cs.InitParams = validInit
 			cs.Metadata = &validMetadata
 			cs.ConsumerGenesis = vaastypes.ConsumerGenesisState{} // cleared
 		}, ""},
 		{"DELETED missing metadata", func(cs *types.ConsumerState) {
 			*cs = base(types.CONSUMER_PHASE_DELETED)
+			cs.ChainId = ""
 			cs.InitParams = validInit
 			cs.ConsumerGenesis = vaastypes.ConsumerGenesisState{}
 		}, "metadata required"},
+		{"DELETED with retained chain id", func(cs *types.ConsumerState) {
+			*cs = base(types.CONSUMER_PHASE_DELETED)
+			cs.InitParams = validInit
+			cs.Metadata = &validMetadata
+			cs.ConsumerGenesis = vaastypes.ConsumerGenesisState{}
+		}, "chain id must be empty"},
 	}
 
 	for _, tc := range cases {

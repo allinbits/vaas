@@ -180,7 +180,7 @@ func (s *IntegrationTestSuite) testLivenessRemoval() {
 		removeJSON := fmt.Sprintf(`{
   "messages": [{
     "@type": "/vaas.provider.v1.MsgRemoveConsumer",
-    "authority": %q,
+    "signer": %q,
     "consumer_id": %q
   }],
   "metadata": "ipfs://test",
