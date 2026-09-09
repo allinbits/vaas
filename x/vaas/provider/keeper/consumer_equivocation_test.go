@@ -11,6 +11,8 @@ import (
 
 	"cosmossdk.io/math"
 
+	ibctmtypes "github.com/cosmos/ibc-go/v10/modules/light-clients/07-tendermint"
+
 	cryptocodec "github.com/cosmos/cosmos-sdk/crypto/codec"
 	cryptotypes "github.com/cosmos/cosmos-sdk/crypto/types"
 	sdk "github.com/cosmos/cosmos-sdk/types"
@@ -833,156 +835,88 @@ func getTestInfractionParameters() *types.InfractionParameters {
 	}
 }
 
-// legacyDecEq matches a math.LegacyDec argument by numeric value (LegacyDec.Equal)
-// rather than reflect.DeepEqual, so a fraction read back from the params store
-// still matches regardless of the underlying big.Int representation.
-type legacyDecEq struct{ expected math.LegacyDec }
-
-func (m legacyDecEq) Matches(x any) bool {
-	d, ok := x.(math.LegacyDec)
-	return ok && d.Equal(m.expected)
-}
-
-func (m legacyDecEq) String() string {
-	return fmt.Sprintf("is numerically equal to LegacyDec %s", m.expected)
-}
-
-// TestHandleConfirmedLightClientAttackTombstonesByzantineValidators asserts that
-// a confirmed light-client attack with an identifiable byzantine set is punished
-// exactly like vote-level double signing: each signer is slashed at the
-// DoubleSign fraction, jailed, and tombstoned. The consumer keeps running --
-// the chain-level escalation only fires when nobody can be punished.
-func TestHandleConfirmedLightClientAttackTombstonesByzantineValidators(t *testing.T) {
-	keeper, ctx, ctrl, mocks := testkeeper.GetProviderKeeperAndCtx(t, testkeeper.NewInMemKeeperParams(t))
+// TestConfirmedLightClientAttackPausesConsumerWithoutPunishment asserts the
+// containment policy: a confirmed attack with an identifiable byzantine set
+// pauses the consumer and punishes nobody. No staking or slashing calls are
+// mocked, so the controller also proves that no validator was slashed,
+// jailed, or tombstoned. The byzantine set is still attributed and returned.
+func TestConfirmedLightClientAttackPausesConsumerWithoutPunishment(t *testing.T) {
+	keeper, ctx, ctrl, _ := testkeeper.GetProviderKeeperAndCtx(t, testkeeper.NewInMemKeeperParams(t))
 	defer ctrl.Finish()
 
 	ctx = ctx.WithBlockTime(time.Now())
 
 	const consumerID = uint64(0)
 	keeper.SetConsumerPhase(ctx, consumerID, types.CONSUMER_PHASE_LAUNCHED)
-	keeper.SetInfractionParams(ctx, types.DefaultInfractionParameters())
-	doubleSign := keeper.GetInfractionParams(ctx).DoubleSign
-	require.True(t, doubleSign.Tombstone, "double-sign params must tombstone")
 
 	// Build a byzantine validator. With no assigned consumer key, its consumer
 	// consensus address is its provider consensus address.
 	byzantinePV := tmtypes.NewMockPV()
 	byzantineVal := tmtypes.NewValidator(byzantinePV.PrivKey.PubKey(), 1)
-
 	sdkPubKey, err := cryptocodec.FromCmtPubKeyInterface(byzantineVal.PubKey)
 	require.NoError(t, err)
-	validator, err := stakingtypes.NewValidator(
-		sdk.ValAddress(sdkPubKey.Address()).String(),
-		sdkPubKey,
-		stakingtypes.NewDescription("", "", "", "", ""),
-	)
+	providerAddr := types.NewProviderConsAddress(sdk.ConsAddress(sdkPubKey.Address()))
+
+	maxPause := keeper.GetMaxPauseDuration(ctx)
+	attributed, err := keeper.ContainLightClientAttackForTest(ctx, consumerID, []*tmtypes.Validator{byzantineVal})
 	require.NoError(t, err)
-	validator.Status = stakingtypes.Bonded
+	require.Equal(t, []types.ProviderConsAddress{providerAddr}, attributed,
+		"the byzantine set must still be attributed for operators and governance")
 
-	consAddr, err := validator.GetConsAddr()
+	// Contained, not punished: the consumer is paused with the auto-stop
+	// scheduled, and the deferred mock controller proves no slash, jail, or
+	// tombstone ever happened.
+	require.Equal(t, types.CONSUMER_PHASE_PAUSED, keeper.GetConsumerPhase(ctx, consumerID))
+	wantExpiration := ctx.BlockTime().Add(maxPause)
+	gotExpiration, err := keeper.GetConsumerPauseExpirationTime(ctx, consumerID)
 	require.NoError(t, err)
-	providerAddr := types.NewProviderConsAddress(consAddr)
-	valAddr, err := keeper.ValidatorAddressCodec().StringToBytes(validator.GetOperator())
+	require.Equal(t, wantExpiration, gotExpiration)
+	queued, err := keeper.GetConsumersToBeAutoStopped(ctx, wantExpiration)
 	require.NoError(t, err)
-
-	// SlashValidator and JailAndTombstoneValidator each look the validator up
-	// and check its tombstone flag once.
-	mocks.MockStakingKeeper.EXPECT().GetValidatorByConsAddr(ctx, consAddr).Return(validator, nil).Times(2)
-	mocks.MockSlashingKeeper.EXPECT().IsTombstoned(ctx, consAddr).Return(false).Times(2)
-
-	// Slash must use the DoubleSign fraction and the double-sign infraction reason.
-	mocks.MockStakingKeeper.EXPECT().GetUnbondingDelegationsFromValidator(ctx, valAddr).Return(nil, nil)
-	mocks.MockStakingKeeper.EXPECT().GetRedelegationsFromSrcValidator(ctx, valAddr).Return(nil, nil)
-	mocks.MockStakingKeeper.EXPECT().GetLastValidatorPower(ctx, valAddr).Return(int64(500), nil)
-	mocks.MockStakingKeeper.EXPECT().PowerReduction(ctx).Return(math.NewInt(1))
-	mocks.MockStakingKeeper.EXPECT().SlashWithInfractionReason(
-		ctx, consAddr, int64(0), int64(500), legacyDecEq{doubleSign.SlashFraction}, stakingtypes.Infraction_INFRACTION_DOUBLE_SIGN,
-	).Return(math.NewInt(25), nil)
-
-	// Jail and tombstone.
-	mocks.MockStakingKeeper.EXPECT().Jail(ctx, consAddr)
-	mocks.MockSlashingKeeper.EXPECT().JailUntil(ctx, consAddr, gomock.Any())
-	mocks.MockSlashingKeeper.EXPECT().Tombstone(ctx, consAddr)
-
-	punished, err := keeper.SlashOrEscalateLightClientAttackForTest(ctx, consumerID, []*tmtypes.Validator{byzantineVal})
-	require.NoError(t, err)
-	require.Equal(t, []types.ProviderConsAddress{providerAddr}, punished)
-
-	// Punishing the byzantine set does not stop the chain.
-	require.Equal(t, types.CONSUMER_PHASE_LAUNCHED, keeper.GetConsumerPhase(ctx, consumerID))
+	require.Equal(t, []uint64{consumerID}, queued.Ids)
 }
 
-// TestHandleConfirmedLightClientAttackEscalatesWhenUnidentifiable asserts that a
-// confirmed attack with no identifiable byzantine validators (an amnesia
-// attack) is not a silent no-op: the consumer is stopped and scheduled for
-// removal. Re-submitting the same evidence does not schedule removal twice.
-func TestHandleConfirmedLightClientAttackEscalatesWhenUnidentifiable(t *testing.T) {
-	keeper, ctx, ctrl, mocks := testkeeper.GetProviderKeeperAndCtx(t, testkeeper.NewInMemKeeperParams(t))
+// TestUnattributableLightClientAttackStillPausesConsumer asserts that a
+// confirmed attack with no identifiable byzantine set (an amnesia attack) is
+// contained all the same: the fork is proven either way, only the attribution
+// is missing. A second containment attempt fails on the phase guard instead
+// of double-scheduling the auto-stop.
+func TestUnattributableLightClientAttackStillPausesConsumer(t *testing.T) {
+	keeper, ctx, ctrl, _ := testkeeper.GetProviderKeeperAndCtx(t, testkeeper.NewInMemKeeperParams(t))
 	defer ctrl.Finish()
 
 	ctx = ctx.WithBlockTime(time.Now())
-	keeper.SetInfractionParams(ctx, types.DefaultInfractionParameters())
-
-	unbonding := 21 * 24 * time.Hour
-	mocks.MockStakingKeeper.EXPECT().UnbondingTime(gomock.Any()).Return(unbonding, nil).AnyTimes()
 
 	const consumerID = uint64(0)
 	keeper.SetConsumerPhase(ctx, consumerID, types.CONSUMER_PHASE_LAUNCHED)
 
-	// No byzantine validators can be extracted: no slash/jail mocks are set, so
-	// ctrl.Finish() also asserts that no validator was punished.
-	punished, err := keeper.SlashOrEscalateLightClientAttackForTest(ctx, consumerID, nil)
+	attributed, err := keeper.ContainLightClientAttackForTest(ctx, consumerID, nil)
 	require.NoError(t, err)
-	require.Empty(t, punished)
+	require.Empty(t, attributed)
+	require.Equal(t, types.CONSUMER_PHASE_PAUSED, keeper.GetConsumerPhase(ctx, consumerID))
 
-	require.Equal(t, types.CONSUMER_PHASE_STOPPED, keeper.GetConsumerPhase(ctx, consumerID))
-	removalTime, err := keeper.GetConsumerRemovalTime(ctx, consumerID)
+	_, err = keeper.ContainLightClientAttackForTest(ctx, consumerID, nil)
+	require.ErrorIs(t, err, types.ErrInvalidPhase,
+		"containing an already-paused consumer must fail on the phase guard")
+	wantExpiration := ctx.BlockTime().Add(keeper.GetMaxPauseDuration(ctx))
+	queued, err := keeper.GetConsumersToBeAutoStopped(ctx, wantExpiration)
 	require.NoError(t, err)
-	require.Equal(t, ctx.BlockTime().Add(unbonding), removalTime)
-
-	toRemove, err := keeper.GetConsumersToBeRemoved(ctx, removalTime)
-	require.NoError(t, err)
-	require.Contains(t, toRemove.Ids, consumerID)
-
-	// Re-submitting the same unattributable attack is a no-op: the consumer is
-	// already stopping, so it is not appended to the removal queue again.
-	punished, err = keeper.SlashOrEscalateLightClientAttackForTest(ctx, consumerID, nil)
-	require.NoError(t, err)
-	require.Empty(t, punished)
-
-	toRemove, err = keeper.GetConsumersToBeRemoved(ctx, removalTime)
-	require.NoError(t, err)
-	require.Len(t, toRemove.Ids, 1)
+	require.Len(t, queued.Ids, 1, "the auto-stop must not be scheduled twice")
 }
 
-// TestHandleConfirmedLightClientAttackEscalatesWhenSignersUnpunishable asserts
-// that when a byzantine signer is identified but cannot be punished (here:
-// already unbonded), the confirmed attack still escalates to stopping the
-// consumer rather than doing nothing.
-func TestHandleConfirmedLightClientAttackEscalatesWhenSignersUnpunishable(t *testing.T) {
-	keeper, ctx, ctrl, mocks := testkeeper.GetProviderKeeperAndCtx(t, testkeeper.NewInMemKeeperParams(t))
+// TestHandleConsumerMisbehaviourRejectsNotLaunched asserts the cheap up-front
+// gate: evidence against a consumer that is not launched (here: already
+// paused by earlier evidence) is rejected before any light-client
+// verification work, so re-submissions against a contained consumer cost
+// nothing. No client-keeper expectations are mocked, which also proves
+// CheckMisbehaviour was never reached.
+func TestHandleConsumerMisbehaviourRejectsNotLaunched(t *testing.T) {
+	keeper, ctx, ctrl, _ := testkeeper.GetProviderKeeperAndCtx(t, testkeeper.NewInMemKeeperParams(t))
 	defer ctrl.Finish()
 
-	ctx = ctx.WithBlockTime(time.Now())
-	keeper.SetInfractionParams(ctx, types.DefaultInfractionParameters())
-	mocks.MockStakingKeeper.EXPECT().UnbondingTime(gomock.Any()).Return(21*24*time.Hour, nil).AnyTimes()
-
 	const consumerID = uint64(0)
-	keeper.SetConsumerPhase(ctx, consumerID, types.CONSUMER_PHASE_LAUNCHED)
+	keeper.SetConsumerPhase(ctx, consumerID, types.CONSUMER_PHASE_PAUSED)
 
-	byzantinePV := tmtypes.NewMockPV()
-	byzantineVal := tmtypes.NewValidator(byzantinePV.PrivKey.PubKey(), 1)
-	sdkPubKey, err := cryptocodec.FromCmtPubKeyInterface(byzantineVal.PubKey)
-	require.NoError(t, err)
-	consAddr := sdk.ConsAddress(sdkPubKey.Address())
-
-	// SlashValidator finds the validator already unbonded and refuses to slash;
-	// with nobody punishable the attack escalates to the chain level.
-	mocks.MockStakingKeeper.EXPECT().GetValidatorByConsAddr(ctx, consAddr).
-		Return(stakingtypes.Validator{Status: stakingtypes.Unbonded}, nil)
-
-	punished, err := keeper.SlashOrEscalateLightClientAttackForTest(ctx, consumerID, []*tmtypes.Validator{byzantineVal})
-	require.NoError(t, err)
-	require.Empty(t, punished)
-	require.Equal(t, types.CONSUMER_PHASE_STOPPED, keeper.GetConsumerPhase(ctx, consumerID))
+	_, err := keeper.HandleConsumerMisbehaviour(ctx, consumerID, ibctmtypes.Misbehaviour{})
+	require.ErrorIs(t, err, types.ErrInvalidPhase)
 }

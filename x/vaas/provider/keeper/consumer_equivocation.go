@@ -163,22 +163,53 @@ func (k Keeper) VerifyDoubleVotingEvidence(
 //
 
 // HandleConsumerMisbehaviour verifies an IBC light-client misbehaviour for a
-// consumer chain and, when it is a confirmed equivocation light-client attack,
-// punishes the byzantine validators identically to vote-level double signing:
-// the validators that signed both conflicting headers are slashed, jailed, and
-// tombstoned at the DoubleSign infraction severity through the same
-// punishEquivocation primitive HandleConsumerDoubleVoting uses. The two paths
-// differ only in how the evidence is verified (two votes vs two headers), not
-// in how the equivocation is punished.
+// consumer chain and, when it is a confirmed light-client attack, contains it:
+// the consumer is paused (see containLightClientAttack) and no validator is
+// punished. Evidence for a consumer that is not launched is rejected up
+// front, which also makes re-submitting evidence against an already-paused
+// consumer a cheap no-op.
 //
-// When the attack is cryptographically confirmed but no validator can be
-// punished, the response escalates to the chain level rather than silently
-// doing nothing; see slashOrEscalateLightClientAttack.
+// No validator is punished on this path, deliberately. Everything in the
+// evidence can be real: a malicious consumer binary can orchestrate an
+// application-level fork in which every honest validator signs each
+// conflicting header once, believing it legitimate. The per-node double-sign
+// protection never fires, and the resulting evidence is indistinguishable
+// on-chain from a genuine coalition attack, because the distinction does not
+// exist in the data. Any automatic punishment triggered by attacker-shaped
+// evidence becomes the attacker's tool: punishing the full byzantine set
+// lets one submission tombstone the provider's honest validator set, and
+// punishing only small sets is no better, since the binary chooses who signs
+// and turns the threshold into a targeting tool against chosen validators.
+// Do not reintroduce slashing, jailing, or tombstoning here, at any
+// threshold, without revisiting this design. Governance-gated punishment was
+// considered and rejected too: it moves a decision the data cannot ground
+// into politics.
 //
-// Returns the provider consensus addresses that were punished (empty when the
-// attack was escalated to the chain level).
+// Pausing the consumer is the containment that stays safe under
+// attacker-shaped evidence, because it touches only the chain that provably
+// forked and no validator's stake. It is also not redundant: nothing else
+// would end the relationship on its own. This module never freezes the IBC
+// client, and a forked consumer keeps producing acks on whichever branch the
+// relayer follows, so under detection alone the provider would keep serving
+// VSCs to a compromised chain indefinitely. What happens after containment
+// is a human decision in the right place: governance resumes the consumer
+// (MsgResumeConsumer, with a forced snapshot) once the fork is understood
+// and fixed, or lets the pause expire into STOPPED via MaxPauseDuration. A
+// resume does not bury the evidence: while the conflicting headers remain
+// verifiable within the client's trusting period, re-submission pauses the
+// consumer again, which is correct while the fork still stands.
+//
+// Returns the byzantine set mapped to provider consensus addresses.
+// Attribution is deliberately informational: it is logged and carried on the
+// submission event so operators and governance can see exactly who signed
+// the conflicting headers while they decide, but nothing acts on it.
 func (k Keeper) HandleConsumerMisbehaviour(ctx sdk.Context, consumerId uint64, misbehaviour ibctmtypes.Misbehaviour) ([]types.ProviderConsAddress, error) {
 	logger := k.Logger(ctx)
+
+	if phase := k.GetConsumerPhase(ctx, consumerId); phase != types.CONSUMER_PHASE_LAUNCHED {
+		return nil, errorsmod.Wrapf(types.ErrInvalidPhase,
+			"cannot handle misbehaviour for consumer %d: expected phase launched, got %s", consumerId, phase)
+	}
 
 	// Check that the misbehaviour is valid and that the client consensus states at trusted heights are within trusting period
 	if err := k.CheckMisbehaviour(ctx, consumerId, misbehaviour); err != nil {
@@ -197,106 +228,50 @@ func (k Keeper) HandleConsumerMisbehaviour(ctx sdk.Context, consumerId uint64, m
 		return nil, err
 	}
 
-	return k.slashOrEscalateLightClientAttack(ctx, consumerId, byzantineValidators)
+	return k.containLightClientAttack(ctx, consumerId, byzantineValidators)
 }
 
-// slashOrEscalateLightClientAttack applies the punishment policy for a
-// confirmed light-client attack whose byzantine set has already been extracted
-// from the conflicting headers. Each identified validator is slashed, jailed,
-// and tombstoned at the DoubleSign severity via punishEquivocation -- the same
-// primitive that punishes vote-level double signing -- so a single validator
-// that cannot be slashed (e.g. already unbonded) does not prevent punishing the
-// rest of the coalition, and re-submitted evidence for an already-tombstoned
-// validator is idempotent.
+// containLightClientAttack is the containment response to a verified
+// light-client attack: it maps the byzantine set to provider consensus
+// addresses for attribution and pauses the consumer whose fork the evidence
+// proves. It punishes nobody; HandleConsumerMisbehaviour's contract explains
+// why. An amnesia attack has no identifiable byzantine set by construction
+// (GetByzantineValidators returns none), and containment applies all the
+// same: the fork is proven either way, only the attribution is missing.
 //
-// When no validator could be punished the attack is escalated to the chain
-// level via escalateUnpunishableLightClientAttack: an amnesia attack has no
-// identifiable byzantine set by construction (GetByzantineValidators returns
-// none), and other conflicts may leave only unbonded signers, yet a confirmed
-// attack must never be a silent no-op. Returns the punished provider consensus
-// addresses (empty when the attack was escalated).
-func (k Keeper) slashOrEscalateLightClientAttack(
+// The pause does the whole job. A paused consumer receives no further VSC
+// packets (QueueVSCPackets serves only launched consumers), both evidence
+// paths reject it (HandleConsumerDoubleVoting and this handler gate on
+// launched, closing the pipeline a malicious binary would keep feeding), its
+// pending downtime accusations are cancelled (a forked chain's accusations
+// are no more trustworthy than its headers; see PauseConsumerChain), and an
+// auto-stop at MaxPauseDuration guarantees governance silence converges to
+// STOPPED.
+func (k Keeper) containLightClientAttack(
 	ctx sdk.Context,
 	consumerId uint64,
 	byzantineValidators []*tmtypes.Validator,
 ) ([]types.ProviderConsAddress, error) {
-	logger := k.Logger(ctx)
-	infractionParams := k.GetInfractionParams(ctx)
-
-	punished := make([]types.ProviderConsAddress, 0, len(byzantineValidators))
+	byzantineAddrs := make([]types.ProviderConsAddress, 0, len(byzantineValidators))
 	for _, v := range byzantineValidators {
-		providerAddr := k.GetProviderAddrFromConsumerAddr(
+		byzantineAddrs = append(byzantineAddrs, k.GetProviderAddrFromConsumerAddr(
 			ctx,
 			consumerId,
 			types.NewConsumerConsAddress(sdk.ConsAddress(v.Address.Bytes())),
-		)
-
-		alreadyTombstoned, err := k.punishEquivocation(ctx, providerAddr, infractionParams.DoubleSign)
-		if err != nil {
-			logger.Error(
-				"failed to punish byzantine validator for light client attack",
-				"consumerId", consumerId,
-				"providerAddr", providerAddr.String(),
-				"error", err.Error(),
-			)
-			continue
-		}
-
-		punished = append(punished, providerAddr)
-		logger.Info(
-			"punished byzantine validator for light client attack",
-			"consumerId", consumerId,
-			"providerAddr", providerAddr.String(),
-			"already_tombstoned", alreadyTombstoned,
-		)
+		))
 	}
 
-	if len(punished) == 0 {
-		if err := k.escalateUnpunishableLightClientAttack(ctx, consumerId); err != nil {
-			return nil, err
-		}
-		return punished, nil
+	if err := k.PauseConsumerChain(ctx, consumerId); err != nil {
+		return nil, fmt.Errorf("containing light client attack for consumer %d: %w", consumerId, err)
 	}
 
-	logger.Info(
-		"confirmed equivocation light client attack",
+	k.Logger(ctx).Info(
+		"confirmed light client attack: consumer paused pending a governance decision",
 		"consumerId", consumerId,
-		"byzantine_validators", punished,
+		"byzantine_validators", byzantineAddrs,
 	)
 
-	return punished, nil
-}
-
-// escalateUnpunishableLightClientAttack is the chain-level response to a
-// confirmed light-client attack for which no validator could be held
-// accountable. The consumer proved able to produce conflicting valid headers
-// yet no individual can be punished, so its consensus is treated as compromised
-// and the chain is stopped and scheduled for removal through the standard
-// lifecycle path (StopAndPrepareForConsumerRemoval). Only a launched consumer
-// is escalated: once it has already left the launched phase (e.g. a
-// re-submission of the same evidence after the first escalation) this is a
-// no-op, so the removal is not scheduled twice.
-func (k Keeper) escalateUnpunishableLightClientAttack(ctx sdk.Context, consumerId uint64) error {
-	logger := k.Logger(ctx)
-
-	if phase := k.GetConsumerPhase(ctx, consumerId); phase != types.CONSUMER_PHASE_LAUNCHED {
-		logger.Info(
-			"confirmed light client attack with no punishable validators; consumer already stopping",
-			"consumerId", consumerId,
-			"phase", phase.String(),
-		)
-		return nil
-	}
-
-	if err := k.StopAndPrepareForConsumerRemoval(ctx, consumerId); err != nil {
-		return fmt.Errorf("escalating unpunishable light client attack for consumer %d: %w", consumerId, err)
-	}
-
-	logger.Info(
-		"confirmed light client attack with no punishable validators; stopped consumer and scheduled removal",
-		"consumerId", consumerId,
-	)
-	return nil
+	return byzantineAddrs, nil
 }
 
 // GetByzantineValidators returns the validators that signed both headers.
@@ -482,11 +457,11 @@ func verifyLightBlockCommitSig(lightBlock tmtypes.LightBlock, sigIdx int) error 
 //
 
 // punishEquivocation slashes, jails, and tombstones the validator identified by
-// providerAddr at the given (DoubleSign) infraction severity. It is the shared
-// punishment primitive behind both equivocation paths -- vote-level double
-// signing (HandleConsumerDoubleVoting) and header-level light-client attacks
-// (HandleConsumerMisbehaviour) -- which differ only in how they verify the
-// evidence, not in how the equivocation is punished.
+// providerAddr at the given (DoubleSign) infraction severity. It is the
+// punishment primitive behind vote-level double signing
+// (HandleConsumerDoubleVoting). Header-level light-client attacks deliberately
+// do not use it: that path contains the consumer instead of punishing
+// validators (see HandleConsumerMisbehaviour).
 //
 // Re-submitted evidence for an already-tombstoned validator is idempotent: the
 // validator is not punished twice and no error is returned. The returned bool

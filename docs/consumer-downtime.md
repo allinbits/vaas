@@ -248,7 +248,9 @@ providerd tx provider challenge-consumer-downtime <consumer-id> <validator-cons-
 
 A successful challenge moves the consumer from `LAUNCHED` to `PAUSED` -- proven-corrupt
 reporting is grounds for suspension, but a bug deserves a recovery path that does not force
-re-registration. While paused:
+re-registration. A confirmed light-client attack pauses the consumer the same way: a fork
+proves the chain's consensus is compromised without proving who is at fault, so the provider
+contains the chain and punishes nobody (see `HandleConsumerMisbehaviour`). While paused:
 
 - No VSC packets are queued or sent; no fees are distributed; downtime evidence from the
   consumer is rejected.

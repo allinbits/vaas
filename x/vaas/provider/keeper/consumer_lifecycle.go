@@ -396,11 +396,14 @@ func (k Keeper) StopAndPrepareForConsumerRemoval(ctx sdk.Context, consumerId uin
 }
 
 // PauseConsumerChain transitions a launched consumer chain into
-// CONSUMER_PHASE_PAUSED following a successful downtime challenge (see
-// HandleChallengeConsumerDowntime, which calls this after paying withheld
-// fees): the challenge proved the validator was live, so every pending
-// downtime slash and this epoch's downtime marks for the consumer are
-// cancelled via CancelConsumerDowntimeState. A paused consumer is excluded from VSC packet
+// CONSUMER_PHASE_PAUSED when the provider must stop serving it: a successful
+// downtime challenge (see HandleChallengeConsumerDowntime, which calls this
+// after paying withheld fees) or a confirmed light-client attack (see
+// containLightClientAttack). Either way every pending downtime slash and this
+// epoch's downtime marks for the consumer are cancelled via
+// CancelConsumerDowntimeState: a won challenge proved the accusations wrong,
+// and a forked chain's accusations are no more trustworthy than its headers.
+// A paused consumer is excluded from VSC packet
 // queuing (QueueVSCPackets iterates GetAllLaunchedConsumerIds), fee
 // distribution, and evidence handling -- all of which require phase LAUNCHED.
 //
