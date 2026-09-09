@@ -268,6 +268,12 @@ message PendingDowntimeSlash {
   ];
   google.protobuf.Timestamp matures_at = 8
       [ (gogoproto.nullable) = false, (gogoproto.stdtime) = true ];
+  // consumer_cons_addr is the reporting validator's consensus address on the
+  // consumer chain, captured at acceptance. A challenge names this address,
+  // and provider_cons_addr above is derived from it through the key-assignment
+  // mapping; storing it lets the challenge find this slash even after that
+  // mapping is pruned or the validator rotates its consumer key.
+  bytes consumer_cons_addr = 9;
 }
 
 // AcceptedDowntimeWindow records one downtime-detection window whose evidence
