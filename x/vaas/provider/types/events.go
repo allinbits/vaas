@@ -13,9 +13,11 @@ const (
 
 	AttributeProviderValidatorAddress = "provider_validator_address"
 	// AttributeConsumerClientID carries the IBC client id declared for a
-	// consumer; defined here so the wholesale rewrite of this block does not
-	// drop it out from under its user. Harmless ahead of that user.
-	AttributeConsumerClientID        = "consumer_client_id"
+	// consumer via MsgUpdateConsumer.
+	AttributeConsumerClientID = "consumer_client_id"
+	// AttributePauseReason names, on the consumer_paused event, the
+	// PauseReason the consumer was paused for.
+	AttributePauseReason             = "reason"
 	AttributeConsumerConsensusPubKey = "consumer_consensus_pub_key"
 	AttributeSubmitterAddress        = "submitter_address"
 	AttributeConsumerId              = "consumer_id"
@@ -37,13 +39,4 @@ const (
 	// AttributeWithdrawPath values
 	WithdrawPathDirect        = "direct"
 	WithdrawPathCommunityPool = "community_pool"
-)
-
-const (
-	// AttributeConsumerClientID carries the IBC client id declared for a
-	// consumer via MsgUpdateConsumer.
-	AttributeConsumerClientID = "consumer_client_id"
-	// AttributePauseReason names, on the consumer_paused event, the
-	// PauseReason the consumer was paused for.
-	AttributePauseReason = "reason"
 )
