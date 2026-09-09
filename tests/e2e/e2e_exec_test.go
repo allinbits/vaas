@@ -47,7 +47,7 @@ func (s *baseTestSuite) dockerExec(containerID string, cmd []string) (bytes.Buff
 	// deliberately run commands expected to fail and assert on stderr
 	// themselves.
 	if inspect, inspectErr := s.dkrPool.Client.InspectExec(exec.ID); inspectErr == nil && inspect.ExitCode != 0 {
-		s.T().Logf("command exited %d: %v\nstdout: %s\nstderr: %s",
+		s.T().Logf("tolerated nonzero exit %d (callers assert on stderr; often an expected rejection or a poll miss): %v\nstdout: %s\nstderr: %s",
 			inspect.ExitCode, cmd, stdout.String(), stderr.String())
 	}
 
