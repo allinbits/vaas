@@ -645,7 +645,7 @@ func (s *baseTestSuite) declareConsumerClients(consumerID string) {
 	// log each failed attempt, since a simulation error only reaches stderr.
 	s.Require().Eventuallyf(func() bool {
 		stdout, stderr, err := s.dockerExec(s.providerValRes[0].Container.ID, []string{
-			providerBinary, "tx", "provider", "update-consumer", "/tmp/declare_client.json",
+			providerBinary, "tx", "vaasprovider", "update-consumer", "/tmp/declare_client.json",
 			"--from", "owner",
 			"--home", providerHomePath,
 			"--keyring-backend", "test",
