@@ -44,7 +44,9 @@ func (s *baseTestSuite) consumerUserBech32() string {
 // debt gate fires here just like it would for a real broadcast. It carries no
 // fee, keeping it neutral to the photon-only policy (simulation permits empty
 // fees) so the main suite, which enables that policy, can use it too. Returns
-// the stderr output so callers can inspect rejection reasons.
+// the stderr output so callers can inspect rejection reasons; a successful
+// simulation prints "gas estimate: <n>" there, which is the only reliable
+// success marker (the exec helper does not surface exit codes as errors).
 func (s *baseTestSuite) consumerBankSendDryRun() (string, error) {
 	user := s.consumerUserBech32()
 	_, stderr, err := s.dockerExec(s.consumerValRes[0].Container.ID, []string{
@@ -170,7 +172,10 @@ func (s *IntegrationTestSuite) testConsumerDebtFlow() {
 		s.T().Log("waiting for consumer to enter debt (bank send should be rejected)...")
 		s.Require().Eventuallyf(func() bool {
 			out, err := s.consumerBankSendDryRun()
-			return err != nil || strings.Contains(out, "consumer chain is in debt")
+			if err != nil {
+				return false
+			}
+			return strings.Contains(out, "consumer chain is in debt")
 		}, 2*time.Minute, 5*time.Second,
 			"consumer did not enter debt; last dry-run did not surface debt error")
 
@@ -185,7 +190,11 @@ func (s *IntegrationTestSuite) testConsumerDebtFlow() {
 			if err != nil {
 				return false
 			}
-			return !strings.Contains(out, "consumer chain is in debt")
+			// The simulation must actually succeed, not merely fail for some
+			// other reason: a broken CLI or an unreachable node also stops
+			// producing the debt error, and only the gas estimate proves the
+			// ante chain admitted the tx.
+			return strings.Contains(out, "gas estimate")
 		}, 2*time.Minute, 5*time.Second,
 			"consumer did not exit debt after fee pool was funded")
 	})
