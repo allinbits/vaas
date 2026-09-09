@@ -81,10 +81,15 @@ const (
 
 	// DefaultMaxPauseDuration is the default maximum time a consumer chain may
 	// remain in the PAUSED phase before the provider automatically stops it
-	// (see PauseConsumerChain). 720h (30 days) gives governance ample time to
-	// resolve whatever triggered the pause without leaving the consumer
-	// paused indefinitely.
-	DefaultMaxPauseDuration = 720 * time.Hour
+	// (see PauseConsumerChain). Resuming is a governance act
+	// (MsgResumeConsumer), so this must exceed the provider's governance
+	// latency (deposit period + voting period, plus time to notice the pause
+	// and draft the proposal) or the resume path is unreachable and every
+	// pause silently becomes terminal. 1080h (45 days) clears AtomOne's
+	// 28-day voting period with a two-week runway to notice the pause, draft
+	// the proposal, and reach the deposit; operators on chains with slower
+	// governance must raise it accordingly.
+	DefaultMaxPauseDuration = 1080 * time.Hour
 )
 
 // NewParams creates new provider parameters with provided arguments
