@@ -10,7 +10,6 @@ import (
 	"cosmossdk.io/math"
 
 	sdk "github.com/cosmos/cosmos-sdk/types"
-	govkeeper "github.com/cosmos/cosmos-sdk/x/gov/keeper"
 )
 
 // NewKeeper fixes the per-block fee denom at construction. The guard exists so
@@ -34,7 +33,6 @@ func TestNewKeeperRejectsInvalidFeeDenom(t *testing.T) {
 		}()
 		providerkeeper.NewKeeper(
 			nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil,
-			govkeeper.Keeper{},
 			"authority",
 			nil, nil,
 			"fee_collector",

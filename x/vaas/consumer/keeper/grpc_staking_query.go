@@ -3,6 +3,9 @@ package keeper
 import (
 	"context"
 
+	"google.golang.org/grpc/codes"
+	"google.golang.org/grpc/status"
+
 	"cosmossdk.io/math"
 
 	sdk "github.com/cosmos/cosmos-sdk/types"
@@ -31,6 +34,9 @@ func NewStakingQueryServer(k *Keeper) StakingQueryServer {
 // MaxEntries, MinCommissionRate) are therefore left at their zero values
 // rather than fabricated, so callers are not misled.
 func (s StakingQueryServer) Params(goCtx context.Context, req *stakingtypes.QueryParamsRequest) (*stakingtypes.QueryParamsResponse, error) {
+	if req == nil {
+		return nil, status.Error(codes.InvalidArgument, "empty request")
+	}
 	ctx := sdk.UnwrapSDKContext(goCtx)
 	params := s.keeper.GetConsumerParams(ctx)
 

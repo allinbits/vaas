@@ -4,6 +4,9 @@ import (
 	providerante "github.com/allinbits/vaas/x/vaas/provider/ante"
 	ibcproviderkeeper "github.com/allinbits/vaas/x/vaas/provider/keeper"
 
+	ibcante "github.com/cosmos/ibc-go/v10/modules/core/ante"
+	ibckeeper "github.com/cosmos/ibc-go/v10/modules/core/keeper"
+
 	errorsmod "cosmossdk.io/errors"
 
 	sdk "github.com/cosmos/cosmos-sdk/types"
@@ -12,11 +15,12 @@ import (
 )
 
 // HandlerOptions extend the SDK's AnteHandler options by requiring the VAAS
-// provider keeper.
+// provider keeper and the IBC keeper.
 type HandlerOptions struct {
 	ante.HandlerOptions
 
 	ProviderKeeper ibcproviderkeeper.Keeper
+	IBCKeeper      *ibckeeper.Keeper
 }
 
 func NewAnteHandler(options HandlerOptions) (sdk.AnteHandler, error) {
@@ -28,6 +32,9 @@ func NewAnteHandler(options HandlerOptions) (sdk.AnteHandler, error) {
 	}
 	if options.SignModeHandler == nil {
 		return nil, errorsmod.Wrap(sdkerrors.ErrLogic, "sign mode handler is required for ante builder")
+	}
+	if options.IBCKeeper == nil {
+		return nil, errorsmod.Wrap(sdkerrors.ErrLogic, "IBC keeper is required for AnteHandler")
 	}
 
 	sigGasConsumer := options.SigGasConsumer
@@ -50,6 +57,7 @@ func NewAnteHandler(options HandlerOptions) (sdk.AnteHandler, error) {
 		ante.NewSigGasConsumeDecorator(options.AccountKeeper, sigGasConsumer),
 		ante.NewSigVerificationDecorator(options.AccountKeeper, options.SignModeHandler),
 		ante.NewIncrementSequenceDecorator(options.AccountKeeper),
+		ibcante.NewRedundantRelayDecorator(options.IBCKeeper),
 	}
 
 	return sdk.ChainAnteDecorators(anteDecorators...), nil
