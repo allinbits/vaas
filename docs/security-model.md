@@ -76,21 +76,21 @@ No automatic re-binding exists.
 | Infraction | Detection | Punishment |
 |---|---|---|
 | Double-sign (duplicate vote) on a consumer | `MsgSubmitConsumerDoubleVoting`, re-verified on the provider | slash + jail + tombstone at `InfractionParameters.DoubleSign` |
-| Light-client attack (IBC misbehaviour) on a consumer | `MsgSubmitConsumerMisbehaviour`, re-verified on the provider | identifiable byzantine signers slashed + jailed + tombstoned at the double-sign level; a confirmed attack that leaves no punishable validator stops the consumer and schedules it for removal, terminally |
+| Light-client attack (IBC misbehaviour) on a consumer | `MsgSubmitConsumerMisbehaviour`, re-verified on the provider | the consumer is paused, nobody is punished; the byzantine set is attributed on the event; governance resumes the chain or lets the pause expire into `STOPPED` |
 | Downtime on a consumer | falsifiable IBC evidence packets | fee-priced slash held behind a challenge window; a successful `MsgChallengeConsumerDowntime` cancels it and moves the consumer to `PAUSED` |
 | Double-sign on the provider itself | CometBFT `DuplicateVoteEvidence` via `x/evidence` | slash + jail + tombstone |
 
-**The light-client escalation is terminal.** A confirmed light-client attack
-where the provider could punish nobody -- an amnesia attack, which has no
-byzantine set by construction, but equally a byzantine set whose members have
-all unbonded and so cannot be jailed -- moves the consumer to `STOPPED` via
-`escalateUnpunishableLightClientAttack`. Nothing takes a consumer back out of
-`STOPPED`: `MsgResumeConsumer` requires `PAUSED`, `MsgRemoveConsumer` requires
-`LAUNCHED` or `PAUSED`, and there is no cancel or veto message. The consumer is
-deleted once the provider unbonding period elapses. That is the intended
-posture -- a consumer that demonstrably produced conflicting valid headers has
-forfeited the benefit of the doubt -- but it means an escalation cannot be
-undone, and a chain that wants to run again must register afresh.
+**A confirmed light-client attack punishes nobody, deliberately.** A malicious
+consumer binary can orchestrate a fork in which every honest validator signs
+each conflicting header once, so the byzantine set of a verified attack is
+exactly as likely to be the victim set: the distinction does not exist in the
+data, and any automatic punishment keyed on attacker-shaped evidence becomes a
+targeting tool, at any threshold. The provider instead contains the chain: the
+consumer is paused, VSC service stops, both evidence paths reject it, and its
+pending downtime accusations are cancelled. Governance resumes the chain once
+the fork is understood and fixed, or lets the pause expire into `STOPPED` via
+`MaxPauseDuration`. See [equivocation-evidence.md](equivocation-evidence.md)
+and the design contract on `HandleConsumerMisbehaviour`.
 
 Provider-native equivocation is punished only if the embedding chain wires the
 Cosmos SDK `x/evidence` module and its CometBFT evidence handling. This
@@ -103,6 +103,45 @@ priced from foregone fees, not a flat stake fraction, is capped at
 `InfractionParameters.Downtime.SlashFraction`, never jails, and can be cancelled
 by the accused validator within the challenge window by proving liveness. See
 [consumer-downtime.md](consumer-downtime.md).
+
+### The consumer binary is in the trust path
+
+Mandatory validation means every provider validator runs every consumer's
+binary: code the protocol never vets. Two exposures follow, and they are
+accepted and bounded rather than solved:
+
+- **Direct key abuse (the double-vote residual).** A validator that runs a
+  consumer binary with an in-process signing key hands that key to the binary,
+  which can then sign fabricated conflicting votes directly -- no fork, nothing
+  for the misbehaviour path to contain -- and the resulting
+  `MsgSubmitConsumerDoubleVoting` evidence is genuine by construction: the
+  provider cannot distinguish it from a real equivocation, and slashes the
+  validator's provider stake. The protocol deliberately does nothing automatic
+  about this, for the same reason the light-client path punishes nobody. The
+  defenses are operational: run consumer nodes behind an external signer whose
+  double-sign guard the binary cannot bypass (this closes the vector
+  completely), and vet the binary against the registered `binary_hash` before
+  validating. The fork-based flavor of binary griefing, by contrast, is
+  contained on-chain: the fork evidence itself pauses the consumer and closes
+  its evidence pipeline.
+- **The refusal dilemma.** A validator that vets a binary, finds it malicious,
+  and refuses to run it is indistinguishable from an offline node, so the
+  downtime path will accuse it. The current model bounds the cost: downtime
+  accusations start only after the launch grace (`DowntimeGracePeriod`,
+  default 7 days), every accepted accusation waits out the challenge window
+  (`DowntimeChallengeWindow`, default 7 days) before executing, and pausing,
+  stopping, or removing the consumer cancels all of its pending accusations.
+  The playbook is: refuse from launch and submit the removal proposal
+  immediately. Every accusation whose challenge window is still open when the
+  removal passes dies with the chain; what executes is the windows that
+  mature while governance deliberates. On a provider whose voting period
+  exceeds the grace plus the challenge window -- AtomOne's does -- some
+  windows will mature before any proposal can pass, so principled refusal has
+  a real but bounded price: the per-window fraction (default `0.0001`, no
+  tombstone) times the windows that close between grace expiry and removal.
+  Reducing that price to zero needs protocol help (deferring downtime
+  execution while a removal proposal is in voting) and is deliberately left
+  to future work.
 
 ## Fee escrow
 
