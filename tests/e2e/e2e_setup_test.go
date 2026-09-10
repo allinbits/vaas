@@ -27,6 +27,12 @@ const (
 // provider chain and consumer chain containers.
 type IntegrationTestSuite struct {
 	baseTestSuite
+
+	// Cross-subtest state for the equivocation cancellation pair (see
+	// testEquivocationQueuedBeforeRemoval / testEquivocationCancelledByRemoval).
+	eqval2Valoper      string
+	eqval2AccAddr      string
+	eqval2TokensBefore int64
 }
 
 // makeCodec creates a proto codec with the standard cosmos SDK interfaces registered.
@@ -81,11 +87,14 @@ func (s *IntegrationTestSuite) SetupSuite() {
 		// policy, and testPhotonFeeEnforcement proves the policy end to end.
 		enableConsumerPhotonFees: true,
 
+		govVotingPeriod: 30 * time.Second,
 		patchProviderGenesis: func(appState map[string]any) {
-			// Set fast voting period
+			// A fast voting period, still wide enough for the deferral tests
+			// to land a removal proposal inside it with room to spare on both
+			// sides of the punishment maturity they time it over.
 			if gov, ok := appState["gov"].(map[string]any); ok {
 				if params, ok := gov["params"].(map[string]any); ok {
-					params["voting_period"] = "15s"
+					params["voting_period"] = "30s"
 				}
 			}
 
@@ -96,6 +105,14 @@ func (s *IntegrationTestSuite) SetupSuite() {
 				if params, ok := provider["params"].(map[string]any); ok {
 					params["blocks_per_epoch"] = "5"
 					params["fees_per_block_amount"] = "1000"
+					// Shrink the equivocation execution delay and the
+					// removal-vote deferral margin so the pending-punishment
+					// tests (queue, defer behind a vote, execute or cancel)
+					// complete within a CI run. The delay comfortably covers
+					// submitting a removal proposal and its voting period;
+					// the margin covers proposal execution.
+					params["equivocation_execution_delay"] = "120s"
+					params["removal_vote_deferral_margin"] = "30s"
 				}
 
 				// Shrink the downtime detection window and the challenge window so
