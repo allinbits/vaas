@@ -62,6 +62,32 @@ message Params {
   // to STOPPED (and eventually DELETED) rather than hanging indefinitely.
   google.protobuf.Duration max_pause_duration = 7
       [ (gogoproto.nullable) = false, (gogoproto.stdduration) = true ];
+
+  // RefusalPauseThreshold is the fraction of bonded power that must refuse a
+  // consumer (MsgSetConsumerRefusal) for the provider to pause it. That much
+  // power refusing to sign halts the consumer's consensus physically anyway;
+  // the threshold turns the implicit halt into an explicit, attributable
+  // pause with the standard PAUSED lifecycle. In (0, 1).
+  string refusal_pause_threshold = 8;
+
+  // EquivocationExecutionDelay is how long a verified consumer equivocation
+  // waits, jailed but not yet slashed or tombstoned, before the irreversible
+  // punishment executes. The window exists so a removal proposal against the
+  // consumer can reach its voting period first: a chain condemned by
+  // governance takes its evidence down with it (see
+  // SweepPendingEquivocationPunishments). The accused validator's unbonding
+  // operations are held for the whole pending window, so the delay never
+  // becomes an unbond-escape.
+  google.protobuf.Duration equivocation_execution_delay = 9
+      [ (gogoproto.nullable) = false, (gogoproto.stdduration) = true ];
+
+  // RemovalVoteDeferralMargin is added past a removal vote's end when a
+  // pending punishment (downtime or equivocation) is deferred behind it,
+  // covering the gap between the voting end time and the proposal's
+  // execution in the following blocks: a passed removal cancels the
+  // consumer's pending punishments, so they must not fire first.
+  google.protobuf.Duration removal_vote_deferral_margin = 10
+      [ (gogoproto.nullable) = false, (gogoproto.stdduration) = true ];
 }
 
 // AddressList contains a list of consensus addresses
@@ -215,9 +241,12 @@ enum ConsumerPhase {
   // deleted.
   CONSUMER_PHASE_DELETED = 5;
   // PAUSED defines the phase of a launched consumer chain suspended by a
-  // successful downtime challenge (MsgChallengeConsumerDowntime). It exits
-  // via governance-authorized resumption (MsgResumeConsumer), removal, or
-  // the pause auto-stop after max_pause_duration.
+  // successful downtime challenge (MsgChallengeConsumerDowntime) or by the
+  // bonded power refusing it reaching refusal_pause_threshold
+  // (MsgSetConsumerRefusal). A paused chain receives no VSC packets and no fee
+  // distribution and its evidence is rejected; governance resumes it
+  // (MsgResumeConsumer) or removes it, or it stops on its own when the pause
+  // outlives max_pause_duration.
   CONSUMER_PHASE_PAUSED = 6;
 }
 
@@ -268,6 +297,15 @@ message PendingDowntimeSlash {
   ];
   google.protobuf.Timestamp matures_at = 8
       [ (gogoproto.nullable) = false, (gogoproto.stdtime) = true ];
+  // MaturesAtExtended records that this entry's maturity was pushed past the
+  // end of a removal vote for its consumer (see SweepPendingDowntimeSlashes).
+  // Only that one proposal ever shields the entry: while it is still in its
+  // voting period at the extended maturity the entry waits for its tally, and
+  // no later proposal defers it again.
+  bool matures_at_extended = 10;
+  // DeferredByProposalId is the governance proposal whose removal vote the
+  // entry was extended behind (0 when never extended).
+  uint64 deferred_by_proposal_id = 11;
 }
 
 // AcceptedDowntimeWindow records one downtime-detection window whose evidence
@@ -319,4 +357,36 @@ message SlashJailParameters {
       [ (gogoproto.nullable) = false, (gogoproto.stdduration) = true ];
   // Indicates whether the validator should be tombstoned when slashed
   bool tombstone = 3;
+}
+
+// PendingEquivocationPunishment is a verified consumer equivocation whose
+// slash and tombstone have not executed yet: the validator is jailed at
+// acceptance, its unbonding operations are held, and the irreversible part
+// waits out EquivocationExecutionDelay (extended once past a live removal
+// vote for the consumer). Only a governance removal of the consumer cancels
+// it: either the removal executing, or the removal vote it deferred behind
+// passing. A consumer stopped for any other reason leaves it to execute.
+message PendingEquivocationPunishment {
+  uint64 consumer_id = 1;
+  bytes provider_cons_addr = 2;
+  // the height of the infraction on the consumer chain; part of the entry's
+  // identity, so re-submitted evidence for the same infraction is a no-op.
+  // The slash itself is issued at infraction height 0, as every
+  // consumer-sourced slash is.
+  int64 infraction_height = 3;
+  google.protobuf.Timestamp executes_at = 4
+      [ (gogoproto.nullable) = false, (gogoproto.stdtime) = true ];
+  // ExecutesAtExtended records that execution was pushed past the end of a
+  // removal vote for the consumer. Only that one proposal ever shields the
+  // entry: while it is still in its voting period at the extended maturity
+  // the entry waits for its tally, and no later proposal defers it again.
+  bool executes_at_extended = 5;
+  // DeferredByProposalId is the governance proposal whose removal vote the
+  // entry was extended behind (0 when never extended). At the extended
+  // maturity its tally decides: PASSED cancels the punishment, and so does
+  // FAILED while the consumer is no longer running, since that is a passed
+  // vote whose MsgRemoveConsumer found nothing left to remove (the consumer
+  // stopped for another reason during the vote). Any other outcome lets the
+  // punishment execute.
+  uint64 deferred_by_proposal_id = 6;
 }

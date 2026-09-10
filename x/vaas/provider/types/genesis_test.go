@@ -88,7 +88,7 @@ func TestValidateGenesisState(t *testing.T) {
 				nil,
 				[]types.ConsumerState{launchedCS(0, "chainid-1", "client-id", false)},
 				types.NewParams(
-					types.DefaultTrustingPeriodFraction, types.DefaultLivenessGraceFraction, time.Hour, 600, math.NewInt(42), types.DefaultMinDepositBlocks, types.DefaultMaxPauseDuration),
+					types.DefaultTrustingPeriodFraction, types.DefaultLivenessGraceFraction, time.Hour, 600, math.NewInt(42), types.DefaultMinDepositBlocks, types.DefaultMaxPauseDuration, types.DefaultRefusalPauseThreshold, types.DefaultEquivocationExecutionDelay, types.DefaultRemovalVoteDeferralMargin),
 				nil,
 				nil,
 				nil,
@@ -136,7 +136,7 @@ func TestValidateGenesisState(t *testing.T) {
 				types.NewParams(
 					"0.0", // 0 trusting period fraction here
 					types.DefaultLivenessGraceFraction,
-					vaastypes.DefaultVAASTimeoutPeriod, 600, math.NewInt(42), types.DefaultMinDepositBlocks, types.DefaultMaxPauseDuration),
+					vaastypes.DefaultVAASTimeoutPeriod, 600, math.NewInt(42), types.DefaultMinDepositBlocks, types.DefaultMaxPauseDuration, types.DefaultRefusalPauseThreshold, types.DefaultEquivocationExecutionDelay, types.DefaultRemovalVoteDeferralMargin),
 				nil,
 				nil,
 				nil,
@@ -155,7 +155,7 @@ func TestValidateGenesisState(t *testing.T) {
 					types.DefaultTrustingPeriodFraction,
 					types.DefaultLivenessGraceFraction,
 					0, // 0 ccv timeout here
-					600, math.NewInt(42), types.DefaultMinDepositBlocks, types.DefaultMaxPauseDuration),
+					600, math.NewInt(42), types.DefaultMinDepositBlocks, types.DefaultMaxPauseDuration, types.DefaultRefusalPauseThreshold, types.DefaultEquivocationExecutionDelay, types.DefaultRemovalVoteDeferralMargin),
 				nil,
 				nil,
 				nil,
@@ -823,4 +823,157 @@ func getInitialConsumerGenesis(t *testing.T, chainID string, preVAAS bool) vaast
 	params.Enabled = true
 
 	return *vaastypes.NewInitialConsumerGenesisState(clientState, consensusState, valUpdates, preVAAS, params)
+}
+
+// TestValidateGenesisState_RefusalAndEquivocationLists covers the refusal
+// model's genesis lists: refusal signals, pending equivocation punishments,
+// and the unbonding holds behind them.
+func TestValidateGenesisState_RefusalAndEquivocationLists(t *testing.T) {
+	owner := sdk.AccAddress([]byte("vaas-test-owner-1234")).String()
+	cs := types.ConsumerState{
+		ConsumerId:   0,
+		ChainId:      "chain-1",
+		Phase:        types.CONSUMER_PHASE_REGISTERED,
+		OwnerAddress: owner,
+	}
+	valoper := sdk.ValAddress([]byte("refusing-validator-1")).String()
+	accused := []byte("provider-cons-addr-one11")
+
+	build := func() *types.GenesisState {
+		return types.NewGenesisState(
+			types.DefaultValsetUpdateID, nil,
+			[]types.ConsumerState{cs},
+			types.DefaultParams(),
+			nil, nil, nil, nil, nil,
+		)
+	}
+	punishment := func() types.PendingEquivocationPunishment {
+		return types.PendingEquivocationPunishment{
+			ConsumerId:       0,
+			ProviderConsAddr: accused,
+			InfractionHeight: 42,
+			ExecutesAt:       time.Unix(300, 0).UTC(),
+		}
+	}
+
+	t.Run("valid lists", func(t *testing.T) {
+		gs := build()
+		deferred := punishment()
+		deferred.InfractionHeight = 43
+		deferred.ExecutesAtExtended = true
+		deferred.DeferredByProposalId = 7
+		gs.ConsumerRefusals = []types.ConsumerRefusal{{ConsumerId: 0, ValidatorAddress: valoper}}
+		gs.PendingEquivocationPunishments = []types.PendingEquivocationPunishment{punishment(), deferred}
+		gs.HeldUnbondingOps = []types.HeldUnbondingOps{{ProviderConsAddr: accused, UnbondingOpIds: []uint64{5, 6}}}
+		require.NoError(t, gs.Validate())
+	})
+
+	t.Run("refusal for unknown consumer", func(t *testing.T) {
+		gs := build()
+		gs.ConsumerRefusals = []types.ConsumerRefusal{{ConsumerId: 9, ValidatorAddress: valoper}}
+		require.ErrorContains(t, gs.Validate(), "unknown consumer")
+	})
+
+	t.Run("refusal with a malformed validator address", func(t *testing.T) {
+		gs := build()
+		gs.ConsumerRefusals = []types.ConsumerRefusal{{ConsumerId: 0, ValidatorAddress: "not-an-address"}}
+		require.Error(t, gs.Validate())
+	})
+
+	t.Run("duplicate refusal", func(t *testing.T) {
+		gs := build()
+		gs.ConsumerRefusals = []types.ConsumerRefusal{
+			{ConsumerId: 0, ValidatorAddress: valoper},
+			{ConsumerId: 0, ValidatorAddress: valoper},
+		}
+		require.ErrorContains(t, gs.Validate(), "duplicate")
+	})
+
+	t.Run("punishment for unknown consumer", func(t *testing.T) {
+		gs := build()
+		bad := punishment()
+		bad.ConsumerId = 9
+		gs.PendingEquivocationPunishments = []types.PendingEquivocationPunishment{bad}
+		require.ErrorContains(t, gs.Validate(), "unknown consumer")
+	})
+
+	t.Run("punishment without an execution time", func(t *testing.T) {
+		gs := build()
+		bad := punishment()
+		bad.ExecutesAt = time.Time{}
+		gs.PendingEquivocationPunishments = []types.PendingEquivocationPunishment{bad}
+		require.ErrorContains(t, gs.Validate(), "executes_at must be set")
+	})
+
+	t.Run("punishment at a non-positive height", func(t *testing.T) {
+		gs := build()
+		bad := punishment()
+		bad.InfractionHeight = 0
+		gs.PendingEquivocationPunishments = []types.PendingEquivocationPunishment{bad}
+		require.ErrorContains(t, gs.Validate(), "infraction height must be positive")
+	})
+
+	t.Run("punishment extended without its proposal, or the reverse", func(t *testing.T) {
+		gs := build()
+		bad := punishment()
+		bad.ExecutesAtExtended = true
+		gs.PendingEquivocationPunishments = []types.PendingEquivocationPunishment{bad}
+		require.ErrorContains(t, gs.Validate(), "must be set together")
+		bad = punishment()
+		bad.DeferredByProposalId = 7
+		gs.PendingEquivocationPunishments = []types.PendingEquivocationPunishment{bad}
+		require.ErrorContains(t, gs.Validate(), "must be set together")
+	})
+
+	t.Run("duplicate punishment", func(t *testing.T) {
+		gs := build()
+		gs.PendingEquivocationPunishments = []types.PendingEquivocationPunishment{punishment(), punishment()}
+		require.ErrorContains(t, gs.Validate(), "duplicate pending equivocation punishment")
+	})
+
+	t.Run("holds without a pending punishment", func(t *testing.T) {
+		gs := build()
+		gs.HeldUnbondingOps = []types.HeldUnbondingOps{{ProviderConsAddr: accused, UnbondingOpIds: []uint64{5}}}
+		require.ErrorContains(t, gs.Validate(), "without a pending equivocation punishment")
+	})
+
+	t.Run("holds with no operation ids, or id 0", func(t *testing.T) {
+		gs := build()
+		gs.PendingEquivocationPunishments = []types.PendingEquivocationPunishment{punishment()}
+		gs.HeldUnbondingOps = []types.HeldUnbondingOps{{ProviderConsAddr: accused}}
+		require.ErrorContains(t, gs.Validate(), "no operation ids")
+		gs.HeldUnbondingOps = []types.HeldUnbondingOps{{ProviderConsAddr: accused, UnbondingOpIds: []uint64{0}}}
+		require.ErrorContains(t, gs.Validate(), "operation id 0")
+	})
+
+	t.Run("one operation held by two validators", func(t *testing.T) {
+		gs := build()
+		other := []byte("provider-cons-addr-two22")
+		second := punishment()
+		second.ProviderConsAddr = other
+		gs.PendingEquivocationPunishments = []types.PendingEquivocationPunishment{punishment(), second}
+		gs.HeldUnbondingOps = []types.HeldUnbondingOps{
+			{ProviderConsAddr: accused, UnbondingOpIds: []uint64{5}},
+			{ProviderConsAddr: other, UnbondingOpIds: []uint64{5}},
+		}
+		require.ErrorContains(t, gs.Validate(), "held more than once")
+	})
+
+	t.Run("downtime slash extended without its proposal", func(t *testing.T) {
+		gs := build()
+		gs.PendingDowntimeSlashes = []types.PendingDowntimeSlash{{
+			ConsumerId:         0,
+			ProviderConsAddr:   accused,
+			WindowStartHeight:  100,
+			Span:               16,
+			MissedBlocksBitmap: []byte{0x00, 0x00},
+			SlashTokens:        math.NewInt(1),
+			MaturesAt:          time.Unix(200, 0).UTC(),
+			MaturesAtExtended:  true,
+		}}
+		gs.AcceptedDowntimeWindows = []types.AcceptedDowntimeWindowRecord{{
+			ConsumerId: 0, ProviderConsAddr: accused, WindowStartHeight: 100, WindowEndHeight: 115, AcceptedAt: time.Unix(150, 0).UTC(),
+		}}
+		require.ErrorContains(t, gs.Validate(), "must be set together")
+	})
 }

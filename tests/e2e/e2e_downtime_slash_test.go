@@ -328,6 +328,7 @@ type pendingDowntimeSlashJSON struct {
 	Span              string `json:"span"`
 	SlashTokens       string `json:"slash_tokens"`
 	MaturesAt         string `json:"matures_at"`
+	MaturesAtExtended bool   `json:"matures_at_extended"`
 }
 
 // coversWindowEnd reports whether the pending slash entry's window

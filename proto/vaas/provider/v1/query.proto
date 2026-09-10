@@ -156,6 +156,22 @@ service Query {
     option (google.api.http).get =
         "/vaas/provider/v1/withheld_fee_records/{consumer_id}";
   }
+
+  // QueryConsumerRefusals returns the validators currently refusing a
+  // consumer, the refused share of bonded power, and the pause threshold.
+  rpc QueryConsumerRefusals(QueryConsumerRefusalsRequest)
+      returns (QueryConsumerRefusalsResponse) {
+    option (google.api.http).get =
+        "/vaas/provider/v1/consumer_refusals/{consumer_id}";
+  }
+
+  // QueryPendingEquivocationPunishments returns the verified equivocations
+  // queued for a consumer, jailed but awaiting the execution delay.
+  rpc QueryPendingEquivocationPunishments(QueryPendingEquivocationPunishmentsRequest)
+      returns (QueryPendingEquivocationPunishmentsResponse) {
+    option (google.api.http).get =
+        "/vaas/provider/v1/pending_equivocation_punishments/{consumer_id}";
+  }
 }
 
 message QueryConsumerGenesisRequest {
@@ -399,4 +415,24 @@ message QueryPendingDowntimeSlashesResponse {
 message QueryWithheldFeeRecordsRequest { uint64 consumer_id = 1; }
 message QueryWithheldFeeRecordsResponse {
   repeated WithheldFeeRecord records = 1 [(gogoproto.nullable) = false];
+}
+
+message QueryConsumerRefusalsRequest { uint64 consumer_id = 1; }
+message QueryConsumerRefusalsResponse {
+  // operator addresses of the validators currently refusing the consumer
+  repeated string validator_addresses = 1;
+  // bonded power currently behind the refusals
+  int64 refused_power = 2;
+  // total bonded power at evaluation
+  int64 total_power = 3;
+  // refused_power / total_power as a decimal string
+  string refused_fraction = 4;
+  // the RefusalPauseThreshold param at evaluation
+  string pause_threshold = 5;
+}
+
+message QueryPendingEquivocationPunishmentsRequest { uint64 consumer_id = 1; }
+message QueryPendingEquivocationPunishmentsResponse {
+  repeated PendingEquivocationPunishment punishments = 1
+      [ (gogoproto.nullable) = false ];
 }

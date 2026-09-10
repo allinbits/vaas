@@ -31,6 +31,12 @@ type StakingKeeper interface {
 	// already claimed by a rotation yet absent from every validator lookup.
 	GetBlockConsPubKeyRotationHistory(ctx context.Context) ([]stakingtypes.ConsPubKeyRotationHistory, error)
 	GetLastValidatorPower(ctx context.Context, operator sdk.ValAddress) (int64, error)
+	GetLastTotalPower(ctx context.Context) (math.Int, error)
+	PutUnbondingOnHold(ctx context.Context, id uint64) error
+	GetUnbondingType(ctx context.Context, id uint64) (stakingtypes.UnbondingType, error)
+	GetUnbondingDelegationByUnbondingID(ctx context.Context, id uint64) (stakingtypes.UnbondingDelegation, error)
+	GetRedelegationByUnbondingID(ctx context.Context, id uint64) (stakingtypes.Redelegation, error)
+	GetValidatorByUnbondingID(ctx context.Context, id uint64) (stakingtypes.Validator, error)
 	Jail(context.Context, sdk.ConsAddress) error // jail a validator
 	SlashWithInfractionReason(ctx context.Context, consAddr sdk.ConsAddress, infractionHeight, power int64, slashFactor math.LegacyDec, infraction stakingtypes.Infraction) (math.Int, error)
 	SlashUnbondingDelegation(ctx context.Context, unbondingDelegation stakingtypes.UnbondingDelegation, infractionHeight int64, slashFactor math.LegacyDec) (math.Int, error)

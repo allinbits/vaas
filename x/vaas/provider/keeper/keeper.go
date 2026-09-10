@@ -24,6 +24,7 @@ import (
 	"github.com/cosmos/cosmos-sdk/codec"
 	sdk "github.com/cosmos/cosmos-sdk/types"
 	govkeeper "github.com/cosmos/cosmos-sdk/x/gov/keeper"
+	govv1 "github.com/cosmos/cosmos-sdk/x/gov/types/v1"
 	stakingtypes "github.com/cosmos/cosmos-sdk/x/staking/types"
 )
 
@@ -43,8 +44,12 @@ type Keeper struct {
 	photonKeeper       vaastypes.PhotonKeeper
 	bankKeeper         vaastypes.BankKeeper
 	distributionKeeper vaastypes.DistributionKeeper
-	govKeeper          govkeeper.Keeper
-	feeCollectorName   string
+	// govKeeper is read by the removal-vote deferral (removalVote and
+	// removalProposalStatus). The app constructs gov after this keeper, so it
+	// is wired afterwards through SetGovKeeper and required from the first
+	// block on (see BeginBlock).
+	govKeeper        *govkeeper.Keeper
+	feeCollectorName string
 	// feeDenom is the denom charged to consumers per block. It is fixed at
 	// construction and cannot be changed without a binary upgrade. The amount
 	// is instead governed via Params.FeesPerBlockAmount.
@@ -172,6 +177,21 @@ type Keeper struct {
 	// deleted by PayWithheldFees on a successful challenge.
 	WithheldFeeRecords collections.Map[collections.Pair[uint64, []byte], types.WithheldFeeRecord]
 
+	// ConsumerRefusals records validators' public refusals to validate a
+	// consumer, keyed (consumerId, validator operator address bytes). See
+	// SetConsumerRefusal and EvaluateConsumerRefusals.
+	ConsumerRefusals collections.KeySet[collections.Pair[uint64, []byte]]
+
+	// PendingEquivocationPunishments holds verified consumer equivocations
+	// whose slash and tombstone are deferred, keyed (consumerId, provider
+	// consensus address, infraction height). See QueuePendingEquivocationPunishment.
+	PendingEquivocationPunishments collections.Map[collections.Triple[uint64, []byte, int64], types.PendingEquivocationPunishment]
+
+	// HeldUnbondingOps records the staking unbonding-operation ids held per
+	// accused validator while it has pending equivocation punishments, keyed
+	// (provider consensus address, unbonding op id).
+	HeldUnbondingOps collections.KeySet[collections.Pair[[]byte, uint64]]
+
 	// windowEndTimestampFn resolves the timestamp anchor for a downtime
 	// evidence window. Nil in production, where NewKeeper leaves it unset and
 	// windowEndTimestamp falls back to the real IBC-client-backed
@@ -188,6 +208,20 @@ type Keeper struct {
 	// to bypass the real light-client call when a real client store proves
 	// impractical to fabricate.
 	verifyDowntimeChallengeHeaderFn func(ctx sdk.Context, clientId string, header *ibctmtypes.Header) error
+
+	// removalVoteFn reports whether a governance proposal carrying a
+	// MsgRemoveConsumer for the consumer is currently in its voting period,
+	// with the proposal id and the voting end. Nil in production, where
+	// removalVote falls back to scanning the gov keeper's active-proposal
+	// queue. Tests may override it via OverrideRemovalVoteForTest to steer
+	// the punishment deferrals without a real gov keeper.
+	removalVoteFn func(ctx sdk.Context, consumerId uint64) (uint64, time.Time, bool)
+
+	// removalProposalStatusFn reports a governance proposal's status, with
+	// its voting end while it is in voting. Nil in production, where
+	// removalProposalStatus reads the gov keeper. Tests may override it via
+	// OverrideRemovalProposalStatusForTest.
+	removalProposalStatusFn func(ctx sdk.Context, proposalId uint64) (govv1.ProposalStatus, time.Time, bool)
 }
 
 // NewKeeper creates a new provider Keeper instance
@@ -201,7 +235,7 @@ func NewKeeper(
 	accountKeeper vaastypes.AccountKeeper,
 	bankKeeper vaastypes.BankKeeper,
 	distributionKeeper vaastypes.DistributionKeeper,
-	govKeeper govkeeper.Keeper,
+	govKeeper *govkeeper.Keeper,
 	authority string,
 	validatorAddressCodec, consensusAddressCodec addresscodec.Codec,
 	feeCollectorName string,
@@ -351,6 +385,25 @@ func NewKeeper(
 		collections.Int64Value,
 	)
 
+	k.ConsumerRefusals = collections.NewKeySet(
+		sb, types.ConsumerRefusalsPrefix,
+		types.ConsumerRefusalsKeyName,
+		collections.PairKeyCodec(collections.Uint64Key, collections.BytesKey),
+	)
+
+	k.PendingEquivocationPunishments = collections.NewMap(
+		sb, types.PendingEquivocationPunishmentsPrefix,
+		types.PendingEquivocationPunishmentsKeyName,
+		collections.TripleKeyCodec(collections.Uint64Key, collections.BytesKey, collections.Int64Key),
+		codec.CollValue[types.PendingEquivocationPunishment](cdc),
+	)
+
+	k.HeldUnbondingOps = collections.NewKeySet(
+		sb, types.HeldUnbondingOpsPrefix,
+		types.HeldUnbondingOpsKeyName,
+		collections.PairKeyCodec(collections.BytesKey, collections.Uint64Key),
+	)
+
 	k.WithheldFeeRecords = collections.NewMap(
 		sb, types.WithheldFeeRecordsPrefix,
 		types.WithheldFeeRecordsKeyName,
@@ -396,7 +449,9 @@ func (k Keeper) ConsensusAddressCodec() addresscodec.Codec {
 	return k.consensusAddressCodec
 }
 
-func (k *Keeper) SetGovKeeper(govKeeper govkeeper.Keeper) {
+// SetGovKeeper wires the gov keeper the removal-vote deferral reads; the app
+// calls it once the gov keeper exists, before the chain runs.
+func (k *Keeper) SetGovKeeper(govKeeper *govkeeper.Keeper) {
 	k.govKeeper = govKeeper
 }
 

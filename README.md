@@ -69,6 +69,7 @@ make test-e2e
 - [Consumer lifecycle](docs/consumer-lifecycle.md) — phases, on-chain effects, operator/relayer responsibilities
 - [Consumer downtime](docs/consumer-downtime.md) — detection, verifiable evidence, optimistic slashing, challenges, and the PAUSED phase
 - [Consumer liveness](docs/consumer-liveness.md) — removal sweep, snapshot resync, and consumer safe mode
+- [Consumer refusal](docs/consumer-refusal.md) — refusal signal and threshold pause, punishment deferral behind removal votes, delayed equivocation punishment
 - [Consumer fee pool](docs/consumer-fee-pool.md) — funding, share accounting, withdrawal locks, and sweeping
 - [Contributor guide (AGENTS.md)](AGENTS.md) — architecture, build/test commands, code layout
 - [Design rationale (DESIGN_RATIONALE.md)](DESIGN_RATIONALE.md) — why VAAS is shaped the way it is

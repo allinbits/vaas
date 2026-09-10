@@ -702,10 +702,11 @@ func TestSlashValidator(t *testing.T) {
 		createRedelegation([]int64{500}, []time.Time{nowPlus1Hour}),
 	}
 
-	// validator's current power
+	// validator's current power: its tokens over the power reduction
 	currentPower := int64(3000)
 
 	powerReduction := math.NewInt(2)
+	validator.Tokens = powerReduction.MulRaw(currentPower)
 	slashFraction := getTestInfractionParameters().DoubleSign.SlashFraction
 
 	// the call to `Slash` should provide an `infractionHeight` of 0 and an expected power of
@@ -729,9 +730,6 @@ func TestSlashValidator(t *testing.T) {
 		mocks.MockStakingKeeper.EXPECT().
 			GetRedelegationsFromSrcValidator(ctx, expectedValoperAddr).
 			Return(redelegations, nil),
-		mocks.MockStakingKeeper.EXPECT().
-			GetLastValidatorPower(ctx, expectedValoperAddr).
-			Return(currentPower, nil),
 		mocks.MockStakingKeeper.EXPECT().
 			PowerReduction(ctx).
 			Return(powerReduction),

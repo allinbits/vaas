@@ -42,6 +42,8 @@ func NewQueryCmd() *cobra.Command {
 	cmd.AddCommand(CmdConsumerValidators())
 	cmd.AddCommand(CmdBlocksUntilNextEpoch())
 	cmd.AddCommand(CmdConsumerIdFromClientId())
+	cmd.AddCommand(CmdConsumerRefusals())
+	cmd.AddCommand(CmdPendingEquivocationPunishments())
 	cmd.AddCommand(CmdConsumerChain())
 	cmd.AddCommand(CmdConsumerGenesisTime())
 	cmd.AddCommand(CmdConsumerFeesPerBlock())
@@ -654,5 +656,63 @@ func CmdWithheldFeeRecords() *cobra.Command {
 
 	flags.AddQueryFlagsToCmd(cmd)
 
+	return cmd
+}
+
+// CmdConsumerRefusals queries the validators currently refusing a consumer
+// and the refused share of bonded power.
+func CmdConsumerRefusals() *cobra.Command {
+	cmd := &cobra.Command{
+		Use:   "consumer-refusals [consumer-id]",
+		Short: "Query the validators refusing a consumer and the refused power fraction",
+		Args:  cobra.ExactArgs(1),
+		RunE: func(cmd *cobra.Command, args []string) error {
+			clientCtx, err := client.GetClientQueryContext(cmd)
+			if err != nil {
+				return err
+			}
+			consumerId, err := parseConsumerIdArg(args[0])
+			if err != nil {
+				return err
+			}
+			queryClient := types.NewQueryClient(clientCtx)
+			res, err := queryClient.QueryConsumerRefusals(cmd.Context(),
+				&types.QueryConsumerRefusalsRequest{ConsumerId: consumerId})
+			if err != nil {
+				return err
+			}
+			return clientCtx.PrintProto(res)
+		},
+	}
+	flags.AddQueryFlagsToCmd(cmd)
+	return cmd
+}
+
+// CmdPendingEquivocationPunishments queries the verified equivocations queued
+// for a consumer, jailed but awaiting the execution delay.
+func CmdPendingEquivocationPunishments() *cobra.Command {
+	cmd := &cobra.Command{
+		Use:   "pending-equivocation-punishments [consumer-id]",
+		Short: "Query the equivocation punishments queued for a consumer",
+		Args:  cobra.ExactArgs(1),
+		RunE: func(cmd *cobra.Command, args []string) error {
+			clientCtx, err := client.GetClientQueryContext(cmd)
+			if err != nil {
+				return err
+			}
+			consumerId, err := parseConsumerIdArg(args[0])
+			if err != nil {
+				return err
+			}
+			queryClient := types.NewQueryClient(clientCtx)
+			res, err := queryClient.QueryPendingEquivocationPunishments(cmd.Context(),
+				&types.QueryPendingEquivocationPunishmentsRequest{ConsumerId: consumerId})
+			if err != nil {
+				return err
+			}
+			return clientCtx.PrintProto(res)
+		},
+	}
+	flags.AddQueryFlagsToCmd(cmd)
 	return cmd
 }

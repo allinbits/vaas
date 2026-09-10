@@ -98,6 +98,12 @@ const (
 	PauseExpirationTimeToConsumerIdsKeyName = "PauseExpirationTimeToConsumerIdsKey"
 
 	DowntimeWindowFloorsKeyName = "DowntimeWindowFloorsKey"
+
+	ConsumerRefusalsKeyName = "ConsumerRefusalsKey"
+
+	PendingEquivocationPunishmentsKeyName = "PendingEquivocationPunishmentsKey"
+
+	HeldUnbondingOpsKeyName = "HeldUnbondingOpsKey"
 )
 
 // Collection key prefixes for use with cosmossdk.io/collections
@@ -142,5 +148,8 @@ var (
 	ConsumerIdToPauseExpirationTimePrefix  = collections.NewPrefix(37)
 	PauseExpirationTimeToConsumerIdsPrefix = collections.NewPrefix(38)
 	DowntimeWindowFloorsPrefix             = collections.NewPrefix(39)
+	ConsumerRefusalsPrefix                 = collections.NewPrefix(40)
+	PendingEquivocationPunishmentsPrefix   = collections.NewPrefix(41)
+	HeldUnbondingOpsPrefix                 = collections.NewPrefix(42)
 	ParametersPrefix                       = collections.NewPrefix(0xFF)
 )

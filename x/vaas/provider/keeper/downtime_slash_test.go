@@ -13,6 +13,7 @@ import (
 
 	cryptocodec "github.com/cosmos/cosmos-sdk/crypto/codec"
 	sdk "github.com/cosmos/cosmos-sdk/types"
+	govv1 "github.com/cosmos/cosmos-sdk/x/gov/types/v1"
 	stakingtypes "github.com/cosmos/cosmos-sdk/x/staking/types"
 
 	tmtypes "github.com/cometbft/cometbft/types"
@@ -98,12 +99,15 @@ func putPendingDowntimeSlash(
 // check is the exception: it names the address the validator runs now, which
 // x/slashing keys its signing info by, and that differs from consAddr when the
 // entry is keyed under an address the validator has rotated away from.
-func expectSlashableStakeLookup(t *testing.T, k providerkeeper.Keeper, mocks testkeeper.MockedKeepers, ctx sdk.Context, validator stakingtypes.Validator, consAddr sdk.ConsAddress, lastPower int64, powerReduction math.Int) {
+func expectSlashableStakeLookup(t *testing.T, k providerkeeper.Keeper, mocks testkeeper.MockedKeepers, ctx sdk.Context, validator stakingtypes.Validator, consAddr sdk.ConsAddress, power int64, powerReduction math.Int) {
 	t.Helper()
 	valAddr, err := k.ValidatorAddressCodec().StringToBytes(validator.GetOperator())
 	require.NoError(t, err)
 	liveConsAddr, err := validator.GetConsAddr()
 	require.NoError(t, err)
+	// The slash is sized from the validator's tokens, so the lookup hands back
+	// a validator worth exactly power.
+	validator.Tokens = powerReduction.MulRaw(power)
 	mocks.MockStakingKeeper.EXPECT().
 		GetValidatorByConsAddr(ctx, consAddr).
 		Return(validator, nil)
@@ -116,9 +120,6 @@ func expectSlashableStakeLookup(t *testing.T, k providerkeeper.Keeper, mocks tes
 	mocks.MockStakingKeeper.EXPECT().
 		GetRedelegationsFromSrcValidator(ctx, valAddr).
 		Return(nil, nil)
-	mocks.MockStakingKeeper.EXPECT().
-		GetLastValidatorPower(ctx, valAddr).
-		Return(lastPower, nil)
 	mocks.MockStakingKeeper.EXPECT().
 		PowerReduction(ctx).
 		Return(powerReduction)
@@ -844,4 +845,202 @@ func TestPruneAcceptedDowntimeWindowsKeepsRecordWhilePendingSlashMatures(t *test
 	require.NoError(t, err)
 	require.Equal(t, int64(100), floor)
 	require.NoError(t, k.ExportGenesis(maturedCtx).Validate())
+}
+
+// TestSweepDefersDuringRemovalVote pins the removal-vote deferral: a matured
+// pending slash whose consumer has a removal proposal in voting is not
+// executed but pushed past the voting end, exactly once. After the extended
+// maturity it executes even if another vote is still live, so serial
+// proposals cannot defer a slash forever.
+func TestSweepDefersDuringRemovalVote(t *testing.T) {
+	infractionParams := types.InfractionParameters{
+		Downtime: &types.SlashJailParameters{
+			SlashFraction: math.LegacyNewDecWithPrec(5, 1),
+			Tombstone:     false,
+		},
+	}
+	k, ctx, ctrl, mocks, validator, providerAddr := setupSweepTest(t, infractionParams)
+	defer ctrl.Finish()
+
+	consAddr := providerAddr.ToSdkConsAddr()
+	consumerId := uint64(0)
+	maturesAt := ctx.BlockTime().Add(-time.Minute)
+	putPendingDowntimeSlash(t, k, ctx, consumerId, providerAddr, math.NewInt(100), maturesAt, 100)
+
+	// A removal vote is live, ending an hour from now.
+	voteEnd := ctx.BlockTime().Add(time.Hour)
+	k.OverrideRemovalVoteForTest(func(_ sdk.Context, cid uint64) (uint64, time.Time, bool) {
+		require.Equal(t, consumerId, cid)
+		return 7, voteEnd, true
+	})
+
+	// First sweep: deferred, not executed (no slashing mocks are set, so the
+	// controller also proves nothing was slashed).
+	k.SweepPendingDowntimeSlashes(ctx)
+	key := collections.Join3(consumerId, consAddr.Bytes(), int64(100))
+	entry, err := k.PendingDowntimeSlashes.Get(ctx, key)
+	require.NoError(t, err, "deferred entry must remain pending")
+	require.True(t, entry.MaturesAtExtended)
+	require.Equal(t, uint64(7), entry.DeferredByProposalId)
+	require.Equal(t, voteEnd.Add(k.GetParams(ctx).RemovalVoteDeferralMargin), entry.MaturesAt)
+
+	// Second sweep before the extended maturity: nothing happens.
+	k.SweepPendingDowntimeSlashes(ctx)
+	_, err = k.PendingDowntimeSlashes.Get(ctx, key)
+	require.NoError(t, err)
+
+	// Past the extended maturity the recorded proposal has been rejected;
+	// the scan still reporting a live vote (a later proposal) changes
+	// nothing, and the slash executes.
+	k.OverrideRemovalProposalStatusForTest(func(_ sdk.Context, proposalId uint64) (govv1.ProposalStatus, time.Time, bool) {
+		require.Equal(t, uint64(7), proposalId)
+		return govv1.StatusRejected, time.Time{}, true
+	})
+	lateCtx := ctx.WithBlockTime(entry.MaturesAt.Add(time.Second))
+	powerReduction := math.NewInt(1)
+	expectSlashableStakeLookup(t, k, mocks, lateCtx, validator, consAddr, 1000, powerReduction)
+	expectedFraction := math.LegacyNewDecWithPrec(1, 1)
+	mocks.MockStakingKeeper.EXPECT().
+		SlashWithInfractionReason(lateCtx, consAddr, int64(0), int64(1000), expectedFraction, stakingtypes.Infraction_INFRACTION_DOWNTIME).
+		Return(math.NewInt(100), nil)
+
+	k.SweepPendingDowntimeSlashes(lateCtx)
+	has, err := k.PendingDowntimeSlashes.Has(lateCtx, key)
+	require.NoError(t, err)
+	require.False(t, has, "extended entry must execute at its extended maturity")
+}
+
+// TestSweepExecutesWhenNoRemovalVote pins the negative: with no live removal
+// vote the deferral changes nothing and a matured entry executes on the spot.
+func TestSweepExecutesWhenNoRemovalVote(t *testing.T) {
+	infractionParams := types.InfractionParameters{
+		Downtime: &types.SlashJailParameters{
+			SlashFraction: math.LegacyNewDecWithPrec(5, 1),
+		},
+	}
+	k, ctx, ctrl, mocks, validator, providerAddr := setupSweepTest(t, infractionParams)
+	defer ctrl.Finish()
+
+	consAddr := providerAddr.ToSdkConsAddr()
+	consumerId := uint64(0)
+	putPendingDowntimeSlash(t, k, ctx, consumerId, providerAddr, math.NewInt(100), ctx.BlockTime().Add(-time.Minute), 100)
+
+	k.OverrideRemovalVoteForTest(func(_ sdk.Context, _ uint64) (uint64, time.Time, bool) {
+		return 0, time.Time{}, false
+	})
+
+	powerReduction := math.NewInt(1)
+	expectSlashableStakeLookup(t, k, mocks, ctx, validator, consAddr, 1000, powerReduction)
+	mocks.MockStakingKeeper.EXPECT().
+		SlashWithInfractionReason(ctx, consAddr, int64(0), int64(1000), math.LegacyNewDecWithPrec(1, 1), stakingtypes.Infraction_INFRACTION_DOWNTIME).
+		Return(math.NewInt(100), nil)
+
+	k.SweepPendingDowntimeSlashes(ctx)
+	has, err := k.PendingDowntimeSlashes.Has(ctx, collections.Join3(consumerId, consAddr.Bytes(), int64(100)))
+	require.NoError(t, err)
+	require.False(t, has)
+}
+
+// TestSweepKeepsDeferringWhileTheSameVoteIsOpen: at the extended maturity
+// the recorded proposal is still in its voting period (gov moved its end
+// after a late quorum), so the entry follows the new end instead of
+// executing mid-vote; once that proposal is rejected it executes.
+func TestSweepKeepsDeferringWhileTheSameVoteIsOpen(t *testing.T) {
+	infractionParams := types.InfractionParameters{
+		Downtime: &types.SlashJailParameters{SlashFraction: math.LegacyNewDecWithPrec(5, 1)},
+	}
+	k, ctx, ctrl, mocks, validator, providerAddr := setupSweepTest(t, infractionParams)
+	defer ctrl.Finish()
+
+	consAddr := providerAddr.ToSdkConsAddr()
+	consumerId := uint64(0)
+	putPendingDowntimeSlash(t, k, ctx, consumerId, providerAddr, math.NewInt(100), ctx.BlockTime().Add(-time.Minute), 100)
+	margin := k.GetParams(ctx).RemovalVoteDeferralMargin
+
+	voteEnd := ctx.BlockTime().Add(time.Hour)
+	k.OverrideRemovalVoteForTest(func(_ sdk.Context, _ uint64) (uint64, time.Time, bool) {
+		return 7, voteEnd, true
+	})
+	k.SweepPendingDowntimeSlashes(ctx)
+	key := collections.Join3(consumerId, consAddr.Bytes(), int64(100))
+	entry, err := k.PendingDowntimeSlashes.Get(ctx, key)
+	require.NoError(t, err)
+	require.Equal(t, voteEnd.Add(margin), entry.MaturesAt)
+
+	// The vote is still open at the extended maturity, now ending later.
+	k.OverrideRemovalVoteForTest(func(_ sdk.Context, _ uint64) (uint64, time.Time, bool) {
+		return 0, time.Time{}, false
+	})
+	movedEnd := entry.MaturesAt.Add(3 * time.Hour)
+	k.OverrideRemovalProposalStatusForTest(func(_ sdk.Context, proposalId uint64) (govv1.ProposalStatus, time.Time, bool) {
+		require.Equal(t, uint64(7), proposalId)
+		return govv1.StatusVotingPeriod, movedEnd, true
+	})
+	stillVoting := ctx.WithBlockTime(entry.MaturesAt.Add(time.Second))
+	k.SweepPendingDowntimeSlashes(stillVoting)
+	entry, err = k.PendingDowntimeSlashes.Get(stillVoting, key)
+	require.NoError(t, err, "an open vote keeps the entry pending")
+	require.Equal(t, movedEnd.Add(margin), entry.MaturesAt)
+	require.Equal(t, uint64(7), entry.DeferredByProposalId)
+
+	// Rejected at the moved end: the slash executes.
+	k.OverrideRemovalProposalStatusForTest(func(_ sdk.Context, _ uint64) (govv1.ProposalStatus, time.Time, bool) {
+		return govv1.StatusRejected, time.Time{}, true
+	})
+	decided := ctx.WithBlockTime(entry.MaturesAt.Add(time.Second))
+	expectSlashableStakeLookup(t, k, mocks, decided, validator, consAddr, 1000, math.NewInt(1))
+	mocks.MockStakingKeeper.EXPECT().
+		SlashWithInfractionReason(decided, consAddr, int64(0), int64(1000), math.LegacyNewDecWithPrec(1, 1), stakingtypes.Infraction_INFRACTION_DOWNTIME).
+		Return(math.NewInt(100), nil)
+	k.SweepPendingDowntimeSlashes(decided)
+	has, err := k.PendingDowntimeSlashes.Has(decided, key)
+	require.NoError(t, err)
+	require.False(t, has)
+}
+
+// TestSweepDeferralKeepsWithheldFeeRecordClaimable: deferring an entry pushes
+// the pair's withheld fee record past its original challenge-window expiry
+// to the new maturity, so a challenge won during the deferral still repays
+// the withheld shares; a record already outliving the maturity is untouched.
+func TestSweepDeferralKeepsWithheldFeeRecordClaimable(t *testing.T) {
+	infractionParams := types.InfractionParameters{
+		Downtime: &types.SlashJailParameters{SlashFraction: math.LegacyNewDecWithPrec(5, 1)},
+	}
+	k, ctx, ctrl, _, _, providerAddr := setupSweepTest(t, infractionParams)
+	defer ctrl.Finish()
+
+	consAddr := providerAddr.ToSdkConsAddr()
+	consumerId := uint64(0)
+	putPendingDowntimeSlash(t, k, ctx, consumerId, providerAddr, math.NewInt(100), ctx.BlockTime().Add(-time.Minute), 100)
+	recordKey := collections.Join(consumerId, consAddr.Bytes())
+	require.NoError(t, k.WithheldFeeRecords.Set(ctx, recordKey, types.WithheldFeeRecord{
+		ConsumerId:       consumerId,
+		ProviderConsAddr: consAddr.Bytes(),
+		Amount:           sdk.NewInt64Coin("stake", 5),
+		ExpiresAt:        ctx.BlockTime().Add(30 * time.Second),
+	}))
+
+	voteEnd := ctx.BlockTime().Add(time.Hour)
+	k.OverrideRemovalVoteForTest(func(_ sdk.Context, _ uint64) (uint64, time.Time, bool) {
+		return 7, voteEnd, true
+	})
+	k.SweepPendingDowntimeSlashes(ctx)
+
+	entry, err := k.PendingDowntimeSlashes.Get(ctx, collections.Join3(consumerId, consAddr.Bytes(), int64(100)))
+	require.NoError(t, err)
+	record, err := k.WithheldFeeRecords.Get(ctx, recordKey)
+	require.NoError(t, err)
+	require.Equal(t, entry.MaturesAt, record.ExpiresAt, "the record must stay claimable until the deferred maturity")
+
+	// A record that already outlives the maturity keeps its own expiry.
+	later := entry.MaturesAt.Add(time.Hour)
+	record.ExpiresAt = later
+	require.NoError(t, k.WithheldFeeRecords.Set(ctx, recordKey, record))
+	k.OverrideRemovalProposalStatusForTest(func(_ sdk.Context, _ uint64) (govv1.ProposalStatus, time.Time, bool) {
+		return govv1.StatusVotingPeriod, voteEnd, true
+	})
+	k.SweepPendingDowntimeSlashes(ctx.WithBlockTime(entry.MaturesAt.Add(time.Second)))
+	record, err = k.WithheldFeeRecords.Get(ctx, recordKey)
+	require.NoError(t, err)
+	require.Equal(t, later, record.ExpiresAt)
 }

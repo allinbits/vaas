@@ -57,6 +57,7 @@ func GetTxCmd() *cobra.Command {
 	cmd.AddCommand(NewWithdrawConsumerFeePoolCmd())
 	cmd.AddCommand(NewSweepConsumerFeePoolCmd())
 	cmd.AddCommand(NewChallengeConsumerDowntimeCmd())
+	cmd.AddCommand(NewSetConsumerRefusalCmd())
 
 	return cmd
 }
@@ -709,4 +710,48 @@ func fetchAllValidators(ctx context.Context, rpcClient *rpchttp.HTTP, height int
 		}
 		page++
 	}
+}
+
+// NewSetConsumerRefusalCmd records or withdraws the sending validator's public
+// refusal to validate a consumer chain. The validator operator address is
+// derived from the --from account, which must be the operator account.
+func NewSetConsumerRefusalCmd() *cobra.Command {
+	cmd := &cobra.Command{
+		Use:   "set-consumer-refusal [consumer-id] [refused]",
+		Short: "Record (true) or withdraw (false) the sending validator's refusal to validate a consumer",
+		Args:  cobra.ExactArgs(2),
+		RunE: func(cmd *cobra.Command, args []string) error {
+			clientCtx, err := client.GetClientTxContext(cmd)
+			if err != nil {
+				return err
+			}
+			consumerId, err := parseConsumerIdArg(args[0])
+			if err != nil {
+				return err
+			}
+			var refused bool
+			switch args[1] {
+			case "true":
+				refused = true
+			case "false":
+				refused = false
+			default:
+				return fmt.Errorf("refused must be true or false, got %q", args[1])
+			}
+			from := clientCtx.GetFromAddress()
+			msg := types.NewMsgSetConsumerRefusal(
+				from.String(),
+				consumerId,
+				sdk.ValAddress(from).String(),
+				refused,
+			)
+			if err := msg.ValidateBasic(); err != nil {
+				return err
+			}
+			return tx.GenerateOrBroadcastTxCLI(clientCtx, cmd.Flags(), msg)
+		},
+	}
+	flags.AddTxFlagsToCmd(cmd)
+	_ = cmd.MarkFlagRequired(flags.FlagFrom)
+	return cmd
 }

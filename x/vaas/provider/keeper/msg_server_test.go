@@ -354,23 +354,15 @@ func TestSubmitConsumerDoubleVotingHappyPath(t *testing.T) {
 	valOperBytes, err := providerKeeper.ValidatorAddressCodec().StringToBytes(stakingValidator.GetOperator())
 	require.NoError(t, err)
 
-	// SlashValidator path (uses default infraction params: double-sign slash fraction = 0.05).
-	mocks.MockStakingKeeper.EXPECT().GetValidatorByConsAddr(ctx, consAddr).Return(stakingValidator, nil).Times(1)
-	mocks.MockSlashingKeeper.EXPECT().IsTombstoned(ctx, consAddr).Return(false).Times(1)
-	mocks.MockStakingKeeper.EXPECT().GetUnbondingDelegationsFromValidator(ctx, valOperBytes).Return([]stakingtypes.UnbondingDelegation{}, nil).Times(1)
-	mocks.MockStakingKeeper.EXPECT().GetRedelegationsFromSrcValidator(ctx, valOperBytes).Return([]stakingtypes.Redelegation{}, nil).Times(1)
-	mocks.MockStakingKeeper.EXPECT().GetLastValidatorPower(ctx, valOperBytes).Return(int64(1000), nil).Times(1)
-	mocks.MockStakingKeeper.EXPECT().PowerReduction(ctx).Return(math.NewInt(1)).Times(1)
-	mocks.MockStakingKeeper.EXPECT().
-		SlashWithInfractionReason(ctx, consAddr, int64(0), int64(1000), math.LegacyNewDecWithPrec(5, 2), stakingtypes.Infraction_INFRACTION_DOUBLE_SIGN).
-		Return(math.NewInt(1000), nil).Times(1)
-
-	// JailAndTombstoneValidator path (second consAddr lookup + tombstone).
-	mocks.MockStakingKeeper.EXPECT().GetValidatorByConsAddr(ctx, consAddr).Return(stakingValidator, nil).Times(1)
+	// Queue path: the submission jails the validator and holds its unbonding
+	// operations; the slash and tombstone are deferred to the sweep, so no
+	// expectations for them exist and the controller proves they never ran.
+	mocks.MockStakingKeeper.EXPECT().GetValidatorByConsAddr(ctx, consAddr).Return(stakingValidator, nil).Times(2)
 	mocks.MockSlashingKeeper.EXPECT().IsTombstoned(ctx, consAddr).Return(false).Times(1)
 	mocks.MockStakingKeeper.EXPECT().Jail(ctx, consAddr).Return(nil).Times(1)
 	mocks.MockSlashingKeeper.EXPECT().JailUntil(ctx, consAddr, gomock.Any()).Return(nil).Times(1)
-	mocks.MockSlashingKeeper.EXPECT().Tombstone(ctx, consAddr).Return(nil).Times(1)
+	mocks.MockStakingKeeper.EXPECT().GetUnbondingDelegationsFromValidator(ctx, valOperBytes).Return([]stakingtypes.UnbondingDelegation{}, nil).Times(1)
+	mocks.MockStakingKeeper.EXPECT().GetRedelegationsFromSrcValidator(ctx, valOperBytes).Return([]stakingtypes.Redelegation{}, nil).Times(1)
 
 	msg := &providertypes.MsgSubmitConsumerDoubleVoting{
 		ConsumerId:            consumerID,

@@ -318,6 +318,42 @@ func (k Keeper) InitGenesis(ctx sdk.Context, genState *types.GenesisState) []abc
 			panic(fmt.Errorf("init: set epoch downtime mark for consumer %d: %w", e.ConsumerId, err))
 		}
 	}
+	for _, e := range genState.PendingEquivocationPunishments {
+		key := collections.Join3(e.ConsumerId, e.ProviderConsAddr, e.InfractionHeight)
+		if err := k.PendingEquivocationPunishments.Set(ctx, key, e); err != nil {
+			panic(fmt.Errorf("init: set pending equivocation punishment for consumer %d: %w", e.ConsumerId, err))
+		}
+	}
+	for _, h := range genState.HeldUnbondingOps {
+		for _, id := range h.UnbondingOpIds {
+			// A hold is only ever released through x/staking's index of the
+			// operation. x/staking's genesis import rebuilds neither that
+			// index nor its operation counter, so an export taken with live
+			// holds cannot be imported without stranding the held stake:
+			// refuse it here, at import, rather than discover it when the
+			// punishment resolves. The exported genesis can be edited to drop
+			// the holds (and the entries' on-hold refcounts) at the cost of
+			// the protection they gave; see docs/consumer-refusal.md.
+			if _, err := k.stakingKeeper.GetUnbondingType(ctx, id); err != nil {
+				panic(fmt.Errorf("init: held unbonding op %d of validator %x is not indexed by x/staking; "+
+					"resolve pending equivocation punishments before exporting, or drop held_unbonding_ops "+
+					"and the entries' unbonding_on_hold_ref_count from the exported genesis: %w",
+					id, h.ProviderConsAddr, err))
+			}
+			if err := k.HeldUnbondingOps.Set(ctx, collections.Join(h.ProviderConsAddr, id)); err != nil {
+				panic(fmt.Errorf("init: set held unbonding op %d: %w", id, err))
+			}
+		}
+	}
+	for _, r := range genState.ConsumerRefusals {
+		valAddr, err := sdk.ValAddressFromBech32(r.ValidatorAddress)
+		if err != nil {
+			panic(fmt.Errorf("init: invalid refusal validator address %q: %w", r.ValidatorAddress, err))
+		}
+		if err := k.ConsumerRefusals.Set(ctx, collections.Join(r.ConsumerId, valAddr.Bytes())); err != nil {
+			panic(fmt.Errorf("init: set consumer refusal for consumer %d: %w", r.ConsumerId, err))
+		}
+	}
 
 	return k.InitGenesisValUpdates(ctx)
 }
@@ -508,6 +544,9 @@ func (k Keeper) ExportGenesis(ctx sdk.Context) *types.GenesisState {
 	acceptedDowntimeWindows := k.exportAcceptedDowntimeWindows(ctx)
 	downtimeWindowFloors := k.exportDowntimeWindowFloors(ctx)
 	epochDowntimeEntries := k.exportEpochDowntimeEntries(ctx)
+	consumerRefusals := k.exportConsumerRefusals(ctx)
+	pendingEquivocations := k.exportPendingEquivocationPunishments(ctx)
+	heldUnbondingOps := k.exportHeldUnbondingOps(ctx)
 
 	// Only export infraction params if they have actually been set (e.g. a
 	// keeper built directly via setters in a test, without ever running
@@ -541,6 +580,9 @@ func (k Keeper) ExportGenesis(ctx sdk.Context) *types.GenesisState {
 	genState.AcceptedDowntimeWindows = acceptedDowntimeWindows
 	genState.DowntimeWindowFloors = downtimeWindowFloors
 	genState.EpochDowntimeEntries = epochDowntimeEntries
+	genState.ConsumerRefusals = consumerRefusals
+	genState.PendingEquivocationPunishments = pendingEquivocations
+	genState.HeldUnbondingOps = heldUnbondingOps
 	return genState
 }
 
@@ -781,4 +823,57 @@ func (k Keeper) checkFeePoolTotalsConsistency(
 			}
 		}
 	}
+}
+
+// exportConsumerRefusals walks ConsumerRefusals into the flat list carried by
+// the genesis state.
+func (k Keeper) exportConsumerRefusals(ctx sdk.Context) []types.ConsumerRefusal {
+	entries := []types.ConsumerRefusal{}
+	if err := k.ConsumerRefusals.Walk(ctx, nil, func(key collections.Pair[uint64, []byte]) (bool, error) {
+		entries = append(entries, types.ConsumerRefusal{
+			ConsumerId:       key.K1(),
+			ValidatorAddress: sdk.ValAddress(key.K2()).String(),
+		})
+		return false, nil
+	}); err != nil {
+		panic(fmt.Errorf("export: failed to iterate consumer refusals: %w", err))
+	}
+	return entries
+}
+
+// exportPendingEquivocationPunishments walks PendingEquivocationPunishments
+// into the flat list carried by genesis.
+func (k Keeper) exportPendingEquivocationPunishments(ctx sdk.Context) []types.PendingEquivocationPunishment {
+	entries := []types.PendingEquivocationPunishment{}
+	if err := k.PendingEquivocationPunishments.Walk(ctx, nil, func(_ collections.Triple[uint64, []byte, int64], entry types.PendingEquivocationPunishment) (bool, error) {
+		entries = append(entries, entry)
+		return false, nil
+	}); err != nil {
+		panic(fmt.Errorf("export: failed to iterate pending equivocation punishments: %w", err))
+	}
+	return entries
+}
+
+// exportHeldUnbondingOps walks HeldUnbondingOps into per-validator groups.
+func (k Keeper) exportHeldUnbondingOps(ctx sdk.Context) []types.HeldUnbondingOps {
+	grouped := map[string][]uint64{}
+	var order []string
+	if err := k.HeldUnbondingOps.Walk(ctx, nil, func(key collections.Pair[[]byte, uint64]) (bool, error) {
+		addr := string(key.K1())
+		if _, ok := grouped[addr]; !ok {
+			order = append(order, addr)
+		}
+		grouped[addr] = append(grouped[addr], key.K2())
+		return false, nil
+	}); err != nil {
+		panic(fmt.Errorf("export: failed to iterate held unbonding ops: %w", err))
+	}
+	entries := []types.HeldUnbondingOps{}
+	for _, addr := range order {
+		entries = append(entries, types.HeldUnbondingOps{
+			ProviderConsAddr: []byte(addr),
+			UnbondingOpIds:   grouped[addr],
+		})
+	}
+	return entries
 }

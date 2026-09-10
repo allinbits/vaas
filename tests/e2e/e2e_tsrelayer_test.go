@@ -104,7 +104,35 @@ func (s *baseTestSuite) verifyTSRelayerConnectivity(chainName, rpcURL string) {
 	s.Require().Fail("ts-relayer cannot reach %s RPC at %s", chainName, rpcURL)
 }
 
+// startTSRelayerRelay starts the relay process and makes sure it can read the
+// mnemonics. Every /bin/with_keyring invocation in the relayer image runs its
+// own dbus session and gnome-keyring daemon, so the relay process can come up
+// on a daemon that never saw the mnemonics add-mnemonic stored through
+// another one; it then logs "Mnemonic not found in keyring" on every cycle
+// and relays nothing. The relay process is the only reader of the mnemonics,
+// so the check is its first cycle: on the miss the process is killed and
+// restarted with the mnemonics added again, a few times over.
 func (s *baseTestSuite) startTSRelayerRelay() {
+	const attempts = 3
+	for attempt := 1; attempt <= attempts; attempt++ {
+		logMark := len(s.tsRelayerLogLines())
+		s.launchTSRelayerRelayProcess()
+		if s.tsRelayerRelayReadsKeyring(logMark) {
+			s.T().Log("ts-relayer: relay process started")
+			return
+		}
+		s.T().Logf("ts-relayer: relay process cannot read the mnemonics (attempt %d of %d); restarting it", attempt, attempts)
+		s.killTSRelayerRelayProcess()
+		s.tsRelayerAddMnemonic(s.cfg.providerChainID, relayerMnemonic)
+		s.tsRelayerAddMnemonic(s.cfg.consumerChainID, relayerMnemonic)
+	}
+	s.Require().Failf("ts-relayer relay process never found the mnemonics in its keyring",
+		"relayer log tail:\n%s", tailLines(strings.Join(s.tsRelayerLogLines(), "\n"), 60))
+}
+
+// launchTSRelayerRelayProcess starts `ibc-v2-ts-relayer relay` detached in the
+// relayer container and checks that it is still running a moment later.
+func (s *baseTestSuite) launchTSRelayerRelayProcess() {
 	s.T().Log("ts-relayer: starting relay process")
 	ctx, cancel := context.WithTimeout(context.Background(), time.Minute)
 	defer cancel()
@@ -131,7 +159,71 @@ func (s *baseTestSuite) startTSRelayerRelay() {
 	inspectExec, err := s.dkrPool.Client.InspectExec(exec.ID)
 	s.Require().NoError(err, "failed to inspect relay exec")
 	s.Require().True(inspectExec.Running, "relay process is not running")
-	s.T().Log("ts-relayer: relay process started")
+}
+
+// tsRelayerRelayReadsKeyring watches the relayer log written after logMark for
+// the relay process's first cycle: a keyring miss reports false at once; a
+// path listing followed by a quiet stretch reports true. Neither within the
+// budget reports false.
+func (s *baseTestSuite) tsRelayerRelayReadsKeyring(logMark int) bool {
+	const (
+		budget = 45 * time.Second
+		quiet  = 8 * time.Second
+	)
+	deadline := time.Now().Add(budget)
+	var pathsSeenAt time.Time
+	for time.Now().Before(deadline) {
+		lines := s.tsRelayerLogLines()
+		if len(lines) > logMark {
+			for _, line := range lines[logMark:] {
+				if strings.Contains(line, "Mnemonic not found in keyring") {
+					return false
+				}
+				if pathsSeenAt.IsZero() && strings.Contains(line, "relay paths.") && !strings.Contains(line, "No relay paths") {
+					pathsSeenAt = time.Now()
+				}
+			}
+		}
+		if !pathsSeenAt.IsZero() && time.Since(pathsSeenAt) >= quiet {
+			return true
+		}
+		time.Sleep(time.Second)
+	}
+	return false
+}
+
+// killTSRelayerRelayProcess stops a running relay process inside the relayer
+// container so it can be started again on a fresh keyring session.
+func (s *baseTestSuite) killTSRelayerRelayProcess() {
+	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	defer cancel()
+	exec, err := s.dkrPool.Client.CreateExec(docker.CreateExecOptions{
+		Context:      ctx,
+		AttachStdout: true,
+		AttachStderr: true,
+		Container:    s.tsRelayerResource.Container.ID,
+		User:         "root",
+		Cmd:          []string{"pkill", "-f", "ibc-v2-ts-relayer relay"},
+	})
+	s.Require().NoError(err, "failed to create pkill exec")
+	var out bytes.Buffer
+	s.Require().NoError(s.dkrPool.Client.StartExec(exec.ID, docker.StartExecOptions{
+		Context: ctx, Detach: false, OutputStream: &out, ErrorStream: &out,
+	}), "failed to run pkill: %s", out.String())
+	time.Sleep(2 * time.Second)
+}
+
+// tsRelayerLogLines returns the relayer container's log so far, line by line.
+func (s *baseTestSuite) tsRelayerLogLines() []string {
+	var buf bytes.Buffer
+	_ = s.dkrPool.Client.Logs(docker.LogsOptions{
+		Container:    s.tsRelayerResource.Container.ID,
+		OutputStream: &buf,
+		ErrorStream:  &buf,
+		Stdout:       true,
+		Stderr:       true,
+	})
+	return strings.Split(buf.String(), "\n")
 }
 
 func (s *baseTestSuite) stopTSRelayer() {

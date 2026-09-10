@@ -43,6 +43,7 @@ var (
 	_ sdk.Msg = (*MsgCreateConsumer)(nil)
 	_ sdk.Msg = (*MsgUpdateConsumer)(nil)
 	_ sdk.Msg = (*MsgRemoveConsumer)(nil)
+	_ sdk.Msg = (*MsgSetConsumerRefusal)(nil)
 	_ sdk.Msg = (*MsgFundConsumerFeePool)(nil)
 	_ sdk.Msg = (*MsgWithdrawConsumerFeePool)(nil)
 	_ sdk.Msg = (*MsgSweepConsumerFeePool)(nil)
@@ -567,6 +568,35 @@ func (msg MsgChallengeConsumerDowntime) ValidateBasic() error {
 func (msg MsgResumeConsumer) ValidateBasic() error {
 	if _, err := sdk.AccAddressFromBech32(msg.Authority); err != nil {
 		return errorsmod.Wrapf(sdkerrors.ErrInvalidAddress, "invalid authority address: %s", err)
+	}
+	return nil
+}
+
+// NewMsgSetConsumerRefusal creates a new MsgSetConsumerRefusal instance.
+func NewMsgSetConsumerRefusal(signer string, consumerId uint64, validatorAddress string, refused bool) *MsgSetConsumerRefusal {
+	return &MsgSetConsumerRefusal{
+		Signer:           signer,
+		ConsumerId:       consumerId,
+		ValidatorAddress: validatorAddress,
+		Refused:          refused,
+	}
+}
+
+// ValidateBasic implements the sdk.HasValidateBasic interface.
+func (msg MsgSetConsumerRefusal) ValidateBasic() error {
+	valAddr, err := sdk.ValAddressFromBech32(msg.ValidatorAddress)
+	if err != nil {
+		return errorsmod.Wrapf(sdkerrors.ErrInvalidAddress, "invalid validator address: %s", err)
+	}
+	signer, err := sdk.AccAddressFromBech32(msg.Signer)
+	if err != nil {
+		return errorsmod.Wrapf(sdkerrors.ErrInvalidAddress, "invalid signer address: %s", err)
+	}
+	// The refusal is the validator's own public stance: only its operator
+	// account may set or withdraw it.
+	if !sdk.AccAddress(valAddr).Equals(signer) {
+		return errorsmod.Wrapf(sdkerrors.ErrUnauthorized,
+			"refusal for validator %s must be signed by its operator account", msg.ValidatorAddress)
 	}
 	return nil
 }

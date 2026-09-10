@@ -134,6 +134,15 @@ func (gs GenesisState) Validate() error {
 	if err := validateEpochDowntimeEntries(gs.EpochDowntimeEntries, known); err != nil {
 		return errorsmod.Wrap(vaastypes.ErrInvalidGenesis, err.Error())
 	}
+	if err := validateConsumerRefusals(gs.ConsumerRefusals, known); err != nil {
+		return errorsmod.Wrap(vaastypes.ErrInvalidGenesis, err.Error())
+	}
+	if err := validatePendingEquivocationPunishments(gs.PendingEquivocationPunishments, known); err != nil {
+		return errorsmod.Wrap(vaastypes.ErrInvalidGenesis, err.Error())
+	}
+	if err := validateHeldUnbondingOps(gs.HeldUnbondingOps, gs.PendingEquivocationPunishments); err != nil {
+		return errorsmod.Wrap(vaastypes.ErrInvalidGenesis, err.Error())
+	}
 
 	if gs.InfractionParameters != nil {
 		if err := gs.InfractionParameters.Validate(); err != nil {
@@ -228,6 +237,9 @@ func validatePendingDowntimeSlashes(slashes []PendingDowntimeSlash, knownConsume
 		}
 		if _, ok := knownConsumerIds[p.ConsumerId]; !ok {
 			return fmt.Errorf("pending downtime slash references unknown consumer %d", p.ConsumerId)
+		}
+		if p.MaturesAtExtended != (p.DeferredByProposalId != 0) {
+			return fmt.Errorf("pending downtime slash for consumer %d: matures_at_extended and deferred_by_proposal_id must be set together", p.ConsumerId)
 		}
 		pk := pairKey{p.ConsumerId, string(p.ProviderConsAddr)}
 		windowEnd := p.WindowStartHeight + p.Span - 1
@@ -558,5 +570,105 @@ func (cs ConsumerState) Validate() error {
 		return fmt.Errorf("invalid phase: %s", cs.Phase)
 	}
 
+	return nil
+}
+
+// validateConsumerRefusals rejects refusals for unknown consumers, invalid
+// validator addresses, and duplicate (consumer_id, validator) pairs.
+func validateConsumerRefusals(refusals []ConsumerRefusal, knownConsumerIds map[uint64]struct{}) error {
+	type key struct {
+		consumerId uint64
+		addr       string
+	}
+	seen := map[key]bool{}
+	for _, r := range refusals {
+		if _, ok := knownConsumerIds[r.ConsumerId]; !ok {
+			return fmt.Errorf("consumer refusal references unknown consumer %d", r.ConsumerId)
+		}
+		if _, err := sdk.ValAddressFromBech32(r.ValidatorAddress); err != nil {
+			return fmt.Errorf("consumer refusal for consumer %d: invalid validator address %q: %s", r.ConsumerId, r.ValidatorAddress, err)
+		}
+		k := key{r.ConsumerId, r.ValidatorAddress}
+		if seen[k] {
+			return fmt.Errorf("duplicate consumer refusal for consumer %d validator %s", r.ConsumerId, r.ValidatorAddress)
+		}
+		seen[k] = true
+	}
+	return nil
+}
+
+// validatePendingEquivocationPunishments rejects entries for unknown
+// consumers, empty validator addresses, unset execution times, and duplicate
+// (consumer, validator, infraction height) triples.
+func validatePendingEquivocationPunishments(entries []PendingEquivocationPunishment, knownConsumerIds map[uint64]struct{}) error {
+	type key struct {
+		consumerId uint64
+		addr       string
+		height     int64
+	}
+	seen := map[key]bool{}
+	for _, e := range entries {
+		if _, ok := knownConsumerIds[e.ConsumerId]; !ok {
+			return fmt.Errorf("pending equivocation punishment references unknown consumer %d", e.ConsumerId)
+		}
+		if len(e.ProviderConsAddr) == 0 {
+			return fmt.Errorf("pending equivocation punishment: provider cons addr cannot be empty")
+		}
+		if e.ExecutesAt.IsZero() {
+			return fmt.Errorf("pending equivocation punishment for consumer %d: executes_at must be set", e.ConsumerId)
+		}
+		if e.InfractionHeight <= 0 {
+			return fmt.Errorf("pending equivocation punishment for consumer %d: infraction height must be positive", e.ConsumerId)
+		}
+		if e.ExecutesAtExtended != (e.DeferredByProposalId != 0) {
+			return fmt.Errorf("pending equivocation punishment for consumer %d: executes_at_extended and deferred_by_proposal_id must be set together", e.ConsumerId)
+		}
+		k := key{e.ConsumerId, string(e.ProviderConsAddr), e.InfractionHeight}
+		if seen[k] {
+			return fmt.Errorf("duplicate pending equivocation punishment for consumer %d validator %x height %d", e.ConsumerId, e.ProviderConsAddr, e.InfractionHeight)
+		}
+		seen[k] = true
+	}
+	return nil
+}
+
+// validateHeldUnbondingOps rejects empty validator addresses, empty id lists,
+// id 0 (x/staking numbers operations from 1), duplicate operation ids per
+// validator and across validators (one staking operation belongs to exactly
+// one validator), and holds for a validator with no pending equivocation
+// punishment: holds are only ever released when a punishment resolves, so an
+// orphan hold would never let its operation complete.
+func validateHeldUnbondingOps(entries []HeldUnbondingOps, pending []PendingEquivocationPunishment) error {
+	accused := map[string]bool{}
+	for _, e := range pending {
+		accused[string(e.ProviderConsAddr)] = true
+	}
+	seenAddr := map[string]bool{}
+	seenID := map[uint64]bool{}
+	for _, h := range entries {
+		if len(h.ProviderConsAddr) == 0 {
+			return fmt.Errorf("held unbonding ops: provider cons addr cannot be empty")
+		}
+		addr := string(h.ProviderConsAddr)
+		if seenAddr[addr] {
+			return fmt.Errorf("duplicate held unbonding ops entry for validator %x", h.ProviderConsAddr)
+		}
+		seenAddr[addr] = true
+		if !accused[addr] {
+			return fmt.Errorf("held unbonding ops for validator %x without a pending equivocation punishment", h.ProviderConsAddr)
+		}
+		if len(h.UnbondingOpIds) == 0 {
+			return fmt.Errorf("held unbonding ops for validator %x: no operation ids", h.ProviderConsAddr)
+		}
+		for _, id := range h.UnbondingOpIds {
+			if id == 0 {
+				return fmt.Errorf("held unbonding ops for validator %x: operation id 0 is not a staking operation", h.ProviderConsAddr)
+			}
+			if seenID[id] {
+				return fmt.Errorf("unbonding op %d held more than once", id)
+			}
+			seenID[id] = true
+		}
+	}
 	return nil
 }

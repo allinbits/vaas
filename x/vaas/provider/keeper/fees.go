@@ -2,6 +2,7 @@ package keeper
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"time"
 
@@ -457,6 +458,28 @@ func (k Keeper) PayWithheldFees(ctx sdk.Context, consumerId uint64) error {
 	}
 
 	return nil
+}
+
+// extendWithheldFeeRecord keeps the (consumer, validator) withheld fee record
+// claimable until at least `until`. A pending downtime slash deferred behind a
+// removal vote stays challengeable past the original challenge window, and a
+// challenge won during that deferral must still find the record to repay.
+func (k Keeper) extendWithheldFeeRecord(ctx sdk.Context, consumerId uint64, providerConsAddr []byte, until time.Time) {
+	key := collections.Join(consumerId, providerConsAddr)
+	record, err := k.WithheldFeeRecords.Get(ctx, key)
+	if err != nil {
+		if !errors.Is(err, collections.ErrNotFound) {
+			k.Logger(ctx).Error("failed to read withheld fee record for extension", "error", err)
+		}
+		return
+	}
+	if !until.After(record.ExpiresAt) {
+		return
+	}
+	record.ExpiresAt = until
+	if err := k.WithheldFeeRecords.Set(ctx, key, record); err != nil {
+		k.Logger(ctx).Error("failed to extend withheld fee record", "error", err)
+	}
 }
 
 // SweepExpiredWithheldFeeRecords deletes withheld fee records whose challenge
