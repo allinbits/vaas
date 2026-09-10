@@ -166,7 +166,12 @@ windows each carry their own fee-derived amount.
 
 Each pending slash matures `DowntimeChallengeWindow` after its own acceptance. A
 `BeginBlock` sweep executes matured entries -- several can execute for the same validator,
-in the same sweep or across sweeps, one per matured window. For each entry the token amount
+in the same sweep or across sweeps, one per matured window. A matured entry whose consumer
+has a removal proposal in its voting period is deferred instead of executed, past that vote's
+end, so the community's verdict on the chain decides first; a passed removal cancels the
+consumer's pending slashes outright, and a deferred entry stays challengeable, its withheld
+fee record kept claimable, until it resolves (see
+[consumer-refusal.md](consumer-refusal.md)). For each entry the token amount
 converts to a stake fraction, **capped** by `InfractionParameters.Downtime.SlashFraction` --
 never the price itself: under honest pricing `P*M/C` sits far below the cap, which only bites
 when fee overrides or conversion-rate anomalies would otherwise turn a fee-sized number into a
@@ -266,16 +271,8 @@ providerd tx vaasprovider challenge-consumer-downtime <consumer-id> <validator-c
 
 A successful challenge moves the consumer from `LAUNCHED` to `PAUSED` -- proven-corrupt
 reporting is grounds for suspension, but a bug deserves a recovery path that does not force
-re-registration. A confirmed light-client attack pauses the consumer the same way: a fork
-proves the chain's consensus is compromised without proving who is at fault, so the provider
-contains the chain and punishes nobody, and the consumer's IBC client is frozen so that no
-packet proven against the fork lands any more. Either order works: `MsgSubmitConsumerMisbehaviour`
-freezes and pauses in one transaction (see `HandleConsumerMisbehaviour`), and a client frozen
-through ibc-go's `MsgUpdateClient`, the path a generic relayer or watcher takes, is caught by
-the provider's BeginBlock, which pauses a launched consumer whose client is frozen. Whichever
-way it came, a pause first repays the fees withheld from accused validators: their
-accusations are cancelled with it and could not be challenged any more. The
-`vaas_consumer_paused` event names the reason. While paused:
+re-registration. A refusal coalition reaching `RefusalPauseThreshold` pauses the consumer the
+same way (see [consumer-refusal.md](consumer-refusal.md)). While paused:
 
 - No VSC packets are queued or sent; no fees are distributed; downtime evidence from the
   consumer is rejected.

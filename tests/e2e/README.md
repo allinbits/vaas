@@ -60,10 +60,14 @@ The scenarios run as an **ordered** sequence in `TestVAAS`
 ([e2e_test.go](e2e_test.go)): block production, consumer-on-provider and
 provider-on-consumer, validator-set sync, a transient-outage snapshot resync,
 the debt flow, downtime slash, the fee-pool send restriction / fund-and-lock /
-gov-subsidy-clawback tests, liveness removal, and finally the genesis round-trip
-(which stops the provider container and restarts it from exported genesis). The
-order is load-bearing: later tests depend on consumer `"0"` staying `LAUNCHED`
-until liveness removal, and the genesis round-trip runs last.
+gov-subsidy-clawback tests, the refusal pause with its refused-then-accepted
+governance resume, a downtime slash and an equivocation punishment (fabricated
+double votes signed with test-held validator keys) each deferring behind a
+rejected removal vote, a second punishment queued right before liveness
+removal and cancelled by it, and finally the genesis round-trip (which stops
+the provider container and restarts it from exported genesis). The order
+matters: later tests depend on consumer `"0"` staying `LAUNCHED` until
+liveness removal, and the genesis round-trip runs last.
 
 This suite uses a realistic (~21-day) provider unbonding, so the liveness sweep
 timing is not exercised here -- that is the liveness suite's job.
@@ -78,10 +82,13 @@ resync, and auto-sweep removal are all observable within a CI run, while keeping
 the relayer-derived client trusting period viable. It uses fast blocks and a
 first-sync gate to keep the timing-sensitive assertions reliable. Its consumer
 is registered via `testdata/create_consumer_short_unbonding.json`. Scenarios run
-in order in `TestLivenessVAAS` (lines 208+): recover-before-grace, real safe
-mode, the liveness query, forced-timeout snapshot resync, and auto-sweep
-removal. The header comment of that file documents the timing rationale in
-detail.
+in order in `TestLivenessVAAS`: recover-before-grace, real safe mode, the
+liveness query, forced-timeout snapshot resync, a punishment queued before the
+outage, auto-sweep removal (with a second punishment queued mid-outage), the
+first punishment surviving the stop and executing at maturity, and the second
+deferring behind a removal vote passed after the stop and being cancelled
+(`equivocation_execution_delay` is 420s and the gov voting period 180s here).
+The header comment of that file documents the timing rationale in detail.
 
 ## File layout
 
@@ -98,6 +105,7 @@ detail.
 | `e2e_downtime_slash_test.go` | downtime evidence + slash scenario |
 | `e2e_fee_pool_test.go` | fee-pool send restriction, locks, gov clawback |
 | `e2e_consumer_liveness_test.go` | liveness / safe-mode scenarios |
+| `e2e_refusal_and_deferral_test.go` | refusal pause and resume, downtime and equivocation deferral behind removal votes, cancellation on removal; fabricated double-vote evidence helpers |
 | `e2e_genesis_roundtrip_test.go` | provider export/restart round-trip |
 | `gov_proposal_helpers_test.go` | submit/vote governance proposals from a test |
 | `query_test.go`, `http_util_test.go`, `chain_test.go`, `e2e_exec_test.go`, `io.go` | query, HTTP, chain, container-exec helpers |
