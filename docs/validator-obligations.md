@@ -69,10 +69,29 @@ as described in [consumer-liveness.md](consumer-liveness.md) section 6.
 
 ## 4. Do not equivocate
 
-Double-signing on a consumer is punished on the provider by slash + jail +
-tombstone once evidence is submitted -- permanent removal at the default
-parameters ([equivocation-evidence.md](equivocation-evidence.md)). This is the
-one infraction with no grace period and no recovery.
+Double-signing on a consumer is punished on the provider: the evidence jails
+you at once and holds your unbonding operations, and the slash + tombstone
+follow `equivocation_execution_delay` later (default 7 days) unless governance
+removes the consumer in the meantime -- permanent removal at the default
+parameters ([equivocation-evidence.md](equivocation-evidence.md)). The delay
+exists so that evidence a malicious consumer binary fabricates against you can
+be answered by a removal vote, not so that a real double-sign can be undone:
+run consumer nodes behind an external signer whose double-sign guard the binary
+cannot bypass.
+
+## 4a. Refuse a consumer on-chain, not by going dark
+
+If you vet a consumer binary and will not run it, say so on-chain:
+`providerd tx provider set-consumer-refusal <consumer-id> true --from <operator>`
+(see [consumer-refusal.md](consumer-refusal.md)). Downtime accusations keep
+coming while you are offline for that chain, but a refusal is a public,
+stake-weighted signal: at one third of the bonded power the consumer is paused
+and its pending accusations cancelled, and any accusation that matures while a
+removal vote for the consumer is open waits for that vote. Pair the signal with
+the removal proposal, timed so it is in its voting period before the first
+accusation matures (grace plus challenge window after spawn, 14 days at
+defaults). Withdraw the signal with `false`; a governance resume is refused
+while the coalition still stands.
 
 ## 5. Keep IBC clients fresh, especially during a PAUSE
 

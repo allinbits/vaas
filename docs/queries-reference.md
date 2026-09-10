@@ -1,6 +1,6 @@
 # Queries Reference
 
-The full query surface of both VAAS modules: 18 provider queries and 2 consumer
+The full query surface of both VAAS modules: 20 provider queries and 2 consumer
 queries, each with a CLI command. Every gRPC method has a CLI equivalent and
 vice versa.
 
@@ -65,10 +65,21 @@ See [consumer-fee-pool.md](consumer-fee-pool.md).
 | Command | Args | Returns |
 |---|---|---|
 | `consumer-liveness` | `<consumer-id>` | `last_ack_time`, `grace_period`, `removal_eta`, `degraded`. `grace_period` is derived (provider unbonding times `liveness_grace_fraction`), `removal_eta` is `last_ack + grace`, and `degraded` trips at half the grace period as an early warning. **Caveat:** a consumer that has never acked reports the current block time as its last ack, so it looks freshly alive rather than overdue. |
-| `pending-downtime-slashes` | `<consumer-id>` | Every accepted downtime window awaiting its challenge window: `provider_cons_addr`, `window_start_height`, `span`, `missed_count`, `missed_blocks_bitmap`, `slash_tokens`, `matures_at`, `consumer_cons_addr`. Not paginated, and deliberately so -- it is bounded by validator count times pending windows. A validator can appear more than once, one row per disjoint window. These are the rows `challenge-consumer-downtime` contests before `matures_at`. |
+| `pending-downtime-slashes` | `<consumer-id>` | Every accepted downtime window awaiting its challenge window: `provider_cons_addr`, `window_start_height`, `span`, `missed_count`, `missed_blocks_bitmap`, `slash_tokens`, `matures_at`, `matures_at_extended`, `deferred_by_proposal_id` (set once the entry has been deferred behind a removal vote), `consumer_cons_addr`. Not paginated, and deliberately so -- it is bounded by validator count times pending windows. A validator can appear more than once, one row per disjoint window. These are the rows `challenge-consumer-downtime` contests before `matures_at`. |
 
 See [consumer-downtime.md](consumer-downtime.md) and
 [consumer-liveness.md](consumer-liveness.md).
+
+### Refusals and pending punishments
+
+| Command | Args | Returns |
+|---|---|---|
+| `consumer-refusals` | `<consumer-id>` | `validator_addresses` (operator addresses currently refusing the consumer), `refused_power`, `total_power`, `refused_fraction`, `pause_threshold`. Not paginated. An unknown consumer is an invalid argument. |
+| `pending-equivocation-punishments` | `<consumer-id>` | `punishments[]`: `consumer_id`, `provider_cons_addr`, `infraction_height`, `executes_at`, `executes_at_extended`, `deferred_by_proposal_id`. The validator behind each entry is jailed and its unbonding operations held until the entry resolves. Not paginated. |
+
+REST: `/vaas/provider/v1/consumer_refusals/{consumer_id}` and
+`/vaas/provider/v1/pending_equivocation_punishments/{consumer_id}`. See
+[consumer-refusal.md](consumer-refusal.md).
 
 ---
 
@@ -97,6 +108,7 @@ no CLI command.
 | `MsgSubmitConsumerDoubleVoting` | any | `submit-consumer-double-voting <consumer-id> <evidence.json> <header.json>` |
 | `MsgSubmitConsumerMisbehaviour` | any | `submit-consumer-misbehaviour <consumer-id> <misbehaviour.json>` |
 | `MsgChallengeConsumerDowntime` | any | `challenge-consumer-downtime <consumer-id> <validator-cons-addr> <claimed-height> --consumer-rpc <url>` |
+| `MsgSetConsumerRefusal` | validator operator account | `set-consumer-refusal <consumer-id> <true|false>` (the validator is the operator behind `--from`) |
 | `MsgRemoveConsumer` | owner **or** gov pre-launch; gov only after | `remove-consumer <consumer-id>` (pre-launch); governance proposal after launch |
 | `MsgResumeConsumer` | gov authority | none -- governance proposal |
 | `MsgSetConsumerFeesPerBlock` | gov authority | none -- governance proposal |

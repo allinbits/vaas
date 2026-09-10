@@ -166,7 +166,12 @@ windows each carry their own fee-derived amount.
 
 Each pending slash matures `DowntimeChallengeWindow` after its own acceptance. A
 `BeginBlock` sweep executes matured entries -- several can execute for the same validator,
-in the same sweep or across sweeps, one per matured window. For each entry the token amount
+in the same sweep or across sweeps, one per matured window. A matured entry whose consumer
+has a removal proposal in its voting period is deferred instead of executed, past that vote's
+end, so the community's verdict on the chain decides first; a passed removal cancels the
+consumer's pending slashes outright, and a deferred entry stays challengeable, its withheld
+fee record kept claimable, until it resolves (see
+[consumer-refusal.md](consumer-refusal.md)). For each entry the token amount
 converts to a stake fraction, **capped** by `InfractionParameters.Downtime.SlashFraction` --
 never the price itself: under honest pricing `P*M/C` sits far below the cap, which only bites
 when fee overrides or conversion-rate anomalies would otherwise turn a fee-sized number into a
@@ -266,7 +271,8 @@ providerd tx vaasprovider challenge-consumer-downtime <consumer-id> <validator-c
 
 A successful challenge moves the consumer from `LAUNCHED` to `PAUSED` -- proven-corrupt
 reporting is grounds for suspension, but a bug deserves a recovery path that does not force
-re-registration. While paused:
+re-registration. A refusal coalition reaching `RefusalPauseThreshold` pauses the consumer the
+same way (see [consumer-refusal.md](consumer-refusal.md)). While paused:
 
 - No VSC packets are queued or sent; no fees are distributed; downtime evidence from the
   consumer is rejected.

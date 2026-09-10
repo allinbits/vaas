@@ -34,8 +34,8 @@ To read the live values off a running chain rather than the defaults here, see
 One global set. Seeded from the provider genesis (`app_state.provider.params`)
 and changed only by governance through the provider `MsgUpdateParams`
 (authority-gated: the signer must be the governance authority). Source:
-[x/vaas/provider/types/params.go](../x/vaas/provider/types/params.go) (defaults
-lines 15-88, `Params.Validate` lines 234-265) and the `UpdateParams` handler in
+[x/vaas/provider/types/params.go](../x/vaas/provider/types/params.go) (the
+defaults and `Params.Validate`) and the `UpdateParams` handler in
 [x/vaas/provider/keeper/msg_server.go](../x/vaas/provider/keeper/msg_server.go)
 (lines 41-67).
 
@@ -47,7 +47,10 @@ lines 15-88, `Params.Validate` lines 234-265) and the `UpdateParams` handler in
 | `blocks_per_epoch` | int64 | `> 0` | `600` | VSC cadence and the fee-collection period (about 1h at 6s blocks) |
 | `fees_per_block_amount` | Int | set and `> 0` | `1000` | amount only; the denom is not a parameter (see below) |
 | `min_deposit_blocks` | uint64 | none (not checked in `Params.Validate`) | `14400` | fee-pool minimum-deposit floor multiplier; `0` disables the floor |
-| `max_pause_duration` | duration | `> 0` | `720h` (30 days) | how long a consumer may stay `PAUSED` before auto-stop; see [consumer-downtime.md](consumer-downtime.md) section 7 |
+| `max_pause_duration` | duration | `> 0` | `720h` (30 days) | how long a consumer may stay `PAUSED` before auto-stop; must exceed the provider's governance latency, since a refusal-triggered pause is resumed by governance only after the coalition withdraws; see [consumer-downtime.md](consumer-downtime.md) section 7 |
+| `refusal_pause_threshold` | string decimal | `(0, 1)` | `"0.333333333333333333"` | share of bonded power whose recorded refusal pauses a consumer; keep it at or above the share that halts the chain physically (one third); see [consumer-refusal.md](consumer-refusal.md) section 1 |
+| `equivocation_execution_delay` | duration | `> 0` | `168h` (7 days) | jailed-but-pending window before a verified equivocation's slash and tombstone execute; see [consumer-refusal.md](consumer-refusal.md) section 3 |
+| `removal_vote_deferral_margin` | duration | `> 0` | `1h` | how far past a removal vote's end a punishment deferred behind it waits for the tally; see [consumer-refusal.md](consumer-refusal.md) section 2 |
 
 The bounds come from `Params.Validate`: `trusting_period_fraction` and
 `liveness_grace_fraction` go through `ValidateStringFractionNonZero`, which
@@ -55,7 +58,11 @@ rejects `0`, negatives, and any value `>= 1`
 ([x/vaas/types/shared_params.go](../x/vaas/types/shared_params.go) lines 64-79);
 `vaas_timeout_period` through `ValidateVAASTimeoutPeriod` against
 `channeltypesv2.MaxTimeoutDelta` (24h); `blocks_per_epoch` must be a positive
-int64; `fees_per_block_amount` must be set and positive. `min_deposit_blocks` is
+int64; `fees_per_block_amount` must be set and positive;
+`refusal_pause_threshold` goes through `ValidateStringFractionNonZero` as well,
+and `max_pause_duration`, `equivocation_execution_delay` and
+`removal_vote_deferral_margin` through `ValidateDuration` (strictly positive).
+`min_deposit_blocks` is
 **not** validated in `Params.Validate` -- its only effect is as the fee-pool
 floor multiplier, where `0` is a valid "disable the floor" value.
 

@@ -68,16 +68,18 @@ Built with `make build-apps` into `build/`.
 2. Once per epoch (`blocks_per_epoch`, default 600) the provider queues a VSC packet per launched consumer and, in the same window, collects each consumer's epoch fee (`fees_per_block * blocks_per_epoch`) from its fee pool and distributes it to the bonded validators.
 3. Provider sends each queued VSC packet over the declared IBC v2 client. Packets are out-of-order; the consumer deduplicates via `HighestValsetUpdateID`. A packet carries a diff by default, or an absolute snapshot (`is_snapshot`) when the consumer has fallen behind on acks, and every packet also carries the consumer's current in-debt flag.
 4. Consumer's `OnRecvPacket` calls `ApplyCCValidatorChanges()` and the new set is flushed to CometBFT on the next `EndBlock`.
-5. Evidence flows back to the provider two ways. Downtime evidence travels consumer -> provider as IBC `EvidencePacketData` packets, which the provider prices into a slash held behind a challenge window (a successful `MsgChallengeConsumerDowntime` cancels it and moves the consumer to `PAUSED`). Double-voting / light-client evidence is submitted as ordinary provider transactions (`MsgSubmitConsumerDoubleVoting` / `MsgSubmitConsumerMisbehaviour`). Global infraction parameters determine slash/jail.
+5. Evidence flows back to the provider two ways. Downtime evidence travels consumer -> provider as IBC `EvidencePacketData` packets, which the provider prices into a slash held behind a challenge window (a successful `MsgChallengeConsumerDowntime` cancels it and moves the consumer to `PAUSED`). Double-voting / light-client evidence is submitted as ordinary provider transactions (`MsgSubmitConsumerDoubleVoting` / `MsgSubmitConsumerMisbehaviour`). Global infraction parameters determine slash/jail; a verified double-vote jails at once but slashes and tombstones only after `equivocation_execution_delay`, and both that and matured downtime slashes wait out a removal vote for the consumer that is in its voting period (see docs/consumer-refusal.md).
 
 ### Consumer Lifecycle
 
 `REGISTERED -> INITIALIZED -> LAUNCHED -> STOPPED -> DELETED`, plus a `PAUSED`
-branch off `LAUNCHED` (entered by a successful downtime challenge; governance
-resumes it to `LAUNCHED` or removes it to `STOPPED`).
+branch off `LAUNCHED` (entered by a successful downtime challenge or by the
+bonded power refusing the consumer reaching `refusal_pause_threshold`;
+governance resumes it to `LAUNCHED` or removes it to `STOPPED`).
 
 Managed on the provider via `MsgCreateConsumer`, `MsgUpdateConsumer`,
-`MsgRemoveConsumer`, `MsgChallengeConsumerDowntime`, and `MsgResumeConsumer`;
+`MsgRemoveConsumer`, `MsgChallengeConsumerDowntime`, `MsgSetConsumerRefusal`,
+and `MsgResumeConsumer`;
 the per-consumer fee pool via `MsgFundConsumerFeePool`,
 `MsgWithdrawConsumerFeePool`, `MsgSweepConsumerFeePool`, and
 `MsgSetConsumerFeesPerBlock`.

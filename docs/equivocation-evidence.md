@@ -5,14 +5,15 @@ not watch consumer consensus directly. Instead, anyone can submit evidence of
 validator misconduct on a consumer to the provider, which verifies it and (for
 double-signing) punishes the offender on the provider chain.
 
-Two evidence types exist. Both punish an identifiable offender the same way --
-slash, jail, and tombstone at the double-sign level -- and differ only in how
-the evidence is verified and in what happens when the provider ends up unable to
-punish anyone:
+Two evidence types exist and differ in how the evidence is verified and in what
+follows: a double-sign names an offender, who is jailed at once and whose slash
+and tombstone are queued behind a delay governance can act within; a
+light-client attack names nobody the provider can trust the evidence about, so
+the chain is paused instead:
 
 | Evidence | Message | Consequence |
 |---|---|---|
-| Double-sign (duplicate vote) | `MsgSubmitConsumerDoubleVoting` | slash + jail + tombstone |
+| Double-sign (duplicate vote) | `MsgSubmitConsumerDoubleVoting` | jail now, unbonding operations held; slash + tombstone after `equivocation_execution_delay`, deferred once behind a live removal vote; cancelled if governance removes the consumer |
 | Light-client attack (IBC misbehaviour) | `MsgSubmitConsumerMisbehaviour` | the consumer is paused; nobody is punished; the byzantine set is attributed on the event |
 
 Both messages are permissionless -- any account can submit them as an ordinary
@@ -59,18 +60,27 @@ Both files are decoded with the proto-JSON codec. CLI source:
    votes share height/round/type and validator address but differ in block id;
    and both signatures verify against the consumer chain id.
 4. Resolves the offender's provider consensus address (honouring key assignment,
-   see [key-assignment.md](key-assignment.md)) and applies the global
-   `InfractionParameters.DoubleSign` through `punishEquivocation`: **slash** the
-   stake (default 5%), **jail**, and **tombstone**. Repeated submissions of
-   already-processed evidence are idempotent (already-tombstoned is not an
-   error).
+   see [key-assignment.md](key-assignment.md)) and queues the punishment
+   (`QueuePendingEquivocationPunishment`): the validator is **jailed** at once
+   and its unbonding operations are **held**, while the **slash** (default 5%)
+   and **tombstone** at `InfractionParameters.DoubleSign` execute
+   `equivocation_execution_delay` later (default 7 days) in the provider
+   `BeginBlock`, deferred once past a removal vote for the consumer that is in
+   its voting period at that point. A passed removal cancels the punishment,
+   releases the holds and opens the jail; a rejected one lets it execute. See
+   [consumer-refusal.md](consumer-refusal.md) section 3. Repeated submissions
+   of already-processed evidence are idempotent (already queued is a no-op,
+   already-tombstoned is not an error).
 
-On success the provider emits `vaas_submit_consumer_double_voting`; see
+On success the provider emits `vaas_submit_consumer_double_voting` and
+`vaas_equivocation_punishment_queued`; the resolution later emits
+`vaas_equivocation_punishment_executed` or `_cancelled`; see
 [events-reference.md](events-reference.md).
 
 The slash fraction, jail duration, and tombstone flag are the global infraction
 parameters (see [params-reference.md](params-reference.md) section 2); with the
-defaults, a double-signer is slashed 5% and permanently removed.
+defaults, a double-signer whose consumer governance does not remove is slashed
+5% and permanently removed seven days after the evidence is accepted.
 
 ---
 

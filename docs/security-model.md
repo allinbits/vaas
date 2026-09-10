@@ -75,9 +75,9 @@ No automatic re-binding exists.
 
 | Infraction | Detection | Punishment |
 |---|---|---|
-| Double-sign (duplicate vote) on a consumer | `MsgSubmitConsumerDoubleVoting`, re-verified on the provider | slash + jail + tombstone at `InfractionParameters.DoubleSign` |
+| Double-sign (duplicate vote) on a consumer | `MsgSubmitConsumerDoubleVoting`, re-verified on the provider | jail now and unbonding operations held; slash + tombstone at `InfractionParameters.DoubleSign` after `equivocation_execution_delay`, deferred once behind a live removal vote for the consumer; cancelled if governance removes the consumer (see [consumer-refusal.md](consumer-refusal.md)) |
 | Light-client attack (IBC misbehaviour) on a consumer | `MsgSubmitConsumerMisbehaviour`, re-verified on the provider | the consumer is paused, nobody is punished; the byzantine set is attributed on the event; governance resumes the chain or lets the pause expire into `STOPPED` |
-| Downtime on a consumer | falsifiable IBC evidence packets | fee-priced slash held behind a challenge window; a successful `MsgChallengeConsumerDowntime` cancels it and moves the consumer to `PAUSED` |
+| Downtime on a consumer | falsifiable IBC evidence packets | fee-priced slash held behind a challenge window, deferred once behind a live removal vote for the consumer; a successful `MsgChallengeConsumerDowntime` cancels it and moves the consumer to `PAUSED`; any stop of the consumer cancels it |
 | Double-sign on the provider itself | CometBFT `DuplicateVoteEvidence` via `x/evidence` | slash + jail + tombstone |
 
 **A confirmed light-client attack punishes nobody, deliberately.** A malicious
@@ -107,41 +107,48 @@ by the accused validator within the challenge window by proving liveness. See
 ### The consumer binary is in the trust path
 
 Mandatory validation means every provider validator runs every consumer's
-binary: code the protocol never vets. Two exposures follow, and they are
-accepted and bounded rather than solved:
+binary: code the protocol never vets. Two exposures follow. The protocol
+answers both mechanically and leaves the verdict to governance, on one
+principle: no consumer-originated punishment is instant, and a chain condemned
+by a removal vote takes its evidence down with it
+([consumer-refusal.md](consumer-refusal.md)).
 
 - **Direct key abuse (the double-vote residual).** A validator that runs a
   consumer binary with an in-process signing key hands that key to the binary,
   which can then sign fabricated conflicting votes directly -- no fork, nothing
   for the misbehaviour path to contain -- and the resulting
   `MsgSubmitConsumerDoubleVoting` evidence is genuine by construction: the
-  provider cannot distinguish it from a real equivocation, and slashes the
-  validator's provider stake. The protocol deliberately does nothing automatic
-  about this, for the same reason the light-client path punishes nobody. The
-  defenses are operational: run consumer nodes behind an external signer whose
-  double-sign guard the binary cannot bypass (this closes the vector
-  completely), and vet the binary and genesis against the registered
-  `binary_hash` and `genesis_hash` before validating. The fork-based flavor of binary griefing, by contrast, is
-  contained on-chain: the fork evidence itself pauses the consumer and closes
-  its evidence pipeline.
+  provider cannot distinguish it from a real equivocation. What the provider
+  does with it is reversible first and irreversible later: the validator is
+  jailed at once and its unbonding operations are held, while the slash and
+  tombstone wait out `equivocation_execution_delay` (default 7 days) and, if a
+  removal vote for the consumer is open when that delay ends, the vote's
+  outcome. A passed removal cancels the punishment and opens the jail; a
+  rejected one lets it execute. Nothing is judged automatically, for the same
+  reason the light-client path punishes nobody. The complete defense is still
+  operational: run consumer nodes behind an external signer whose double-sign
+  guard the binary cannot bypass, and vet the binary and genesis against the
+  registered `binary_hash` and `genesis_hash` before validating. The
+  fork-based flavor of binary griefing, by contrast, is contained on-chain:
+  the fork evidence itself pauses the consumer and closes its evidence
+  pipeline.
 - **The refusal dilemma.** A validator that vets a binary, finds it malicious,
   and refuses to run it is indistinguishable from an offline node, so the
-  downtime path will accuse it. The current model bounds the cost: downtime
-  accusations start only after the launch grace (`DowntimeGracePeriod`,
-  default 7 days), every accepted accusation waits out the challenge window
-  (`DowntimeChallengeWindow`, default 7 days) before executing, and pausing,
-  stopping, or removing the consumer cancels all of its pending accusations.
-  The playbook is: refuse from launch and submit the removal proposal
-  immediately. Every accusation whose challenge window is still open when the
-  removal passes dies with the chain; what executes is the windows that
-  mature while governance deliberates. On a provider whose voting period
-  exceeds the grace plus the challenge window -- AtomOne's does -- some
-  windows will mature before any proposal can pass, so principled refusal has
-  a real but bounded price: the per-window fraction (default `0.0001`, no
-  tombstone) times the windows that close between grace expiry and removal.
-  Reducing that price to zero needs protocol help (deferring downtime
-  execution while a removal proposal is in voting) and is deliberately left
-  to future work.
+  downtime path will accuse it. The model gives the refuser two things. A
+  public, stake-weighted signal (`MsgSetConsumerRefusal`): at
+  `refusal_pause_threshold` (default one third, the share that halts the
+  chain physically anyway) the consumer is paused, which cancels its pending
+  accusations for everyone, and it stays paused until the coalition withdraws
+  or governance removes it. And deferral: downtime accusations start only
+  after the launch grace (`DowntimeGracePeriod`, default 7 days), every
+  accepted accusation waits out the challenge window
+  (`DowntimeChallengeWindow`, default 7 days), and one that matures while a
+  removal vote for the consumer is open waits for that vote; a passed removal
+  stops the chain and cancels every pending accusation, a rejected one lets
+  them execute. The playbook is: refuse from launch, signal it, and have the
+  removal proposal in its voting period before the first accusation matures.
+  What a principled refuser then loses is no stake at all, only the fee shares
+  withheld while it stood accused, which only a successful challenge repays.
 
 ## Fee escrow
 
@@ -156,9 +163,11 @@ it. See [consumer-fee-pool.md](consumer-fee-pool.md).
 ## Assumptions and out of scope
 
 - **The consumer binary is in the trust path.** Validators run code the
-  protocol never vets, and the two exposures that follow (direct key abuse
-  and the refusal dilemma) are accepted MVP posture, bounded operationally
-  rather than solved; see the dedicated section above.
+  protocol never vets. The two exposures that follow (direct key abuse and
+  the refusal dilemma) are bounded on-chain by deferring every
+  consumer-originated punishment behind a governance verdict, and closed only
+  operationally (an external signer); see the dedicated section above and
+  [consumer-refusal.md](consumer-refusal.md).
 - **Provider validator honesty.** VAAS inherits the provider chain's
   2/3-honest assumption. Collusion of 2/3+ of the provider's own validators can
   forge a consumer light-client history; that is the provider's own security
