@@ -148,11 +148,6 @@ func (AppModule) ConsensusVersion() uint64 {
 func (am AppModule) BeginBlock(goCtx context.Context) error {
 	ctx := sdk.UnwrapSDKContext(goCtx)
 
-	blockHeight := uint64(ctx.BlockHeight())
-	vID := am.keeper.GetHeightValsetUpdateID(ctx, blockHeight)
-	am.keeper.SetHeightValsetUpdateID(ctx, blockHeight+1, vID)
-	am.keeper.Logger(ctx).Debug("block height was mapped to vscID", "height", blockHeight+1, "vscID", vID)
-
 	err := am.keeper.TrackHistoricalInfo(ctx)
 	if err != nil {
 		am.keeper.Logger(ctx).Warn("failed to track historical info", "error", err)

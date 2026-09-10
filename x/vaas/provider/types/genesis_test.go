@@ -50,7 +50,6 @@ func TestValidateGenesisState(t *testing.T) {
 			"valid initializing provider genesis with nil updates",
 			types.NewGenesisState(
 				types.DefaultValsetUpdateID,
-				nil,
 				[]types.ConsumerState{launchedCS(0, "chainid-1", "client-id", false)},
 				types.DefaultParams(),
 				nil,
@@ -65,7 +64,6 @@ func TestValidateGenesisState(t *testing.T) {
 			"valid multiple provider genesis with multiple consumer chains",
 			types.NewGenesisState(
 				types.DefaultValsetUpdateID,
-				nil,
 				[]types.ConsumerState{
 					launchedCS(0, "chainid-1", "client-id", false),
 					launchedCS(1, "chainid-2", "client-id", true),
@@ -85,7 +83,6 @@ func TestValidateGenesisState(t *testing.T) {
 			"valid provider genesis with custom params",
 			types.NewGenesisState(
 				types.DefaultValsetUpdateID,
-				nil,
 				[]types.ConsumerState{launchedCS(0, "chainid-1", "client-id", false)},
 				types.NewParams(
 					types.DefaultTrustingPeriodFraction, types.DefaultLivenessGraceFraction, time.Hour, 600, math.NewInt(42), types.DefaultMinDepositBlocks, types.DefaultMaxPauseDuration),
@@ -102,22 +99,6 @@ func TestValidateGenesisState(t *testing.T) {
 			types.NewGenesisState(
 				0,
 				nil,
-				nil,
-				types.DefaultParams(),
-				nil,
-				nil,
-				nil,
-				nil,
-				nil,
-			),
-			false,
-		},
-		{
-			"invalid valset ID to block height mapping",
-			types.NewGenesisState(
-				types.DefaultValsetUpdateID,
-				[]types.ValsetUpdateIdToHeight{{ValsetUpdateId: 0}},
-				nil,
 				types.DefaultParams(),
 				nil,
 				nil,
@@ -131,7 +112,6 @@ func TestValidateGenesisState(t *testing.T) {
 			"invalid params, zero trusting period fraction",
 			types.NewGenesisState(
 				types.DefaultValsetUpdateID,
-				nil,
 				[]types.ConsumerState{launchedCS(0, "chainid-1", "client-id", false)},
 				types.NewParams(
 					"0.0", // 0 trusting period fraction here
@@ -149,7 +129,6 @@ func TestValidateGenesisState(t *testing.T) {
 			"invalid params, zero VAAS timeout",
 			types.NewGenesisState(
 				types.DefaultValsetUpdateID,
-				nil,
 				[]types.ConsumerState{launchedCS(0, "chainid-1", "client-id", false)},
 				types.NewParams(
 					types.DefaultTrustingPeriodFraction,
@@ -168,7 +147,6 @@ func TestValidateGenesisState(t *testing.T) {
 			"empty consumer state chain id",
 			types.NewGenesisState(
 				types.DefaultValsetUpdateID,
-				nil,
 				[]types.ConsumerState{{ChainId: "", ClientId: "client-id"}},
 				types.DefaultParams(),
 				nil,
@@ -183,7 +161,6 @@ func TestValidateGenesisState(t *testing.T) {
 			"valid consumer state with client id",
 			types.NewGenesisState(
 				types.DefaultValsetUpdateID,
-				nil,
 				[]types.ConsumerState{launchedCS(0, "chainid", "abc", false)},
 				types.DefaultParams(),
 				nil,
@@ -198,7 +175,6 @@ func TestValidateGenesisState(t *testing.T) {
 			"invalid consumer state pending VSC packets",
 			types.NewGenesisState(
 				types.DefaultValsetUpdateID,
-				nil,
 				[]types.ConsumerState{func() types.ConsumerState {
 					cs := launchedCS(0, "chainid", "client-id", false)
 					cs.PendingValsetChanges = []vaastypes.ValidatorSetChangePacketData{{}} // ValsetUpdateId=0
@@ -240,7 +216,7 @@ func TestValidateGenesisState_FeePoolShares(t *testing.T) {
 
 	build := func(shares ...types.ConsumerFeePoolShare) *types.GenesisState {
 		gs := types.NewGenesisState(
-			types.DefaultValsetUpdateID, nil,
+			types.DefaultValsetUpdateID,
 			[]types.ConsumerState{cs},
 			types.DefaultParams(),
 			nil, nil, nil, nil,
@@ -346,7 +322,7 @@ func TestValidateGenesisState_DowntimeLists(t *testing.T) {
 
 	build := func() *types.GenesisState {
 		return types.NewGenesisState(
-			types.DefaultValsetUpdateID, nil,
+			types.DefaultValsetUpdateID,
 			[]types.ConsumerState{cs},
 			types.DefaultParams(),
 			nil, nil, nil, nil, nil,
@@ -528,6 +504,66 @@ func TestValidateGenesisState_DowntimeLists(t *testing.T) {
 		err := gs.Validate()
 		require.Error(t, err)
 		require.Contains(t, err.Error(), "unknown consumer")
+	})
+
+	// A genesis whose withheld-fee record omits the amount subfield decodes to
+	// a math.Int wrapping a nil big.Int. Validate must reject it here, because
+	// every later reader of the record (payout on a successful challenge, the
+	// expiry sweep, the fee-pool accounting that reserves the escrow) does
+	// arithmetic on that amount and would panic on the nil.
+	t.Run("withheld fee record with nil amount", func(t *testing.T) {
+		gs := build()
+		bad := validWithheld(addr1)
+		bad.Amount = sdk.Coin{Denom: "uphoton"}
+		gs.WithheldFeeRecords = []types.WithheldFeeRecord{bad}
+
+		var err error
+		require.NotPanics(t, func() { err = gs.Validate() },
+			"Validate must reject a nil amount rather than panic on it")
+		require.Error(t, err)
+		require.Contains(t, err.Error(), "amount cannot be nil")
+	})
+
+	t.Run("withheld fee record with an entirely absent amount", func(t *testing.T) {
+		gs := build()
+		bad := validWithheld(addr1)
+		bad.Amount = sdk.Coin{}
+		gs.WithheldFeeRecords = []types.WithheldFeeRecord{bad}
+
+		var err error
+		require.NotPanics(t, func() { err = gs.Validate() })
+		require.Error(t, err)
+		require.Contains(t, err.Error(), "amount cannot be nil")
+	})
+
+	t.Run("withheld fee record with zero expiry", func(t *testing.T) {
+		gs := build()
+		bad := validWithheld(addr1)
+		bad.ExpiresAt = time.Time{}
+		gs.WithheldFeeRecords = []types.WithheldFeeRecord{bad}
+		err := gs.Validate()
+		require.Error(t, err)
+		require.Contains(t, err.Error(), "expires_at cannot be zero")
+	})
+
+	t.Run("withheld fee record with negative amount", func(t *testing.T) {
+		gs := build()
+		bad := validWithheld(addr1)
+		bad.Amount = sdk.Coin{Denom: "uphoton", Amount: math.NewInt(-1)}
+		gs.WithheldFeeRecords = []types.WithheldFeeRecord{bad}
+		err := gs.Validate()
+		require.Error(t, err)
+		require.Contains(t, err.Error(), "invalid amount")
+	})
+
+	t.Run("withheld fee record with invalid denom", func(t *testing.T) {
+		gs := build()
+		bad := validWithheld(addr1)
+		bad.Amount = sdk.Coin{Denom: "", Amount: math.NewInt(10)}
+		gs.WithheldFeeRecords = []types.WithheldFeeRecord{bad}
+		err := gs.Validate()
+		require.Error(t, err)
+		require.Contains(t, err.Error(), "invalid denom")
 	})
 
 	t.Run("duplicate accepted downtime window", func(t *testing.T) {
