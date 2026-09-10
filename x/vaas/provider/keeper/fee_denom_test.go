@@ -33,6 +33,7 @@ func TestNewKeeperRejectsInvalidFeeDenom(t *testing.T) {
 		}()
 		providerkeeper.NewKeeper(
 			nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil,
+			nil,
 			"authority",
 			nil, nil,
 			"fee_collector",
