@@ -354,6 +354,6 @@ docker-build-all: docker-build-debug
 # Run the e2e integration test suite
 test-e2e: docker-build-all
 	@echo "Running e2e tests..."
-	cd tests/e2e && go test -timeout=40m -v ./... --count=1
+	cd tests/e2e && go test -timeout=60m -v ./... --count=1
 
 .PHONY: docker-build-debug docker-build-all test-e2e

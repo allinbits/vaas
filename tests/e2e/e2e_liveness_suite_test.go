@@ -67,6 +67,8 @@ import (
 
 	"github.com/ory/dockertest/v3"
 	"github.com/stretchr/testify/suite"
+
+	sdk "github.com/cosmos/cosmos-sdk/types"
 )
 
 const (
@@ -95,6 +97,14 @@ const (
 //     (600s unbonding, 20s vaas_timeout, 5s safe_mode_threshold)
 type LivenessIntegrationTestSuite struct {
 	baseTestSuite
+
+	// Cross-step state for the equivocation steps: lqval's punishment must
+	// survive the liveness stop and execute, lqval2's (queued mid-outage)
+	// must defer behind a removal vote passed after the stop and be cancelled.
+	lqvalValoper   string
+	lqvalConsAddr  string
+	lqval2Valoper  string
+	lqval2ConsAddr string
 }
 
 // TestLivenessIntegrationTestSuite is the entry point for the short-unbonding
@@ -125,11 +135,15 @@ func (s *LivenessIntegrationTestSuite) SetupSuite() {
 
 		consumerTemplateFile:        "create_consumer_short_unbonding.json",
 		consumerTemplatePlaceholder: "CONSUMER_SHORT_CHAIN_ID",
+		govVotingPeriod:             180 * time.Second,
 
 		patchProviderGenesis: func(appState map[string]any) {
+			// Long enough for a removal vote submitted after the liveness stop
+			// to still be open when the mid-outage punishment matures (see
+			// testDeferredEquivocationCancelledByVotePassedAfterStop).
 			if gov, ok := appState["gov"].(map[string]any); ok {
 				if params, ok := gov["params"].(map[string]any); ok {
-					params["voting_period"] = "15s"
+					params["voting_period"] = "180s"
 				}
 			}
 
@@ -148,6 +162,15 @@ func (s *LivenessIntegrationTestSuite) SetupSuite() {
 					// deadline). Timeouts are log-only, so this does not perturb the
 					// other liveness tests.
 					params["vaas_timeout_period"] = "20s"
+					// Long enough for a queued equivocation punishment to
+					// still be pending when the liveness sweep stops the
+					// consumer (grace ~225s plus the sweep poll), short
+					// enough to then execute within the run; see
+					// testEquivocationSurvivesLivenessStop.
+					params["equivocation_execution_delay"] = "420s"
+					// Covers the tally block after a vote ends; the deferred
+					// punishment resolves this long past the voting end.
+					params["removal_vote_deferral_margin"] = "30s"
 					// Shrink the liveness grace fraction so the grace period
 					// (unbonding * fraction = 600s * 0.375 = ~225s) is observable in
 					// a CI run, while keeping the unbonding itself long enough that
@@ -290,7 +313,12 @@ func (s *LivenessIntegrationTestSuite) TestLivenessVAAS() {
 	s.testLivenessQuery()
 	s.testForcedTimeoutSnapshotResync()
 	s.testEvidenceRequeueOnTimeout()
+	// Queue an equivocation punishment right before the sweep stops the
+	// consumer, then prove the stop did not cancel it (asserted right after).
+	s.testQueueEquivocationBeforeLivenessStop()
 	s.testAutoSweepRemoval()
+	s.testEquivocationSurvivesLivenessStop()
+	s.testDeferredEquivocationCancelledByVotePassedAfterStop()
 }
 
 // ---- test methods ----------------------------------------------------------
@@ -609,9 +637,15 @@ func (s *LivenessIntegrationTestSuite) testAutoSweepRemoval() {
 		// The grace period is provider_unbonding * liveness_grace_fraction =
 		// 600s * 0.375 = ~225s. Wait for the grace period to elapse before polling,
 		// so that the sweep has had time to fire by the first poll iteration.
+		// Partway through, while the provider still sees the consumer LAUNCHED,
+		// a second equivocation punishment is queued whose maturity lands well
+		// after lqval's (see queueEquivocationMidOutage).
+		const midOutage = 100 * time.Second
 		const gracePlusBuffer = 235 * time.Second
 		s.T().Logf("outage started; waiting %s for grace period to elapse...", gracePlusBuffer)
-		time.Sleep(gracePlusBuffer)
+		time.Sleep(midOutage)
+		s.queueEquivocationMidOutage()
+		time.Sleep(gracePlusBuffer - midOutage)
 
 		// Poll until the provider sweeps the consumer to STOPPED.
 		// Allow up to 2 minutes total (grace already elapsed above).
@@ -619,6 +653,9 @@ func (s *LivenessIntegrationTestSuite) testAutoSweepRemoval() {
 		s.Require().Eventuallyf(func() bool {
 			p := s.queryProviderConsumerPhase(consumerID)
 			s.T().Logf("consumer %s phase: %s", consumerID, p)
+			if body, err := httpGet(livenessURL); err == nil {
+				s.T().Logf("consumer %s liveness: %s", consumerID, string(body))
+			}
 			return p == "CONSUMER_PHASE_STOPPED"
 		}, 2*time.Minute, 5*time.Second,
 			"provider did not sweep consumer %s to STOPPED within 2 minutes", consumerID)
@@ -634,3 +671,138 @@ func (s *LivenessIntegrationTestSuite) testAutoSweepRemoval() {
 // here -- it is covered by TestSweepRemovesStaleConsumer, which asserts the
 // removal_time scheduling directly. This e2e suite's contribution is proving
 // the LAUNCHED -> STOPPED sweep fires end-to-end under real IBC silence.
+
+// testQueueEquivocationBeforeLivenessStop bonds an equivocating validator on
+// the liveness provider and queues a fabricated punishment against it right
+// before testAutoSweepRemoval lets the liveness sweep stop the consumer.
+func (s *LivenessIntegrationTestSuite) testQueueEquivocationBeforeLivenessStop() {
+	s.Run("equivocation: queue a punishment the liveness stop must not cancel", func() {
+		const consumerID = "0"
+
+		valoper, priv := s.createEquivocatingValidator("lqval", "5000000"+bondDenom)
+		s.lqvalValoper = valoper
+		s.lqvalConsAddr = sdk.ConsAddress(priv.PubKey().Address()).String()
+
+		evidencePath, headerPath := s.fabricateDoubleVote(priv, s.cfg.consumerChainID, 1_000_002, "lqval")
+		s.submitDoubleVoteEvidence(consumerID, evidencePath, headerPath)
+
+		s.Require().Eventuallyf(func() bool {
+			pending, err := s.queryPendingEquivocations(consumerID)
+			return err == nil && len(pending) == 1
+		}, time.Minute, 2*time.Second, "the punishment never queued")
+		jailed, _ := s.stakingValidatorState(valoper)
+		s.Require().True(jailed, "lqval must be jailed at queue time")
+	})
+}
+
+// queueEquivocationMidOutage bonds a second equivocating validator and queues a
+// punishment against it partway through testAutoSweepRemoval's outage, while
+// the provider still sees the consumer LAUNCHED. Its maturity lands well after
+// lqval's, so a removal vote timed over it defers only this entry (see
+// testDeferredEquivocationCancelledByVotePassedAfterStop).
+func (s *LivenessIntegrationTestSuite) queueEquivocationMidOutage() {
+	const consumerID = "0"
+
+	valoper, priv := s.createEquivocatingValidator("lqval2", "5000000"+bondDenom)
+	s.lqval2Valoper = valoper
+	s.lqval2ConsAddr = sdk.ConsAddress(priv.PubKey().Address()).String()
+
+	evidencePath, headerPath := s.fabricateDoubleVote(priv, s.cfg.consumerChainID, 1_000_003, "lqval2")
+	s.submitDoubleVoteEvidence(consumerID, evidencePath, headerPath)
+
+	s.Require().Eventuallyf(func() bool {
+		pending, err := s.queryPendingEquivocations(consumerID)
+		return err == nil && len(pending) == 2
+	}, time.Minute, 2*time.Second, "the mid-outage punishment never queued")
+	s.T().Log("second equivocation punishment queued mid-outage")
+}
+
+// pendingEquivocationFor returns the pending entry naming the consensus
+// address, if any.
+func pendingEquivocationFor(pending []pendingEquivocationJSON, consAddr string) (pendingEquivocationJSON, bool) {
+	for _, p := range pending {
+		if sdk.ConsAddress(p.ProviderConsAddr).String() == consAddr {
+			return p, true
+		}
+	}
+	return pendingEquivocationJSON{}, false
+}
+
+// testEquivocationSurvivesLivenessStop asserts, after the liveness sweep has
+// stopped the consumer, that the stop was not a verdict: the punishment is
+// still pending, and it then executes at maturity (tombstone, slash) rather
+// than being cancelled.
+func (s *LivenessIntegrationTestSuite) testEquivocationSurvivesLivenessStop() {
+	s.Run("equivocation: a liveness stop does not cancel the pending punishment", func() {
+		const consumerID = "0"
+
+		s.Require().Equal("CONSUMER_PHASE_STOPPED", s.queryProviderConsumerPhase(consumerID),
+			"precondition: the liveness sweep stopped the consumer")
+
+		pending := s.mustPendingEquivocations(consumerID)
+		s.Require().Len(pending, 2, "the liveness stop must leave both punishments pending")
+		entry, found := pendingEquivocationFor(pending, s.lqvalConsAddr)
+		s.Require().True(found, "lqval's punishment must still be pending")
+		s.Require().False(entry.Extended, "no removal vote ran, so nothing extended it")
+
+		s.T().Logf("waiting for lqval's punishment to execute at maturity (%s)...", entry.ExecutesAt)
+		s.Require().Eventuallyf(func() bool {
+			pending, err := s.queryPendingEquivocations(consumerID)
+			if err != nil {
+				return false
+			}
+			_, stillPending := pendingEquivocationFor(pending, s.lqvalConsAddr)
+			return !stillPending
+		}, time.Until(entry.ExecutesAt)+2*time.Minute, 5*time.Second,
+			"the punishment never executed after the liveness stop")
+
+		s.Require().Eventuallyf(func() bool {
+			return s.signingInfoTombstoned(s.lqvalConsAddr)
+		}, time.Minute, 2*time.Second, "lqval was not tombstoned at execution")
+		jailed, _ := s.stakingValidatorState(s.lqvalValoper)
+		s.Require().True(jailed, "a tombstoned validator stays jailed")
+	})
+}
+
+// testDeferredEquivocationCancelledByVotePassedAfterStop: lqval2's punishment,
+// queued mid-outage, matures during a removal vote submitted after the
+// liveness stop, so it defers behind that vote. The vote passes, but its
+// MsgRemoveConsumer finds the consumer already STOPPED and gov records the
+// proposal FAILED; the tally is still the community's verdict, so the deferred
+// punishment is cancelled: entry gone, no tombstone, jail opened.
+func (s *LivenessIntegrationTestSuite) testDeferredEquivocationCancelledByVotePassedAfterStop() {
+	s.Run("equivocation: a removal vote passed after the liveness stop cancels the deferred punishment", func() {
+		const consumerID = "0"
+
+		s.Require().Equal("CONSUMER_PHASE_STOPPED", s.queryProviderConsumerPhase(consumerID),
+			"precondition: the liveness sweep stopped the consumer")
+		pending := s.mustPendingEquivocations(consumerID)
+		s.Require().Len(pending, 1, "only lqval2's punishment is left pending")
+		entry, found := pendingEquivocationFor(pending, s.lqval2ConsAddr)
+		s.Require().True(found)
+		s.Require().False(entry.Extended)
+		s.Require().Truef(time.Until(entry.ExecutesAt) > 30*time.Second,
+			"lqval2's maturity (%s) must fall inside the vote about to be submitted", entry.ExecutesAt)
+
+		s.T().Log("submitting a removal proposal against the stopped consumer: the vote passes, the removal cannot execute...")
+		proposalID := s.submitProposalWithVote(
+			s.removalProposalJSON(consumerID, "Remove consumer (liveness e2e, passes after the stop)"),
+			"yes", "PROPOSAL_STATUS_FAILED")
+
+		pending = s.mustPendingEquivocations(consumerID)
+		s.Require().Len(pending, 1, "the punishment waits for the verdict at its extended maturity")
+		s.Require().True(pending[0].Extended, "the punishment must have deferred behind the vote")
+		s.Require().Equal(strconv.FormatUint(proposalID, 10), pending[0].DeferredByProposalId,
+			"the punishment must record the vote it deferred behind")
+
+		s.T().Log("waiting for the deferred punishment to be cancelled at its extended maturity...")
+		s.Require().Eventuallyf(func() bool {
+			return s.pendingEquivocationsEmpty(consumerID)
+		}, time.Until(pending[0].ExecutesAt)+2*time.Minute, 5*time.Second,
+			"the punishment was not cancelled after the passed vote")
+		s.Require().False(s.signingInfoTombstoned(s.lqval2ConsAddr), "a cancelled punishment must not tombstone")
+
+		s.T().Log("unjailing lqval2 now that the cancelled punishment opened the jail...")
+		s.mustUnjail("lqval2", s.lqval2Valoper)
+	})
+}

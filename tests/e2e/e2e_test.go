@@ -19,10 +19,19 @@ func (s *IntegrationTestSuite) TestVAAS() {
 	s.testFeePoolSendRestriction()
 	s.testFeePoolFundAndLockEnforcement()
 	s.testFeePoolGovSubsidyClawback()
+	// Refusal-protection model (docs/consumer-refusal.md): all of these need
+	// consumer "0" LAUNCHED and, except the last pair, leave it LAUNCHED.
+	s.testConsumerRefusalPauseAndResume()
+	s.testDowntimeDeferralBehindRejectedRemoval()
+	s.testEquivocationDeferralBehindRejectedRemoval()
+	// Queue a punishment right before the explicit removal below, so the
+	// passed vote observably cancels it (asserted right after).
+	s.testEquivocationQueuedBeforeRemoval()
 	// Explicitly remove consumer "0"; verify STOPPED (DELETED if removal_time
 	// has elapsed). Must run after all tests that rely on consumer "0" being
 	// LAUNCHED and before testGenesisRoundTrip (which tolerates any phase).
 	s.testLivenessRemoval()
+	s.testEquivocationCancelledByRemoval()
 	// Run last: stops the provider container and replaces it with a fresh
 	// one started from the exported genesis.
 	s.testGenesisRoundTrip()
