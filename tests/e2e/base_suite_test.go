@@ -474,8 +474,8 @@ func (s *baseTestSuite) initAndStartConsumer(consumerGenesisJSON []byte) {
 func (s *baseTestSuite) setupTSRelayer() {
 	s.startTSRelayer()
 
-	s.tsRelayerAddMnemonic(s.cfg.providerChainID, relayerMnemonic)
-	s.tsRelayerAddMnemonic(s.cfg.consumerChainID, relayerMnemonic)
+	s.tsRelayerAddMnemonic(s.cfg.providerChainID)
+	s.tsRelayerAddMnemonic(s.cfg.consumerChainID)
 	s.tsRelayerAddGasPrice(s.cfg.providerChainID, "0.025"+bondDenom)
 	s.tsRelayerAddGasPrice(s.cfg.consumerChainID, "0.025"+bondDenom)
 
