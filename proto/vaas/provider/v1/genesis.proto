@@ -87,6 +87,22 @@ message GenesisState {
   // new chain.
   repeated DowntimeWindowFloor downtime_window_floors = 17
       [ (gogoproto.nullable) = false ];
+
+  // Validator refusal signals per consumer (see MsgSetConsumerRefusal);
+  // empty for a new chain.
+  repeated ConsumerRefusal consumer_refusals = 18
+      [ (gogoproto.nullable) = false ];
+
+  // Verified equivocations whose slash and tombstone are still pending;
+  // empty for a new chain.
+  repeated PendingEquivocationPunishment pending_equivocation_punishments = 19
+      [ (gogoproto.nullable) = false ];
+
+  // Unbonding-operation holds backing the pending equivocation punishments;
+  // empty for a new chain. The staking module exports the matching hold
+  // refcounts itself.
+  repeated HeldUnbondingOps held_unbonding_ops = 20
+      [ (gogoproto.nullable) = false ];
 }
 
 // AcceptedDowntimeWindowRecord is a single (consumer_id, provider_cons_addr,
@@ -225,4 +241,20 @@ message ConsumerFeePoolShare {
     (gogoproto.customtype) = "cosmossdk.io/math.Int",
     (gogoproto.nullable) = false
   ];
+}
+
+// ConsumerRefusal is one validator's recorded refusal to validate a consumer
+// chain (see MsgSetConsumerRefusal).
+message ConsumerRefusal {
+  uint64 consumer_id = 1;
+  // the refusing validator's operator address
+  string validator_address = 2 [(cosmos_proto.scalar) = "cosmos.ValidatorAddressString"];
+}
+
+// HeldUnbondingOps lists the staking unbonding-operation ids held for one
+// accused validator while it has pending equivocation punishments (see
+// QueuePendingEquivocationPunishment in the provider keeper).
+message HeldUnbondingOps {
+  bytes provider_cons_addr = 1;
+  repeated uint64 unbonding_op_ids = 2;
 }

@@ -37,4 +37,5 @@ var (
 	ErrFeePoolLocked                           = errorsmod.Register(ModuleName, 29, "consumer fee pool is locked while consumer is launched")
 	ErrDowntimeChallengeFailed                 = errorsmod.Register(ModuleName, 30, "downtime challenge verification failed")
 	ErrConsumerClientNotActive                 = errorsmod.Register(ModuleName, 31, "consumer client is not active")
+	ErrConsumerRefused                         = errorsmod.Register(ModuleName, 32, "consumer is refused by validators at the pause threshold")
 )

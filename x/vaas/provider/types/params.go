@@ -85,6 +85,25 @@ const (
 	// resolve whatever triggered the pause without leaving the consumer
 	// paused indefinitely.
 	DefaultMaxPauseDuration = 720 * time.Hour
+
+	// DefaultRefusalPauseThreshold is the default fraction of bonded power
+	// that must refuse a consumer (MsgSetConsumerRefusal) before the provider
+	// pauses it. One third of the power refusing to sign halts the consumer's
+	// consensus physically anyway; the threshold turns that implicit halt
+	// into an explicit, attributable pause.
+	DefaultRefusalPauseThreshold = "0.333333333333333333"
+
+	// DefaultEquivocationExecutionDelay is the default window a verified
+	// consumer equivocation stays jailed-but-pending before the irreversible
+	// slash and tombstone execute, giving a removal proposal time to reach
+	// voting. Mirrors the downtime challenge window.
+	DefaultEquivocationExecutionDelay = 7 * 24 * time.Hour
+
+	// DefaultRemovalVoteDeferralMargin pads a punishment deferred behind a
+	// removal vote past the voting end, covering proposal execution. Gov
+	// executes a passed proposal within a block of the voting end; an hour is
+	// generous.
+	DefaultRemovalVoteDeferralMargin = time.Hour
 )
 
 // NewParams creates new provider parameters with provided arguments
@@ -96,15 +115,21 @@ func NewParams(
 	feesPerBlockAmount math.Int,
 	minDepositBlocks uint64,
 	maxPauseDuration time.Duration,
+	refusalPauseThreshold string,
+	equivocationExecutionDelay time.Duration,
+	removalVoteDeferralMargin time.Duration,
 ) Params {
 	return Params{
-		TrustingPeriodFraction: trustingPeriodFraction,
-		LivenessGraceFraction:  livenessGraceFraction,
-		VaasTimeoutPeriod:      vaasTimeoutPeriod,
-		BlocksPerEpoch:         blocksPerEpoch,
-		FeesPerBlockAmount:     feesPerBlockAmount,
-		MinDepositBlocks:       minDepositBlocks,
-		MaxPauseDuration:       maxPauseDuration,
+		TrustingPeriodFraction:     trustingPeriodFraction,
+		LivenessGraceFraction:      livenessGraceFraction,
+		VaasTimeoutPeriod:          vaasTimeoutPeriod,
+		BlocksPerEpoch:             blocksPerEpoch,
+		FeesPerBlockAmount:         feesPerBlockAmount,
+		MinDepositBlocks:           minDepositBlocks,
+		MaxPauseDuration:           maxPauseDuration,
+		RefusalPauseThreshold:      refusalPauseThreshold,
+		EquivocationExecutionDelay: equivocationExecutionDelay,
+		RemovalVoteDeferralMargin:  removalVoteDeferralMargin,
 	}
 }
 
@@ -117,6 +142,9 @@ func DefaultParams() Params {
 		math.NewInt(DefaultFeesPerBlockAmount),
 		DefaultMinDepositBlocks,
 		DefaultMaxPauseDuration,
+		DefaultRefusalPauseThreshold,
+		DefaultEquivocationExecutionDelay,
+		DefaultRemovalVoteDeferralMargin,
 	)
 }
 
@@ -268,6 +296,15 @@ func (p Params) Validate() error {
 	}
 	if err := vaastypes.ValidateDuration(p.MaxPauseDuration); err != nil {
 		return fmt.Errorf("max pause duration is invalid: %s", err)
+	}
+	if err := vaastypes.ValidateStringFractionNonZero(p.RefusalPauseThreshold); err != nil {
+		return fmt.Errorf("refusal pause threshold is invalid: %s", err)
+	}
+	if err := vaastypes.ValidateDuration(p.EquivocationExecutionDelay); err != nil {
+		return fmt.Errorf("equivocation execution delay is invalid: %s", err)
+	}
+	if err := vaastypes.ValidateDuration(p.RemovalVoteDeferralMargin); err != nil {
+		return fmt.Errorf("removal vote deferral margin is invalid: %s", err)
 	}
 
 	return nil

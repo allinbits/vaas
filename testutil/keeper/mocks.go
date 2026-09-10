@@ -126,6 +126,21 @@ func (mr *MockStakingKeeperMockRecorder) GetHistoricalInfo(ctx, height any) *gom
 	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "GetHistoricalInfo", reflect.TypeOf((*MockStakingKeeper)(nil).GetHistoricalInfo), ctx, height)
 }
 
+// GetLastTotalPower mocks base method.
+func (m *MockStakingKeeper) GetLastTotalPower(ctx context.Context) (math.Int, error) {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "GetLastTotalPower", ctx)
+	ret0, _ := ret[0].(math.Int)
+	ret1, _ := ret[1].(error)
+	return ret0, ret1
+}
+
+// GetLastTotalPower indicates an expected call of GetLastTotalPower.
+func (mr *MockStakingKeeperMockRecorder) GetLastTotalPower(ctx any) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "GetLastTotalPower", reflect.TypeOf((*MockStakingKeeper)(nil).GetLastTotalPower), ctx)
+}
+
 // GetLastValidatorPower mocks base method.
 func (m *MockStakingKeeper) GetLastValidatorPower(ctx context.Context, operator types.ValAddress) (int64, error) {
 	m.ctrl.T.Helper()
@@ -139,6 +154,21 @@ func (m *MockStakingKeeper) GetLastValidatorPower(ctx context.Context, operator 
 func (mr *MockStakingKeeperMockRecorder) GetLastValidatorPower(ctx, operator any) *gomock.Call {
 	mr.mock.ctrl.T.Helper()
 	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "GetLastValidatorPower", reflect.TypeOf((*MockStakingKeeper)(nil).GetLastValidatorPower), ctx, operator)
+}
+
+// GetRedelegationByUnbondingID mocks base method.
+func (m *MockStakingKeeper) GetRedelegationByUnbondingID(ctx context.Context, id uint64) (types1.Redelegation, error) {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "GetRedelegationByUnbondingID", ctx, id)
+	ret0, _ := ret[0].(types1.Redelegation)
+	ret1, _ := ret[1].(error)
+	return ret0, ret1
+}
+
+// GetRedelegationByUnbondingID indicates an expected call of GetRedelegationByUnbondingID.
+func (mr *MockStakingKeeperMockRecorder) GetRedelegationByUnbondingID(ctx, id any) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "GetRedelegationByUnbondingID", reflect.TypeOf((*MockStakingKeeper)(nil).GetRedelegationByUnbondingID), ctx, id)
 }
 
 // GetRedelegationsFromSrcValidator mocks base method.
@@ -156,6 +186,21 @@ func (mr *MockStakingKeeperMockRecorder) GetRedelegationsFromSrcValidator(ctx, v
 	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "GetRedelegationsFromSrcValidator", reflect.TypeOf((*MockStakingKeeper)(nil).GetRedelegationsFromSrcValidator), ctx, valAddr)
 }
 
+// GetUnbondingDelegationByUnbondingID mocks base method.
+func (m *MockStakingKeeper) GetUnbondingDelegationByUnbondingID(ctx context.Context, id uint64) (types1.UnbondingDelegation, error) {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "GetUnbondingDelegationByUnbondingID", ctx, id)
+	ret0, _ := ret[0].(types1.UnbondingDelegation)
+	ret1, _ := ret[1].(error)
+	return ret0, ret1
+}
+
+// GetUnbondingDelegationByUnbondingID indicates an expected call of GetUnbondingDelegationByUnbondingID.
+func (mr *MockStakingKeeperMockRecorder) GetUnbondingDelegationByUnbondingID(ctx, id any) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "GetUnbondingDelegationByUnbondingID", reflect.TypeOf((*MockStakingKeeper)(nil).GetUnbondingDelegationByUnbondingID), ctx, id)
+}
+
 // GetUnbondingDelegationsFromValidator mocks base method.
 func (m *MockStakingKeeper) GetUnbondingDelegationsFromValidator(ctx context.Context, valAddr types.ValAddress) ([]types1.UnbondingDelegation, error) {
 	m.ctrl.T.Helper()
@@ -169,6 +214,21 @@ func (m *MockStakingKeeper) GetUnbondingDelegationsFromValidator(ctx context.Con
 func (mr *MockStakingKeeperMockRecorder) GetUnbondingDelegationsFromValidator(ctx, valAddr any) *gomock.Call {
 	mr.mock.ctrl.T.Helper()
 	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "GetUnbondingDelegationsFromValidator", reflect.TypeOf((*MockStakingKeeper)(nil).GetUnbondingDelegationsFromValidator), ctx, valAddr)
+}
+
+// GetUnbondingType mocks base method.
+func (m *MockStakingKeeper) GetUnbondingType(ctx context.Context, id uint64) (types1.UnbondingType, error) {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "GetUnbondingType", ctx, id)
+	ret0, _ := ret[0].(types1.UnbondingType)
+	ret1, _ := ret[1].(error)
+	return ret0, ret1
+}
+
+// GetUnbondingType indicates an expected call of GetUnbondingType.
+func (mr *MockStakingKeeperMockRecorder) GetUnbondingType(ctx, id any) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "GetUnbondingType", reflect.TypeOf((*MockStakingKeeper)(nil).GetUnbondingType), ctx, id)
 }
 
 // GetValidator mocks base method.
@@ -199,6 +259,21 @@ func (m *MockStakingKeeper) GetValidatorByConsAddr(ctx context.Context, consAddr
 func (mr *MockStakingKeeperMockRecorder) GetValidatorByConsAddr(ctx, consAddr any) *gomock.Call {
 	mr.mock.ctrl.T.Helper()
 	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "GetValidatorByConsAddr", reflect.TypeOf((*MockStakingKeeper)(nil).GetValidatorByConsAddr), ctx, consAddr)
+}
+
+// GetValidatorByUnbondingID mocks base method.
+func (m *MockStakingKeeper) GetValidatorByUnbondingID(ctx context.Context, id uint64) (types1.Validator, error) {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "GetValidatorByUnbondingID", ctx, id)
+	ret0, _ := ret[0].(types1.Validator)
+	ret1, _ := ret[1].(error)
+	return ret0, ret1
+}
+
+// GetValidatorByUnbondingID indicates an expected call of GetValidatorByUnbondingID.
+func (mr *MockStakingKeeperMockRecorder) GetValidatorByUnbondingID(ctx, id any) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "GetValidatorByUnbondingID", reflect.TypeOf((*MockStakingKeeper)(nil).GetValidatorByUnbondingID), ctx, id)
 }
 
 // IterateBondedValidatorsByPower mocks base method.
@@ -270,6 +345,20 @@ func (m *MockStakingKeeper) PowerReduction(ctx context.Context) math.Int {
 func (mr *MockStakingKeeperMockRecorder) PowerReduction(ctx any) *gomock.Call {
 	mr.mock.ctrl.T.Helper()
 	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "PowerReduction", reflect.TypeOf((*MockStakingKeeper)(nil).PowerReduction), ctx)
+}
+
+// PutUnbondingOnHold mocks base method.
+func (m *MockStakingKeeper) PutUnbondingOnHold(ctx context.Context, id uint64) error {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "PutUnbondingOnHold", ctx, id)
+	ret0, _ := ret[0].(error)
+	return ret0
+}
+
+// PutUnbondingOnHold indicates an expected call of PutUnbondingOnHold.
+func (mr *MockStakingKeeperMockRecorder) PutUnbondingOnHold(ctx, id any) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "PutUnbondingOnHold", reflect.TypeOf((*MockStakingKeeper)(nil).PutUnbondingOnHold), ctx, id)
 }
 
 // SlashRedelegation mocks base method.

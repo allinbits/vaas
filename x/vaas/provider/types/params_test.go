@@ -24,18 +24,26 @@ func TestValidateParams(t *testing.T) {
 		expPass bool
 	}{
 		{"default params", types.DefaultParams(), true},
-		{"custom valid params", types.NewParams("0.33", "0.5", time.Hour, 1000, math.NewInt(42), types.DefaultMinDepositBlocks, types.DefaultMaxPauseDuration), true},
-		{"zero fees per block", types.NewParams("0.33", "0.5", time.Hour, 1000, math.NewInt(0), types.DefaultMinDepositBlocks, types.DefaultMaxPauseDuration), false},
+		{"custom valid params", types.NewParams("0.33", "0.5", time.Hour, 1000, math.NewInt(42), types.DefaultMinDepositBlocks, types.DefaultMaxPauseDuration, types.DefaultRefusalPauseThreshold, types.DefaultEquivocationExecutionDelay, types.DefaultRemovalVoteDeferralMargin), true},
+		{"zero fees per block", types.NewParams("0.33", "0.5", time.Hour, 1000, math.NewInt(0), types.DefaultMinDepositBlocks, types.DefaultMaxPauseDuration, types.DefaultRefusalPauseThreshold, types.DefaultEquivocationExecutionDelay, types.DefaultRemovalVoteDeferralMargin), false},
 		{"0 trusting period fraction", types.NewParams(
-			"0.00", "0.5", time.Hour, 1000, math.NewInt(1), types.DefaultMinDepositBlocks, types.DefaultMaxPauseDuration), false},
+			"0.00", "0.5", time.Hour, 1000, math.NewInt(1), types.DefaultMinDepositBlocks, types.DefaultMaxPauseDuration, types.DefaultRefusalPauseThreshold, types.DefaultEquivocationExecutionDelay, types.DefaultRemovalVoteDeferralMargin), false},
 		{"0 liveness grace fraction", types.NewParams(
-			"0.33", "0.00", time.Hour, 1000, math.NewInt(1), types.DefaultMinDepositBlocks, types.DefaultMaxPauseDuration), false},
+			"0.33", "0.00", time.Hour, 1000, math.NewInt(1), types.DefaultMinDepositBlocks, types.DefaultMaxPauseDuration, types.DefaultRefusalPauseThreshold, types.DefaultEquivocationExecutionDelay, types.DefaultRemovalVoteDeferralMargin), false},
 		{"0 ccv timeout period", types.NewParams(
-			"0.33", "0.5", 0, 1000, math.NewInt(1), types.DefaultMinDepositBlocks, types.DefaultMaxPauseDuration), false},
+			"0.33", "0.5", 0, 1000, math.NewInt(1), types.DefaultMinDepositBlocks, types.DefaultMaxPauseDuration, types.DefaultRefusalPauseThreshold, types.DefaultEquivocationExecutionDelay, types.DefaultRemovalVoteDeferralMargin), false},
 		{"0 max pause duration", types.NewParams(
-			"0.33", "0.5", time.Hour, 1000, math.NewInt(1), types.DefaultMinDepositBlocks, 0), false},
+			"0.33", "0.5", time.Hour, 1000, math.NewInt(1), types.DefaultMinDepositBlocks, 0, types.DefaultRefusalPauseThreshold, types.DefaultEquivocationExecutionDelay, types.DefaultRemovalVoteDeferralMargin), false},
 		{"negative max pause duration", types.NewParams(
-			"0.33", "0.5", time.Hour, 1000, math.NewInt(1), types.DefaultMinDepositBlocks, -time.Hour), false},
+			"0.33", "0.5", time.Hour, 1000, math.NewInt(1), types.DefaultMinDepositBlocks, -time.Hour, types.DefaultRefusalPauseThreshold, types.DefaultEquivocationExecutionDelay, types.DefaultRemovalVoteDeferralMargin), false},
+		{"0 refusal pause threshold", types.NewParams(
+			"0.33", "0.5", time.Hour, 1000, math.NewInt(1), types.DefaultMinDepositBlocks, types.DefaultMaxPauseDuration, "0.00", types.DefaultEquivocationExecutionDelay, types.DefaultRemovalVoteDeferralMargin), false},
+		{"refusal pause threshold of one", types.NewParams(
+			"0.33", "0.5", time.Hour, 1000, math.NewInt(1), types.DefaultMinDepositBlocks, types.DefaultMaxPauseDuration, "1.00", types.DefaultEquivocationExecutionDelay, types.DefaultRemovalVoteDeferralMargin), false},
+		{"zero equivocation execution delay", types.NewParams(
+			"0.33", "0.5", time.Hour, 1000, math.NewInt(1), types.DefaultMinDepositBlocks, types.DefaultMaxPauseDuration, types.DefaultRefusalPauseThreshold, 0, types.DefaultRemovalVoteDeferralMargin), false},
+		{"negative removal vote deferral margin", types.NewParams(
+			"0.33", "0.5", time.Hour, 1000, math.NewInt(1), types.DefaultMinDepositBlocks, types.DefaultMaxPauseDuration, types.DefaultRefusalPauseThreshold, types.DefaultEquivocationExecutionDelay, -time.Minute), false},
 	}
 
 	for _, tc := range testCases {
