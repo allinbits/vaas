@@ -64,5 +64,8 @@ var (
 	ConsumerPauseReasonPrefix              = collections.NewPrefix(43)
 	ConsumerPausedAtPrefix                 = collections.NewPrefix(44)
 	PunishedEquivocationsPrefix            = collections.NewPrefix(45)
+	ConsumerRefusalsPrefix                 = collections.NewPrefix(40)
+	PendingEquivocationPunishmentsPrefix   = collections.NewPrefix(41)
+	HeldUnbondingOpsPrefix                 = collections.NewPrefix(42)
 	ParametersPrefix                       = collections.NewPrefix(0xFF)
 )
