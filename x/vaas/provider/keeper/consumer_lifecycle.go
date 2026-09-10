@@ -396,11 +396,14 @@ func (k Keeper) StopAndPrepareForConsumerRemoval(ctx sdk.Context, consumerId uin
 }
 
 // PauseConsumerChain transitions a launched consumer chain into
-// CONSUMER_PHASE_PAUSED following a successful downtime challenge (see
-// HandleChallengeConsumerDowntime, which calls this after paying withheld
-// fees): the challenge proved the validator was live, so every pending
-// downtime slash and this epoch's downtime marks for the consumer are
-// cancelled via CancelConsumerDowntimeState. A paused consumer is excluded from VSC packet
+// CONSUMER_PHASE_PAUSED when the provider must stop serving it: a successful
+// downtime challenge (see HandleChallengeConsumerDowntime, which calls this
+// after paying withheld fees) or a refusal coalition reaching the
+// RefusalPauseThreshold (see EvaluateConsumerRefusals). Either way every
+// pending downtime slash and this epoch's downtime marks for the consumer are
+// cancelled via CancelConsumerDowntimeState: a won challenge proved the
+// accusations wrong, and a chain the refusal-threshold share of power refuses
+// to run cannot have its accusations trusted either. A paused consumer is excluded from VSC packet
 // queuing (QueueVSCPackets iterates GetAllLaunchedConsumerIds), fee
 // distribution, and evidence handling -- all of which require phase LAUNCHED.
 //
@@ -433,6 +436,11 @@ func (k Keeper) PauseConsumerChain(ctx sdk.Context, consumerId uint64) error {
 			"cannot schedule auto-stop for consumer %d: %s", consumerId, err.Error())
 	}
 
+	// The pause freezes the consumer's pending equivocation punishments (see
+	// SweepPendingEquivocationPunishments); keep their validators jailed for
+	// as long as the pause can last.
+	k.refreshPendingEquivocationJailsForConsumer(ctx, consumerId)
+
 	ctx.EventManager().EmitEvent(sdk.NewEvent(
 		vaastypes.EventTypeConsumerPaused,
 		sdk.NewAttribute(sdk.AttributeKeyModule, types.ModuleName),
@@ -453,6 +461,13 @@ func (k Keeper) PauseConsumerChain(ctx sdk.Context, consumerId uint64) error {
 // below, so this fails instead and directs the caller to bundle ibc-go's
 // MsgRecoverClient (client substitution, already governance-gated) into the
 // same governance proposal as the resume.
+//
+// It also requires the consumer's refusal signals to stand below the
+// RefusalPauseThreshold: a coalition at the threshold would pause the consumer
+// again in the very block it is resumed (the provider's EndBlock runs after
+// gov's), so the resume is refused outright and governance gets a reason
+// instead of a silent no-op that also resets the pause's auto-stop clock. The
+// refusers withdraw first, or governance raises the threshold.
 //
 // On success: cancels the scheduled auto-stop (CancelConsumerPauseExpiration),
 // restores phase LAUNCHED, reseeds the liveness clock (so the liveness sweep
@@ -479,6 +494,16 @@ func (k Keeper) ResumeConsumerChain(ctx sdk.Context, consumerId uint64) error {
 	if phase != types.CONSUMER_PHASE_PAUSED {
 		return errorsmod.Wrapf(types.ErrInvalidPhase,
 			"cannot resume consumer %d: expected phase paused, got %s", consumerId, phase)
+	}
+
+	standing, err := k.consumerRefusalStanding(ctx, consumerId)
+	if err != nil {
+		return fmt.Errorf("evaluating refusals for consumer %d: %w", consumerId, err)
+	}
+	if standing.atThreshold() {
+		return errorsmod.Wrapf(types.ErrConsumerRefused,
+			"cannot resume consumer %d: %s of bonded power refuses it (pause threshold %s); the refusals must be withdrawn first",
+			consumerId, standing.fraction, standing.threshold)
 	}
 
 	clientId, found := k.GetConsumerClientId(ctx, consumerId)
@@ -633,6 +658,9 @@ func (k Keeper) DeleteConsumerChain(ctx sdk.Context, consumerId uint64) (err err
 
 	k.DeleteConsumerRemovalTime(ctx, consumerId)
 	k.DeleteConsumerLastAckTime(ctx, consumerId)
+	if err := k.DeleteConsumerRefusals(ctx, consumerId); err != nil {
+		return fmt.Errorf("deleting consumer refusals for consumer %d: %w", consumerId, err)
+	}
 	k.DeleteConsumerHighestSentVscId(ctx, consumerId)
 	k.DeleteConsumerHighestAckedVscId(ctx, consumerId)
 	k.DeleteConsumerDebt(ctx, consumerId)

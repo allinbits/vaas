@@ -713,3 +713,62 @@ func (k Keeper) QueryAllConsumerFeesPerBlockOverrides(
 		Pagination: pageRes,
 	}, nil
 }
+
+// QueryConsumerRefusals returns the validators currently refusing a consumer,
+// the refused share of bonded power, and the pause threshold, all evaluated
+// live.
+func (k Keeper) QueryConsumerRefusals(goCtx context.Context, req *types.QueryConsumerRefusalsRequest) (*types.QueryConsumerRefusalsResponse, error) {
+	if req == nil {
+		return nil, status.Error(codes.InvalidArgument, "empty request")
+	}
+	ctx := sdk.UnwrapSDKContext(goCtx)
+
+	if _, err := k.GetConsumerChainId(ctx, req.ConsumerId); err != nil {
+		return nil, status.Errorf(codes.InvalidArgument, "cannot retrieve chain id for consumer id: %d", req.ConsumerId)
+	}
+
+	addrs, err := k.GetConsumerRefusals(ctx, req.ConsumerId)
+	if err != nil {
+		return nil, status.Error(codes.Internal, err.Error())
+	}
+	bech := make([]string, 0, len(addrs))
+	for _, a := range addrs {
+		bech = append(bech, a.String())
+	}
+
+	refused, total, _, err := k.refusedPowerOf(ctx, addrs)
+	if err != nil {
+		return nil, status.Error(codes.Internal, err.Error())
+	}
+	fraction := math.LegacyZeroDec()
+	if total > 0 {
+		fraction = math.LegacyNewDec(refused).Quo(math.LegacyNewDec(total))
+	}
+
+	return &types.QueryConsumerRefusalsResponse{
+		ValidatorAddresses: bech,
+		RefusedPower:       refused,
+		TotalPower:         total,
+		RefusedFraction:    fraction.String(),
+		PauseThreshold:     k.GetParams(ctx).RefusalPauseThreshold,
+	}, nil
+}
+
+// QueryPendingEquivocationPunishments returns the verified equivocations
+// queued for a consumer, jailed but awaiting the execution delay.
+func (k Keeper) QueryPendingEquivocationPunishments(goCtx context.Context, req *types.QueryPendingEquivocationPunishmentsRequest) (*types.QueryPendingEquivocationPunishmentsResponse, error) {
+	if req == nil {
+		return nil, status.Error(codes.InvalidArgument, "empty request")
+	}
+	ctx := sdk.UnwrapSDKContext(goCtx)
+
+	punishments := []types.PendingEquivocationPunishment{}
+	rng := collections.NewPrefixedTripleRange[uint64, []byte, int64](req.ConsumerId)
+	if err := k.PendingEquivocationPunishments.Walk(ctx, rng, func(_ collections.Triple[uint64, []byte, int64], entry types.PendingEquivocationPunishment) (bool, error) {
+		punishments = append(punishments, entry)
+		return false, nil
+	}); err != nil {
+		return nil, status.Error(codes.Internal, err.Error())
+	}
+	return &types.QueryPendingEquivocationPunishmentsResponse{Punishments: punishments}, nil
+}

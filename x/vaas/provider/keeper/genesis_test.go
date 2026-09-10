@@ -410,6 +410,15 @@ func TestGenesisRoundTrip(t *testing.T) {
 	// windowEnd = WindowStartHeight(100) + Span(50) - 1 = 149.
 	require.NoError(t, pkA.PendingDowntimeSlashes.Set(ctxA,
 		collections.Join3(keyedConsumerID, downtimeProviderAddr.ToSdkConsAddr().Bytes(), int64(149)), pendingSlash))
+	// A second entry, already deferred behind a removal vote, on the next
+	// window [150, 199]; its accepted record is seeded below.
+	deferredSlash := pendingSlash
+	deferredSlash.WindowStartHeight = 150
+	deferredSlash.MaturesAt = time.Unix(1_951_000_000, 0).UTC()
+	deferredSlash.MaturesAtExtended = true
+	deferredSlash.DeferredByProposalId = 8
+	require.NoError(t, pkA.PendingDowntimeSlashes.Set(ctxA,
+		collections.Join3(keyedConsumerID, downtimeProviderAddr.ToSdkConsAddr().Bytes(), int64(199)), deferredSlash))
 
 	previousDowntimeParams := providertypes.PreviousDowntimeParams{
 		Params: vaastypes.DowntimeParams{
@@ -455,6 +464,38 @@ func TestGenesisRoundTrip(t *testing.T) {
 	require.NoError(t, pkA.EpochDowntime.Set(ctxA,
 		collections.Join(keyedConsumerID, downtimeProviderAddr.ToSdkConsAddr().Bytes()), true))
 
+	// Seed the refusal model's state: refusals on a launched and a stopped
+	// consumer, a pending equivocation punishment on the launched consumer and
+	// one, already deferred behind a vote, on the DELETED consumer (entries
+	// outlive a deletion, and the export's consumer set must still cover
+	// them), plus the accused validators' unbonding holds.
+	refuser := sdk.ValAddress([]byte("refusing-validator-1"))
+	require.NoError(t, pkA.RecordConsumerRefusal(ctxA, keyedConsumerID, refuser, true))
+	require.NoError(t, pkA.RecordConsumerRefusal(ctxA, otherConsumerID, refuser, true))
+	const deletedConsumerID uint64 = 4 // consumer-epsilon
+	accusedAddr := providertypes.NewProviderConsAddress([]byte("provider-addr-accused-x1"))
+	pendingPunishment := providertypes.PendingEquivocationPunishment{
+		ConsumerId:       keyedConsumerID,
+		ProviderConsAddr: accusedAddr.ToSdkConsAddr().Bytes(),
+		InfractionHeight: 77,
+		ExecutesAt:       time.Unix(1_955_000_000, 0).UTC(),
+	}
+	require.NoError(t, pkA.PendingEquivocationPunishments.Set(ctxA,
+		collections.Join3(keyedConsumerID, accusedAddr.ToSdkConsAddr().Bytes(), int64(77)), pendingPunishment))
+	deferredPunishment := providertypes.PendingEquivocationPunishment{
+		ConsumerId:           deletedConsumerID,
+		ProviderConsAddr:     accusedAddr.ToSdkConsAddr().Bytes(),
+		InfractionHeight:     78,
+		ExecutesAt:           time.Unix(1_956_000_000, 0).UTC(),
+		ExecutesAtExtended:   true,
+		DeferredByProposalId: 9,
+	}
+	require.NoError(t, pkA.PendingEquivocationPunishments.Set(ctxA,
+		collections.Join3(deletedConsumerID, accusedAddr.ToSdkConsAddr().Bytes(), int64(78)), deferredPunishment))
+	for _, id := range []uint64{31, 32} {
+		require.NoError(t, pkA.HeldUnbondingOps.Set(ctxA, collections.Join(accusedAddr.ToSdkConsAddr().Bytes(), id)))
+	}
+
 	pkA.SetParams(ctxA, providertypes.DefaultParams())
 	pkA.SetValidatorSetUpdateId(ctxA, 1)
 
@@ -483,8 +524,7 @@ func TestGenesisRoundTrip(t *testing.T) {
 	require.Equal(t, keyedConsumerID, expA.ConsumerAddrsToPrune[0].ConsumerId)
 
 	// Sanity: the export must carry the downtime-detection state.
-	require.Len(t, expA.PendingDowntimeSlashes, 1)
-	require.Equal(t, pendingSlash, expA.PendingDowntimeSlashes[0])
+	require.Equal(t, []providertypes.PendingDowntimeSlash{pendingSlash, deferredSlash}, expA.PendingDowntimeSlashes)
 	require.NotNil(t, expA.PreviousDowntimeParams)
 	require.Equal(t, previousDowntimeParams, *expA.PreviousDowntimeParams)
 	require.Len(t, expA.EpochShareRecords, 2)
@@ -517,6 +557,17 @@ func TestGenesisRoundTrip(t *testing.T) {
 		ProviderConsAddr: downtimeProviderAddr.ToSdkConsAddr().Bytes(),
 	}, expA.EpochDowntimeEntries[0])
 
+	// Sanity: the export must carry the refusal model's state.
+	require.Equal(t, []providertypes.ConsumerRefusal{
+		{ConsumerId: keyedConsumerID, ValidatorAddress: refuser.String()},
+		{ConsumerId: otherConsumerID, ValidatorAddress: refuser.String()},
+	}, expA.ConsumerRefusals)
+	require.Equal(t, []providertypes.PendingEquivocationPunishment{pendingPunishment, deferredPunishment}, expA.PendingEquivocationPunishments)
+	require.Equal(t, []providertypes.HeldUnbondingOps{{
+		ProviderConsAddr: accusedAddr.ToSdkConsAddr().Bytes(),
+		UnbondingOpIds:   []uint64{31, 32},
+	}}, expA.HeldUnbondingOps)
+
 	// Sanity: the PAUSED consumer (zeta) carries its pause-expiration time.
 	byChainId := map[string]providertypes.ConsumerState{}
 	for _, cs := range expA.ConsumerStates {
@@ -538,6 +589,9 @@ func TestGenesisRoundTrip(t *testing.T) {
 	// InitGenesisValUpdates reads from staking; mock it on both keepers.
 	stakingA.MockStakingKeeper.EXPECT().GetBondedValidatorsByPower(gomock.Any()).Return(nil, nil).AnyTimes()
 	stakingB.MockStakingKeeper.EXPECT().GetBondedValidatorsByPower(gomock.Any()).Return(nil, nil).AnyTimes()
+	// The import checks that x/staking still indexes every held operation.
+	stakingB.MockStakingKeeper.EXPECT().GetUnbondingType(gomock.Any(), gomock.Any()).
+		Return(stakingtypes.UnbondingType_UnbondingDelegation, nil).AnyTimes()
 	// InitGenesis walks fee-pool addresses for an orphan-balance check.
 	stakingB.MockBankKeeper.EXPECT().GetAllBalances(gomock.Any(), gomock.Any()).
 		Return(sdk.NewCoins()).AnyTimes()
@@ -592,6 +646,20 @@ func TestGenesisRoundTrip(t *testing.T) {
 
 	require.True(t, pkB.IsEpochDowntime(ctxB, keyedConsumerID, downtimeProviderAddr.ToSdkConsAddr()),
 		"EpochDowntime lost across round-trip")
+
+	// The refusal model's state must reconnect too, the deleted consumer's
+	// deferred punishment included.
+	require.True(t, pkB.HasConsumerRefusal(ctxB, keyedConsumerID, refuser), "ConsumerRefusals lost across round-trip")
+	require.True(t, pkB.HasConsumerRefusal(ctxB, otherConsumerID, refuser))
+	gotDeferred, err := pkB.PendingEquivocationPunishments.Get(ctxB,
+		collections.Join3(deletedConsumerID, accusedAddr.ToSdkConsAddr().Bytes(), int64(78)))
+	require.NoError(t, err, "PendingEquivocationPunishments lost across round-trip")
+	require.Equal(t, deferredPunishment, gotDeferred)
+	for _, id := range []uint64{31, 32} {
+		held, err := pkB.HeldUnbondingOps.Has(ctxB, collections.Join(accusedAddr.ToSdkConsAddr().Bytes(), id))
+		require.NoError(t, err)
+		require.True(t, held, "HeldUnbondingOps lost across round-trip")
+	}
 
 	// The PAUSED consumer's pause-expiration queue must be rebuilt from the
 	// per-consumer pause_expiration_time, mirroring the removal-time queue.
@@ -872,4 +940,38 @@ func TestInitGenesisAcceptsDefaultGenesis(t *testing.T) {
 	mocks.MockStakingKeeper.EXPECT().GetBondedValidatorsByPower(gomock.Any()).Return(nil, nil).Times(1)
 
 	require.NotPanics(t, func() { k.InitGenesis(ctx, providertypes.DefaultGenesisState()) })
+}
+
+// TestInitGenesisRefusesHeldOpsStakingCannotRelease: an exported genesis
+// carrying unbonding holds can only be imported if x/staking still indexes
+// the held operations (its own import rebuilds neither the index nor the
+// operation counter); otherwise the held stake would be stranded, so the
+// import fails loudly with the remedy in the message.
+func TestInitGenesisRefusesHeldOpsStakingCannotRelease(t *testing.T) {
+	pk, ctx, ctrl, mocks := testkeeper.GetProviderKeeperAndCtx(t, testkeeper.NewInMemKeeperParams(t))
+	defer ctrl.Finish()
+
+	accused := []byte("provider-addr-accused-x1")
+	gs := providertypes.DefaultGenesisState()
+	gs.ConsumerStates = []providertypes.ConsumerState{{
+		ConsumerId:   0,
+		ChainId:      "chain-1",
+		Phase:        providertypes.CONSUMER_PHASE_REGISTERED,
+		OwnerAddress: sdk.AccAddress([]byte("vaas-test-owner-1234")).String(),
+	}}
+	gs.PendingEquivocationPunishments = []providertypes.PendingEquivocationPunishment{{
+		ConsumerId: 0, ProviderConsAddr: accused, InfractionHeight: 42, ExecutesAt: time.Unix(300, 0).UTC(),
+	}}
+	gs.HeldUnbondingOps = []providertypes.HeldUnbondingOps{{ProviderConsAddr: accused, UnbondingOpIds: []uint64{5}}}
+	require.NoError(t, gs.Validate())
+
+	mocks.MockStakingKeeper.EXPECT().GetBondedValidatorsByPower(gomock.Any()).Return(nil, nil).AnyTimes()
+	mocks.MockBankKeeper.EXPECT().GetAllBalances(gomock.Any(), gomock.Any()).Return(sdk.NewCoins()).AnyTimes()
+	mocks.MockStakingKeeper.EXPECT().GetUnbondingType(gomock.Any(), uint64(5)).Return(stakingtypes.UnbondingType_Undefined, stakingtypes.ErrNoUnbondingType)
+
+	require.PanicsWithError(t,
+		"init: held unbonding op 5 of validator 70726f76696465722d616464722d616363757365642d7831 is not indexed by x/staking; "+
+			"resolve pending equivocation punishments before exporting, or drop held_unbonding_ops "+
+			"and the entries' unbonding_on_hold_ref_count from the exported genesis: unbonding type not found",
+		func() { pk.InitGenesis(ctx, gs) })
 }

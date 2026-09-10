@@ -146,6 +146,12 @@ func (AppModule) ConsensusVersion() uint64 { return 1 }
 func (am AppModule) BeginBlock(ctx context.Context) error {
 	sdkCtx := sdk.UnwrapSDKContext(ctx)
 
+	// The removal-vote deferral needs the gov keeper; an app that never wired
+	// it fails at the first block rather than at the first matured slash.
+	if !am.keeper.HasGovKeeper() {
+		panic("provider module: no gov keeper wired; call ProviderKeeper.SetGovKeeper in the app")
+	}
+
 	// Create clients to consumer chains that are due to be spawned
 	if err := am.keeper.BeginBlockLaunchConsumers(sdkCtx); err != nil {
 		return err
@@ -169,6 +175,13 @@ func (am AppModule) BeginBlock(ctx context.Context) error {
 	// The liveness sweep and the pause auto-stop above must run before this
 	// slash sweep so same-block cancellations win.
 	am.keeper.SweepPendingDowntimeSlashes(sdkCtx)
+
+	// Resolve pending equivocation punishments: defer matured entries behind
+	// a live removal vote, cancel those whose vote passed, execute the rest.
+	// A stop never cancels these, but the pause auto-stop above must run
+	// first so a pause lapsing this block is seen as STOPPED (entries run on
+	// their own clock) rather than frozen for one more block.
+	am.keeper.SweepPendingEquivocationPunishments(sdkCtx)
 
 	ip := am.keeper.GetInfractionParams(sdkCtx)
 
@@ -205,6 +218,7 @@ func (am AppModule) EndBlock(ctx context.Context) ([]abci.ValidatorUpdate, error
 	sdkCtx := sdk.UnwrapSDKContext(ctx)
 
 	am.keeper.EndBlockTrackValsetUpdates(sdkCtx)
+	am.keeper.EvaluateConsumerRefusals(sdkCtx)
 
 	return am.keeper.EndBlockVSU(sdkCtx)
 }

@@ -6,6 +6,7 @@ import (
 	ibctmtypes "github.com/cosmos/ibc-go/v10/modules/light-clients/07-tendermint"
 
 	sdk "github.com/cosmos/cosmos-sdk/types"
+	govv1 "github.com/cosmos/cosmos-sdk/x/gov/types/v1"
 )
 
 // OverrideWindowEndTimestampForTest replaces the downtime-evidence window-end
@@ -43,4 +44,25 @@ func (k Keeper) WindowEndTimestampForTest(ctx sdk.Context, clientId string, wind
 // verifyDowntimeChallengeHeader itself.
 func (k Keeper) VerifyDowntimeChallengeHeaderForTest(ctx sdk.Context, clientId string, header *ibctmtypes.Header) error {
 	return k.verifyDowntimeChallengeHeader(ctx, clientId, header)
+}
+
+// OverrideRemovalVoteForTest replaces the removal-vote lookup with fn.
+// Production code always scans the real gov keeper's active-proposal queue
+// (see Keeper.removalVote); this exists solely so unit tests can steer the
+// punishment deferrals without constructing a real gov keeper.
+func (k *Keeper) OverrideRemovalVoteForTest(fn func(ctx sdk.Context, consumerId uint64) (uint64, time.Time, bool)) {
+	k.removalVoteFn = fn
+}
+
+// OverrideRemovalProposalStatusForTest replaces the proposal-status lookup
+// with fn (see Keeper.removalProposalStatus), so unit tests can decide a
+// deferred punishment's fate without a real gov keeper.
+func (k *Keeper) OverrideRemovalProposalStatusForTest(fn func(ctx sdk.Context, proposalId uint64) (govv1.ProposalStatus, time.Time, bool)) {
+	k.removalProposalStatusFn = fn
+}
+
+// HoldUnbondingOpForTest exposes holdUnbondingOp so unit tests can seed
+// hook-placed holds without driving the full staking hook resolution.
+func (k Keeper) HoldUnbondingOpForTest(ctx sdk.Context, consAddr sdk.ConsAddress, id uint64) error {
+	return k.holdUnbondingOp(ctx, consAddr, id)
 }
