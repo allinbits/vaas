@@ -33,8 +33,27 @@ func (k *Keeper) Hooks() Hooks {
 // staking hooks
 //
 
+// AfterUnbondingInitiated holds a new unbonding operation when its validator
+// has a pending equivocation punishment, so stake accused while the operation
+// starts cannot finish unbonding before the punishment resolves (see
+// QueuePendingEquivocationPunishment; operations already in flight at queue
+// time are held there). The operation is matched to its validator by the
+// validator's live consensus address, which is what the punishments are keyed
+// by. Operations of validators with nothing pending pass through untouched.
+// Errors are returned whoever the operation belongs to; they are codec and
+// store failures only. x/staking logs and ignores them for undelegations and
+// redelegations, and propagates them for a validator's own unbonding.
 func (h Hooks) AfterUnbondingInitiated(goCtx context.Context, id uint64) error {
-	return nil
+	ctx := sdk.UnwrapSDKContext(goCtx)
+
+	consAddr, found, err := h.k.unbondingOpValidator(ctx, id)
+	if err != nil {
+		return err
+	}
+	if !found || !h.k.hasPendingEquivocationFor(ctx, consAddr) {
+		return nil
+	}
+	return h.k.holdUnbondingOp(ctx, consAddr, id)
 }
 
 func (h Hooks) AfterValidatorCreated(goCtx context.Context, valAddr sdk.ValAddress) error {

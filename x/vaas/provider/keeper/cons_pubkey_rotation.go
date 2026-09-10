@@ -45,6 +45,11 @@ import (
 //     until the next epoch boundary. The rest have their set rebuilt under the
 //     new address by the rotation snapshot, and an accusation naming the
 //     pre-rotation identity finds it there (see accusedConsumerValidatorAddr).
+//   - Pending equivocation punishments and the unbonding holds behind them
+//     are keyed by the live address and move for every consumer, deleted ones
+//     included: the unbonding hook and the release-when-last accounting look
+//     them up under the address the validator runs now (see
+//     migratePendingEquivocations).
 //
 // It never returns an error. It is called from
 // Hooks.AfterConsensusPubKeyUpdate, which x/staking invokes in EndBlock, where
@@ -61,6 +66,7 @@ func (k Keeper) MigrateStateOnConsPubKeyRotation(
 		}
 		k.migrateFeeExclusion(ctx, consumerId, oldProviderAddr, newProviderAddr)
 	}
+	k.migratePendingEquivocations(ctx, oldProviderAddr, newProviderAddr)
 }
 
 // liveProviderConsAddr resolves providerAddr to the provider consensus address
