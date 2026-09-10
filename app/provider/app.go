@@ -413,6 +413,7 @@ func New(
 		app.AccountKeeper,
 		app.BankKeeper,
 		app.DistrKeeper,
+		nil, // set below via SetGovKeeper once the GovKeeper exists
 		authtypes.NewModuleAddress(govtypes.ModuleName).String(),
 		authcodec.NewBech32Codec(sdk.GetConfig().GetBech32ValidatorAddrPrefix()),
 		authcodec.NewBech32Codec(sdk.GetConfig().GetBech32ConsensusAddrPrefix()),
@@ -434,6 +435,8 @@ func New(
 		govConfig,
 		authtypes.NewModuleAddress(govtypes.ModuleName).String(),
 	)
+
+	app.ProviderKeeper.SetGovKeeper(app.GovKeeper)
 
 	app.MintKeeper = mintkeeper.NewKeeper(
 		appCodec,
