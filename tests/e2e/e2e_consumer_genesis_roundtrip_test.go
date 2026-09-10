@@ -97,9 +97,12 @@ func (s *IntegrationTestSuite) testConsumerGenesisRoundTrip() {
 			"failed to unpause relayer container")
 
 		// 4. Export at the last committed height (no --for-zero-height): the
-		//    restarted chain continues at the next height, keeping the
-		//    provider's IBC client for the consumer verifiable across the
-		//    restart.
+		//    restarted chain continues at the next height, so the provider's
+		//    IBC client for the consumer can still verify its headers. It
+		//    cannot be advanced, though: the fresh data dir serves no history
+		//    at the client's trusted height, so consumer-originated packets
+		//    stop reaching the provider from here on (see
+		//    docs/genesis-restart-runbook.md).
 		s.T().Log("exporting consumer genesis via ephemeral container...")
 		exportedJSON := s.exportConsumerGenesis(ctx, oldDataDir)
 

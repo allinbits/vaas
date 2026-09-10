@@ -60,6 +60,10 @@ type baseSuiteConfig struct {
 	// chain container starts.
 	patchProviderGenesis func(appState map[string]any)
 
+	// govVotingPeriod is the provider gov voting period patchProviderGenesis
+	// sets; the proposal helpers size their tally wait from it.
+	govVotingPeriod time.Duration
+
 	// patchProviderConfigToml / patchConsumerConfigToml, when non-nil, mutate
 	// the respective config.toml before the chain container starts (the
 	// liveness suite uses this for fast blocks). Leaving them nil skips the
@@ -97,6 +101,17 @@ type baseTestSuite struct {
 // TearDownSuite cleans up all Docker resources and temp directories.
 func (s *baseTestSuite) TearDownSuite() {
 	s.T().Log("tearing down e2e suite...")
+
+	// A failed run leaves no other trace of what the chains were doing; keep
+	// the tail of both logs in the test output.
+	if s.T().Failed() {
+		if len(s.providerValRes) > 0 {
+			s.T().Logf("provider log tail:\n%s", tailLines(s.providerLogs(), 300))
+		}
+		if len(s.consumerValRes) > 0 {
+			s.T().Logf("consumer log tail:\n%s", tailLines(s.consumerLogs(), 100))
+		}
+	}
 
 	if os.Getenv("VAAS_E2E_SKIP_CLEANUP") == "true" {
 		s.T().Log("skipping cleanup (VAAS_E2E_SKIP_CLEANUP=true)")
@@ -692,4 +707,13 @@ func (s *baseTestSuite) declareConsumerClients(consumerID string) {
 		return true
 	}, 2*time.Minute, 3*time.Second,
 		"pinning the provider client never broadcast; see the attempt logs above")
+}
+
+// tailLines returns the last n lines of text.
+func tailLines(text string, n int) string {
+	lines := strings.Split(strings.TrimRight(text, "\n"), "\n")
+	if len(lines) > n {
+		lines = lines[len(lines)-n:]
+	}
+	return strings.Join(lines, "\n")
 }
