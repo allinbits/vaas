@@ -314,6 +314,12 @@ func (k Keeper) QueryConsumerChain(goCtx context.Context, req *types.QueryConsum
 	}, nil
 }
 
+// ConsumerFeePoolClaim quotes one depositor's claim on a consumer fee pool,
+// per denom, as the tokens a withdrawal would deliver at this block: funds
+// reserved as withheld-fee escrow are excluded, since they cannot be drawn
+// until the downtime challenge they back resolves (see ComputeClaim). The gov
+// authority is quoted under the identity it deposits with, the distribution
+// module account.
 func (k Keeper) ConsumerFeePoolClaim(
 	goCtx context.Context, req *types.QueryConsumerFeePoolClaimRequest,
 ) (*types.QueryConsumerFeePoolClaimResponse, error) {
@@ -341,7 +347,9 @@ func (k Keeper) ConsumerFeePoolClaim(
 		depositor = authtypes.NewModuleAddress(disttypes.ModuleName)
 	}
 
-	poolAddr := k.GetConsumerFeePoolAddress(req.ConsumerId)
+	// One ComputeClaim per denom the pool accounts for: the quote is then
+	// whatever a withdrawal would deliver at this block, withheld-fee escrow
+	// reservation included.
 	coins := sdk.NewCoins()
 	prefix := collections.NewPrefixedPairRange[uint64, string](req.ConsumerId)
 	iter, err := k.ConsumerFeePoolTotalShares.Iterate(ctx, prefix)
@@ -354,25 +362,8 @@ func (k Keeper) ConsumerFeePoolClaim(
 		if err != nil {
 			return nil, status.Errorf(codes.Internal, "key: %s", err)
 		}
-		total, err := iter.Value()
-		if err != nil {
-			return nil, status.Errorf(codes.Internal, "value: %s", err)
-		}
 		denom := key.K2()
-		if total.IsZero() {
-			continue
-		}
-		shares, err := k.ConsumerFeePoolShares.Get(ctx,
-			collections.Join3(req.ConsumerId, denom, depositor))
-		if err != nil {
-			// No shares for this (consumer, depositor, denom) — skip.
-			continue
-		}
-		balance := k.bankKeeper.GetBalance(ctx, poolAddr, denom)
-		if balance.Amount.IsZero() {
-			continue
-		}
-		claim := shares.Mul(balance.Amount).Quo(total)
+		claim := k.ComputeClaim(ctx, req.ConsumerId, depositor, denom)
 		if claim.IsPositive() {
 			coins = coins.Add(sdk.NewCoin(denom, claim))
 		}
@@ -380,6 +371,13 @@ func (k Keeper) ConsumerFeePoolClaim(
 	return &types.QueryConsumerFeePoolClaimResponse{Claim: coins}, nil
 }
 
+// ConsumerFeePoolClaims quotes every depositor's claim on a consumer fee pool,
+// paginated by depositor address. Each claim is what a withdrawal by that
+// depositor would deliver at this block, so withheld-fee escrow is excluded from
+// all of them alike (see ComputeClaim). While an escrow is open the quotes can
+// therefore sum to more than the pool can currently pay out: the escrow is not
+// allocated to anyone, it is simply out of reach until the downtime challenge it
+// backs resolves, and the first depositor to withdraw is the one it limits.
 func (k Keeper) ConsumerFeePoolClaims(
 	goCtx context.Context, req *types.QueryConsumerFeePoolClaimsRequest,
 ) (*types.QueryConsumerFeePoolClaimsResponse, error) {
@@ -405,11 +403,13 @@ func (k Keeper) ConsumerFeePoolClaims(
 	}
 	perDepositor := map[string]*acc{}
 
-	// Cache per-denom (balance, total) so we don't pay one bank read +
-	// one collection read per (depositor, denom) tuple.
+	// Cache per-denom (balance, total, unreserved balance) so we don't pay one
+	// bank read, one collection read and one escrow scan per (depositor, denom)
+	// tuple.
 	poolAddr := k.GetConsumerFeePoolAddress(req.ConsumerId)
 	balances := map[string]math.Int{}
 	totals := map[string]math.Int{}
+	availables := map[string]math.Int{}
 
 	prefix := collections.NewPrefixedTripleRange[uint64, string, sdk.AccAddress](req.ConsumerId)
 	iter, err := k.ConsumerFeePoolShares.Iterate(ctx, prefix)
@@ -451,8 +451,15 @@ func (k Keeper) ConsumerFeePoolClaims(
 		if total.IsZero() {
 			continue
 		}
-		claim := shares.Mul(balance).Quo(total)
-		if claim.IsZero() {
+		available, ok := availables[denom]
+		if !ok {
+			available = balance.Sub(k.outstandingWithheldFees(ctx, req.ConsumerId, denom))
+			availables[denom] = available
+		}
+		// Same computation WithdrawShares moves money by, so no depositor is
+		// quoted more than a withdrawal would pay them.
+		_, claim := feePoolDraw(shares, total, balance, available)
+		if !claim.IsPositive() {
 			continue
 		}
 		if entry, ok := perDepositor[addr.String()]; ok {

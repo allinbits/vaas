@@ -2,6 +2,7 @@ package keeper_test
 
 import (
 	"testing"
+	"time"
 
 	"cosmossdk.io/collections"
 	"cosmossdk.io/math"
@@ -37,6 +38,49 @@ func TestComputeClaim(t *testing.T) {
 		collections.Join(consumerId, denom), math.NewInt(100)))
 	mocks.MockBankKeeper.EXPECT().GetBalance(ctx, poolAddr, denom).Return(sdk.NewInt64Coin(denom, 50))
 	require.Equal(t, math.NewInt(50), k.ComputeClaim(ctx, consumerId, alice, denom))
+
+	// Escrow 20 against an unexpired withheld-fee record: only the unreserved
+	// balance (50 - 20 = 30) is currently claimable.
+	require.NoError(t, k.WithheldFeeRecords.Set(ctx,
+		collections.Join(consumerId, []byte("val-escrow-holder__")), providertypes.WithheldFeeRecord{
+			ConsumerId:       consumerId,
+			ProviderConsAddr: []byte("val-escrow-holder__"),
+			Amount:           sdk.NewInt64Coin(denom, 20),
+			ExpiresAt:        ctx.BlockTime().Add(time.Hour),
+		}))
+	mocks.MockBankKeeper.EXPECT().GetBalance(ctx, poolAddr, denom).Return(sdk.NewInt64Coin(denom, 50))
+	require.Equal(t, math.NewInt(30), k.ComputeClaim(ctx, consumerId, alice, denom))
+}
+
+// TestFeePoolSharesConsistencyInvariant_UnaccountedBalance checks that the
+// invariant reports a pool balance no shares account for -- reachable through
+// the send restriction's distribution-module exemption -- and stops reporting it
+// once a deposit has credited the community pool with that balance.
+func TestFeePoolSharesConsistencyInvariant_UnaccountedBalance(t *testing.T) {
+	k, ctx, ctrl, mocks := testkeeper.GetProviderKeeperAndCtx(t, testkeeper.NewInMemKeeperParams(t))
+	defer ctrl.Finish()
+
+	consumerId := uint64(0)
+	denom := "uphoton"
+	alice := sdk.AccAddress([]byte("alice___________"))
+	poolAddr := k.GetConsumerFeePoolAddress(consumerId)
+	require.NoError(t, k.FeePoolAddressToConsumerId.Set(ctx, poolAddr, consumerId))
+
+	mocks.MockBankKeeper.EXPECT().GetAllBalances(ctx, poolAddr).
+		Return(sdk.NewCoins(sdk.NewInt64Coin(denom, 100))).AnyTimes()
+	mocks.MockBankKeeper.EXPECT().GetBalance(ctx, poolAddr, denom).
+		Return(sdk.NewInt64Coin(denom, 100)).AnyTimes()
+
+	msg, broken := providerkeeper.FeePoolSharesConsistencyInvariant(k)(ctx)
+	require.True(t, broken)
+	require.Contains(t, msg, "with no shares")
+
+	// A deposit books the unaccounted balance to the community pool, and shares
+	// cover the balance again.
+	require.NoError(t, k.MintShares(ctx, consumerId, alice, sdk.NewInt64Coin(denom, 100)))
+
+	msg, broken = providerkeeper.FeePoolSharesConsistencyInvariant(k)(ctx)
+	require.False(t, broken, msg)
 }
 
 func TestMintShares(t *testing.T) {
@@ -44,6 +88,7 @@ func TestMintShares(t *testing.T) {
 	denom := "uphoton"
 	alice := sdk.AccAddress([]byte("alice___________"))
 	bob := sdk.AccAddress([]byte("bob_____________"))
+	distrAddr := authtypes.NewModuleAddress(disttypes.ModuleName)
 
 	testCases := []struct {
 		name      string
@@ -120,6 +165,55 @@ func TestMintShares(t *testing.T) {
 				total, err := k.ConsumerFeePoolTotalShares.Get(ctx, collections.Join(consumerId, denom))
 				require.NoError(t, err)
 				require.Equal(t, math.NewInt(50), total)
+			},
+		},
+		{
+			name:      "unaccounted balance is credited to the community pool",
+			depositor: bob,
+			deposit:   sdk.NewInt64Coin(denom, 50),
+			setup: func(k providerkeeper.Keeper, ctx sdk.Context, mocks testkeeper.MockedKeepers, poolAddr sdk.AccAddress) {
+				// No share records at all, yet the pool holds 100: a
+				// community-pool spend addressed the pool directly.
+				mocks.MockBankKeeper.EXPECT().GetBalance(ctx, poolAddr, denom).Return(sdk.NewInt64Coin(denom, 100))
+			},
+			postCheck: func(t *testing.T, k providerkeeper.Keeper, ctx sdk.Context) {
+				// The 100 is booked to the distribution module account, so bob's
+				// 50 mints at par against it instead of buying into it.
+				distrShares, err := k.ConsumerFeePoolShares.Get(ctx, collections.Join3(consumerId, denom, distrAddr))
+				require.NoError(t, err)
+				require.Equal(t, math.NewInt(100), distrShares)
+
+				bobShares, err := k.ConsumerFeePoolShares.Get(ctx, collections.Join3(consumerId, denom, bob))
+				require.NoError(t, err)
+				require.Equal(t, math.NewInt(50), bobShares)
+
+				total, err := k.ConsumerFeePoolTotalShares.Get(ctx, collections.Join(consumerId, denom))
+				require.NoError(t, err)
+				require.Equal(t, math.NewInt(150), total)
+			},
+		},
+		{
+			name:      "share record without a stored total is dropped, not re-valued",
+			depositor: bob,
+			deposit:   sdk.NewInt64Coin(denom, 50),
+			setup: func(k providerkeeper.Keeper, ctx sdk.Context, mocks testkeeper.MockedKeepers, poolAddr sdk.AccAddress) {
+				// A share record with no total behind it backs no claim: every
+				// reader treats a missing total as an empty pool.
+				require.NoError(t, k.ConsumerFeePoolShares.Set(ctx,
+					collections.Join3(consumerId, denom, alice), math.NewInt(999)))
+				mocks.MockBankKeeper.EXPECT().GetBalance(ctx, poolAddr, denom).Return(sdk.NewInt64Coin(denom, 100))
+			},
+			postCheck: func(t *testing.T, k providerkeeper.Keeper, ctx sdk.Context) {
+				_, err := k.ConsumerFeePoolShares.Get(ctx, collections.Join3(consumerId, denom, alice))
+				require.ErrorIs(t, err, collections.ErrNotFound)
+
+				distrShares, err := k.ConsumerFeePoolShares.Get(ctx, collections.Join3(consumerId, denom, distrAddr))
+				require.NoError(t, err)
+				require.Equal(t, math.NewInt(100), distrShares)
+
+				total, err := k.ConsumerFeePoolTotalShares.Get(ctx, collections.Join(consumerId, denom))
+				require.NoError(t, err)
+				require.Equal(t, math.NewInt(150), total)
 			},
 		},
 		{
@@ -236,6 +330,42 @@ func TestWithdrawShares(t *testing.T) {
 				require.Equal(t, math.NewInt(50), aliceShares)
 				total, _ := k.ConsumerFeePoolTotalShares.Get(ctx, collections.Join(consumerId, denom))
 				require.Equal(t, math.NewInt(150), total)
+			},
+		},
+		{
+			name:      "withheld escrow caps the withdrawal and leaves residual shares",
+			depositor: alice,
+			withdraw:  sdk.NewInt64Coin(denom, 100),
+			setup: func(k providerkeeper.Keeper, ctx sdk.Context, mocks testkeeper.MockedKeepers, poolAddr sdk.AccAddress) {
+				// Alice sole depositor: 100 shares against balance 100, but 40
+				// is escrowed against an unexpired withheld-fee record, so only
+				// 60 is unreserved.
+				require.NoError(t, k.ConsumerFeePoolShares.Set(ctx,
+					collections.Join3(consumerId, denom, alice), math.NewInt(100)))
+				require.NoError(t, k.ConsumerFeePoolTotalShares.Set(ctx,
+					collections.Join(consumerId, denom), math.NewInt(100)))
+				require.NoError(t, k.WithheldFeeRecords.Set(ctx,
+					collections.Join(consumerId, []byte("val-escrow-holder__")), providertypes.WithheldFeeRecord{
+						ConsumerId:       consumerId,
+						ProviderConsAddr: []byte("val-escrow-holder__"),
+						Amount:           sdk.NewInt64Coin(denom, 40),
+						ExpiresAt:        ctx.BlockTime().Add(time.Hour),
+					}))
+				mocks.MockBankKeeper.EXPECT().GetBalance(ctx, poolAddr, denom).Return(sdk.NewInt64Coin(denom, 100))
+			},
+			// Request 100 (the whole claim) but only 60 is unreserved: deliver
+			// 60, burning shares at the full-balance rate so alice keeps 40
+			// shares backing the escrow -- no orphan balance is created.
+			postCheck: func(t *testing.T, k providerkeeper.Keeper, ctx sdk.Context, tokens sdk.Coin) {
+				require.Equal(t, math.NewInt(60), tokens.Amount)
+
+				aliceShares, err := k.ConsumerFeePoolShares.Get(ctx, collections.Join3(consumerId, denom, alice))
+				require.NoError(t, err)
+				require.Equal(t, math.NewInt(40), aliceShares)
+
+				total, err := k.ConsumerFeePoolTotalShares.Get(ctx, collections.Join(consumerId, denom))
+				require.NoError(t, err)
+				require.Equal(t, math.NewInt(40), total)
 			},
 		},
 		{
@@ -389,6 +519,26 @@ func TestSweepConsumerFeePoolDenom(t *testing.T) {
 				mocks.MockDistributionKeeper.EXPECT().FundCommunityPool(
 					ctx, sdk.NewCoins(sdk.NewInt64Coin(denom, 100)),
 					providerModuleAddr).Return(nil)
+			},
+		},
+		{
+			name: "unaccounted balance is swept to the community pool",
+			setupMocks: func(k providerkeeper.Keeper, ctx sdk.Context, mocks testkeeper.MockedKeepers, poolAddr sdk.AccAddress) {
+				// No share records at all, balance 100: the sweep credits the
+				// community pool with it and pays it straight back out there.
+				mocks.MockBankKeeper.EXPECT().GetBalance(ctx, poolAddr, denom).Return(sdk.NewInt64Coin(denom, 100))
+				mocks.MockBankKeeper.EXPECT().SendCoinsFromAccountToModule(
+					ctx, poolAddr, providerModuleName, sdk.NewCoins(sdk.NewInt64Coin(denom, 100))).Return(nil)
+				mocks.MockDistributionKeeper.EXPECT().FundCommunityPool(
+					ctx, sdk.NewCoins(sdk.NewInt64Coin(denom, 100)),
+					providerModuleAddr).Return(nil)
+			},
+			postCheck: func(t *testing.T, k providerkeeper.Keeper, ctx sdk.Context) {
+				// Nothing left behind, including the absorbed share record.
+				_, err := k.ConsumerFeePoolShares.Get(ctx, collections.Join3(consumerId, denom, distrAddr))
+				require.ErrorIs(t, err, collections.ErrNotFound)
+				_, err = k.ConsumerFeePoolTotalShares.Get(ctx, collections.Join(consumerId, denom))
+				require.ErrorIs(t, err, collections.ErrNotFound)
 			},
 		},
 		{

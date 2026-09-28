@@ -118,7 +118,11 @@ func TestHandleConsumerDowntimeAcceptsAndQueuesPricedSlash(t *testing.T) {
 	err := providerKeeper.HandleConsumerEvidencePacket(ctx, consumerId, evidencePacket)
 	require.NoError(t, err)
 
-	require.True(t, providerKeeper.IsEpochDowntime(ctx, consumerId, consAddr))
+	// The window resolves to an already-recorded epoch distribution (the run
+	// seeded above at windowEndTime), i.e. an epoch that already paid out, so
+	// the validator is NOT fee-excluded -- excluding it would dock a later,
+	// wrong epoch. The (challengeable) pending slash below is still queued.
+	require.False(t, providerKeeper.IsEpochDowntime(ctx, consumerId, consAddr))
 
 	// windowStart 93, span 8 => window end (WindowEndHeight) 100.
 	pending, err := providerKeeper.PendingDowntimeSlashes.Get(ctx, collections.Join3(consumerId, consAddr.Bytes(), int64(100)))
@@ -129,6 +133,39 @@ func TestHandleConsumerDowntimeAcceptsAndQueuesPricedSlash(t *testing.T) {
 	// M = 6/8 = 0.75; slashTokens = P*M/C = 1000*0.75/2 = 375
 	require.True(t, math.NewInt(375).Equal(pending.SlashTokens), "expected 375, got %s", pending.SlashTokens)
 	require.Equal(t, windowEndTime.Add(7*24*time.Hour), pending.MaturesAt)
+}
+
+// TestHandleConsumerDowntimeCurrentEpochIsFeeExcluded is the affirmative side
+// of infraction-epoch fee exclusion: a window falling in the current,
+// not-yet-distributed epoch (no recorded run at or after it) DOES exclude the
+// validator from that epoch's distribution, pricing the slash live.
+func TestHandleConsumerDowntimeCurrentEpochIsFeeExcluded(t *testing.T) {
+	windowEndTime := time.Date(2025, 6, 1, 0, 0, 0, 0, time.UTC)
+	spawnTime := windowEndTime.Add(-30 * 24 * time.Hour)
+	infractionParams := downtimeParams(8, "0.5", 0, 7*24*time.Hour, 72*time.Hour)
+
+	providerKeeper, ctx, ctrl, mocks, consumerId, providerAddr := setupDowntimeTest(t, infractionParams, spawnTime, windowEndTime)
+	defer ctrl.Finish()
+	ctx = ctx.WithBlockTime(windowEndTime)
+
+	// No epoch-share record at or after the window end: the window is in the
+	// current, not-yet-distributed epoch, so P prices live (one bonded
+	// validator here) and the exclusion applies.
+	pp := types.DefaultParams()
+	pp.FeesPerBlockAmount = math.NewInt(10)
+	providerKeeper.SetParams(ctx, pp)
+	mocks.MockStakingKeeper.EXPECT().GetBondedValidatorsByPower(gomock.Any()).
+		Return([]stakingtypes.Validator{{}}, nil)
+	mocks.MockPhotonKeeper.EXPECT().ConversionRate(ctx).Return(math.LegacyNewDec(2), nil)
+
+	consAddr := providerAddr.ToSdkConsAddr()
+	evidencePacket := vaastypes.NewEvidencePacketData(
+		sdk.ConsAddress(consAddr), 93, []byte{0x3F}, 8, 8, math.LegacyMustNewDecFromStr("0.5"),
+	)
+
+	require.NoError(t, providerKeeper.HandleConsumerEvidencePacket(ctx, consumerId, evidencePacket))
+	require.True(t, providerKeeper.IsEpochDowntime(ctx, consumerId, consAddr),
+		"a current-epoch infraction must be excluded from that epoch's distribution")
 }
 
 func TestHandleConsumerDowntimeRejectsBelowThreshold(t *testing.T) {
