@@ -1,6 +1,7 @@
 package app_test
 
 import (
+	"bytes"
 	"encoding/json"
 	"testing"
 	"time"
@@ -12,13 +13,19 @@ import (
 
 	dbm "github.com/cosmos/cosmos-db"
 	ibctransfertypes "github.com/cosmos/ibc-go/v10/modules/apps/transfer/types"
+	clienttypes "github.com/cosmos/ibc-go/v10/modules/core/02-client/types"
 	clientv2types "github.com/cosmos/ibc-go/v10/modules/core/02-client/v2/types"
+	commitmenttypes "github.com/cosmos/ibc-go/v10/modules/core/23-commitment/types"
+	ibcexported "github.com/cosmos/ibc-go/v10/modules/core/exported"
+	ibctypes "github.com/cosmos/ibc-go/v10/modules/core/types"
+	ibctmtypes "github.com/cosmos/ibc-go/v10/modules/light-clients/07-tendermint"
 
 	errorsmod "cosmossdk.io/errors"
 	"cosmossdk.io/log"
 
 	"github.com/cosmos/cosmos-sdk/baseapp"
 	clienttx "github.com/cosmos/cosmos-sdk/client/tx"
+	"github.com/cosmos/cosmos-sdk/codec"
 	cryptocodec "github.com/cosmos/cosmos-sdk/crypto/codec"
 	"github.com/cosmos/cosmos-sdk/crypto/keys/ed25519"
 	"github.com/cosmos/cosmos-sdk/crypto/keys/secp256k1"
@@ -61,6 +68,7 @@ func setupAnteTestApp(t *testing.T, photonFees bool) *consumerapp.App {
 	capp := consumerapp.New(log.NewNopLogger(), db, nil, true, appOpts, baseapp.SetChainID(anteTestChainID))
 
 	genesisState := consumerapp.ModuleBasics.DefaultGenesis(capp.AppCodec())
+	genesisTime := time.Unix(1_850_000_000, 0).UTC()
 
 	valPubKey, err := cryptocodec.ToCmtProtoPublicKey(ed25519.GenPrivKey().PubKey())
 	require.NoError(t, err)
@@ -70,15 +78,14 @@ func setupAnteTestApp(t *testing.T, photonFees bool) *consumerapp.App {
 	consumerGenesis := consumertypes.NewRestartGenesisState(
 		providerClientID,
 		[]abci.ValidatorUpdate{{PubKey: valPubKey, Power: 100}},
-		[]consumertypes.HeightToValsetUpdateID{{ValsetUpdateId: 1, Height: 1}},
 		params,
 	)
 	genesisState[consumertypes.ModuleName] = capp.AppCodec().MustMarshalJSON(consumerGenesis)
+	genesisState[ibcexported.ModuleName] = pinnedProviderClientGenesis(capp.AppCodec(), genesisTime)
 
 	stateBytes, err := json.Marshal(genesisState)
 	require.NoError(t, err)
 
-	genesisTime := time.Unix(1_850_000_000, 0).UTC()
 	_, err = capp.InitChain(&abci.RequestInitChain{
 		ChainId:         anteTestChainID,
 		Time:            genesisTime,
@@ -94,6 +101,35 @@ func setupAnteTestApp(t *testing.T, photonFees bool) *consumerapp.App {
 	require.NoError(t, err)
 
 	return capp
+}
+
+// pinnedProviderClientGenesis is the ibc genesis fragment carrying the
+// provider client the consumer's restart genesis pins. A restart genesis
+// naming a client absent from the IBC client store is refused at InitChain,
+// exactly as it would be on a node whose VAAS and IBC fragments came from
+// different exports, so the pinned client has to exist here. One consensus
+// state is enough: the ante chain never verifies anything against it.
+func pinnedProviderClientGenesis(cdc codec.Codec, genesisTime time.Time) json.RawMessage {
+	clientState := ibctmtypes.NewClientState(
+		"provider", ibctmtypes.DefaultTrustLevel,
+		14*24*time.Hour, 21*24*time.Hour, 10*time.Second,
+		clienttypes.NewHeight(0, 1), commitmenttypes.GetSDKSpecs(),
+		[]string{"upgrade", "upgradedIBCState"},
+	)
+	consensusState := ibctmtypes.NewConsensusState(
+		genesisTime, commitmenttypes.NewMerkleRoot([]byte("provider-app-hash")), bytes.Repeat([]byte{1}, 32),
+	)
+	ibcGenesis := ibctypes.DefaultGenesisState()
+	ibcGenesis.ClientGenesis.Clients = []clienttypes.IdentifiedClientState{
+		clienttypes.NewIdentifiedClientState(providerClientID, clientState),
+	}
+	ibcGenesis.ClientGenesis.ClientsConsensus = clienttypes.ClientsConsensusStates{
+		clienttypes.NewClientConsensusStates(providerClientID, []clienttypes.ConsensusStateWithHeight{
+			clienttypes.NewConsensusStateWithHeight(clientState.LatestHeight, consensusState),
+		}),
+	}
+	ibcGenesis.ClientGenesis.NextClientSequence = 1
+	return cdc.MustMarshalJSON(ibcGenesis)
 }
 
 // anteTestContext branches a fresh, isolated context off the app's committed
