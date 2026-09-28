@@ -76,7 +76,7 @@ No automatic re-binding exists.
 | Infraction | Detection | Punishment |
 |---|---|---|
 | Double-sign (duplicate vote) on a consumer | `MsgSubmitConsumerDoubleVoting`, re-verified on the provider | jail now and unbonding operations held; slash + tombstone at `InfractionParameters.DoubleSign` after `equivocation_execution_delay`, deferred once behind a live removal vote for the consumer; cancelled if governance removes the consumer (see [consumer-refusal.md](consumer-refusal.md)) |
-| Light-client attack (IBC misbehaviour) on a consumer | `MsgSubmitConsumerMisbehaviour`, re-verified on the provider | the consumer is paused, nobody is punished; the byzantine set is attributed on the event; governance resumes the chain or lets the pause expire into `STOPPED` |
+| Light-client attack (IBC misbehaviour) on a consumer | `MsgSubmitConsumerMisbehaviour`, re-verified on the provider | the consumer's IBC client is frozen and the consumer paused, nobody is punished; the byzantine set is attributed on the event; governance resumes the chain (recovering the client in the same proposal), which adjudicates that fork, or lets the pause expire into `STOPPED` |
 | Downtime on a consumer | falsifiable IBC evidence packets | fee-priced slash held behind a challenge window, deferred once behind a live removal vote for the consumer; a successful `MsgChallengeConsumerDowntime` cancels it and moves the consumer to `PAUSED`; any stop of the consumer cancels it |
 | Double-sign on the provider itself | CometBFT `DuplicateVoteEvidence` via `x/evidence` | slash + jail + tombstone |
 
@@ -85,11 +85,15 @@ consumer binary can orchestrate a fork in which every honest validator signs
 each conflicting header once, so the byzantine set of a verified attack is
 exactly as likely to be the victim set: the distinction does not exist in the
 data, and any automatic punishment keyed on attacker-shaped evidence becomes a
-targeting tool, at any threshold. The provider instead contains the chain: the
-consumer is paused, VSC service stops, both evidence paths reject it, and its
-pending downtime accusations are cancelled. Governance resumes the chain once
-the fork is understood and fixed, or lets the pause expire into `STOPPED` via
-`MaxPauseDuration`. See [equivocation-evidence.md](equivocation-evidence.md)
+targeting tool, at any threshold. The provider instead contains the chain: its
+IBC client is frozen so no packet proven against the fork lands, the consumer
+is paused, VSC service stops, both evidence paths reject it, and its pending
+downtime accusations are cancelled with the fees withheld on their account
+repaid. Governance resumes the chain once the fork is understood and fixed,
+recovering the client in the same proposal, which also adjudicates that fork
+(the same conflicting headers cannot pause the chain again; a fork at a later
+height can), or lets the pause expire into `STOPPED` via `MaxPauseDuration`.
+See [equivocation-evidence.md](equivocation-evidence.md)
 and the design contract on `HandleConsumerMisbehaviour`.
 
 Provider-native equivocation is punished only if the embedding chain wires the

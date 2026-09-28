@@ -14,7 +14,7 @@ the chain is paused instead:
 | Evidence | Message | Consequence |
 |---|---|---|
 | Double-sign (duplicate vote) | `MsgSubmitConsumerDoubleVoting` | jail now, unbonding operations held; slash + tombstone after `equivocation_execution_delay`, deferred once behind a live removal vote; cancelled if governance removes the consumer |
-| Light-client attack (IBC misbehaviour) | `MsgSubmitConsumerMisbehaviour` | the consumer is paused; nobody is punished; the byzantine set is attributed on the event |
+| Light-client attack (IBC misbehaviour) | `MsgSubmitConsumerMisbehaviour` | the consumer's IBC client is frozen and the consumer paused; nobody is punished; the byzantine set is attributed on the event; a governance resume adjudicates the fork |
 
 Both messages are permissionless -- any account can submit them as an ordinary
 provider transaction. This is distinct from downtime, which flows automatically
@@ -111,7 +111,10 @@ verifies a light-client attack and contains it. No validator is punished on
 this path:
 
 1. Evidence for a consumer that is not `LAUNCHED` is rejected up front, so
-   re-submitting evidence against an already-paused consumer is a cheap no-op.
+   re-submitting evidence against an already-paused consumer is a cheap no-op;
+   so is misbehaviour whose headers both sit at or below the fork height the
+   last governance resume adjudicated (`ErrMisbehaviourAdjudicated`), the fork
+   governance already ruled on.
 2. `CheckMisbehaviour` verifies the chain id and client id match the consumer,
    that the two headers are at the same height and within the client trusting
    period, and that they genuinely conflict (different block id hashes, each
@@ -121,11 +124,16 @@ this path:
    carried on the submission event so operators and governance can see who
    signed what. An amnesia attack has no attributable set by construction and
    the extraction returns none; containment applies all the same.
-4. The consumer is **paused** (`containLightClientAttack` calling
-   `PauseConsumerChain`): VSC service stops, both evidence paths reject the
-   consumer (they gate on `LAUNCHED`), its pending downtime accusations are
-   cancelled, and an auto-stop is scheduled at `MaxPauseDuration` so governance
-   silence converges to `STOPPED`.
+4. The consumer's IBC client is **frozen** (`containLightClientAttack` handing
+   the misbehaviour to the client keeper's `UpdateClient` while the client is
+   still active, exactly as a relayer's `MsgSubmitMisbehaviour` would; a client
+   already frozen or expired is left alone), so no packet proven against the
+   fork lands on the provider, and the consumer is **paused**
+   (`PauseConsumerChain` under `PAUSE_REASON_LIGHT_CLIENT_ATTACK`): VSC service
+   stops, both evidence paths reject the consumer (they gate on `LAUNCHED`), its
+   pending downtime accusations are cancelled and the fees withheld on their
+   account repaid, and an auto-stop is scheduled at `MaxPauseDuration` so
+   governance silence converges to `STOPPED`.
 
 Nobody is slashed, jailed, or tombstoned, deliberately. A malicious consumer
 binary can orchestrate a fork in which every honest validator signs each
@@ -136,10 +144,13 @@ attacker a targeting tool. The full rationale, including why this must not be
 
 What happens after containment is a governance decision: `MsgResumeConsumer`
 resumes the chain (with a forced snapshot) once the fork is understood and
-fixed, or the pause expires into `STOPPED`. A resume does not bury the
-evidence: while the conflicting headers remain verifiable within the client's
-trusting period, re-submission pauses the consumer again, which is correct
-while the fork still stands.
+fixed, bundling ibc-go's `MsgRecoverClient` for the frozen client, or the pause
+expires into `STOPPED`. The resume is governance's ruling on the fork it was
+asked about: it records the recovered client's latest height, and misbehaviour
+whose headers both sit at or below it is rejected as adjudicated, so the same
+conflicting headers cannot pause the consumer again for as long as they verify
+(a trusting period). A fork at a later height is new evidence and pauses it
+again.
 
 ---
 

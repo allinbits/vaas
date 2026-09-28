@@ -151,24 +151,29 @@ VSC packets are diffs by default. If a consumer falls behind on acknowledgements
 **Trigger:** a successful `MsgChallengeConsumerDowntime` -- a cryptographic proof that the
 consumer reported false downtime evidence (see [consumer-downtime.md](consumer-downtime.md))
 -- or the bonded power refusing the consumer reaching `RefusalPauseThreshold`, evaluated
-every EndBlock (see [consumer-refusal.md](consumer-refusal.md)).
+every EndBlock (see [consumer-refusal.md](consumer-refusal.md)) -- or a confirmed
+light-client attack (`MsgSubmitConsumerMisbehaviour`, see
+[equivocation-evidence.md](equivocation-evidence.md)), which also freezes the consumer's
+IBC client.
 
 **Requirements:** consumer must be in `LAUNCHED` phase.
 
 **What happens on-chain:**
-1. On a challenge only: withheld fee shares from the false accusations are paid back from the
-   consumer's fee pool.
-2. Phase is set to `PAUSED`.
+1. Withheld fee shares from the consumer's accusations are paid back from the consumer's fee
+   pool, whichever way the pause came: the accusations are cancelled with it and could not be
+   challenged any more.
+2. Phase is set to `PAUSED` and the pause reason recorded; `vaas_consumer_paused` names it.
 3. All pending downtime slashes from this consumer are cancelled and its epoch downtime
    marks cleared.
-4. An automatic stop is scheduled at `block_time + MaxPauseDuration` (default 30 days).
+4. An automatic stop is scheduled at `block_time + MaxPauseDuration` (default 45 days).
 5. No further VSC packets are queued or sent; fee distribution and downtime evidence from
    this consumer stop; the liveness sweep skips it.
 
 **Exits:** `MsgResumeConsumer` (gov) returns the consumer to `LAUNCHED` with an immediate
 snapshot resync (the resume pre-flights the IBC client and fails with `MsgRecoverClient`
-guidance if the client expired during the pause); `MsgRemoveConsumer` (gov) or the scheduled
-auto-stop moves it to `STOPPED`.
+guidance if the client expired or was frozen during the pause; after a light-client pause it
+also records the fork height it adjudicated, below which misbehaviour is rejected from then
+on); `MsgRemoveConsumer` (gov) or the scheduled auto-stop moves it to `STOPPED`.
 
 ---
 
@@ -287,7 +292,7 @@ can be erased and its chain ID re-registered in the next block.
 | `REGISTERED` | `MsgCreateConsumer` | Any account | Consumer created, owner assigned (only `chain_id` and `metadata` are required) |
 | `INITIALIZED` | `spawn_time` set | On-chain (automatic) | Queued for launch at spawn_time |
 | `LAUNCHED` | `spawn_time` elapsed | On-chain (BeginBlock) | Genesis built; operator starts consumer; relayer creates IBC path |
-| `PAUSED` | Successful downtime challenge, or refusal coalition at `RefusalPauseThreshold` | Any account (with proof) / on-chain (EndBlock) | Pending slashes cancelled, withheld fees repaid (challenge only), auto-stop scheduled; a resume is refused while the coalition stands |
+| `PAUSED` | Successful downtime challenge, confirmed light-client attack, or refusal coalition at `RefusalPauseThreshold` | Any account (with proof) / on-chain (EndBlock) | Withheld fees repaid, pending slashes cancelled, auto-stop scheduled; a light-client attack also freezes the IBC client; a resume is refused while the coalition stands |
 | `STOPPED` | `MsgRemoveConsumer` (gov), liveness sweep, or pause auto-stop | Governance / on-chain | Queued for deletion after unbonding period; the governance removal also cancels the consumer's pending equivocation punishments |
 | `DELETED` | Unbonding period elapsed | On-chain (BeginBlock) | Fee pool auto-swept to depositors, state cleaned up, chain ID released |
 | `DELETED` | `MsgRemoveConsumer` on a consumer that never launched | Owner or governance | Same teardown, with no `STOPPED` stopover and no unbonding delay |
