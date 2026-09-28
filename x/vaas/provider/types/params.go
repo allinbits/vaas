@@ -86,9 +86,9 @@ const (
 	// latency (deposit period + voting period, plus time to notice the pause
 	// and draft the proposal) or the resume path is unreachable and every
 	// pause silently becomes terminal. 1080h (45 days) clears AtomOne's
-	// 28-day voting period with a two-week runway to notice the pause, draft
-	// the proposal, and reach the deposit; operators on chains with slower
-	// governance must raise it accordingly.
+	// 21-day voting period with more than three weeks of runway to notice the
+	// pause, draft the proposal, and reach the deposit; operators on chains
+	// with slower governance must raise it accordingly.
 	DefaultMaxPauseDuration = 1080 * time.Hour
 )
 
