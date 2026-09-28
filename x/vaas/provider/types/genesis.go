@@ -558,5 +558,21 @@ func (cs ConsumerState) Validate() error {
 		return fmt.Errorf("invalid phase: %s", cs.Phase)
 	}
 
+	// The pause reason lives exactly as long as the pause (see
+	// PauseConsumerChain); the adjudicated fork height outlives it and is
+	// only ever a real client height (see ResumeConsumerChain).
+	if _, known := PauseReason_name[int32(cs.PauseReason)]; !known {
+		return fmt.Errorf("unknown pause reason %d", cs.PauseReason)
+	}
+	if cs.Phase == CONSUMER_PHASE_PAUSED && cs.PauseReason == PAUSE_REASON_UNSPECIFIED {
+		return fmt.Errorf("pause reason required for phase %s", cs.Phase)
+	}
+	if cs.Phase != CONSUMER_PHASE_PAUSED && cs.PauseReason != PAUSE_REASON_UNSPECIFIED {
+		return fmt.Errorf("pause reason must be unspecified for phase %s", cs.Phase)
+	}
+	if cs.AdjudicatedForkHeight != nil && cs.AdjudicatedForkHeight.IsZero() {
+		return fmt.Errorf("adjudicated fork height must be a real client height when set")
+	}
+
 	return nil
 }

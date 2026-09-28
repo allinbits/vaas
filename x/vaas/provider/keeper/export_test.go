@@ -53,6 +53,6 @@ func (k Keeper) VerifyDowntimeChallengeHeaderForTest(ctx sdk.Context, clientId s
 // tests can exercise the confirmed-light-client-attack containment policy
 // directly, without fabricating a real IBC light-client misbehaviour proof for
 // CheckMisbehaviour and GetByzantineValidators to verify.
-func (k Keeper) ContainLightClientAttackForTest(ctx sdk.Context, consumerId uint64, byzantineValidators []*tmtypes.Validator) ([]types.ProviderConsAddress, error) {
-	return k.containLightClientAttack(ctx, consumerId, byzantineValidators)
+func (k Keeper) ContainLightClientAttackForTest(ctx sdk.Context, consumerId uint64, misbehaviour *ibctmtypes.Misbehaviour, byzantineValidators []*tmtypes.Validator) ([]types.ProviderConsAddress, error) {
+	return k.containLightClientAttack(ctx, consumerId, misbehaviour, byzantineValidators)
 }

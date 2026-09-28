@@ -37,4 +37,5 @@ var (
 	ErrFeePoolLocked                           = errorsmod.Register(ModuleName, 29, "consumer fee pool is locked while consumer is launched")
 	ErrDowntimeChallengeFailed                 = errorsmod.Register(ModuleName, 30, "downtime challenge verification failed")
 	ErrConsumerClientNotActive                 = errorsmod.Register(ModuleName, 31, "consumer client is not active")
+	ErrMisbehaviourAdjudicated                 = errorsmod.Register(ModuleName, 33, "misbehaviour at or below the fork height governance adjudicated at the last resume")
 )

@@ -772,7 +772,7 @@ func TestRemoveConsumerFromPaused(t *testing.T) {
 	consumerId := createResp.ConsumerId
 
 	providerKeeper.SetConsumerPhase(ctx, consumerId, providertypes.CONSUMER_PHASE_LAUNCHED)
-	require.NoError(t, providerKeeper.PauseConsumerChain(ctx, consumerId))
+	require.NoError(t, providerKeeper.PauseConsumerChain(ctx, consumerId, providertypes.PAUSE_REASON_DOWNTIME_CHALLENGE))
 	expirationTime, err := providerKeeper.GetConsumerPauseExpirationTime(ctx, consumerId)
 	require.NoError(t, err)
 
@@ -821,7 +821,7 @@ func TestResumeConsumerGovAuth(t *testing.T) {
 
 	providerKeeper.SetConsumerClientId(ctx, consumerId, "07-tendermint-0")
 	providerKeeper.SetConsumerPhase(ctx, consumerId, providertypes.CONSUMER_PHASE_LAUNCHED)
-	require.NoError(t, providerKeeper.PauseConsumerChain(ctx, consumerId))
+	require.NoError(t, providerKeeper.PauseConsumerChain(ctx, consumerId, providertypes.PAUSE_REASON_DOWNTIME_CHALLENGE))
 
 	// non-authority is rejected
 	_, err = msgServer.ResumeConsumer(ctx,
@@ -916,7 +916,7 @@ func TestResumeConsumerRejectsInactiveClient(t *testing.T) {
 
 	providerKeeper.SetConsumerClientId(ctx, consumerId, "07-tendermint-0")
 	providerKeeper.SetConsumerPhase(ctx, consumerId, providertypes.CONSUMER_PHASE_LAUNCHED)
-	require.NoError(t, providerKeeper.PauseConsumerChain(ctx, consumerId))
+	require.NoError(t, providerKeeper.PauseConsumerChain(ctx, consumerId, providertypes.PAUSE_REASON_DOWNTIME_CHALLENGE))
 
 	mocks.MockClientKeeper.EXPECT().GetClientStatus(gomock.Any(), "07-tendermint-0").Return(ibcexported.Expired)
 

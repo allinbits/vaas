@@ -549,6 +549,20 @@ func (mr *MockClientKeeperMockRecorder) GetClientConsensusState(ctx, clientID, h
 	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "GetClientConsensusState", reflect.TypeOf((*MockClientKeeper)(nil).GetClientConsensusState), ctx, clientID, height)
 }
 
+// GetClientLatestHeight mocks base method.
+func (m *MockClientKeeper) GetClientLatestHeight(ctx types.Context, clientID string) types3.Height {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "GetClientLatestHeight", ctx, clientID)
+	ret0, _ := ret[0].(types3.Height)
+	return ret0
+}
+
+// GetClientLatestHeight indicates an expected call of GetClientLatestHeight.
+func (mr *MockClientKeeperMockRecorder) GetClientLatestHeight(ctx, clientID any) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "GetClientLatestHeight", reflect.TypeOf((*MockClientKeeper)(nil).GetClientLatestHeight), ctx, clientID)
+}
+
 // GetClientState mocks base method.
 func (m *MockClientKeeper) GetClientState(ctx types.Context, clientID string) (exported.ClientState, bool) {
 	m.ctrl.T.Helper()
@@ -602,6 +616,20 @@ func (m *MockClientKeeper) IterateClientStates(ctx types.Context, storePrefix []
 func (mr *MockClientKeeperMockRecorder) IterateClientStates(ctx, storePrefix, cb any) *gomock.Call {
 	mr.mock.ctrl.T.Helper()
 	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "IterateClientStates", reflect.TypeOf((*MockClientKeeper)(nil).IterateClientStates), ctx, storePrefix, cb)
+}
+
+// UpdateClient mocks base method.
+func (m *MockClientKeeper) UpdateClient(ctx types.Context, clientID string, clientMsg exported.ClientMessage) error {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "UpdateClient", ctx, clientID, clientMsg)
+	ret0, _ := ret[0].(error)
+	return ret0
+}
+
+// UpdateClient indicates an expected call of UpdateClient.
+func (mr *MockClientKeeperMockRecorder) UpdateClient(ctx, clientID, clientMsg any) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "UpdateClient", reflect.TypeOf((*MockClientKeeper)(nil).UpdateClient), ctx, clientID, clientMsg)
 }
 
 // MockClientV2Keeper is a mock of ClientV2Keeper interface.

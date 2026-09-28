@@ -1,6 +1,7 @@
 package keeper_test
 
 import (
+	"context"
 	"fmt"
 	"testing"
 	"time"
@@ -8,13 +9,16 @@ import (
 	"github.com/stretchr/testify/require"
 	"go.uber.org/mock/gomock"
 
+	clienttypes "github.com/cosmos/ibc-go/v10/modules/core/02-client/types"
 	channeltypesv2 "github.com/cosmos/ibc-go/v10/modules/core/04-channel/v2/types"
 	ibcexported "github.com/cosmos/ibc-go/v10/modules/core/exported"
 
 	"cosmossdk.io/collections"
 	"cosmossdk.io/math"
 
+	"github.com/cosmos/cosmos-sdk/codec/address"
 	sdk "github.com/cosmos/cosmos-sdk/types"
+	banktypes "github.com/cosmos/cosmos-sdk/x/bank/types"
 	stakingtypes "github.com/cosmos/cosmos-sdk/x/staking/types"
 
 	testkeeper "github.com/allinbits/vaas/testutil/keeper"
@@ -66,7 +70,7 @@ func TestPauseConsumerChain_RequiresLaunched(t *testing.T) {
 			cid := k.FetchAndIncrementConsumerId(ctx)
 			k.SetConsumerPhase(ctx, cid, phase)
 
-			err := k.PauseConsumerChain(ctx, cid)
+			err := k.PauseConsumerChain(ctx, cid, providertypes.PAUSE_REASON_DOWNTIME_CHALLENGE)
 			require.Error(t, err)
 			require.ErrorIs(t, err, providertypes.ErrInvalidPhase)
 			require.Equal(t, phase, k.GetConsumerPhase(ctx, cid))
@@ -89,7 +93,7 @@ func TestPauseConsumerChain_Success(t *testing.T) {
 	k.MarkEpochDowntime(ctx, cid, providerAddr.ToSdkConsAddr())
 
 	maxPause := k.GetMaxPauseDuration(ctx)
-	require.NoError(t, k.PauseConsumerChain(ctx, cid))
+	require.NoError(t, k.PauseConsumerChain(ctx, cid, providertypes.PAUSE_REASON_DOWNTIME_CHALLENGE))
 
 	require.Equal(t, providertypes.CONSUMER_PHASE_PAUSED, k.GetConsumerPhase(ctx, cid))
 
@@ -139,7 +143,7 @@ func TestBeginBlockAutoStopPausedConsumers_StopsMaturedPause(t *testing.T) {
 
 	cid := k.FetchAndIncrementConsumerId(ctx)
 	k.SetConsumerPhase(ctx, cid, providertypes.CONSUMER_PHASE_LAUNCHED)
-	require.NoError(t, k.PauseConsumerChain(ctx, cid))
+	require.NoError(t, k.PauseConsumerChain(ctx, cid, providertypes.PAUSE_REASON_DOWNTIME_CHALLENGE))
 	require.Equal(t, providertypes.CONSUMER_PHASE_PAUSED, k.GetConsumerPhase(ctx, cid))
 
 	maxPause := k.GetMaxPauseDuration(ctx)
@@ -172,7 +176,7 @@ func TestBeginBlockAutoStopPausedConsumers_StopsAtExactExpirationTime(t *testing
 
 	cid := k.FetchAndIncrementConsumerId(ctx)
 	k.SetConsumerPhase(ctx, cid, providertypes.CONSUMER_PHASE_LAUNCHED)
-	require.NoError(t, k.PauseConsumerChain(ctx, cid))
+	require.NoError(t, k.PauseConsumerChain(ctx, cid, providertypes.PAUSE_REASON_DOWNTIME_CHALLENGE))
 
 	expiration, err := k.GetConsumerPauseExpirationTime(ctx, cid)
 	require.NoError(t, err)
@@ -193,7 +197,7 @@ func TestBeginBlockAutoStopPausedConsumers_SkipsUnexpiredPause(t *testing.T) {
 
 	cid := k.FetchAndIncrementConsumerId(ctx)
 	k.SetConsumerPhase(ctx, cid, providertypes.CONSUMER_PHASE_LAUNCHED)
-	require.NoError(t, k.PauseConsumerChain(ctx, cid))
+	require.NoError(t, k.PauseConsumerChain(ctx, cid, providertypes.PAUSE_REASON_DOWNTIME_CHALLENGE))
 
 	// Still well before now + MaxPauseDuration.
 	require.NoError(t, k.BeginBlockAutoStopPausedConsumers(ctx))
@@ -211,7 +215,7 @@ func TestBeginBlockAutoStopPausedConsumers_SkipsNoLongerPaused(t *testing.T) {
 
 	cid := k.FetchAndIncrementConsumerId(ctx)
 	k.SetConsumerPhase(ctx, cid, providertypes.CONSUMER_PHASE_LAUNCHED)
-	require.NoError(t, k.PauseConsumerChain(ctx, cid))
+	require.NoError(t, k.PauseConsumerChain(ctx, cid, providertypes.PAUSE_REASON_DOWNTIME_CHALLENGE))
 
 	// Simulate the consumer having left PAUSED through some other path before
 	// its auto-stop matured.
@@ -362,8 +366,8 @@ func TestCancelConsumerPauseExpiration_RemovesBucketEntryWithoutAffectingOthers(
 	cidB := k.FetchAndIncrementConsumerId(ctx)
 	k.SetConsumerPhase(ctx, cidA, providertypes.CONSUMER_PHASE_LAUNCHED)
 	k.SetConsumerPhase(ctx, cidB, providertypes.CONSUMER_PHASE_LAUNCHED)
-	require.NoError(t, k.PauseConsumerChain(ctx, cidA))
-	require.NoError(t, k.PauseConsumerChain(ctx, cidB))
+	require.NoError(t, k.PauseConsumerChain(ctx, cidA, providertypes.PAUSE_REASON_DOWNTIME_CHALLENGE))
+	require.NoError(t, k.PauseConsumerChain(ctx, cidB, providertypes.PAUSE_REASON_DOWNTIME_CHALLENGE))
 
 	expirationTime, err := k.GetConsumerPauseExpirationTime(ctx, cidA)
 	require.NoError(t, err)
@@ -438,7 +442,7 @@ func TestResumeConsumerChain_RequiresDiscoveredClient(t *testing.T) {
 
 	cid := k.FetchAndIncrementConsumerId(ctx)
 	k.SetConsumerPhase(ctx, cid, providertypes.CONSUMER_PHASE_LAUNCHED)
-	require.NoError(t, k.PauseConsumerChain(ctx, cid))
+	require.NoError(t, k.PauseConsumerChain(ctx, cid, providertypes.PAUSE_REASON_DOWNTIME_CHALLENGE))
 
 	expirationTime, err := k.GetConsumerPauseExpirationTime(ctx, cid)
 	require.NoError(t, err)
@@ -474,7 +478,7 @@ func TestResumeConsumerChain_SendFailureFailsResume(t *testing.T) {
 	cid := k.FetchAndIncrementConsumerId(ctx)
 	k.SetConsumerClientId(ctx, cid, "07-tendermint-0")
 	k.SetConsumerPhase(ctx, cid, providertypes.CONSUMER_PHASE_LAUNCHED)
-	require.NoError(t, k.PauseConsumerChain(ctx, cid))
+	require.NoError(t, k.PauseConsumerChain(ctx, cid, providertypes.PAUSE_REASON_DOWNTIME_CHALLENGE))
 
 	expirationTime, err := k.GetConsumerPauseExpirationTime(ctx, cid)
 	require.NoError(t, err)
@@ -521,7 +525,7 @@ func TestResumeConsumerChain_RejectsInactiveClient(t *testing.T) {
 			cid := k.FetchAndIncrementConsumerId(ctx)
 			k.SetConsumerClientId(ctx, cid, "07-tendermint-0")
 			k.SetConsumerPhase(ctx, cid, providertypes.CONSUMER_PHASE_LAUNCHED)
-			require.NoError(t, k.PauseConsumerChain(ctx, cid))
+			require.NoError(t, k.PauseConsumerChain(ctx, cid, providertypes.PAUSE_REASON_DOWNTIME_CHALLENGE))
 
 			mocks.MockClientKeeper.EXPECT().GetClientStatus(gomock.Any(), "07-tendermint-0").Return(status)
 
@@ -551,7 +555,7 @@ func TestResumeConsumerChain_Success(t *testing.T) {
 	cid := k.FetchAndIncrementConsumerId(ctx)
 	k.SetConsumerClientId(ctx, cid, "07-tendermint-0")
 	k.SetConsumerPhase(ctx, cid, providertypes.CONSUMER_PHASE_LAUNCHED)
-	require.NoError(t, k.PauseConsumerChain(ctx, cid))
+	require.NoError(t, k.PauseConsumerChain(ctx, cid, providertypes.PAUSE_REASON_DOWNTIME_CHALLENGE))
 
 	expirationTime, err := k.GetConsumerPauseExpirationTime(ctx, cid)
 	require.NoError(t, err)
@@ -598,4 +602,203 @@ func TestResumeConsumerChain_Success(t *testing.T) {
 		require.True(t, sawConsumerId, "consumer_id attribute missing on resumed event")
 	}
 	require.True(t, found, "vaas_consumer_resumed event not emitted")
+}
+
+// TestPauseConsumerChainRequiresAReason: a pause without a reason is a
+// programming error, refused before any state changes.
+func TestPauseConsumerChainRequiresAReason(t *testing.T) {
+	k, ctx, ctrl, _ := testkeeper.GetProviderKeeperAndCtx(t, testkeeper.NewInMemKeeperParams(t))
+	defer ctrl.Finish()
+
+	cid := k.FetchAndIncrementConsumerId(ctx)
+	k.SetConsumerPhase(ctx, cid, providertypes.CONSUMER_PHASE_LAUNCHED)
+
+	require.Error(t, k.PauseConsumerChain(ctx, cid, providertypes.PAUSE_REASON_UNSPECIFIED))
+	require.Equal(t, providertypes.CONSUMER_PHASE_LAUNCHED, k.GetConsumerPhase(ctx, cid))
+	_, err := k.GetConsumerPauseExpirationTime(ctx, cid)
+	require.Error(t, err, "no auto-stop may be scheduled for a refused pause")
+}
+
+// TestPauseConsumerChainRecordsTheReasonAndNamesItOnTheEvent: the reason is
+// kept for the duration of the pause (a resume reads it) and carried on the
+// paused event so operators and governance see why the consumer stopped.
+func TestPauseConsumerChainRecordsTheReasonAndNamesItOnTheEvent(t *testing.T) {
+	k, ctx, ctrl, _ := testkeeper.GetProviderKeeperAndCtx(t, testkeeper.NewInMemKeeperParams(t))
+	defer ctrl.Finish()
+
+	cid := k.FetchAndIncrementConsumerId(ctx)
+	k.SetConsumerPhase(ctx, cid, providertypes.CONSUMER_PHASE_LAUNCHED)
+
+	require.NoError(t, k.PauseConsumerChain(ctx, cid, providertypes.PAUSE_REASON_DOWNTIME_CHALLENGE))
+	require.Equal(t, providertypes.PAUSE_REASON_DOWNTIME_CHALLENGE, k.GetConsumerPauseReason(ctx, cid))
+
+	var reason string
+	for _, ev := range ctx.EventManager().Events() {
+		if ev.Type != "vaas_consumer_paused" {
+			continue
+		}
+		for _, attr := range ev.Attributes {
+			if attr.Key == "reason" {
+				reason = attr.Value
+			}
+		}
+	}
+	require.Equal(t, "PAUSE_REASON_DOWNTIME_CHALLENGE", reason, "reason attribute missing on the paused event")
+}
+
+// TestPauseConsumerChainRepaysWithheldFeesWhileStillLaunched: every pause,
+// not only the one a won challenge triggers, repays the fees withheld from
+// accused validators, and does so before the phase flips, since the
+// consumer's withdraw lock opens the moment it leaves LAUNCHED. The
+// payment callback checks the phase at the moment the transfer happens.
+func TestPauseConsumerChainRepaysWithheldFeesWhileStillLaunched(t *testing.T) {
+	k, ctx, ctrl, mocks := testkeeper.GetProviderKeeperAndCtx(t, testkeeper.NewInMemKeeperParams(t))
+	defer ctrl.Finish()
+
+	valAddrCodec := address.NewBech32Codec("cosmosvaloper")
+	mocks.MockStakingKeeper.EXPECT().ValidatorAddressCodec().Return(valAddrCodec).AnyTimes()
+	val, valBytes := newBondedValidator(t, valAddrCodec, 1)
+	consAddr, err := val.GetConsAddr()
+	require.NoError(t, err)
+
+	cid := k.FetchAndIncrementConsumerId(ctx)
+	k.SetConsumerPhase(ctx, cid, providertypes.CONSUMER_PHASE_LAUNCHED)
+	amount := sdk.NewInt64Coin("uphoton", 500)
+	putWithheldFeeRecord(t, k, ctx, cid, consAddr, amount, ctx.BlockTime().Add(time.Hour))
+	pool := k.GetConsumerFeePoolAddress(cid)
+
+	mocks.MockBankKeeper.EXPECT().GetBalance(gomock.Any(), pool, "uphoton").Return(sdk.NewInt64Coin("uphoton", 1000))
+	mocks.MockStakingKeeper.EXPECT().GetValidatorByConsAddr(gomock.Any(), sdk.ConsAddress(consAddr)).Return(val, nil)
+	mocks.MockBankKeeper.EXPECT().
+		InputOutputCoins(gomock.Any(),
+			banktypes.Input{Address: pool.String(), Coins: sdk.NewCoins(amount)},
+			[]banktypes.Output{{Address: accAddr(valBytes), Coins: sdk.NewCoins(amount)}},
+		).
+		DoAndReturn(func(context.Context, banktypes.Input, []banktypes.Output) error {
+			require.Equal(t, providertypes.CONSUMER_PHASE_LAUNCHED, k.GetConsumerPhase(ctx, cid),
+				"withheld fees must be repaid before the consumer leaves LAUNCHED")
+			return nil
+		})
+
+	require.NoError(t, k.PauseConsumerChain(ctx, cid, providertypes.PAUSE_REASON_LIGHT_CLIENT_ATTACK))
+
+	has, err := k.WithheldFeeRecords.Has(ctx, collections.Join(cid, consAddr))
+	require.NoError(t, err)
+	require.False(t, has, "paid record must be deleted")
+	require.Equal(t, providertypes.CONSUMER_PHASE_PAUSED, k.GetConsumerPhase(ctx, cid))
+}
+
+// resumeMocks sets the expectations a successful ResumeConsumerChain needs
+// beyond the client status: the immediate snapshot it builds and sends.
+func resumeMocks(mocks testkeeper.MockedKeepers) {
+	mocks.MockStakingKeeper.EXPECT().MaxValidators(gomock.Any()).Return(uint32(100), nil).AnyTimes()
+	mocks.MockStakingKeeper.EXPECT().GetBondedValidatorsByPower(gomock.Any()).Return([]stakingtypes.Validator{}, nil).AnyTimes()
+	mocks.MockChannelV2Keeper.EXPECT().
+		SendPacket(gomock.Any(), gomock.Any()).
+		Return(&channeltypesv2.MsgSendPacketResponse{Sequence: 1}, nil).Times(1)
+}
+
+// TestResumeAfterALightClientPauseRecordsTheAdjudicatedHeight: resuming a
+// consumer paused for a light-client attack means governance ruled on that
+// fork, so the resume records the client's latest height as the bar below
+// which misbehaviour is adjudicated, names it on the resumed event, and
+// clears the pause reason.
+func TestResumeAfterALightClientPauseRecordsTheAdjudicatedHeight(t *testing.T) {
+	k, ctx, ctrl, mocks := testkeeper.GetProviderKeeperAndCtx(t, testkeeper.NewInMemKeeperParams(t))
+	defer ctrl.Finish()
+
+	k.SetInfractionParams(ctx, providertypes.DefaultInfractionParameters())
+
+	cid := k.FetchAndIncrementConsumerId(ctx)
+	k.SetConsumerClientId(ctx, cid, "07-tendermint-0")
+	k.SetConsumerPhase(ctx, cid, providertypes.CONSUMER_PHASE_LAUNCHED)
+	require.NoError(t, k.PauseConsumerChain(ctx, cid, providertypes.PAUSE_REASON_LIGHT_CLIENT_ATTACK))
+
+	resumedAt := clienttypes.NewHeight(1, 500)
+	mocks.MockClientKeeper.EXPECT().GetClientStatus(gomock.Any(), "07-tendermint-0").Return(ibcexported.Active)
+	mocks.MockClientKeeper.EXPECT().GetClientLatestHeight(gomock.Any(), "07-tendermint-0").Return(resumedAt)
+	resumeMocks(mocks)
+
+	require.NoError(t, k.ResumeConsumerChain(ctx, cid))
+
+	got, err := k.GetConsumerAdjudicatedForkHeight(ctx, cid)
+	require.NoError(t, err)
+	require.Equal(t, resumedAt, got)
+	require.Equal(t, providertypes.PAUSE_REASON_UNSPECIFIED, k.GetConsumerPauseReason(ctx, cid))
+
+	var bar string
+	for _, ev := range ctx.EventManager().Events() {
+		if ev.Type != "vaas_consumer_resumed" {
+			continue
+		}
+		for _, attr := range ev.Attributes {
+			if attr.Key == "adjudicated_fork_height" {
+				bar = attr.Value
+			}
+		}
+	}
+	require.Equal(t, resumedAt.String(), bar, "adjudicated_fork_height attribute missing on the resumed event")
+}
+
+// TestResumeAfterADowntimePauseRecordsNoAdjudicatedHeight: a downtime pause
+// says nothing about forks, so its resume adjudicates nothing (no client
+// height is read) and only clears the reason.
+func TestResumeAfterADowntimePauseRecordsNoAdjudicatedHeight(t *testing.T) {
+	k, ctx, ctrl, mocks := testkeeper.GetProviderKeeperAndCtx(t, testkeeper.NewInMemKeeperParams(t))
+	defer ctrl.Finish()
+
+	k.SetInfractionParams(ctx, providertypes.DefaultInfractionParameters())
+
+	cid := k.FetchAndIncrementConsumerId(ctx)
+	k.SetConsumerClientId(ctx, cid, "07-tendermint-0")
+	k.SetConsumerPhase(ctx, cid, providertypes.CONSUMER_PHASE_LAUNCHED)
+	require.NoError(t, k.PauseConsumerChain(ctx, cid, providertypes.PAUSE_REASON_DOWNTIME_CHALLENGE))
+
+	mocks.MockClientKeeper.EXPECT().GetClientStatus(gomock.Any(), "07-tendermint-0").Return(ibcexported.Active)
+	resumeMocks(mocks)
+
+	require.NoError(t, k.ResumeConsumerChain(ctx, cid))
+
+	_, err := k.GetConsumerAdjudicatedForkHeight(ctx, cid)
+	require.ErrorIs(t, err, collections.ErrNotFound)
+	require.Equal(t, providertypes.PAUSE_REASON_UNSPECIFIED, k.GetConsumerPauseReason(ctx, cid))
+}
+
+// TestStopClearsThePauseReason: a consumer stopped out of PAUSED (the
+// auto-stop or a governance removal) is no longer paused for any reason.
+func TestStopClearsThePauseReason(t *testing.T) {
+	k, ctx, ctrl, mocks := testkeeper.GetProviderKeeperAndCtx(t, testkeeper.NewInMemKeeperParams(t))
+	defer ctrl.Finish()
+
+	mocks.MockStakingKeeper.EXPECT().UnbondingTime(gomock.Any()).Return(21*24*time.Hour, nil).AnyTimes()
+
+	cid := k.FetchAndIncrementConsumerId(ctx)
+	k.SetConsumerPhase(ctx, cid, providertypes.CONSUMER_PHASE_LAUNCHED)
+	require.NoError(t, k.PauseConsumerChain(ctx, cid, providertypes.PAUSE_REASON_LIGHT_CLIENT_ATTACK))
+
+	require.NoError(t, k.StopAndPrepareForConsumerRemoval(ctx, cid))
+	require.Equal(t, providertypes.PAUSE_REASON_UNSPECIFIED, k.GetConsumerPauseReason(ctx, cid))
+}
+
+// TestDeleteConsumerChainClearsPauseReasonAndAdjudicatedHeight: deletion is
+// the consumer's terminal erasure and leaves neither record behind.
+func TestDeleteConsumerChainClearsPauseReasonAndAdjudicatedHeight(t *testing.T) {
+	k, ctx, ctrl, mocks := testkeeper.GetProviderKeeperAndCtx(t, testkeeper.NewInMemKeeperParams(t))
+	defer ctrl.Finish()
+
+	cid := k.FetchAndIncrementConsumerId(ctx)
+	k.SetConsumerPhase(ctx, cid, providertypes.CONSUMER_PHASE_STOPPED)
+	k.SetConsumerClientId(ctx, cid, "07-tendermint-0")
+	poolAddr := k.GetConsumerFeePoolAddress(cid)
+	require.NoError(t, k.FeePoolAddressToConsumerId.Set(ctx, poolAddr, cid))
+	mocks.MockBankKeeper.EXPECT().GetAllBalances(ctx, poolAddr).Return(sdk.NewCoins())
+
+	require.NoError(t, k.SetConsumerPauseReason(ctx, cid, providertypes.PAUSE_REASON_LIGHT_CLIENT_ATTACK))
+	require.NoError(t, k.SetConsumerAdjudicatedForkHeight(ctx, cid, clienttypes.NewHeight(1, 500)))
+
+	require.NoError(t, k.DeleteConsumerChain(ctx, cid))
+
+	require.Equal(t, providertypes.PAUSE_REASON_UNSPECIFIED, k.GetConsumerPauseReason(ctx, cid))
+	_, err := k.GetConsumerAdjudicatedForkHeight(ctx, cid)
+	require.ErrorIs(t, err, collections.ErrNotFound)
 }

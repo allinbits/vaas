@@ -45,16 +45,11 @@ import (
 //     that validator's CommitSig in the commit -- Commit or Nil, never
 //     Absent -- carries a valid signature over the canonical vote bytes.
 //
-// On success, in order: PayWithheldFees (before the phase flip -- the
-// consumer's withdraw-lock only opens once it leaves LAUNCHED, so retro-pay
-// must land before PauseConsumerChain moves it to PAUSED), then
-// PauseConsumerChain, which itself calls CancelConsumerDowntimeState to clear
-// every pending downtime slash and epoch downtime mark for the consumer (one
-// proven-false bit indicts the reporting source as a whole). Calling
-// CancelConsumerDowntimeState again here would be redundant:
-// PauseConsumerChain already does it, and neither function touches
-// WithheldFeeRecords (only DeleteConsumerChain does), so the pay-then-pause
-// order is safe regardless.
+// On success: PauseConsumerChain under the downtime-challenge reason. The
+// pause retro-pays the consumer's withheld fee records before the phase
+// flips (the consumer's withdraw lock only opens once it leaves LAUNCHED)
+// and cancels every pending downtime slash and epoch downtime mark for the
+// consumer (one proven-false bit indicts the reporting source as a whole).
 func (k Keeper) HandleChallengeConsumerDowntime(ctx sdk.Context, msg *types.MsgChallengeConsumerDowntime) error {
 	// Defensive: ValidateBasic already rejects a nil header or a nil/absent
 	// inner SignedHeader.Header, but this is a permissionless entry point, so
@@ -123,13 +118,10 @@ func (k Keeper) HandleChallengeConsumerDowntime(ctx sdk.Context, msg *types.MsgC
 		return err
 	}
 
-	// The challenge is proven: retro-pay withheld fees before the phase
-	// flip, then pause the consumer (which cancels every pending downtime
-	// slash and epoch downtime mark for it -- see the doc comment above).
-	if err := k.PayWithheldFees(ctx, msg.ConsumerId); err != nil {
-		return fmt.Errorf("paying withheld fees for consumer %d: %w", msg.ConsumerId, err)
-	}
-	if err := k.PauseConsumerChain(ctx, msg.ConsumerId); err != nil {
+	// The challenge is proven: pause the consumer, which repays the withheld
+	// fees and cancels every pending downtime slash and epoch downtime mark
+	// for it (see the doc comment above).
+	if err := k.PauseConsumerChain(ctx, msg.ConsumerId, types.PAUSE_REASON_DOWNTIME_CHALLENGE); err != nil {
 		return fmt.Errorf("pausing consumer %d after successful downtime challenge: %w", msg.ConsumerId, err)
 	}
 

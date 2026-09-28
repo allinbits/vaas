@@ -377,6 +377,9 @@ func (k Keeper) StopAndPrepareForConsumerRemoval(ctx sdk.Context, consumerId uin
 	if err := k.CancelConsumerPauseExpiration(ctx, consumerId); err != nil {
 		return fmt.Errorf("cancelling pause-expiration schedule for consumer %d: %w", consumerId, err)
 	}
+	// A stopped consumer is paused for no reason any more; a no-op unless it
+	// was paused.
+	k.DeleteConsumerPauseReason(ctx, consumerId)
 
 	// state of this chain is removed once UnbondingPeriod elapses
 	unbondingPeriod, err := k.stakingKeeper.UnbondingTime(ctx)
@@ -396,13 +399,19 @@ func (k Keeper) StopAndPrepareForConsumerRemoval(ctx sdk.Context, consumerId uin
 }
 
 // PauseConsumerChain transitions a launched consumer chain into
-// CONSUMER_PHASE_PAUSED when the provider must stop serving it: a successful
-// downtime challenge (see HandleChallengeConsumerDowntime, which calls this
-// after paying withheld fees) or a confirmed light-client attack (see
-// containLightClientAttack). Either way every pending downtime slash and this
+// CONSUMER_PHASE_PAUSED when the provider must stop serving it, for the
+// given reason: a successful downtime challenge (see
+// HandleChallengeConsumerDowntime) or a confirmed light-client attack (see
+// containLightClientAttack). Either way the consumer's accusations are no
+// longer trusted: a won challenge proved them wrong, and a forked chain's
+// accusations are no more trustworthy than its headers. So, in order, the
+// fees withheld from the accused validators are repaid (PayWithheldFees,
+// before the phase flips, since the consumer's withdraw lock opens the
+// moment it leaves LAUNCHED and the accused could no longer challenge once
+// their accusations are gone), then every pending downtime slash and this
 // epoch's downtime marks for the consumer are cancelled via
-// CancelConsumerDowntimeState: a won challenge proved the accusations wrong,
-// and a forked chain's accusations are no more trustworthy than its headers.
+// CancelConsumerDowntimeState. The reason is kept for the duration of the
+// pause (a resume reads it) and named on the consumer_paused event.
 // A paused consumer is excluded from VSC packet
 // queuing (QueueVSCPackets iterates GetAllLaunchedConsumerIds), fee
 // distribution, and evidence handling -- all of which require phase LAUNCHED.
@@ -414,14 +423,24 @@ func (k Keeper) StopAndPrepareForConsumerRemoval(ctx sdk.Context, consumerId uin
 // STOPPED and would reject a still-PAUSED consumer. This guarantees an
 // unresolved pause deterministically becomes STOPPED-then-DELETED rather than
 // stranding the consumer in PAUSED forever.
-func (k Keeper) PauseConsumerChain(ctx sdk.Context, consumerId uint64) error {
+func (k Keeper) PauseConsumerChain(ctx sdk.Context, consumerId uint64, reason types.PauseReason) error {
+	if reason == types.PAUSE_REASON_UNSPECIFIED {
+		return fmt.Errorf("cannot pause consumer %d without a reason", consumerId)
+	}
 	phase := k.GetConsumerPhase(ctx, consumerId)
 	if phase != types.CONSUMER_PHASE_LAUNCHED {
 		return errorsmod.Wrapf(types.ErrInvalidPhase,
 			"cannot pause consumer %d: expected phase launched, got %s", consumerId, phase)
 	}
 
+	if err := k.PayWithheldFees(ctx, consumerId); err != nil {
+		return fmt.Errorf("repaying withheld fees for consumer %d: %w", consumerId, err)
+	}
+
 	k.SetConsumerPhase(ctx, consumerId, types.CONSUMER_PHASE_PAUSED)
+	if err := k.SetConsumerPauseReason(ctx, consumerId, reason); err != nil {
+		return fmt.Errorf("recording pause reason for consumer %d: %w", consumerId, err)
+	}
 
 	if err := k.CancelConsumerDowntimeState(ctx, consumerId); err != nil {
 		return fmt.Errorf("cancelling downtime state for consumer %d: %w", consumerId, err)
@@ -440,6 +459,7 @@ func (k Keeper) PauseConsumerChain(ctx sdk.Context, consumerId uint64) error {
 		vaastypes.EventTypeConsumerPaused,
 		sdk.NewAttribute(sdk.AttributeKeyModule, types.ModuleName),
 		sdk.NewAttribute(types.AttributeConsumerId, fmt.Sprintf("%d", consumerId)),
+		sdk.NewAttribute(types.AttributePauseReason, reason.String()),
 	))
 
 	return nil
@@ -494,6 +514,24 @@ func (k Keeper) ResumeConsumerChain(ctx sdk.Context, consumerId uint64) error {
 			consumerId, clientId, status)
 	}
 
+	// A resume after a light-client containment is governance's ruling on
+	// that fork: everything the recovered client has seen up to now is
+	// adjudicated, and the same headers cannot pause the consumer again (see
+	// HandleConsumerMisbehaviour). A downtime pause says nothing about forks
+	// and adjudicates nothing.
+	resumedAttrs := []sdk.Attribute{
+		sdk.NewAttribute(sdk.AttributeKeyModule, types.ModuleName),
+		sdk.NewAttribute(types.AttributeConsumerId, fmt.Sprintf("%d", consumerId)),
+	}
+	if k.GetConsumerPauseReason(ctx, consumerId) == types.PAUSE_REASON_LIGHT_CLIENT_ATTACK {
+		adjudicated := k.clientKeeper.GetClientLatestHeight(ctx, clientId)
+		if err := k.SetConsumerAdjudicatedForkHeight(ctx, consumerId, adjudicated); err != nil {
+			return fmt.Errorf("recording adjudicated fork height for consumer %d: %w", consumerId, err)
+		}
+		resumedAttrs = append(resumedAttrs, sdk.NewAttribute(types.AttributeAdjudicatedForkHeight, adjudicated.String()))
+	}
+	k.DeleteConsumerPauseReason(ctx, consumerId)
+
 	if err := k.CancelConsumerPauseExpiration(ctx, consumerId); err != nil {
 		return fmt.Errorf("cancelling pause-expiration schedule for consumer %d: %w", consumerId, err)
 	}
@@ -511,11 +549,7 @@ func (k Keeper) ResumeConsumerChain(ctx sdk.Context, consumerId uint64) error {
 		return fmt.Errorf("sending resume snapshot for consumer %d: %w", consumerId, err)
 	}
 
-	ctx.EventManager().EmitEvent(sdk.NewEvent(
-		vaastypes.EventTypeConsumerResumed,
-		sdk.NewAttribute(sdk.AttributeKeyModule, types.ModuleName),
-		sdk.NewAttribute(types.AttributeConsumerId, fmt.Sprintf("%d", consumerId)),
-	))
+	ctx.EventManager().EmitEvent(sdk.NewEvent(vaastypes.EventTypeConsumerResumed, resumedAttrs...))
 
 	return nil
 }
@@ -638,6 +672,8 @@ func (k Keeper) DeleteConsumerChain(ctx sdk.Context, consumerId uint64) (err err
 	k.DeleteConsumerLastAckTime(ctx, consumerId)
 	k.DeleteConsumerHighestSentVscId(ctx, consumerId)
 	k.DeleteConsumerHighestAckedVscId(ctx, consumerId)
+	k.DeleteConsumerPauseReason(ctx, consumerId)
+	k.DeleteConsumerAdjudicatedForkHeight(ctx, consumerId)
 	k.DeleteConsumerDebt(ctx, consumerId)
 
 	if err := k.ConsumerFeesPerBlockOverride.Remove(ctx, consumerId); err != nil {

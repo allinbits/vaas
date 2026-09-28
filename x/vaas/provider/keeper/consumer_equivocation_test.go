@@ -1,6 +1,7 @@
 package keeper_test
 
 import (
+	"errors"
 	"fmt"
 	"testing"
 	"time"
@@ -11,6 +12,8 @@ import (
 
 	"cosmossdk.io/math"
 
+	clienttypes "github.com/cosmos/ibc-go/v10/modules/core/02-client/types"
+	ibcexported "github.com/cosmos/ibc-go/v10/modules/core/exported"
 	ibctmtypes "github.com/cosmos/ibc-go/v10/modules/light-clients/07-tendermint"
 
 	cryptocodec "github.com/cosmos/cosmos-sdk/crypto/codec"
@@ -18,6 +21,7 @@ import (
 	sdk "github.com/cosmos/cosmos-sdk/types"
 	stakingtypes "github.com/cosmos/cosmos-sdk/x/staking/types"
 
+	tmproto "github.com/cometbft/cometbft/proto/tendermint/types"
 	tmtypes "github.com/cometbft/cometbft/types"
 
 	cryptotestutil "github.com/allinbits/vaas/testutil/crypto"
@@ -837,17 +841,23 @@ func getTestInfractionParameters() *types.InfractionParameters {
 
 // TestConfirmedLightClientAttackPausesConsumerWithoutPunishment asserts the
 // containment policy: a confirmed attack with an identifiable byzantine set
-// pauses the consumer and punishes nobody. No staking or slashing calls are
-// mocked, so the controller also proves that no validator was slashed,
-// jailed, or tombstoned. The byzantine set is still attributed and returned.
+// freezes the client, pauses the consumer and punishes nobody. No staking or
+// slashing calls are mocked, so the controller also proves that no validator
+// was slashed, jailed, or tombstoned. The byzantine set is still attributed
+// and returned.
 func TestConfirmedLightClientAttackPausesConsumerWithoutPunishment(t *testing.T) {
-	keeper, ctx, ctrl, _ := testkeeper.GetProviderKeeperAndCtx(t, testkeeper.NewInMemKeeperParams(t))
+	keeper, ctx, ctrl, mocks := testkeeper.GetProviderKeeperAndCtx(t, testkeeper.NewInMemKeeperParams(t))
 	defer ctrl.Finish()
 
 	ctx = ctx.WithBlockTime(time.Now())
 
 	const consumerID = uint64(0)
+	const clientID = "07-tendermint-0"
 	keeper.SetConsumerPhase(ctx, consumerID, types.CONSUMER_PHASE_LAUNCHED)
+	keeper.SetConsumerClientId(ctx, consumerID, clientID)
+	misbehaviour := &ibctmtypes.Misbehaviour{ClientId: clientID}
+	mocks.MockClientKeeper.EXPECT().GetClientStatus(gomock.Any(), clientID).Return(ibcexported.Active)
+	mocks.MockClientKeeper.EXPECT().UpdateClient(gomock.Any(), clientID, misbehaviour).Return(nil)
 
 	// Build a byzantine validator. With no assigned consumer key, its consumer
 	// consensus address is its provider consensus address.
@@ -858,7 +868,7 @@ func TestConfirmedLightClientAttackPausesConsumerWithoutPunishment(t *testing.T)
 	providerAddr := types.NewProviderConsAddress(sdk.ConsAddress(sdkPubKey.Address()))
 
 	maxPause := keeper.GetMaxPauseDuration(ctx)
-	attributed, err := keeper.ContainLightClientAttackForTest(ctx, consumerID, []*tmtypes.Validator{byzantineVal})
+	attributed, err := keeper.ContainLightClientAttackForTest(ctx, consumerID, misbehaviour, []*tmtypes.Validator{byzantineVal})
 	require.NoError(t, err)
 	require.Equal(t, []types.ProviderConsAddress{providerAddr}, attributed,
 		"the byzantine set must still be attributed for operators and governance")
@@ -879,23 +889,33 @@ func TestConfirmedLightClientAttackPausesConsumerWithoutPunishment(t *testing.T)
 // TestUnattributableLightClientAttackStillPausesConsumer asserts that a
 // confirmed attack with no identifiable byzantine set (an amnesia attack) is
 // contained all the same: the fork is proven either way, only the attribution
-// is missing. A second containment attempt fails on the phase guard instead
-// of double-scheduling the auto-stop.
+// is missing. The first containment finds the client active and freezes it;
+// a second attempt finds it frozen, skips the freeze, and fails on the phase
+// guard instead of double-scheduling the auto-stop.
 func TestUnattributableLightClientAttackStillPausesConsumer(t *testing.T) {
-	keeper, ctx, ctrl, _ := testkeeper.GetProviderKeeperAndCtx(t, testkeeper.NewInMemKeeperParams(t))
+	keeper, ctx, ctrl, mocks := testkeeper.GetProviderKeeperAndCtx(t, testkeeper.NewInMemKeeperParams(t))
 	defer ctrl.Finish()
 
 	ctx = ctx.WithBlockTime(time.Now())
 
 	const consumerID = uint64(0)
+	const clientID = "07-tendermint-0"
 	keeper.SetConsumerPhase(ctx, consumerID, types.CONSUMER_PHASE_LAUNCHED)
+	keeper.SetConsumerClientId(ctx, consumerID, clientID)
+	misbehaviour := &ibctmtypes.Misbehaviour{ClientId: clientID}
 
-	attributed, err := keeper.ContainLightClientAttackForTest(ctx, consumerID, nil)
+	gomock.InOrder(
+		mocks.MockClientKeeper.EXPECT().GetClientStatus(gomock.Any(), clientID).Return(ibcexported.Active),
+		mocks.MockClientKeeper.EXPECT().UpdateClient(gomock.Any(), clientID, misbehaviour).Return(nil),
+		mocks.MockClientKeeper.EXPECT().GetClientStatus(gomock.Any(), clientID).Return(ibcexported.Frozen),
+	)
+
+	attributed, err := keeper.ContainLightClientAttackForTest(ctx, consumerID, misbehaviour, nil)
 	require.NoError(t, err)
 	require.Empty(t, attributed)
 	require.Equal(t, types.CONSUMER_PHASE_PAUSED, keeper.GetConsumerPhase(ctx, consumerID))
 
-	_, err = keeper.ContainLightClientAttackForTest(ctx, consumerID, nil)
+	_, err = keeper.ContainLightClientAttackForTest(ctx, consumerID, misbehaviour, nil)
 	require.ErrorIs(t, err, types.ErrInvalidPhase,
 		"containing an already-paused consumer must fail on the phase guard")
 	wantExpiration := ctx.BlockTime().Add(keeper.GetMaxPauseDuration(ctx))
@@ -919,4 +939,145 @@ func TestHandleConsumerMisbehaviourRejectsNotLaunched(t *testing.T) {
 
 	_, err := keeper.HandleConsumerMisbehaviour(ctx, consumerID, ibctmtypes.Misbehaviour{})
 	require.ErrorIs(t, err, types.ErrInvalidPhase)
+}
+
+// TestContainLightClientAttackFreezesActiveClient: containment freezes the
+// consumer's IBC client through the client keeper before pausing, so packets
+// proven against the forked headers stop being accepted on the provider, and
+// the pause is recorded under the light-client reason.
+func TestContainLightClientAttackFreezesActiveClient(t *testing.T) {
+	keeper, ctx, ctrl, mocks := testkeeper.GetProviderKeeperAndCtx(t, testkeeper.NewInMemKeeperParams(t))
+	defer ctrl.Finish()
+
+	ctx = ctx.WithBlockTime(time.Now())
+
+	const consumerID = uint64(0)
+	const clientID = "07-tendermint-0"
+	keeper.SetConsumerPhase(ctx, consumerID, types.CONSUMER_PHASE_LAUNCHED)
+	keeper.SetConsumerClientId(ctx, consumerID, clientID)
+	misbehaviour := &ibctmtypes.Misbehaviour{ClientId: clientID}
+
+	mocks.MockClientKeeper.EXPECT().GetClientStatus(gomock.Any(), clientID).Return(ibcexported.Active)
+	mocks.MockClientKeeper.EXPECT().UpdateClient(gomock.Any(), clientID, misbehaviour).Return(nil)
+
+	_, err := keeper.ContainLightClientAttackForTest(ctx, consumerID, misbehaviour, nil)
+	require.NoError(t, err)
+	require.Equal(t, types.CONSUMER_PHASE_PAUSED, keeper.GetConsumerPhase(ctx, consumerID))
+	require.Equal(t, types.PAUSE_REASON_LIGHT_CLIENT_ATTACK, keeper.GetConsumerPauseReason(ctx, consumerID))
+}
+
+// TestContainLightClientAttackLeavesANonActiveClientAlone: a client that is
+// already frozen (a relayer reported the same misbehaviour to 02-client
+// first) or expired cannot be updated, so the freeze is skipped and the
+// pause still happens. No UpdateClient expectation is set: gomock fails the
+// test if the keeper tries.
+func TestContainLightClientAttackLeavesANonActiveClientAlone(t *testing.T) {
+	for _, status := range []ibcexported.Status{ibcexported.Frozen, ibcexported.Expired} {
+		t.Run(string(status), func(t *testing.T) {
+			keeper, ctx, ctrl, mocks := testkeeper.GetProviderKeeperAndCtx(t, testkeeper.NewInMemKeeperParams(t))
+			defer ctrl.Finish()
+
+			ctx = ctx.WithBlockTime(time.Now())
+
+			const consumerID = uint64(0)
+			const clientID = "07-tendermint-0"
+			keeper.SetConsumerPhase(ctx, consumerID, types.CONSUMER_PHASE_LAUNCHED)
+			keeper.SetConsumerClientId(ctx, consumerID, clientID)
+			misbehaviour := &ibctmtypes.Misbehaviour{ClientId: clientID}
+
+			mocks.MockClientKeeper.EXPECT().GetClientStatus(gomock.Any(), clientID).Return(status)
+
+			_, err := keeper.ContainLightClientAttackForTest(ctx, consumerID, misbehaviour, nil)
+			require.NoError(t, err)
+			require.Equal(t, types.CONSUMER_PHASE_PAUSED, keeper.GetConsumerPhase(ctx, consumerID))
+		})
+	}
+}
+
+// TestContainLightClientAttackFailsWhenTheFreezeFails: a freeze the client
+// keeper refuses fails the containment before the pause, so the whole
+// submission reverts rather than leaving a paused consumer behind an active
+// client.
+func TestContainLightClientAttackFailsWhenTheFreezeFails(t *testing.T) {
+	keeper, ctx, ctrl, mocks := testkeeper.GetProviderKeeperAndCtx(t, testkeeper.NewInMemKeeperParams(t))
+	defer ctrl.Finish()
+
+	const consumerID = uint64(0)
+	const clientID = "07-tendermint-0"
+	keeper.SetConsumerPhase(ctx, consumerID, types.CONSUMER_PHASE_LAUNCHED)
+	keeper.SetConsumerClientId(ctx, consumerID, clientID)
+	misbehaviour := &ibctmtypes.Misbehaviour{ClientId: clientID}
+
+	mocks.MockClientKeeper.EXPECT().GetClientStatus(gomock.Any(), clientID).Return(ibcexported.Active)
+	mocks.MockClientKeeper.EXPECT().UpdateClient(gomock.Any(), clientID, misbehaviour).Return(errors.New("client refused the update"))
+
+	_, err := keeper.ContainLightClientAttackForTest(ctx, consumerID, misbehaviour, nil)
+	require.ErrorContains(t, err, "client refused the update")
+	require.Equal(t, types.CONSUMER_PHASE_LAUNCHED, keeper.GetConsumerPhase(ctx, consumerID))
+}
+
+// forkHeaders builds the two headers of a misbehaviour with only the fields
+// the adjudication guard reads (chain id and height). Nothing else about
+// them is valid, which is the point: the guard must answer before any
+// light-client verification runs.
+func forkHeaders(chainID string, height1, height2 int64) (*ibctmtypes.Header, *ibctmtypes.Header) {
+	mk := func(height int64) *ibctmtypes.Header {
+		return &ibctmtypes.Header{SignedHeader: &tmproto.SignedHeader{Header: &tmproto.Header{ChainID: chainID, Height: height}}}
+	}
+	return mk(height1), mk(height2)
+}
+
+// TestHandleConsumerMisbehaviourRejectsAForkGovernanceAdjudicated: once a
+// governance resume recorded the client height it adjudicated up to, a
+// misbehaviour whose headers both sit at or below that height is the fork
+// governance already ruled on and is rejected before verification. No
+// client-keeper expectation is set, which proves CheckMisbehaviour was never
+// reached.
+func TestHandleConsumerMisbehaviourRejectsAForkGovernanceAdjudicated(t *testing.T) {
+	keeper, ctx, ctrl, _ := testkeeper.GetProviderKeeperAndCtx(t, testkeeper.NewInMemKeeperParams(t))
+	defer ctrl.Finish()
+
+	const consumerID = uint64(0)
+	keeper.SetConsumerPhase(ctx, consumerID, types.CONSUMER_PHASE_LAUNCHED)
+	require.NoError(t, keeper.SetConsumerAdjudicatedForkHeight(ctx, consumerID, clienttypes.NewHeight(0, 100)))
+
+	for name, heights := range map[string][2]int64{"both below the bar": {90, 99}, "one header at the bar": {80, 100}} {
+		t.Run(name, func(t *testing.T) {
+			h1, h2 := forkHeaders("consumer", heights[0], heights[1])
+			_, err := keeper.HandleConsumerMisbehaviour(ctx, consumerID, ibctmtypes.Misbehaviour{ClientId: "07-tendermint-0", Header1: h1, Header2: h2})
+			require.ErrorIs(t, err, types.ErrMisbehaviourAdjudicated)
+		})
+	}
+}
+
+// TestHandleConsumerMisbehaviourVerifiesAForkAboveTheAdjudicatedHeight: a
+// fork with at least one header above the adjudicated height is new and goes
+// to verification, as does any fork when nothing was adjudicated. Here
+// verification fails on the missing consumer chain id, which is any error
+// but the adjudication one.
+func TestHandleConsumerMisbehaviourVerifiesAForkAboveTheAdjudicatedHeight(t *testing.T) {
+	cases := map[string]struct {
+		adjudicated *clienttypes.Height
+		heights     [2]int64
+	}{
+		"one header above the bar": {adjudicated: func() *clienttypes.Height { h := clienttypes.NewHeight(0, 100); return &h }(), heights: [2]int64{100, 101}},
+		"nothing adjudicated":      {heights: [2]int64{1, 2}},
+	}
+	for name, tc := range cases {
+		t.Run(name, func(t *testing.T) {
+			keeper, ctx, ctrl, _ := testkeeper.GetProviderKeeperAndCtx(t, testkeeper.NewInMemKeeperParams(t))
+			defer ctrl.Finish()
+
+			const consumerID = uint64(0)
+			keeper.SetConsumerPhase(ctx, consumerID, types.CONSUMER_PHASE_LAUNCHED)
+			if tc.adjudicated != nil {
+				require.NoError(t, keeper.SetConsumerAdjudicatedForkHeight(ctx, consumerID, *tc.adjudicated))
+			}
+
+			h1, h2 := forkHeaders("consumer", tc.heights[0], tc.heights[1])
+			_, err := keeper.HandleConsumerMisbehaviour(ctx, consumerID, ibctmtypes.Misbehaviour{ClientId: "07-tendermint-0", Header1: h1, Header2: h2})
+			require.Error(t, err)
+			require.NotErrorIs(t, err, types.ErrMisbehaviourAdjudicated)
+		})
+	}
 }

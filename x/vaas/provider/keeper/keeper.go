@@ -11,6 +11,7 @@ import (
 
 	tmprotocrypto "github.com/cometbft/cometbft/proto/tendermint/crypto"
 
+	clienttypes "github.com/cosmos/ibc-go/v10/modules/core/02-client/types"
 	ibchost "github.com/cosmos/ibc-go/v10/modules/core/exported"
 	ibctmtypes "github.com/cosmos/ibc-go/v10/modules/light-clients/07-tendermint"
 
@@ -91,6 +92,15 @@ type Keeper struct {
 	// requires phase STOPPED and would reject a still-PAUSED consumer.
 	ConsumerPauseExpirationTime      collections.Map[uint64, []byte]
 	PauseExpirationTimeToConsumerIds collections.Map[[]byte, types.ConsumerIds]
+	// ConsumerPauseReason keeps, per paused consumer, the PauseReason it was
+	// paused for: set by PauseConsumerChain, cleared when the consumer leaves
+	// PAUSED (ResumeConsumerChain, StopAndPrepareForConsumerRemoval).
+	ConsumerPauseReason collections.Map[uint64, int32]
+	// ConsumerAdjudicatedForkHeight keeps, per consumer, the client height a
+	// governance resume adjudicated forks up to (see ResumeConsumerChain and
+	// HandleConsumerMisbehaviour); absent until a resume follows a
+	// light-client containment.
+	ConsumerAdjudicatedForkHeight collections.Map[uint64, clienttypes.Height]
 
 	// Key assignment collections
 	ValidatorConsumerPubKey collections.Map[collections.Pair[uint64, []byte], []byte]
@@ -279,6 +289,8 @@ func NewKeeper(
 		RemovalTimeToConsumerIds:         collections.NewMap(sb, types.RemovalTimeToConsumerIdsPrefix, "removal_time_to_consumer_ids", collections.BytesKey, codec.CollValue[types.ConsumerIds](cdc)),
 		ConsumerPauseExpirationTime:      collections.NewMap(sb, types.ConsumerIdToPauseExpirationTimePrefix, types.ConsumerIdToPauseExpirationTimeKeyName, collections.Uint64Key, collections.BytesValue),
 		PauseExpirationTimeToConsumerIds: collections.NewMap(sb, types.PauseExpirationTimeToConsumerIdsPrefix, types.PauseExpirationTimeToConsumerIdsKeyName, collections.BytesKey, codec.CollValue[types.ConsumerIds](cdc)),
+		ConsumerPauseReason:              collections.NewMap(sb, types.ConsumerPauseReasonPrefix, types.ConsumerPauseReasonKeyName, collections.Uint64Key, collections.Int32Value),
+		ConsumerAdjudicatedForkHeight:    collections.NewMap(sb, types.ConsumerAdjudicatedForkHeightPrefix, types.ConsumerAdjudicatedForkHeightKeyName, collections.Uint64Key, codec.CollValue[clienttypes.Height](cdc)),
 
 		// Key assignment collections
 		ValidatorConsumerPubKey: collections.NewMap(sb, types.ConsumerValidatorsPrefix, "validator_consumer_pub_key", collections.PairKeyCodec(collections.Uint64Key, collections.BytesKey), collections.BytesValue),
@@ -932,6 +944,49 @@ func (k Keeper) GetConsumerPauseExpirationTime(ctx context.Context, consumerId u
 func (k Keeper) DeleteConsumerPauseExpirationTime(ctx context.Context, consumerId uint64) {
 	if err := k.ConsumerPauseExpirationTime.Remove(ctx, consumerId); err != nil {
 		panic(fmt.Errorf("failed to delete pause expiration time for consumer id (%d): %w", consumerId, err))
+	}
+}
+
+// SetConsumerPauseReason records why consumerId is paused.
+func (k Keeper) SetConsumerPauseReason(ctx context.Context, consumerId uint64, reason types.PauseReason) error {
+	return k.ConsumerPauseReason.Set(ctx, consumerId, int32(reason))
+}
+
+// GetConsumerPauseReason returns why consumerId is paused, or
+// PAUSE_REASON_UNSPECIFIED when it is not paused.
+func (k Keeper) GetConsumerPauseReason(ctx context.Context, consumerId uint64) types.PauseReason {
+	reason, err := k.ConsumerPauseReason.Get(ctx, consumerId)
+	if err != nil {
+		return types.PAUSE_REASON_UNSPECIFIED
+	}
+	return types.PauseReason(reason)
+}
+
+// DeleteConsumerPauseReason forgets why consumerId was paused.
+func (k Keeper) DeleteConsumerPauseReason(ctx context.Context, consumerId uint64) {
+	if err := k.ConsumerPauseReason.Remove(ctx, consumerId); err != nil {
+		panic(fmt.Errorf("failed to delete pause reason for consumer id (%d): %w", consumerId, err))
+	}
+}
+
+// SetConsumerAdjudicatedForkHeight records the client height up to which a
+// governance resume adjudicated forks of consumerId.
+func (k Keeper) SetConsumerAdjudicatedForkHeight(ctx context.Context, consumerId uint64, height clienttypes.Height) error {
+	return k.ConsumerAdjudicatedForkHeight.Set(ctx, consumerId, height)
+}
+
+// GetConsumerAdjudicatedForkHeight returns the client height up to which
+// governance adjudicated forks of consumerId; collections.ErrNotFound when
+// no resume ever followed a light-client containment.
+func (k Keeper) GetConsumerAdjudicatedForkHeight(ctx context.Context, consumerId uint64) (clienttypes.Height, error) {
+	return k.ConsumerAdjudicatedForkHeight.Get(ctx, consumerId)
+}
+
+// DeleteConsumerAdjudicatedForkHeight forgets the adjudicated fork height of
+// consumerId.
+func (k Keeper) DeleteConsumerAdjudicatedForkHeight(ctx context.Context, consumerId uint64) {
+	if err := k.ConsumerAdjudicatedForkHeight.Remove(ctx, consumerId); err != nil {
+		panic(fmt.Errorf("failed to delete adjudicated fork height for consumer id (%d): %w", consumerId, err))
 	}
 }
 

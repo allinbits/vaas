@@ -250,7 +250,11 @@ A successful challenge moves the consumer from `LAUNCHED` to `PAUSED` -- proven-
 reporting is grounds for suspension, but a bug deserves a recovery path that does not force
 re-registration. A confirmed light-client attack pauses the consumer the same way: a fork
 proves the chain's consensus is compromised without proving who is at fault, so the provider
-contains the chain and punishes nobody (see `HandleConsumerMisbehaviour`). While paused:
+freezes the consumer's IBC client (no packet proven against the fork lands any more),
+contains the chain and punishes nobody (see `HandleConsumerMisbehaviour`). Whichever way it
+came, a pause first repays the fees withheld from accused validators: their accusations are
+cancelled with it and could not be challenged any more. The `vaas_consumer_paused` event
+names the reason. While paused:
 
 - No VSC packets are queued or sent; no fees are distributed; downtime evidence from the
   consumer is rejected.
@@ -285,11 +289,15 @@ Two governance exits:
   whole resume fails and rolls back, because reporting success while the snapshot silently
   stayed queued would let the next epoch send a diff against a set the consumer never
   received. The resume also pre-flights the IBC client: with defaults, `MaxPauseDuration`
-  (30 days) exceeds the client trusting period, so a long pause with idle relayers can
+  (45 days) exceeds the client trusting period, so a long pause with idle relayers can
   expire the client. An expired or frozen client fails the resume with instructions to
   bundle ibc-go's `MsgRecoverClient` (client substitution, already governance-gated) in the
   same proposal. Client expiry during a pause is therefore a recoverable inconvenience, not
   a death sentence -- which is why `MaxPauseDuration` is not bounded by the trusting period.
+  A resume after a light-client pause is governance's ruling on that fork: it records the
+  recovered client's latest height, and misbehaviour whose headers both sit at or below it
+  is rejected as adjudicated, so the same conflicting headers cannot pause the consumer again
+  for as long as they verify. A fork at a later height is new evidence and pauses it again.
 - **`MsgRemoveConsumer`** accepts a paused consumer and routes it into the ordinary
   `STOPPED -> DELETED` teardown.
 
