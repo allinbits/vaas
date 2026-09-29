@@ -3,7 +3,8 @@
 Docker-based integration tests that spin up a real provider chain, a real
 consumer chain, and the `ibc-v2-ts-relayer`, then exercise the full VAAS
 lifecycle: consumer registration, genesis bootstrapping, IBC v2 client
-discovery, VSC synchronization, downtime slashing, fee pooling, liveness, and
+discovery, VSC synchronization, downtime slashing and challenges, fee pooling
+and distribution, key assignment, refusal and punishment deferral, liveness, and
 genesis round-trip.
 
 This directory is its own Go module (`tests/e2e/go.mod`) and is excluded from the
@@ -21,7 +22,7 @@ make test-e2e           # docker-build-all, then go test in this directory
 ([Makefile](../../Makefile) lines 305-322) runs:
 
 ```
-cd tests/e2e && go test -timeout=25m -v ./... --count=1
+cd tests/e2e && go test -timeout=60m -v ./... --count=1
 ```
 
 The chain image is built from
@@ -57,17 +58,11 @@ IBC v2 path. Provider genesis is patched for a fast voting period, a fast epoch
 challenge-gated flow completes inside a test run.
 
 The scenarios run as an **ordered** sequence in `TestVAAS`
-([e2e_test.go](e2e_test.go)): block production, consumer-on-provider and
-provider-on-consumer, validator-set sync, a transient-outage snapshot resync,
-the debt flow, downtime slash, the fee-pool send restriction / fund-and-lock /
-gov-subsidy-clawback tests, the refusal pause with its refused-then-accepted
-governance resume, a downtime slash and an equivocation punishment (fabricated
-double votes signed with test-held validator keys) each deferring behind a
-rejected removal vote, a second punishment queued right before liveness
-removal and cancelled by it, and finally the genesis round-trip (which stops
-the provider container and restarts it from exported genesis). The order
-matters: later tests depend on consumer `"0"` staying `LAUNCHED` until
-liveness removal, and the genesis round-trip runs last.
+([e2e_test.go](e2e_test.go)); each scenario's doc comment says what it proves,
+and the call-site comments in that list state the ordering constraints. The
+order matters: later tests depend on consumer `"0"` staying `LAUNCHED` until
+liveness removal, and the genesis round-trip runs last, since it stops the
+provider container and restarts it from exported genesis.
 
 This suite uses a realistic (~21-day) provider unbonding, so the liveness sweep
 timing is not exercised here -- that is the liveness suite's job.
@@ -82,13 +77,9 @@ resync, and auto-sweep removal are all observable within a CI run, while keeping
 the relayer-derived client trusting period viable. It uses fast blocks and a
 first-sync gate to keep the timing-sensitive assertions reliable. Its consumer
 is registered via `testdata/create_consumer_short_unbonding.json`. Scenarios run
-in order in `TestLivenessVAAS`: recover-before-grace, real safe mode, the
-liveness query, forced-timeout snapshot resync, a punishment queued before the
-outage, auto-sweep removal (with a second punishment queued mid-outage), the
-first punishment surviving the stop and executing at maturity, and the second
-deferring behind a removal vote passed after the stop and being cancelled
-(`equivocation_execution_delay` is 420s and the gov voting period 180s here).
-The header comment of that file documents the timing rationale in detail.
+in order in `TestLivenessVAAS`, each with its doc comment;
+`equivocation_execution_delay` is 420s and the gov voting period 180s here,
+and the header comment of that file documents the timing rationale in detail.
 
 ## File layout
 
@@ -103,12 +94,18 @@ The header comment of that file documents the timing rationale in detail.
 | `e2e_vaas_test.go` | core VSC / valset-sync scenarios |
 | `e2e_debt_test.go` | fee-pool debt-gating scenario |
 | `e2e_downtime_slash_test.go` | downtime evidence + slash scenario |
+| `e2e_downtime_challenge_test.go` | challenging a queued downtime slash with real consumer chain data |
 | `e2e_fee_pool_test.go` | fee-pool send restriction, locks, gov clawback |
+| `e2e_fee_distribution_test.go` | per-epoch validator payout out of a consumer's fee pool |
+| `e2e_key_assignment_test.go` | consumer key assignment and the consumer switching onto it |
 | `e2e_consumer_liveness_test.go` | liveness / safe-mode scenarios |
 | `e2e_refusal_and_deferral_test.go` | refusal pause and resume, downtime and equivocation deferral behind removal votes, cancellation on removal; fabricated double-vote evidence helpers |
 | `e2e_genesis_roundtrip_test.go` | provider export/restart round-trip |
 | `gov_proposal_helpers_test.go` | submit/vote governance proposals from a test |
+| `validator_identity_helpers_test.go` | one validator's address forms across both chains |
+| `genesis_test.go` | genesis-file patching (consumer genesis merge, generic mutation) |
 | `query_test.go`, `http_util_test.go`, `chain_test.go`, `e2e_exec_test.go`, `io.go` | query, HTTP, chain, container-exec helpers |
+| `go.mod`, `go.sum` | this directory's own Go module |
 | `docker/e2e.Dockerfile` | chain image (provider + consumer binaries) |
 | `scripts/provider-init.sh`, `scripts/consumer-init.sh` | in-container chain init |
 | `testdata/create_consumer*.json` | consumer-registration payloads (with a `CONSUMER_CHAIN_ID` placeholder) |
