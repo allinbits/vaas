@@ -1,15 +1,5 @@
 package e2e
 
-// e2e_fee_distribution_test.go asserts the paying end of the consumer fee
-// model: e2e_fee_pool_test.go covers funding, locks, and the gov
-// subsidy/clawback paths -- i.e. money going *into* a consumer's pool and the
-// depositor claims it mints -- but nothing there proves a validator is ever
-// actually paid. DistributeConsumerFees pays each eligible bonded validator
-// share = fees_per_epoch / num_bonded straight to its account (there is no
-// intermediate reward pool to claim from), so the assertion here is a bank
-// balance delta on the provider validator's own account, checked against the
-// share recomputed from the chain's live parameters.
-
 import (
 	"encoding/json"
 	"time"
@@ -17,27 +7,25 @@ import (
 	stakingtypes "github.com/cosmos/cosmos-sdk/x/staking/types"
 )
 
-// testFeeDistributionAccrual verifies that a funded epoch distribution
-// actually credits the bonded validator's account with exactly the
-// per-validator share (or a whole multiple of it, when more than one epoch
-// elapses while the balance is being polled).
+// testFeeDistributionAccrual proves the paying end of the fee model, which
+// e2e_fee_pool_test.go leaves out: a funded epoch distribution credits the
+// bonded validator's own account with exactly the per-validator share (or a
+// whole multiple of it, when more than one epoch elapses while the balance is
+// polled), recomputed from the chain's live parameters as
+// DistributeConsumerFees does.
 func (s *IntegrationTestSuite) testFeeDistributionAccrual() {
 	s.Run("epoch fee distribution credits the validator account", func() {
 		const consumerID = "0"
 
-		// Fund far above one epoch fee so the distribution cannot be skipped
-		// for debt regardless of what earlier sub-tests drew down. Funding is
-		// done before the balance snapshot below: it debits val in feeDenom,
-		// and requireTxCommitted has already confirmed it on-chain, so it can
-		// never land inside the measured delta.
+		// Funded far above one epoch fee so debt cannot skip the distribution,
+		// and committed before the balance snapshot so it never lands in the
+		// measured delta.
 		s.providerFundConsumerFeePool(consumerID, "20000000"+feeDenom)
 
 		numBonded := s.countBondedProviderValidators()
 		s.Require().Positivef(numBonded, "no bonded validators on the provider")
 
-		// share is recomputed exactly as DistributeConsumerFees does:
-		// effective per-consumer fees_per_block * blocks_per_epoch, split
-		// evenly (integer division) across the bonded set.
+		// The share as DistributeConsumerFees computes it.
 		feesPerBlock := s.queryConsumerFeesPerBlock(consumerID)
 		blocksPerEpoch := s.queryBlocksPerEpoch()
 		share := (feesPerBlock * blocksPerEpoch) / int64(numBonded)
