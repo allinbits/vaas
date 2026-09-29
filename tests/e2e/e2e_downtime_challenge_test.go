@@ -1,36 +1,5 @@
 package e2e
 
-// e2e_downtime_challenge_test.go exercises MsgChallengeConsumerDowntime
-// against real chain data: the CLI assembles the challenge from the consumer's
-// own CometBFT RPC (canonical commit for the claimed height H, light-client
-// header for H+1, validator sets) and the provider verifies it on-chain
-// through the 07-tendermint light client -- the one part of the challenge path
-// no unit test can cover, since every unit test stubs the header verification
-// out (see OverrideVerifyDowntimeChallengeHeaderForTest).
-//
-// What is asserted here is the rejection side, and that is a property of the
-// design rather than a gap in the test: a challenge disproves a *false*
-// accusation by exhibiting the accused validator's signature sealed into the
-// consumer chain at a height the accusation claims it missed. The consumer
-// marks a height missed only when the validator is absent from that height's
-// commit (TrackMissedBlocks only sets a bit for BlockIDFlagAbsent), and the
-// challenge only accepts a Commit-or-Nil signature for the same consumer
-// address at the same height -- so for an honest consumer the two are mutually
-// exclusive, and no challenge can ever succeed against it. A successful
-// challenge (and therefore the PAUSED phase and MsgResumeConsumer, which are
-// only reachable through one) requires a consumer that reports missed blocks
-// it did not observe, i.e. injecting a forged evidence packet from the
-// consumer side -- a Byzantine-consumer harness this suite does not have. That
-// flow is covered by unit tests (TestHandleChallengeConsumerDowntime_Success,
-// TestPauseConsumerChain_Success, TestResumeConsumerChain_Success).
-//
-// So the property proven here is the one that protects a live consumer: a
-// challenge that cannot exhibit a chain-sealed signature is rejected at
-// exactly that step -- after the pending-slash lookup, the bitmap check, the
-// chain-id/height checks and the full light-client verification of a real
-// consumer header have all passed -- the consumer is not paused, and the
-// queued downtime slash still executes.
-
 import (
 	"encoding/base64"
 	"encoding/json"
@@ -58,6 +27,21 @@ type downtimeChallengeTarget struct {
 	slashTokens      string
 }
 
+// testDowntimeChallengeWithoutSealedSignature exercises
+// MsgChallengeConsumerDowntime against real chain data: the CLI assembles the
+// challenge from the consumer's own CometBFT RPC and the provider verifies it
+// through the 07-tendermint light client, the one step every unit test stubs
+// out. Only the rejection side is reachable here, by design rather than by
+// omission: an honest consumer marks a height missed only when the validator
+// is absent from its commit, and a challenge succeeds only with that
+// validator's signature sealed at that height, so no challenge against an
+// honest consumer can succeed. The success path needs a consumer that reports
+// blocks it did not observe and is covered by unit tests
+// (TestHandleChallengeConsumerDowntime_Success and the pause and resume
+// tests). What is proven is what protects a live consumer: a challenge without
+// a chain-sealed signature fails at exactly that step, after the pending-slash
+// lookup, the bitmap check and the light-client verification of a real header
+// all passed, the consumer stays LAUNCHED, and the queued slash still executes.
 func (s *IntegrationTestSuite) testDowntimeChallengeWithoutSealedSignature() {
 	s.Run("downtime challenge without a chain-sealed signature is rejected", func() {
 		const consumerID = "0"
@@ -121,21 +105,15 @@ func (s *IntegrationTestSuite) testDowntimeChallengeWithoutSealedSignature() {
 		code, rawLog := s.queryTxResult(stdout.Bytes())
 		s.Require().NotZerof(code,
 			"challenge for a validator that was genuinely absent must fail on-chain, but the tx succeeded: %s", rawLog)
-		// The specific step is the assertion: reaching it means the pending
-		// slash was found, its bitmap did claim this height, and the real
-		// header for claimed_height+1 passed light-client verification and was
-		// shown to seal the supplied commit.
+		// Failing at this step means every check before it passed.
 		s.Require().Containsf(rawLog, "last_commit carries no signature for validator_addr",
 			"challenge failed for the wrong reason: %s", rawLog)
 
-		// A failed challenge changes nothing: the consumer keeps running (a
-		// successful one would have paused it and cancelled every pending
-		// downtime slash for it)...
+		// A failed challenge changes nothing: no pause, and the queued slash
+		// still executes.
 		s.Require().Equalf("CONSUMER_PHASE_LAUNCHED", s.queryProviderConsumerPhase(consumerID),
 			"consumer %s must stay LAUNCHED after a failed downtime challenge", consumerID)
 
-		// ... and the queued slash still executes against the accused stake
-		// once its challenge window matures.
 		s.T().Log("verifying the queued downtime slash still executes after the failed challenge...")
 		s.Require().Eventuallyf(func() bool {
 			tokensNow, err := s.getProviderValidatorTokensByAddr(target.valoper)

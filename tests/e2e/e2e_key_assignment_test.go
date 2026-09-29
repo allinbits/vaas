@@ -1,28 +1,5 @@
 package e2e
 
-// e2e_key_assignment_test.go exercises MsgAssignConsumerKey end to end: the
-// provider records the assignment, the next epoch's VSC packet carries the
-// assigned consensus key to the consumer, and the consumer's CometBFT
-// validator set switches the validator over to the assigned consensus address
-// while the chain keeps producing blocks.
-//
-// Which validator gets the assignment matters. This suite runs a single
-// consumer node, whose priv_validator_key is a copy of the provider's sole
-// signing validator ("val", ~99.5% of the voting power): reassigning *that*
-// validator's consumer key would move it to an address its node cannot sign
-// with and halt the consumer chain outright. Launching a second consumer chain
-// with the assigned key set up front (which would exercise the pre-launch
-// assignment path) needs a second consumer container plus a second ts-relayer
-// path -- neither of which the shared bring-up in base_suite_test.go supports.
-//
-// The assignment is therefore done on the permanently-silent second provider
-// validator (see createSilentValidator in e2e_downtime_slash_test.go), which is
-// in the consumer's validator set but runs no consumer node and holds ~0.5% of
-// the power: its consensus address can change without stalling consensus, so
-// the full provider-to-consumer path can be asserted -- including the consumer
-// actually applying the assigned address -- rather than only the provider-side
-// bookkeeping.
-
 import (
 	"encoding/json"
 	"slices"
@@ -32,6 +9,14 @@ import (
 	stakingtypes "github.com/cosmos/cosmos-sdk/x/staking/types"
 )
 
+// testKeyAssignment exercises MsgAssignConsumerKey end to end: the provider
+// records the assignment, the next epoch's VSC packet carries the key, and the
+// consumer's validator set switches the validator to the assigned address
+// while the chain keeps producing blocks. The assignment goes to the
+// permanently-silent second validator (see createSilentValidator): the only
+// signing validator runs the single consumer node, so moving its key would
+// halt the consumer, and a second consumer launched with the key set up front
+// needs a second container and relayer path the shared bring-up lacks.
 func (s *IntegrationTestSuite) testKeyAssignment() {
 	s.Run("assigned consumer key replaces the validator's address in the consumer valset", func() {
 		const consumerID = "0"
