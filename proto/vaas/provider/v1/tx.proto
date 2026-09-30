@@ -105,16 +105,26 @@ message MsgUpdateParams {
 
 message MsgUpdateParamsResponse {}
 
-// MsgRemoveConsumer defines the message used to remove (and stop) a consumer chain.
-// If it passes, all the consumer chain's state is eventually removed from the provider chain.
-// Only the governance authority can remove a consumer chain.
+// MsgRemoveConsumer defines the message used to remove a consumer chain. Its
+// effect depends on the consumer's phase.
+//
+// A consumer that has not launched yet (registered or initialized) is erased
+// right away -- a chain no validator ever validated needs no unbonding delay --
+// its fee pool is refunded to its depositors and its chain id is released for
+// immediate reuse. Either the consumer owner or the governance authority may
+// sign: the owner to abandon a chain it no longer intends to launch,
+// governance when the owner key is lost, which would otherwise pin the
+// consumer -- and its chain id -- in place forever.
+//
+// A launched or paused consumer is stopped, and its state is erased only once
+// the unbonding period has elapsed. Only the governance authority may sign.
 message MsgRemoveConsumer {
-  option (cosmos.msg.v1.signer) = "authority";
+  option (cosmos.msg.v1.signer) = "signer";
 
-  // the consumer id of the consumer chain to be stopped
+  // the consumer id of the consumer chain to be removed
   uint64 consumer_id = 1;
-  // authority is the address of the governance account.
-  string authority = 2 [(cosmos_proto.scalar) = "cosmos.AddressString"];
+  // signer is the consumer owner (pre-launch only) or the governance authority
+  string signer = 2 [(cosmos_proto.scalar) = "cosmos.AddressString"];
 }
 
 // MsgRemoveConsumerResponse defines response type for MsgRemoveConsumer messages
