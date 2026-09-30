@@ -11,6 +11,7 @@ import (
 	ibcexported "github.com/cosmos/ibc-go/v10/modules/core/exported"
 	ibctmtypes "github.com/cosmos/ibc-go/v10/modules/light-clients/07-tendermint"
 
+	"cosmossdk.io/collections"
 	errorsmod "cosmossdk.io/errors"
 	"cosmossdk.io/math"
 
@@ -52,11 +53,11 @@ func (k Keeper) HandleConsumerDoubleVoting(
 	//
 	//   - Equivocation is a permanent, self-contained cryptographic fault: the
 	//     two conflicting signed votes prove it forever, so it is punished
-	//     whenever proven. The tombstone applied below makes punishment
-	//     one-time (a re-submitted old evidence hits the already-tombstoned
-	//     path and is a no-op), so there is no re-slash risk from stale
-	//     evidence, and the min-height gate already blocks evidence from before
-	//     the validator was in the consumer's set.
+	//     whenever proven, and exactly once: with tombstoning on, the tombstone
+	//     stops every later submission; with it off, the PunishedEquivocations
+	//     record of the infraction does (see below). Either way there is no
+	//     re-slash risk from stale evidence, and the min-height gate already
+	//     blocks evidence from before the validator was in the consumer's set.
 	//   - Downtime is a liveness signal priced against a specific epoch and
 	//     resolved through a challenge window; letting arbitrarily old downtime
 	//     evidence in would misprice it and reopen a settled window, so it is
@@ -92,12 +93,43 @@ func (k Keeper) HandleConsumerDoubleVoting(
 		types.NewConsumerConsAddress(sdk.ConsAddress(evidence.VoteA.ValidatorAddress.Bytes())),
 	)
 
+	// One punishment per infraction. The record names the infraction by its
+	// height (two conflicting votes at one height are one infraction) under
+	// the validator's live provider consensus address, which is where a
+	// re-submission resolves to after a rotation as well.
+	liveAddr := k.liveProviderConsAddr(ctx, providerAddr)
+	punishedKey := collections.Join3(consumerId, liveAddr.ToSdkConsAddr().Bytes(), evidence.VoteA.Height)
+	if punished, err := k.PunishedEquivocations.Has(ctx, punishedKey); err != nil {
+		return fmt.Errorf("checking whether the equivocation was already punished: %w", err)
+	} else if punished {
+		k.Logger(ctx).Info(
+			"equivocation already punished",
+			"consumerId", consumerId,
+			"chainId", chainId,
+			"byzantine validator address", providerAddr.String(),
+			"infraction height", evidence.VoteA.Height,
+		)
+		return nil
+	}
+
 	// get infraction parameters
 	infractionParams := k.GetInfractionParams(ctx)
 
 	alreadyTombstoned, err := k.punishEquivocation(ctx, providerAddr, infractionParams.DoubleSign)
 	if err != nil {
 		return err
+	}
+
+	// A tombstoning punishment needs no record, the tombstone stops the next
+	// submission by itself, and makes any record left by an earlier,
+	// non-tombstoning policy redundant. A non-tombstoning punishment is
+	// remembered, or the same evidence would punish again.
+	if alreadyTombstoned || infractionParams.DoubleSign.Tombstone {
+		if err := k.PunishedEquivocations.Clear(ctx, collections.NewSuperPrefixedTripleRange[uint64, []byte, int64](consumerId, punishedKey.K2())); err != nil {
+			return fmt.Errorf("forgetting the punished equivocations of a tombstoned validator: %w", err)
+		}
+	} else if err := k.PunishedEquivocations.Set(ctx, punishedKey); err != nil {
+		return fmt.Errorf("recording the punished equivocation: %w", err)
 	}
 
 	k.Logger(ctx).Info(

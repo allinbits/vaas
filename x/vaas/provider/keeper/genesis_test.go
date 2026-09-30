@@ -417,6 +417,8 @@ func TestGenesisRoundTrip(t *testing.T) {
 	// windowEnd = WindowStartHeight(100) + Span(50) - 1 = 149.
 	require.NoError(t, pkA.PendingDowntimeSlashes.Set(ctxA,
 		collections.Join3(keyedConsumerID, downtimeProviderAddr.ToSdkConsAddr().Bytes(), int64(149)), pendingSlash))
+	require.NoError(t, pkA.PunishedEquivocations.Set(ctxA,
+		collections.Join3(keyedConsumerID, downtimeProviderAddr.ToSdkConsAddr().Bytes(), int64(77))))
 
 	previousDowntimeParams := providertypes.PreviousDowntimeParams{
 		Params: vaastypes.DowntimeParams{
@@ -492,6 +494,11 @@ func TestGenesisRoundTrip(t *testing.T) {
 	// Sanity: the export must carry the downtime-detection state.
 	require.Len(t, expA.PendingDowntimeSlashes, 1)
 	require.Equal(t, pendingSlash, expA.PendingDowntimeSlashes[0])
+	require.Equal(t, []providertypes.PunishedEquivocation{{
+		ConsumerId:       keyedConsumerID,
+		ProviderConsAddr: downtimeProviderAddr.ToSdkConsAddr().Bytes(),
+		InfractionHeight: 77,
+	}}, expA.PunishedEquivocations)
 	require.NotNil(t, expA.PreviousDowntimeParams)
 	require.Equal(t, previousDowntimeParams, *expA.PreviousDowntimeParams)
 	require.Len(t, expA.EpochShareRecords, 2)
@@ -571,6 +578,10 @@ func TestGenesisRoundTrip(t *testing.T) {
 		collections.Join3(keyedConsumerID, downtimeProviderAddr.ToSdkConsAddr().Bytes(), int64(149)))
 	require.NoError(t, err, "PendingDowntimeSlashes lost across round-trip")
 	require.Equal(t, pendingSlash, gotPending)
+	punished, err := pkB.PunishedEquivocations.Has(ctxB,
+		collections.Join3(keyedConsumerID, downtimeProviderAddr.ToSdkConsAddr().Bytes(), int64(77)))
+	require.NoError(t, err)
+	require.True(t, punished, "PunishedEquivocations lost across round-trip")
 	gotPrevious, err := pkB.PreviousDowntimeParams.Get(ctxB)
 	require.NoError(t, err, "PreviousDowntimeParams lost across round-trip")
 	require.Equal(t, previousDowntimeParams, gotPrevious)
