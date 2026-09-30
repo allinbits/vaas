@@ -304,6 +304,7 @@ func TestGenesisRoundTrip(t *testing.T) {
 	spawnAt := time.Unix(1_700_000_000, 0).UTC()
 	removeAt := time.Unix(1_800_000_000, 0).UTC()
 	pauseExpiresAt := time.Unix(1_820_000_000, 0).UTC()
+	pausedAt := time.Unix(1_816_000_000, 0).UTC()
 	ip := providertypes.ConsumerInitializationParameters{
 		InitialHeight:     clienttypes.Height{RevisionNumber: 0, RevisionHeight: 42},
 		GenesisHash:       []byte("g"),
@@ -369,6 +370,7 @@ func TestGenesisRoundTrip(t *testing.T) {
 			require.NoError(t, pkA.SetConsumerPauseExpirationTime(ctxA, id, pauseExpiresAt))
 			require.NoError(t, pkA.AppendConsumerToBeAutoStopped(ctxA, id, pauseExpiresAt))
 			require.NoError(t, pkA.SetConsumerPauseReason(ctxA, id, providertypes.PAUSE_REASON_DOWNTIME_CHALLENGE))
+			require.NoError(t, pkA.SetConsumerPausedAt(ctxA, id, pausedAt))
 		}
 	}
 	// Seed one entry per consumer-id-keyed key-assignment / prune collection
@@ -875,11 +877,10 @@ func TestInitGenesisAcceptsDefaultGenesis(t *testing.T) {
 	require.NotPanics(t, func() { k.InitGenesis(ctx, providertypes.DefaultGenesisState()) })
 }
 
-// TestGenesisRoundTripKeepsPauseReasonAndAdjudicatedForkHeight: the reason
-// a consumer is paused for and the fork height governance adjudicated at its
-// last resume travel through export, validation and import, each attached
-// to its own consumer.
-func TestGenesisRoundTripKeepsPauseReasonAndAdjudicatedForkHeight(t *testing.T) {
+// TestGenesisRoundTripKeepsPauseReasonAndPausedAt: the reason a consumer is
+// paused for and the time it was paused at travel through export, validation
+// and import, and a launched consumer carries neither.
+func TestGenesisRoundTripKeepsPauseReasonAndPausedAt(t *testing.T) {
 	pkA, ctxA, ctrlA, mocksA := testkeeper.GetProviderKeeperAndCtx(t, testkeeper.NewInMemKeeperParams(t))
 	defer ctrlA.Finish()
 	pkA.SetParams(ctxA, providertypes.DefaultParams())
@@ -917,19 +918,19 @@ func TestGenesisRoundTripKeepsPauseReasonAndAdjudicatedForkHeight(t *testing.T) 
 	require.NoError(t, pkA.SetConsumerPauseExpirationTime(ctxA, paused, pauseExpiresAt))
 	require.NoError(t, pkA.AppendConsumerToBeAutoStopped(ctxA, paused, pauseExpiresAt))
 	require.NoError(t, pkA.SetConsumerPauseReason(ctxA, paused, providertypes.PAUSE_REASON_LIGHT_CLIENT_ATTACK))
+	pausedAt := time.Unix(1_816_000_000, 0).UTC()
+	require.NoError(t, pkA.SetConsumerPausedAt(ctxA, paused, pausedAt))
 
-	// consumer 1: launched again after governance adjudicated a fork.
+	// consumer 1: launched, never paused.
 	launched := seed("consumer-beta", providertypes.CONSUMER_PHASE_LAUNCHED, "07-tendermint-1")
-	adjudicated := clienttypes.NewHeight(1, 500)
-	require.NoError(t, pkA.SetConsumerAdjudicatedForkHeight(ctxA, launched, adjudicated))
 
 	expA := pkA.ExportGenesis(ctxA)
 	require.NoError(t, expA.Validate(), "export must validate")
 	require.Len(t, expA.ConsumerStates, 2)
 	require.Equal(t, providertypes.PAUSE_REASON_LIGHT_CLIENT_ATTACK, expA.ConsumerStates[0].PauseReason)
-	require.Nil(t, expA.ConsumerStates[0].AdjudicatedForkHeight)
+	require.Equal(t, &pausedAt, expA.ConsumerStates[0].PausedAt)
 	require.Equal(t, providertypes.PAUSE_REASON_UNSPECIFIED, expA.ConsumerStates[1].PauseReason)
-	require.Equal(t, &adjudicated, expA.ConsumerStates[1].AdjudicatedForkHeight)
+	require.Nil(t, expA.ConsumerStates[1].PausedAt)
 
 	pkB, ctxB, ctrlB, mocksB := testkeeper.GetProviderKeeperAndCtx(t, testkeeper.NewInMemKeeperParams(t))
 	defer ctrlB.Finish()
@@ -940,10 +941,10 @@ func TestGenesisRoundTripKeepsPauseReasonAndAdjudicatedForkHeight(t *testing.T) 
 	_ = pkB.InitGenesis(ctxB, expA)
 
 	require.Equal(t, providertypes.PAUSE_REASON_LIGHT_CLIENT_ATTACK, pkB.GetConsumerPauseReason(ctxB, paused))
-	_, err := pkB.GetConsumerAdjudicatedForkHeight(ctxB, paused)
-	require.ErrorIs(t, err, collections.ErrNotFound)
-	require.Equal(t, providertypes.PAUSE_REASON_UNSPECIFIED, pkB.GetConsumerPauseReason(ctxB, launched))
-	got, err := pkB.GetConsumerAdjudicatedForkHeight(ctxB, launched)
+	got, err := pkB.GetConsumerPausedAt(ctxB, paused)
 	require.NoError(t, err)
-	require.Equal(t, adjudicated, got)
+	require.Equal(t, pausedAt, got)
+	require.Equal(t, providertypes.PAUSE_REASON_UNSPECIFIED, pkB.GetConsumerPauseReason(ctxB, launched))
+	_, err = pkB.GetConsumerPausedAt(ctxB, launched)
+	require.Error(t, err)
 }

@@ -549,20 +549,6 @@ func (mr *MockClientKeeperMockRecorder) GetClientConsensusState(ctx, clientID, h
 	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "GetClientConsensusState", reflect.TypeOf((*MockClientKeeper)(nil).GetClientConsensusState), ctx, clientID, height)
 }
 
-// GetClientLatestHeight mocks base method.
-func (m *MockClientKeeper) GetClientLatestHeight(ctx types.Context, clientID string) types3.Height {
-	m.ctrl.T.Helper()
-	ret := m.ctrl.Call(m, "GetClientLatestHeight", ctx, clientID)
-	ret0, _ := ret[0].(types3.Height)
-	return ret0
-}
-
-// GetClientLatestHeight indicates an expected call of GetClientLatestHeight.
-func (mr *MockClientKeeperMockRecorder) GetClientLatestHeight(ctx, clientID any) *gomock.Call {
-	mr.mock.ctrl.T.Helper()
-	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "GetClientLatestHeight", reflect.TypeOf((*MockClientKeeper)(nil).GetClientLatestHeight), ctx, clientID)
-}
-
 // GetClientState mocks base method.
 func (m *MockClientKeeper) GetClientState(ctx types.Context, clientID string) (exported.ClientState, bool) {
 	m.ctrl.T.Helper()

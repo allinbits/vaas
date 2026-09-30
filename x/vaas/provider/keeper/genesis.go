@@ -91,9 +91,9 @@ func (k Keeper) InitGenesis(ctx sdk.Context, genState *types.GenesisState) []abc
 				panic(fmt.Errorf("init: set pause reason for %d: %w", consumerId, err))
 			}
 		}
-		if cs.AdjudicatedForkHeight != nil {
-			if err := k.SetConsumerAdjudicatedForkHeight(ctx, consumerId, *cs.AdjudicatedForkHeight); err != nil {
-				panic(fmt.Errorf("init: set adjudicated fork height for %d: %w", consumerId, err))
+		if cs.PausedAt != nil {
+			if err := k.SetConsumerPausedAt(ctx, consumerId, *cs.PausedAt); err != nil {
+				panic(fmt.Errorf("init: set paused-at time for %d: %w", consumerId, err))
 			}
 		}
 		// Restore the liveness clock (see ExportGenesis): only when present, so
@@ -456,10 +456,10 @@ func (k Keeper) ExportGenesis(ctx sdk.Context) *types.GenesisState {
 			panic(fmt.Errorf("export: failed to read pause expiration time for consumer %d: %w", consumerId, err))
 		}
 		cs.PauseReason = k.GetConsumerPauseReason(ctx, consumerId)
-		if adjudicated, err := k.GetConsumerAdjudicatedForkHeight(ctx, consumerId); err == nil {
-			cs.AdjudicatedForkHeight = &adjudicated
+		if pausedAt, err := k.GetConsumerPausedAt(ctx, consumerId); err == nil {
+			cs.PausedAt = &pausedAt
 		} else if !errors.Is(err, collections.ErrNotFound) {
-			panic(fmt.Errorf("export: failed to read adjudicated fork height for consumer %d: %w", consumerId, err))
+			panic(fmt.Errorf("export: failed to read paused-at time for consumer %d: %w", consumerId, err))
 		}
 
 		// Liveness clock: export the last-ack time only when actually recorded

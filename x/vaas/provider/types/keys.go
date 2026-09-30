@@ -101,7 +101,7 @@ const (
 
 	ConsumerPauseReasonKeyName = "ConsumerPauseReasonKey"
 
-	ConsumerAdjudicatedForkHeightKeyName = "ConsumerAdjudicatedForkHeightKey"
+	ConsumerPausedAtKeyName = "ConsumerPausedAtKey"
 )
 
 // Collection key prefixes for use with cosmossdk.io/collections
@@ -147,6 +147,6 @@ var (
 	PauseExpirationTimeToConsumerIdsPrefix = collections.NewPrefix(38)
 	DowntimeWindowFloorsPrefix             = collections.NewPrefix(39)
 	ConsumerPauseReasonPrefix              = collections.NewPrefix(43)
-	ConsumerAdjudicatedForkHeightPrefix    = collections.NewPrefix(44)
+	ConsumerPausedAtPrefix                 = collections.NewPrefix(44)
 	ParametersPrefix                       = collections.NewPrefix(0xFF)
 )

@@ -49,8 +49,4 @@ const (
 	// AttributePauseReason names, on the consumer_paused event, the
 	// PauseReason the consumer was paused for.
 	AttributePauseReason = "reason"
-	// AttributeAdjudicatedForkHeight carries, on the consumer_resumed event
-	// of a consumer paused for a light-client attack, the client height up to
-	// which that resume adjudicated forks.
-	AttributeAdjudicatedForkHeight = "adjudicated_fork_height"
 )

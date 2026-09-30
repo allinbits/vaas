@@ -9,9 +9,9 @@ import (
 	"github.com/stretchr/testify/require"
 	"go.uber.org/mock/gomock"
 
-	clienttypes "github.com/cosmos/ibc-go/v10/modules/core/02-client/types"
 	channeltypesv2 "github.com/cosmos/ibc-go/v10/modules/core/04-channel/v2/types"
 	ibcexported "github.com/cosmos/ibc-go/v10/modules/core/exported"
+	ibctmtypes "github.com/cosmos/ibc-go/v10/modules/light-clients/07-tendermint"
 
 	"cosmossdk.io/collections"
 	"cosmossdk.io/math"
@@ -631,6 +631,9 @@ func TestPauseConsumerChainRecordsTheReasonAndNamesItOnTheEvent(t *testing.T) {
 
 	require.NoError(t, k.PauseConsumerChain(ctx, cid, providertypes.PAUSE_REASON_DOWNTIME_CHALLENGE))
 	require.Equal(t, providertypes.PAUSE_REASON_DOWNTIME_CHALLENGE, k.GetConsumerPauseReason(ctx, cid))
+	pausedAt, err := k.GetConsumerPausedAt(ctx, cid)
+	require.NoError(t, err)
+	require.Equal(t, ctx.BlockTime(), pausedAt)
 
 	var reason string
 	for _, ev := range ctx.EventManager().Events() {
@@ -698,12 +701,13 @@ func resumeMocks(mocks testkeeper.MockedKeepers) {
 		Return(&channeltypesv2.MsgSendPacketResponse{Sequence: 1}, nil).Times(1)
 }
 
-// TestResumeAfterALightClientPauseRecordsTheAdjudicatedHeight: resuming a
-// consumer paused for a light-client attack means governance ruled on that
-// fork, so the resume records the client's latest height as the bar below
-// which misbehaviour is adjudicated, names it on the resumed event, and
-// clears the pause reason.
-func TestResumeAfterALightClientPauseRecordsTheAdjudicatedHeight(t *testing.T) {
+// TestResumeAfterALightClientPauseWaitsOutTheTrustingPeriod: the fork's
+// evidence stays verifiable, on every submission path, until the pre-fork
+// consensus states age out of the client's trusting period, so a resume
+// before then would be paused again by the same headers. The resume is
+// refused until one trusting period plus the client's clock-drift allowance
+// has passed since the pause, and allowed from then on.
+func TestResumeAfterALightClientPauseWaitsOutTheTrustingPeriod(t *testing.T) {
 	k, ctx, ctrl, mocks := testkeeper.GetProviderKeeperAndCtx(t, testkeeper.NewInMemKeeperParams(t))
 	defer ctrl.Finish()
 
@@ -712,38 +716,34 @@ func TestResumeAfterALightClientPauseRecordsTheAdjudicatedHeight(t *testing.T) {
 	cid := k.FetchAndIncrementConsumerId(ctx)
 	k.SetConsumerClientId(ctx, cid, "07-tendermint-0")
 	k.SetConsumerPhase(ctx, cid, providertypes.CONSUMER_PHASE_LAUNCHED)
+	pausedAt := ctx.BlockTime()
 	require.NoError(t, k.PauseConsumerChain(ctx, cid, providertypes.PAUSE_REASON_LIGHT_CLIENT_ATTACK))
 
-	resumedAt := clienttypes.NewHeight(1, 500)
-	mocks.MockClientKeeper.EXPECT().GetClientStatus(gomock.Any(), "07-tendermint-0").Return(ibcexported.Active)
-	mocks.MockClientKeeper.EXPECT().GetClientLatestHeight(gomock.Any(), "07-tendermint-0").Return(resumedAt)
+	clientState := &ibctmtypes.ClientState{TrustingPeriod: 14 * 24 * time.Hour, MaxClockDrift: 10 * time.Second}
+	mocks.MockClientKeeper.EXPECT().GetClientStatus(gomock.Any(), "07-tendermint-0").Return(ibcexported.Active).AnyTimes()
+	mocks.MockClientKeeper.EXPECT().GetClientState(gomock.Any(), "07-tendermint-0").Return(clientState, true).AnyTimes()
+	wait := clientState.TrustingPeriod + clientState.MaxClockDrift
+
+	early := ctx.WithBlockTime(pausedAt.Add(wait - time.Second))
+	err := k.ResumeConsumerChain(early, cid)
+	require.ErrorIs(t, err, providertypes.ErrForkEvidenceStillVerifiable)
+	require.Equal(t, providertypes.CONSUMER_PHASE_PAUSED, k.GetConsumerPhase(ctx, cid))
+	require.Equal(t, providertypes.PAUSE_REASON_LIGHT_CLIENT_ATTACK, k.GetConsumerPauseReason(ctx, cid))
+
+	due := ctx.WithBlockTime(pausedAt.Add(wait))
 	resumeMocks(mocks)
-
-	require.NoError(t, k.ResumeConsumerChain(ctx, cid))
-
-	got, err := k.GetConsumerAdjudicatedForkHeight(ctx, cid)
-	require.NoError(t, err)
-	require.Equal(t, resumedAt, got)
+	require.NoError(t, k.ResumeConsumerChain(due, cid))
+	require.Equal(t, providertypes.CONSUMER_PHASE_LAUNCHED, k.GetConsumerPhase(ctx, cid))
 	require.Equal(t, providertypes.PAUSE_REASON_UNSPECIFIED, k.GetConsumerPauseReason(ctx, cid))
-
-	var bar string
-	for _, ev := range ctx.EventManager().Events() {
-		if ev.Type != "vaas_consumer_resumed" {
-			continue
-		}
-		for _, attr := range ev.Attributes {
-			if attr.Key == "adjudicated_fork_height" {
-				bar = attr.Value
-			}
-		}
-	}
-	require.Equal(t, resumedAt.String(), bar, "adjudicated_fork_height attribute missing on the resumed event")
+	_, err = k.GetConsumerPausedAt(ctx, cid)
+	require.Error(t, err, "paused-at must be cleared by the resume")
 }
 
-// TestResumeAfterADowntimePauseRecordsNoAdjudicatedHeight: a downtime pause
-// says nothing about forks, so its resume adjudicates nothing (no client
-// height is read) and only clears the reason.
-func TestResumeAfterADowntimePauseRecordsNoAdjudicatedHeight(t *testing.T) {
+// TestResumeAfterADowntimePauseWaitsForNothing: a downtime pause says
+// nothing about forks, so its resume reads no client state and imposes no
+// wait. No GetClientState expectation is set: gomock fails the test if the
+// keeper asks.
+func TestResumeAfterADowntimePauseWaitsForNothing(t *testing.T) {
 	k, ctx, ctrl, mocks := testkeeper.GetProviderKeeperAndCtx(t, testkeeper.NewInMemKeeperParams(t))
 	defer ctrl.Finish()
 
@@ -757,11 +757,52 @@ func TestResumeAfterADowntimePauseRecordsNoAdjudicatedHeight(t *testing.T) {
 	mocks.MockClientKeeper.EXPECT().GetClientStatus(gomock.Any(), "07-tendermint-0").Return(ibcexported.Active)
 	resumeMocks(mocks)
 
-	require.NoError(t, k.ResumeConsumerChain(ctx, cid))
-
-	_, err := k.GetConsumerAdjudicatedForkHeight(ctx, cid)
-	require.ErrorIs(t, err, collections.ErrNotFound)
+	require.NoError(t, k.ResumeConsumerChain(ctx.WithBlockTime(ctx.BlockTime().Add(time.Second)), cid))
+	require.Equal(t, providertypes.CONSUMER_PHASE_LAUNCHED, k.GetConsumerPhase(ctx, cid))
 	require.Equal(t, providertypes.PAUSE_REASON_UNSPECIFIED, k.GetConsumerPauseReason(ctx, cid))
+}
+
+// TestPauseConsumersWithFrozenClients: the BeginBlock mirror pauses every
+// launched consumer whose IBC client is Frozen, under the light-client
+// reason, so a fork reported through MsgUpdateClient contains the consumer
+// exactly as one reported through MsgSubmitConsumerMisbehaviour does. Active
+// and expired clients are left alone, a consumer with no client is skipped,
+// and a consumer already paused is never inspected.
+func TestPauseConsumersWithFrozenClients(t *testing.T) {
+	k, ctx, ctrl, mocks := testkeeper.GetProviderKeeperAndCtx(t, testkeeper.NewInMemKeeperParams(t))
+	defer ctrl.Finish()
+
+	launched := func(clientId string) uint64 {
+		cid := k.FetchAndIncrementConsumerId(ctx)
+		k.SetConsumerPhase(ctx, cid, providertypes.CONSUMER_PHASE_LAUNCHED)
+		if clientId != "" {
+			k.SetConsumerClientId(ctx, cid, clientId)
+		}
+		return cid
+	}
+	frozen := launched("07-tendermint-0")
+	active := launched("07-tendermint-1")
+	expired := launched("07-tendermint-2")
+	clientless := launched("")
+	paused := k.FetchAndIncrementConsumerId(ctx)
+	k.SetConsumerPhase(ctx, paused, providertypes.CONSUMER_PHASE_PAUSED)
+	k.SetConsumerClientId(ctx, paused, "07-tendermint-3")
+
+	mocks.MockClientKeeper.EXPECT().GetClientStatus(gomock.Any(), "07-tendermint-0").Return(ibcexported.Frozen)
+	mocks.MockClientKeeper.EXPECT().GetClientStatus(gomock.Any(), "07-tendermint-1").Return(ibcexported.Active)
+	mocks.MockClientKeeper.EXPECT().GetClientStatus(gomock.Any(), "07-tendermint-2").Return(ibcexported.Expired)
+
+	k.PauseConsumersWithFrozenClients(ctx)
+
+	require.Equal(t, providertypes.CONSUMER_PHASE_PAUSED, k.GetConsumerPhase(ctx, frozen))
+	require.Equal(t, providertypes.PAUSE_REASON_LIGHT_CLIENT_ATTACK, k.GetConsumerPauseReason(ctx, frozen))
+	pausedAt, err := k.GetConsumerPausedAt(ctx, frozen)
+	require.NoError(t, err)
+	require.Equal(t, ctx.BlockTime(), pausedAt)
+	for _, cid := range []uint64{active, expired, clientless} {
+		require.Equal(t, providertypes.CONSUMER_PHASE_LAUNCHED, k.GetConsumerPhase(ctx, cid))
+	}
+	require.Equal(t, providertypes.CONSUMER_PHASE_PAUSED, k.GetConsumerPhase(ctx, paused))
 }
 
 // TestStopClearsThePauseReason: a consumer stopped out of PAUSED (the
@@ -778,11 +819,13 @@ func TestStopClearsThePauseReason(t *testing.T) {
 
 	require.NoError(t, k.StopAndPrepareForConsumerRemoval(ctx, cid))
 	require.Equal(t, providertypes.PAUSE_REASON_UNSPECIFIED, k.GetConsumerPauseReason(ctx, cid))
+	_, err := k.GetConsumerPausedAt(ctx, cid)
+	require.Error(t, err, "paused-at must be cleared by the stop")
 }
 
-// TestDeleteConsumerChainClearsPauseReasonAndAdjudicatedHeight: deletion is
-// the consumer's terminal erasure and leaves neither record behind.
-func TestDeleteConsumerChainClearsPauseReasonAndAdjudicatedHeight(t *testing.T) {
+// TestDeleteConsumerChainClearsPauseReasonAndPausedAt: deletion is the
+// consumer's terminal erasure and leaves neither record behind.
+func TestDeleteConsumerChainClearsPauseReasonAndPausedAt(t *testing.T) {
 	k, ctx, ctrl, mocks := testkeeper.GetProviderKeeperAndCtx(t, testkeeper.NewInMemKeeperParams(t))
 	defer ctrl.Finish()
 
@@ -794,11 +837,11 @@ func TestDeleteConsumerChainClearsPauseReasonAndAdjudicatedHeight(t *testing.T) 
 	mocks.MockBankKeeper.EXPECT().GetAllBalances(ctx, poolAddr).Return(sdk.NewCoins())
 
 	require.NoError(t, k.SetConsumerPauseReason(ctx, cid, providertypes.PAUSE_REASON_LIGHT_CLIENT_ATTACK))
-	require.NoError(t, k.SetConsumerAdjudicatedForkHeight(ctx, cid, clienttypes.NewHeight(1, 500)))
+	require.NoError(t, k.SetConsumerPausedAt(ctx, cid, ctx.BlockTime()))
 
 	require.NoError(t, k.DeleteConsumerChain(ctx, cid))
 
 	require.Equal(t, providertypes.PAUSE_REASON_UNSPECIFIED, k.GetConsumerPauseReason(ctx, cid))
-	_, err := k.GetConsumerAdjudicatedForkHeight(ctx, cid)
-	require.ErrorIs(t, err, collections.ErrNotFound)
+	_, err := k.GetConsumerPausedAt(ctx, cid)
+	require.Error(t, err)
 }

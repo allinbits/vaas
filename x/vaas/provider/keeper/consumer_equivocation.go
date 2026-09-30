@@ -187,31 +187,32 @@ func (k Keeper) VerifyDoubleVotingEvidence(
 // into politics.
 //
 // Containment is two moves, both touching only the chain that provably
-// forked and no validator's stake. The consumer's IBC client is frozen
-// through the client keeper (UpdateClient re-verifies the misbehaviour and
-// freezes the client, exactly as a relayer's MsgSubmitMisbehaviour would),
-// so packets proven against either branch of the fork stop being accepted
-// on the provider, ICS-20 escrow and vouchers included. Then the consumer is
-// paused (see containLightClientAttack): VSC service stops, both evidence
-// paths close, its pending downtime accusations are cancelled and the fees
+// forked and no validator's stake: the consumer's IBC client is frozen and
+// the consumer is paused (see containLightClientAttack). A frozen client
+// accepts no packet proven against either branch of the fork, ICS-20 escrow
+// and vouchers included; a paused consumer gets no VSC, both evidence paths
+// close, its pending downtime accusations are cancelled and the fees
 // withheld on their account repaid, and an auto-stop at MaxPauseDuration
-// guarantees governance silence converges to STOPPED. Neither move is
-// redundant with the other: a frozen client alone leaves the provider
-// serving VSCs to a compromised chain until the liveness sweep gives up on
-// it, and a pause alone leaves the client active for the relayer to keep
-// proving packets against whichever branch it follows.
+// guarantees governance silence converges to STOPPED. This message does both
+// in one transaction, through the client keeper's UpdateClient, and adds the
+// attribution. It is not the only way in: a relayer or watcher reports the
+// same misbehaviour through ibc-go's MsgUpdateClient, which freezes the
+// client without the provider hearing of it, and the BeginBlock mirror
+// (PauseConsumersWithFrozenClients) pauses a launched consumer whose client
+// is frozen, so the standard IBC path contains the fork just the same, one
+// block later and without the attribution.
 //
 // What happens after containment is a human decision in the right place.
 // Governance resumes the consumer (MsgResumeConsumer, with a forced
 // snapshot) once the fork is understood and fixed, bundling ibc-go's
 // MsgRecoverClient for the frozen client, or lets the pause expire into
-// STOPPED via MaxPauseDuration. A resume is governance's ruling on the fork
-// it was asked about: it records the recovered client's latest height (see
-// ResumeConsumerChain), and misbehaviour whose headers both sit at or below
-// that height is rejected here as adjudicated (see misbehaviourAdjudicated).
-// That closes the replay the conflicting headers would otherwise allow for
-// as long as they verify, a trusting period, while a fork at a later height
-// is new evidence and pauses the consumer again.
+// STOPPED via MaxPauseDuration. The evidence outlives the pause: a recovery
+// keeps the client's pre-fork consensus states, and the conflicting headers
+// verify against them, on either submission path, until those states age
+// out of the trusting period. A resume therefore waits out one trusting
+// period from the pause (see ResumeConsumerChain), after which the old
+// headers can no longer pause the consumer, while a fork at a later height
+// is new evidence and pauses it again.
 //
 // Returns the byzantine set mapped to provider consensus addresses.
 // Attribution is deliberately informational: it is logged and carried on the
@@ -223,11 +224,6 @@ func (k Keeper) HandleConsumerMisbehaviour(ctx sdk.Context, consumerId uint64, m
 	if phase := k.GetConsumerPhase(ctx, consumerId); phase != types.CONSUMER_PHASE_LAUNCHED {
 		return nil, errorsmod.Wrapf(types.ErrInvalidPhase,
 			"cannot handle misbehaviour for consumer %d: expected phase launched, got %s", consumerId, phase)
-	}
-
-	if adjudicated, ruled := k.misbehaviourAdjudicated(ctx, consumerId, misbehaviour); ruled {
-		return nil, errorsmod.Wrapf(types.ErrMisbehaviourAdjudicated,
-			"consumer %d: governance adjudicated forks up to client height %s at the last resume", consumerId, adjudicated)
 	}
 
 	// Check that the misbehaviour is valid and that the client consensus states at trusted heights are within trusting period
@@ -248,27 +244,6 @@ func (k Keeper) HandleConsumerMisbehaviour(ctx sdk.Context, consumerId uint64, m
 	}
 
 	return k.containLightClientAttack(ctx, consumerId, &misbehaviour, byzantineValidators)
-}
-
-// misbehaviourAdjudicated reports whether both headers of misbehaviour sit
-// at or below the fork height governance adjudicated at the consumer's last
-// resume (see ResumeConsumerChain), returning that height. Malformed headers
-// are left to CheckMisbehaviour, which rejects them with the right error.
-func (k Keeper) misbehaviourAdjudicated(ctx sdk.Context, consumerId uint64, misbehaviour ibctmtypes.Misbehaviour) (ibcclienttypes.Height, bool) {
-	adjudicated, err := k.GetConsumerAdjudicatedForkHeight(ctx, consumerId)
-	if err != nil {
-		return ibcclienttypes.Height{}, false
-	}
-	for _, header := range []*ibctmtypes.Header{misbehaviour.Header1, misbehaviour.Header2} {
-		if header == nil || header.SignedHeader == nil || header.SignedHeader.Header == nil {
-			return ibcclienttypes.Height{}, false
-		}
-	}
-	newest := misbehaviour.Header1.GetHeight()
-	if misbehaviour.Header2.GetHeight().GT(newest) {
-		newest = misbehaviour.Header2.GetHeight()
-	}
-	return adjudicated, !newest.GT(adjudicated)
 }
 
 // containLightClientAttack is the containment response to a verified

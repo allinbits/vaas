@@ -78,7 +78,6 @@ type ClientKeeper interface {
 	GetClientConsensusState(ctx sdk.Context, clientID string, height ibcexported.Height) (ibcexported.ConsensusState,
 		bool)
 	GetClientStatus(ctx sdk.Context, clientID string) ibcexported.Status
-	GetClientLatestHeight(ctx sdk.Context, clientID string) clienttypes.Height
 	// UpdateClient verifies clientMsg against the client and applies it: a
 	// header advances the client, a misbehaviour freezes it. It refuses a
 	// client that is not active.

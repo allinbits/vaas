@@ -7,7 +7,6 @@ option go_package = "github.com/allinbits/vaas/x/vaas/provider/types";
 import "cosmos_proto/cosmos.proto";
 import "gogoproto/gogo.proto";
 import "google/protobuf/timestamp.proto";
-import "ibc/core/client/v1/client.proto";
 import "vaas/v1/shared_consumer.proto";
 import "vaas/v1/wire.proto";
 import "vaas/provider/v1/provider.proto";
@@ -200,11 +199,11 @@ message ConsumerState {
   // pause_reason is why a PAUSED consumer is paused; unspecified in every
   // other phase.
   PauseReason pause_reason = 18;
-  // adjudicated_fork_height is the consumer client's latest height at the
-  // last governance resume that followed a light-client containment.
-  // Misbehaviour whose headers both sit at or below it is the fork that
-  // resume ruled on and is rejected; absent until such a resume happens.
-  ibc.core.client.v1.Height adjudicated_fork_height = 19;
+  // paused_at is when a PAUSED consumer was paused; absent in every other
+  // phase. A resume after a light-client pause waits one client trusting
+  // period from it, so the fork's evidence can no longer pause the consumer.
+  google.protobuf.Timestamp paused_at = 19
+      [ (gogoproto.stdtime) = true ];
 }
 
 // ValsetUpdateIdToHeight defines the genesis information for the mapping

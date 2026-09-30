@@ -741,6 +741,7 @@ func TestConsumerStateValidatePerPhase(t *testing.T) {
 			cs.ConsumerGenesis = nonDefaultConsumerGenesis()
 			cs.PauseExpirationTime = &rt
 			cs.PauseReason = types.PAUSE_REASON_DOWNTIME_CHALLENGE
+			cs.PausedAt = &rt
 		}, ""},
 		{"PAUSED missing pause_reason", func(cs *types.ConsumerState) {
 			*cs = base(types.CONSUMER_PHASE_PAUSED)
@@ -748,7 +749,16 @@ func TestConsumerStateValidatePerPhase(t *testing.T) {
 			cs.ClientId = "07-tendermint-0"
 			cs.ConsumerGenesis = nonDefaultConsumerGenesis()
 			cs.PauseExpirationTime = &rt
+			cs.PausedAt = &rt
 		}, "pause reason required"},
+		{"PAUSED missing paused_at", func(cs *types.ConsumerState) {
+			*cs = base(types.CONSUMER_PHASE_PAUSED)
+			cs.InitParams = validInit
+			cs.ClientId = "07-tendermint-0"
+			cs.ConsumerGenesis = nonDefaultConsumerGenesis()
+			cs.PauseExpirationTime = &rt
+			cs.PauseReason = types.PAUSE_REASON_DOWNTIME_CHALLENGE
+		}, "paused at required"},
 		{"PAUSED missing pause_expiration_time", func(cs *types.ConsumerState) {
 			*cs = base(types.CONSUMER_PHASE_PAUSED)
 			cs.InitParams = validInit
@@ -770,21 +780,13 @@ func TestConsumerStateValidatePerPhase(t *testing.T) {
 			cs.ConsumerGenesis = nonDefaultConsumerGenesis()
 			cs.PauseReason = types.PAUSE_REASON_LIGHT_CLIENT_ATTACK
 		}, "pause reason must be unspecified"},
-		{"LAUNCHED with adjudicated_fork_height", func(cs *types.ConsumerState) {
+		{"LAUNCHED with stray paused_at", func(cs *types.ConsumerState) {
 			*cs = base(types.CONSUMER_PHASE_LAUNCHED)
 			cs.InitParams = validInit
 			cs.ClientId = "07-tendermint-0"
 			cs.ConsumerGenesis = nonDefaultConsumerGenesis()
-			h := clienttypes.NewHeight(1, 500)
-			cs.AdjudicatedForkHeight = &h
-		}, ""},
-		{"LAUNCHED with zero adjudicated_fork_height", func(cs *types.ConsumerState) {
-			*cs = base(types.CONSUMER_PHASE_LAUNCHED)
-			cs.InitParams = validInit
-			cs.ClientId = "07-tendermint-0"
-			cs.ConsumerGenesis = nonDefaultConsumerGenesis()
-			cs.AdjudicatedForkHeight = &clienttypes.Height{}
-		}, "adjudicated fork height"},
+			cs.PausedAt = &rt
+		}, "paused at must be empty"},
 
 		// DELETED: chain_id + owner + init_params + metadata preserved; everything else cleared.
 		{"DELETED valid", func(cs *types.ConsumerState) {
