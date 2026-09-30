@@ -55,9 +55,8 @@ deferral in section 2. What the threshold pause does is collective: like every
 pause, it cancels every pending downtime slash and epoch downtime mark the
 consumer has sourced, for every accused validator, because a chain the
 refusal-threshold share of power refuses to run cannot have its accusations
-trusted. Fee shares withheld while those accusations stood are not repaid;
-only a successful challenge repays them (see
-[consumer-downtime.md](consumer-downtime.md)).
+trusted. Fee shares withheld while those accusations stood are repaid, as
+every pause repays them (see [consumer-downtime.md](consumer-downtime.md)).
 
 Signals of validators x/staking no longer knows at all (removed after
 unbonding to nothing) are pruned at evaluation; a validator that merely lost

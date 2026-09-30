@@ -265,6 +265,9 @@ enum PauseReason {
   // LIGHT_CLIENT_ATTACK: verified light-client misbehaviour proved the
   // consumer forked (MsgSubmitConsumerMisbehaviour).
   PAUSE_REASON_LIGHT_CLIENT_ATTACK = 2;
+  // REFUSAL_THRESHOLD: the bonded power refusing the consumer reached
+  // RefusalPauseThreshold (MsgSetConsumerRefusal, see EvaluateConsumerRefusals).
+  PAUSE_REASON_REFUSAL_THRESHOLD = 3;
 }
 
 //
