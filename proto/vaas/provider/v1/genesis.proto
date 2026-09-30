@@ -196,6 +196,14 @@ message ConsumerState {
   google.protobuf.Timestamp pause_expiration_time = 16
       [ (gogoproto.stdtime) = true ];
 
+  // pause_reason is why a PAUSED consumer is paused; unspecified in every
+  // other phase.
+  PauseReason pause_reason = 18;
+  // paused_at is when a PAUSED consumer was paused; absent in every other
+  // phase. A resume after a light-client pause waits one client trusting
+  // period from it, so the fork's evidence can no longer pause the consumer.
+  google.protobuf.Timestamp paused_at = 19
+      [ (gogoproto.stdtime) = true ];
 }
 
 // ValsetUpdateIdToHeight defines the genesis information for the mapping

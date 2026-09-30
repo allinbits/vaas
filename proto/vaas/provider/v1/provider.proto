@@ -221,6 +221,23 @@ enum ConsumerPhase {
   CONSUMER_PHASE_PAUSED = 6;
 }
 
+// PauseReason records why a consumer was moved to CONSUMER_PHASE_PAUSED. It
+// is carried on the consumer_paused event and kept for the duration of the
+// pause, so a resume can tell a light-client containment from a downtime
+// pause.
+enum PauseReason {
+  option (gogoproto.goproto_enum_prefix) = false;
+
+  // UNSPECIFIED is the absence of a pause.
+  PAUSE_REASON_UNSPECIFIED = 0;
+  // DOWNTIME_CHALLENGE: a validator proved a downtime accusation from the
+  // consumer false (MsgChallengeConsumerDowntime).
+  PAUSE_REASON_DOWNTIME_CHALLENGE = 1;
+  // LIGHT_CLIENT_ATTACK: verified light-client misbehaviour proved the
+  // consumer forked (MsgSubmitConsumerMisbehaviour).
+  PAUSE_REASON_LIGHT_CLIENT_ATTACK = 2;
+}
+
 //
 message InfractionParameters {
   SlashJailParameters double_sign = 1;

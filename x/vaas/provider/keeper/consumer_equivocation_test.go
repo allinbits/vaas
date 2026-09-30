@@ -1,6 +1,7 @@
 package keeper_test
 
 import (
+	"errors"
 	"fmt"
 	"testing"
 	"time"
@@ -10,6 +11,9 @@ import (
 	"go.uber.org/mock/gomock"
 
 	"cosmossdk.io/math"
+
+	ibcexported "github.com/cosmos/ibc-go/v10/modules/core/exported"
+	ibctmtypes "github.com/cosmos/ibc-go/v10/modules/light-clients/07-tendermint"
 
 	cryptocodec "github.com/cosmos/cosmos-sdk/crypto/codec"
 	cryptotypes "github.com/cosmos/cosmos-sdk/crypto/types"
@@ -831,4 +835,181 @@ func getTestInfractionParameters() *types.InfractionParameters {
 			Tombstone:     false,
 		},
 	}
+}
+
+// TestConfirmedLightClientAttackPausesConsumerWithoutPunishment asserts the
+// containment policy: a confirmed attack with an identifiable byzantine set
+// freezes the client, pauses the consumer and punishes nobody. No staking or
+// slashing calls are mocked, so the controller also proves that no validator
+// was slashed, jailed, or tombstoned. The byzantine set is still attributed
+// and returned.
+func TestConfirmedLightClientAttackPausesConsumerWithoutPunishment(t *testing.T) {
+	keeper, ctx, ctrl, mocks := testkeeper.GetProviderKeeperAndCtx(t, testkeeper.NewInMemKeeperParams(t))
+	defer ctrl.Finish()
+
+	ctx = ctx.WithBlockTime(time.Now())
+
+	const consumerID = uint64(0)
+	const clientID = "07-tendermint-0"
+	keeper.SetConsumerPhase(ctx, consumerID, types.CONSUMER_PHASE_LAUNCHED)
+	keeper.SetConsumerClientId(ctx, consumerID, clientID)
+	misbehaviour := &ibctmtypes.Misbehaviour{ClientId: clientID}
+	mocks.MockClientKeeper.EXPECT().GetClientStatus(gomock.Any(), clientID).Return(ibcexported.Active)
+	mocks.MockClientKeeper.EXPECT().UpdateClient(gomock.Any(), clientID, misbehaviour).Return(nil)
+
+	// Build a byzantine validator. With no assigned consumer key, its consumer
+	// consensus address is its provider consensus address.
+	byzantinePV := tmtypes.NewMockPV()
+	byzantineVal := tmtypes.NewValidator(byzantinePV.PrivKey.PubKey(), 1)
+	sdkPubKey, err := cryptocodec.FromCmtPubKeyInterface(byzantineVal.PubKey)
+	require.NoError(t, err)
+	providerAddr := types.NewProviderConsAddress(sdk.ConsAddress(sdkPubKey.Address()))
+
+	maxPause := keeper.GetMaxPauseDuration(ctx)
+	attributed, err := keeper.ContainLightClientAttackForTest(ctx, consumerID, misbehaviour, []*tmtypes.Validator{byzantineVal})
+	require.NoError(t, err)
+	require.Equal(t, []types.ProviderConsAddress{providerAddr}, attributed,
+		"the byzantine set must still be attributed for operators and governance")
+
+	// Contained, not punished: the consumer is paused with the auto-stop
+	// scheduled, and the deferred mock controller proves no slash, jail, or
+	// tombstone ever happened.
+	require.Equal(t, types.CONSUMER_PHASE_PAUSED, keeper.GetConsumerPhase(ctx, consumerID))
+	wantExpiration := ctx.BlockTime().Add(maxPause)
+	gotExpiration, err := keeper.GetConsumerPauseExpirationTime(ctx, consumerID)
+	require.NoError(t, err)
+	require.Equal(t, wantExpiration, gotExpiration)
+	queued, err := keeper.GetConsumersToBeAutoStopped(ctx, wantExpiration)
+	require.NoError(t, err)
+	require.Equal(t, []uint64{consumerID}, queued.Ids)
+}
+
+// TestUnattributableLightClientAttackStillPausesConsumer asserts that a
+// confirmed attack with no identifiable byzantine set (an amnesia attack) is
+// contained all the same: the fork is proven either way, only the attribution
+// is missing. The first containment finds the client active and freezes it;
+// a second attempt finds it frozen, skips the freeze, and fails on the phase
+// guard instead of double-scheduling the auto-stop.
+func TestUnattributableLightClientAttackStillPausesConsumer(t *testing.T) {
+	keeper, ctx, ctrl, mocks := testkeeper.GetProviderKeeperAndCtx(t, testkeeper.NewInMemKeeperParams(t))
+	defer ctrl.Finish()
+
+	ctx = ctx.WithBlockTime(time.Now())
+
+	const consumerID = uint64(0)
+	const clientID = "07-tendermint-0"
+	keeper.SetConsumerPhase(ctx, consumerID, types.CONSUMER_PHASE_LAUNCHED)
+	keeper.SetConsumerClientId(ctx, consumerID, clientID)
+	misbehaviour := &ibctmtypes.Misbehaviour{ClientId: clientID}
+
+	gomock.InOrder(
+		mocks.MockClientKeeper.EXPECT().GetClientStatus(gomock.Any(), clientID).Return(ibcexported.Active),
+		mocks.MockClientKeeper.EXPECT().UpdateClient(gomock.Any(), clientID, misbehaviour).Return(nil),
+		mocks.MockClientKeeper.EXPECT().GetClientStatus(gomock.Any(), clientID).Return(ibcexported.Frozen),
+	)
+
+	attributed, err := keeper.ContainLightClientAttackForTest(ctx, consumerID, misbehaviour, nil)
+	require.NoError(t, err)
+	require.Empty(t, attributed)
+	require.Equal(t, types.CONSUMER_PHASE_PAUSED, keeper.GetConsumerPhase(ctx, consumerID))
+
+	_, err = keeper.ContainLightClientAttackForTest(ctx, consumerID, misbehaviour, nil)
+	require.ErrorIs(t, err, types.ErrInvalidPhase,
+		"containing an already-paused consumer must fail on the phase guard")
+	wantExpiration := ctx.BlockTime().Add(keeper.GetMaxPauseDuration(ctx))
+	queued, err := keeper.GetConsumersToBeAutoStopped(ctx, wantExpiration)
+	require.NoError(t, err)
+	require.Len(t, queued.Ids, 1, "the auto-stop must not be scheduled twice")
+}
+
+// TestHandleConsumerMisbehaviourRejectsNotLaunched asserts the cheap up-front
+// gate: evidence against a consumer that is not launched (here: already
+// paused by earlier evidence) is rejected before any light-client
+// verification work, so re-submissions against a contained consumer cost
+// nothing. No client-keeper expectations are mocked, which also proves
+// CheckMisbehaviour was never reached.
+func TestHandleConsumerMisbehaviourRejectsNotLaunched(t *testing.T) {
+	keeper, ctx, ctrl, _ := testkeeper.GetProviderKeeperAndCtx(t, testkeeper.NewInMemKeeperParams(t))
+	defer ctrl.Finish()
+
+	const consumerID = uint64(0)
+	keeper.SetConsumerPhase(ctx, consumerID, types.CONSUMER_PHASE_PAUSED)
+
+	_, err := keeper.HandleConsumerMisbehaviour(ctx, consumerID, ibctmtypes.Misbehaviour{})
+	require.ErrorIs(t, err, types.ErrInvalidPhase)
+}
+
+// TestContainLightClientAttackFreezesActiveClient: containment freezes the
+// consumer's IBC client through the client keeper before pausing, so packets
+// proven against the forked headers stop being accepted on the provider, and
+// the pause is recorded under the light-client reason.
+func TestContainLightClientAttackFreezesActiveClient(t *testing.T) {
+	keeper, ctx, ctrl, mocks := testkeeper.GetProviderKeeperAndCtx(t, testkeeper.NewInMemKeeperParams(t))
+	defer ctrl.Finish()
+
+	ctx = ctx.WithBlockTime(time.Now())
+
+	const consumerID = uint64(0)
+	const clientID = "07-tendermint-0"
+	keeper.SetConsumerPhase(ctx, consumerID, types.CONSUMER_PHASE_LAUNCHED)
+	keeper.SetConsumerClientId(ctx, consumerID, clientID)
+	misbehaviour := &ibctmtypes.Misbehaviour{ClientId: clientID}
+
+	mocks.MockClientKeeper.EXPECT().GetClientStatus(gomock.Any(), clientID).Return(ibcexported.Active)
+	mocks.MockClientKeeper.EXPECT().UpdateClient(gomock.Any(), clientID, misbehaviour).Return(nil)
+
+	_, err := keeper.ContainLightClientAttackForTest(ctx, consumerID, misbehaviour, nil)
+	require.NoError(t, err)
+	require.Equal(t, types.CONSUMER_PHASE_PAUSED, keeper.GetConsumerPhase(ctx, consumerID))
+	require.Equal(t, types.PAUSE_REASON_LIGHT_CLIENT_ATTACK, keeper.GetConsumerPauseReason(ctx, consumerID))
+}
+
+// TestContainLightClientAttackLeavesANonActiveClientAlone: a client that is
+// already frozen (a relayer reported the same misbehaviour to 02-client
+// first) or expired cannot be updated, so the freeze is skipped and the
+// pause still happens. No UpdateClient expectation is set: gomock fails the
+// test if the keeper tries.
+func TestContainLightClientAttackLeavesANonActiveClientAlone(t *testing.T) {
+	for _, status := range []ibcexported.Status{ibcexported.Frozen, ibcexported.Expired} {
+		t.Run(string(status), func(t *testing.T) {
+			keeper, ctx, ctrl, mocks := testkeeper.GetProviderKeeperAndCtx(t, testkeeper.NewInMemKeeperParams(t))
+			defer ctrl.Finish()
+
+			ctx = ctx.WithBlockTime(time.Now())
+
+			const consumerID = uint64(0)
+			const clientID = "07-tendermint-0"
+			keeper.SetConsumerPhase(ctx, consumerID, types.CONSUMER_PHASE_LAUNCHED)
+			keeper.SetConsumerClientId(ctx, consumerID, clientID)
+			misbehaviour := &ibctmtypes.Misbehaviour{ClientId: clientID}
+
+			mocks.MockClientKeeper.EXPECT().GetClientStatus(gomock.Any(), clientID).Return(status)
+
+			_, err := keeper.ContainLightClientAttackForTest(ctx, consumerID, misbehaviour, nil)
+			require.NoError(t, err)
+			require.Equal(t, types.CONSUMER_PHASE_PAUSED, keeper.GetConsumerPhase(ctx, consumerID))
+		})
+	}
+}
+
+// TestContainLightClientAttackFailsWhenTheFreezeFails: a freeze the client
+// keeper refuses fails the containment before the pause, so the whole
+// submission reverts rather than leaving a paused consumer behind an active
+// client.
+func TestContainLightClientAttackFailsWhenTheFreezeFails(t *testing.T) {
+	keeper, ctx, ctrl, mocks := testkeeper.GetProviderKeeperAndCtx(t, testkeeper.NewInMemKeeperParams(t))
+	defer ctrl.Finish()
+
+	const consumerID = uint64(0)
+	const clientID = "07-tendermint-0"
+	keeper.SetConsumerPhase(ctx, consumerID, types.CONSUMER_PHASE_LAUNCHED)
+	keeper.SetConsumerClientId(ctx, consumerID, clientID)
+	misbehaviour := &ibctmtypes.Misbehaviour{ClientId: clientID}
+
+	mocks.MockClientKeeper.EXPECT().GetClientStatus(gomock.Any(), clientID).Return(ibcexported.Active)
+	mocks.MockClientKeeper.EXPECT().UpdateClient(gomock.Any(), clientID, misbehaviour).Return(errors.New("client refused the update"))
+
+	_, err := keeper.ContainLightClientAttackForTest(ctx, consumerID, misbehaviour, nil)
+	require.ErrorContains(t, err, "client refused the update")
+	require.Equal(t, types.CONSUMER_PHASE_LAUNCHED, keeper.GetConsumerPhase(ctx, consumerID))
 }

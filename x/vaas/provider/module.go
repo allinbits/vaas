@@ -155,6 +155,10 @@ func (am AppModule) BeginBlock(ctx context.Context) error {
 		return err
 	}
 
+	// Pause consumers whose IBC client was frozen by verified misbehaviour,
+	// before the liveness sweep can mistake the resulting silence for death.
+	am.keeper.PauseConsumersWithFrozenClients(sdkCtx)
+
 	// Stop consumers that have gone silent past the liveness grace period.
 	if err := am.keeper.SweepUnresponsiveConsumers(sdkCtx); err != nil {
 		return err

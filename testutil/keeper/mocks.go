@@ -604,6 +604,20 @@ func (mr *MockClientKeeperMockRecorder) IterateClientStates(ctx, storePrefix, cb
 	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "IterateClientStates", reflect.TypeOf((*MockClientKeeper)(nil).IterateClientStates), ctx, storePrefix, cb)
 }
 
+// UpdateClient mocks base method.
+func (m *MockClientKeeper) UpdateClient(ctx types.Context, clientID string, clientMsg exported.ClientMessage) error {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "UpdateClient", ctx, clientID, clientMsg)
+	ret0, _ := ret[0].(error)
+	return ret0
+}
+
+// UpdateClient indicates an expected call of UpdateClient.
+func (mr *MockClientKeeperMockRecorder) UpdateClient(ctx, clientID, clientMsg any) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "UpdateClient", reflect.TypeOf((*MockClientKeeper)(nil).UpdateClient), ctx, clientID, clientMsg)
+}
+
 // MockClientV2Keeper is a mock of ClientV2Keeper interface.
 type MockClientV2Keeper struct {
 	ctrl     *gomock.Controller

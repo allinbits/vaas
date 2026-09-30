@@ -86,6 +86,16 @@ func (k Keeper) InitGenesis(ctx sdk.Context, genState *types.GenesisState) []abc
 				panic(fmt.Errorf("init: set pause expiration time for %d: %w", consumerId, err))
 			}
 		}
+		if cs.PauseReason != types.PAUSE_REASON_UNSPECIFIED {
+			if err := k.SetConsumerPauseReason(ctx, consumerId, cs.PauseReason); err != nil {
+				panic(fmt.Errorf("init: set pause reason for %d: %w", consumerId, err))
+			}
+		}
+		if cs.PausedAt != nil {
+			if err := k.SetConsumerPausedAt(ctx, consumerId, *cs.PausedAt); err != nil {
+				panic(fmt.Errorf("init: set paused-at time for %d: %w", consumerId, err))
+			}
+		}
 		// Restore the liveness clock (see ExportGenesis): only when present, so
 		// a consumer that never launched keeps the absent-defaults.
 		if cs.LastAckTime != nil {
@@ -444,6 +454,12 @@ func (k Keeper) ExportGenesis(ctx sdk.Context) *types.GenesisState {
 			cs.PauseExpirationTime = &pet
 		} else if !errors.Is(err, collections.ErrNotFound) {
 			panic(fmt.Errorf("export: failed to read pause expiration time for consumer %d: %w", consumerId, err))
+		}
+		cs.PauseReason = k.GetConsumerPauseReason(ctx, consumerId)
+		if pausedAt, err := k.GetConsumerPausedAt(ctx, consumerId); err == nil {
+			cs.PausedAt = &pausedAt
+		} else if !errors.Is(err, collections.ErrNotFound) {
+			panic(fmt.Errorf("export: failed to read paused-at time for consumer %d: %w", consumerId, err))
 		}
 
 		// Liveness clock: export the last-ack time only when actually recorded

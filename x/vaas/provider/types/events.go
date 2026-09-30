@@ -46,4 +46,7 @@ const (
 	// AttributeConsumerClientID carries the IBC client id declared for a
 	// consumer via MsgUpdateConsumer.
 	AttributeConsumerClientID = "consumer_client_id"
+	// AttributePauseReason names, on the consumer_paused event, the
+	// PauseReason the consumer was paused for.
+	AttributePauseReason = "reason"
 )

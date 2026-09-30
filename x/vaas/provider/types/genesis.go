@@ -558,5 +558,23 @@ func (cs ConsumerState) Validate() error {
 		return fmt.Errorf("invalid phase: %s", cs.Phase)
 	}
 
+	// The pause reason and the pause time live exactly as long as the pause
+	// (see PauseConsumerChain).
+	if _, known := PauseReason_name[int32(cs.PauseReason)]; !known {
+		return fmt.Errorf("unknown pause reason %d", cs.PauseReason)
+	}
+	if cs.Phase == CONSUMER_PHASE_PAUSED && cs.PauseReason == PAUSE_REASON_UNSPECIFIED {
+		return fmt.Errorf("pause reason required for phase %s", cs.Phase)
+	}
+	if cs.Phase != CONSUMER_PHASE_PAUSED && cs.PauseReason != PAUSE_REASON_UNSPECIFIED {
+		return fmt.Errorf("pause reason must be unspecified for phase %s", cs.Phase)
+	}
+	if cs.Phase == CONSUMER_PHASE_PAUSED && cs.PausedAt == nil {
+		return fmt.Errorf("paused at required for phase %s", cs.Phase)
+	}
+	if cs.Phase != CONSUMER_PHASE_PAUSED && cs.PausedAt != nil {
+		return fmt.Errorf("paused at must be empty for phase %s", cs.Phase)
+	}
+
 	return nil
 }

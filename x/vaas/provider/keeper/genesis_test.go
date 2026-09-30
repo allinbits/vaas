@@ -304,6 +304,7 @@ func TestGenesisRoundTrip(t *testing.T) {
 	spawnAt := time.Unix(1_700_000_000, 0).UTC()
 	removeAt := time.Unix(1_800_000_000, 0).UTC()
 	pauseExpiresAt := time.Unix(1_820_000_000, 0).UTC()
+	pausedAt := time.Unix(1_816_000_000, 0).UTC()
 	ip := providertypes.ConsumerInitializationParameters{
 		InitialHeight:     clienttypes.Height{RevisionNumber: 0, RevisionHeight: 42},
 		GenesisHash:       []byte("g"),
@@ -368,6 +369,8 @@ func TestGenesisRoundTrip(t *testing.T) {
 		if s.setPET {
 			require.NoError(t, pkA.SetConsumerPauseExpirationTime(ctxA, id, pauseExpiresAt))
 			require.NoError(t, pkA.AppendConsumerToBeAutoStopped(ctxA, id, pauseExpiresAt))
+			require.NoError(t, pkA.SetConsumerPauseReason(ctxA, id, providertypes.PAUSE_REASON_DOWNTIME_CHALLENGE))
+			require.NoError(t, pkA.SetConsumerPausedAt(ctxA, id, pausedAt))
 		}
 	}
 	// Seed one entry per consumer-id-keyed key-assignment / prune collection
@@ -872,4 +875,76 @@ func TestInitGenesisAcceptsDefaultGenesis(t *testing.T) {
 	mocks.MockStakingKeeper.EXPECT().GetBondedValidatorsByPower(gomock.Any()).Return(nil, nil).Times(1)
 
 	require.NotPanics(t, func() { k.InitGenesis(ctx, providertypes.DefaultGenesisState()) })
+}
+
+// TestGenesisRoundTripKeepsPauseReasonAndPausedAt: the reason a consumer is
+// paused for and the time it was paused at travel through export, validation
+// and import, and a launched consumer carries neither.
+func TestGenesisRoundTripKeepsPauseReasonAndPausedAt(t *testing.T) {
+	pkA, ctxA, ctrlA, mocksA := testkeeper.GetProviderKeeperAndCtx(t, testkeeper.NewInMemKeeperParams(t))
+	defer ctrlA.Finish()
+	pkA.SetParams(ctxA, providertypes.DefaultParams())
+	pkA.SetValidatorSetUpdateId(ctxA, 1)
+
+	owner := sdk.AccAddress([]byte("vaas-test-owner-1234")).String()
+	md := providertypes.ConsumerMetadata{Name: "n", Description: "d", Metadata: "m"}
+	ip := providertypes.ConsumerInitializationParameters{
+		InitialHeight:     clienttypes.Height{RevisionNumber: 0, RevisionHeight: 42},
+		GenesisHash:       []byte("g"),
+		BinaryHash:        []byte("b"),
+		SpawnTime:         time.Unix(1_700_000_000, 0).UTC(),
+		UnbondingPeriod:   time.Hour,
+		VaasTimeoutPeriod: time.Hour,
+		HistoricalEntries: 10,
+	}
+	cg := *vaastypes.DefaultConsumerGenesisState()
+	cg.NewChain = true
+	seed := func(chainId string, phase providertypes.ConsumerPhase, clientId string) uint64 {
+		id := pkA.FetchAndIncrementConsumerId(ctxA)
+		pkA.SetConsumerChainId(ctxA, id, chainId)
+		pkA.SetConsumerPhase(ctxA, id, phase)
+		pkA.SetConsumerOwnerAddress(ctxA, id, owner)
+		require.NoError(t, pkA.SetConsumerMetadata(ctxA, id, md))
+		require.NoError(t, pkA.SetConsumerInitializationParameters(ctxA, id, ip))
+		pkA.SetConsumerClientId(ctxA, id, clientId)
+		require.NoError(t, pkA.SetConsumerGenesis(ctxA, id, cg))
+		pkA.SetEquivocationEvidenceMinHeight(ctxA, id, ip.InitialHeight.RevisionHeight)
+		return id
+	}
+
+	// consumer 0: paused after a light-client containment.
+	paused := seed("consumer-alpha", providertypes.CONSUMER_PHASE_PAUSED, "07-tendermint-0")
+	pauseExpiresAt := time.Unix(1_820_000_000, 0).UTC()
+	require.NoError(t, pkA.SetConsumerPauseExpirationTime(ctxA, paused, pauseExpiresAt))
+	require.NoError(t, pkA.AppendConsumerToBeAutoStopped(ctxA, paused, pauseExpiresAt))
+	require.NoError(t, pkA.SetConsumerPauseReason(ctxA, paused, providertypes.PAUSE_REASON_LIGHT_CLIENT_ATTACK))
+	pausedAt := time.Unix(1_816_000_000, 0).UTC()
+	require.NoError(t, pkA.SetConsumerPausedAt(ctxA, paused, pausedAt))
+
+	// consumer 1: launched, never paused.
+	launched := seed("consumer-beta", providertypes.CONSUMER_PHASE_LAUNCHED, "07-tendermint-1")
+
+	expA := pkA.ExportGenesis(ctxA)
+	require.NoError(t, expA.Validate(), "export must validate")
+	require.Len(t, expA.ConsumerStates, 2)
+	require.Equal(t, providertypes.PAUSE_REASON_LIGHT_CLIENT_ATTACK, expA.ConsumerStates[0].PauseReason)
+	require.Equal(t, &pausedAt, expA.ConsumerStates[0].PausedAt)
+	require.Equal(t, providertypes.PAUSE_REASON_UNSPECIFIED, expA.ConsumerStates[1].PauseReason)
+	require.Nil(t, expA.ConsumerStates[1].PausedAt)
+
+	pkB, ctxB, ctrlB, mocksB := testkeeper.GetProviderKeeperAndCtx(t, testkeeper.NewInMemKeeperParams(t))
+	defer ctrlB.Finish()
+	mocksA.MockStakingKeeper.EXPECT().GetBondedValidatorsByPower(gomock.Any()).Return(nil, nil).AnyTimes()
+	mocksB.MockStakingKeeper.EXPECT().GetBondedValidatorsByPower(gomock.Any()).Return(nil, nil).AnyTimes()
+	mocksB.MockBankKeeper.EXPECT().GetAllBalances(gomock.Any(), gomock.Any()).Return(sdk.NewCoins()).AnyTimes()
+
+	_ = pkB.InitGenesis(ctxB, expA)
+
+	require.Equal(t, providertypes.PAUSE_REASON_LIGHT_CLIENT_ATTACK, pkB.GetConsumerPauseReason(ctxB, paused))
+	got, err := pkB.GetConsumerPausedAt(ctxB, paused)
+	require.NoError(t, err)
+	require.Equal(t, pausedAt, got)
+	require.Equal(t, providertypes.PAUSE_REASON_UNSPECIFIED, pkB.GetConsumerPauseReason(ctxB, launched))
+	_, err = pkB.GetConsumerPausedAt(ctxB, launched)
+	require.Error(t, err)
 }

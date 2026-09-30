@@ -78,6 +78,10 @@ type ClientKeeper interface {
 	GetClientConsensusState(ctx sdk.Context, clientID string, height ibcexported.Height) (ibcexported.ConsensusState,
 		bool)
 	GetClientStatus(ctx sdk.Context, clientID string) ibcexported.Status
+	// UpdateClient verifies clientMsg against the client and applies it: a
+	// header advances the client, a misbehaviour freezes it. It refuses a
+	// client that is not active.
+	UpdateClient(ctx sdk.Context, clientID string, clientMsg ibcexported.ClientMessage) error
 	GetStoreProvider() clienttypes.StoreProvider
 	IterateClientStates(ctx sdk.Context, storePrefix []byte, cb func(clientID string, cs ibcexported.ClientState) bool)
 }

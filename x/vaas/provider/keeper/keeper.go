@@ -91,6 +91,14 @@ type Keeper struct {
 	// requires phase STOPPED and would reject a still-PAUSED consumer.
 	ConsumerPauseExpirationTime      collections.Map[uint64, []byte]
 	PauseExpirationTimeToConsumerIds collections.Map[[]byte, types.ConsumerIds]
+	// ConsumerPauseReason keeps, per paused consumer, the PauseReason it was
+	// paused for: set by PauseConsumerChain, cleared when the consumer leaves
+	// PAUSED (ResumeConsumerChain, StopAndPrepareForConsumerRemoval).
+	ConsumerPauseReason collections.Map[uint64, int32]
+	// ConsumerPausedAt keeps, per paused consumer, the block time it was paused
+	// at; a resume after a light-client pause waits one client trusting period
+	// from it (see ResumeConsumerChain). Cleared with the pause reason.
+	ConsumerPausedAt collections.Map[uint64, []byte]
 
 	// Key assignment collections
 	ValidatorConsumerPubKey collections.Map[collections.Pair[uint64, []byte], []byte]
@@ -279,6 +287,8 @@ func NewKeeper(
 		RemovalTimeToConsumerIds:         collections.NewMap(sb, types.RemovalTimeToConsumerIdsPrefix, "removal_time_to_consumer_ids", collections.BytesKey, codec.CollValue[types.ConsumerIds](cdc)),
 		ConsumerPauseExpirationTime:      collections.NewMap(sb, types.ConsumerIdToPauseExpirationTimePrefix, types.ConsumerIdToPauseExpirationTimeKeyName, collections.Uint64Key, collections.BytesValue),
 		PauseExpirationTimeToConsumerIds: collections.NewMap(sb, types.PauseExpirationTimeToConsumerIdsPrefix, types.PauseExpirationTimeToConsumerIdsKeyName, collections.BytesKey, codec.CollValue[types.ConsumerIds](cdc)),
+		ConsumerPauseReason:              collections.NewMap(sb, types.ConsumerPauseReasonPrefix, types.ConsumerPauseReasonKeyName, collections.Uint64Key, collections.Int32Value),
+		ConsumerPausedAt:                 collections.NewMap(sb, types.ConsumerPausedAtPrefix, types.ConsumerPausedAtKeyName, collections.Uint64Key, collections.BytesValue),
 
 		// Key assignment collections
 		ValidatorConsumerPubKey: collections.NewMap(sb, types.ConsumerValidatorsPrefix, "validator_consumer_pub_key", collections.PairKeyCodec(collections.Uint64Key, collections.BytesKey), collections.BytesValue),
@@ -932,6 +942,61 @@ func (k Keeper) GetConsumerPauseExpirationTime(ctx context.Context, consumerId u
 func (k Keeper) DeleteConsumerPauseExpirationTime(ctx context.Context, consumerId uint64) {
 	if err := k.ConsumerPauseExpirationTime.Remove(ctx, consumerId); err != nil {
 		panic(fmt.Errorf("failed to delete pause expiration time for consumer id (%d): %w", consumerId, err))
+	}
+}
+
+// SetConsumerPauseReason records why consumerId is paused.
+func (k Keeper) SetConsumerPauseReason(ctx context.Context, consumerId uint64, reason types.PauseReason) error {
+	return k.ConsumerPauseReason.Set(ctx, consumerId, int32(reason))
+}
+
+// GetConsumerPauseReason returns why consumerId is paused, or
+// PAUSE_REASON_UNSPECIFIED when it is not paused.
+func (k Keeper) GetConsumerPauseReason(ctx context.Context, consumerId uint64) types.PauseReason {
+	reason, err := k.ConsumerPauseReason.Get(ctx, consumerId)
+	if err != nil {
+		return types.PAUSE_REASON_UNSPECIFIED
+	}
+	return types.PauseReason(reason)
+}
+
+// DeleteConsumerPauseReason forgets why consumerId was paused.
+func (k Keeper) DeleteConsumerPauseReason(ctx context.Context, consumerId uint64) {
+	if err := k.ConsumerPauseReason.Remove(ctx, consumerId); err != nil {
+		panic(fmt.Errorf("failed to delete pause reason for consumer id (%d): %w", consumerId, err))
+	}
+}
+
+// SetConsumerPausedAt records when consumerId was paused.
+func (k Keeper) SetConsumerPausedAt(ctx context.Context, consumerId uint64, pausedAt time.Time) error {
+	buf, err := pausedAt.MarshalBinary()
+	if err != nil {
+		return fmt.Errorf("failed to marshal paused-at time (%+v) for consumer id (%d): %w", pausedAt, consumerId, err)
+	}
+	if err := k.ConsumerPausedAt.Set(ctx, consumerId, buf); err != nil {
+		return fmt.Errorf("failed to set paused-at time for consumer id (%d): %w", consumerId, err)
+	}
+	return nil
+}
+
+// GetConsumerPausedAt returns when consumerId was paused; an error wrapping
+// collections.ErrNotFound when it is not paused.
+func (k Keeper) GetConsumerPausedAt(ctx context.Context, consumerId uint64) (time.Time, error) {
+	buf, err := k.ConsumerPausedAt.Get(ctx, consumerId)
+	if err != nil {
+		return time.Time{}, fmt.Errorf("failed to retrieve paused-at time for consumer id (%d): %w", consumerId, err)
+	}
+	var t time.Time
+	if err := t.UnmarshalBinary(buf); err != nil {
+		return time.Time{}, fmt.Errorf("failed to unmarshal paused-at time for consumer id (%d): %w", consumerId, err)
+	}
+	return t, nil
+}
+
+// DeleteConsumerPausedAt forgets when consumerId was paused.
+func (k Keeper) DeleteConsumerPausedAt(ctx context.Context, consumerId uint64) {
+	if err := k.ConsumerPausedAt.Remove(ctx, consumerId); err != nil {
+		panic(fmt.Errorf("failed to delete paused-at time for consumer id (%d): %w", consumerId, err))
 	}
 }
 
