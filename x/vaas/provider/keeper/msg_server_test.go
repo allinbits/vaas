@@ -1,7 +1,6 @@
 package keeper_test
 
 import (
-	"fmt"
 	"strconv"
 	"sync"
 	"testing"
@@ -793,93 +792,41 @@ func TestUpdateInfractionParams(t *testing.T) {
 	}
 }
 
-// TestUpdateInfractionParamsAgainstAdoptedClients verifies that widening the
-// challengeable interval (evidence max age + challenge window) past the trusting
-// period of an already-adopted consumer client is rejected -- such an interval
-// would leave the oldest challengeable header unverifiable, so pending slashes
-// on that consumer would execute undefended -- while a widening that still fits
-// every adopted client, and any narrowing, are accepted. The narrowing case is
-// checked with a client too short even for the current interval: a chain in that
-// state must still be able to correct itself.
-func TestUpdateInfractionParamsAgainstAdoptedClients(t *testing.T) {
-	// The stored starting point: 72h + 168h = 240h.
-	current := providertypes.DefaultInfractionParameters()
+// TestUpdateInfractionParamsIgnoresAdoptedClientTrustingPeriods: the
+// challengeable interval (evidence max age + challenge window) is bounded by
+// the default trusting period only. A consumer adopted with a shorter
+// trusting period does not veto a provider-wide change: no client state is
+// read (no GetClientState expectation is set, so gomock fails the test if
+// the keeper asks), and evidence acceptance bounds itself against that
+// client instead (see TestHandleConsumerDowntimeRejectsEvidenceTooOldToStayChallengeable).
+func TestUpdateInfractionParamsIgnoresAdoptedClientTrustingPeriods(t *testing.T) {
+	k, ctx, ctrl, _ := testkeeper.GetProviderKeeperAndCtx(t, testkeeper.NewInMemKeeperParams(t))
+	defer ctrl.Finish()
+	k.SetParams(ctx, providertypes.DefaultParams())
+	k.SetInfractionParams(ctx, providertypes.DefaultInfractionParameters())
+	k.SetConsumerClientId(ctx, 0, "07-tendermint-0")
 
-	widenPast := providertypes.DefaultInfractionParameters()
-	widenPast.DowntimeEvidenceMaxAge = 100 * time.Hour
-	widenPast.DowntimeChallengeWindow = 160 * time.Hour // 260h
+	widenWithinDefault := providertypes.DefaultInfractionParameters()
+	widenWithinDefault.DowntimeEvidenceMaxAge = 85 * time.Hour
+	widenWithinDefault.DowntimeChallengeWindow = 160 * time.Hour // 245h, below the default trusting period
 
-	widenWithin := providertypes.DefaultInfractionParameters()
-	widenWithin.DowntimeEvidenceMaxAge = 85 * time.Hour
-	widenWithin.DowntimeChallengeWindow = 160 * time.Hour // 245h
+	msgSrv := providerkeeper.NewMsgServerImpl(&k)
+	_, err := msgSrv.UpdateInfractionParams(ctx, &providertypes.MsgUpdateInfractionParams{
+		Authority:            k.GetAuthority(),
+		InfractionParameters: widenWithinDefault,
+	})
+	require.NoError(t, err)
+	require.Equal(t, widenWithinDefault, k.GetInfractionParams(ctx))
 
-	narrow := providertypes.DefaultInfractionParameters()
-	narrow.DowntimeEvidenceMaxAge = 50 * time.Hour
-	narrow.DowntimeChallengeWindow = 100 * time.Hour // 150h
-
-	cases := []struct {
-		name            string
-		trustingPeriods map[uint64]time.Duration
-		params          providertypes.InfractionParameters
-		wantErr         string
-	}{
-		{
-			name:            "widening past the shortest adopted client is rejected",
-			trustingPeriods: map[uint64]time.Duration{0: 300 * time.Hour, 1: 250 * time.Hour},
-			params:          widenPast,
-			wantErr:         "must be below the trusting period (250h0m0s) of client 07-tendermint-1, already adopted for consumer 1",
-		},
-		{
-			name:            "widening that still fits every adopted client is accepted",
-			trustingPeriods: map[uint64]time.Duration{0: 300 * time.Hour, 1: 250 * time.Hour},
-			params:          widenWithin,
-		},
-		{
-			name:            "widening is unconstrained when no client is adopted yet",
-			trustingPeriods: nil,
-			params:          widenPast,
-		},
-		{
-			// 240h down to 150h, against a client that trusts only 100h: still
-			// wider than that client can support, but strictly better than what
-			// it replaces, so it must go through. A chain that reaches this state
-			// has to be able to walk itself back out of it.
-			name:            "narrowing is allowed even when it stays above an adopted client's trusting period",
-			trustingPeriods: map[uint64]time.Duration{0: 100 * time.Hour},
-			params:          narrow,
-		},
-	}
-
-	for _, tc := range cases {
-		t.Run(tc.name, func(t *testing.T) {
-			k, ctx, ctrl, mocks := testkeeper.GetProviderKeeperAndCtx(t, testkeeper.NewInMemKeeperParams(t))
-			defer ctrl.Finish()
-			k.SetParams(ctx, providertypes.DefaultParams())
-			k.SetInfractionParams(ctx, current)
-
-			for consumerId, trustingPeriod := range tc.trustingPeriods {
-				clientId := fmt.Sprintf("07-tendermint-%d", consumerId)
-				k.SetConsumerClientId(ctx, consumerId, clientId)
-				mocks.MockClientKeeper.EXPECT().GetClientState(ctx, clientId).
-					Return(&ibctmtypes.ClientState{TrustingPeriod: trustingPeriod}, true).AnyTimes()
-			}
-
-			msgSrv := providerkeeper.NewMsgServerImpl(&k)
-			_, err := msgSrv.UpdateInfractionParams(ctx, &providertypes.MsgUpdateInfractionParams{
-				Authority:            k.GetAuthority(),
-				InfractionParameters: tc.params,
-			})
-
-			if tc.wantErr != "" {
-				require.ErrorContains(t, err, tc.wantErr)
-				require.Equal(t, current, k.GetInfractionParams(ctx),
-					"a rejected update must not have been applied")
-				return
-			}
-			require.NoError(t, err)
-			require.Equal(t, tc.params, k.GetInfractionParams(ctx))
-		})
-	}
+	widenPastDefault := providertypes.DefaultInfractionParameters()
+	widenPastDefault.DowntimeEvidenceMaxAge = 300 * time.Hour
+	widenPastDefault.DowntimeChallengeWindow = 300 * time.Hour
+	_, err = msgSrv.UpdateInfractionParams(ctx, &providertypes.MsgUpdateInfractionParams{
+		Authority:            k.GetAuthority(),
+		InfractionParameters: widenPastDefault,
+	})
+	require.ErrorContains(t, err, "must be below the default trusting period")
+	require.Equal(t, widenWithinDefault, k.GetInfractionParams(ctx), "a rejected update must not have been applied")
 }
 
 // TestUpdateInfractionParamsRecordsPreviousDowntimeParams verifies that the

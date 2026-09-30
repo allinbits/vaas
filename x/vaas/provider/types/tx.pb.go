@@ -385,11 +385,14 @@ var xxx_messageInfo_MsgUpdateParamsResponse proto.InternalMessageInfo
 // handlers enforce the cross-parameter constraint the two sides share (see
 // ValidateInfractionParamsAgainst), each against the stored other half.
 //
-// A proposal that widens downtime_evidence_max_age +
-// downtime_challenge_window past the trusting period of a consumer client the
-// provider has already adopted is rejected: challenges on that consumer would
-// no longer verify, so its pending slashes would execute undefended.
-// Narrowing is never blocked.
+// The challengeable interval, downtime_evidence_max_age +
+// downtime_challenge_window, is bounded by the trusting period derived from
+// the default consumer unbonding period only, never by the clients already
+// adopted for consumers: a consumer adopted with a shorter trusting period
+// would otherwise veto a provider-wide change. The client that verifies a
+// challenge bounds evidence at acceptance instead (see HandleConsumerDowntime),
+// so every accusation the provider accepts stays challengeable for its whole
+// window whatever the parameters say.
 //
 // A change to signed_blocks_window or min_signed_per_window redefines the
 // downtime SLA consumers compute their bitmaps against. Consumers learn the

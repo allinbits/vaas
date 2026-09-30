@@ -13,6 +13,8 @@ import (
 	"cosmossdk.io/math"
 
 	cryptocodec "github.com/cosmos/cosmos-sdk/crypto/codec"
+	ibctmtypes "github.com/cosmos/ibc-go/v10/modules/light-clients/07-tendermint"
+
 	sdk "github.com/cosmos/cosmos-sdk/types"
 	stakingtypes "github.com/cosmos/cosmos-sdk/x/staking/types"
 
@@ -36,6 +38,23 @@ func setupDowntimeTest(
 	infractionParams types.InfractionParameters,
 	spawnTime time.Time,
 	windowEndTime time.Time,
+) (providerkeeper.Keeper, sdk.Context, *gomock.Controller, testkeeper.MockedKeepers, uint64, types.ProviderConsAddress) {
+	t.Helper()
+	// A trusting period no test's challengeable interval comes near, so the
+	// per-client acceptance bound stays out of the way unless a test sets
+	// its own through setupDowntimeTestWithTrustingPeriod.
+	return setupDowntimeTestWithTrustingPeriod(t, infractionParams, spawnTime, windowEndTime, 365*24*time.Hour)
+}
+
+// setupDowntimeTestWithTrustingPeriod is setupDowntimeTest with the consumer
+// client's trusting period, which the acceptance path reads, under the
+// test's control.
+func setupDowntimeTestWithTrustingPeriod(
+	t *testing.T,
+	infractionParams types.InfractionParameters,
+	spawnTime time.Time,
+	windowEndTime time.Time,
+	trustingPeriod time.Duration,
 ) (providerkeeper.Keeper, sdk.Context, *gomock.Controller, testkeeper.MockedKeepers, uint64, types.ProviderConsAddress) {
 	t.Helper()
 	keeperParams := testkeeper.NewInMemKeeperParams(t)
@@ -74,8 +93,52 @@ func setupDowntimeTest(
 	providerKeeper.OverrideWindowEndTimestampForTest(func(_ sdk.Context, _ string, _ int64) (time.Time, error) {
 		return windowEndTime, nil
 	})
+	mocks.MockClientKeeper.EXPECT().GetClientState(gomock.Any(), "07-tendermint-0").
+		Return(&ibctmtypes.ClientState{TrustingPeriod: trustingPeriod}, true).AnyTimes()
 
 	return providerKeeper, ctx, ctrl, mocks, consumerId, providerAddr
+}
+
+// TestHandleConsumerDowntimeRejectsEvidenceTooOldToStayChallengeable: an
+// accusation is accepted only if its whole challenge window fits inside the
+// consumer client's trusting period, counted from the window end, so the
+// accused can still verify a challenge header at the end of it. The
+// parameter-level bound uses the default trusting period; this is what
+// protects a consumer whose client trusts for less.
+func TestHandleConsumerDowntimeRejectsEvidenceTooOldToStayChallengeable(t *testing.T) {
+	windowEndTime := time.Date(2025, 6, 1, 0, 0, 0, 0, time.UTC)
+	spawnTime := windowEndTime.Add(-30 * 24 * time.Hour)
+	// max age 72h, challenge window 168h: the default 240h interval, against
+	// a client trusting for only 200h.
+	infractionParams := downtimeParams(8, "0.5", 0, 168*time.Hour, 72*time.Hour)
+	const trustingPeriod = 200 * time.Hour
+
+	evidenceFor := func(providerAddr types.ProviderConsAddress) vaastypes.EvidencePacketData {
+		return vaastypes.NewEvidencePacketData(sdk.ConsAddress(providerAddr.ToSdkConsAddr()), 93, []byte{0x3F}, 8, 8, math.LegacyMustNewDecFromStr("0.5"))
+	}
+
+	t.Run("40h old: 40h + 168h reaches past the 200h trusting period", func(t *testing.T) {
+		providerKeeper, ctx, ctrl, _, consumerId, providerAddr := setupDowntimeTestWithTrustingPeriod(t, infractionParams, spawnTime, windowEndTime, trustingPeriod)
+		defer ctrl.Finish()
+		ctx = ctx.WithBlockTime(windowEndTime.Add(40 * time.Hour))
+
+		err := providerKeeper.HandleConsumerEvidencePacket(ctx, consumerId, evidenceFor(providerAddr))
+		require.ErrorContains(t, err, "too old to stay challengeable against client 07-tendermint-0")
+		_, err = providerKeeper.PendingDowntimeSlashes.Get(ctx, collections.Join3(consumerId, providerAddr.ToSdkConsAddr().Bytes(), int64(100)))
+		require.ErrorIs(t, err, collections.ErrNotFound, "nothing may be queued for a rejected accusation")
+	})
+
+	t.Run("30h old: 30h + 168h still fits, accepted and priced", func(t *testing.T) {
+		providerKeeper, ctx, ctrl, mocks, consumerId, providerAddr := setupDowntimeTestWithTrustingPeriod(t, infractionParams, spawnTime, windowEndTime, trustingPeriod)
+		defer ctrl.Finish()
+		ctx = ctx.WithBlockTime(windowEndTime.Add(30 * time.Hour))
+		providerKeeper.SetEpochShareRecord(ctx, consumerId, windowEndTime, math.NewInt(1000))
+		mocks.MockPhotonKeeper.EXPECT().ConversionRate(ctx).Return(math.LegacyNewDec(2), nil)
+
+		require.NoError(t, providerKeeper.HandleConsumerEvidencePacket(ctx, consumerId, evidenceFor(providerAddr)))
+		_, err := providerKeeper.PendingDowntimeSlashes.Get(ctx, collections.Join3(consumerId, providerAddr.ToSdkConsAddr().Bytes(), int64(100)))
+		require.NoError(t, err)
+	})
 }
 
 // downtimeParams returns InfractionParameters carrying only the fields
