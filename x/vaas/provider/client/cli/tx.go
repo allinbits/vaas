@@ -660,6 +660,10 @@ Example:
 			if err != nil {
 				return err
 			}
+			consensusHeights, err := fetchConsensusStateHeights(ctx, ibcClientQuerier, chainResp.ClientId)
+			if err != nil {
+				return fmt.Errorf("querying consensus state heights for client %s: %w", chainResp.ClientId, err)
+			}
 			var trustedHeight clienttypes.Height
 			if trustedHeightOverride != 0 {
 				trustedHeight = clienttypes.NewHeight(headerHeight.RevisionNumber, trustedHeightOverride)
@@ -667,11 +671,11 @@ Example:
 					return fmt.Errorf("--%s %d is not below the header height %d (claimed-height+1); the light client rejects a header at or below its trusted height",
 						FlagTrustedHeight, trustedHeightOverride, nextHeight)
 				}
-			} else {
-				consensusHeights, err := fetchConsensusStateHeights(ctx, ibcClientQuerier, chainResp.ClientId)
-				if err != nil {
-					return fmt.Errorf("querying consensus state heights for client %s: %w", chainResp.ClientId, err)
+				if !containsHeight(consensusHeights, trustedHeight) {
+					return fmt.Errorf("--%s %d: client %s stores no consensus state at that height, so the header cannot be verified against it",
+						FlagTrustedHeight, trustedHeightOverride, chainResp.ClientId)
 				}
+			} else {
 				var found bool
 				trustedHeight, found = highestHeightBelow(consensusHeights, headerHeight)
 				if !found {
@@ -749,6 +753,12 @@ func fetchAllValidators(ctx context.Context, rpcClient *rpchttp.HTTP, height int
 	}
 }
 
+// consensusStateHeightsPageLimit is how many heights one
+// ConsensusStateHeights page asks for: a long-lived client stores thousands
+// of consensus states, and the default page of 100 would turn the lookup
+// into that many serial round-trips.
+const consensusStateHeightsPageLimit = 10_000
+
 // fetchConsensusStateHeights pages through the provider's
 // ibc.core.client.v1.Query/ConsensusStateHeights endpoint to return every
 // height at which the client identified by clientId stores a consensus
@@ -760,7 +770,7 @@ func fetchConsensusStateHeights(ctx context.Context, queryClient clienttypes.Que
 	for {
 		res, err := queryClient.ConsensusStateHeights(ctx, &clienttypes.QueryConsensusStateHeightsRequest{
 			ClientId:   clientId,
-			Pagination: &query.PageRequest{Key: nextKey},
+			Pagination: &query.PageRequest{Key: nextKey, Limit: consensusStateHeightsPageLimit},
 		})
 		if err != nil {
 			return nil, err
@@ -771,6 +781,17 @@ func fetchConsensusStateHeights(ctx context.Context, queryClient clienttypes.Que
 		}
 		nextKey = res.Pagination.NextKey
 	}
+}
+
+// containsHeight reports whether heights holds h exactly, revision number
+// and revision height both.
+func containsHeight(heights []clienttypes.Height, h clienttypes.Height) bool {
+	for _, stored := range heights {
+		if stored.EQ(h) {
+			return true
+		}
+	}
+	return false
 }
 
 // highestHeightBelow returns the highest of heights that shares bound's
