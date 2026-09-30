@@ -81,9 +81,10 @@ func (k msgServer) UpdateParams(goCtx context.Context, msg *types.MsgUpdateParam
 // window, the challenge window and the evidence max age. They are stored
 // outside Params, so they have their own governance message; both handlers
 // enforce the constraint the two halves share, each against the stored other
-// half. Widening the challengeable interval is additionally checked against the
-// consumer clients already adopted, which no later discovery would repair (see
-// ValidateInfractionParamsAgainstAdoptedClients).
+// half. That bound is the default trusting period only: a consumer adopted
+// with a shorter trusting period does not veto a provider-wide change, its
+// evidence is bounded against its own client at acceptance instead (see
+// HandleConsumerDowntime).
 //
 // Changing signed_blocks_window or min_signed_per_window redefines the SLA
 // consumers compute their bitmaps against. SetInfractionParams records the
@@ -105,10 +106,6 @@ func (k msgServer) UpdateInfractionParams(goCtx context.Context, msg *types.MsgU
 	ctx := sdk.UnwrapSDKContext(goCtx)
 
 	if err := types.ValidateInfractionParamsAgainst(msg.InfractionParameters, k.GetParams(ctx).TrustingPeriodFraction); err != nil {
-		return nil, err
-	}
-
-	if err := k.ValidateInfractionParamsAgainstAdoptedClients(ctx, msg.InfractionParameters); err != nil {
 		return nil, err
 	}
 
