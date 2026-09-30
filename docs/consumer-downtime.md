@@ -72,11 +72,17 @@ on, so the provider owns them:
 - The consumer's `MsgUpdateParams` preserves the stored values; they are not locally
   changeable.
 
-Because an update can race in-flight evidence, packets echo the params they were computed
-under, and the provider accepts evidence computed under either its current values or the
-immediately previous ones (within the evidence-age horizon). Staged values are validated
-before activation: a malformed update (zero window, out-of-range fraction) is logged and
-dropped rather than applied.
+Governance changes them with `MsgUpdateInfractionParams` (section 8). Because a change can
+race in-flight evidence, packets echo the params they were computed under, and the provider
+accepts evidence computed under either its current values or the immediately previous ones.
+The superseded pair is recorded with the block time of the change and stays acceptable for
+`DowntimeEvidenceMaxAge + DowntimeChallengeWindow` afterwards (10 days at the defaults),
+exactly as long as evidence computed under it could still be inside its own challenge window
+(`AcceptableDowntimeParams`). A packet is always judged by the threshold its echoed values
+imply, never by the live one, so widening the window mid-flight neither retroactively excuses
+nor retroactively creates an infraction. Staged values are validated before activation: a
+malformed update (zero window, out-of-range fraction) is logged and dropped rather than
+applied.
 
 ## 3. Provider validation of incoming evidence
 
@@ -89,11 +95,24 @@ acknowledgement at the first failure:
 3. **Identity** -- the consumer consensus address maps to a known provider validator that is
    in this consumer's validator set; the window end respects the consumer's minimum evidence
    height.
-4. **Time anchoring** -- the window-end timestamp is taken from the smallest stored consensus
-   state at or above the window-end height (the IBC client's own verified history). Against
-   that anchor: the window must end after the launch grace period
-   (`SpawnTime + DowntimeGracePeriod`), and must be no older than `DowntimeEvidenceMaxAge`
-   at receipt -- old windows are rejected because their challenge data availability decays.
+4. **Time anchoring** -- the window-end height must be *bracketed* by two consensus states
+   the provider's IBC client for this consumer still stores, each doing a different job. The
+   smallest stored height at or above the window end proves the consumer chain actually
+   reached it. The largest stored height at or below it supplies the timestamp: consumer
+   block times rise with height, so that state's timestamp is a verified lower bound on the
+   true window-end time, and the anchor can therefore never place the window end later than
+   it really was. Against that anchor: the window must end after the launch grace period
+   (`SpawnTime + DowntimeGracePeriod`), must be no older than `DowntimeEvidenceMaxAge`
+   at receipt -- old windows are rejected because their challenge data availability decays --
+   and must leave the whole `DowntimeChallengeWindow` inside the consumer client's trusting
+   period, so the accused can still verify a challenge header at the end of it.
+   Anchoring to the upper state instead would overstate the window-end time by however far
+   the client skipped past it, understating the evidence's age by the same amount and
+   admitting evidence whose challenge data is already gone; anchoring to the lower state
+   biases the error the safe way, so a computed age is never smaller than the real one.
+   Evidence whose window end is not bracketed -- typically because the states around it
+   expired and were pruned, or because relaying was idle across the window -- is rejected
+   with `cannot anchor downtime evidence window`; section 9 covers how to read that.
 5. **No re-acceptance** -- the window must not intersect any window already accepted for
    this validator on this consumer (`AcceptedDowntimeWindows`, one record per accepted
    window, written at acceptance), and must start above the pair's pruned acceptance floor
@@ -124,9 +143,16 @@ Note what is deliberately *not* checked: the truth of the bitmap. That is the ch
 mechanism's job (section 6).
 
 On acceptance the provider does three things: it marks the validator for **fee exclusion**
-in the current epoch (section 5), it prices and stores a **pending slash** (section 4), and
-it emits an event carrying the claimed window and bitmap so the accused validator can see
-exactly which heights it must disprove.
+for the epoch the window falls in, if that epoch has not yet been distributed (section 5),
+it prices and stores a **pending slash** (section 4), and it emits
+**`vaas_pending_downtime_slash`** carrying the claimed window, the bitmap, the priced
+`slash_tokens`, and `matures_at`, so the accused validator can see exactly which heights it
+must disprove and by when.
+
+A rejected packet emits nothing on the provider -- the rejection travels back as an IBC
+error acknowledgement, and the *consumer* surfaces it as
+`vaas_consumer_evidence_rejected` (with the raw ack in the `error` attribute) and drops
+the packet rather than retrying it. See [events-reference.md](events-reference.md).
 
 ## 4. Pricing and execution: P*M/C behind a challenge window
 
@@ -140,7 +166,9 @@ slash_tokens = (P * M) / C
   in. Each epoch distribution records the share it paid (zero for an epoch where nothing was
   paid out); evidence for a past epoch resolves against that record, evidence for the
   current epoch prices live. Downtime during an epoch the consumer did not pay for prices to
-  zero -- no fees were foregone, so the slash is vacuous (the fee exclusion still applies).
+  zero -- no fees were foregone, so the slash is vacuous, and because that epoch has already
+  been recorded there is no fee exclusion either (section 5). Fee exclusion applies only
+  when the window falls in the current, not-yet-distributed epoch.
 - `C` -- the photon conversion rate (photons per bond token), read at receipt from the
   embedding application's `x/photon` via an injected `PhotonKeeper`; this repository's
   standalone provider app wires a fixed rate of 1.
@@ -155,7 +183,12 @@ windows each carry their own fee-derived amount.
 
 Each pending slash matures `DowntimeChallengeWindow` after its own acceptance. A
 `BeginBlock` sweep executes matured entries -- several can execute for the same validator,
-in the same sweep or across sweeps, one per matured window. For each entry the token amount
+in the same sweep or across sweeps, one per matured window. A matured entry whose consumer
+has a removal proposal in its voting period is deferred instead of executed, past that vote's
+end, so the community's verdict on the chain decides first; a passed removal cancels the
+consumer's pending slashes outright, and a deferred entry stays challengeable, its withheld
+fee record kept claimable, until it resolves (see
+[consumer-refusal.md](consumer-refusal.md)). For each entry the token amount
 converts to a stake fraction, **capped** by `InfractionParameters.Downtime.SlashFraction` --
 never the price itself: under honest pricing `P*M/C` sits far below the cap, which only bites
 when fee overrides or conversion-rate anomalies would otherwise turn a fee-sized number into a
@@ -168,10 +201,14 @@ than executed; a zero-token slash is likewise dropped as vacuous.
 
 ## 5. Fee exclusion and the pool as escrow
 
-Fee exclusion is immediate: an accepted evidence packet excludes the validator from the
-current epoch's distribution for that consumer. The excluded share is simply never drawn
-from the consumer's fee pool -- the other validators' shares do not grow (no incentive to
-DOS a competitor), and the consumer does not pay for validation work it did not receive.
+Fee exclusion targets the epoch the infraction window falls in. When that is the current,
+not-yet-distributed epoch, the validator is excluded from that distribution: the excluded
+share is simply never drawn from the consumer's fee pool -- the other validators' shares do
+not grow (no incentive to DOS a competitor), and the consumer does not pay for validation
+work it did not receive. When the window falls in an epoch that has already paid out there is
+nothing left to withhold -- docking a later epoch would take fees the validator was genuinely
+owed -- so only the pending slash applies, priced against that past epoch's recorded share
+(section 4).
 
 Because the withheld money never leaves the pool, the pool itself acts as the escrow for a
 possible successful challenge (see [consumer-fee-pool.md](consumer-fee-pool.md) for the
@@ -193,9 +230,12 @@ while windows keep pending. The record ends one of three ways:
   accusation withheld. Payment is best-effort against the pool balance for the edge where
   the consumer was stopped through an unrelated path in between.
 
-Records are only written when the distribution actually had the funds to cover the epoch;
-an underfunded epoch marks debt and writes no records, so a record is always backed by money
-the pool genuinely retained. The `MsgWithdrawConsumerFeePool` depositor lock covers the
+Records are only written when the pool's *unreserved* balance -- balance minus the amounts
+already escrowed against unexpired records -- covered a full epoch fee; an underfunded epoch
+marks debt and writes no records, so a record is always backed by money the pool genuinely
+retained beyond what it already owes. Note the pool must *hold* a full epoch fee for the
+distribution to run at all, even though only the eligible validators' shares are drawn from
+it. The `MsgWithdrawConsumerFeePool` depositor lock covers the
 `PAUSED` phase as well as `LAUNCHED`, so escrowed funds cannot be raced out by depositors
 between a challenge and its payout.
 
@@ -240,7 +280,7 @@ canonical commit for `H`, `/commit?height=H+1` the header, `/validators` the key
 does the assembly:
 
 ```
-providerd tx provider challenge-consumer-downtime <consumer-id> <validator-cons-addr> <height> \
+providerd tx vaasprovider challenge-consumer-downtime <consumer-id> <validator-cons-addr> <height> \
     --consumer-rpc http://consumer-node:26657
 ```
 
@@ -251,13 +291,13 @@ reporting is grounds for suspension, but a bug deserves a recovery path that doe
 re-registration. A confirmed light-client attack pauses the consumer the same way: a fork
 proves the chain's consensus is compromised without proving who is at fault, so the provider
 contains the chain and punishes nobody, and the consumer's IBC client is frozen so that no
-packet proven against the fork lands any more. Either order works: `MsgSubmitConsumerMisbehaviour`
-freezes and pauses in one transaction (see `HandleConsumerMisbehaviour`), and a client frozen
-through ibc-go's `MsgUpdateClient`, the path a generic relayer or watcher takes, is caught by
-the provider's BeginBlock, which pauses a launched consumer whose client is frozen. Whichever
-way it came, a pause first repays the fees withheld from accused validators: their
-accusations are cancelled with it and could not be challenged any more. The
-`vaas_consumer_paused` event names the reason. While paused:
+packet proven against the fork lands any more; `MsgSubmitConsumerMisbehaviour` does both in one
+transaction (see `HandleConsumerMisbehaviour`), and a client frozen through ibc-go's
+`MsgUpdateClient` is caught by the provider's BeginBlock, which pauses the consumer. A refusal
+coalition reaching `RefusalPauseThreshold` pauses the consumer the same way (see
+[consumer-refusal.md](consumer-refusal.md)). Whichever way it came, a pause first repays the
+fees withheld from accused validators: their accusations are cancelled with it and could not
+be challenged any more. The `vaas_consumer_paused` event names the reason. While paused:
 
 - No VSC packets are queued or sent; no fees are distributed; downtime evidence from the
   consumer is rejected.
@@ -324,28 +364,77 @@ them along with the escrow records.
 | `DowntimeGracePeriod` | provider `InfractionParameters` | `>= 0` | 7 days |
 | `DowntimeChallengeWindow` | provider `InfractionParameters` | `> 0` | 7 days |
 | `DowntimeEvidenceMaxAge` | provider `InfractionParameters` | `(0, DowntimeChallengeWindow]` | 3 days |
-| `MaxPauseDuration` | provider module param | `> 0` | 30 days |
+| `MaxPauseDuration` | provider module param | `> 0` | 45 days |
+
+Every `InfractionParameters` row is governance-updatable on a running chain with
+`MsgUpdateInfractionParams`, which replaces the set in full and revalidates it; the values in
+force are readable from the provider `params` query. They live outside the module `Params`
+because they are stored (and exported) as their own state item, so a fee or epoch change need
+not restate the slashing policy and vice versa.
+
+What an update reaches differs by parameter, which matters when governance is responding to an
+incident with slashes already queued. A pending slash carries the maturity timestamp it was
+stamped with at acceptance, so changing `DowntimeChallengeWindow` neither accelerates nor
+delays anything already pending -- it only sizes the window for evidence accepted afterwards
+(the same holds for withheld-fee-record expiries). `Downtime.SlashFraction`, by contrast, is
+the cap applied when a matured entry executes, so lowering it does limit slashes already
+queued, and raising it can let them execute closer to their priced amount -- never above it,
+since the token amount was fixed at receipt.
 
 `DowntimeEvidenceMaxAge <= DowntimeChallengeWindow` is enforced at validation time: were
 evidence allowed to be older than the challenge window, a consumer could re-submit a window
 whose previous slash had already matured while the window was still fresh enough to accept.
-The sum of the two must also stay below the consumer client trusting period (checked against
-the default consumer unbonding at genesis; per-consumer deviations are operator guidance),
-so the oldest challengeable header remains light-client verifiable through the end of its
-challenge window.
+The sum of the two -- the *challengeable interval*, how far back a challenge may have to reach
+-- must also stay below the consumer client trusting period, so the oldest challengeable header
+remains light-client verifiable through the end of its challenge window. That constraint spans
+both halves of the configuration, so both governance messages enforce it against the stored
+other half: `MsgUpdateInfractionParams` against the stored `Params.TrustingPeriodFraction`, and
+`MsgUpdateParams` against the stored infraction parameters. Neither half can be moved out from
+under the other one proposal at a time.
+
+That check bounds the interval by the trusting period derived from the *default* consumer
+unbonding period, i.e. it constrains the parameters in the abstract, and deliberately not by
+the clients that exist: a consumer adopted with a shorter trusting period would otherwise veto
+a provider-wide change. The client that actually verifies a challenge bounds evidence at
+acceptance instead: an accusation is rejected when its age plus `DowntimeChallengeWindow`
+reaches that client's trusting period (section 3), so every accusation the provider accepts
+stays challengeable for its whole window, whatever the parameters say.
 
 ## 9. Operator guidance
 
-- **Retain blocks.** A challenger must produce the commit for a height up to
-  `DowntimeEvidenceMaxAge + DowntimeChallengeWindow` in the past (10 days at defaults).
+- **Retain blocks.** A challenger must produce the commit for a claimed-missed height. The
+  oldest one a live accusation can name is `DowntimeEvidenceMaxAge + DowntimeChallengeWindow`
+  in the past, plus the window's own `SignedBlocksWindow` blocks: evidence is accepted only
+  while its window end is within `DowntimeEvidenceMaxAge` of now, measured against an anchor
+  that never understates that age (section 3); the slash then waits out
+  `DowntimeChallengeWindow`; and the window's first height sits `SignedBlocksWindow` blocks
+  below its end. At defaults that is 10 days plus one window (600 blocks, about an hour).
   Validators should configure consumer-node retention (`min-retain-blocks`, pruning) to keep
   at least that span.
-- **Watch the acceptance events.** An accepted evidence packet emits the claimed window,
-  bitmap, and priced slash; the pending-slash and withheld-fee-record queries
-  (`pending-downtime-slashes`, `withheld-fee-records`) show everything currently at stake.
-  A validator that was online should challenge well inside the window.
+- **Watch the acceptance events.** An accepted evidence packet emits
+  `vaas_pending_downtime_slash` with the claimed window, bitmap, priced `slash_tokens`, and
+  `matures_at`; execution emits `vaas_execute_consumer_chain_slash`, a discarded entry
+  `vaas_downtime_slash_dropped` (with a `reason`), and a won challenge
+  `vaas_downtime_challenge_succeeded` plus one `vaas_withheld_fee_paid` per repaid record.
+  On the consumer side, `vaas_consumer_evidence_request` marks each packet sent and
+  `vaas_consumer_evidence_rejected` a packet the provider refused. See
+  [events-reference.md](events-reference.md). The pending-slash and withheld-fee-record
+  queries (`pending-downtime-slashes`, `withheld-fee-records`) show everything currently at
+  stake; see [queries-reference.md](queries-reference.md). A validator that was online
+  should challenge well inside the window.
 - **Keep clients fresh during pauses.** Relayers have no packet traffic on a paused
   consumer; updating the clients anyway avoids the `MsgRecoverClient` step at resume time.
+- **Read `cannot anchor downtime evidence window` as client coverage, not validator
+  behavior.** The provider rejected an accusation because it could not bracket the window end
+  between two stored consensus states for that consumer's client -- normally because no state
+  sits at or below the window end, the states around it having expired and been pruned, or
+  relaying having been idle across the window. Nothing is at stake for the accused validator:
+  the packet was refused with an error acknowledgement, so no slash was ever queued. The
+  remedy is on the relaying side: a client that takes at least one update per evidence window
+  brackets every window. A sparse client also drags the anchor down toward its last stored
+  state, spending part of the `DowntimeEvidenceMaxAge` budget and possibly rejecting otherwise
+  fresh evidence as too old; the effect is bounded by the client's update interval, which is
+  one epoch while packets are flowing -- negligible against the 3-day default.
 
 ## 10. Trust boundaries
 
