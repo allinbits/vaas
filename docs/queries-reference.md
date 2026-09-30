@@ -35,7 +35,7 @@ Every query command accepts the standard query flags (`--node`, `--height`,
 | `consumer-genesis-time` | `<consumer-id>` | The consumer's genesis timestamp, **derived** from the IBC consensus state at the consumer's `initial_height`. Errors if the consumer is unknown, has no client yet, or has no consensus state at that height. |
 | `consumer-id-from-client-id` | `<client-id>` | The consumer id a provider-side client belongs to. The client id wanted here is the *provider's* client tracking the consumer -- the `client_id` field of `consumer-chain`, not the consumer-side `provider-info` output. |
 | `blocks-until-next-epoch` | -- | Blocks remaining until the next epoch boundary. Purely computed; returns `0` exactly on a boundary. |
-| `params` | -- | The provider module `Params`. Note the **fee denom is not a parameter** -- it is fixed at application wiring, so use `consumer-fees-per-block` to learn the denom. See [params-reference.md](params-reference.md). |
+| `params` | -- | The provider module `Params` and, as `infraction_parameters`, the `InfractionParameters` in force (their own state item, changed by their own governance message). Note the **fee denom is not a parameter** -- it is fixed at application wiring, so use `consumer-fees-per-block` to learn the denom. See [params-reference.md](params-reference.md). |
 
 ### Validator sets and key assignment
 
@@ -107,12 +107,13 @@ no CLI command.
 | `MsgSweepConsumerFeePool` | owner | `sweep-consumer-fee-pool <consumer-id> [--denoms]` |
 | `MsgSubmitConsumerDoubleVoting` | any | `submit-consumer-double-voting <consumer-id> <evidence.json> <header.json>` |
 | `MsgSubmitConsumerMisbehaviour` | any | `submit-consumer-misbehaviour <consumer-id> <misbehaviour.json>` |
-| `MsgChallengeConsumerDowntime` | any | `challenge-consumer-downtime <consumer-id> <validator-cons-addr> <claimed-height> --consumer-rpc <url>` |
+| `MsgChallengeConsumerDowntime` | any | `challenge-consumer-downtime <consumer-id> <validator-cons-addr> <claimed-height> --consumer-rpc <url> [--trusted-height <h>]` (the override must name a consensus state the provider stores below the `claimed-height+1` header; the default is the highest such height in the header's revision) |
 | `MsgSetConsumerRefusal` | validator operator account | `set-consumer-refusal <consumer-id> <true|false>` (the validator is the operator behind `--from`) |
 | `MsgRemoveConsumer` | owner **or** gov pre-launch; gov only after | `remove-consumer <consumer-id>` (pre-launch); governance proposal after launch |
 | `MsgResumeConsumer` | gov authority | none -- governance proposal |
 | `MsgSetConsumerFeesPerBlock` | gov authority | none -- governance proposal |
 | `MsgUpdateParams` | gov authority | none -- governance proposal |
+| `MsgUpdateInfractionParams` | gov authority | none -- governance proposal |
 
 The consumer module exposes `MsgUpdateParams` only, governance-signed, with no
 CLI command.

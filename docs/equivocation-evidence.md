@@ -69,8 +69,13 @@ Both files are decoded with the proto-JSON codec. CLI source:
    its voting period at that point. A passed removal cancels the punishment,
    releases the holds and opens the jail; a rejected one lets it execute. See
    [consumer-refusal.md](consumer-refusal.md) section 3. Repeated submissions
-   of already-processed evidence are idempotent (already queued is a no-op,
-   already-tombstoned is not an error).
+   of already-processed evidence are idempotent: already queued is a no-op,
+   already-tombstoned is not an error, and a double-sign whose punishment
+   executed without tombstoning (`double_sign.tombstone = false`) is
+   remembered by consumer, live provider consensus address and infraction
+   height (`PunishedEquivocations`, which follows consumer key rotation and
+   is cleared with the consumer or once the validator is tombstoned), so the
+   same infraction is never punished twice.
 
 On success the provider emits `vaas_submit_consumer_double_voting` and
 `vaas_equivocation_punishment_queued`; the resolution later emits

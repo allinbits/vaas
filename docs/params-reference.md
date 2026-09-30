@@ -37,7 +37,7 @@ and changed only by governance through the provider `MsgUpdateParams`
 [x/vaas/provider/types/params.go](../x/vaas/provider/types/params.go) (the
 defaults and `Params.Validate`) and the `UpdateParams` handler in
 [x/vaas/provider/keeper/msg_server.go](../x/vaas/provider/keeper/msg_server.go)
-(lines 41-67).
+(lines 40-77).
 
 | Parameter | Type | Bound | Default | Notes |
 |---|---|---|---|---|
@@ -84,8 +84,8 @@ everywhere through `GetInfractionParams(ctx)` with no consumer id
 ([x/vaas/provider/keeper/params.go](../x/vaas/provider/keeper/params.go) lines
 154-161). Source of defaults and validation:
 [x/vaas/provider/types/params.go](../x/vaas/provider/types/params.go)
-(`DefaultInfractionParameters` lines 123-145, `InfractionParameters.Validate`
-lines 163-199, `SlashJailParameters.Validate` lines 222-231).
+(`DefaultInfractionParameters` lines 128-150, `InfractionParameters.Validate`
+lines 168-212, `SlashJailParameters.Validate` lines 253-262).
 
 | Parameter | Type | Bound | Default |
 |---|---|---|---|
@@ -117,22 +117,37 @@ Two cross-parameter constraints are enforced when infraction params are
 validated:
 
 - `downtime_evidence_max_age <= downtime_challenge_window` (`Validate`, lines
-  192-197).
+  205-210).
 - `downtime_evidence_max_age + downtime_challenge_window < trusting_period_fraction
   * default_consumer_unbonding` (`ValidateInfractionParamsAgainst`, lines
-  207-220), so the oldest challengeable header stays light-client verifiable
-  through the end of its challenge window.
+  225-251), so the oldest challengeable header stays light-client verifiable
+  through the end of its challenge window. Both governance messages enforce it
+  against the stored other half: `MsgUpdateInfractionParams` against the stored
+  `trusting_period_fraction`, `MsgUpdateParams` against the stored infraction
+  parameters. The bound is the trusting period the *default* consumer unbonding
+  period implies, deliberately not the trusting period of any client already
+  adopted for a consumer, which could otherwise veto a provider-wide change; the
+  client that verifies a challenge bounds evidence at acceptance instead (see
+  [consumer-downtime.md](consumer-downtime.md) section 3).
 
-**Where set:** the provider genesis field `infraction_parameters` only,
-defaulting to `DefaultInfractionParameters()` when omitted (`InitGenesis` in
-[x/vaas/provider/keeper/genesis.go](../x/vaas/provider/keeper/genesis.go)). The
-current provider `Msg` service exposes no transaction that changes them on a
-running chain: `MsgUpdateParams` carries only `Params`
-([proto/vaas/provider/v1/tx.proto](../proto/vaas/provider/v1/tx.proto)), and
-`MsgCreateConsumer` neither carries nor stores per-consumer infraction
+**Where set:** the provider genesis field `infraction_parameters`, defaulting
+to `DefaultInfractionParameters()` when omitted (`InitGenesis` in
+[x/vaas/provider/keeper/genesis.go](../x/vaas/provider/keeper/genesis.go)), and
+on a running chain by governance through `MsgUpdateInfractionParams`
+(authority-gated; `UpdateInfractionParams` in
+[msg_server.go](../x/vaas/provider/keeper/msg_server.go) lines 79-115), which
+replaces the set in full and revalidates it. `MsgUpdateParams` carries only
+`Params` ([proto/vaas/provider/v1/tx.proto](../proto/vaas/provider/v1/tx.proto)),
+and `MsgCreateConsumer` neither carries nor stores per-consumer infraction
 parameters -- every consumer is validated under the single global set
 (`msgServer.CreateConsumer` in
-[msg_server.go](../x/vaas/provider/keeper/msg_server.go)).
+[msg_server.go](../x/vaas/provider/keeper/msg_server.go)). A change to
+`signed_blocks_window` or `min_signed_per_window` reaches consumers with the
+next VSC packet and takes effect at their next window boundary; evidence
+echoing the superseded pair stays acceptable for `downtime_evidence_max_age +
+downtime_challenge_window` after the change (see
+[consumer-downtime.md](consumer-downtime.md) section 2). The values in force
+are in the provider `params` query, next to `Params`.
 
 ---
 
