@@ -958,3 +958,18 @@ func TestMsgResumeConsumer_ValidateBasic(t *testing.T) {
 		})
 	}
 }
+
+// TestMsgSetConsumerRefusalValidateBasic: the refusal must name a valid
+// validator and be signed by that validator's operator account.
+func TestMsgSetConsumerRefusalValidateBasic(t *testing.T) {
+	valAddr := sdk.ValAddress([]byte("refusing-validator-1"))
+	operator := sdk.AccAddress(valAddr).String()
+	other := sdk.AccAddress([]byte("someone-else-entirely")).String()
+
+	require.NoError(t, types.NewMsgSetConsumerRefusal(operator, 0, valAddr.String(), true).ValidateBasic())
+	require.NoError(t, types.NewMsgSetConsumerRefusal(operator, 0, valAddr.String(), false).ValidateBasic())
+	require.Error(t, types.NewMsgSetConsumerRefusal(operator, 0, "not-a-valoper", true).ValidateBasic())
+	require.Error(t, types.NewMsgSetConsumerRefusal("not-an-account", 0, valAddr.String(), true).ValidateBasic())
+	require.Error(t, types.NewMsgSetConsumerRefusal(other, 0, valAddr.String(), true).ValidateBasic(),
+		"only the operator account may sign")
+}

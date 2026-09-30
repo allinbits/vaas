@@ -402,15 +402,18 @@ func (k Keeper) StopAndPrepareForConsumerRemoval(ctx sdk.Context, consumerId uin
 // PauseConsumerChain transitions a launched consumer chain into
 // CONSUMER_PHASE_PAUSED when the provider must stop serving it, for the
 // given reason: a successful downtime challenge (see
-// HandleChallengeConsumerDowntime) or a confirmed light-client attack (see
-// containLightClientAttack). Either way the consumer's accusations are no
-// longer trusted: a won challenge proved them wrong, and a forked chain's
-// accusations are no more trustworthy than its headers. So, in order, the
-// fees withheld from the accused validators are repaid (PayWithheldFees,
-// before the phase flips, since the consumer's withdraw lock opens the
-// moment it leaves LAUNCHED and the accused could no longer challenge once
-// their accusations are gone), then every pending downtime slash and this
-// epoch's downtime marks for the consumer are cancelled via
+// HandleChallengeConsumerDowntime), a confirmed light-client attack (see
+// containLightClientAttack) or a refusal coalition reaching the
+// RefusalPauseThreshold (see EvaluateConsumerRefusals). Either way the
+// consumer's accusations are no longer trusted: a won challenge proved them
+// wrong, a forked chain's accusations are no more trustworthy than its
+// headers, and a chain the refusal-threshold share of power refuses to run
+// cannot have its accusations trusted either. So, in order, the fees
+// withheld from the accused validators are repaid (PayWithheldFees, before
+// the phase flips, since the consumer's withdraw lock opens the moment it
+// leaves LAUNCHED and the accused could no longer challenge once their
+// accusations are gone), then every pending downtime slash and this epoch's
+// downtime marks for the consumer are cancelled via
 // CancelConsumerDowntimeState. The reason is kept for the duration of the
 // pause (a resume reads it) and named on the consumer_paused event.
 // A paused consumer is excluded from VSC packet
@@ -458,6 +461,11 @@ func (k Keeper) PauseConsumerChain(ctx sdk.Context, consumerId uint64, reason ty
 		return errorsmod.Wrapf(vaastypes.ErrInvalidConsumerState,
 			"cannot schedule auto-stop for consumer %d: %s", consumerId, err.Error())
 	}
+
+	// The pause freezes the consumer's pending equivocation punishments (see
+	// SweepPendingEquivocationPunishments); keep their validators jailed for
+	// as long as the pause can last.
+	k.refreshPendingEquivocationJailsForConsumer(ctx, consumerId)
 
 	ctx.EventManager().EmitEvent(sdk.NewEvent(
 		vaastypes.EventTypeConsumerPaused,
@@ -538,6 +546,13 @@ func (k Keeper) PauseConsumersWithFrozenClients(ctx sdk.Context) {
 // MsgRecoverClient (client substitution, already governance-gated) into the
 // same governance proposal as the resume.
 //
+// It also requires the consumer's refusal signals to stand below the
+// RefusalPauseThreshold: a coalition at the threshold would pause the consumer
+// again in the very block it is resumed (the provider's EndBlock runs after
+// gov's), so the resume is refused outright and governance gets a reason
+// instead of a silent no-op that also resets the pause's auto-stop clock. The
+// refusers withdraw first, or governance raises the threshold.
+//
 // On success: cancels the scheduled auto-stop (CancelConsumerPauseExpiration),
 // restores phase LAUNCHED, reseeds the liveness clock (so the liveness sweep
 // does not immediately re-flag the consumer for the pause duration it was
@@ -563,6 +578,16 @@ func (k Keeper) ResumeConsumerChain(ctx sdk.Context, consumerId uint64) error {
 	if phase != types.CONSUMER_PHASE_PAUSED {
 		return errorsmod.Wrapf(types.ErrInvalidPhase,
 			"cannot resume consumer %d: expected phase paused, got %s", consumerId, phase)
+	}
+
+	standing, err := k.consumerRefusalStanding(ctx, consumerId)
+	if err != nil {
+		return fmt.Errorf("evaluating refusals for consumer %d: %w", consumerId, err)
+	}
+	if standing.atThreshold() {
+		return errorsmod.Wrapf(types.ErrConsumerRefused,
+			"cannot resume consumer %d: %s of bonded power refuses it (pause threshold %s); the refusals must be withdrawn first",
+			consumerId, standing.fraction, standing.threshold)
 	}
 
 	clientId, found := k.GetConsumerClientId(ctx, consumerId)
@@ -733,6 +758,9 @@ func (k Keeper) DeleteConsumerChain(ctx sdk.Context, consumerId uint64) (err err
 
 	k.DeleteConsumerRemovalTime(ctx, consumerId)
 	k.DeleteConsumerLastAckTime(ctx, consumerId)
+	if err := k.DeleteConsumerRefusals(ctx, consumerId); err != nil {
+		return fmt.Errorf("deleting consumer refusals for consumer %d: %w", consumerId, err)
+	}
 	k.DeleteConsumerHighestSentVscId(ctx, consumerId)
 	k.DeleteConsumerHighestAckedVscId(ctx, consumerId)
 	k.DeleteConsumerPauseReason(ctx, consumerId)

@@ -600,6 +600,14 @@ func (k msgServer) RemoveConsumer(goCtx context.Context, msg *types.MsgRemoveCon
 	}
 
 	err = k.Keeper.StopAndPrepareForConsumerRemoval(ctx, consumerId)
+	if err == nil {
+		// Governance condemned the chain, so its evidence goes with it: the
+		// equivocation punishments it sourced are cancelled, their unbonding
+		// holds released, and the queue-time jails opened. Only this path
+		// cancels them; a consumer stopped for liveness or a lapsed pause is
+		// not a verdict on its evidence (see SweepPendingEquivocationPunishments).
+		k.CancelPendingEquivocationPunishmentsForConsumer(ctx, consumerId)
+	}
 
 	k.Logger(ctx).Info("stopped consumer",
 		"consumerId", consumerId,
@@ -938,4 +946,64 @@ func (k msgServer) ResumeConsumer(
 	}
 
 	return &types.MsgResumeConsumerResponse{}, nil
+}
+
+// SetConsumerRefusal records or withdraws the signer validator's public
+// refusal to validate a consumer chain. The signer must be the validator's
+// operator account. Recording a refusal needs a bonded validator and a
+// LAUNCHED or PAUSED consumer; withdrawing one needs neither, so a validator
+// that unbonded, or a consumer that stopped, never leaves a signal its owner
+// cannot take back. Refusals aggregate toward the RefusalPauseThreshold pause
+// (see EvaluateConsumerRefusals); they are not an individual exemption from
+// the consumer's downtime evidence.
+func (k msgServer) SetConsumerRefusal(goCtx context.Context, msg *types.MsgSetConsumerRefusal) (*types.MsgSetConsumerRefusalResponse, error) {
+	ctx := sdk.UnwrapSDKContext(goCtx)
+
+	valAddr, err := sdk.ValAddressFromBech32(msg.ValidatorAddress)
+	if err != nil {
+		return nil, err
+	}
+
+	signer, err := sdk.AccAddressFromBech32(msg.Signer)
+	if err != nil {
+		return nil, err
+	}
+	if !sdk.AccAddress(valAddr).Equals(signer) {
+		return nil, errorsmod.Wrapf(types.ErrUnauthorized,
+			"refusal for validator %s must be signed by its operator account", msg.ValidatorAddress)
+	}
+
+	if msg.Refused {
+		validator, err := k.stakingKeeper.GetValidator(ctx, valAddr)
+		if err != nil {
+			return nil, errorsmod.Wrapf(stakingtypes.ErrNoValidatorFound,
+				"cannot set refusal: %s", err.Error())
+		}
+		if !validator.IsBonded() {
+			return nil, errorsmod.Wrapf(sdkerrors.ErrInvalidRequest,
+				"only bonded validators may refuse a consumer; %s is %s", msg.ValidatorAddress, validator.Status)
+		}
+
+		phase := k.GetConsumerPhase(ctx, msg.ConsumerId)
+		if phase != types.CONSUMER_PHASE_LAUNCHED && phase != types.CONSUMER_PHASE_PAUSED {
+			return nil, errorsmod.Wrapf(types.ErrInvalidPhase,
+				"cannot set refusal for consumer %d: expected phase launched or paused, got %s", msg.ConsumerId, phase)
+		}
+	}
+
+	if err := k.RecordConsumerRefusal(ctx, msg.ConsumerId, valAddr, msg.Refused); err != nil {
+		return nil, err
+	}
+
+	ctx.EventManager().EmitEvent(
+		sdk.NewEvent(
+			types.EventTypeConsumerRefusalSet,
+			sdk.NewAttribute(sdk.AttributeKeyModule, types.ModuleName),
+			sdk.NewAttribute(types.AttributeConsumerId, strconv.FormatUint(msg.ConsumerId, 10)),
+			sdk.NewAttribute(types.AttributeProviderValidatorAddress, msg.ValidatorAddress),
+			sdk.NewAttribute(types.AttributeRefused, strconv.FormatBool(msg.Refused)),
+		),
+	)
+
+	return &types.MsgSetConsumerRefusalResponse{}, nil
 }

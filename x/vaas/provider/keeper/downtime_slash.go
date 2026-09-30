@@ -3,6 +3,7 @@ package keeper
 import (
 	"errors"
 	"fmt"
+	"time"
 
 	"github.com/allinbits/vaas/x/vaas/provider/types"
 	vaastypes "github.com/allinbits/vaas/x/vaas/types"
@@ -11,6 +12,7 @@ import (
 	"cosmossdk.io/math"
 
 	sdk "github.com/cosmos/cosmos-sdk/types"
+	govv1 "github.com/cosmos/cosmos-sdk/x/gov/types/v1"
 	stakingtypes "github.com/cosmos/cosmos-sdk/x/staking/types"
 )
 
@@ -30,6 +32,20 @@ import (
 // record out). A pair whose remaining entries were only dropped (never
 // executed) does not trigger this; its withheld record still ages out on its
 // own expiry via SweepExpiredWithheldFeeRecords (fees.go).
+//
+// A matured entry whose consumer has a removal vote in progress is deferred
+// instead of executed: its maturity moves past the voting end by the
+// RemovalVoteDeferralMargin param, recording the proposal it waits for, so
+// the community's verdict on the chain decides first. A passed removal stops
+// the consumer and cancels its pending slashes; a rejected one lets the
+// deferred entries execute at their extended maturity. A vote still open at
+// that point (gov extended it after a late quorum, or no block landed inside
+// the margin) keeps deferring the entry until its tally, but only that one
+// proposal ever does: serial removal proposals cannot defer a slash
+// indefinitely, so a validator refusing a chain whose removal keeps failing
+// is bounded by one voting period of grace per accusation. The pair's
+// withheld fee record stays claimable for as long as the entry is pending,
+// so a challenge won during the deferral still repays it.
 func (k Keeper) SweepPendingDowntimeSlashes(ctx sdk.Context) {
 	ip := k.GetInfractionParams(ctx)
 
@@ -41,6 +57,19 @@ func (k Keeper) SweepPendingDowntimeSlashes(ctx sdk.Context) {
 
 	var maturedKeys []collections.Triple[uint64, []byte, int64]
 	var maturedEntries []types.PendingDowntimeSlash
+	var deferredKeys []collections.Triple[uint64, []byte, int64]
+	var deferredEntries []types.PendingDowntimeSlash
+	votes := k.newRemovalVoteMemo()
+	margin := k.GetParams(ctx).RemovalVoteDeferralMargin
+	deferBehind := func(key collections.Triple[uint64, []byte, int64], entry types.PendingDowntimeSlash, proposalId uint64, votingEnd time.Time) {
+		if newMaturity := votingEnd.Add(margin); newMaturity.After(entry.MaturesAt) {
+			entry.MaturesAt = newMaturity
+		}
+		entry.MaturesAtExtended = true
+		entry.DeferredByProposalId = proposalId
+		deferredKeys = append(deferredKeys, key)
+		deferredEntries = append(deferredEntries, entry)
+	}
 	for ; iter.Valid(); iter.Next() {
 		kv, err := iter.KeyValue()
 		if err != nil {
@@ -50,10 +79,37 @@ func (k Keeper) SweepPendingDowntimeSlashes(ctx sdk.Context) {
 		if kv.Value.MaturesAt.After(ctx.BlockTime()) {
 			continue
 		}
+		consumerId := kv.Key.K1()
+		if kv.Value.MaturesAtExtended {
+			// Only the proposal the entry deferred behind can keep it
+			// waiting, and only while its vote is still open. A passed
+			// removal has already cancelled the consumer's downtime state;
+			// anything else lets the entry execute.
+			if status, votingEnd, found := k.removalProposalStatus(ctx, kv.Value.DeferredByProposalId); found && status == govv1.StatusVotingPeriod {
+				deferBehind(kv.Key, kv.Value, kv.Value.DeferredByProposalId, votingEnd)
+				continue
+			}
+		} else if v := votes.get(ctx, consumerId); v.active {
+			deferBehind(kv.Key, kv.Value, v.proposalId, v.end)
+			continue
+		}
 		maturedKeys = append(maturedKeys, kv.Key)
 		maturedEntries = append(maturedEntries, kv.Value)
 	}
 	iter.Close()
+
+	for i, key := range deferredKeys {
+		if err := k.PendingDowntimeSlashes.Set(ctx, key, deferredEntries[i]); err != nil {
+			k.Logger(ctx).Error("failed to defer pending downtime slash behind a removal vote", "error", err)
+			continue
+		}
+		k.extendWithheldFeeRecord(ctx, key.K1(), key.K2(), deferredEntries[i].MaturesAt)
+		k.Logger(ctx).Info("pending downtime slash deferred behind a removal vote",
+			"consumerId", key.K1(),
+			"proposalId", deferredEntries[i].DeferredByProposalId,
+			"maturesAt", deferredEntries[i].MaturesAt,
+		)
+	}
 
 	type pairKey struct {
 		consumerId uint64

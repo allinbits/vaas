@@ -34,7 +34,6 @@ import (
 	"github.com/cosmos/cosmos-sdk/runtime"
 	sdk "github.com/cosmos/cosmos-sdk/types"
 	authtypes "github.com/cosmos/cosmos-sdk/x/auth/types"
-	govkeeper "github.com/cosmos/cosmos-sdk/x/gov/keeper"
 	govtypes "github.com/cosmos/cosmos-sdk/x/gov/types"
 	stakingtypes "github.com/cosmos/cosmos-sdk/x/staking/types"
 )
@@ -43,31 +42,40 @@ import (
 type InMemKeeperParams struct {
 	Cdc      *codec.ProtoCodec
 	StoreKey *storetypes.KVStoreKey
-	Ctx      sdk.Context
+	// GovStoreKey backs the gov keeper NewInMemGovKeeper builds for tests
+	// that exercise the provider's removal-vote scan against real gov state.
+	GovStoreKey *storetypes.KVStoreKey
+	Ctx         sdk.Context
 }
 
 // NewInMemKeeperParams instantiates in-memory keeper params with default values
 func NewInMemKeeperParams(tb testing.TB) InMemKeeperParams {
 	tb.Helper()
 	storeKey := storetypes.NewKVStoreKey(types.StoreKey)
+	govStoreKey := storetypes.NewKVStoreKey(govtypes.StoreKey)
 	memStoreKey := storetypes.NewMemoryStoreKey(types.MemStoreKey)
 
 	db := dbm.NewMemDB()
 	stateStore := store.NewCommitMultiStore(db, log.NewNopLogger(), metrics.NewNoOpMetrics())
 	stateStore.MountStoreWithDB(storeKey, storetypes.StoreTypeIAVL, db)
+	stateStore.MountStoreWithDB(govStoreKey, storetypes.StoreTypeIAVL, db)
 	stateStore.MountStoreWithDB(memStoreKey, storetypes.StoreTypeMemory, nil)
 	require.NoError(tb, stateStore.LoadLatestVersion())
 
 	registry := codectypes.NewInterfaceRegistry()
 	cryptocodec.RegisterInterfaces(registry)
+	// Gov proposals carry their messages as Any; unpacking a stored
+	// MsgRemoveConsumer needs the provider's msg types on the registry.
+	providertypes.RegisterInterfaces(registry)
 	cdc := codec.NewProtoCodec(registry)
 
 	ctx := sdk.NewContext(stateStore, tmproto.Header{}, false, log.NewNopLogger())
 
 	return InMemKeeperParams{
-		Cdc:      cdc,
-		StoreKey: storeKey,
-		Ctx:      ctx,
+		Cdc:         cdc,
+		StoreKey:    storeKey,
+		GovStoreKey: govStoreKey,
+		Ctx:         ctx,
 	}
 }
 
@@ -149,7 +157,7 @@ func NewMockedKeepers(ctrl *gomock.Controller) MockedKeepers {
 // NewInMemProviderKeeper instantiates an in-mem provider keeper from params and mocked keepers
 func NewInMemProviderKeeper(params InMemKeeperParams, mocks MockedKeepers) providerkeeper.Keeper {
 	storeService := runtime.NewKVStoreService(params.StoreKey)
-	return providerkeeper.NewKeeper(
+	k := providerkeeper.NewKeeper(
 		params.Cdc,
 		storeService,
 		mocks.MockClientKeeper,
@@ -161,13 +169,19 @@ func NewInMemProviderKeeper(params InMemKeeperParams, mocks MockedKeepers) provi
 		mocks.MockAccountKeeper,
 		mocks.MockBankKeeper,
 		mocks.MockDistributionKeeper,
-		govkeeper.Keeper{}, // HACK: to make parts of the test work
+		nil,
 		authtypes.NewModuleAddress(govtypes.ModuleName).String(),
 		address.NewBech32Codec("cosmosvaloper"),
 		address.NewBech32Codec("cosmosvalcons"),
 		authtypes.FeeCollectorName,
 		providertypes.DefaultFeesPerBlockDenom,
 	)
+	// A real gov keeper on the same store, as the app wires one: the
+	// removal-vote scan runs for real in every unit test (an empty proposal
+	// store means no live vote), and tests seed proposals through
+	// NewInMemGovKeeper, which builds another handle onto the same state.
+	k.SetGovKeeper(newInMemGovKeeper(params))
+	return k
 }
 
 // NewInMemConsumerKeeper instantiates an in-mem consumer keeper from params and mocked keepers
