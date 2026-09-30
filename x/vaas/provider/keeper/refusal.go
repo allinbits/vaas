@@ -182,7 +182,7 @@ func (k Keeper) EvaluateConsumerRefusals(ctx sdk.Context) {
 		if !standing.atThreshold() {
 			continue
 		}
-		if err := k.PauseConsumerChain(ctx, consumerId); err != nil {
+		if err := k.PauseConsumerChain(ctx, consumerId, types.PAUSE_REASON_REFUSAL_THRESHOLD); err != nil {
 			k.Logger(ctx).Error("failed to pause consumer at refusal threshold",
 				"consumerId", consumerId, "error", err)
 			continue
