@@ -122,6 +122,9 @@ func (gs GenesisState) Validate() error {
 	if err := validateDowntimeWindowFloors(gs.DowntimeWindowFloors, known); err != nil {
 		return errorsmod.Wrap(vaastypes.ErrInvalidGenesis, err.Error())
 	}
+	if err := validatePunishedEquivocations(gs.PunishedEquivocations, known); err != nil {
+		return errorsmod.Wrap(vaastypes.ErrInvalidGenesis, err.Error())
+	}
 	if err := validateEpochDowntimeEntries(gs.EpochDowntimeEntries, known); err != nil {
 		return errorsmod.Wrap(vaastypes.ErrInvalidGenesis, err.Error())
 	}
@@ -423,6 +426,35 @@ func validateDowntimeWindowFloors(floors []DowntimeWindowFloor, knownConsumerIds
 		k := key{f.ConsumerId, string(f.ProviderConsAddr)}
 		if seen[k] {
 			return fmt.Errorf("duplicate downtime window floor for consumer %d validator %x", f.ConsumerId, f.ProviderConsAddr)
+		}
+		seen[k] = true
+	}
+	return nil
+}
+
+// validatePunishedEquivocations rejects entries without a validator address
+// or a positive infraction height, orphan consumer references, and
+// duplicates.
+func validatePunishedEquivocations(entries []PunishedEquivocation, knownConsumerIds map[uint64]struct{}) error {
+	type key struct {
+		consumerId uint64
+		addr       string
+		height     int64
+	}
+	seen := map[key]bool{}
+	for _, e := range entries {
+		if len(e.ProviderConsAddr) == 0 {
+			return fmt.Errorf("punished equivocation: provider cons addr cannot be empty")
+		}
+		if e.InfractionHeight <= 0 {
+			return fmt.Errorf("punished equivocation: infraction height must be positive (consumer=%d)", e.ConsumerId)
+		}
+		if _, ok := knownConsumerIds[e.ConsumerId]; !ok {
+			return fmt.Errorf("punished equivocation references unknown consumer %d", e.ConsumerId)
+		}
+		k := key{e.ConsumerId, string(e.ProviderConsAddr), e.InfractionHeight}
+		if seen[k] {
+			return fmt.Errorf("duplicate punished equivocation for consumer %d validator %x height %d", e.ConsumerId, e.ProviderConsAddr, e.InfractionHeight)
 		}
 		seen[k] = true
 	}

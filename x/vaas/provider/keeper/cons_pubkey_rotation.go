@@ -60,6 +60,50 @@ func (k Keeper) MigrateStateOnConsPubKeyRotation(
 			k.migrateDowntimeAcceptance(ctx, consumerId, oldProviderAddr, newProviderAddr)
 		}
 		k.migrateFeeExclusion(ctx, consumerId, oldProviderAddr, newProviderAddr)
+		k.migratePunishedEquivocations(ctx, consumerId, oldProviderAddr, newProviderAddr)
+	}
+}
+
+// migratePunishedEquivocations moves the validator's punished-equivocation
+// records to its new provider consensus address. They are keyed by the live
+// address, the one a re-submission resolves to, and after the rotation that
+// is the new one; left behind, the same infraction would be punishable again.
+func (k Keeper) migratePunishedEquivocations(
+	ctx sdk.Context,
+	consumerId uint64,
+	oldProviderAddr, newProviderAddr types.ProviderConsAddress,
+) {
+	oldAddrBz := oldProviderAddr.ToSdkConsAddr().Bytes()
+	newAddrBz := newProviderAddr.ToSdkConsAddr().Bytes()
+
+	iter, err := k.PunishedEquivocations.Iterate(ctx, collections.NewSuperPrefixedTripleRange[uint64, []byte, int64](consumerId, oldAddrBz))
+	if err != nil {
+		k.Logger(ctx).Error("cannot read the rotating validator's punished equivocations",
+			"consumerId", consumerId, "providerConsAddr", oldProviderAddr.String(), "error", err)
+		return
+	}
+	var heights []int64
+	for ; iter.Valid(); iter.Next() {
+		key, err := iter.Key()
+		if err != nil {
+			k.Logger(ctx).Error("cannot read a punished equivocation key",
+				"consumerId", consumerId, "providerConsAddr", oldProviderAddr.String(), "error", err)
+			break
+		}
+		heights = append(heights, key.K3())
+	}
+	iter.Close()
+
+	for _, height := range heights {
+		if err := k.PunishedEquivocations.Set(ctx, collections.Join3(consumerId, newAddrBz, height)); err != nil {
+			k.Logger(ctx).Error("cannot move punished equivocation to the rotated provider consensus address",
+				"consumerId", consumerId, "providerConsAddr", newProviderAddr.String(), "error", err)
+			continue
+		}
+		if err := k.PunishedEquivocations.Remove(ctx, collections.Join3(consumerId, oldAddrBz, height)); err != nil {
+			k.Logger(ctx).Error("cannot delete punished equivocation left at the old provider consensus address",
+				"consumerId", consumerId, "providerConsAddr", oldProviderAddr.String(), "error", err)
+		}
 	}
 }
 
