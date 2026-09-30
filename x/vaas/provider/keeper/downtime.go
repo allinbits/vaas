@@ -62,8 +62,10 @@ func (k Keeper) HandleConsumerEvidencePacket(ctx sdk.Context, consumerId uint64,
 //  4. The window-end time -- bracketed by IBC consensus states, one proving
 //     the consumer chain reached the window end and one supplying a verified
 //     lower bound on when it did, see windowEndTimestamp -- is past the
-//     consumer's downtime grace period and not older than
-//     DowntimeEvidenceMaxAge.
+//     consumer's downtime grace period, not older than
+//     DowntimeEvidenceMaxAge, and leaves the whole DowntimeChallengeWindow
+//     inside the consumer client's trusting period, so the accused can still
+//     challenge at the end of it (see consumerClientTrustingPeriod).
 //  5. The window starts above the pair's pruned acceptance floor
 //     (DowntimeWindowFloors) and does not intersect any window already
 //     accepted for this (consumer, validator) pair
@@ -181,13 +183,38 @@ func (k Keeper) HandleConsumerDowntime(ctx sdk.Context, consumerId uint64, evide
 	}
 
 	// Verify the evidence isn't stale relative to when it was submitted.
-	if age := ctx.BlockTime().Sub(windowEndTime); age > infractionParams.DowntimeEvidenceMaxAge {
+	age := ctx.BlockTime().Sub(windowEndTime)
+	if age > infractionParams.DowntimeEvidenceMaxAge {
 		return errorsmod.Wrapf(
 			vaastypes.ErrInvalidPacketData,
 			"downtime evidence for consumer chain %d is too old: window ended %s ago, max age %s",
 			consumerId,
 			age,
 			infractionParams.DowntimeEvidenceMaxAge,
+		)
+	}
+
+	// The accusation must stay challengeable for its whole window against the
+	// client that verifies a challenge: the header at the claimed height is
+	// verified against a consensus state within that client's trusting
+	// period, so a window whose age plus the challenge window reaches past it
+	// would leave the accused unable to challenge late in the window. The
+	// parameter bound (types.ValidateInfractionParamsAgainst) enforces the
+	// same relation against the default trusting period only, so a client
+	// adopted with a shorter one is bounded here, at acceptance.
+	trustingPeriod, err := k.consumerClientTrustingPeriod(ctx, clientId)
+	if err != nil {
+		return errorsmod.Wrapf(
+			vaastypes.ErrInvalidConsumerState,
+			"cannot read the trusting period of client %s for consumer chain %d: %s",
+			clientId, consumerId, err,
+		)
+	}
+	if age+infractionParams.DowntimeChallengeWindow >= trustingPeriod {
+		return errorsmod.Wrapf(
+			vaastypes.ErrInvalidPacketData,
+			"downtime evidence for consumer chain %d is too old to stay challengeable against client %s: window ended %s ago, challenge window %s, client trusting period %s",
+			consumerId, clientId, age, infractionParams.DowntimeChallengeWindow, trustingPeriod,
 		)
 	}
 
@@ -382,6 +409,21 @@ func (k Keeper) checkAcceptedDowntimeWindowIntersection(
 		}
 	}
 	return nil
+}
+
+// consumerClientTrustingPeriod returns the trusting period of the consumer
+// client clientId, which bounds how old a header a downtime challenge can
+// still verify against it.
+func (k Keeper) consumerClientTrustingPeriod(ctx sdk.Context, clientId string) (time.Duration, error) {
+	clientState, found := k.clientKeeper.GetClientState(ctx, clientId)
+	if !found {
+		return 0, fmt.Errorf("client %s has no client state", clientId)
+	}
+	tmClientState, ok := clientState.(*ibctmtypes.ClientState)
+	if !ok {
+		return 0, fmt.Errorf("client %s is not a tendermint client", clientId)
+	}
+	return tmClientState.TrustingPeriod, nil
 }
 
 // windowEndTimestamp resolves the timestamp anchor for a downtime evidence
