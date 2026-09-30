@@ -273,8 +273,10 @@ A successful challenge moves the consumer from `LAUNCHED` to `PAUSED` -- proven-
 reporting is grounds for suspension, but a bug deserves a recovery path that does not force
 re-registration. A confirmed light-client attack pauses the consumer the same way: a fork
 proves the chain's consensus is compromised without proving who is at fault, so the provider
-freezes the consumer's IBC client (no packet proven against the fork lands any more),
-contains the chain and punishes nobody (see `HandleConsumerMisbehaviour`). A refusal
+contains the chain and punishes nobody, and the consumer's IBC client is frozen so that no
+packet proven against the fork lands any more; `MsgSubmitConsumerMisbehaviour` does both in one
+transaction (see `HandleConsumerMisbehaviour`), and a client frozen through ibc-go's
+`MsgUpdateClient` is caught by the provider's BeginBlock, which pauses the consumer. A refusal
 coalition reaching `RefusalPauseThreshold` pauses the consumer the same way (see
 [consumer-refusal.md](consumer-refusal.md)). Whichever way it came, a pause first repays the
 fees withheld from accused validators: their accusations are cancelled with it and could not
@@ -318,10 +320,13 @@ Two governance exits:
   bundle ibc-go's `MsgRecoverClient` (client substitution, already governance-gated) in the
   same proposal. Client expiry during a pause is therefore a recoverable inconvenience, not
   a death sentence -- which is why `MaxPauseDuration` is not bounded by the trusting period.
-  A resume after a light-client pause is governance's ruling on that fork: it records the
-  recovered client's latest height, and misbehaviour whose headers both sit at or below it
-  is rejected as adjudicated, so the same conflicting headers cannot pause the consumer again
-  for as long as they verify. A fork at a later height is new evidence and pauses it again.
+  A resume after a light-client pause also waits out the fork's evidence: a recovery keeps
+  the client's pre-fork consensus states, and the conflicting headers verify against them on
+  either submission path until those states age out of the trusting period, so a consumer
+  resumed earlier would be paused again by the same headers. The resume is refused until one
+  trusting period (plus the client's clock-drift allowance) has passed since the pause; with
+  a 21-day consumer unbonding period that is about 14 days, which AtomOne's voting period
+  alone already covers. A fork at a later height is new evidence and pauses it again.
 - **`MsgRemoveConsumer`** accepts a paused consumer and routes it into the ordinary
   `STOPPED -> DELETED` teardown.
 

@@ -14,7 +14,7 @@ the chain is paused instead:
 | Evidence | Message | Consequence |
 |---|---|---|
 | Double-sign (duplicate vote) | `MsgSubmitConsumerDoubleVoting` | jail now, unbonding operations held; slash + tombstone after `equivocation_execution_delay`, deferred once behind a live removal vote; cancelled if governance removes the consumer |
-| Light-client attack (IBC misbehaviour) | `MsgSubmitConsumerMisbehaviour` | the consumer's IBC client is frozen and the consumer paused; nobody is punished; the byzantine set is attributed on the event; a governance resume adjudicates the fork |
+| Light-client attack (IBC misbehaviour) | `MsgSubmitConsumerMisbehaviour` | the consumer's IBC client is frozen and the consumer paused; nobody is punished; the byzantine set is attributed on the event; a governance resume waits out the fork's evidence |
 
 Both messages are permissionless -- any account can submit them as an ordinary
 provider transaction. This is distinct from downtime, which flows automatically
@@ -111,10 +111,7 @@ verifies a light-client attack and contains it. No validator is punished on
 this path:
 
 1. Evidence for a consumer that is not `LAUNCHED` is rejected up front, so
-   re-submitting evidence against an already-paused consumer is a cheap no-op;
-   so is misbehaviour whose headers both sit at or below the fork height the
-   last governance resume adjudicated (`ErrMisbehaviourAdjudicated`), the fork
-   governance already ruled on.
+   re-submitting evidence against an already-paused consumer is a cheap no-op.
 2. `CheckMisbehaviour` verifies the chain id and client id match the consumer,
    that the two headers are at the same height and within the client trusting
    period, and that they genuinely conflict (different block id hashes, each
@@ -135,6 +132,12 @@ this path:
    account repaid, and an auto-stop is scheduled at `MaxPauseDuration` so
    governance silence converges to `STOPPED`.
 
+A fork reported through ibc-go's `MsgUpdateClient` instead, the path a generic
+relayer or watcher takes, freezes the client without the provider hearing of
+it. The provider's BeginBlock pauses a launched consumer whose client is
+frozen, so the containment is the same, one block later and without the
+attribution.
+
 Nobody is slashed, jailed, or tombstoned, deliberately. A malicious consumer
 binary can orchestrate a fork in which every honest validator signs each
 conflicting header once, so the byzantine set of a verified attack is exactly
@@ -145,12 +148,12 @@ attacker a targeting tool. The full rationale, including why this must not be
 What happens after containment is a governance decision: `MsgResumeConsumer`
 resumes the chain (with a forced snapshot) once the fork is understood and
 fixed, bundling ibc-go's `MsgRecoverClient` for the frozen client, or the pause
-expires into `STOPPED`. The resume is governance's ruling on the fork it was
-asked about: it records the recovered client's latest height, and misbehaviour
-whose headers both sit at or below it is rejected as adjudicated, so the same
-conflicting headers cannot pause the consumer again for as long as they verify
-(a trusting period). A fork at a later height is new evidence and pauses it
-again.
+expires into `STOPPED`. The resume waits out the fork's evidence: a recovery
+keeps the client's pre-fork consensus states, against which the conflicting
+headers verify on either submission path until those states age out of the
+trusting period, so the resume is refused until one trusting period (plus the
+client's clock-drift allowance) has passed since the pause. A fork at a later
+height is new evidence and pauses it again.
 
 ---
 

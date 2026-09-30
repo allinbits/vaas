@@ -38,7 +38,7 @@ app, not a template.
 | VSC Packets              | Validator set updates sent at epoch boundaries                       |
 | Double Voting Evidence   | Handle double voting evidence from consumers                         |
 | Downtime Slashing        | Falsifiable downtime evidence; slash held behind a challenge window  |
-| Light Client Misbehavior | Consumer client frozen and consumer paused; nobody punished; a governance resume adjudicates the fork |
+| Light Client Misbehavior | Consumer client frozen and consumer paused; nobody punished; a governance resume waits out the fork's evidence |
 | Consumer Metadata        | Name, description, metadata for chain discovery                      |
 
 ### Removed from ICS

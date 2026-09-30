@@ -152,9 +152,9 @@ VSC packets are diffs by default. If a consumer falls behind on acknowledgements
 consumer reported false downtime evidence (see [consumer-downtime.md](consumer-downtime.md))
 -- or the bonded power refusing the consumer reaching `RefusalPauseThreshold`, evaluated
 every EndBlock (see [consumer-refusal.md](consumer-refusal.md)) -- or a confirmed
-light-client attack (`MsgSubmitConsumerMisbehaviour`, see
-[equivocation-evidence.md](equivocation-evidence.md)), which also freezes the consumer's
-IBC client.
+light-client attack: `MsgSubmitConsumerMisbehaviour` freezes the consumer's IBC client and
+pauses in one transaction, and a client frozen through ibc-go's `MsgUpdateClient` is caught
+by the provider's BeginBlock (see [equivocation-evidence.md](equivocation-evidence.md)).
 
 **Requirements:** consumer must be in `LAUNCHED` phase.
 
@@ -172,8 +172,9 @@ IBC client.
 **Exits:** `MsgResumeConsumer` (gov) returns the consumer to `LAUNCHED` with an immediate
 snapshot resync (the resume pre-flights the IBC client and fails with `MsgRecoverClient`
 guidance if the client expired or was frozen during the pause; after a light-client pause it
-also records the fork height it adjudicated, below which misbehaviour is rejected from then
-on); `MsgRemoveConsumer` (gov) or the scheduled auto-stop moves it to `STOPPED`.
+is accepted only once one client trusting period has passed since the pause, when the fork's
+evidence can no longer pause the consumer); `MsgRemoveConsumer` (gov) or the scheduled
+auto-stop moves it to `STOPPED`.
 
 ---
 
