@@ -409,6 +409,7 @@ func TestGenesisRoundTrip(t *testing.T) {
 	pendingSlash := providertypes.PendingDowntimeSlash{
 		ConsumerId:        keyedConsumerID,
 		ProviderConsAddr:  downtimeProviderAddr.ToSdkConsAddr().Bytes(),
+		ConsumerConsAddr:  downtimeProviderAddr.ToSdkConsAddr().Bytes(),
 		WindowStartHeight: 100,
 		Span:              50,
 		MissedCount:       30,

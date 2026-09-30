@@ -79,3 +79,15 @@ func TestHighestHeightBelow(t *testing.T) {
 		})
 	}
 }
+
+func TestContainsHeight(t *testing.T) {
+	heights := []clienttypes.Height{
+		clienttypes.NewHeight(0, 10),
+		clienttypes.NewHeight(0, 20),
+		clienttypes.NewHeight(1, 5),
+	}
+	require.True(t, containsHeight(heights, clienttypes.NewHeight(0, 20)))
+	require.False(t, containsHeight(heights, clienttypes.NewHeight(0, 15)), "a height between stored ones is not stored")
+	require.False(t, containsHeight(heights, clienttypes.NewHeight(1, 20)), "the revision number must match too")
+	require.False(t, containsHeight(nil, clienttypes.NewHeight(0, 20)))
+}

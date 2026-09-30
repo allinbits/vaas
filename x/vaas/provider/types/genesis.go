@@ -209,6 +209,9 @@ func validatePendingDowntimeSlashes(slashes []PendingDowntimeSlash, knownConsume
 		if len(p.ProviderConsAddr) == 0 {
 			return fmt.Errorf("pending downtime slash: provider cons addr cannot be empty")
 		}
+		if len(p.ConsumerConsAddr) == 0 {
+			return fmt.Errorf("pending downtime slash: consumer cons addr cannot be empty")
+		}
 		if p.SlashTokens.IsNil() || p.SlashTokens.IsNegative() {
 			return fmt.Errorf("pending downtime slash: slash tokens cannot be nil or negative")
 		}

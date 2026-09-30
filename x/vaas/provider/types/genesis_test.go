@@ -333,6 +333,7 @@ func TestValidateGenesisState_DowntimeLists(t *testing.T) {
 		return types.PendingDowntimeSlash{
 			ConsumerId:         0,
 			ProviderConsAddr:   addr,
+			ConsumerConsAddr:   addr,
 			WindowStartHeight:  100,
 			Span:               16,
 			MissedCount:        1,
@@ -371,6 +372,16 @@ func TestValidateGenesisState_DowntimeLists(t *testing.T) {
 		err := gs.Validate()
 		require.Error(t, err)
 		require.Contains(t, err.Error(), "missed blocks bitmap length")
+	})
+
+	t.Run("missing consumer cons addr", func(t *testing.T) {
+		gs := build()
+		bad := validSlash(addr1)
+		bad.ConsumerConsAddr = nil
+		gs.PendingDowntimeSlashes = []types.PendingDowntimeSlash{bad}
+		err := gs.Validate()
+		require.Error(t, err)
+		require.Contains(t, err.Error(), "consumer cons addr cannot be empty")
 	})
 
 	t.Run("non-positive span", func(t *testing.T) {
