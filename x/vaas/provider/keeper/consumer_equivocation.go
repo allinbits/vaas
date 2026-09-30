@@ -494,10 +494,12 @@ func verifyLightBlockCommitSig(lightBlock tmtypes.LightBlock, sigIdx int) error 
 
 // punishEquivocation slashes, jails, and tombstones the validator identified by
 // providerAddr at the given (DoubleSign) infraction severity. It is the
-// punishment primitive behind vote-level double signing
-// (HandleConsumerDoubleVoting). Header-level light-client attacks deliberately
-// do not use it: that path contains the consumer instead of punishing
-// validators (see HandleConsumerMisbehaviour).
+// punishment primitive behind vote-level double signing:
+// HandleConsumerDoubleVoting verifies the evidence and queues the punishment,
+// and executePendingEquivocation calls this once the removal vote is in.
+// Header-level light-client attacks deliberately do not use it: that path
+// contains the consumer instead of punishing validators (see
+// HandleConsumerMisbehaviour).
 //
 // Re-submitted evidence for an already-tombstoned validator is idempotent: the
 // validator is not punished twice and no error is returned. The returned bool

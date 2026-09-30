@@ -786,7 +786,7 @@ func TestPauseExtendsJailOfPendingPunishments(t *testing.T) {
 	pauseExpiration := ctx.BlockTime().Add(k.GetMaxPauseDuration(ctx))
 	mocks.MockStakingKeeper.EXPECT().GetValidatorByConsAddr(ctx, consAddr).Return(validator, nil)
 	mocks.MockSlashingKeeper.EXPECT().JailUntil(ctx, consAddr, pauseExpiration.Add(24*time.Hour))
-	require.NoError(t, k.PauseConsumerChain(ctx, consumerID))
+	require.NoError(t, k.PauseConsumerChain(ctx, consumerID, types.PAUSE_REASON_REFUSAL_THRESHOLD))
 
 	// Frozen and matured: still nothing to do until the pause resolves.
 	frozen := ctx.WithBlockTime(ctx.BlockTime().Add(k.GetParams(ctx).EquivocationExecutionDelay + time.Hour))
