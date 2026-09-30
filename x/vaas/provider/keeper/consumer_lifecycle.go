@@ -772,6 +772,9 @@ func (k Keeper) DeleteConsumerChain(ctx sdk.Context, consumerId uint64) (err err
 	if err := k.DowntimeWindowFloors.Clear(ctx, collections.NewPrefixedPairRange[uint64, []byte](consumerId)); err != nil {
 		return fmt.Errorf("clearing downtime window floors for consumer %d: %w", consumerId, err)
 	}
+	if err := k.PunishedEquivocations.Clear(ctx, collections.NewPrefixedTripleRange[uint64, []byte, int64](consumerId)); err != nil {
+		return fmt.Errorf("clearing punished equivocations for consumer %d: %w", consumerId, err)
+	}
 
 	// Note that we do not delete ConsumerIdToChainIdKey and ConsumerIdToPhase, as well
 	// as consumer metadata and initialization parameters.

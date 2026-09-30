@@ -333,6 +333,12 @@ func (k Keeper) InitGenesis(ctx sdk.Context, genState *types.GenesisState) []abc
 			panic(fmt.Errorf("init: set downtime window floor for consumer %d: %w", e.ConsumerId, err))
 		}
 	}
+	for _, e := range genState.PunishedEquivocations {
+		key := collections.Join3(e.ConsumerId, e.ProviderConsAddr, e.InfractionHeight)
+		if err := k.PunishedEquivocations.Set(ctx, key); err != nil {
+			panic(fmt.Errorf("init: set punished equivocation for consumer %d: %w", e.ConsumerId, err))
+		}
+	}
 	for _, e := range genState.EpochDowntimeEntries {
 		key := collections.Join(e.ConsumerId, e.ProviderConsAddr)
 		if err := k.EpochDowntime.Set(ctx, key, true); err != nil {
@@ -542,6 +548,7 @@ func (k Keeper) ExportGenesis(ctx sdk.Context) *types.GenesisState {
 	withheldFeeRecords := k.exportWithheldFeeRecords(ctx)
 	acceptedDowntimeWindows := k.exportAcceptedDowntimeWindows(ctx)
 	downtimeWindowFloors := k.exportDowntimeWindowFloors(ctx)
+	punishedEquivocations := k.exportPunishedEquivocations(ctx)
 	epochDowntimeEntries := k.exportEpochDowntimeEntries(ctx)
 
 	// Only export infraction params if they have actually been set (e.g. a
@@ -574,6 +581,7 @@ func (k Keeper) ExportGenesis(ctx sdk.Context) *types.GenesisState {
 	genState.WithheldFeeRecords = withheldFeeRecords
 	genState.AcceptedDowntimeWindows = acceptedDowntimeWindows
 	genState.DowntimeWindowFloors = downtimeWindowFloors
+	genState.PunishedEquivocations = punishedEquivocations
 	genState.EpochDowntimeEntries = epochDowntimeEntries
 	return genState
 }
@@ -648,6 +656,29 @@ func (k Keeper) exportDowntimeWindowFloors(ctx sdk.Context) []types.DowntimeWind
 			ConsumerId:       key.K1(),
 			ProviderConsAddr: key.K2(),
 			WindowEndHeight:  val,
+		})
+	}
+	return entries
+}
+
+// exportPunishedEquivocations walks PunishedEquivocations into the flat list
+// carried by genesis.
+func (k Keeper) exportPunishedEquivocations(ctx sdk.Context) []types.PunishedEquivocation {
+	entries := []types.PunishedEquivocation{}
+	iter, err := k.PunishedEquivocations.Iterate(ctx, nil)
+	if err != nil {
+		panic(fmt.Errorf("export: failed to iterate punished equivocations: %w", err))
+	}
+	defer iter.Close()
+	for ; iter.Valid(); iter.Next() {
+		key, err := iter.Key()
+		if err != nil {
+			panic(fmt.Errorf("export: failed to read punished equivocation key: %w", err))
+		}
+		entries = append(entries, types.PunishedEquivocation{
+			ConsumerId:       key.K1(),
+			ProviderConsAddr: key.K2(),
+			InfractionHeight: key.K3(),
 		})
 	}
 	return entries

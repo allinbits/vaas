@@ -355,6 +355,9 @@ func TestSubmitConsumerDoubleVotingHappyPath(t *testing.T) {
 	valOperBytes, err := providerKeeper.ValidatorAddressCodec().StringToBytes(stakingValidator.GetOperator())
 	require.NoError(t, err)
 
+	// The punished-equivocation record is keyed by the live address, resolved once up front.
+	mocks.MockStakingKeeper.EXPECT().GetValidatorByConsAddr(ctx, consAddr).Return(stakingValidator, nil).Times(1)
+
 	// SlashValidator path (uses default infraction params: double-sign slash fraction = 0.05).
 	mocks.MockStakingKeeper.EXPECT().GetValidatorByConsAddr(ctx, consAddr).Return(stakingValidator, nil).Times(1)
 	mocks.MockSlashingKeeper.EXPECT().IsTombstoned(ctx, consAddr).Return(false).Times(1)

@@ -100,6 +100,8 @@ const (
 	ConsumerPauseReasonKeyName = "ConsumerPauseReasonKey"
 
 	ConsumerPausedAtKeyName = "ConsumerPausedAtKey"
+
+	PunishedEquivocationsKeyName = "PunishedEquivocationsKey"
 )
 
 // Collection key prefixes for use with cosmossdk.io/collections
@@ -145,5 +147,6 @@ var (
 	DowntimeWindowFloorsPrefix             = collections.NewPrefix(39)
 	ConsumerPauseReasonPrefix              = collections.NewPrefix(43)
 	ConsumerPausedAtPrefix                 = collections.NewPrefix(44)
+	PunishedEquivocationsPrefix            = collections.NewPrefix(45)
 	ParametersPrefix                       = collections.NewPrefix(0xFF)
 )

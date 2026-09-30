@@ -169,6 +169,15 @@ type Keeper struct {
 	// Advanced only by pruning, never by acceptance.
 	DowntimeWindowFloors collections.Map[collections.Pair[uint64, []byte], int64]
 
+	// PunishedEquivocations records, per (consumer_id, live provider cons
+	// addr, infraction height), a consumer double-sign already punished
+	// without tombstoning the validator, so the same infraction is never
+	// punished twice. A tombstoning punishment needs no record, the tombstone
+	// stops every later submission by itself, and drops the validator's
+	// entries as redundant. Keyed by the live address, so a rotation moves
+	// the entries (see migratePunishedEquivocations).
+	PunishedEquivocations collections.KeySet[collections.Triple[uint64, []byte, int64]]
+
 	// WithheldFeeRecords holds fee shares withheld from a validator due to a
 	// downtime-driven epoch exclusion, keyed by (consumer_id, provider cons
 	// addr). At most one record exists per pair: a later exclusion within an
@@ -357,6 +366,12 @@ func NewKeeper(
 		types.DowntimeWindowFloorsKeyName,
 		collections.PairKeyCodec(collections.Uint64Key, collections.BytesKey),
 		collections.Int64Value,
+	)
+
+	k.PunishedEquivocations = collections.NewKeySet(
+		sb, types.PunishedEquivocationsPrefix,
+		types.PunishedEquivocationsKeyName,
+		collections.TripleKeyCodec(collections.Uint64Key, collections.BytesKey, collections.Int64Key),
 	)
 
 	k.WithheldFeeRecords = collections.NewMap(
