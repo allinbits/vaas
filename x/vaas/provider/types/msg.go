@@ -210,30 +210,15 @@ func NewMsgCreateConsumer(submitter, chainId string, metadata ConsumerMetadata,
 	}, nil
 }
 
-// reservedChainIds lists chain-ids that a consumer chain may not use. It is
-// currently empty; the check is kept as the hook a future release (or
-// governance) can populate, e.g. to reserve the provider's own chain-id.
-var reservedChainIds = map[string]struct{}{}
-
-// IsReservedChainId reports whether chainId is reserved and therefore cannot be
-// used by a consumer chain.
-func IsReservedChainId(chainId string) bool {
-	_, reserved := reservedChainIds[chainId]
-	return reserved
-}
-
-// ValidateChainId validates that the chain id is valid and is not reserved.
+// ValidateChainId validates the shape of a consumer chain id. Whether the id
+// is free is a keeper question (see Keeper.ValidateConsumerChainIdFree): it
+// depends on the registered consumers and on the provider's own chain id.
 // Can be called for the `MsgUpdateConsumer.NewChainId` field as well, so this method takes the `field` as an argument
 // to return more appropriate error messages in case the validation fails.
 func ValidateChainId(field, chainId string) error {
 	if err := ValidateStringField(field, chainId, cmttypes.MaxChainIDLen); err != nil {
 		return errorsmod.Wrapf(ErrInvalidMsgCreateConsumer, "%s: %s", field, err.Error())
 	}
-
-	if IsReservedChainId(chainId) {
-		return errorsmod.Wrapf(ErrInvalidMsgCreateConsumer, "cannot use a reserved chain id")
-	}
-
 	return nil
 }
 
