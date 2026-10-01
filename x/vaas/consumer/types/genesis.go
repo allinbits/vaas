@@ -55,9 +55,6 @@ func NewInitialGenesisState(cs *ibctmtypes.ClientState, consState *ibctmtypes.Co
 
 // Validate performs basic genesis state validation returning an error upon any failure.
 func (gs GenesisState) Validate() error {
-	if !gs.Params.Enabled {
-		return nil
-	}
 	if len(gs.Provider.InitialValSet) == 0 {
 		return errorsmod.Wrap(vaastypes.ErrInvalidGenesis, "initial validator set is empty")
 	}

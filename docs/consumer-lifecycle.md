@@ -95,7 +95,7 @@ owner (or governance) submits `MsgRemoveConsumer`: see
        period is derived from the provider unbonding period and `trusting_period_fraction`.
      - The initial validator set.
      - Consumer parameters seeded from the consumer's `initialization_parameters`:
-       `enabled` (set to true), `vaas_timeout_period`, `historical_entries`,
+       `vaas_timeout_period`, `historical_entries`,
        `unbonding_period`, and `safe_mode_threshold`.
      - The provider-owned downtime parameters `signed_blocks_window` and
        `min_signed_per_window`, seeded from the provider's current values so the consumer

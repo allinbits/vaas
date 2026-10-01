@@ -19,7 +19,7 @@ func TestDefaultConsumerParamsDowntimeWindowDefaults(t *testing.T) {
 }
 
 func TestNewConsumerParamsAppliesDowntimeWindowDefaults(t *testing.T) {
-	p := types.NewConsumerParams(true, types.DefaultVAASTimeoutPeriod, 1000, types.DefaultConsumerUnbondingPeriod, types.DefaultSafeModeThreshold)
+	p := types.NewConsumerParams(types.DefaultVAASTimeoutPeriod, 1000, types.DefaultConsumerUnbondingPeriod, types.DefaultSafeModeThreshold)
 	require.False(t, p.MinSignedPerWindow.IsNil())
 	require.Equal(t, types.DefaultSignedBlocksWindow, p.SignedBlocksWindow)
 	require.Equal(t, math.LegacyMustNewDecFromStr(types.DefaultMinSignedPerWindow), p.MinSignedPerWindow)
@@ -32,7 +32,7 @@ func TestConsumerParamsPhotonFeesEnabled(t *testing.T) {
 	require.False(t, p.PhotonFeesEnabled)
 	require.NoError(t, p.Validate())
 
-	p = types.NewConsumerParams(true, types.DefaultVAASTimeoutPeriod, 1000, types.DefaultConsumerUnbondingPeriod, types.DefaultSafeModeThreshold)
+	p = types.NewConsumerParams(types.DefaultVAASTimeoutPeriod, 1000, types.DefaultConsumerUnbondingPeriod, types.DefaultSafeModeThreshold)
 	require.False(t, p.PhotonFeesEnabled)
 
 	p.PhotonFeesEnabled = true

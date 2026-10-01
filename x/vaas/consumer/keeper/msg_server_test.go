@@ -44,7 +44,6 @@ func newPinFixture(t *testing.T) *pinFixture {
 	t.Cleanup(ctrl.Finish)
 
 	params := vaastypes.DefaultConsumerParams()
-	params.Enabled = true
 	params.OwnerAddress = pinOwner
 	k.SetParams(ctx, params)
 	// The provider chain id is pinned at genesis from the provider-authored

@@ -17,7 +17,6 @@ func TestParams(t *testing.T) {
 	consumerKeeper.SetParams(ctx, vaastypes.DefaultConsumerParams())
 
 	expParams := vaastypes.NewConsumerParams(
-		false,
 		vaastypes.DefaultVAASTimeoutPeriod,
 		vaastypes.DefaultHistoricalEntries,
 		vaastypes.DefaultConsumerUnbondingPeriod,
@@ -27,7 +26,7 @@ func TestParams(t *testing.T) {
 	params := consumerKeeper.GetConsumerParams(ctx)
 	require.Equal(t, expParams, params)
 
-	newParams := vaastypes.NewConsumerParams(false, 7*24*time.Hour, 500, 24*21*time.Hour, vaastypes.DefaultSafeModeThreshold)
+	newParams := vaastypes.NewConsumerParams(7*24*time.Hour, 500, 24*21*time.Hour, vaastypes.DefaultSafeModeThreshold)
 	consumerKeeper.SetParams(ctx, newParams)
 	params = consumerKeeper.GetConsumerParams(ctx)
 	require.Equal(t, newParams, params)

@@ -19,10 +19,6 @@ func (k Keeper) InitGenesis(ctx sdk.Context, state *types.GenesisState) []abci.V
 	k.SetInitGenesisHeight(ctx, ctx.BlockHeight())
 
 	k.SetParams(ctx, state.Params)
-	if !state.Params.Enabled {
-		return nil
-	}
-
 	if state.NewChain {
 		// No client is created here. A client the chain creates for itself
 		// could never carry a packet: created outside a MsgCreateClient it has
@@ -154,9 +150,6 @@ func (k Keeper) InitGenesis(ctx sdk.Context, state *types.GenesisState) []abci.V
 // ExportGenesis returns the VAAS consumer module's exported genesis
 func (k Keeper) ExportGenesis(ctx sdk.Context) (genesis *types.GenesisState) {
 	params := k.GetConsumerParams(ctx)
-	if !params.Enabled {
-		return types.DefaultGenesisState()
-	}
 
 	// export the current validator set
 	valset := k.MustGetCurrentValidatorsAsABCIUpdates(ctx)

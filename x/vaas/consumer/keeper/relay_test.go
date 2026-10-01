@@ -284,7 +284,6 @@ func TestConsumerVSCStaleness(t *testing.T) {
 	// value (not a constant) and that the boundary tracks the param.
 	const threshold = 2 * time.Hour
 	k.SetParams(ctx, types.NewConsumerParams(
-		true,
 		types.DefaultVAASTimeoutPeriod,
 		types.DefaultHistoricalEntries,
 		types.DefaultConsumerUnbondingPeriod,
@@ -409,7 +408,6 @@ func TestRecvPacketAfterStalenessLiftsStale(t *testing.T) {
 
 	const threshold = 2 * time.Hour
 	k.SetParams(ctx, types.NewConsumerParams(
-		true,
 		types.DefaultVAASTimeoutPeriod,
 		types.DefaultHistoricalEntries,
 		types.DefaultConsumerUnbondingPeriod,
