@@ -2,12 +2,14 @@ package app
 
 import (
 	"encoding/json"
+	"errors"
 	"log"
 
 	cmtproto "github.com/cometbft/cometbft/proto/tendermint/types"
 
 	servertypes "github.com/cosmos/cosmos-sdk/server/types"
 	sdk "github.com/cosmos/cosmos-sdk/types"
+	distrtypes "github.com/cosmos/cosmos-sdk/x/distribution/types"
 	slashingtypes "github.com/cosmos/cosmos-sdk/x/slashing/types"
 	"github.com/cosmos/cosmos-sdk/x/staking"
 	stakingtypes "github.com/cosmos/cosmos-sdk/x/staking/types"
@@ -86,8 +88,10 @@ func (app *App) prepForZeroHeightGenesis(ctx sdk.Context, jailAllowedAddrs []str
 			panic(err)
 		}
 
-		_, err = app.DistrKeeper.WithdrawValidatorCommission(ctx, valAddr)
-		if err != nil {
+		// A validator at a zero commission rate, or one that withdrew
+		// recently, has nothing accumulated; that is not an error here.
+		if _, err = app.DistrKeeper.WithdrawValidatorCommission(ctx, valAddr); err != nil &&
+			!errors.Is(err, distrtypes.ErrNoValidatorCommission) {
 			panic(err)
 		}
 		return false
@@ -99,12 +103,10 @@ func (app *App) prepForZeroHeightGenesis(ctx sdk.Context, jailAllowedAddrs []str
 		panic(err)
 	}
 	for _, delegation := range dels {
-		// TODO: add tests to figure this out (it's low impact since this is just a test app)
 		delAddr, err := app.AccountKeeper.AddressCodec().StringToBytes(delegation.GetDelegatorAddr())
 		if err != nil {
 			panic(err)
 		}
-		// NOTE: @MSalopek this may be wrong -> need validator addr codec
 		valAddr, err := app.StakingKeeper.ValidatorAddressCodec().StringToBytes(delegation.GetValidatorAddr())
 		if err != nil {
 			panic(err)
