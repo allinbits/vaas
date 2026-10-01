@@ -93,12 +93,13 @@ func (k Keeper) HandleConsumerDoubleVoting(
 		types.NewConsumerConsAddress(sdk.ConsAddress(evidence.VoteA.ValidatorAddress.Bytes())),
 	)
 
-	// One punishment per infraction. The record names the infraction by its
-	// height (two conflicting votes at one height are one infraction) under
-	// the validator's live provider consensus address, which is where a
-	// re-submission resolves to after a rotation as well.
+	// One punishment per infraction. The record names the infraction by the
+	// chain id the votes were signed over and its height (two conflicting
+	// votes at one height are one infraction) under the validator's live
+	// provider consensus address, which is where a re-submission resolves to
+	// after a rotation as well.
 	liveAddr := k.liveProviderConsAddr(ctx, providerAddr)
-	punishedKey := collections.Join3(consumerId, liveAddr.ToSdkConsAddr().Bytes(), evidence.VoteA.Height)
+	punishedKey := collections.Join3(chainId, liveAddr.ToSdkConsAddr().Bytes(), evidence.VoteA.Height)
 	if punished, err := k.PunishedEquivocations.Has(ctx, punishedKey); err != nil {
 		return fmt.Errorf("checking whether the equivocation was already punished: %w", err)
 	} else if punished {
@@ -125,7 +126,7 @@ func (k Keeper) HandleConsumerDoubleVoting(
 	// non-tombstoning policy redundant. A non-tombstoning punishment is
 	// remembered, or the same evidence would punish again.
 	if alreadyTombstoned || infractionParams.DoubleSign.Tombstone {
-		if err := k.PunishedEquivocations.Clear(ctx, collections.NewSuperPrefixedTripleRange[uint64, []byte, int64](consumerId, punishedKey.K2())); err != nil {
+		if err := k.PunishedEquivocations.Clear(ctx, collections.NewSuperPrefixedTripleRange[string, []byte, int64](chainId, punishedKey.K2())); err != nil {
 			return fmt.Errorf("forgetting the punished equivocations of a tombstoned validator: %w", err)
 		}
 	} else if err := k.PunishedEquivocations.Set(ctx, punishedKey); err != nil {

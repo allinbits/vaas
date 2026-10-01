@@ -915,20 +915,22 @@ func TestGenesisStateValidatePunishedEquivocations(t *testing.T) {
 		return gs
 	}
 	addr := []byte("provider-cons-addr-one11")
-	valid := types.PunishedEquivocation{ConsumerId: 0, ProviderConsAddr: addr, InfractionHeight: 55}
+	valid := types.PunishedEquivocation{ChainId: "chain-1", ProviderConsAddr: addr, InfractionHeight: 55}
 
 	require.NoError(t, build(valid).Validate())
-	require.NoError(t, build(valid, types.PunishedEquivocation{ConsumerId: 0, ProviderConsAddr: addr, InfractionHeight: 56}).Validate(),
+	require.NoError(t, build(valid, types.PunishedEquivocation{ChainId: "chain-1", ProviderConsAddr: addr, InfractionHeight: 56}).Validate(),
 		"two infractions of one validator are two entries")
+	require.NoError(t, build(types.PunishedEquivocation{ChainId: "gone-1", ProviderConsAddr: addr, InfractionHeight: 55}).Validate(),
+		"a record outlives the consumer it was taken under: no live consumer needs to carry its chain id")
 
 	cases := []struct {
 		name  string
 		entry types.PunishedEquivocation
 		want  string
 	}{
-		{"empty address", types.PunishedEquivocation{ConsumerId: 0, InfractionHeight: 55}, "provider cons addr cannot be empty"},
-		{"non-positive height", types.PunishedEquivocation{ConsumerId: 0, ProviderConsAddr: addr}, "infraction height must be positive"},
-		{"unknown consumer", types.PunishedEquivocation{ConsumerId: 9, ProviderConsAddr: addr, InfractionHeight: 55}, "unknown consumer 9"},
+		{"empty chain id", types.PunishedEquivocation{ProviderConsAddr: addr, InfractionHeight: 55}, "chain id cannot be empty"},
+		{"empty address", types.PunishedEquivocation{ChainId: "chain-1", InfractionHeight: 55}, "provider cons addr cannot be empty"},
+		{"non-positive height", types.PunishedEquivocation{ChainId: "chain-1", ProviderConsAddr: addr}, "infraction height must be positive"},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
