@@ -137,7 +137,7 @@ func (s *LivenessIntegrationTestSuite) testEvidenceRequeueOnTimeout() {
 		const consumerID = "0"
 		const window = int64(downtimeSignedBlocksWindow)
 
-		s.Require().Equalf("CONSUMER_PHASE_LAUNCHED", s.queryProviderConsumerPhase(consumerID),
+		s.Require().Equalf(phaseLaunched, s.queryProviderConsumerPhase(consumerID),
 			"consumer %s must be LAUNCHED before the evidence-requeue test", consumerID)
 
 		// Top up the consumer fee pool: epochs are one ~1s block here, so the
@@ -294,7 +294,7 @@ func (s *LivenessIntegrationTestSuite) testEvidenceRequeueOnTimeout() {
 
 		// The outage must not have tripped the provider's liveness sweep; the
 		// suite's remaining tests need a LAUNCHED consumer.
-		s.Require().Equalf("CONSUMER_PHASE_LAUNCHED", s.queryProviderConsumerPhase(consumerID),
+		s.Require().Equalf(phaseLaunched, s.queryProviderConsumerPhase(consumerID),
 			"consumer %s must still be LAUNCHED after the evidence-requeue test", consumerID)
 	})
 }

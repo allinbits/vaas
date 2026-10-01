@@ -97,7 +97,7 @@ func (s *IntegrationTestSuite) queryCommunityPoolBalance(denom string) int64 {
 //
 // proposalJSON must be a valid gov v1 proposal body. The submitter and voting
 // fees are paid in bondDenom by val.
-func (s *baseTestSuite) submitAndPassProposal(proposalJSON string) uint64 {
+func (s *baseTestSuite) submitAndPassProposal(proposalJSON string) {
 	containerID := s.providerValRes[0].Container.ID
 
 	// 1. Write the proposal body to /tmp/proposal.json via base64 to avoid
@@ -182,8 +182,6 @@ func (s *baseTestSuite) submitAndPassProposal(proposalJSON string) uint64 {
 		}
 	}, 30*time.Second, 2*time.Second,
 		"proposal %d did not pass within timeout", proposalID)
-
-	return proposalID
 }
 
 // dumpProposal returns the raw JSON of a gov proposal query, used to surface

@@ -87,7 +87,7 @@ func (s *baseTestSuite) providerFundAddress(addr, amount string) {
 
 // providerFundConsumerFeePool deposits `amount` into the named consumer's
 // fee pool via MsgFundConsumerFeePool, signed by val.
-func (s *baseTestSuite) providerFundConsumerFeePool(consumerID, amount string) {
+func (s *baseTestSuite) providerFundConsumerFeePool(consumerID, amount string) { //nolint:unparam // the suite drives one consumer; the helper stays generic
 	stdout, stderr, err := s.dockerExec(s.providerValRes[0].Container.ID, []string{
 		providerBinary, "tx", "vaasprovider", "fund-consumer-fee-pool",
 		consumerID, amount,
