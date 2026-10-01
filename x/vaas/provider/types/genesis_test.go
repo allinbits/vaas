@@ -853,14 +853,19 @@ func TestConsumerStateValidatePerPhase(t *testing.T) {
 	}
 }
 
+// nonDefaultConsumerGenesis is the consumer genesis a launched consumer
+// carries: a complete one the consumer module would accept, not the default
+// placeholder a pre-launch consumer holds.
 func nonDefaultConsumerGenesis() vaastypes.ConsumerGenesisState {
-	gs := vaastypes.DefaultConsumerGenesisState()
-	gs.NewChain = true
-	return *gs
+	return initialConsumerGenesis("consumer-alpha")
 }
 
 func getInitialConsumerGenesis(t *testing.T, chainID string) vaastypes.ConsumerGenesisState {
 	t.Helper()
+	return initialConsumerGenesis(chainID)
+}
+
+func initialConsumerGenesis(chainID string) vaastypes.ConsumerGenesisState {
 	cId := crypto.NewCryptoIdentityFromIntSeed(239668)
 	pubKey := cId.TMCryptoPubKey()
 
@@ -881,7 +886,6 @@ func getInitialConsumerGenesis(t *testing.T, chainID string) vaastypes.ConsumerG
 	consensusState := ibctmtypes.NewConsensusState(time.Now(), commitmenttypes.NewMerkleRoot([]byte("apphash")), valHash)
 
 	params := vaastypes.DefaultConsumerParams()
-	params.Enabled = true
 
 	return *vaastypes.NewInitialConsumerGenesisState(clientState, consensusState, valUpdates, params)
 }

@@ -70,7 +70,6 @@ func TestInitGenesis(t *testing.T) {
 	)
 
 	params := vaastypes.DefaultConsumerParams()
-	params.Enabled = true
 
 	testCases := []struct {
 		name         string
@@ -143,7 +142,6 @@ func TestExportGenesis(t *testing.T) {
 	valset := []abci.ValidatorUpdate{tmtypes.TM2PB.ValidatorUpdate(validator)}
 
 	params := vaastypes.DefaultConsumerParams()
-	params.Enabled = true
 
 	testCases := []struct {
 		name       string
@@ -190,7 +188,6 @@ func TestExportGenesis(t *testing.T) {
 func TestGenesisRoundTripLastVSCRecvTime(t *testing.T) {
 	provClientID := "tendermint-07"
 	params := vaastypes.DefaultConsumerParams()
-	params.Enabled = true
 
 	pubKey := ed25519.GenPrivKey().PubKey()
 	tmPK, err := cryptocodec.ToCmtPubKeyInterface(pubKey)
@@ -254,7 +251,6 @@ func TestVSCStalenessClockArmsAtFirstWallClockBlock(t *testing.T) {
 	)
 
 	params := vaastypes.DefaultConsumerParams()
-	params.Enabled = true
 
 	t.Run("new chain arms at the first block after genesis, with wall-clock time", func(t *testing.T) {
 		ck, ctx, ctrl, _ := testkeeper.GetConsumerKeeperAndCtx(t, testkeeper.NewInMemKeeperParams(t))
@@ -349,7 +345,6 @@ func TestVSCStalenessClockArmsAtFirstWallClockBlock(t *testing.T) {
 func TestGenesisRoundTripConsumerInDebt(t *testing.T) {
 	provClientID := "tendermint-07"
 	params := vaastypes.DefaultConsumerParams()
-	params.Enabled = true
 
 	pubKey := ed25519.GenPrivKey().PubKey()
 	tmPK, err := cryptocodec.ToCmtPubKeyInterface(pubKey)
@@ -400,7 +395,6 @@ func TestGenesisRoundTripConsumerInDebt(t *testing.T) {
 func TestGenesisRoundTripDowntimeState(t *testing.T) {
 	provClientID := "tendermint-07"
 	params := vaastypes.DefaultConsumerParams()
-	params.Enabled = true
 
 	pubKey := ed25519.GenPrivKey().PubKey()
 	tmPK, err := cryptocodec.ToCmtPubKeyInterface(pubKey)
@@ -499,7 +493,6 @@ func TestGenesisRoundTripDowntimeState(t *testing.T) {
 func TestGenesisRoundTripProviderChainId(t *testing.T) {
 	provClientID := "tendermint-07"
 	params := vaastypes.DefaultConsumerParams()
-	params.Enabled = true
 
 	pubKey := ed25519.GenPrivKey().PubKey()
 	tmPK, err := cryptocodec.ToCmtPubKeyInterface(pubKey)
@@ -542,7 +535,6 @@ func TestGenesisRoundTripProviderChainId(t *testing.T) {
 func TestGenesisRoundTripPhotonFeesEnabled(t *testing.T) {
 	provClientID := "tendermint-07"
 	params := vaastypes.DefaultConsumerParams()
-	params.Enabled = true
 	params.PhotonFeesEnabled = true
 
 	pubKey := ed25519.GenPrivKey().PubKey()
@@ -626,7 +618,6 @@ func TestInitGenesisPanicsOnInvalidStagedDowntimeParams(t *testing.T) {
 	valset := []abci.ValidatorUpdate{tmtypes.TM2PB.ValidatorUpdate(validator)}
 
 	params := vaastypes.DefaultConsumerParams()
-	params.Enabled = true
 	genesis := consumertypes.NewRestartGenesisState(
 		"07-tendermint-0",
 		valset,
@@ -684,7 +675,6 @@ func TestInitGenesisNewChainCreatesNoClient(t *testing.T) {
 	)
 
 	params := vaastypes.DefaultConsumerParams()
-	params.Enabled = true
 	genesis := consumertypes.NewInitialGenesisState(provClientState, provConsState, nil, params)
 	ck.InitGenesis(ctx, genesis)
 
@@ -707,7 +697,6 @@ func TestGenesisRoundTripBeforePinKeepsState(t *testing.T) {
 	defer ctrl.Finish()
 
 	params := vaastypes.DefaultConsumerParams()
-	params.Enabled = true
 	ck.SetParams(ctx, params)
 	ck.SetProviderChainId(ctx, "provider-boot-1")
 	armedAt := time.Unix(1_850_000_000, 0).UTC()
@@ -746,7 +735,6 @@ func TestInitGenesisPanicsWhenPinnedClientMissing(t *testing.T) {
 	validator := tmtypes.NewValidator(cId.TMCryptoPubKey(), 1)
 	valset := []abci.ValidatorUpdate{tmtypes.TM2PB.ValidatorUpdate(validator)}
 	params := vaastypes.DefaultConsumerParams()
-	params.Enabled = true
 	genesis := consumertypes.NewRestartGenesisState("07-tendermint-9", valset, params)
 
 	require.PanicsWithError(t,

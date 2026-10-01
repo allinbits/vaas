@@ -254,7 +254,6 @@ func (k Keeper) MakeConsumerGenesis(
 	}
 	// Create consumer genesis params
 	consumerGenesisParams := vaastypes.NewConsumerParams(
-		true,
 		initializationRecord.VaasTimeoutPeriod,
 		initializationRecord.HistoricalEntries,
 		initializationRecord.UnbondingPeriod,

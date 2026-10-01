@@ -87,7 +87,7 @@ REST: `/vaas/provider/v1/consumer_refusals/{consumer_id}` and
 
 | Command | Args | Returns |
 |---|---|---|
-| `params` | -- | The consumer's `ConsumerParams`: `enabled`, `vaas_timeout_period`, `historical_entries`, `unbonding_period`, `safe_mode_threshold`, `signed_blocks_window`, `min_signed_per_window`. The last two are provider-owned, arrive via VSC packets, and cannot be changed locally. |
+| `params` | -- | The consumer's `ConsumerParams`: `vaas_timeout_period`, `historical_entries`, `unbonding_period`, `safe_mode_threshold`, `signed_blocks_window`, `min_signed_per_window`. The last two are provider-owned, arrive via VSC packets, and cannot be changed locally. |
 | `provider-info` | -- | `consumer` and `provider` `ChainInfo` pairs, derived from IBC state. This is the "is my consumer wired up yet" probe: it errors `NotFound` until the provider client exists. **Read the fields carefully:** `consumer.chainID` is the local chain id but `consumer.clientID` is the id of the client *on the consumer that tracks the provider*; `provider.chainID` comes from that client's state, and `provider.clientID` is never populated. |
 
 ---

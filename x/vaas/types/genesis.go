@@ -35,9 +35,6 @@ func DefaultConsumerGenesisState() *ConsumerGenesisState {
 }
 
 func (gs ConsumerGenesisState) Validate() error {
-	if !gs.Params.Enabled {
-		return nil
-	}
 	if len(gs.Provider.InitialValSet) == 0 {
 		return errorsmod.Wrap(ErrInvalidGenesis, "initial validator set is empty")
 	}

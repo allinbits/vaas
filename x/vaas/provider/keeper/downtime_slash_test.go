@@ -777,8 +777,7 @@ func TestPruneAcceptedDowntimeWindowsKeepsRecordWhilePendingSlashMatures(t *test
 	// genesis can be validated at each step.
 	require.Equal(t, consumerId, k.FetchAndIncrementConsumerId(ctx))
 	k.SetConsumerOwnerAddress(ctx, consumerId, sdk.AccAddress([]byte("vaas-test-owner-1234")).String())
-	cg := *vaastypes.DefaultConsumerGenesisState()
-	cg.NewChain = true
+	cg := launchedConsumerGenesis()
 	require.NoError(t, k.SetConsumerGenesis(ctx, consumerId, cg))
 	k.SetParams(ctx, types.DefaultParams())
 	k.SetValidatorSetUpdateId(ctx, 1)

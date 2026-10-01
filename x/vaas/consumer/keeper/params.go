@@ -40,12 +40,6 @@ func (k Keeper) GetParams(context.Context) (stakingtypes.Params, error) {
 	return stakingtypes.Params{}, nil
 }
 
-// GetEnabled returns the enabled flag for the consumer module
-func (k Keeper) GetEnabled(ctx context.Context) bool {
-	params := k.GetConsumerParams(ctx)
-	return params.Enabled
-}
-
 // PhotonFeesEnabled reports whether this consumer requires transaction fees to
 // be paid in the one-hop photon voucher from the provider. It is read from the
 // module params on every transaction so that all nodes reach the same verdict,
