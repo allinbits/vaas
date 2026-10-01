@@ -33,18 +33,10 @@ issues:
   exclude-files:
     - ".*\\.pb\\.go$"
     - ".*\\.pb\\.gw\\.go$"
-    - x/gov/types/v1/wrapper.go
-    - x/gov/types/v1beta1/wrapper.go
   exclude-rules:
     - text: "Use of weak random number generator"
       linters:
         - gosec
-    - text: "comment on exported var"
-      linters:
-        - golint
-    - text: "don't use an underscore in package name"
-      linters:
-        - golint
     - text: "ST1003:"
       linters:
         - stylecheck
@@ -53,10 +45,6 @@ issues:
     - text: "ST1016:"
       linters:
         - stylecheck
-    - path: "migrations"
-      text: "SA1019:"
-      linters:
-        - staticcheck
     - linters:
         - gosec
       text: "G115: integer overflow conversion"
@@ -76,7 +64,7 @@ linters-settings:
       - prefix(github.com/cosmos) # cosmos org
       - prefix(cosmossdk.io) # new modules
       - prefix(github.com/cosmos/cosmos-sdk) # cosmos sdk
-      - prefix(github.com/atomone-hub/atomone) # AtomOne
+      - prefix(github.com/allinbits/vaas) # this module
   dogsled:
     max-blank-identifiers: 3
   maligned:

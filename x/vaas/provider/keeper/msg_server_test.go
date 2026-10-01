@@ -144,6 +144,16 @@ func TestCreateConsumerDuplicateChainId(t *testing.T) {
 		})
 	require.Error(t, err)
 	require.ErrorIs(t, err, providertypes.ErrDuplicateChainId)
+
+	// The provider's own chain id is not available to a consumer either.
+	_, err = msgServer.CreateConsumer(ctx.WithChainID("provider-1"),
+		&providertypes.MsgCreateConsumer{
+			Submitter: "submitter3", ChainId: "provider-1", Metadata: consumerMetadata,
+			InitializationParameters: &providertypes.ConsumerInitializationParameters{
+				UnbondingPeriod: 21 * 24 * time.Hour,
+			},
+		})
+	require.ErrorIs(t, err, providertypes.ErrProviderChainId)
 }
 
 func TestUpdateConsumer(t *testing.T) {
@@ -271,6 +281,17 @@ func TestUpdateConsumerDuplicateChainId(t *testing.T) {
 	actualChainId, err := providerKeeper.GetConsumerChainId(ctx, consumerId2)
 	require.NoError(t, err)
 	require.Equal(t, chainId2, actualChainId)
+
+	// nor can it take the provider's own chain id
+	_, err = msgServer.UpdateConsumer(ctx.WithChainID("provider-1"),
+		&providertypes.MsgUpdateConsumer{
+			Owner: "submitter", ConsumerId: consumerId2,
+			NewChainId: "provider-1",
+		})
+	require.ErrorIs(t, err, providertypes.ErrProviderChainId)
+	actualChainId, err = providerKeeper.GetConsumerChainId(ctx, consumerId2)
+	require.NoError(t, err)
+	require.Equal(t, chainId2, actualChainId)
 }
 
 func TestSubmitConsumerDoubleVotingRejectsMismatchedChainID(t *testing.T) {
@@ -386,7 +407,7 @@ func TestSubmitConsumerDoubleVotingHappyPath(t *testing.T) {
 	// Sanity-check the chain event surfaced the expected consumer/chain attrs.
 	var found bool
 	for _, ev := range ctx.EventManager().Events() {
-		if ev.Type != "submit_consumer_double_voting" {
+		if ev.Type != "vaas_submit_consumer_double_voting" {
 			continue
 		}
 		found = true
@@ -1097,7 +1118,7 @@ func TestCreateConsumerEventsIncludeInitParams(t *testing.T) {
 	// verify the event has binary_hash, genesis_hash, and spawn_time attributes
 	var found bool
 	for _, ev := range ctx.EventManager().Events() {
-		if ev.Type != "create_consumer" {
+		if ev.Type != "vaas_create_consumer" {
 			continue
 		}
 		found = true

@@ -73,7 +73,6 @@ func setupAnteTestApp(t *testing.T, photonFees bool) *consumerapp.App {
 	valPubKey, err := cryptocodec.ToCmtProtoPublicKey(ed25519.GenPrivKey().PubKey())
 	require.NoError(t, err)
 	params := vaastypes.DefaultConsumerParams()
-	params.Enabled = true
 	params.PhotonFeesEnabled = photonFees
 	consumerGenesis := consumertypes.NewRestartGenesisState(
 		providerClientID,

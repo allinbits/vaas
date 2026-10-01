@@ -14,7 +14,7 @@ import (
 	sdk "github.com/cosmos/cosmos-sdk/types"
 )
 
-// TestParams tests the getting/setting of provider ccv module params.
+// TestParams tests the getting/setting of the VAAS provider module params.
 func TestParams(t *testing.T) {
 	// Construct an in-mem keeper with registered key table
 	keeperParams := testkeeper.NewInMemKeeperParams(t)

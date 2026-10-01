@@ -1,14 +1,14 @@
 package ante
 
 import (
-	providertypes "github.com/allinbits/vaas/x/vaas/provider/types"
-
 	errorsmod "cosmossdk.io/errors"
 
 	cryptotypes "github.com/cosmos/cosmos-sdk/crypto/types"
 	sdk "github.com/cosmos/cosmos-sdk/types"
 	"github.com/cosmos/cosmos-sdk/x/authz"
 	stakingtypes "github.com/cosmos/cosmos-sdk/x/staking/types"
+
+	providertypes "github.com/allinbits/vaas/x/vaas/provider/types"
 )
 
 type (

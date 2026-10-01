@@ -7,9 +7,6 @@ import (
 	"strings"
 	"time"
 
-	"github.com/allinbits/vaas/x/vaas/provider/types"
-	vaastypes "github.com/allinbits/vaas/x/vaas/types"
-
 	tmtypes "github.com/cometbft/cometbft/types"
 
 	"cosmossdk.io/collections"
@@ -23,6 +20,9 @@ import (
 	disttypes "github.com/cosmos/cosmos-sdk/x/distribution/types"
 	govtypes "github.com/cosmos/cosmos-sdk/x/gov/types"
 	stakingtypes "github.com/cosmos/cosmos-sdk/x/staking/types"
+
+	"github.com/allinbits/vaas/x/vaas/provider/types"
+	vaastypes "github.com/allinbits/vaas/x/vaas/types"
 )
 
 type msgServer struct {
@@ -276,13 +276,8 @@ func (k msgServer) CreateConsumer(goCtx context.Context, msg *types.MsgCreateCon
 	consumerId := k.Keeper.FetchAndIncrementConsumerId(ctx)
 
 	k.Keeper.SetConsumerOwnerAddress(ctx, consumerId, msg.Submitter)
-	chainIdInUse, err := k.Keeper.ChainIdInUse(ctx, msg.ChainId)
-	if err != nil {
+	if err := k.Keeper.ValidateConsumerChainIdFree(ctx, msg.ChainId); err != nil {
 		return nil, err
-	}
-	if chainIdInUse {
-		return nil, errorsmod.Wrapf(types.ErrDuplicateChainId,
-			"chain ID %s is already registered", msg.ChainId)
 	}
 	k.Keeper.SetConsumerChainId(ctx, consumerId, msg.ChainId)
 	k.Keeper.SetConsumerPhase(ctx, consumerId, types.CONSUMER_PHASE_REGISTERED)
@@ -330,8 +325,7 @@ func (k msgServer) CreateConsumer(goCtx context.Context, msg *types.MsgCreateCon
 			sdk.NewAttribute(types.AttributeConsumerGenesisHash, string(initializationParameters.GenesisHash)))
 	}
 
-	// Power shaping and infraction parameters removed - all validators validate all consumers
-	// with default provider parameters
+	// All validators validate all consumers with the default provider parameters.
 
 	if spawnTime, initialized := k.Keeper.InitializeConsumer(ctx, consumerId); initialized {
 		if err := k.Keeper.PrepareConsumerForLaunch(ctx, consumerId, time.Time{}, spawnTime); err != nil {
@@ -442,13 +436,8 @@ func (k msgServer) UpdateConsumer(goCtx context.Context, msg *types.MsgUpdateCon
 
 		if k.IsConsumerPrelaunched(ctx, consumerId) {
 			chainId = msg.NewChainId
-			chainIdInUse, err := k.Keeper.ChainIdInUse(ctx, chainId)
-			if err != nil {
+			if err := k.Keeper.ValidateConsumerChainIdFree(ctx, chainId); err != nil {
 				return nil, err
-			}
-			if chainIdInUse {
-				return nil, errorsmod.Wrapf(types.ErrDuplicateChainId,
-					"chain ID %s is already registered", chainId)
 			}
 			k.SetConsumerChainId(ctx, consumerId, chainId)
 		} else {
@@ -535,8 +524,7 @@ func (k msgServer) UpdateConsumer(goCtx context.Context, msg *types.MsgUpdateCon
 		}
 	}
 
-	// Power shaping and infraction parameters removed - all validators validate all consumers
-	// with default provider parameters
+	// All validators validate all consumers with the default provider parameters.
 
 	currentOwnerAddress, err := k.Keeper.GetConsumerOwnerAddress(ctx, consumerId)
 	if err != nil {

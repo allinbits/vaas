@@ -65,7 +65,6 @@ func TestSendEvidencePacketsCapsSendsPerBlock(t *testing.T) {
 	defer ctrl.Finish()
 
 	params := vaastypes.DefaultConsumerParams()
-	params.Enabled = true
 	ck.SetParams(ctx, params)
 
 	ck.SetProviderClientID(ctx, "07-tendermint-0")

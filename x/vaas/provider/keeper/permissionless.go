@@ -4,6 +4,10 @@ import (
 	"context"
 	"fmt"
 
+	errorsmod "cosmossdk.io/errors"
+
+	sdk "github.com/cosmos/cosmos-sdk/types"
+
 	"github.com/allinbits/vaas/x/vaas/provider/types"
 )
 
@@ -172,13 +176,6 @@ func (k Keeper) SetConsumerPhase(ctx context.Context, consumerId uint64, phase t
 	}
 }
 
-// DeleteConsumerPhase deletes the phase associated with this consumer id
-func (k Keeper) DeleteConsumerPhase(ctx context.Context, consumerId uint64) {
-	if err := k.ConsumerPhase.Remove(ctx, consumerId); err != nil {
-		panic(fmt.Errorf("failed to delete consumer phase for consumer id (%d): %w", consumerId, err))
-	}
-}
-
 // IsConsumerPrelaunched checks if a consumer chain is in its prelaunch phase
 func (k Keeper) IsConsumerPrelaunched(ctx context.Context, consumerId uint64) bool {
 	phase := k.GetConsumerPhase(ctx, consumerId)
@@ -204,4 +201,21 @@ func (k Keeper) IsConsumerActive(ctx context.Context, consumerId uint64) bool {
 		phase == types.CONSUMER_PHASE_INITIALIZED ||
 		phase == types.CONSUMER_PHASE_LAUNCHED ||
 		phase == types.CONSUMER_PHASE_PAUSED
+}
+
+// ValidateConsumerChainIdFree refuses a chain id a consumer cannot take: the
+// provider's own, which would make the two chains indistinguishable to
+// relayers and light clients, and one a registered consumer already holds.
+func (k Keeper) ValidateConsumerChainIdFree(ctx sdk.Context, chainId string) error {
+	if chainId == ctx.ChainID() {
+		return errorsmod.Wrapf(types.ErrProviderChainId, "chain ID %s", chainId)
+	}
+	inUse, err := k.ChainIdInUse(ctx, chainId)
+	if err != nil {
+		return err
+	}
+	if inUse {
+		return errorsmod.Wrapf(types.ErrDuplicateChainId, "chain ID %s is already registered", chainId)
+	}
+	return nil
 }

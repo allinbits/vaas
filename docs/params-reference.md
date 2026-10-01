@@ -155,11 +155,10 @@ are in the provider `params` query, next to `Params`.
 
 The per-consumer-chain settings, held on the consumer. Source:
 [x/vaas/types/params.go](../x/vaas/types/params.go) (`DefaultConsumerParams`
-lines 56-65, `ConsumerParams.Validate` lines 67-88).
+lines 67-75, `ConsumerParams.Validate` lines 77-107).
 
 | Parameter | Type | Bound | Default |
 |---|---|---|---|
-| `enabled` | bool | -- | `false` |
 | `vaas_timeout_period` | duration | `> 0` | `1h` |
 | `historical_entries` | int64 | `> 0` | `10000` (staking default) |
 | `unbonding_period` | duration | `> 0` | provider default unbonding minus 1 day (about 20 days) |

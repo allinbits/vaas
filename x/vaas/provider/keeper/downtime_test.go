@@ -44,6 +44,7 @@ func setupDowntimeTest(
 	consumerId := uint64(0)
 	providerKeeper.SetConsumerPhase(ctx, consumerId, types.CONSUMER_PHASE_LAUNCHED)
 	providerKeeper.SetConsumerChainId(ctx, consumerId, "consumer-chain")
+	require.NoError(t, providerKeeper.SetConsumerGenesis(ctx, consumerId, launchedConsumerGenesis()))
 	providerKeeper.SetConsumerClientId(ctx, consumerId, "07-tendermint-0")
 	providerKeeper.SetEquivocationEvidenceMinHeight(ctx, consumerId, 1)
 	providerKeeper.SetInfractionParams(ctx, infractionParams)

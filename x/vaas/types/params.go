@@ -47,14 +47,13 @@ const (
 // consumer-local opt-in that the provider-authored genesis never enables. A
 // chain opts in through a hand-authored genesis or a later MsgUpdateParams
 // from its params authority, where the embedding app wires one.
-func NewConsumerParams(enabled bool,
+func NewConsumerParams(
 	vaasTimeoutPeriod time.Duration,
 	historicalEntries int64,
 	consumerUnbondingPeriod time.Duration,
 	safeModeThreshold time.Duration,
 ) ConsumerParams {
 	return ConsumerParams{
-		Enabled:            enabled,
 		VaasTimeoutPeriod:  vaasTimeoutPeriod,
 		HistoricalEntries:  historicalEntries,
 		UnbondingPeriod:    consumerUnbondingPeriod,
@@ -68,7 +67,6 @@ func NewConsumerParams(enabled bool,
 // DefaultConsumerParams is the default params for the consumer module.
 func DefaultConsumerParams() ConsumerParams {
 	return NewConsumerParams(
-		false,
 		DefaultVAASTimeoutPeriod,
 		DefaultHistoricalEntries,
 		DefaultConsumerUnbondingPeriod,

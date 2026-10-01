@@ -4,8 +4,6 @@ import (
 	cryptoEd25519 "crypto/ed25519"
 	"encoding/binary"
 
-	providertypes "github.com/allinbits/vaas/x/vaas/provider/types"
-
 	tmcrypto "github.com/cometbft/cometbft/crypto"
 	tmprotocrypto "github.com/cometbft/cometbft/proto/tendermint/crypto"
 	tmtypes "github.com/cometbft/cometbft/types"
@@ -16,6 +14,8 @@ import (
 	sdkcryptotypes "github.com/cosmos/cosmos-sdk/crypto/types"
 	sdktypes "github.com/cosmos/cosmos-sdk/types"
 	sdkstakingtypes "github.com/cosmos/cosmos-sdk/x/staking/types"
+
+	providertypes "github.com/allinbits/vaas/x/vaas/provider/types"
 )
 
 // CryptoIdentity is a test helper for generating keys and addresses of
@@ -45,15 +45,6 @@ func NewCryptoIdentityFromIntSeed(i int) *CryptoIdentity {
 	seed := []byte("AAAAAAAAabcdefghijklmnopqrstuvwx") // 8+24 bytes
 	binary.LittleEndian.PutUint64(seed[:8], iUint64)
 	return NewCryptoIdentityFromBytesSeed(seed)
-}
-
-// GenMultipleCryptoIds generates and returns multiple CryptoIdentities from a starting int seed.
-func GenMultipleCryptoIds(num, fromIntSeed int) []*CryptoIdentity {
-	ids := make([]*CryptoIdentity, num)
-	for i := range num {
-		ids[i] = NewCryptoIdentityFromIntSeed(fromIntSeed + i)
-	}
-	return ids
 }
 
 func (v *CryptoIdentity) TMValidator(power int64) *tmtypes.Validator {

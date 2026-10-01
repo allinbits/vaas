@@ -42,7 +42,7 @@ Dev tool dependencies are isolated in `devdeps/go.mod` and invoked via `go run -
 The core protocol lives in `x/vaas/` with two symmetric modules:
 
 - **`x/vaas/provider/`** — runs on the provider chain. Manages consumer lifecycle, generates VSC (Validator Set Change) packets at epoch boundaries, handles key assignment, processes double-voting evidence.
-- **`x/vaas/consumer/`** — runs on consumer chains. Receives VSC packets, maintains cross-chain validator set, reports evidence back to provider.
+- **`x/vaas/consumer/`** — runs on consumer chains. Receives VSC packets, maintains VAAS validator set, reports evidence back to provider.
 - **`x/vaas/types/`** — shared types, errors, constants, and `expected_keepers.go` (interfaces for external dependencies like staking/slashing).
 
 Each module has: `keeper/` (business logic + state), `types/` (data structures + params), `client/cli/` (CLI commands), `module.go`, and `ibc_module.go` (IBC v2 callbacks implementing `api.IBCModule` from `ibc-go/v10/modules/core/api`).
@@ -67,7 +67,7 @@ Built with `make build-apps` into `build/`.
 1. Once a consumer reaches `LAUNCHED`, a relayer creates an IBC v2 client on each chain pointing at the other (with counterparties registered). The consumer's owner then declares them: `MsgUpdateConsumer`'s `client_id` binds the provider side, `MsgSetProviderClient` pins the consumer side. Neither chain creates or infers a client itself.
 2. Once per epoch (`blocks_per_epoch`, default 600) the provider queues a VSC packet per launched consumer and, in the same window, collects each consumer's epoch fee (`fees_per_block * blocks_per_epoch`) from its fee pool and distributes it to the bonded validators.
 3. Provider sends each queued VSC packet over the declared IBC v2 client. Packets are out-of-order; the consumer deduplicates via `HighestValsetUpdateID`. A packet carries a diff by default, or an absolute snapshot (`is_snapshot`) when the consumer has fallen behind on acks, and every packet also carries the consumer's current in-debt flag.
-4. Consumer's `OnRecvPacket` calls `ApplyCCValidatorChanges()` and the new set is flushed to CometBFT on the next `EndBlock`.
+4. Consumer's `OnRecvPacket` calls `ApplyVaasValidatorChanges()` and the new set is flushed to CometBFT on the next `EndBlock`.
 5. Evidence flows back to the provider two ways. Downtime evidence travels consumer -> provider as IBC `EvidencePacketData` packets, which the provider prices into a slash held behind a challenge window (a successful `MsgChallengeConsumerDowntime` cancels it and moves the consumer to `PAUSED`). Double-voting / light-client evidence is submitted as ordinary provider transactions (`MsgSubmitConsumerDoubleVoting` / `MsgSubmitConsumerMisbehaviour`). Global infraction parameters determine slash/jail; a verified double-vote jails at once but slashes and tombstones only after `equivocation_execution_delay`, and both that and matured downtime slashes wait out a removal vote for the consumer that is in its voting period (see docs/consumer-refusal.md).
 
 ### Consumer Lifecycle
@@ -106,6 +106,6 @@ Import groups (enforced by gci in `.golangci.yml`):
 2. Third-party
 3. `github.com/cometbft/cometbft`
 4. `github.com/cosmos/*`, `cosmossdk.io/*`, `github.com/cosmos/cosmos-sdk`
-5. `github.com/atomone-hub/atomone`
+5. `github.com/allinbits/vaas` (this module)
 
 Generated files (`*.pb.go`, `*.pb.gw.go`) and `tests/` directory are excluded from linting.
