@@ -7,9 +7,20 @@ import (
 	stdlog "log"
 	"os"
 	"path/filepath"
+	"slices"
+
+	"github.com/allinbits/vaas/app/ibcshim"
+	ibcconsumer "github.com/allinbits/vaas/x/vaas/consumer"
+	ibcconsumerkeeper "github.com/allinbits/vaas/x/vaas/consumer/keeper"
+	ibcconsumertypes "github.com/allinbits/vaas/x/vaas/consumer/types"
+	vaastypes "github.com/allinbits/vaas/x/vaas/types"
+	"github.com/spf13/cast"
+
+	abci "github.com/cometbft/cometbft/abci/types"
+	tmjson "github.com/cometbft/cometbft/libs/json"
+	tmos "github.com/cometbft/cometbft/libs/os"
 
 	dbm "github.com/cosmos/cosmos-db"
-
 	"github.com/cosmos/gogoproto/proto"
 	"github.com/cosmos/ibc-go/v10/modules/apps/transfer"
 	ibctransferkeeper "github.com/cosmos/ibc-go/v10/modules/apps/transfer/keeper"
@@ -24,19 +35,17 @@ import (
 	ibctm "github.com/cosmos/ibc-go/v10/modules/light-clients/07-tendermint"
 	ibctesting "github.com/cosmos/ibc-go/v10/testing"
 
-	"github.com/spf13/cast"
-
 	autocliv1 "cosmossdk.io/api/cosmos/autocli/v1"
 	reflectionv1 "cosmossdk.io/api/cosmos/reflection/v1"
 	"cosmossdk.io/client/v2/autocli"
 	"cosmossdk.io/core/appmodule"
 	"cosmossdk.io/log"
 	storetypes "cosmossdk.io/store/types"
-
 	"cosmossdk.io/x/tx/signing"
 	"cosmossdk.io/x/upgrade"
 	upgradekeeper "cosmossdk.io/x/upgrade/keeper"
 	upgradetypes "cosmossdk.io/x/upgrade/types"
+
 	"github.com/cosmos/cosmos-sdk/baseapp"
 	"github.com/cosmos/cosmos-sdk/client"
 	"github.com/cosmos/cosmos-sdk/client/flags"
@@ -87,16 +96,6 @@ import (
 	"github.com/cosmos/cosmos-sdk/x/slashing"
 	slashingkeeper "github.com/cosmos/cosmos-sdk/x/slashing/keeper"
 	slashingtypes "github.com/cosmos/cosmos-sdk/x/slashing/types"
-
-	abci "github.com/cometbft/cometbft/abci/types"
-	tmjson "github.com/cometbft/cometbft/libs/json"
-	tmos "github.com/cometbft/cometbft/libs/os"
-
-	"github.com/allinbits/vaas/app/ibcshim"
-	ibcconsumer "github.com/allinbits/vaas/x/vaas/consumer"
-	ibcconsumerkeeper "github.com/allinbits/vaas/x/vaas/consumer/keeper"
-	ibcconsumertypes "github.com/allinbits/vaas/x/vaas/consumer/types"
-	vaastypes "github.com/allinbits/vaas/x/vaas/types"
 )
 
 const (
@@ -150,7 +149,7 @@ var (
 // App extends an ABCI application, but with most of its parameters exported.
 // They are exported for convenience in creating helper functions, as object
 // capabilities aren't needed for testing.
-type App struct { // nolint: golint
+type App struct {
 	*baseapp.BaseApp
 	legacyAmino       *codec.LegacyAmino
 	appCodec          codec.Codec
@@ -409,8 +408,7 @@ func New(
 	ModuleBasics.RegisterLegacyAminoCodec(app.legacyAmino)
 	ModuleBasics.RegisterInterfaces(app.interfaceRegistry)
 
-	enabledSignModes := append(authtx.DefaultSignModes,
-		sigtypes.SignMode_SIGN_MODE_TEXTUAL)
+	enabledSignModes := slices.Concat(authtx.DefaultSignModes, []sigtypes.SignMode{sigtypes.SignMode_SIGN_MODE_TEXTUAL})
 	txConfigOpts := authtx.ConfigOptions{
 		EnabledSignModes:           enabledSignModes,
 		TextualCoinMetadataQueryFn: txmodule.NewBankKeeperCoinMetadataQueryFn(app.BankKeeper),

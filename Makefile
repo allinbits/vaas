@@ -16,12 +16,16 @@ test:
 	go test -timeout=25m -v $(shell go list ./... | grep -v 'github.com/allinbits/vaas/tests/e2e')
 
 lint_cmd=$(rundep) github.com/golangci/golangci-lint/cmd/golangci-lint
-lint: lint-e2e
+lint: lint-e2e lint-app
 	$(lint_cmd) run ./...
 
-# The e2e suite is its own Go module, so the root run above never sees it.
+# The e2e suite and the apps are their own Go modules, so the root run above
+# never sees them.
 lint-e2e:
 	cd tests/e2e && go run -modfile ../../devdeps/go.mod github.com/golangci/golangci-lint/cmd/golangci-lint run --config ../../.golangci.yml --tests=true ./...
+
+lint-app:
+	cd app && go run -modfile ../devdeps/go.mod github.com/golangci/golangci-lint/cmd/golangci-lint run --config ../.golangci.yml --tests=true ./...
 
 lint-fix:
 	$(lint_cmd) run --fix --out-format=tab --issues-exit-code=0
