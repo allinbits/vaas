@@ -958,3 +958,60 @@ func TestMsgResumeConsumer_ValidateBasic(t *testing.T) {
 		})
 	}
 }
+
+func TestMsgUpdateInfractionParams_ValidateBasic(t *testing.T) {
+	validAuthority := authtypes.NewModuleAddress(govtypes.ModuleName).String()
+
+	noDowntime := types.DefaultInfractionParameters()
+	noDowntime.Downtime = nil
+
+	zeroWindow := types.DefaultInfractionParameters()
+	zeroWindow.SignedBlocksWindow = 0
+
+	minSignedAtOne := types.DefaultInfractionParameters()
+	minSignedAtOne.MinSignedPerWindow = math.LegacyOneDec()
+
+	ageAboveChallenge := types.DefaultInfractionParameters()
+	ageAboveChallenge.DowntimeEvidenceMaxAge = ageAboveChallenge.DowntimeChallengeWindow + time.Hour
+
+	tests := []struct {
+		name    string
+		msg     types.MsgUpdateInfractionParams
+		wantErr bool
+	}{
+		{"valid", types.MsgUpdateInfractionParams{
+			Authority:            validAuthority,
+			InfractionParameters: types.DefaultInfractionParameters(),
+		}, false},
+		{"invalid authority", types.MsgUpdateInfractionParams{
+			Authority:            "not-bech32",
+			InfractionParameters: types.DefaultInfractionParameters(),
+		}, true},
+		{"missing downtime parameters", types.MsgUpdateInfractionParams{
+			Authority:            validAuthority,
+			InfractionParameters: noDowntime,
+		}, true},
+		{"zero signed blocks window", types.MsgUpdateInfractionParams{
+			Authority:            validAuthority,
+			InfractionParameters: zeroWindow,
+		}, true},
+		{"min signed per window at one", types.MsgUpdateInfractionParams{
+			Authority:            validAuthority,
+			InfractionParameters: minSignedAtOne,
+		}, true},
+		{"evidence max age above challenge window", types.MsgUpdateInfractionParams{
+			Authority:            validAuthority,
+			InfractionParameters: ageAboveChallenge,
+		}, true},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			err := tc.msg.ValidateBasic()
+			if tc.wantErr {
+				require.Error(t, err)
+			} else {
+				require.NoError(t, err)
+			}
+		})
+	}
+}

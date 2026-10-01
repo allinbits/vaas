@@ -4,6 +4,7 @@ import (
 	"errors"
 	"fmt"
 	"sort"
+	"strings"
 
 	vaastypes "github.com/allinbits/vaas/x/vaas/types"
 
@@ -122,6 +123,9 @@ func (gs GenesisState) Validate() error {
 	if err := validateDowntimeWindowFloors(gs.DowntimeWindowFloors, known); err != nil {
 		return errorsmod.Wrap(vaastypes.ErrInvalidGenesis, err.Error())
 	}
+	if err := validatePunishedEquivocations(gs.PunishedEquivocations); err != nil {
+		return errorsmod.Wrap(vaastypes.ErrInvalidGenesis, err.Error())
+	}
 	if err := validateEpochDowntimeEntries(gs.EpochDowntimeEntries, known); err != nil {
 		return errorsmod.Wrap(vaastypes.ErrInvalidGenesis, err.Error())
 	}
@@ -205,6 +209,9 @@ func validatePendingDowntimeSlashes(slashes []PendingDowntimeSlash, knownConsume
 	for _, p := range slashes {
 		if len(p.ProviderConsAddr) == 0 {
 			return fmt.Errorf("pending downtime slash: provider cons addr cannot be empty")
+		}
+		if len(p.ConsumerConsAddr) == 0 {
+			return fmt.Errorf("pending downtime slash: consumer cons addr cannot be empty")
 		}
 		if p.SlashTokens.IsNil() || p.SlashTokens.IsNegative() {
 			return fmt.Errorf("pending downtime slash: slash tokens cannot be nil or negative")
@@ -423,6 +430,36 @@ func validateDowntimeWindowFloors(floors []DowntimeWindowFloor, knownConsumerIds
 		k := key{f.ConsumerId, string(f.ProviderConsAddr)}
 		if seen[k] {
 			return fmt.Errorf("duplicate downtime window floor for consumer %d validator %x", f.ConsumerId, f.ProviderConsAddr)
+		}
+		seen[k] = true
+	}
+	return nil
+}
+
+// validatePunishedEquivocations rejects entries without a chain id, a
+// validator address or a positive infraction height, and duplicates. An
+// entry needs no live consumer: it outlives the consumer it was recorded
+// under, by design.
+func validatePunishedEquivocations(entries []PunishedEquivocation) error {
+	type key struct {
+		chainId string
+		addr    string
+		height  int64
+	}
+	seen := map[key]bool{}
+	for _, e := range entries {
+		if strings.TrimSpace(e.ChainId) == "" {
+			return fmt.Errorf("punished equivocation: chain id cannot be empty")
+		}
+		if len(e.ProviderConsAddr) == 0 {
+			return fmt.Errorf("punished equivocation: provider cons addr cannot be empty (chain id %q)", e.ChainId)
+		}
+		if e.InfractionHeight <= 0 {
+			return fmt.Errorf("punished equivocation: infraction height must be positive (chain id %q)", e.ChainId)
+		}
+		k := key{e.ChainId, string(e.ProviderConsAddr), e.InfractionHeight}
+		if seen[k] {
+			return fmt.Errorf("duplicate punished equivocation for chain id %q validator %x height %d", e.ChainId, e.ProviderConsAddr, e.InfractionHeight)
 		}
 		seen[k] = true
 	}

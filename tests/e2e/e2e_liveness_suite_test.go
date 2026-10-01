@@ -185,7 +185,7 @@ func (s *LivenessIntegrationTestSuite) SetupSuite() {
 				// window every 30 of its ~1s blocks.
 				//
 				// downtime_challenge_window / downtime_evidence_max_age diverge
-				// from the main suite's 30s: evidence that survives an IBC
+				// from the main suite's 120s: evidence that survives an IBC
 				// timeout is only delivered a full timeout-and-requeue cycle
 				// after the relayer outage ends, and its window-end time is
 				// anchored to the first post-outage client update -- the
