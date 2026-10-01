@@ -6,6 +6,10 @@ import (
 	"testing"
 	"time"
 
+	consumerapp "github.com/allinbits/vaas/app/consumer"
+	consumerante "github.com/allinbits/vaas/x/vaas/consumer/ante"
+	consumertypes "github.com/allinbits/vaas/x/vaas/consumer/types"
+	vaastypes "github.com/allinbits/vaas/x/vaas/types"
 	"github.com/stretchr/testify/require"
 
 	abci "github.com/cometbft/cometbft/abci/types"
@@ -36,11 +40,6 @@ import (
 	"github.com/cosmos/cosmos-sdk/x/auth/ante"
 	authsigning "github.com/cosmos/cosmos-sdk/x/auth/signing"
 	banktypes "github.com/cosmos/cosmos-sdk/x/bank/types"
-
-	consumerapp "github.com/allinbits/vaas/app/consumer"
-	consumerante "github.com/allinbits/vaas/x/vaas/consumer/ante"
-	consumertypes "github.com/allinbits/vaas/x/vaas/consumer/types"
-	vaastypes "github.com/allinbits/vaas/x/vaas/types"
 )
 
 const (

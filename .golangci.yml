@@ -28,8 +28,6 @@ linters:
     - unused
 
 issues:
-  exclude-dirs:
-    - tests/
   exclude-files:
     - ".*\\.pb\\.go$"
     - ".*\\.pb\\.gw\\.go$"

@@ -149,7 +149,7 @@ func (s *IntegrationTestSuite) testConsumerGenesisRoundTrip() {
 		// The provider must not have noticed anything fatal: the consumer is
 		// still LAUNCHED (testLivenessRemoval relies on this next).
 		phase := s.queryProviderConsumerPhase("0")
-		s.Require().Equal("CONSUMER_PHASE_LAUNCHED", phase,
+		s.Require().Equal(phaseLaunched, phase,
 			"consumer must remain LAUNCHED across the restart")
 
 		// 11. VSC flow must resume over the pre-existing IBC clients: change
@@ -475,12 +475,12 @@ func (s *IntegrationTestSuite) bootstrapRestartedConsumerDir(oldDir string, expo
 	} {
 		data, err := os.ReadFile(filepath.Join(oldDir, name))
 		s.Require().NoErrorf(err, "read %s from old consumer data dir", name)
-		s.Require().NoErrorf(os.WriteFile(filepath.Join(newDir, name), data, 0o644),
+		s.Require().NoErrorf(os.WriteFile(filepath.Join(newDir, name), data, 0o644), //nolint:gosec // the node runs as nonroot in its container and must read this bind-mounted file
 			"write %s to new consumer data dir", name)
 	}
 
 	// Write the exported JSON as the new chain's genesis.
-	s.Require().NoError(os.WriteFile(
+	s.Require().NoError(os.WriteFile( //nolint:gosec // the node runs as nonroot in its container and must read this bind-mounted file
 		filepath.Join(newDir, "config", "genesis.json"),
 		exportedJSON,
 		0o644,
@@ -488,7 +488,7 @@ func (s *IntegrationTestSuite) bootstrapRestartedConsumerDir(oldDir string, expo
 
 	// Reset priv_validator_state.json: the restarted chain's heights start
 	// past anything the old chain signed, so a zeroed state cannot double-sign.
-	s.Require().NoError(os.WriteFile(
+	s.Require().NoError(os.WriteFile( //nolint:gosec // the node runs as nonroot in its container and must read this bind-mounted file
 		filepath.Join(newDir, "data", "priv_validator_state.json"),
 		[]byte(`{"height":"0","round":0,"step":0}`),
 		0o644,

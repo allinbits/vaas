@@ -215,12 +215,12 @@ func (s *IntegrationTestSuite) bootstrapRestartedProviderDir(oldDir string, expo
 	} {
 		data, err := os.ReadFile(filepath.Join(oldDir, name))
 		s.Require().NoErrorf(err, "read %s from old data dir", name)
-		s.Require().NoErrorf(os.WriteFile(filepath.Join(newDir, name), data, 0o644),
+		s.Require().NoErrorf(os.WriteFile(filepath.Join(newDir, name), data, 0o644), //nolint:gosec // the node runs as nonroot in its container and must read this bind-mounted file
 			"write %s to new data dir", name)
 	}
 
 	// Write the exported JSON as the new chain's genesis.
-	s.Require().NoError(os.WriteFile(
+	s.Require().NoError(os.WriteFile( //nolint:gosec // the node runs as nonroot in its container and must read this bind-mounted file
 		filepath.Join(newDir, "config", "genesis.json"),
 		exportedJSON,
 		0o644,
@@ -228,7 +228,7 @@ func (s *IntegrationTestSuite) bootstrapRestartedProviderDir(oldDir string, expo
 
 	// Reset priv_validator_state.json so the validator can sign blocks at
 	// the new chain's initial height without tripping double-sign detection.
-	s.Require().NoError(os.WriteFile(
+	s.Require().NoError(os.WriteFile( //nolint:gosec // the node runs as nonroot in its container and must read this bind-mounted file
 		filepath.Join(newDir, "data", "priv_validator_state.json"),
 		[]byte(`{"height":"0","round":0,"step":0}`),
 		0o644,

@@ -5,10 +5,14 @@ import (
 	"io"
 	"os"
 
-
-	dbm "github.com/cosmos/cosmos-db"
+	providerApp "github.com/allinbits/vaas/app/provider"
+	appEncoding "github.com/allinbits/vaas/app/provider/encoding"
 	"github.com/spf13/cobra"
 	"github.com/spf13/viper"
+
+	cmtcfg "github.com/cometbft/cometbft/config"
+
+	dbm "github.com/cosmos/cosmos-db"
 
 	"cosmossdk.io/client/v2/autocli"
 	"cosmossdk.io/log"
@@ -34,11 +38,6 @@ import (
 	txmodule "github.com/cosmos/cosmos-sdk/x/auth/tx/config"
 	"github.com/cosmos/cosmos-sdk/x/auth/types"
 	genutilcli "github.com/cosmos/cosmos-sdk/x/genutil/client/cli"
-
-	cmtcfg "github.com/cometbft/cometbft/config"
-
-	providerApp "github.com/allinbits/vaas/app/provider"
-	appEncoding "github.com/allinbits/vaas/app/provider/encoding"
 )
 
 // NewRootCmd creates a new root command for simd. It is called once in the
@@ -112,10 +111,7 @@ func NewRootCmd() *cobra.Command {
 	}
 
 	initRootCmd(rootCmd, encodingConfig)
-	autoCliOpts, err := enrichAutoCliOpts(tempApp.AutoCliOpts(), initClientCtx)
-	if err != nil {
-		panic(err)
-	}
+	autoCliOpts := enrichAutoCliOpts(tempApp.AutoCliOpts(), initClientCtx)
 
 	if err := autoCliOpts.EnhanceRootCommand(rootCmd); err != nil {
 		panic(err)
@@ -124,14 +120,14 @@ func NewRootCmd() *cobra.Command {
 	return rootCmd
 }
 
-func enrichAutoCliOpts(autoCliOpts autocli.AppOptions, clientCtx client.Context) (autocli.AppOptions, error) {
+func enrichAutoCliOpts(autoCliOpts autocli.AppOptions, clientCtx client.Context) autocli.AppOptions {
 	autoCliOpts.AddressCodec = addresscodec.NewBech32Codec(sdk.GetConfig().GetBech32AccountAddrPrefix())
 	autoCliOpts.ValidatorAddressCodec = addresscodec.NewBech32Codec(sdk.GetConfig().GetBech32ValidatorAddrPrefix())
 	autoCliOpts.ConsensusAddressCodec = addresscodec.NewBech32Codec(sdk.GetConfig().GetBech32ConsensusAddrPrefix())
 
 	autoCliOpts.ClientCtx = clientCtx
 
-	return autoCliOpts, nil
+	return autoCliOpts
 }
 
 // initCometBFTConfig helps to override default CometBFT Config values.
