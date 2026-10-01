@@ -334,9 +334,9 @@ func (k Keeper) InitGenesis(ctx sdk.Context, genState *types.GenesisState) []abc
 		}
 	}
 	for _, e := range genState.PunishedEquivocations {
-		key := collections.Join3(e.ConsumerId, e.ProviderConsAddr, e.InfractionHeight)
+		key := collections.Join3(e.ChainId, e.ProviderConsAddr, e.InfractionHeight)
 		if err := k.PunishedEquivocations.Set(ctx, key); err != nil {
-			panic(fmt.Errorf("init: set punished equivocation for consumer %d: %w", e.ConsumerId, err))
+			panic(fmt.Errorf("init: set punished equivocation for chain id %q: %w", e.ChainId, err))
 		}
 	}
 	for _, e := range genState.EpochDowntimeEntries {
@@ -676,7 +676,7 @@ func (k Keeper) exportPunishedEquivocations(ctx sdk.Context) []types.PunishedEqu
 			panic(fmt.Errorf("export: failed to read punished equivocation key: %w", err))
 		}
 		entries = append(entries, types.PunishedEquivocation{
-			ConsumerId:       key.K1(),
+			ChainId:          key.K1(),
 			ProviderConsAddr: key.K2(),
 			InfractionHeight: key.K3(),
 		})
