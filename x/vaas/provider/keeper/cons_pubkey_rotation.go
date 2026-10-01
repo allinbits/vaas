@@ -75,8 +75,14 @@ func (k Keeper) migratePunishedEquivocations(
 ) {
 	oldAddrBz := oldProviderAddr.ToSdkConsAddr().Bytes()
 	newAddrBz := newProviderAddr.ToSdkConsAddr().Bytes()
+	chainId, err := k.GetConsumerChainId(ctx, consumerId)
+	if err != nil {
+		k.Logger(ctx).Error("cannot resolve the chain id of a consumer with a rotating validator",
+			"consumerId", consumerId, "providerConsAddr", oldProviderAddr.String(), "error", err)
+		return
+	}
 
-	iter, err := k.PunishedEquivocations.Iterate(ctx, collections.NewSuperPrefixedTripleRange[uint64, []byte, int64](consumerId, oldAddrBz))
+	iter, err := k.PunishedEquivocations.Iterate(ctx, collections.NewSuperPrefixedTripleRange[string, []byte, int64](chainId, oldAddrBz))
 	if err != nil {
 		k.Logger(ctx).Error("cannot read the rotating validator's punished equivocations",
 			"consumerId", consumerId, "providerConsAddr", oldProviderAddr.String(), "error", err)
@@ -95,12 +101,12 @@ func (k Keeper) migratePunishedEquivocations(
 	iter.Close()
 
 	for _, height := range heights {
-		if err := k.PunishedEquivocations.Set(ctx, collections.Join3(consumerId, newAddrBz, height)); err != nil {
+		if err := k.PunishedEquivocations.Set(ctx, collections.Join3(chainId, newAddrBz, height)); err != nil {
 			k.Logger(ctx).Error("cannot move punished equivocation to the rotated provider consensus address",
 				"consumerId", consumerId, "providerConsAddr", newProviderAddr.String(), "error", err)
 			continue
 		}
-		if err := k.PunishedEquivocations.Remove(ctx, collections.Join3(consumerId, oldAddrBz, height)); err != nil {
+		if err := k.PunishedEquivocations.Remove(ctx, collections.Join3(chainId, oldAddrBz, height)); err != nil {
 			k.Logger(ctx).Error("cannot delete punished equivocation left at the old provider consensus address",
 				"consumerId", consumerId, "providerConsAddr", oldProviderAddr.String(), "error", err)
 		}

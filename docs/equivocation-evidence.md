@@ -72,10 +72,13 @@ Both files are decoded with the proto-JSON codec. CLI source:
    of already-processed evidence are idempotent: already queued is a no-op,
    already-tombstoned is not an error, and a double-sign whose punishment
    executed without tombstoning (`double_sign.tombstone = false`) is
-   remembered by consumer, live provider consensus address and infraction
+   remembered by chain id, live provider consensus address and infraction
    height (`PunishedEquivocations`, which follows consumer key rotation and
-   is cleared with the consumer or once the validator is tombstoned), so the
-   same infraction is never punished twice.
+   is cleared once the validator is tombstoned), so the same infraction is
+   never punished twice. The record is keyed by the chain id the votes were
+   signed over and outlives the consumer: a consumer that re-registers a
+   deleted consumer's chain id cannot be handed the dead chain's double-signs
+   and punish them again.
 
 On success the provider emits `vaas_submit_consumer_double_voting` and
 `vaas_equivocation_punishment_queued`; the resolution later emits

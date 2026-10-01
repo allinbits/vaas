@@ -86,8 +86,9 @@ message GenesisState {
       [ (gogoproto.nullable) = false ];
 
   // Consumer double-signs already punished without tombstoning the
-  // validator, keyed by the validator's live provider consensus address and
-  // the infraction height. Empty for a new chain.
+  // validator, keyed by the consumer chain id, the validator's live provider
+  // consensus address and the infraction height. They outlive the consumer
+  // they were recorded under. Empty for a new chain.
   repeated PunishedEquivocation punished_equivocations = 17
       [ (gogoproto.nullable) = false ];
 }
@@ -119,12 +120,13 @@ message DowntimeWindowFloor {
   int64 window_end_height = 3;
 }
 
-// PunishedEquivocation is a single (consumer_id, provider_cons_addr,
+// PunishedEquivocation is a single (chain_id, provider_cons_addr,
 // infraction_height) entry from the keeper's PunishedEquivocations
 // collection: a consumer double-sign already punished without tombstoning
-// the validator, which the same evidence must not punish again.
+// the validator, which the same evidence must not punish again, not even
+// under a consumer that re-registered the chain id.
 message PunishedEquivocation {
-  uint64 consumer_id = 1;
+  string chain_id = 1;
   bytes provider_cons_addr = 2;
   int64 infraction_height = 3;
 }

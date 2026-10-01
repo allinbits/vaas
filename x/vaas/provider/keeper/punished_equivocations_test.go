@@ -39,6 +39,7 @@ type doubleVoteFixture struct {
 	k        providerkeeper.Keeper
 	ctx      sdk.Context
 	cid      uint64
+	chainId  string
 	signer   tmtypes.PrivValidator
 	pubKey   cryptotypes.PubKey
 	consAddr sdk.ConsAddress
@@ -85,12 +86,14 @@ func newDoubleVoteFixture(t *testing.T, tombstone bool) (doubleVoteFixture, *gom
 			return nil
 		}).AnyTimes()
 
-	return doubleVoteFixture{k: k, ctx: ctx, cid: cid, signer: signer, pubKey: sdkPubKey, consAddr: consAddr, counters: counters, signing: signing}, ctrl
+	chainId, err := k.GetConsumerChainId(ctx, cid)
+	require.NoError(t, err)
+	return doubleVoteFixture{k: k, ctx: ctx, cid: cid, chainId: chainId, signer: signer, pubKey: sdkPubKey, consAddr: consAddr, counters: counters, signing: signing}, ctrl
 }
 
 func (f doubleVoteFixture) punished(t *testing.T, height int64) bool {
 	t.Helper()
-	has, err := f.k.PunishedEquivocations.Has(f.ctx, collections.Join3(f.cid, f.consAddr.Bytes(), height))
+	has, err := f.k.PunishedEquivocations.Has(f.ctx, collections.Join3(f.chainId, f.consAddr.Bytes(), height))
 	require.NoError(t, err)
 	return has
 }
@@ -143,7 +146,7 @@ func TestTombstoningForgetsThePunishedEquivocations(t *testing.T) {
 	defer ctrl.Finish()
 
 	for _, height := range []int64{10, 20} {
-		require.NoError(t, f.k.PunishedEquivocations.Set(f.ctx, collections.Join3(f.cid, f.consAddr.Bytes(), height)))
+		require.NoError(t, f.k.PunishedEquivocations.Set(f.ctx, collections.Join3(f.chainId, f.consAddr.Bytes(), height)))
 	}
 
 	require.NoError(t, f.k.HandleConsumerDoubleVoting(f.ctx, f.cid, doubleVoteBy(t, f.signer, 55, f.ctx.BlockTime()), f.pubKey))
@@ -162,43 +165,43 @@ func TestPunishedEquivocationsFollowAConsensusKeyRotation(t *testing.T) {
 	defer ctrl.Finish()
 
 	cid, _ := setupRotationConsumer(t, k, ctx, ctx.BlockTime())
+	chainId, err := k.GetConsumerChainId(ctx, cid)
+	require.NoError(t, err)
 	oldAddr := cryptotestutil.NewCryptoIdentityFromIntSeed(41).SDKValConsAddress()
 	newAddr := cryptotestutil.NewCryptoIdentityFromIntSeed(42).SDKValConsAddress()
-	require.NoError(t, k.PunishedEquivocations.Set(ctx, collections.Join3(cid, oldAddr.Bytes(), int64(55))))
+	require.NoError(t, k.PunishedEquivocations.Set(ctx, collections.Join3(chainId, oldAddr.Bytes(), int64(55))))
 
 	k.MigrateStateOnConsPubKeyRotation(ctx, types.NewProviderConsAddress(oldAddr), types.NewProviderConsAddress(newAddr))
 
-	has, err := k.PunishedEquivocations.Has(ctx, collections.Join3(cid, oldAddr.Bytes(), int64(55)))
+	has, err := k.PunishedEquivocations.Has(ctx, collections.Join3(chainId, oldAddr.Bytes(), int64(55)))
 	require.NoError(t, err)
 	require.False(t, has, "nothing may be left at the rotated-away address")
-	has, err = k.PunishedEquivocations.Has(ctx, collections.Join3(cid, newAddr.Bytes(), int64(55)))
+	has, err = k.PunishedEquivocations.Has(ctx, collections.Join3(chainId, newAddr.Bytes(), int64(55)))
 	require.NoError(t, err)
 	require.True(t, has, "the record must follow the validator to its new address")
 }
 
-// TestDeleteConsumerChainClearsPunishedEquivocations: the consumer's records
-// go with it, and only its own.
-func TestDeleteConsumerChainClearsPunishedEquivocations(t *testing.T) {
+// TestDeleteConsumerChainKeepsPunishedEquivocations: the records outlive the
+// consumer. They are keyed by the chain id the votes were signed over, so a
+// consumer that re-registers the id inherits them and the dead chain's
+// double-signs cannot be punished a second time.
+func TestDeleteConsumerChainKeepsPunishedEquivocations(t *testing.T) {
 	k, ctx, ctrl, mocks := testkeeper.GetProviderKeeperAndCtx(t, testkeeper.NewInMemKeeperParams(t))
 	defer ctrl.Finish()
 
 	addr := cryptotestutil.NewCryptoIdentityFromIntSeed(43).SDKValConsAddress().Bytes()
 	deleted := k.FetchAndIncrementConsumerId(ctx)
-	kept := k.FetchAndIncrementConsumerId(ctx)
+	k.SetConsumerChainId(ctx, deleted, "dead-chain")
 	k.SetConsumerPhase(ctx, deleted, types.CONSUMER_PHASE_STOPPED)
 	k.SetConsumerClientId(ctx, deleted, "07-tendermint-0")
 	poolAddr := k.GetConsumerFeePoolAddress(deleted)
 	require.NoError(t, k.FeePoolAddressToConsumerId.Set(ctx, poolAddr, deleted))
 	mocks.MockBankKeeper.EXPECT().GetAllBalances(ctx, poolAddr).Return(sdk.NewCoins())
-	require.NoError(t, k.PunishedEquivocations.Set(ctx, collections.Join3(deleted, addr, int64(55))))
-	require.NoError(t, k.PunishedEquivocations.Set(ctx, collections.Join3(kept, addr, int64(55))))
+	require.NoError(t, k.PunishedEquivocations.Set(ctx, collections.Join3("dead-chain", addr, int64(55))))
 
 	require.NoError(t, k.DeleteConsumerChain(ctx, deleted))
 
-	has, err := k.PunishedEquivocations.Has(ctx, collections.Join3(deleted, addr, int64(55)))
+	has, err := k.PunishedEquivocations.Has(ctx, collections.Join3("dead-chain", addr, int64(55)))
 	require.NoError(t, err)
-	require.False(t, has)
-	has, err = k.PunishedEquivocations.Has(ctx, collections.Join3(kept, addr, int64(55)))
-	require.NoError(t, err)
-	require.True(t, has, "another consumer's record must survive")
+	require.True(t, has, "the record must survive the consumer it was taken under")
 }

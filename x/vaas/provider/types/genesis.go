@@ -4,6 +4,7 @@ import (
 	"errors"
 	"fmt"
 	"sort"
+	"strings"
 
 	errorsmod "cosmossdk.io/errors"
 	"cosmossdk.io/math"
@@ -122,7 +123,7 @@ func (gs GenesisState) Validate() error {
 	if err := validateDowntimeWindowFloors(gs.DowntimeWindowFloors, known); err != nil {
 		return errorsmod.Wrap(vaastypes.ErrInvalidGenesis, err.Error())
 	}
-	if err := validatePunishedEquivocations(gs.PunishedEquivocations, known); err != nil {
+	if err := validatePunishedEquivocations(gs.PunishedEquivocations); err != nil {
 		return errorsmod.Wrap(vaastypes.ErrInvalidGenesis, err.Error())
 	}
 	if err := validateEpochDowntimeEntries(gs.EpochDowntimeEntries, known); err != nil {
@@ -435,29 +436,30 @@ func validateDowntimeWindowFloors(floors []DowntimeWindowFloor, knownConsumerIds
 	return nil
 }
 
-// validatePunishedEquivocations rejects entries without a validator address
-// or a positive infraction height, orphan consumer references, and
-// duplicates.
-func validatePunishedEquivocations(entries []PunishedEquivocation, knownConsumerIds map[uint64]struct{}) error {
+// validatePunishedEquivocations rejects entries without a chain id, a
+// validator address or a positive infraction height, and duplicates. An
+// entry needs no live consumer: it outlives the consumer it was recorded
+// under, by design.
+func validatePunishedEquivocations(entries []PunishedEquivocation) error {
 	type key struct {
-		consumerId uint64
-		addr       string
-		height     int64
+		chainId string
+		addr    string
+		height  int64
 	}
 	seen := map[key]bool{}
 	for _, e := range entries {
+		if strings.TrimSpace(e.ChainId) == "" {
+			return fmt.Errorf("punished equivocation: chain id cannot be empty")
+		}
 		if len(e.ProviderConsAddr) == 0 {
-			return fmt.Errorf("punished equivocation: provider cons addr cannot be empty")
+			return fmt.Errorf("punished equivocation: provider cons addr cannot be empty (chain id %q)", e.ChainId)
 		}
 		if e.InfractionHeight <= 0 {
-			return fmt.Errorf("punished equivocation: infraction height must be positive (consumer=%d)", e.ConsumerId)
+			return fmt.Errorf("punished equivocation: infraction height must be positive (chain id %q)", e.ChainId)
 		}
-		if _, ok := knownConsumerIds[e.ConsumerId]; !ok {
-			return fmt.Errorf("punished equivocation references unknown consumer %d", e.ConsumerId)
-		}
-		k := key{e.ConsumerId, string(e.ProviderConsAddr), e.InfractionHeight}
+		k := key{e.ChainId, string(e.ProviderConsAddr), e.InfractionHeight}
 		if seen[k] {
-			return fmt.Errorf("duplicate punished equivocation for consumer %d validator %x height %d", e.ConsumerId, e.ProviderConsAddr, e.InfractionHeight)
+			return fmt.Errorf("duplicate punished equivocation for chain id %q validator %x height %d", e.ChainId, e.ProviderConsAddr, e.InfractionHeight)
 		}
 		seen[k] = true
 	}
