@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"regexp"
+	"slices"
 	"strings"
 	"time"
 
@@ -83,6 +84,11 @@ func (s *baseTestSuite) verifyTSRelayerConnectivity(chainName, rpcURL string) {
 			OutputStream: &out,
 			ErrorStream:  &out,
 		})
+		if err != nil {
+			s.T().Logf("ts-relayer connectivity to %s (%s) attempt %d: exec failed: %v", chainName, rpcURL, attempt+1, err)
+			time.Sleep(2 * time.Second)
+			continue
+		}
 
 		for {
 			inspectExec, err := s.dkrPool.Client.InspectExec(exec.ID)
@@ -144,7 +150,7 @@ func (s *baseTestSuite) stopTSRelayer() {
 
 func (s *baseTestSuite) executeTSRelayerCommand(ctx context.Context, args []string) []byte {
 	tsRelayerBinary := []string{"/bin/with_keyring", "ibc-v2-ts-relayer"}
-	cmd := append(tsRelayerBinary, args...)
+	cmd := slices.Concat(tsRelayerBinary, args)
 	exec, err := s.dkrPool.Client.CreateExec(docker.CreateExecOptions{
 		Context:      ctx,
 		AttachStdout: true,

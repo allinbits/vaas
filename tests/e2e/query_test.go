@@ -3,7 +3,6 @@ package e2e
 import (
 	"encoding/json"
 	"fmt"
-	"strings"
 
 	cmtservice "github.com/cosmos/cosmos-sdk/client/grpc/cmtservice"
 	banktypes "github.com/cosmos/cosmos-sdk/x/bank/types"
@@ -11,8 +10,15 @@ import (
 )
 
 // queryProviderConsumerPhase returns the phase string for a given consumer ID
-// from the provider chain (e.g. "CONSUMER_PHASE_LAUNCHED").
-func (s *baseTestSuite) queryProviderConsumerPhase(consumerID string) string {
+// from the provider chain (e.g. phaseLaunched).
+// Consumer phases as the provider's consumer-chain query prints them.
+const (
+	phaseLaunched = "CONSUMER_PHASE_LAUNCHED"
+	phaseStopped  = "CONSUMER_PHASE_STOPPED"
+	phaseDeleted  = "CONSUMER_PHASE_DELETED"
+)
+
+func (s *baseTestSuite) queryProviderConsumerPhase(consumerID string) string { //nolint:unparam // the suite drives one consumer; the helper stays generic
 	stdout, _, err := s.dockerExec(s.providerValRes[0].Container.ID, []string{
 		providerBinary, "query", "provider", "consumer-chain", consumerID,
 		"--home", providerHomePath,
@@ -151,29 +157,4 @@ func (s *baseTestSuite) queryBalance(restEndpoint, address, denom string) (strin
 		}
 	}
 	return "0", nil
-}
-
-// queryProviderBalance queries an account balance on the provider chain.
-func (s *baseTestSuite) queryProviderBalance(address, denom string) (string, error) {
-	return s.queryBalance(s.providerRESTEndpoint(), address, denom)
-}
-
-// queryConsumerBalance queries an account balance on the consumer chain.
-func (s *baseTestSuite) queryConsumerBalance(address, denom string) (string, error) {
-	return s.queryBalance(s.consumerRESTEndpoint(), address, denom)
-}
-
-// queryProviderConsumerGenesis queries the provider for a specific consumer's genesis.
-func (s *baseTestSuite) queryProviderConsumerGenesis(consumerID string) (string, error) {
-	stdout, stderr, err := s.dockerExec(s.providerValRes[0].Container.ID, []string{
-		providerBinary, "query", "provider", "consumer-genesis", consumerID,
-		"--home", providerHomePath,
-		"--output", "json",
-	})
-	if err != nil {
-		return "", fmt.Errorf("query failed: %w (stderr: %s)", err, stderr.String())
-	}
-
-	output := strings.TrimSpace(stdout.String())
-	return output, nil
 }

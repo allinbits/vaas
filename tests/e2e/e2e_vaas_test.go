@@ -49,7 +49,6 @@ func (s *IntegrationTestSuite) testConsumerOnProvider() {
 	s.Run("consumer chain registered on provider", func() {
 		chainsOutput, err := s.queryProviderConsumerChains()
 		s.Require().NoError(err, "failed to query consumer chains")
-		//s.T().Logf("consumer chains: %s", chainsOutput)
 		s.Require().Contains(chainsOutput, consumerChainID, "consumer chain should be registered on provider")
 	})
 }
@@ -59,7 +58,6 @@ func (s *IntegrationTestSuite) testProviderOnConsumer() {
 	s.Run("provider chain registered on consumer", func() {
 		providerInfo, err := s.queryConsumerProviderInfo()
 		s.Require().NoError(err, "failed to query provider info from consumer")
-		//s.T().Logf("provider info: %s", providerInfo)
 		s.Require().Contains(providerInfo, providerChainID, "provider chain should be registered on consumer")
 	})
 }

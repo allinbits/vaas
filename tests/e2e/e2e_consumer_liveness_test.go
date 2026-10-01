@@ -126,7 +126,7 @@ func (s *IntegrationTestSuite) testLivenessTransientOutage() {
 
 		// The consumer must still be LAUNCHED after the transient outage.
 		phase := s.queryProviderConsumerPhase(consumerID)
-		s.Require().Equalf("CONSUMER_PHASE_LAUNCHED", phase,
+		s.Require().Equalf(phaseLaunched, phase,
 			"consumer %s must remain LAUNCHED after a transient outage", consumerID)
 
 		// Consumer VP must re-converge to the updated provider VP after recovery.
@@ -170,7 +170,7 @@ func (s *IntegrationTestSuite) testLivenessRemoval() {
 
 		// Precondition: consumer must still be LAUNCHED.
 		phase := s.queryProviderConsumerPhase(consumerID)
-		s.Require().Equalf("CONSUMER_PHASE_LAUNCHED", phase,
+		s.Require().Equalf(phaseLaunched, phase,
 			"consumer %s must be LAUNCHED before the liveness removal test", consumerID)
 
 		// Issue an explicit remove-consumer via governance (gov authority is required
@@ -195,7 +195,7 @@ func (s *IntegrationTestSuite) testLivenessRemoval() {
 		s.Require().Eventuallyf(func() bool {
 			p := s.queryProviderConsumerPhase(consumerID)
 			s.T().Logf("consumer %s phase: %s", consumerID, p)
-			return p == "CONSUMER_PHASE_STOPPED" || p == "CONSUMER_PHASE_DELETED"
+			return p == phaseStopped || p == phaseDeleted
 		}, 2*time.Minute, 5*time.Second,
 			"provider did not transition consumer %s to STOPPED/DELETED after remove-consumer",
 			consumerID)
@@ -203,7 +203,7 @@ func (s *IntegrationTestSuite) testLivenessRemoval() {
 		finalPhase := s.queryProviderConsumerPhase(consumerID)
 		s.T().Logf("consumer %s terminal phase: %s", consumerID, finalPhase)
 		s.Require().True(
-			finalPhase == "CONSUMER_PHASE_STOPPED" || finalPhase == "CONSUMER_PHASE_DELETED",
+			finalPhase == phaseStopped || finalPhase == phaseDeleted,
 			"expected STOPPED or DELETED, got %q", finalPhase,
 		)
 	})

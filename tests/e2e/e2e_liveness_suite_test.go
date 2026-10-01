@@ -313,7 +313,7 @@ func (s *LivenessIntegrationTestSuite) testRecoverBeforeGrace() {
 		}
 
 		phase := s.queryProviderConsumerPhase(consumerID)
-		s.Require().Equalf("CONSUMER_PHASE_LAUNCHED", phase,
+		s.Require().Equalf(phaseLaunched, phase,
 			"consumer %s must be LAUNCHED before recover-before-grace test", consumerID)
 
 		s.T().Log("pausing consumer container for ~10s (far less than ~225s grace)...")
@@ -336,7 +336,7 @@ func (s *LivenessIntegrationTestSuite) testRecoverBeforeGrace() {
 		}
 
 		phase = s.queryProviderConsumerPhase(consumerID)
-		s.Require().Equalf("CONSUMER_PHASE_LAUNCHED", phase,
+		s.Require().Equalf(phaseLaunched, phase,
 			"consumer %s must remain LAUNCHED after a transient outage shorter than grace", consumerID)
 		s.T().Log("consumer remains LAUNCHED after recovery before grace")
 	})
@@ -435,7 +435,7 @@ func (s *LivenessIntegrationTestSuite) testLivenessQuery() {
 
 		// Confirm the consumer is still LAUNCHED before checking liveness.
 		phase := s.queryProviderConsumerPhase(consumerID)
-		s.Require().Equalf("CONSUMER_PHASE_LAUNCHED", phase,
+		s.Require().Equalf(phaseLaunched, phase,
 			"consumer must be LAUNCHED for liveness query test")
 
 		// Diagnostic: log provider staking params and consumer chain init_params so
@@ -523,7 +523,7 @@ func (s *LivenessIntegrationTestSuite) testForcedTimeoutSnapshotResync() {
 	s.Run("forced timeout: log-only OnTimeout keeps consumer LAUNCHED; behind consumer heals via snapshot", func() {
 		const consumerID = "0"
 
-		s.Require().Equalf("CONSUMER_PHASE_LAUNCHED", s.queryProviderConsumerPhase(consumerID),
+		s.Require().Equalf(phaseLaunched, s.queryProviderConsumerPhase(consumerID),
 			"consumer %s must be LAUNCHED before the forced-timeout test", consumerID)
 
 		// Pause the relayer; the consumer keeps producing blocks, so its clock
@@ -539,7 +539,7 @@ func (s *LivenessIntegrationTestSuite) testForcedTimeoutSnapshotResync() {
 
 		// (a) The log-only OnTimeout must not have removed the consumer.
 		s.Require().Eventuallyf(func() bool {
-			return s.queryProviderConsumerPhase(consumerID) == "CONSUMER_PHASE_LAUNCHED"
+			return s.queryProviderConsumerPhase(consumerID) == phaseLaunched
 		}, 30*time.Second, 3*time.Second,
 			"consumer %s must remain LAUNCHED despite VSC packet timeouts", consumerID)
 		s.T().Log("consumer remained LAUNCHED through the timeouts")
@@ -576,7 +576,7 @@ func (s *LivenessIntegrationTestSuite) testAutoSweepRemoval() {
 		const consumerID = "0"
 
 		phase := s.queryProviderConsumerPhase(consumerID)
-		s.Require().Equalf("CONSUMER_PHASE_LAUNCHED", phase,
+		s.Require().Equalf(phaseLaunched, phase,
 			"consumer %s must be LAUNCHED before auto-sweep test", consumerID)
 
 		// Diagnostic: log provider staking params and consumer liveness state so
@@ -619,7 +619,7 @@ func (s *LivenessIntegrationTestSuite) testAutoSweepRemoval() {
 		s.Require().Eventuallyf(func() bool {
 			p := s.queryProviderConsumerPhase(consumerID)
 			s.T().Logf("consumer %s phase: %s", consumerID, p)
-			return p == "CONSUMER_PHASE_STOPPED"
+			return p == phaseStopped
 		}, 2*time.Minute, 5*time.Second,
 			"provider did not sweep consumer %s to STOPPED within 2 minutes", consumerID)
 
