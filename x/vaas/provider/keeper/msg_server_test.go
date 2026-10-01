@@ -144,6 +144,16 @@ func TestCreateConsumerDuplicateChainId(t *testing.T) {
 		})
 	require.Error(t, err)
 	require.ErrorIs(t, err, providertypes.ErrDuplicateChainId)
+
+	// The provider's own chain id is not available to a consumer either.
+	_, err = msgServer.CreateConsumer(ctx.WithChainID("provider-1"),
+		&providertypes.MsgCreateConsumer{
+			Submitter: "submitter3", ChainId: "provider-1", Metadata: consumerMetadata,
+			InitializationParameters: &providertypes.ConsumerInitializationParameters{
+				UnbondingPeriod: 21 * 24 * time.Hour,
+			},
+		})
+	require.ErrorIs(t, err, providertypes.ErrProviderChainId)
 }
 
 func TestUpdateConsumer(t *testing.T) {
@@ -269,6 +279,17 @@ func TestUpdateConsumerDuplicateChainId(t *testing.T) {
 	require.Error(t, err)
 	require.ErrorIs(t, err, providertypes.ErrDuplicateChainId)
 	actualChainId, err := providerKeeper.GetConsumerChainId(ctx, consumerId2)
+	require.NoError(t, err)
+	require.Equal(t, chainId2, actualChainId)
+
+	// nor can it take the provider's own chain id
+	_, err = msgServer.UpdateConsumer(ctx.WithChainID("provider-1"),
+		&providertypes.MsgUpdateConsumer{
+			Owner: "submitter", ConsumerId: consumerId2,
+			NewChainId: "provider-1",
+		})
+	require.ErrorIs(t, err, providertypes.ErrProviderChainId)
+	actualChainId, err = providerKeeper.GetConsumerChainId(ctx, consumerId2)
 	require.NoError(t, err)
 	require.Equal(t, chainId2, actualChainId)
 }

@@ -34,4 +34,5 @@ var (
 	ErrDowntimeChallengeFailed                 = errorsmod.Register(ModuleName, 26, "downtime challenge verification failed")
 	ErrConsumerClientNotActive                 = errorsmod.Register(ModuleName, 27, "consumer client is not active")
 	ErrForkEvidenceStillVerifiable             = errorsmod.Register(ModuleName, 28, "the fork's evidence is still verifiable; resuming now would let it pause the consumer again")
+	ErrProviderChainId                         = errorsmod.Register(ModuleName, 29, "a consumer cannot use the provider's own chain id")
 )
