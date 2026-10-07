@@ -45,7 +45,6 @@ func TestValidateInitialGenesisState(t *testing.T) {
 	consensusState := ibctmtypes.NewConsensusState(time.Now(), commitmenttypes.NewMerkleRoot([]byte("apphash")), valHash)
 
 	params := vaastypes.DefaultConsumerParams()
-	params.Enabled = true
 
 	cases := []struct {
 		name     string
@@ -89,7 +88,7 @@ func TestValidateInitialGenesisState(t *testing.T) {
 					ConsensusState: consensusState,
 					InitialValSet:  valUpdates,
 				},
-				ProviderClientId: "ccvclient",
+				ProviderClientId: "vaasclient",
 			},
 			true,
 		},
@@ -123,10 +122,9 @@ func TestValidateInitialGenesisState(t *testing.T) {
 			true,
 		},
 		{
-			"invalid new consumer genesis state: invalid params - ccvTimeoutPeriod",
+			"invalid new consumer genesis state: invalid params - vaasTimeoutPeriod",
 			types.NewInitialGenesisState(cs, consensusState, valUpdates,
 				vaastypes.NewConsumerParams(
-					true,
 					0,
 					vaastypes.DefaultHistoricalEntries,
 					vaastypes.DefaultConsumerUnbondingPeriod,
@@ -166,7 +164,6 @@ func TestValidateMissedBlockBitmapLength(t *testing.T) {
 	consensusState := ibctmtypes.NewConsensusState(time.Now(), commitmenttypes.NewMerkleRoot([]byte("apphash")), valHash)
 
 	params := vaastypes.DefaultConsumerParams()
-	params.Enabled = true
 	wantLen := int((params.SignedBlocksWindow + 7) / 8)
 
 	base := func() *types.GenesisState {
@@ -230,7 +227,6 @@ func TestValidateStagedDowntimeParams(t *testing.T) {
 	consensusState := ibctmtypes.NewConsensusState(time.Now(), commitmenttypes.NewMerkleRoot([]byte("apphash")), valHash)
 
 	params := vaastypes.DefaultConsumerParams()
-	params.Enabled = true
 
 	base := func() *types.GenesisState {
 		return types.NewInitialGenesisState(cs, consensusState, valUpdates, params)
@@ -291,7 +287,6 @@ func TestValidateRestartConsumerGenesisState(t *testing.T) {
 	consensusState := ibctmtypes.NewConsensusState(time.Now(), commitmenttypes.NewMerkleRoot([]byte("apphash")), valHash)
 
 	params := vaastypes.DefaultConsumerParams()
-	params.Enabled = true
 
 	cases := []struct {
 		name     string
@@ -299,8 +294,8 @@ func TestValidateRestartConsumerGenesisState(t *testing.T) {
 		expError bool
 	}{
 		{
-			"valid restart consumer genesis state: handshake in progress",
-			types.NewRestartGenesisState("ccvclient", valUpdates, params),
+			"valid restart consumer genesis state: provider client already pinned",
+			types.NewRestartGenesisState("vaasclient", valUpdates, params),
 			false,
 		},
 		{
@@ -318,7 +313,7 @@ func TestValidateRestartConsumerGenesisState(t *testing.T) {
 					ConsensusState: nil,
 					InitialValSet:  valUpdates,
 				},
-				ProviderClientId: "ccvclient",
+				ProviderClientId: "vaasclient",
 			},
 			true,
 		},
@@ -332,20 +327,19 @@ func TestValidateRestartConsumerGenesisState(t *testing.T) {
 					ConsensusState: consensusState,
 					InitialValSet:  valUpdates,
 				},
-				ProviderClientId: "ccvclient",
+				ProviderClientId: "vaasclient",
 			},
 			true,
 		},
 		{
 			"invalid restart consumer genesis state: nil initial validator set",
-			types.NewRestartGenesisState("ccvclient", nil, params),
+			types.NewRestartGenesisState("vaasclient", nil, params),
 			true,
 		},
 		{
 			"invalid restart consumer genesis state: invalid params",
-			types.NewRestartGenesisState("ccvclient", valUpdates,
+			types.NewRestartGenesisState("vaasclient", valUpdates,
 				vaastypes.NewConsumerParams(
-					true,
 					0,
 					vaastypes.DefaultHistoricalEntries,
 					vaastypes.DefaultConsumerUnbondingPeriod,
@@ -383,7 +377,6 @@ func TestValidatePendingEvidencePackets(t *testing.T) {
 	consensusState := ibctmtypes.NewConsensusState(time.Now(), commitmenttypes.NewMerkleRoot([]byte("apphash")), valHash)
 
 	params := vaastypes.DefaultConsumerParams()
-	params.Enabled = true
 
 	addr := sdk.ConsAddress("validator-addr-evidence-one")
 	packet := vaastypes.NewEvidencePacketData(addr, 1, []byte{0xFF, 0x03}, 10, 100, math.LegacyNewDecWithPrec(5, 1))
@@ -456,7 +449,6 @@ func TestValidateNewChainRejectsConsumerInDebt(t *testing.T) {
 	cs := ibctmtypes.NewClientState(chainID, ibctmtypes.DefaultTrustLevel, trustingPeriod, ubdPeriod, maxClockDrift, height, commitmenttypes.GetSDKSpecs(), upgradePath)
 	consensusState := ibctmtypes.NewConsensusState(time.Now(), commitmenttypes.NewMerkleRoot([]byte("apphash")), valSet.Hash())
 	params := vaastypes.DefaultConsumerParams()
-	params.Enabled = true
 
 	newChain := types.NewInitialGenesisState(cs, consensusState, valUpdates, params)
 	newChain.ConsumerInDebt = true

@@ -3,12 +3,13 @@ package cli
 import (
 	"fmt"
 
-	"github.com/allinbits/vaas/x/vaas/consumer/types"
 	"github.com/spf13/cobra"
 
 	"github.com/cosmos/cosmos-sdk/client"
 	"github.com/cosmos/cosmos-sdk/client/flags"
 	"github.com/cosmos/cosmos-sdk/client/tx"
+
+	"github.com/allinbits/vaas/x/vaas/consumer/types"
 )
 
 // NewTxCmd returns the root tx command for the consumer module.

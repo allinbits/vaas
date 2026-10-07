@@ -75,8 +75,7 @@ func TestExportGenesisIncludesNewFields(t *testing.T) {
 	}
 	removalTime := time.Unix(1_800_000_000, 0).UTC()
 	lastAckTime := time.Unix(1_850_000_000, 0).UTC()
-	cg := *vaastypes.DefaultConsumerGenesisState()
-	cg.NewChain = true
+	cg := launchedConsumerGenesis()
 
 	// Chain IDs use a non-numeric suffix so ParseChainID returns revision 0 for
 	// all of them, letting a single initParams (RevisionNumber: 0) pass Validate().
@@ -187,8 +186,7 @@ func TestInitGenesisRestoresPerConsumerStateAndDerivedQueues(t *testing.T) {
 		VaasTimeoutPeriod: time.Hour,
 		HistoricalEntries: 10,
 	}
-	cg := *vaastypes.DefaultConsumerGenesisState()
-	cg.NewChain = true
+	cg := launchedConsumerGenesis()
 
 	gs := &providertypes.GenesisState{
 		ValsetUpdateId: 1,
@@ -314,8 +312,7 @@ func TestGenesisRoundTrip(t *testing.T) {
 		VaasTimeoutPeriod: time.Hour,
 		HistoricalEntries: 10,
 	}
-	cg := *vaastypes.DefaultConsumerGenesisState()
-	cg.NewChain = true
+	cg := launchedConsumerGenesis()
 
 	// Seed keeper A by going through FetchAndIncrementConsumerId for each
 	// consumer, mirroring what production code does at MsgCreateConsumer time.
@@ -656,8 +653,7 @@ func TestGenesisRoundTrip_PreservesFeesPerBlockOverrides(t *testing.T) {
 		VaasTimeoutPeriod: time.Hour,
 		HistoricalEntries: 10,
 	}
-	cg := *vaastypes.DefaultConsumerGenesisState()
-	cg.NewChain = true
+	cg := launchedConsumerGenesis()
 
 	consumerA := k.FetchAndIncrementConsumerId(ctx)
 	consumerB := k.FetchAndIncrementConsumerId(ctx)
@@ -825,7 +821,7 @@ func TestInitGenesis_RebuildsDerivedCollections(t *testing.T) {
 				ConsumerId:      0,
 				ChainId:         "chain-a",
 				Phase:           providertypes.CONSUMER_PHASE_LAUNCHED,
-				ConsumerGenesis: *vaastypes.DefaultConsumerGenesisState(),
+				ConsumerGenesis: launchedConsumerGenesis(),
 			},
 			{
 				ConsumerId:      1,
@@ -912,8 +908,7 @@ func TestGenesisRoundTripKeepsPauseReasonAndPausedAt(t *testing.T) {
 		VaasTimeoutPeriod: time.Hour,
 		HistoricalEntries: 10,
 	}
-	cg := *vaastypes.DefaultConsumerGenesisState()
-	cg.NewChain = true
+	cg := launchedConsumerGenesis()
 	seed := func(chainId string, phase providertypes.ConsumerPhase, clientId string) uint64 {
 		id := pkA.FetchAndIncrementConsumerId(ctxA)
 		pkA.SetConsumerChainId(ctxA, id, chainId)

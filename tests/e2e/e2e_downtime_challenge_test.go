@@ -82,7 +82,7 @@ func (s *IntegrationTestSuite) testDowntimeChallengeWithoutSealedSignature() {
 
 		consumerRPC := "http://" + s.consumerValRes[0].Container.Name[1:] + ":26657"
 		stdout, stderr, err := s.dockerExec(s.providerValRes[0].Container.ID, []string{
-			providerBinary, "tx", "provider", "challenge-consumer-downtime",
+			providerBinary, "tx", "vaasprovider", "challenge-consumer-downtime",
 			consumerID, target.consumerConsAddr, fmt.Sprintf("%d", target.claimedHeight),
 			"--consumer-rpc", consumerRPC,
 			"--trusted-height", fmt.Sprintf("%d", trustedHeight),
@@ -289,7 +289,7 @@ func (s *IntegrationTestSuite) queryClientConsensusStateHeights(clientID string)
 // consumer chain.
 func (s *IntegrationTestSuite) queryConsumerClientID(consumerID string) string {
 	stdout, _, err := s.dockerExec(s.providerValRes[0].Container.ID, []string{
-		providerBinary, "query", "provider", "consumer-chain", consumerID,
+		providerBinary, "query", "vaasprovider", "consumer-chain", consumerID,
 		"--home", providerHomePath,
 		"--output", "json",
 	})
@@ -333,7 +333,7 @@ type downtimeSlashDetail struct {
 // directly inside Eventually.
 func (s *IntegrationTestSuite) queryPendingDowntimeSlashDetails(consumerID string) []downtimeSlashDetail {
 	stdout, _, err := s.dockerExec(s.providerValRes[0].Container.ID, []string{
-		providerBinary, "query", "provider", "pending-downtime-slashes", consumerID,
+		providerBinary, "query", "vaasprovider", "pending-downtime-slashes", consumerID,
 		"--home", providerHomePath,
 		"--output", "json",
 	})

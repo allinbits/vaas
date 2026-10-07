@@ -91,10 +91,10 @@ func (app *App) prepForZeroHeightGenesis(ctx sdk.Context) {
 // GetValidatorSet returns the consumer's cross-chain validators. The set may be
 // empty if the consumer has not yet received a validator set from the provider.
 func (app *App) GetValidatorSet(ctx sdk.Context) ([]tmtypes.GenesisValidator, error) {
-	cVals := app.ConsumerKeeper.GetAllCCValidator(ctx)
+	vaasVals := app.ConsumerKeeper.GetAllVaasValidator(ctx)
 
 	vals := []tmtypes.GenesisValidator{}
-	for _, v := range cVals {
+	for _, v := range vaasVals {
 		// A GenesisValidator with a nil PubKey serializes as "pub_key": null,
 		// and CometBFT's GenesisDoc.ValidateAndComplete panics dereferencing it
 		// on reload -- so unpack the stored consensus key and set it, mirroring

@@ -23,7 +23,13 @@ message GenesisState {
   string provider_client_id = 2;
   // true for new chain, false for chain restart.
   bool new_chain = 3;
-  // Flag indicating whether the consumer VAAS module starts in pre-VAAS state
+  // preVAAS is currently unused and reserved for a future standalone-to-consumer
+  // changeover. When implemented it would signal that the chain is mid-transition,
+  // so the consumer module defers applying the provider validator set; the
+  // consumer keeper does not act on this field today. Field number 4 is kept
+  // (deliberately not removed and not marked `reserved`) so a future
+  // implementation can reuse it without a wire-format clash. See
+  // docs/consumer-transition.md.
   bool preVAAS = 4;
   vaas.v1.ProviderInfo provider = 5 [ (gogoproto.nullable) = false ];
   // LastVSCRecvTime is the block time of the last VSC packet the consumer

@@ -23,36 +23,32 @@ import "cosmos_proto/cosmos.proto";
 // SetConsumerGenesis.
 //
 message ConsumerParams {
-    // TODO: Remove enabled flag and find a better way to setup integration tests
-    // See: https://github.com/cosmos/interchain-security/issues/339
-    bool enabled = 1;
-
     // Sent VAAS related IBC packets will timeout after this duration
-    google.protobuf.Duration vaas_timeout_period = 2
+    google.protobuf.Duration vaas_timeout_period = 1
         [ (gogoproto.nullable) = false, (gogoproto.stdduration) = true ];
 
     // The number of historical info entries to persist in store.
     // This param is a part of the cosmos sdk staking module. In the case of
     // a VAAS enabled consumer chain, the VAAS module acts as the staking module.
-    int64 historical_entries = 3;
+    int64 historical_entries = 2;
 
     // Unbonding period for the consumer,
     // which should be smaller than that of the provider in general.
-    google.protobuf.Duration unbonding_period = 4
+    google.protobuf.Duration unbonding_period = 3
         [ (gogoproto.nullable) = false, (gogoproto.stdduration) = true ];
 
     // How long the consumer may go without receiving a VSC packet before its
     // tx admission gate enters safe mode (only ibc.core and gov messages pass).
-    google.protobuf.Duration safe_mode_threshold = 5
+    google.protobuf.Duration safe_mode_threshold = 4
         [ (gogoproto.nullable) = false, (gogoproto.stdduration) = true ];
 
     // Provider-owned downtime detection window size, in consumer blocks.
     // Written by the provider into the consumer genesis and updated via
     // VSC packets; not locally updatable.
-    int64 signed_blocks_window = 6;
+    int64 signed_blocks_window = 5;
 
     // Provider-owned minimum signing fraction per window.
-    string min_signed_per_window = 7 [
+    string min_signed_per_window = 6 [
         (cosmos_proto.scalar) = "cosmos.Dec",
         (gogoproto.customtype) = "cosmossdk.io/math.LegacyDec",
         (gogoproto.nullable) = false
@@ -62,7 +58,7 @@ message ConsumerParams {
     // MsgSetProviderClient (the governance authority always may). Seeded by
     // the provider from the consumer's registered owner when it authors the
     // consumer genesis; empty leaves the pin to governance alone.
-    string owner_address = 8 [(cosmos_proto.scalar) = "cosmos.AddressString"];
+    string owner_address = 7 [(cosmos_proto.scalar) = "cosmos.AddressString"];
 
     // Whether transaction fees must be paid exclusively in the one-hop photon
     // voucher received from the provider (an AtomOne core-shard requirement).
@@ -72,7 +68,7 @@ message ConsumerParams {
     // embedding app wires one (the reference consumer app wires none). The
     // switch lives here, in consensus state, because the ante policy it drives
     // also runs in FinalizeBlock.
-    bool photon_fees_enabled = 9;
+    bool photon_fees_enabled = 8;
 }
 
 // ConsumerGenesisState defines shared genesis information between provider and
@@ -84,7 +80,8 @@ message ConsumerGenesisState {
   // This is needed and always set to true; otherwise, new_chain in the consumer
   // genesis state will default to false
   bool new_chain = 3;
-  // Flag indicating whether the consumer VAAS module starts in pre-VAAS state
+  // preVAAS is reserved for a future standalone-to-consumer changeover and is
+  // currently unused. See docs/consumer-transition.md.
   bool preVAAS = 4;
 }
 

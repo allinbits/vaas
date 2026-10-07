@@ -2,15 +2,13 @@ package types
 
 // VAAS events
 const (
-	EventTypeTimeout                    = "timeout"
+	EventTypeTimeout                    = "vaas_timeout"
 	EventTypePacket                     = "vaas_packet"
-	EventTypeChannelEstablished         = "channel_established"
-	EventTypeConsumerClientCreated      = "consumer_client_created"
-	EventTypeAssignConsumerKey          = "assign_consumer_key"
-	EventTypeSubmitConsumerMisbehaviour = "submit_consumer_misbehaviour"
-	EventTypeSubmitConsumerDoubleVoting = "submit_consumer_double_voting"
-	EventTypeExecuteConsumerChainSlash  = "execute_consumer_chain_slash"
-	EventTypeConsumerEvidenceRequest    = "consumer_evidence_request"
+	EventTypeClientEstablished          = "vaas_client_established"
+	EventTypeSubmitConsumerMisbehaviour = "vaas_submit_consumer_misbehaviour"
+	EventTypeSubmitConsumerDoubleVoting = "vaas_submit_consumer_double_voting"
+	EventTypeExecuteConsumerChainSlash  = "vaas_execute_consumer_chain_slash"
+	EventTypeConsumerEvidenceRequest    = "vaas_consumer_evidence_request"
 	// EventTypeConsumerEvidenceRejected is emitted by the consumer when the
 	// provider returns an error acknowledgement for a downtime evidence packet.
 	// The provider only error-acks after evaluating and rejecting that exact
@@ -19,9 +17,9 @@ const (
 	// the pruned acceptance floor), all of which are permanent for a given
 	// packet, so the evidence is dropped rather than retried and this event
 	// surfaces the rejection.
-	EventTypeConsumerEvidenceRejected = "consumer_evidence_rejected"
+	EventTypeConsumerEvidenceRejected = "vaas_consumer_evidence_rejected"
 	// EventTypeSnapshotResync is emitted by the consumer when it applies a
-	// snapshot VSC packet (is_snapshot=true), i.e. it replaces its cross-chain
+	// snapshot VSC packet (is_snapshot=true), i.e. it replaces its VAAS
 	// validator set rather than accumulating a diff. Emitted only on snapshots,
 	// not on ordinary diffs.
 	EventTypeSnapshotResync = "vaas_snapshot_resync"
@@ -53,24 +51,15 @@ const (
 	EventTypeWithheldFeePaid = "vaas_withheld_fee_paid"
 
 	AttributeKeyAckSuccess            = "success"
-	AttributeKeyAck                   = "acknowledgement"
 	AttributeKeyAckError              = "error"
 	AttributeWindowEndHeight          = "window_end_height"
-	AttributeConsumerHeight           = "consumer_height"
-	AttributeTimestamp                = "timestamp"
-	AttributeInitialHeight            = "initial_height"
-	AttributeInitializationTimeout    = "initialization_timeout"
-	AttributeTrustingPeriod           = "trusting_period"
-	AttributeUnbondingPeriod          = "unbonding_period"
 	AttributeProviderValidatorAddress = "provider_validator_address"
-	AttributeConsumerConsensusPubKey  = "consumer_consensus_pub_key"
 	AttributeConsumerMisbehaviour     = "consumer_misbehaviour"
 	AttributeMisbehaviourClientId     = "misbehaviour_client_id"
 	AttributeMisbehaviourHeight1      = "misbehaviour_height_1"
 	AttributeMisbehaviourHeight2      = "misbehaviour_height_2"
 	AttributeByzantineValidators      = "byzantine_validators"
 	AttributeConsumerDoubleVoting     = "consumer_double_voting"
-	AttributeChainID                  = "chain_id"
 	AttributeValidatorAddress         = "validator_address"
 	AttributeInfractionType           = "infraction_type"
 	AttributeValSetUpdateID           = "valset_update_id"

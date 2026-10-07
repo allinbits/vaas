@@ -85,7 +85,7 @@ func (s *IntegrationTestSuite) countBondedProviderValidators() int {
 // default).
 func (s *IntegrationTestSuite) queryConsumerFeesPerBlock(consumerID string) int64 {
 	stdout, _, err := s.dockerExec(s.providerValRes[0].Container.ID, []string{
-		providerBinary, "query", "provider", "consumer-fees-per-block", consumerID,
+		providerBinary, "query", "vaasprovider", "consumer-fees-per-block", consumerID,
 		"--home", providerHomePath,
 		"--output", "json",
 	})
@@ -109,7 +109,7 @@ func (s *IntegrationTestSuite) queryConsumerFeesPerBlock(consumerID string) int6
 // envelope is accepted too.
 func (s *IntegrationTestSuite) queryBlocksPerEpoch() int64 {
 	stdout, _, err := s.dockerExec(s.providerValRes[0].Container.ID, []string{
-		providerBinary, "query", "provider", "params",
+		providerBinary, "query", "vaasprovider", "params",
 		"--home", providerHomePath,
 		"--output", "json",
 	})

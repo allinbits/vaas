@@ -41,7 +41,7 @@ func (s *IntegrationTestSuite) testKeyAssignment() {
 		s.T().Logf("assigned consumer consensus address will be %s", assignedConsAddr)
 
 		stdout, stderr, err := s.dockerExec(s.providerValRes[0].Container.ID, []string{
-			providerBinary, "tx", "provider", "assign-consensus-key", consumerID, pubKeyJSON,
+			providerBinary, "tx", "vaasprovider", "assign-consensus-key", consumerID, pubKeyJSON,
 			"--from", "val2",
 			"--home", providerHomePath,
 			"--keyring-backend", "test",
@@ -132,7 +132,7 @@ func (s *IntegrationTestSuite) ensureSilentValidator(key, selfBondAmount string)
 // address, or "" when it has no assignment for that consumer.
 func (s *IntegrationTestSuite) queryValidatorConsumerAddr(consumerID, providerConsAddr string) string {
 	stdout, _, err := s.dockerExec(s.providerValRes[0].Container.ID, []string{
-		providerBinary, "query", "provider", "validator-consumer-key", consumerID, providerConsAddr,
+		providerBinary, "query", "vaasprovider", "validator-consumer-key", consumerID, providerConsAddr,
 		"--home", providerHomePath,
 		"--output", "json",
 	})
@@ -152,7 +152,7 @@ func (s *IntegrationTestSuite) queryValidatorConsumerAddr(consumerID, providerCo
 // consensus address maps back to, or "" when the mapping is unknown.
 func (s *IntegrationTestSuite) queryValidatorProviderAddr(consumerID, consumerConsAddr string) string {
 	stdout, _, err := s.dockerExec(s.providerValRes[0].Container.ID, []string{
-		providerBinary, "query", "provider", "validator-provider-key", consumerID, consumerConsAddr,
+		providerBinary, "query", "vaasprovider", "validator-provider-key", consumerID, consumerConsAddr,
 		"--home", providerHomePath,
 		"--output", "json",
 	})

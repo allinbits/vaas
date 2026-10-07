@@ -6,8 +6,6 @@ import (
 	"fmt"
 	"strings"
 
-	vaastypes "github.com/allinbits/vaas/x/vaas/types"
-
 	"github.com/cometbft/cometbft/crypto/ed25519"
 	tmtypes "github.com/cometbft/cometbft/proto/tendermint/types"
 	cmttypes "github.com/cometbft/cometbft/types"
@@ -21,6 +19,8 @@ import (
 
 	sdk "github.com/cosmos/cosmos-sdk/types"
 	sdkerrors "github.com/cosmos/cosmos-sdk/types/errors"
+
+	vaastypes "github.com/allinbits/vaas/x/vaas/types"
 )
 
 const (
@@ -32,8 +32,6 @@ const (
 	MaxMetadataLength = 255
 	// MaxHashLength defines the maximum length of a hash
 	MaxHashLength = 64
-	// MaxValidatorCount defines the maximum number of validators
-	MaxValidatorCount = 1000
 )
 
 var (
@@ -212,28 +210,15 @@ func NewMsgCreateConsumer(submitter, chainId string, metadata ConsumerMetadata,
 	}, nil
 }
 
-// IsReservedChainId returns true if the specific chain id is reserved and cannot be used by other consumer chains
-func IsReservedChainId(chainId string) bool {
-	// With permissionless ICS, we can have multiple consumer chains with the exact same chain id.
-	// However, as we already have the Neutron and Stride Top N chains running, as a first step we would like to
-	// prevent permissionless chains from re-using the chain ids of Neutron and Stride. Note that this is just a
-	// preliminary measure that will be removed later on as part of:
-	// TODO (#2242): find a better way of ignoring past misbehaviors
-	return chainId == "neutron-1" || chainId == "stride-1"
-}
-
-// ValidateChainId validates that the chain id is valid and is not reserved.
+// ValidateChainId validates the shape of a consumer chain id. Whether the id
+// is free is a keeper question (see Keeper.ValidateConsumerChainIdFree): it
+// depends on the registered consumers and on the provider's own chain id.
 // Can be called for the `MsgUpdateConsumer.NewChainId` field as well, so this method takes the `field` as an argument
 // to return more appropriate error messages in case the validation fails.
 func ValidateChainId(field, chainId string) error {
 	if err := ValidateStringField(field, chainId, cmttypes.MaxChainIDLen); err != nil {
 		return errorsmod.Wrapf(ErrInvalidMsgCreateConsumer, "%s: %s", field, err.Error())
 	}
-
-	if IsReservedChainId(chainId) {
-		return errorsmod.Wrapf(ErrInvalidMsgCreateConsumer, "cannot use a reserved chain id")
-	}
-
 	return nil
 }
 
@@ -290,14 +275,6 @@ func (msg MsgUpdateConsumer) ValidateBasic() error {
 	}
 
 	return nil
-}
-
-// NewMsgRemoveConsumer creates a new MsgRemoveConsumer instance
-func NewMsgRemoveConsumer(authority string, consumerId uint64) (*MsgRemoveConsumer, error) {
-	return &MsgRemoveConsumer{
-		Authority:  authority,
-		ConsumerId: consumerId,
-	}, nil
 }
 
 // ValidateBasic implements the sdk.HasValidateBasic interface.

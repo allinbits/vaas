@@ -8,13 +8,6 @@ import (
 	"path/filepath"
 	"slices"
 
-	"github.com/allinbits/vaas/app/ibcshim"
-	no_valupdates_genutil "github.com/allinbits/vaas/x/vaas/no_valupdates_genutil"
-	no_valupdates_staking "github.com/allinbits/vaas/x/vaas/no_valupdates_staking"
-	ibcprovider "github.com/allinbits/vaas/x/vaas/provider"
-	ibcproviderkeeper "github.com/allinbits/vaas/x/vaas/provider/keeper"
-	providertypes "github.com/allinbits/vaas/x/vaas/provider/types"
-	vaastypes "github.com/allinbits/vaas/x/vaas/types"
 	"github.com/spf13/cast"
 
 	abci "github.com/cometbft/cometbft/abci/types"
@@ -109,6 +102,14 @@ import (
 	slashingtypes "github.com/cosmos/cosmos-sdk/x/slashing/types"
 	stakingkeeper "github.com/cosmos/cosmos-sdk/x/staking/keeper"
 	stakingtypes "github.com/cosmos/cosmos-sdk/x/staking/types"
+
+	"github.com/allinbits/vaas/app/ibcshim"
+	no_valupdates_genutil "github.com/allinbits/vaas/x/vaas/no_valupdates_genutil"
+	no_valupdates_staking "github.com/allinbits/vaas/x/vaas/no_valupdates_staking"
+	ibcprovider "github.com/allinbits/vaas/x/vaas/provider"
+	ibcproviderkeeper "github.com/allinbits/vaas/x/vaas/provider/keeper"
+	providertypes "github.com/allinbits/vaas/x/vaas/provider/types"
+	vaastypes "github.com/allinbits/vaas/x/vaas/types"
 )
 
 const (
@@ -793,11 +794,6 @@ func (app *App) GetSubspace(moduleName string) paramstypes.Subspace {
 // SimulationManager implements the SimulationApp interface
 func (app *App) SimulationManager() *module.SimulationManager {
 	return app.sm
-}
-
-// GetTestGovKeeper implements the ProviderApp interface.
-func (app *App) GetTestGovKeeper() *govkeeper.Keeper {
-	return app.GovKeeper
 }
 
 // TestingApp functions

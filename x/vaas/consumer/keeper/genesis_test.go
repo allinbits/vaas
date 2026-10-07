@@ -31,8 +31,9 @@ import (
 )
 
 // TestInitGenesis tests that a consumer chain is correctly initialised from genesis.
-// It covers the start of a new chain, the restart of a chain during the CCV channel handshake
-// and finally the restart of chain when the CCV channel is already established.
+// It covers the two branches InitGenesis takes: the start of a new chain, which creates
+// the provider client from the genesis client/consensus state, and the restart of a chain,
+// which adopts the provider client id carried in the genesis.
 
 // expectProviderClientExists satisfies the restart-arm guard that the pinned
 // provider client must exist in the IBC client store.
@@ -69,7 +70,6 @@ func TestInitGenesis(t *testing.T) {
 	)
 
 	params := vaastypes.DefaultConsumerParams()
-	params.Enabled = true
 
 	testCases := []struct {
 		name         string
@@ -96,11 +96,11 @@ func TestInitGenesis(t *testing.T) {
 				require.True(t, ok)
 				require.Equal(t, provClientState.ChainId, gotChainID)
 
-				require.Equal(t, validator.Address.Bytes(), ck.GetAllCCValidator(ctx)[0].Address)
+				require.Equal(t, validator.Address.Bytes(), ck.GetAllVaasValidator(ctx)[0].Address)
 				require.Equal(t, gs.Params, ck.GetConsumerParams(ctx))
 			},
 		}, {
-			"restart a chain without an established CCV channel",
+			"restart a chain with an already pinned provider client",
 			func(ctx sdk.Context, mocks testkeeper.MockedKeepers) {
 			},
 			consumertypes.NewRestartGenesisState(
@@ -110,7 +110,7 @@ func TestInitGenesis(t *testing.T) {
 			),
 			func(ctx sdk.Context, ck consumerkeeper.Keeper, gs *consumertypes.GenesisState) {
 				assertProviderClientID(t, ctx, &ck, provClientID)
-				require.Equal(t, validator.Address.Bytes(), ck.GetAllCCValidator(ctx)[0].Address)
+				require.Equal(t, validator.Address.Bytes(), ck.GetAllVaasValidator(ctx)[0].Address)
 				require.Equal(t, gs.Params, ck.GetConsumerParams(ctx))
 			},
 		},
@@ -142,7 +142,6 @@ func TestExportGenesis(t *testing.T) {
 	valset := []abci.ValidatorUpdate{tmtypes.TM2PB.ValidatorUpdate(validator)}
 
 	params := vaastypes.DefaultConsumerParams()
-	params.Enabled = true
 
 	testCases := []struct {
 		name       string
@@ -150,12 +149,12 @@ func TestExportGenesis(t *testing.T) {
 		expGenesis *consumertypes.GenesisState
 	}{
 		{
-			"export a chain without an established CCV channel",
+			"export a chain with a pinned provider client",
 			func(ctx sdk.Context, ck consumerkeeper.Keeper, mocks testkeeper.MockedKeepers) {
 				ck.SetProviderClientID(ctx, provClientID)
-				cVal, err := consumertypes.NewCCValidator(validator.Address.Bytes(), 1, pubKey)
+				vaasVal, err := consumertypes.NewVaasValidator(validator.Address.Bytes(), 1, pubKey)
 				require.NoError(t, err)
-				ck.SetCCValidator(ctx, cVal)
+				ck.SetVaasValidator(ctx, vaasVal)
 				ck.SetParams(ctx, params)
 			},
 			consumertypes.NewRestartGenesisState(
@@ -189,7 +188,6 @@ func TestExportGenesis(t *testing.T) {
 func TestGenesisRoundTripLastVSCRecvTime(t *testing.T) {
 	provClientID := "tendermint-07"
 	params := vaastypes.DefaultConsumerParams()
-	params.Enabled = true
 
 	pubKey := ed25519.GenPrivKey().PubKey()
 	tmPK, err := cryptocodec.ToCmtPubKeyInterface(pubKey)
@@ -203,9 +201,9 @@ func TestGenesisRoundTripLastVSCRecvTime(t *testing.T) {
 	defer ctrl.Finish()
 	ck.SetParams(ctx, params)
 	ck.SetProviderClientID(ctx, provClientID)
-	cVal, err := consumertypes.NewCCValidator(validator.Address.Bytes(), 1, pubKey)
+	vaasVal, err := consumertypes.NewVaasValidator(validator.Address.Bytes(), 1, pubKey)
 	require.NoError(t, err)
-	ck.SetCCValidator(ctx, cVal)
+	ck.SetVaasValidator(ctx, vaasVal)
 	ck.SetLastVSCRecvTime(ctx, lastRecv)
 
 	exported := ck.ExportGenesis(ctx)
@@ -253,7 +251,6 @@ func TestVSCStalenessClockArmsAtFirstWallClockBlock(t *testing.T) {
 	)
 
 	params := vaastypes.DefaultConsumerParams()
-	params.Enabled = true
 
 	t.Run("new chain arms at the first block after genesis, with wall-clock time", func(t *testing.T) {
 		ck, ctx, ctrl, _ := testkeeper.GetConsumerKeeperAndCtx(t, testkeeper.NewInMemKeeperParams(t))
@@ -337,18 +334,6 @@ func TestVSCStalenessClockArmsAtFirstWallClockBlock(t *testing.T) {
 		ck.ArmVSCStalenessClock(ctx.WithBlockHeight(101).WithBlockTime(nextBlock))
 		require.Equal(t, nextBlock, ck.GetLastVSCRecvTime(ctx))
 	})
-
-	t.Run("preVAAS chains stay unarmed", func(t *testing.T) {
-		ck, ctx, ctrl, _ := testkeeper.GetConsumerKeeperAndCtx(t, testkeeper.NewInMemKeeperParams(t))
-		defer ctrl.Finish()
-
-		ck.SetPreVAASTrue(ctx)
-
-		ck.ArmVSCStalenessClock(ctx.WithBlockHeight(2).WithBlockTime(time.Unix(1_850_000_000, 0).UTC()))
-		has, err := ck.LastVSCRecvTime.Has(ctx)
-		require.NoError(t, err)
-		require.False(t, has, "standalone staking still runs a preVAAS chain; VSC staleness is not meaningful yet")
-	})
 }
 
 // TestGenesisRoundTripConsumerInDebt verifies the consumer's debt flag survives
@@ -360,7 +345,6 @@ func TestVSCStalenessClockArmsAtFirstWallClockBlock(t *testing.T) {
 func TestGenesisRoundTripConsumerInDebt(t *testing.T) {
 	provClientID := "tendermint-07"
 	params := vaastypes.DefaultConsumerParams()
-	params.Enabled = true
 
 	pubKey := ed25519.GenPrivKey().PubKey()
 	tmPK, err := cryptocodec.ToCmtPubKeyInterface(pubKey)
@@ -372,9 +356,9 @@ func TestGenesisRoundTripConsumerInDebt(t *testing.T) {
 	defer ctrl.Finish()
 	ck.SetParams(ctx, params)
 	ck.SetProviderClientID(ctx, provClientID)
-	cVal, err := consumertypes.NewCCValidator(validator.Address.Bytes(), 1, pubKey)
+	vaasVal, err := consumertypes.NewVaasValidator(validator.Address.Bytes(), 1, pubKey)
 	require.NoError(t, err)
-	ck.SetCCValidator(ctx, cVal)
+	ck.SetVaasValidator(ctx, vaasVal)
 	ck.SetConsumerInDebt(ctx, true)
 
 	exported := ck.ExportGenesis(ctx)
@@ -411,7 +395,6 @@ func TestGenesisRoundTripConsumerInDebt(t *testing.T) {
 func TestGenesisRoundTripDowntimeState(t *testing.T) {
 	provClientID := "tendermint-07"
 	params := vaastypes.DefaultConsumerParams()
-	params.Enabled = true
 
 	pubKey := ed25519.GenPrivKey().PubKey()
 	tmPK, err := cryptocodec.ToCmtPubKeyInterface(pubKey)
@@ -434,9 +417,9 @@ func TestGenesisRoundTripDowntimeState(t *testing.T) {
 	defer ctrl.Finish()
 	ck.SetParams(ctx, params)
 	ck.SetProviderClientID(ctx, provClientID)
-	cVal, err := consumertypes.NewCCValidator(validator.Address.Bytes(), 1, pubKey)
+	vaasVal, err := consumertypes.NewVaasValidator(validator.Address.Bytes(), 1, pubKey)
 	require.NoError(t, err)
-	ck.SetCCValidator(ctx, cVal)
+	ck.SetVaasValidator(ctx, vaasVal)
 
 	require.NoError(t, ck.MissedBlockBitmaps.Set(ctx, addr1, bitmap1))
 	require.NoError(t, ck.MissedBlockBitmaps.Set(ctx, addr2, bitmap2))
@@ -510,7 +493,6 @@ func TestGenesisRoundTripDowntimeState(t *testing.T) {
 func TestGenesisRoundTripProviderChainId(t *testing.T) {
 	provClientID := "tendermint-07"
 	params := vaastypes.DefaultConsumerParams()
-	params.Enabled = true
 
 	pubKey := ed25519.GenPrivKey().PubKey()
 	tmPK, err := cryptocodec.ToCmtPubKeyInterface(pubKey)
@@ -523,9 +505,9 @@ func TestGenesisRoundTripProviderChainId(t *testing.T) {
 	defer ctrl.Finish()
 	ck.SetParams(ctx, params)
 	ck.SetProviderClientID(ctx, provClientID)
-	cVal, err := consumertypes.NewCCValidator(validator.Address.Bytes(), 1, pubKey)
+	vaasVal, err := consumertypes.NewVaasValidator(validator.Address.Bytes(), 1, pubKey)
 	require.NoError(t, err)
-	ck.SetCCValidator(ctx, cVal)
+	ck.SetVaasValidator(ctx, vaasVal)
 	ck.SetProviderChainId(ctx, providerChainId)
 
 	exported := ck.ExportGenesis(ctx)
@@ -553,14 +535,13 @@ func TestGenesisRoundTripProviderChainId(t *testing.T) {
 func TestGenesisRoundTripPhotonFeesEnabled(t *testing.T) {
 	provClientID := "tendermint-07"
 	params := vaastypes.DefaultConsumerParams()
-	params.Enabled = true
 	params.PhotonFeesEnabled = true
 
 	pubKey := ed25519.GenPrivKey().PubKey()
 	tmPK, err := cryptocodec.ToCmtPubKeyInterface(pubKey)
 	require.NoError(t, err)
 	validator := tmtypes.NewValidator(tmPK, 1)
-	cVal, err := consumertypes.NewCCValidator(validator.Address.Bytes(), 1, pubKey)
+	vaasVal, err := consumertypes.NewVaasValidator(validator.Address.Bytes(), 1, pubKey)
 	require.NoError(t, err)
 
 	ck, ctx, ctrl, mocks := testkeeper.GetConsumerKeeperAndCtx(t, testkeeper.NewInMemKeeperParams(t))
@@ -572,7 +553,7 @@ func TestGenesisRoundTripPhotonFeesEnabled(t *testing.T) {
 		params,
 	))
 	require.True(t, ck.PhotonFeesEnabled(ctx), "genesis opt-in must reach the stored params")
-	ck.SetCCValidator(ctx, cVal)
+	ck.SetVaasValidator(ctx, vaasVal)
 
 	exported := ck.ExportGenesis(ctx)
 	require.True(t, exported.Params.PhotonFeesEnabled, "export must carry photon_fees_enabled")
@@ -637,7 +618,6 @@ func TestInitGenesisPanicsOnInvalidStagedDowntimeParams(t *testing.T) {
 	valset := []abci.ValidatorUpdate{tmtypes.TM2PB.ValidatorUpdate(validator)}
 
 	params := vaastypes.DefaultConsumerParams()
-	params.Enabled = true
 	genesis := consumertypes.NewRestartGenesisState(
 		"07-tendermint-0",
 		valset,
@@ -695,7 +675,6 @@ func TestInitGenesisNewChainCreatesNoClient(t *testing.T) {
 	)
 
 	params := vaastypes.DefaultConsumerParams()
-	params.Enabled = true
 	genesis := consumertypes.NewInitialGenesisState(provClientState, provConsState, nil, params)
 	ck.InitGenesis(ctx, genesis)
 
@@ -718,7 +697,6 @@ func TestGenesisRoundTripBeforePinKeepsState(t *testing.T) {
 	defer ctrl.Finish()
 
 	params := vaastypes.DefaultConsumerParams()
-	params.Enabled = true
 	ck.SetParams(ctx, params)
 	ck.SetProviderChainId(ctx, "provider-boot-1")
 	armedAt := time.Unix(1_850_000_000, 0).UTC()
@@ -757,7 +735,6 @@ func TestInitGenesisPanicsWhenPinnedClientMissing(t *testing.T) {
 	validator := tmtypes.NewValidator(cId.TMCryptoPubKey(), 1)
 	valset := []abci.ValidatorUpdate{tmtypes.TM2PB.ValidatorUpdate(validator)}
 	params := vaastypes.DefaultConsumerParams()
-	params.Enabled = true
 	genesis := consumertypes.NewRestartGenesisState("07-tendermint-9", valset, params)
 
 	require.PanicsWithError(t,

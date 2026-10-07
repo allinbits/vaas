@@ -293,7 +293,7 @@ func (s *IntegrationTestSuite) valAddrPowerMap(vals []*cmtservice.Validator) map
 // validator with no assigned consumer key has no pair.
 func (s *IntegrationTestSuite) queryAllPairsValConsAddr(consumerID string) map[string]string {
 	stdout, _, err := s.dockerExec(s.providerValRes[0].Container.ID, []string{
-		providerBinary, "query", "provider", "all-pairs-valconsensus-address", consumerID,
+		providerBinary, "query", "vaasprovider", "all-pairs-valconsensus-address", consumerID,
 		"--home", providerHomePath,
 		"--output", "json",
 	})
