@@ -19,6 +19,11 @@ func (s *IntegrationTestSuite) TestVAAS() {
 	s.testFeePoolSendRestriction()
 	s.testFeePoolFundAndLockEnforcement()
 	s.testFeePoolGovSubsidyClawback()
+	s.testFeeDistributionAccrual()
+	// After the fee assertion, whose bonded count this may change, and before
+	// the challenge test, which needs the assignment settled.
+	s.testKeyAssignment()
+	s.testDowntimeChallengeWithoutSealedSignature()
 	// Stops the consumer container and replaces it with a fresh one started
 	// from its exported genesis at a continuing height, then verifies VSC
 	// flow resumes. Needs consumer "0" LAUNCHED, so it must run before
