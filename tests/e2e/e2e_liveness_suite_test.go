@@ -378,8 +378,9 @@ func (s *LivenessIntegrationTestSuite) testRealSafeMode() {
 			if err != nil {
 				return false
 			}
-			return !strings.Contains(out, "consumer chain is in debt") &&
-				!strings.Contains(out, "stale validator set")
+			// Only a successful simulation (gas estimate) proves normal mode;
+			// any other failure would otherwise pass for "no gate error".
+			return strings.Contains(out, "gas estimate")
 		}, 2*time.Minute, 5*time.Second,
 			"consumer did not enter normal mode after fee pool funding")
 
@@ -391,7 +392,10 @@ func (s *LivenessIntegrationTestSuite) testRealSafeMode() {
 		s.T().Log("waiting for consumer to enter restricted mode (VSC stale after ~5s)...")
 		s.Require().Eventuallyf(func() bool {
 			out, err := s.consumerBankSendDryRun()
-			return err != nil || strings.Contains(out, "stale validator set") ||
+			if err != nil {
+				return false
+			}
+			return strings.Contains(out, "stale validator set") ||
 				strings.Contains(out, "consumer chain is in debt")
 		}, 2*time.Minute, 3*time.Second,
 			"consumer did not enter restricted mode after VSC staleness")
@@ -409,8 +413,8 @@ func (s *LivenessIntegrationTestSuite) testRealSafeMode() {
 			if err != nil {
 				return false
 			}
-			return !strings.Contains(out, "stale validator set") &&
-				!strings.Contains(out, "consumer chain is in debt")
+			// As above: only the gas estimate proves the gate reopened.
+			return strings.Contains(out, "gas estimate")
 		}, 3*time.Minute, 5*time.Second,
 			"consumer did not exit restricted mode after VSC delivery resumed")
 		s.T().Log("consumer back in normal mode after VSC delivery")
