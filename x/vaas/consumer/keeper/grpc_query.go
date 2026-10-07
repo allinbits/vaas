@@ -35,5 +35,9 @@ func (k Keeper) QueryProviderInfo(c context.Context, //nolint:golint
 		return nil, status.Errorf(codes.InvalidArgument, "empty request")
 	}
 
-	return k.GetProviderInfoV2(ctx)
+	resp, err := k.GetProviderInfoV2(ctx)
+	if err != nil {
+		return nil, status.Error(codes.NotFound, err.Error())
+	}
+	return resp, nil
 }
