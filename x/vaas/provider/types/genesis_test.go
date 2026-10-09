@@ -333,6 +333,7 @@ func TestValidateGenesisState_DowntimeLists(t *testing.T) {
 		return types.PendingDowntimeSlash{
 			ConsumerId:         0,
 			ProviderConsAddr:   addr,
+			ConsumerConsAddr:   addr,
 			WindowStartHeight:  100,
 			Span:               16,
 			MissedCount:        1,
@@ -371,6 +372,16 @@ func TestValidateGenesisState_DowntimeLists(t *testing.T) {
 		err := gs.Validate()
 		require.Error(t, err)
 		require.Contains(t, err.Error(), "missed blocks bitmap length")
+	})
+
+	t.Run("missing consumer cons addr", func(t *testing.T) {
+		gs := build()
+		bad := validSlash(addr1)
+		bad.ConsumerConsAddr = nil
+		gs.PendingDowntimeSlashes = []types.PendingDowntimeSlash{bad}
+		err := gs.Validate()
+		require.Error(t, err)
+		require.Contains(t, err.Error(), "consumer cons addr cannot be empty")
 	})
 
 	t.Run("non-positive span", func(t *testing.T) {
@@ -888,4 +899,43 @@ func initialConsumerGenesis(chainID string) vaastypes.ConsumerGenesisState {
 	params := vaastypes.DefaultConsumerParams()
 
 	return *vaastypes.NewInitialConsumerGenesisState(clientState, consensusState, valUpdates, params)
+}
+
+func TestGenesisStateValidatePunishedEquivocations(t *testing.T) {
+	owner := sdk.AccAddress([]byte("vaas-test-owner-1234")).String()
+	cs := types.ConsumerState{ChainId: "chain-1", Phase: types.CONSUMER_PHASE_REGISTERED, OwnerAddress: owner}
+	build := func(entries ...types.PunishedEquivocation) *types.GenesisState {
+		gs := types.NewGenesisState(
+			types.DefaultValsetUpdateID,
+			[]types.ConsumerState{cs},
+			types.DefaultParams(),
+			nil, nil, nil, nil, nil,
+		)
+		gs.PunishedEquivocations = entries
+		return gs
+	}
+	addr := []byte("provider-cons-addr-one11")
+	valid := types.PunishedEquivocation{ChainId: "chain-1", ProviderConsAddr: addr, InfractionHeight: 55}
+
+	require.NoError(t, build(valid).Validate())
+	require.NoError(t, build(valid, types.PunishedEquivocation{ChainId: "chain-1", ProviderConsAddr: addr, InfractionHeight: 56}).Validate(),
+		"two infractions of one validator are two entries")
+	require.NoError(t, build(types.PunishedEquivocation{ChainId: "gone-1", ProviderConsAddr: addr, InfractionHeight: 55}).Validate(),
+		"a record outlives the consumer it was taken under: no live consumer needs to carry its chain id")
+
+	cases := []struct {
+		name  string
+		entry types.PunishedEquivocation
+		want  string
+	}{
+		{"empty chain id", types.PunishedEquivocation{ProviderConsAddr: addr, InfractionHeight: 55}, "chain id cannot be empty"},
+		{"empty address", types.PunishedEquivocation{ChainId: "chain-1", InfractionHeight: 55}, "provider cons addr cannot be empty"},
+		{"non-positive height", types.PunishedEquivocation{ChainId: "chain-1", ProviderConsAddr: addr}, "infraction height must be positive"},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			require.ErrorContains(t, build(tc.entry).Validate(), tc.want)
+		})
+	}
+	require.ErrorContains(t, build(valid, valid).Validate(), "duplicate punished equivocation")
 }

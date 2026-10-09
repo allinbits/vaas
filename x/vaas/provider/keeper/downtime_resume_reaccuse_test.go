@@ -61,6 +61,8 @@ func TestResumeThenReaccuse_SameWindowRejectedLaterWindowChallengeable(t *testin
 	}))
 	infractionParams := downtimeParams(8, "0.5", 0, 7*24*time.Hour, 72*time.Hour)
 	k.SetInfractionParams(ctx, infractionParams)
+	mocks.MockClientKeeper.EXPECT().GetClientState(gomock.Any(), gomock.Any()).
+		Return(&ibctmtypes.ClientState{TrustingPeriod: 365 * 24 * time.Hour}, true).AnyTimes()
 	k.OverrideWindowEndTimestampForTest(func(sdk.Context, string, int64) (time.Time, error) {
 		return windowEndTime, nil
 	})

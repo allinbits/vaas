@@ -63,5 +63,6 @@ var (
 	DowntimeWindowFloorsPrefix             = collections.NewPrefix(39)
 	ConsumerPauseReasonPrefix              = collections.NewPrefix(43)
 	ConsumerPausedAtPrefix                 = collections.NewPrefix(44)
+	PunishedEquivocationsPrefix            = collections.NewPrefix(45)
 	ParametersPrefix                       = collections.NewPrefix(0xFF)
 )
