@@ -21,7 +21,7 @@ func (s *IntegrationTestSuite) testKeyAssignment() {
 	s.Run("assigned consumer key replaces the validator's address in the consumer valset", func() {
 		const consumerID = "0"
 
-		_, valoper := s.ensureSilentValidator("val2", "5000000"+bondDenom)
+		valoper := s.ensureSilentValidator("val2", "5000000"+bondDenom)
 		providerConsAddr := s.providerValidatorConsAddr(valoper)
 		s.T().Logf("assigning a consumer key for validator %s (provider consensus address %s)",
 			valoper, providerConsAddr)
@@ -93,13 +93,13 @@ func (s *IntegrationTestSuite) testKeyAssignment() {
 	})
 }
 
-// ensureSilentValidator returns the account and operator addresses of the
+// ensureSilentValidator returns the operator address of the
 // permanently-silent provider validator backed by the named keyring entry,
 // creating it via createSilentValidator when it does not exist yet. The main
 // suite creates "val2" in testDowntimeSlash; this keeps the sub-tests that
 // need a validator with no consumer node runnable on their own (e.g. under
 // `go test -run .../assigned_consumer_key`).
-func (s *IntegrationTestSuite) ensureSilentValidator(key, selfBondAmount string) (accAddr, valoperAddr string) {
+func (s *IntegrationTestSuite) ensureSilentValidator(key, selfBondAmount string) string {
 	stdout, _, err := s.dockerExec(s.providerValRes[0].Container.ID, []string{
 		providerBinary, "keys", "show", key, "--bech", "val", "-a",
 		"--home", providerHomePath,
@@ -111,20 +111,15 @@ func (s *IntegrationTestSuite) ensureSilentValidator(key, selfBondAmount string)
 		if verr == nil {
 			for _, v := range vals {
 				if v.OperatorAddress == valoper && v.Status == stakingtypes.Bonded {
-					accStdout, _, aerr := s.dockerExec(s.providerValRes[0].Container.ID, []string{
-						providerBinary, "keys", "show", key, "-a",
-						"--home", providerHomePath,
-						"--keyring-backend", "test",
-					})
-					s.Require().NoError(aerr, "failed to get %s account address", key)
-					return strings.TrimSpace(accStdout.String()), valoper
+					return valoper
 				}
 			}
 		}
 	}
 
 	s.T().Logf("bonding a permanently-silent provider validator %q...", key)
-	return s.createSilentValidator(key, selfBondAmount)
+	_, valoper := s.createSilentValidator(key, selfBondAmount)
+	return valoper
 }
 
 // queryValidatorConsumerAddr returns the consumer consensus address currently

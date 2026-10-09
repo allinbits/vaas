@@ -11,10 +11,11 @@ import (
 	cmtproto "github.com/cometbft/cometbft/proto/tendermint/types"
 	cmttypes "github.com/cometbft/cometbft/types"
 
+	dbm "github.com/cosmos/cosmos-db"
+
 	"cosmossdk.io/log"
 	"cosmossdk.io/math"
 
-	dbm "github.com/cosmos/cosmos-db"
 	"github.com/cosmos/cosmos-sdk/baseapp"
 	"github.com/cosmos/cosmos-sdk/client/flags"
 	cryptocodec "github.com/cosmos/cosmos-sdk/crypto/codec"

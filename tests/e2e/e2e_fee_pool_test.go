@@ -3,6 +3,7 @@ package e2e
 import (
 	"encoding/json"
 	"fmt"
+	"strconv"
 	"strings"
 	"time"
 
@@ -27,8 +28,8 @@ func (s *baseTestSuite) providerQueryBalance(addr, denom string) int64 {
 	s.Require().NoError(json.Unmarshal(stdout.Bytes(), &res))
 	for _, b := range res.Balances {
 		if b.Denom == denom {
-			var n int64
-			fmt.Sscanf(b.Amount, "%d", &n)
+			n, err := strconv.ParseInt(b.Amount, 10, 64)
+			s.Require().NoErrorf(err, "parse balance %q", b.Amount)
 			return n
 		}
 	}
@@ -54,8 +55,8 @@ func (s *IntegrationTestSuite) providerQueryFeePoolClaim(consumerID, depositor, 
 	s.Require().NoError(json.Unmarshal(stdout.Bytes(), &res))
 	for _, c := range res.Claim {
 		if c.Denom == denom {
-			var n int64
-			fmt.Sscanf(c.Amount, "%d", &n)
+			n, err := strconv.ParseInt(c.Amount, 10, 64)
+			s.Require().NoErrorf(err, "parse amount %q", c.Amount)
 			return n
 		}
 	}

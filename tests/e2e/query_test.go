@@ -10,8 +10,15 @@ import (
 )
 
 // queryProviderConsumerPhase returns the phase string for a given consumer ID
-// from the provider chain (e.g. "CONSUMER_PHASE_LAUNCHED").
-func (s *baseTestSuite) queryProviderConsumerPhase(consumerID string) string {
+// from the provider chain (e.g. phaseLaunched).
+// Consumer phases as the provider's consumer-chain query prints them.
+const (
+	phaseLaunched = "CONSUMER_PHASE_LAUNCHED"
+	phaseStopped  = "CONSUMER_PHASE_STOPPED"
+	phaseDeleted  = "CONSUMER_PHASE_DELETED"
+)
+
+func (s *baseTestSuite) queryProviderConsumerPhase(consumerID string) string { //nolint:unparam // the suite drives one consumer; the helper stays generic
 	stdout, _, err := s.dockerExec(s.providerValRes[0].Container.ID, []string{
 		providerBinary, "query", "vaasprovider", "consumer-chain", consumerID,
 		"--home", providerHomePath,

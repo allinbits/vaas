@@ -242,7 +242,7 @@ func (s *IntegrationTestSuite) testDowntimeSlashQueueThenExecute() {
 // tumbling window closes, without needing a second physical consumer node.
 // Returns the new validator's account and operator (valoper) bech32
 // addresses.
-func (s *baseTestSuite) createSilentValidator(key, selfBondAmount string) (accAddr, valoperAddr string) {
+func (s *baseTestSuite) createSilentValidator(key, selfBondAmount string) (accAddr, valoperAddr string) { //nolint:unparam // the account address pairs with the operator address for scenarios that fund or query the validator; the downtime scenarios only need the operator
 	containerID := s.providerValRes[0].Container.ID
 
 	s.dockerExecMust(containerID, []string{
@@ -358,7 +358,7 @@ func (p pendingDowntimeSlashJSON) coversWindowEnd(windowEnd int64) bool {
 // queryPendingDowntimeSlashes returns the pending downtime slashes queued for
 // a consumer, awaiting the challenge window before execution. Returns nil on
 // any query/decode error so callers can poll it directly inside Eventually.
-func (s *baseTestSuite) queryPendingDowntimeSlashes(consumerID string) []pendingDowntimeSlashJSON {
+func (s *baseTestSuite) queryPendingDowntimeSlashes(consumerID string) []pendingDowntimeSlashJSON { //nolint:unparam // the suite drives one consumer; the helper stays generic
 	stdout, _, err := s.dockerExec(s.providerValRes[0].Container.ID, []string{
 		providerBinary, "query", "vaasprovider", "pending-downtime-slashes", consumerID,
 		"--home", providerHomePath,

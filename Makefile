@@ -18,16 +18,28 @@ test:
 	go test -timeout=25m -v $(shell go list ./... | grep -v 'github.com/allinbits/vaas/tests/e2e')
 	cd app && go test -timeout=25m -v ./...
 
-# The app module is linted from its own directory: golangci-lint walks up to the
-# .golangci.yml at the repo root, so both modules share one config.
+# The e2e suite and the apps are their own Go modules, so a run from the root
+# never sees them: each is linted from its own directory against the root
+# config, test files included. The root run leaves its own test files out
+# (run.tests in .golangci.yml).
 lint_cmd=$(rundep) github.com/golangci/golangci-lint/cmd/golangci-lint
-lint:
+lint_e2e_cmd=cd tests/e2e && $(lint_cmd) run --config $(CURDIR)/.golangci.yml --tests=true
+lint_app_cmd=cd app && $(lint_cmd) run --config $(CURDIR)/.golangci.yml --tests=true
+lint_fix_flags=--fix --out-format=tab --issues-exit-code=0
+
+lint: lint-e2e lint-app
 	$(lint_cmd) run ./...
-	cd app && $(lint_cmd) run ./...
+
+lint-e2e:
+	$(lint_e2e_cmd) ./...
+
+lint-app:
+	$(lint_app_cmd) ./...
 
 lint-fix:
-	$(lint_cmd) run --fix --out-format=tab --issues-exit-code=0
-	cd app && $(lint_cmd) run --fix --out-format=tab --issues-exit-code=0
+	$(lint_cmd) run $(lint_fix_flags) ./...
+	$(lint_e2e_cmd) $(lint_fix_flags) ./...
+	$(lint_app_cmd) $(lint_fix_flags) ./...
 
 vulncheck:
 	$(rundep) golang.org/x/vuln/cmd/govulncheck ./...

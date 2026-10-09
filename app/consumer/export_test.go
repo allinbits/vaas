@@ -8,9 +8,10 @@ import (
 	cmtproto "github.com/cometbft/cometbft/proto/tendermint/types"
 	tmtypes "github.com/cometbft/cometbft/types"
 
+	dbm "github.com/cosmos/cosmos-db"
+
 	"cosmossdk.io/log"
 
-	dbm "github.com/cosmos/cosmos-db"
 	"github.com/cosmos/cosmos-sdk/crypto/keys/ed25519"
 	"github.com/cosmos/cosmos-sdk/testutil/sims"
 
