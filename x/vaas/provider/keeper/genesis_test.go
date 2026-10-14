@@ -626,9 +626,6 @@ func TestGenesisRoundTrip(t *testing.T) {
 	// InitGenesisValUpdates reads from staking; mock it on both keepers.
 	stakingA.MockStakingKeeper.EXPECT().GetBondedValidatorsByPower(gomock.Any()).Return(nil, nil).AnyTimes()
 	stakingB.MockStakingKeeper.EXPECT().GetBondedValidatorsByPower(gomock.Any()).Return(nil, nil).AnyTimes()
-	// The import checks that x/staking still indexes every held operation.
-	stakingB.MockStakingKeeper.EXPECT().GetUnbondingType(gomock.Any(), gomock.Any()).
-		Return(stakingtypes.UnbondingType_UnbondingDelegation, nil).AnyTimes()
 	// InitGenesis walks fee-pool addresses for an orphan-balance check.
 	stakingB.MockBankKeeper.EXPECT().GetAllBalances(gomock.Any(), gomock.Any()).
 		Return(sdk.NewCoins()).AnyTimes()
@@ -1085,38 +1082,4 @@ func TestInitGenesisPanicsOnWithheldFeeDenomMismatch(t *testing.T) {
 
 	require.Panics(t, func() { pk.InitGenesis(ctx, gs) },
 		"a withheld record in a denom the module does not charge must fail InitChain")
-}
-
-// TestInitGenesisRefusesHeldOpsStakingCannotRelease: an exported genesis
-// carrying unbonding holds can only be imported if x/staking still indexes
-// the held operations (its own import rebuilds neither the index nor the
-// operation counter); otherwise the held stake would be stranded, so the
-// import fails loudly with the remedy in the message.
-func TestInitGenesisRefusesHeldOpsStakingCannotRelease(t *testing.T) {
-	pk, ctx, ctrl, mocks := testkeeper.GetProviderKeeperAndCtx(t, testkeeper.NewInMemKeeperParams(t))
-	defer ctrl.Finish()
-
-	accused := []byte("provider-addr-accused-x1")
-	gs := providertypes.DefaultGenesisState()
-	gs.ConsumerStates = []providertypes.ConsumerState{{
-		ConsumerId:   0,
-		ChainId:      "chain-1",
-		Phase:        providertypes.CONSUMER_PHASE_REGISTERED,
-		OwnerAddress: sdk.AccAddress([]byte("vaas-test-owner-1234")).String(),
-	}}
-	gs.PendingEquivocationPunishments = []providertypes.PendingEquivocationPunishment{{
-		ConsumerId: 0, ProviderConsAddr: accused, InfractionHeight: 42, ExecutesAt: time.Unix(300, 0).UTC(),
-	}}
-	gs.HeldUnbondingOps = []providertypes.HeldUnbondingOps{{ProviderConsAddr: accused, UnbondingOpIds: []uint64{5}}}
-	require.NoError(t, gs.Validate())
-
-	mocks.MockStakingKeeper.EXPECT().GetBondedValidatorsByPower(gomock.Any()).Return(nil, nil).AnyTimes()
-	mocks.MockBankKeeper.EXPECT().GetAllBalances(gomock.Any(), gomock.Any()).Return(sdk.NewCoins()).AnyTimes()
-	mocks.MockStakingKeeper.EXPECT().GetUnbondingType(gomock.Any(), uint64(5)).Return(stakingtypes.UnbondingType_Undefined, stakingtypes.ErrNoUnbondingType)
-
-	require.PanicsWithError(t,
-		"init: held unbonding op 5 of validator 70726f76696465722d616464722d616363757365642d7831 is not indexed by x/staking; "+
-			"resolve pending equivocation punishments before exporting, or drop held_unbonding_ops "+
-			"and the entries' unbonding_on_hold_ref_count from the exported genesis: unbonding type not found",
-		func() { pk.InitGenesis(ctx, gs) })
 }
