@@ -24,7 +24,7 @@ evidence down with it**, and nothing short of that verdict does.
 A bonded validator publicly refuses a consumer with:
 
 ```
-providerd tx provider set-consumer-refusal <consumer-id> true --from <operator>
+providerd tx vaasprovider set-consumer-refusal <consumer-id> true --from <operator>
 ```
 
 and withdraws the refusal with `false`. The signal (`MsgSetConsumerRefusal`)
@@ -45,7 +45,7 @@ signals. The signal does two things:
   consumer's consensus physically anyway; the threshold turns that implicit
   halt into an explicit, attributable pause.
 - **Accountability.** The refusal is a public stance, queryable by anyone
-  (`providerd query provider consumer-refusals <consumer-id>`), which is what
+  (`providerd query vaasprovider consumer-refusals <consumer-id>`), which is what
   off-chain coordination needs to form.
 
 A refusal is **not** an individual exemption from downtime evidence: it does
@@ -205,9 +205,9 @@ already tombstoned validator is reported as such with nothing queued.
 
 ## 5. Operator surface
 
-Queries: `providerd query provider consumer-refusals <consumer-id>` (refusers,
+Queries: `providerd query vaasprovider consumer-refusals <consumer-id>` (refusers,
 refused and total power, fraction, threshold) and
-`providerd query provider pending-equivocation-punishments <consumer-id>`
+`providerd query vaasprovider pending-equivocation-punishments <consumer-id>`
 (entries with their execution time, extension flag, and the proposal they
 wait for). Events: `vaas_consumer_refusal_set`,
 `vaas_consumer_refusal_threshold_reached`,
