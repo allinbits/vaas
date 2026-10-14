@@ -411,7 +411,7 @@ func (s *baseTestSuite) removalProposalJSON(consumerID, title string) string {
 	return fmt.Sprintf(`{
   "messages": [{
     "@type": "/vaas.provider.v1.MsgRemoveConsumer",
-    "authority": %q,
+    "signer": %q,
     "consumer_id": %q
   }],
   "metadata": "ipfs://test",
@@ -663,12 +663,19 @@ func (s *IntegrationTestSuite) testEquivocationDeferralBehindRejectedRemoval() {
 }
 
 // testEquivocationQueuedBeforeRemoval queues a punishment against a second
-// fabricated equivocator right before the suite's explicit removal of the
+// fabricated equivocator ahead of the suite's explicit removal of the
 // consumer, so testEquivocationCancelledByRemoval can observe the passed vote
-// cancelling it.
+// cancelling it. The provider restart of testGenesisRoundTrip runs in
+// between, so the punishment is queued with an execution delay that outlives
+// it.
 func (s *IntegrationTestSuite) testEquivocationQueuedBeforeRemoval() {
 	s.Run("equivocation: queue a punishment the upcoming removal will cancel", func() {
 		const consumerID = "0"
+
+		// The earlier scenarios needed the short delay to watch an execution;
+		// this punishment must still be pending once the provider has been
+		// exported, restarted and the removal vote has passed.
+		s.setEquivocationExecutionDelay(10 * time.Minute)
 
 		valoper, priv := s.createEquivocatingValidator("eqval2", "5000000"+bondDenom)
 		s.eqval2Valoper = valoper
@@ -698,7 +705,9 @@ func (s *IntegrationTestSuite) testEquivocationQueuedBeforeRemoval() {
 // testEquivocationCancelledByRemoval asserts, after the suite's removal
 // proposal has passed and stopped the consumer, that the condemned chain took
 // its evidence down with it: the pending punishment is gone, the hold is
-// released, the stake is intact, and the validator can unjail.
+// released, the stake is intact, and the validator can unjail. The punishment
+// and the hold came through the provider restart in between, so the release
+// goes through the unbonding index x/staking rebuilt at import.
 func (s *IntegrationTestSuite) testEquivocationCancelledByRemoval() {
 	s.Run("equivocation: a passed removal cancels the pending punishment", func() {
 		const consumerID = "0"
@@ -722,6 +731,49 @@ func (s *IntegrationTestSuite) testEquivocationCancelledByRemoval() {
 		s.T().Log("unjailing eqval2 now that the cancelled punishment opened the jail...")
 		s.mustUnjail("eqval2", s.eqval2Valoper)
 	})
+}
+
+// setEquivocationExecutionDelay moves the provider's equivocation execution
+// delay to d through governance, keeping every other parameter as queried.
+func (s *IntegrationTestSuite) setEquivocationExecutionDelay(d time.Duration) {
+	delay := fmt.Sprintf("%ds", int64(d.Seconds()))
+	params := s.queryProviderParamsJSON()
+	params["equivocation_execution_delay"] = delay
+	paramsJSON, err := json.Marshal(params)
+	s.Require().NoError(err)
+
+	s.T().Logf("setting the equivocation execution delay to %s through governance...", delay)
+	s.submitAndPassProposal(fmt.Sprintf(`{
+  "messages": [{
+    "@type": "/vaas.provider.v1.MsgUpdateParams",
+    "authority": %q,
+    "params": %s
+  }],
+  "metadata": "ipfs://test",
+  "deposit": "10000000%s",
+  "title": "Set the equivocation execution delay to %s",
+  "summary": "e2e: the punishment queued next must outlive the provider restart"
+}`, s.queryGovAuthority(), paramsJSON, bondDenom, delay))
+	s.Require().Equalf(delay, s.queryProviderParamsJSON()["equivocation_execution_delay"],
+		"the provider did not take the new equivocation execution delay")
+}
+
+// queryProviderParamsJSON returns the provider params as the CLI prints them,
+// unwrapped from a "params" envelope when there is one.
+func (s *IntegrationTestSuite) queryProviderParamsJSON() map[string]any {
+	stdout, stderr, err := s.dockerExec(s.providerValRes[0].Container.ID, []string{
+		providerBinary, "query", "vaasprovider", "params",
+		"--home", providerHomePath,
+		"--output", "json",
+	})
+	s.Require().NoErrorf(err, "failed to query provider params: %s", stderr.String())
+	var params map[string]any
+	s.Require().NoErrorf(json.Unmarshal(stdout.Bytes(), &params),
+		"undecodable provider params: %s", stdout.String())
+	if inner, ok := params["params"].(map[string]any); ok {
+		params = inner
+	}
+	return params
 }
 
 // mustKeyAddress returns the bech32 account address of a keyring key.
