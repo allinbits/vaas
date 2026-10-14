@@ -5,7 +5,11 @@ go 1.26.0
 replace (
 	cosmossdk.io/x/evidence => github.com/atomone-hub/cosmos-sdk/x/evidence v0.1.1
 	cosmossdk.io/x/upgrade => github.com/atomone-hub/cosmos-sdk/x/upgrade v0.1.5-atomone.1.0.20251218143825-cbb67818e94a
-	github.com/cosmos/cosmos-sdk => github.com/atomone-hub/cosmos-sdk v0.500.2
+	// Pinned to the atomone-hub/cosmos-sdk main commit that merged
+	// atomone-hub/cosmos-sdk#115 (x/staking InitGenesis rebuilds the
+	// unbonding-operation indexes and counter) until a release tag carries
+	// it; move this back to a tag then.
+	github.com/cosmos/cosmos-sdk => github.com/atomone-hub/cosmos-sdk v0.500.3-0.20261013164648-d5ef9b483990
 	github.com/syndtr/goleveldb => github.com/syndtr/goleveldb v1.0.1-0.20210819022825-2ae1ddf74ef7
 )
 

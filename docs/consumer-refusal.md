@@ -216,19 +216,6 @@ wait for). Events: `vaas_consumer_refusal_set`,
 `cancel_reason`), and `vaas_equivocation_punishment_dropped` (with
 `drop_reason`).
 
-One limitation is guarded rather than solved here. x/staking's genesis import
-rebuilds neither the unbonding-operation indexes nor the operation counter,
-and a hold is only ever released through that index, so an export taken with
-live holds cannot be imported without stranding the held stake. The
-provider's `InitGenesis` therefore refuses such a genesis, naming the remedy:
-resolve the pending punishments before exporting, or drop
-`held_unbonding_ops` and the entries' `unbonding_on_hold_ref_count` from the
-exported genesis, giving up the protection they gave (the punishments stay
-pending and the accused stay jailed; only stake already unbonding can then
-finish before execution). The durable fix belongs in the staking module's
-genesis import, which has everything it needs in the entries it imports; once
-it rebuilds the indexes and the counter the guard simply passes.
-
 ## 6. Parameters and bounds
 
 | Parameter | Where | Bound | Default |

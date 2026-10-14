@@ -358,20 +358,9 @@ func (k Keeper) InitGenesis(ctx sdk.Context, genState *types.GenesisState) []abc
 	}
 	for _, h := range genState.HeldUnbondingOps {
 		for _, id := range h.UnbondingOpIds {
-			// A hold is only ever released through x/staking's index of the
-			// operation. x/staking's genesis import rebuilds neither that
-			// index nor its operation counter, so an export taken with live
-			// holds cannot be imported without stranding the held stake:
-			// refuse it here, at import, rather than discover it when the
-			// punishment resolves. The exported genesis can be edited to drop
-			// the holds (and the entries' on-hold refcounts) at the cost of
-			// the protection they gave; see docs/consumer-refusal.md.
-			if _, err := k.stakingKeeper.GetUnbondingType(ctx, id); err != nil {
-				panic(fmt.Errorf("init: held unbonding op %d of validator %x is not indexed by x/staking; "+
-					"resolve pending equivocation punishments before exporting, or drop held_unbonding_ops "+
-					"and the entries' unbonding_on_hold_ref_count from the exported genesis: %w",
-					id, h.ProviderConsAddr, err))
-			}
+			// Releasing a hold goes through x/staking's index of the
+			// operation, which its genesis import rebuilds from the entries
+			// it imports.
 			if err := k.HeldUnbondingOps.Set(ctx, collections.Join(h.ProviderConsAddr, id)); err != nil {
 				panic(fmt.Errorf("init: set held unbonding op %d: %w", id, err))
 			}
