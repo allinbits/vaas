@@ -263,14 +263,14 @@ clear it.
 providerd tx vaasprovider remove-consumer <consumer-id> --from <owner>
 ```
 
-**What happens on-chain:** `RetireConsumerChain` first drops the consumer's entry from
-the spawn-time launch queue if it was `INITIALIZED`, so the queue cannot later hand an
-erased consumer to the launch sweep. It then runs the same `DeleteConsumerChain`
-teardown a stopped consumer goes through: fee-pool auto-sweep, state cleanup, chain ID
-released, phase `DELETED`. There is no `STOPPED` stopover and no unbonding delay,
-because no validator ever validated this chain, no IBC client was ever declared for it,
-and no validator set was ever computed or sent — so there is nothing to keep slashable
-while an unbonding period runs down.
+**What happens on-chain:** `DeleteConsumerChain`, the same teardown a stopped consumer
+goes through, runs at once. For an `INITIALIZED` consumer it first drops the entry from
+the spawn-time launch queue, so the queue cannot later hand an erased consumer to the
+launch sweep; then fee-pool auto-sweep, state cleanup, chain ID released, phase
+`DELETED`. There is no `STOPPED` stopover and no unbonding delay, because no validator
+ever validated this chain, no IBC client was ever declared for it, and no validator set
+was ever computed or sent: there is nothing to keep slashable while an unbonding period
+runs down.
 
 **A funded fee pool is settled, not stranded.** The auto-sweep distributes the pool
 pro rata to its depositors, with the per-denom truncation residue forwarded to the

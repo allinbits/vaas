@@ -526,7 +526,7 @@ func (k Keeper) GetClientIdToConsumerId(ctx context.Context, clientId string) (u
 // A consumer with no client mapping is not an error: the indexed map has to read
 // the value to unreference the index, so it reports a missing entry, and a
 // consumer that never launched never had a client adopted for it (see
-// RetireConsumerChain). Only a genuine store failure panics.
+// DeleteConsumerChain). Only a genuine store failure panics.
 func (k Keeper) DeleteConsumerClientId(ctx context.Context, consumerId uint64) {
 	if err := k.ConsumerClients.Remove(ctx, consumerId); err != nil && !errors.Is(err, collections.ErrNotFound) {
 		panic(fmt.Errorf("failed to remove consumer id to client id mapping: %w", err))

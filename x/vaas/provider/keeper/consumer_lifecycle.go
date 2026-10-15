@@ -678,28 +678,33 @@ func (k Keeper) BeginBlockRemoveConsumers(ctx sdk.Context) error {
 	return nil
 }
 
-// RetireConsumerChain erases a consumer that has not launched, i.e. one still
-// in the registered or initialized phase.
+// DeleteConsumerChain cleans up the state of the given consumer chain.
 //
-// Such a consumer has no counterpart to wind down: no IBC client was ever
+// It accepts a consumer in either of the two positions from which erasure is
+// final. STOPPED is the deferred route: StopAndPrepareForConsumerRemoval put
+// the consumer there and BeginBlockRemoveConsumers waited out the unbonding
+// delay before calling. A pre-launch phase, registered or initialized, is the
+// immediate route taken by the pre-launch arm of RemoveConsumer: such a
+// consumer has no counterpart to wind down, since no IBC client was ever
 // associated with it (that only happens once a consumer launches), no
-// validator set was ever computed or sent, and evidence,
-// downtime accusations and fee distribution all require phase LAUNCHED. No
-// validator ever validated it, so there is nothing to keep slashable for an
-// unbonding period either -- hence it does not go through STOPPED and the
-// removal queue the way StopAndPrepareForConsumerRemoval does for a live
-// chain, but straight to the shared teardown in DeleteConsumerChain.
+// validator set was ever computed or sent, and evidence, downtime accusations
+// and fee distribution all require phase LAUNCHED. No validator ever
+// validated it, so there is nothing to keep slashable for an unbonding period
+// either.
 //
 // Two pieces of live state a pre-launch consumer can hold are worth naming:
 // key assignments, which AssignConsumerKey accepts for registered and
 // initialized consumers, and a funded fee pool, which anyone may deposit into
-// before launch. DeleteConsumerChain clears the former and pays the latter
-// back to its depositors.
-func (k Keeper) RetireConsumerChain(ctx sdk.Context, consumerId uint64) error {
+// before launch. The teardown clears the former and pays the latter back to
+// its depositors.
+func (k Keeper) DeleteConsumerChain(ctx sdk.Context, consumerId uint64) (err error) {
+	// Both callers gate the phase before calling; this check is the
+	// teardown's own contract, independent of caller discipline, so no
+	// future caller can erase a launched consumer.
 	phase := k.GetConsumerPhase(ctx, consumerId)
-	if !k.IsConsumerPrelaunched(ctx, consumerId) {
-		return errorsmod.Wrapf(types.ErrInvalidPhase,
-			"cannot retire consumer %d: expected phase registered or initialized, got %s", consumerId, phase)
+	deletable := phase == types.CONSUMER_PHASE_STOPPED || phase.Prelaunched()
+	if !deletable {
+		return fmt.Errorf("cannot delete chain %d in phase %s", consumerId, phase)
 	}
 
 	// An initialized consumer waits in the spawn-time queue: drop its entry so
@@ -717,29 +722,6 @@ func (k Keeper) RetireConsumerChain(ctx sdk.Context, consumerId uint64) error {
 			return errorsmod.Wrapf(vaastypes.ErrInvalidConsumerState,
 				"cannot remove consumer %d from the launch queue: %s", consumerId, err.Error())
 		}
-	}
-
-	return k.DeleteConsumerChain(ctx, consumerId)
-}
-
-// DeleteConsumerChain cleans up the state of the given consumer chain.
-//
-// It accepts a consumer in either of the two positions from which erasure is
-// final: STOPPED, reached via StopAndPrepareForConsumerRemoval once
-// BeginBlockRemoveConsumers has waited out the unbonding delay, or a pre-launch
-// phase, reached via RetireConsumerChain, which needs no such delay (see there).
-func (k Keeper) DeleteConsumerChain(ctx sdk.Context, consumerId uint64) (err error) {
-	// The three deletable phases are named positively: STOPPED (the deferred
-	// route, its unbonding delay already served by BeginBlockRemoveConsumers)
-	// and the two pre-launch phases (the immediate route, see
-	// RetireConsumerChain). Both existing callers gate their phase before
-	// calling; this check is the teardown's own contract, independent of
-	// caller discipline, so no future caller can erase a launched consumer.
-	phase := k.GetConsumerPhase(ctx, consumerId)
-	if phase != types.CONSUMER_PHASE_STOPPED &&
-		phase != types.CONSUMER_PHASE_REGISTERED &&
-		phase != types.CONSUMER_PHASE_INITIALIZED {
-		return fmt.Errorf("cannot delete chain %d in phase %s", consumerId, phase)
 	}
 
 	// Auto-sweep the fee pool. This cannot fail under valid state; on state

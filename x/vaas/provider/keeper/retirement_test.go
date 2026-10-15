@@ -415,6 +415,31 @@ func TestRemoveConsumerReturnsFundedFeePool(t *testing.T) {
 	requireConsumerTornDown(t, k, ctx, consumerId)
 }
 
+// TestDeleteConsumerChainRejectsInitializedConsumerMissingFromLaunchQueue: an
+// initialized consumer is always queued for launch, so finding no entry at
+// teardown is inconsistent state; the teardown reports it and leaves the
+// consumer as it was instead of erasing it.
+func TestDeleteConsumerChainRejectsInitializedConsumerMissingFromLaunchQueue(t *testing.T) {
+	k, ctx, ctrl, mocks := testkeeper.GetProviderKeeperAndCtx(t, testkeeper.NewInMemKeeperParams(t))
+	defer ctrl.Finish()
+	mocks.MockStakingKeeper.EXPECT().UnbondingTime(gomock.Any()).
+		Return(21*24*time.Hour, nil).AnyTimes()
+
+	owner := sdk.AccAddress([]byte("consumer-owner-addr1")).String()
+	spawnTime := time.Unix(2_000_000_000, 0).UTC()
+	const chainId = "retire-1"
+	consumerId := createRetirableConsumer(t, k, ctx, owner, chainId, spawnTime)
+	require.Equal(t, providertypes.CONSUMER_PHASE_INITIALIZED, k.GetConsumerPhase(ctx, consumerId))
+	require.NoError(t, k.RemoveConsumerToBeLaunched(ctx, consumerId, spawnTime))
+
+	err := k.DeleteConsumerChain(ctx, consumerId)
+	require.ErrorContains(t, err, "launch queue")
+	require.Equal(t, providertypes.CONSUMER_PHASE_INITIALIZED, k.GetConsumerPhase(ctx, consumerId))
+	inUse, err := k.ChainIdInUse(ctx, chainId)
+	require.NoError(t, err)
+	require.True(t, inUse, "a refused teardown must leave the chain id registered")
+}
+
 // TestDeleteConsumerChainReleasesChainIdOnStoppedPath verifies the other route
 // into deletion: a consumer stopped by the liveness sweep (or by governance)
 // keeps its chain id reserved while it is stopped, and only gives it up once

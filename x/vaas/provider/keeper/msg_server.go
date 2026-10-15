@@ -567,7 +567,7 @@ func (k msgServer) UpdateConsumer(goCtx context.Context, msg *types.MsgUpdateCon
 // effect depends on the consumer's phase.
 //
 // A consumer that has not launched is erased immediately by
-// RetireConsumerChain -- a chain no validator ever validated needs no
+// DeleteConsumerChain -- a chain no validator ever validated needs no
 // unbonding delay -- under the owner-or-gov admission: the owner abandons a
 // chain it no longer intends to launch, and governance is the remedy for a
 // lost owner key, which would otherwise pin the consumer, and the chain id it
@@ -613,7 +613,7 @@ func (k msgServer) RemoveConsumer(goCtx context.Context, msg *types.MsgRemoveCon
 					ownerAddress, consumerId, msg.Signer)
 			}
 		}
-		if err := k.Keeper.RetireConsumerChain(ctx, consumerId); err != nil {
+		if err := k.Keeper.DeleteConsumerChain(ctx, consumerId); err != nil {
 			return nil, err
 		}
 		k.Logger(ctx).Info("removed pre-launch consumer",
