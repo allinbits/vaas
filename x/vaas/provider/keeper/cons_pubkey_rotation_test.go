@@ -273,6 +273,8 @@ func TestConsPubKeyRotationKeepsAssignedValidatorDowntimeStateResolvable(t *test
 	ctx = ctx.WithBlockTime(windowEndTime)
 	infractionParams := downtimeParams(8, "0.5", 0, 7*24*time.Hour, 72*time.Hour)
 	k.SetInfractionParams(ctx, infractionParams)
+	mocks.MockClientKeeper.EXPECT().GetClientState(gomock.Any(), gomock.Any()).
+		Return(&ibctmtypes.ClientState{TrustingPeriod: 365 * 24 * time.Hour}, true).AnyTimes()
 	k.OverrideWindowEndTimestampForTest(func(sdk.Context, string, int64) (time.Time, error) {
 		return windowEndTime, nil
 	})
@@ -448,6 +450,8 @@ func TestConsPubKeyRotationLeavesDefaultKeyValidatorAcceptanceStatePut(t *testin
 	ctx = ctx.WithBlockTime(windowEndTime)
 	infractionParams := downtimeParams(8, "0.5", 0, 7*24*time.Hour, 72*time.Hour)
 	k.SetInfractionParams(ctx, infractionParams)
+	mocks.MockClientKeeper.EXPECT().GetClientState(gomock.Any(), gomock.Any()).
+		Return(&ibctmtypes.ClientState{TrustingPeriod: 365 * 24 * time.Hour}, true).AnyTimes()
 	k.OverrideWindowEndTimestampForTest(func(sdk.Context, string, int64) (time.Time, error) {
 		return windowEndTime, nil
 	})
@@ -579,6 +583,8 @@ func TestConsPubKeyRotationKeepsPreRotationEvidenceAcceptable(t *testing.T) {
 	windowEndTime := time.Date(2025, 6, 1, 0, 0, 0, 0, time.UTC)
 	ctx = ctx.WithBlockTime(windowEndTime)
 	k.SetInfractionParams(ctx, downtimeParams(8, "0.5", 0, 7*24*time.Hour, 72*time.Hour))
+	mocks.MockClientKeeper.EXPECT().GetClientState(gomock.Any(), gomock.Any()).
+		Return(&ibctmtypes.ClientState{TrustingPeriod: 365 * 24 * time.Hour}, true).AnyTimes()
 	k.OverrideWindowEndTimestampForTest(func(sdk.Context, string, int64) (time.Time, error) {
 		return windowEndTime, nil
 	})
@@ -712,6 +718,8 @@ func TestPreRotationDowntimeMarksEpochExclusionUnderTheLiveAddress(t *testing.T)
 	windowEndTime := time.Date(2025, 6, 1, 0, 0, 0, 0, time.UTC)
 	ctx = ctx.WithBlockTime(windowEndTime)
 	k.SetInfractionParams(ctx, downtimeParams(8, "0.5", 0, 7*24*time.Hour, 72*time.Hour))
+	mocks.MockClientKeeper.EXPECT().GetClientState(gomock.Any(), gomock.Any()).
+		Return(&ibctmtypes.ClientState{TrustingPeriod: 365 * 24 * time.Hour}, true).AnyTimes()
 	k.OverrideWindowEndTimestampForTest(func(sdk.Context, string, int64) (time.Time, error) {
 		return windowEndTime, nil
 	})
@@ -781,6 +789,8 @@ func TestPreRotationEvidenceStillRequiresConsumerSetMembership(t *testing.T) {
 	windowEndTime := time.Date(2025, 6, 1, 0, 0, 0, 0, time.UTC)
 	ctx = ctx.WithBlockTime(windowEndTime)
 	k.SetInfractionParams(ctx, downtimeParams(8, "0.5", 0, 7*24*time.Hour, 72*time.Hour))
+	mocks.MockClientKeeper.EXPECT().GetClientState(gomock.Any(), gomock.Any()).
+		Return(&ibctmtypes.ClientState{TrustingPeriod: 365 * 24 * time.Hour}, true).AnyTimes()
 	k.OverrideWindowEndTimestampForTest(func(sdk.Context, string, int64) (time.Time, error) {
 		return windowEndTime, nil
 	})

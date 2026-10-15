@@ -31,7 +31,7 @@ func newFakeClientStoreProvider(params testkeeper.InMemKeeperParams) ibcclientty
 	return ibcclienttypes.NewStoreProvider(runtime.NewKVStoreService(params.StoreKey))
 }
 
-func TestWindowEndTimestampSelectsSmallestHeightAtOrAboveWindowEnd(t *testing.T) {
+func TestWindowEndTimestampSelectsExactHeightWhenStored(t *testing.T) {
 	keeperParams := testkeeper.NewInMemKeeperParams(t)
 	providerKeeper, ctx, ctrl, mocks := testkeeper.GetProviderKeeperAndCtx(t, keeperParams)
 	defer ctrl.Finish()
@@ -41,8 +41,9 @@ func TestWindowEndTimestampSelectsSmallestHeightAtOrAboveWindowEnd(t *testing.T)
 	mocks.MockClientKeeper.EXPECT().GetStoreProvider().Return(storeProvider).AnyTimes()
 
 	clientStore := storeProvider.ClientStore(ctx, clientId)
-	// Heights below, at, and above windowEnd=100; the smallest at-or-above
-	// (100 itself) must be chosen over 120 and 150.
+	// Heights below, at, and above windowEnd=100. A state at exactly windowEnd
+	// is both the highest at-or-below and the smallest at-or-above, so it is
+	// the anchor -- 50 below it and 120/150 above it are all ignored.
 	for _, h := range []uint64{50, 150, 120, 100} {
 		ibctmtypes.SetIterationKey(clientStore, ibcclienttypes.NewHeight(0, h))
 	}
@@ -88,6 +89,65 @@ func TestWindowEndTimestampErrorsOnEmptyClientStore(t *testing.T) {
 
 	_, err := providerKeeper.WindowEndTimestampForTest(ctx, "07-tendermint-0", 100)
 	require.Error(t, err)
+}
+
+func TestWindowEndTimestampRejectsWhenWindowEndPredatesRetainedStates(t *testing.T) {
+	keeperParams := testkeeper.NewInMemKeeperParams(t)
+	providerKeeper, ctx, ctrl, mocks := testkeeper.GetProviderKeeperAndCtx(t, keeperParams)
+	defer ctrl.Finish()
+
+	const clientId = "07-tendermint-0"
+	storeProvider := newFakeClientStoreProvider(keeperParams)
+	mocks.MockClientKeeper.EXPECT().GetStoreProvider().Return(storeProvider).AnyTimes()
+
+	clientStore := storeProvider.ClientStore(ctx, clientId)
+	// windowEnd=100, but every retained consensus state sits far above it: the
+	// states at or below 100 have been pruned (or the client is sparse there),
+	// so nothing supplies a verified lower bound on the height-100 time. Falling
+	// back to the smallest state >= 100 (here 5000) would place the window end
+	// far later than it really was, understating the evidence's age and letting
+	// genuinely-stale evidence pass the age check. The anchor is rejected
+	// instead.
+	for _, h := range []uint64{5000, 6000} {
+		ibctmtypes.SetIterationKey(clientStore, ibcclienttypes.NewHeight(0, h))
+	}
+
+	// No GetClientConsensusState expectation: the rejection must happen before
+	// any consensus-state timestamp is read.
+	_, err := providerKeeper.WindowEndTimestampForTest(ctx, clientId, 100)
+	require.Error(t, err)
+	require.ErrorContains(t, err, "retained consensus states")
+}
+
+func TestWindowEndTimestampAnchorsToHighestStateAtOrBelowWindowEnd(t *testing.T) {
+	keeperParams := testkeeper.NewInMemKeeperParams(t)
+	providerKeeper, ctx, ctrl, mocks := testkeeper.GetProviderKeeperAndCtx(t, keeperParams)
+	defer ctrl.Finish()
+
+	const clientId = "07-tendermint-0"
+	storeProvider := newFakeClientStoreProvider(keeperParams)
+	mocks.MockClientKeeper.EXPECT().GetStoreProvider().Return(storeProvider).AnyTimes()
+
+	clientStore := storeProvider.ClientStore(ctx, clientId)
+	// windowEnd=100 sits between stored states. The state at 120 proves the
+	// chain reached the window end, but the timestamp comes from 90 -- the
+	// highest state at or below windowEnd, hence a verified lower bound on the
+	// true height-100 time. Anchoring to 120 instead would place the window end
+	// later than it really was and understate the evidence's age. 40 and 90 are
+	// both at or below windowEnd; the higher one wins as the tighter bound.
+	for _, h := range []uint64{40, 90, 120} {
+		ibctmtypes.SetIterationKey(clientStore, ibcclienttypes.NewHeight(0, h))
+	}
+
+	wantHeight := ibcclienttypes.NewHeight(0, 90)
+	wantTime := time.Date(2025, 2, 1, 0, 0, 0, 0, time.UTC)
+	mocks.MockClientKeeper.EXPECT().
+		GetClientConsensusState(ctx, clientId, wantHeight).
+		Return(&ibctmtypes.ConsensusState{Timestamp: wantTime}, true)
+
+	got, err := providerKeeper.WindowEndTimestampForTest(ctx, clientId, 100)
+	require.NoError(t, err)
+	require.True(t, wantTime.Equal(got), "expected %s, got %s", wantTime, got)
 }
 
 func TestWindowEndTimestampIgnoresRevisionNumberSelectingByHeightOnly(t *testing.T) {
