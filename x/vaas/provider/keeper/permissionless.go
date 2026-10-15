@@ -185,9 +185,7 @@ func (k Keeper) SetConsumerPhase(ctx context.Context, consumerId uint64, phase t
 
 // IsConsumerPrelaunched checks if a consumer chain is in its prelaunch phase
 func (k Keeper) IsConsumerPrelaunched(ctx context.Context, consumerId uint64) bool {
-	phase := k.GetConsumerPhase(ctx, consumerId)
-	return phase == types.CONSUMER_PHASE_REGISTERED ||
-		phase == types.CONSUMER_PHASE_INITIALIZED
+	return k.GetConsumerPhase(ctx, consumerId).Prelaunched()
 }
 
 // IsConsumerActive reports whether a consumer chain is still live from the

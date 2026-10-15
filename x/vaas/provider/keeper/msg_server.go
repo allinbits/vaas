@@ -600,7 +600,7 @@ func (k msgServer) RemoveConsumer(goCtx context.Context, msg *types.MsgRemoveCon
 	isGov := k.GetAuthority() == msg.Signer
 
 	switch {
-	case k.IsConsumerPrelaunched(ctx, consumerId):
+	case phase.Prelaunched():
 		if !isGov {
 			ownerAddress, err := k.GetConsumerOwnerAddress(ctx, consumerId)
 			if err != nil {
