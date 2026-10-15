@@ -9,11 +9,7 @@ replace (
 	github.com/allinbits/vaas => ../
 	github.com/bytedance/sonic => github.com/bytedance/sonic v1.15.0
 	github.com/cometbft/cometbft => github.com/atomone-hub/cometbft v0.0.0-20251216151559-a24cfa28b916
-	// Pinned to the atomone-hub/cosmos-sdk main commit that merged
-	// atomone-hub/cosmos-sdk#115 (x/staking InitGenesis rebuilds the
-	// unbonding-operation indexes and counter) until a release tag carries
-	// it; move this back to a tag then.
-	github.com/cosmos/cosmos-sdk => github.com/atomone-hub/cosmos-sdk v0.500.3-0.20261013164648-d5ef9b483990
+	github.com/cosmos/cosmos-sdk => github.com/atomone-hub/cosmos-sdk v0.500.3
 	github.com/syndtr/goleveldb => github.com/syndtr/goleveldb v1.0.1-0.20210819022825-2ae1ddf74ef7
 )
 
