@@ -4,7 +4,11 @@ go 1.26.0
 
 replace (
 	github.com/bytedance/sonic => github.com/bytedance/sonic v1.15.0
-	github.com/cosmos/cosmos-sdk => github.com/atomone-hub/cosmos-sdk v0.500.3
+	// v0.500.3 is unusable: proxy.golang.org and sum.golang.org captured that
+	// tag while it pointed at a 2026-10-13 commit without
+	// atomone-hub/cosmos-sdk#115, and the tag was moved afterwards. Pinned to
+	// the release commit's parent until a fresh tag is cut.
+	github.com/cosmos/cosmos-sdk => github.com/atomone-hub/cosmos-sdk v0.500.3-0.20261015105843-3b2bc3fe051a
 	github.com/syndtr/goleveldb => github.com/syndtr/goleveldb v1.0.1-0.20210819022825-2ae1ddf74ef7
 )
 
