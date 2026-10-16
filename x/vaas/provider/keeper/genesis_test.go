@@ -445,6 +445,15 @@ func TestGenesisRoundTrip(t *testing.T) {
 	// windowEnd = WindowStartHeight(100) + Span(50) - 1 = 149.
 	require.NoError(t, pkA.PendingDowntimeSlashes.Set(ctxA,
 		collections.Join3(keyedConsumerID, downtimeProviderAddr.ToSdkConsAddr().Bytes(), int64(149)), pendingSlash))
+	// A second entry, already deferred behind a removal vote, on the next
+	// window [150, 199]; its accepted record is seeded below.
+	deferredSlash := pendingSlash
+	deferredSlash.WindowStartHeight = 150
+	deferredSlash.MaturesAt = time.Unix(1_951_000_000, 0).UTC()
+	deferredSlash.MaturesAtExtended = true
+	deferredSlash.DeferredByProposalId = 8
+	require.NoError(t, pkA.PendingDowntimeSlashes.Set(ctxA,
+		collections.Join3(keyedConsumerID, downtimeProviderAddr.ToSdkConsAddr().Bytes(), int64(199)), deferredSlash))
 
 	previousDowntimeParams := providertypes.PreviousDowntimeParams{
 		Params: vaastypes.DowntimeParams{
@@ -490,6 +499,38 @@ func TestGenesisRoundTrip(t *testing.T) {
 	require.NoError(t, pkA.EpochDowntime.Set(ctxA,
 		collections.Join(keyedConsumerID, downtimeProviderAddr.ToSdkConsAddr().Bytes()), true))
 
+	// Seed the refusal model's state: refusals on a launched and a stopped
+	// consumer, a pending equivocation punishment on the launched consumer and
+	// one, already deferred behind a vote, on the DELETED consumer (entries
+	// outlive a deletion, and the export's consumer set must still cover
+	// them), plus the accused validators' unbonding holds.
+	refuser := sdk.ValAddress([]byte("refusing-validator-1"))
+	require.NoError(t, pkA.RecordConsumerRefusal(ctxA, keyedConsumerID, refuser, true))
+	require.NoError(t, pkA.RecordConsumerRefusal(ctxA, otherConsumerID, refuser, true))
+	const deletedConsumerID uint64 = 4 // consumer-epsilon
+	accusedAddr := providertypes.NewProviderConsAddress([]byte("provider-addr-accused-x1"))
+	pendingPunishment := providertypes.PendingEquivocationPunishment{
+		ConsumerId:       keyedConsumerID,
+		ProviderConsAddr: accusedAddr.ToSdkConsAddr().Bytes(),
+		InfractionHeight: 77,
+		ExecutesAt:       time.Unix(1_955_000_000, 0).UTC(),
+	}
+	require.NoError(t, pkA.PendingEquivocationPunishments.Set(ctxA,
+		collections.Join3(keyedConsumerID, accusedAddr.ToSdkConsAddr().Bytes(), int64(77)), pendingPunishment))
+	deferredPunishment := providertypes.PendingEquivocationPunishment{
+		ConsumerId:           deletedConsumerID,
+		ProviderConsAddr:     accusedAddr.ToSdkConsAddr().Bytes(),
+		InfractionHeight:     78,
+		ExecutesAt:           time.Unix(1_956_000_000, 0).UTC(),
+		ExecutesAtExtended:   true,
+		DeferredByProposalId: 9,
+	}
+	require.NoError(t, pkA.PendingEquivocationPunishments.Set(ctxA,
+		collections.Join3(deletedConsumerID, accusedAddr.ToSdkConsAddr().Bytes(), int64(78)), deferredPunishment))
+	for _, id := range []uint64{31, 32} {
+		require.NoError(t, pkA.HeldUnbondingOps.Set(ctxA, collections.Join(accusedAddr.ToSdkConsAddr().Bytes(), id)))
+	}
+
 	pkA.SetParams(ctxA, providertypes.DefaultParams())
 	pkA.SetValidatorSetUpdateId(ctxA, 1)
 
@@ -518,8 +559,7 @@ func TestGenesisRoundTrip(t *testing.T) {
 	require.Equal(t, keyedConsumerID, expA.ConsumerAddrsToPrune[0].ConsumerId)
 
 	// Sanity: the export must carry the downtime-detection state.
-	require.Len(t, expA.PendingDowntimeSlashes, 1)
-	require.Equal(t, pendingSlash, expA.PendingDowntimeSlashes[0])
+	require.Equal(t, []providertypes.PendingDowntimeSlash{pendingSlash, deferredSlash}, expA.PendingDowntimeSlashes)
 	require.NotNil(t, expA.PreviousDowntimeParams)
 	require.Equal(t, previousDowntimeParams, *expA.PreviousDowntimeParams)
 	require.Len(t, expA.EpochShareRecords, 2)
@@ -551,6 +591,17 @@ func TestGenesisRoundTrip(t *testing.T) {
 		ConsumerId:       keyedConsumerID,
 		ProviderConsAddr: downtimeProviderAddr.ToSdkConsAddr().Bytes(),
 	}, expA.EpochDowntimeEntries[0])
+
+	// Sanity: the export must carry the refusal model's state.
+	require.Equal(t, []providertypes.ConsumerRefusal{
+		{ConsumerId: keyedConsumerID, ValidatorAddress: refuser.String()},
+		{ConsumerId: otherConsumerID, ValidatorAddress: refuser.String()},
+	}, expA.ConsumerRefusals)
+	require.Equal(t, []providertypes.PendingEquivocationPunishment{pendingPunishment, deferredPunishment}, expA.PendingEquivocationPunishments)
+	require.Equal(t, []providertypes.HeldUnbondingOps{{
+		ProviderConsAddr: accusedAddr.ToSdkConsAddr().Bytes(),
+		UnbondingOpIds:   []uint64{31, 32},
+	}}, expA.HeldUnbondingOps)
 
 	// Sanity: the PAUSED consumer (zeta) carries its pause-expiration time.
 	byChainId := map[string]providertypes.ConsumerState{}
@@ -629,6 +680,20 @@ func TestGenesisRoundTrip(t *testing.T) {
 
 	require.True(t, pkB.IsEpochDowntime(ctxB, keyedConsumerID, downtimeProviderAddr.ToSdkConsAddr()),
 		"EpochDowntime lost across round-trip")
+
+	// The refusal model's state must reconnect too, the deleted consumer's
+	// deferred punishment included.
+	require.True(t, pkB.HasConsumerRefusal(ctxB, keyedConsumerID, refuser), "ConsumerRefusals lost across round-trip")
+	require.True(t, pkB.HasConsumerRefusal(ctxB, otherConsumerID, refuser))
+	gotDeferred, err := pkB.PendingEquivocationPunishments.Get(ctxB,
+		collections.Join3(deletedConsumerID, accusedAddr.ToSdkConsAddr().Bytes(), int64(78)))
+	require.NoError(t, err, "PendingEquivocationPunishments lost across round-trip")
+	require.Equal(t, deferredPunishment, gotDeferred)
+	for _, id := range []uint64{31, 32} {
+		held, err := pkB.HeldUnbondingOps.Has(ctxB, collections.Join(accusedAddr.ToSdkConsAddr().Bytes(), id))
+		require.NoError(t, err)
+		require.True(t, held, "HeldUnbondingOps lost across round-trip")
+	}
 
 	// The PAUSED consumer's pause-expiration queue must be rebuilt from the
 	// per-consumer pause_expiration_time, mirroring the removal-time queue.

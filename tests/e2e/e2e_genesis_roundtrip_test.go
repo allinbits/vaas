@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"slices"
 	"time"
 
 	"github.com/ory/dockertest/v3"
@@ -16,22 +17,42 @@ import (
 // testGenesisRoundTrip stops the provider chain, exports its genesis, starts a
 // new provider chain initialised from the exported genesis, and verifies the
 // previously-registered consumer chain still exists in the new chain's state.
+// The export is taken while an equivocation punishment is pending and the
+// undelegation behind it is on hold, so the round trip has to carry a live
+// hold as well: the exported genesis must list it and the restarted provider
+// must still hold it. testEquivocationCancelledByRemoval then watches it
+// release through the unbonding index x/staking rebuilds at import.
 //
 // This is the end-to-end counterpart of TestGenesisRoundTrip in
 // x/vaas/provider/keeper/genesis_test.go: the unit test proves the keeper-level
 // round-trip is a fixed point; this test proves the binary's export and init
 // commands honour the same contract.
 //
-// MUST run last in TestVAAS — it stops and replaces the provider container,
-// after which the relayer and the original consumer chain may produce noise
-// but the suite is about to tear down anyway.
+// Runs after every scenario that needs the consumer: it stops and replaces
+// the provider container, and the restarted chain keeps no history at the
+// consumer client's trusted height, so nothing crosses IBC afterwards. Only
+// provider-local scenarios follow it.
 func (s *IntegrationTestSuite) testGenesisRoundTrip() {
 	s.Run("genesis round-trip across provider restart", func() {
+		const consumerID = "0"
 		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Minute)
 		defer cancel()
 
 		oldRes := s.providerValRes[0]
 		oldDataDir := s.provider.dataDir
+
+		// The state the export has to carry: eqval2's pending punishment and
+		// the undelegation held behind it, both left live by
+		// testEquivocationQueuedBeforeRemoval.
+		s.Require().Len(s.mustPendingEquivocations(consumerID), 1,
+			"the export needs exactly one pending punishment")
+		s.Require().True(s.singleUnbondingEntryHas(s.eqval2AccAddr, s.eqval2Valoper, "1"),
+			"the export needs eqval2's undelegation on hold")
+
+		// Keys added since init are the node user's private files; open them
+		// up the way provider-init.sh does for the initial ones, so the host
+		// can carry the keyring into the new data dir.
+		s.dockerExecMust(oldRes.Container.ID, []string{"chmod", "-R", "777", providerHomePath + "/keyring-test"})
 
 		// 1. Stop the provider container gracefully so the data dir is in a
 		//    consistent state for export.
@@ -48,6 +69,8 @@ func (s *IntegrationTestSuite) testGenesisRoundTrip() {
 		//    fields with populated values.
 		s.T().Log("verifying exported genesis contains owner/metadata/init_params...")
 		s.verifyExportedGenesis(exportedJSON)
+		s.T().Log("verifying exported genesis carries the pending punishment and its hold...")
+		s.verifyExportedLiveHold(exportedJSON)
 
 		// 4. Bootstrap a new provider data dir from the old: same validator
 		//    keys + config, but the exported JSON as genesis.json and a
@@ -94,6 +117,17 @@ func (s *IntegrationTestSuite) testGenesisRoundTrip() {
 		s.Require().NoError(err, "failed to query consumer chains on restarted provider")
 		s.Require().Contains(chainsOutput, consumerChainID,
 			"consumer chain %s should still be registered after restart", consumerChainID)
+
+		// 9. The hold came through the import: the punishment is still
+		//    pending and the undelegation behind it still on hold, for
+		//    testEquivocationCancelledByRemoval to release.
+		s.T().Log("verifying the pending punishment and its hold survived the restart...")
+		s.Require().Eventuallyf(func() bool {
+			pending, err := s.queryPendingEquivocations(consumerID)
+			return err == nil && len(pending) == 1 &&
+				s.singleUnbondingEntryHas(s.eqval2AccAddr, s.eqval2Valoper, "1")
+		}, time.Minute, 2*time.Second,
+			"the restarted provider does not hold eqval2's undelegation behind its pending punishment")
 	})
 }
 
@@ -195,9 +229,57 @@ func (s *IntegrationTestSuite) verifyExportedGenesis(exportedJSON []byte) {
 	s.Require().NotNil(found.InitParams, "init_params must be exported for consumer %s", consumerChainID)
 }
 
+// verifyExportedLiveHold asserts the exported JSON carries the pending
+// punishment, the held operation ids, and the staking entry on hold behind
+// them: the state the restarted provider has to resume with.
+func (s *IntegrationTestSuite) verifyExportedLiveHold(exportedJSON []byte) {
+	var top struct {
+		AppState struct {
+			Provider struct {
+				PendingEquivocationPunishments []json.RawMessage `json:"pending_equivocation_punishments"`
+				HeldUnbondingOps               []struct {
+					UnbondingOpIds []string `json:"unbonding_op_ids"`
+				} `json:"held_unbonding_ops"`
+			} `json:"vaasprovider"`
+			Staking struct {
+				UnbondingDelegations []struct {
+					DelegatorAddress string `json:"delegator_address"`
+					ValidatorAddress string `json:"validator_address"`
+					Entries          []struct {
+						UnbondingID string `json:"unbonding_id"`
+						RefCount    string `json:"unbonding_on_hold_ref_count"`
+					} `json:"entries"`
+				} `json:"unbonding_delegations"`
+			} `json:"staking"`
+		} `json:"app_state"`
+	}
+	s.Require().NoError(json.Unmarshal(exportedJSON, &top), "exported genesis is not valid JSON")
+	s.Require().Len(top.AppState.Provider.PendingEquivocationPunishments, 1,
+		"exported genesis must carry the pending punishment")
+	s.Require().Len(top.AppState.Provider.HeldUnbondingOps, 1,
+		"exported genesis must carry the held operation")
+	heldIDs := top.AppState.Provider.HeldUnbondingOps[0].UnbondingOpIds
+	s.Require().NotEmpty(heldIDs, "the exported hold carries no operation ids")
+
+	var held bool
+	for _, ubd := range top.AppState.Staking.UnbondingDelegations {
+		if ubd.DelegatorAddress != s.eqval2AccAddr || ubd.ValidatorAddress != s.eqval2Valoper {
+			continue
+		}
+		for _, e := range ubd.Entries {
+			if slices.Contains(heldIDs, e.UnbondingID) {
+				s.Require().Equalf("1", e.RefCount, "held entry %s must be exported on hold", e.UnbondingID)
+				held = true
+			}
+		}
+	}
+	s.Require().Truef(held, "the staking export carries no entry of eqval2's undelegation for the held ids %v", heldIDs)
+}
+
 // bootstrapRestartedProviderDir builds a new provider data directory that
-// reuses the old chain's validator and node keys + config files, but uses
-// the exported JSON as its genesis.json and starts with an empty data/.
+// reuses the old chain's validator and node keys, keyring and config files,
+// but uses the exported JSON as its genesis.json and starts with an empty
+// data/.
 func (s *IntegrationTestSuite) bootstrapRestartedProviderDir(oldDir string, exportedJSON []byte) string {
 	newDir, err := os.MkdirTemp("", "vaas-e2e-provider-restart-")
 	s.Require().NoError(err)
@@ -218,6 +300,23 @@ func (s *IntegrationTestSuite) bootstrapRestartedProviderDir(oldDir string, expo
 		s.Require().NoErrorf(os.WriteFile(filepath.Join(newDir, name), data, 0o644), //nolint:gosec // the node runs as nonroot in its container and must read this bind-mounted file
 			"write %s to new data dir", name)
 	}
+
+	// The keyring too: the scenarios after the restart sign transactions
+	// with the keys the old chain created.
+	const keyringDir = "keyring-test"
+	keyringEntries, err := os.ReadDir(filepath.Join(oldDir, keyringDir))
+	s.Require().NoError(err, "read the keyring from the old data dir")
+	s.Require().NoError(os.MkdirAll(filepath.Join(newDir, keyringDir), 0o777))
+	for _, entry := range keyringEntries {
+		if entry.IsDir() {
+			continue
+		}
+		data, err := os.ReadFile(filepath.Join(oldDir, keyringDir, entry.Name()))
+		s.Require().NoErrorf(err, "read keyring file %s from old data dir", entry.Name())
+		s.Require().NoErrorf(os.WriteFile(filepath.Join(newDir, keyringDir, entry.Name()), data, 0o644), //nolint:gosec // the node runs as nonroot in its container and must read this bind-mounted file
+			"write keyring file %s to new data dir", entry.Name())
+	}
+	s.Require().NoError(os.Chmod(filepath.Join(newDir, keyringDir), 0o777))
 
 	// Write the exported JSON as the new chain's genesis.
 	s.Require().NoError(os.WriteFile( //nolint:gosec // the node runs as nonroot in its container and must read this bind-mounted file

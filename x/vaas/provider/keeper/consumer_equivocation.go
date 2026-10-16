@@ -74,10 +74,13 @@ func (k Keeper) HandleConsumerDoubleVoting(
 		types.NewConsumerConsAddress(sdk.ConsAddress(evidence.VoteA.ValidatorAddress.Bytes())),
 	)
 
-	// get infraction parameters
-	infractionParams := k.GetInfractionParams(ctx)
-
-	alreadyTombstoned, err := k.punishEquivocation(ctx, providerAddr, infractionParams.DoubleSign)
+	// Queue the punishment instead of executing it: the validator is jailed
+	// now (reversible), while the slash and tombstone wait out
+	// EquivocationExecutionDelay so a removal proposal against the consumer
+	// can reach its voting period first. See
+	// QueuePendingEquivocationPunishment and
+	// SweepPendingEquivocationPunishments for the resolution paths.
+	alreadyTombstoned, err := k.QueuePendingEquivocationPunishment(ctx, consumerId, providerAddr, evidence.VoteA.Height)
 	if err != nil {
 		return err
 	}
@@ -491,10 +494,12 @@ func verifyLightBlockCommitSig(lightBlock tmtypes.LightBlock, sigIdx int) error 
 
 // punishEquivocation slashes, jails, and tombstones the validator identified by
 // providerAddr at the given (DoubleSign) infraction severity. It is the
-// punishment primitive behind vote-level double signing
-// (HandleConsumerDoubleVoting). Header-level light-client attacks deliberately
-// do not use it: that path contains the consumer instead of punishing
-// validators (see HandleConsumerMisbehaviour).
+// punishment primitive behind vote-level double signing:
+// HandleConsumerDoubleVoting verifies the evidence and queues the punishment,
+// and executePendingEquivocation calls this once the removal vote is in.
+// Header-level light-client attacks deliberately do not use it: that path
+// contains the consumer instead of punishing validators (see
+// HandleConsumerMisbehaviour).
 //
 // Re-submitted evidence for an already-tombstoned validator is idempotent: the
 // validator is not punished twice and no error is returned. The returned bool
@@ -562,7 +567,12 @@ func (k Keeper) JailAndTombstoneValidator(ctx sdk.Context, providerAddr types.Pr
 		}
 	}
 
+	// Never shorten a jail the validator's pending equivocation punishments
+	// still need closed: a second queue, or any other jail, only extends.
 	jailEndTime := ctx.BlockTime().Add(jailingParams.JailDuration)
+	if horizon, ok := k.pendingEquivocationJailHorizon(ctx, liveAddr); ok && horizon.After(jailEndTime) {
+		jailEndTime = horizon
+	}
 	if err := k.slashingKeeper.JailUntil(ctx, liveAddr, jailEndTime); err != nil {
 		return fmt.Errorf("fail to set jail duration for validator: %s: %s", providerAddr.String(), err)
 	}
@@ -616,8 +626,9 @@ func (k Keeper) ComputePowerToSlash(ctx sdk.Context, validator stakingtypes.Vali
 
 // slashableStake looks up the validator behind providerAddr and computes the
 // consensus power -- and its token equivalent -- that would be slashed for
-// it, folding in the power currently tied up in non-matured undelegations
-// and redelegations (see ComputePowerToSlash). Returns
+// it: the power its bonded tokens are worth whether or not it is currently
+// in the active set, plus the power tied up in non-matured undelegations and
+// redelegations (see ComputePowerToSlash). Returns
 // ErrNoValidatorForAddress / ErrBadValidatorAddr / ErrNoUnbondingDelegation /
 // ErrValidatorTombstoned under the same conditions SlashValidator has always
 // rejected under; callers that only care about rejecting those conditions
@@ -669,13 +680,14 @@ func (k Keeper) slashableStake(ctx sdk.Context, providerAddr types.ProviderConsA
 	if err != nil {
 		return 0, totalTokens, consAddr, err
 	}
-	lastPower, err := k.stakingKeeper.GetLastValidatorPower(ctx, valAddr)
-	if err != nil {
-		return 0, totalTokens, consAddr, err
-	}
-
+	// Size the slash from the validator's own tokens rather than its last
+	// recorded power: a jailed validator (the queue-time jail of a pending
+	// equivocation punishment, a downtime jail) has left the power index, and
+	// a slash maturing while it is jailed must still reach the bonded stake.
+	// For a bonded validator the two agree.
 	powerReduction := k.stakingKeeper.PowerReduction(ctx)
-	totalPower = k.ComputePowerToSlash(ctx, validator, undelegations, redelegations, lastPower, powerReduction)
+	bondedPower := validator.PotentialConsensusPower(powerReduction)
+	totalPower = k.ComputePowerToSlash(ctx, validator, undelegations, redelegations, bondedPower, powerReduction)
 	totalTokens = sdk.TokensFromConsensusPower(totalPower, powerReduction)
 
 	return totalPower, totalTokens, consAddr, nil
