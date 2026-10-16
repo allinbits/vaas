@@ -5,11 +5,7 @@ go 1.26.0
 replace (
 	cosmossdk.io/x/evidence => github.com/atomone-hub/cosmos-sdk/x/evidence v0.1.1
 	cosmossdk.io/x/upgrade => github.com/atomone-hub/cosmos-sdk/x/upgrade v0.1.5-atomone.1.0.20251218143825-cbb67818e94a
-	// v0.500.3 is unusable: proxy.golang.org and sum.golang.org captured that
-	// tag while it pointed at a 2026-10-13 commit without
-	// atomone-hub/cosmos-sdk#115, and the tag was moved afterwards. Pinned to
-	// the release commit's parent until a fresh tag is cut.
-	github.com/cosmos/cosmos-sdk => github.com/atomone-hub/cosmos-sdk v0.500.3-0.20261015105843-3b2bc3fe051a
+	github.com/cosmos/cosmos-sdk => github.com/atomone-hub/cosmos-sdk v0.500.6
 	github.com/syndtr/goleveldb => github.com/syndtr/goleveldb v1.0.1-0.20210819022825-2ae1ddf74ef7
 )
 
