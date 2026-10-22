@@ -112,10 +112,11 @@ func NewAppModule(k keeper.Keeper) AppModule {
 	}
 }
 
-// RegisterInvariants implements the AppModule interface
-func (AppModule) RegisterInvariants(ir sdk.InvariantRegistry) {
-	// TODO
-}
+// RegisterInvariants implements the AppModule interface. The consumer keeps
+// no derived aggregate to cross-check: its validator set is replaced wholesale
+// by every applied VSC, and the fee state lives on the provider side, which
+// is where the one VAAS invariant guards the fee-pool shares.
+func (AppModule) RegisterInvariants(_ sdk.InvariantRegistry) {}
 
 // RegisterServices registers module services.
 func (am AppModule) RegisterServices(cfg module.Configurator) {
@@ -184,13 +185,12 @@ func (am AppModule) EndBlock(goCtx context.Context) ([]abci.ValidatorUpdate, err
 
 // AppModuleSimulation functions
 
-// GenerateGenesisState creates a randomized GenState of the transfer module.
-// TODO
+// GenerateGenesisState creates a randomized GenState of the consumer module.
 func (AppModule) GenerateGenesisState(simState *module.SimulationState) {
+	// Simulation not implemented for this module
 }
 
 // RegisterStoreDecoder registers a decoder for consumer module's types
-// TODO
 func (am AppModule) RegisterStoreDecoder(sdr simtypes.StoreDecoderRegistry) {
 }
 

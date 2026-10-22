@@ -28,19 +28,10 @@ func (k Keeper) ParseConsumerKey(consumerKey string) (tmprotocrypto.PublicKey, e
 	// consensus params. That path is disabled for now as a quick way to get
 	// ed25519 working, avoiding amino/proto-any marshalling issues.
 
-	// make sure the consumer key type is supported
-	// cp := ctx.ConsensusParams()
-	// if cp != nil && cp.Validator != nil {
-	// 	if !tmstrings.StringInSlice(pkType, cp.Validator.PubKeyTypes) {
-	// 		return nil, errorsmod.Wrapf(
-	// 			stakingtypes.ErrValidatorPubKeyTypeNotSupported,
-	// 			"got: %s, expected one of: %s", pkType, cp.Validator.PubKeyTypes,
-	// 		)
-	// 	}
-	// }
-
-	// For now, only accept ed25519.
-	// TODO: decide what types should be supported.
+	// ed25519 only (docs/key-assignment.md, rule 1): a consumer key must be one
+	// every consumer's CometBFT accepts, and the provider cannot read a consumer's
+	// consensus parameters to check anything else. Widening this is a decision
+	// for the day a consumer needs another type, not a lookup to add here.
 	if pkType != "/cosmos.crypto.ed25519.PubKey" {
 		return tmprotocrypto.PublicKey{}, errorsmod.Wrapf(
 			stakingtypes.ErrValidatorPubKeyTypeNotSupported,

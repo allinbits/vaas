@@ -833,8 +833,6 @@ func TestAssignConsensusKeyForConsumerChain(t *testing.T) {
 // to a consumer, if that validator has not already assigned the key to a consumer.
 // Ie. the default key assignment is that a validator uses the same key on a provider as it does on a consumer.
 // A validator cannot re-assign the default key assignment if it already uses the default key assignment.
-//
-// TODO: guarding against edge cases like this could be avoided by refactoring key assignment logic to have less cyclomatic complexity.
 func TestCannotReassignDefaultKeyAssignment(t *testing.T) {
 	// We only need one identity, a single validator / single key
 	cId := cryptotestutil.NewCryptoIdentityFromIntSeed(49827489)
