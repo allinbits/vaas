@@ -51,12 +51,18 @@ signals. The signal does two things:
 A refusal is **not** an individual exemption from downtime evidence: it does
 not excuse the refusing validator by itself, or the signal would be a free
 opt-out and the mandate would be gone. Individual protection comes from the
-deferral in section 2. What the threshold pause does is collective: like every
-pause, it cancels every pending downtime slash and epoch downtime mark the
-consumer has sourced, for every accused validator, because a chain the
-refusal-threshold share of power refuses to run cannot have its accusations
-trusted. Fee shares withheld while those accusations stood are repaid, as
-every pause repays them (see [consumer-downtime.md](consumer-downtime.md)).
+deferral in section 2. Nor is the threshold pause a collective one. The
+pauses a won challenge or a confirmed fork causes disprove or discredit the
+consumer's accusations and discard them, repaying the fee shares withheld
+under them (see [consumer-downtime.md](consumer-downtime.md)); the refusal
+pause proves nothing about them and **freezes** them instead. Every pending
+downtime slash and withheld fee record stays as it is, its maturity or
+expiry stopped for the length of the pause. A resume restarts those clocks
+where the pause stopped them; a challenge proven during the pause discards
+the accusations as it would on a launched consumer; a lapsed pause stops the
+consumer, which cancels them like every stop. Discarding them at the pause
+would hand a coalition with pending accusations an exemption by the back
+door: refuse, pause, withdraw, let governance resume.
 
 Signals of validators x/staking no longer knows at all (removed after
 unbonding to nothing) are pruned at evaluation; a validator that merely lost
@@ -75,7 +81,8 @@ coalition it disagrees with are `MsgRemoveConsumer` and raising
 `RefusalPauseThreshold` above the coalition's share. This is coherent as long
 as the threshold is not set below the share that can halt the chain
 physically: below one third a coalition gains a pause it could not otherwise
-force, and with it the cancellation of the chain's pending downtime slashes.
+force, and with it, should the pause lapse into a stop, the cancellation of
+the accusations frozen under it.
 
 ## 2. Downtime slashes defer behind a removal vote
 
@@ -204,6 +211,10 @@ already tombstoned validator is reported as such with nothing queued.
   execution delay cover both scales without threshold games.
 - **Individual downtime exemption for refusers**: a free opt-out; the mandate
   would be gone.
+- **Discarding downtime accusations at the refusal pause**: a coalition with
+  pending accusations could refuse, pause, withdraw and have governance
+  resume, an exemption by the back door. The refusal pause freezes them;
+  only a proven challenge, a removal or a lapsed pause decides them.
 - **Any stop cancelling equivocation punishment**: a liveness stop or a lapsed
   pause is not a governance verdict, and a coalition able to halt the chain
   could otherwise void punishments queued against its members. Only the

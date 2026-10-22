@@ -50,6 +50,10 @@ import (
 // flips (the consumer's withdraw lock only opens once it leaves LAUNCHED)
 // and cancels every pending downtime slash and epoch downtime mark for the
 // consumer (one proven-false bit indicts the reporting source as a whole).
+// A consumer already paused by a refusal coalition, whose accusations that
+// pause froze, has them discarded the same way and stays paused as it was;
+// the other pauses leave no accusation behind, so a pending slash under one
+// of them is refused rather than acted on.
 func (k Keeper) HandleChallengeConsumerDowntime(ctx sdk.Context, msg *types.MsgChallengeConsumerDowntime) error {
 	// Defensive: ValidateBasic already rejects a nil header or a nil/absent
 	// inner SignedHeader.Header, but this is a permissionless entry point, so
@@ -124,11 +128,27 @@ func (k Keeper) HandleChallengeConsumerDowntime(ctx sdk.Context, msg *types.MsgC
 		return err
 	}
 
-	// The challenge is proven: pause the consumer, which repays the withheld
-	// fees and cancels every pending downtime slash and epoch downtime mark
-	// for it (see the doc comment above).
-	if err := k.PauseConsumerChain(ctx, msg.ConsumerId, types.PAUSE_REASON_DOWNTIME_CHALLENGE); err != nil {
-		return fmt.Errorf("pausing consumer %d after successful downtime challenge: %w", msg.ConsumerId, err)
+	// The challenge is proven: the withheld fees are repaid and every pending
+	// downtime slash and epoch downtime mark of the consumer cancelled, by
+	// the pause this proof causes or, for a consumer a refusal coalition
+	// paused with its accusations frozen, directly (see the doc comment
+	// above).
+	switch phase := k.GetConsumerPhase(ctx, msg.ConsumerId); phase {
+	case types.CONSUMER_PHASE_LAUNCHED:
+		if err := k.PauseConsumerChain(ctx, msg.ConsumerId, types.PAUSE_REASON_DOWNTIME_CHALLENGE); err != nil {
+			return fmt.Errorf("pausing consumer %d after successful downtime challenge: %w", msg.ConsumerId, err)
+		}
+	case types.CONSUMER_PHASE_PAUSED:
+		if reason := k.GetConsumerPauseReason(ctx, msg.ConsumerId); reason != types.PAUSE_REASON_REFUSAL_THRESHOLD {
+			return errorsmod.Wrapf(types.ErrInvalidPhase,
+				"consumer %d is paused for %s, which left it no accusation to disprove", msg.ConsumerId, reason)
+		}
+		if err := k.DiscardConsumerAccusations(ctx, msg.ConsumerId); err != nil {
+			return fmt.Errorf("discarding the accusations of consumer %d after successful downtime challenge: %w", msg.ConsumerId, err)
+		}
+	default:
+		return errorsmod.Wrapf(types.ErrInvalidPhase,
+			"cannot act on a proven downtime challenge against consumer %d in phase %s", msg.ConsumerId, phase)
 	}
 
 	ctx.EventManager().EmitEvent(sdk.NewEvent(
