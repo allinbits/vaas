@@ -289,17 +289,113 @@ func (msg MsgRemoveConsumer) ValidateBasic() error {
 }
 
 // ValidateBasic enforces that the authority parses as bech32 and that the
-// replacement infraction parameters are internally consistent. The constraint
-// they share with Params.TrustingPeriodFraction needs stored state, so it is
-// enforced in the handler instead (see ValidateInfractionParamsAgainst).
-func (msg MsgUpdateInfractionParams) ValidateBasic() error {
+// diff names at least one parameter to change. The values themselves are
+// validated by the handler, on the merged set, since most bounds involve the
+// stored parameters the diff leaves alone.
+func (msg MsgUpdateParams) ValidateBasic() error {
 	if _, err := sdk.AccAddressFromBech32(msg.Authority); err != nil {
 		return errorsmod.Wrapf(sdkerrors.ErrInvalidAddress, "invalid authority address: %s", err)
 	}
-	if err := msg.InfractionParameters.Validate(); err != nil {
-		return errorsmod.Wrap(sdkerrors.ErrInvalidRequest, err.Error())
+	if !msg.changesSomething() {
+		return errorsmod.Wrap(sdkerrors.ErrInvalidRequest, "the update names no parameter to change")
 	}
 	return nil
+}
+
+// changesSomething reports whether any field of the diff is set.
+func (msg MsgUpdateParams) changesSomething() bool {
+	if msg.TrustingPeriodFraction != nil || msg.LivenessGraceFraction != nil || msg.VaasTimeoutPeriod != nil ||
+		msg.BlocksPerEpoch != nil || msg.FeesPerBlockAmount != nil || msg.MinDepositBlocks != nil || msg.MaxPauseDuration != nil {
+		return true
+	}
+	return msg.InfractionParameters != nil && msg.InfractionParameters.changesSomething()
+}
+
+func (u InfractionParametersUpdate) changesSomething() bool {
+	if u.DowntimeGracePeriod != nil || u.SignedBlocksWindow != nil || u.MinSignedPerWindow != nil ||
+		u.DowntimeChallengeWindow != nil || u.DowntimeEvidenceMaxAge != nil {
+		return true
+	}
+	return (u.DoubleSign != nil && u.DoubleSign.changesSomething()) || (u.Downtime != nil && u.Downtime.changesSomething())
+}
+
+func (u SlashJailParametersUpdate) changesSomething() bool {
+	return u.SlashFraction != nil || u.JailDuration != nil || u.Tombstone != nil
+}
+
+// ApplyTo returns p with every field the diff sets replaced; the rest stays
+// as it is. The result is not validated here.
+func (msg MsgUpdateParams) ApplyTo(p Params) Params {
+	if msg.TrustingPeriodFraction != nil {
+		p.TrustingPeriodFraction = *msg.TrustingPeriodFraction
+	}
+	if msg.LivenessGraceFraction != nil {
+		p.LivenessGraceFraction = *msg.LivenessGraceFraction
+	}
+	if msg.VaasTimeoutPeriod != nil {
+		p.VaasTimeoutPeriod = *msg.VaasTimeoutPeriod
+	}
+	if msg.BlocksPerEpoch != nil {
+		p.BlocksPerEpoch = *msg.BlocksPerEpoch
+	}
+	if msg.FeesPerBlockAmount != nil {
+		p.FeesPerBlockAmount = *msg.FeesPerBlockAmount
+	}
+	if msg.MinDepositBlocks != nil {
+		p.MinDepositBlocks = *msg.MinDepositBlocks
+	}
+	if msg.MaxPauseDuration != nil {
+		p.MaxPauseDuration = *msg.MaxPauseDuration
+	}
+	if msg.InfractionParameters != nil {
+		p.InfractionParameters = msg.InfractionParameters.ApplyTo(p.InfractionParameters)
+	}
+	return p
+}
+
+// ApplyTo returns ip with every field the diff sets replaced.
+func (u InfractionParametersUpdate) ApplyTo(ip InfractionParameters) InfractionParameters {
+	if u.DoubleSign != nil {
+		ip.DoubleSign = u.DoubleSign.ApplyTo(ip.DoubleSign)
+	}
+	if u.Downtime != nil {
+		ip.Downtime = u.Downtime.ApplyTo(ip.Downtime)
+	}
+	if u.DowntimeGracePeriod != nil {
+		ip.DowntimeGracePeriod = *u.DowntimeGracePeriod
+	}
+	if u.SignedBlocksWindow != nil {
+		ip.SignedBlocksWindow = *u.SignedBlocksWindow
+	}
+	if u.MinSignedPerWindow != nil {
+		ip.MinSignedPerWindow = *u.MinSignedPerWindow
+	}
+	if u.DowntimeChallengeWindow != nil {
+		ip.DowntimeChallengeWindow = *u.DowntimeChallengeWindow
+	}
+	if u.DowntimeEvidenceMaxAge != nil {
+		ip.DowntimeEvidenceMaxAge = *u.DowntimeEvidenceMaxAge
+	}
+	return ip
+}
+
+// ApplyTo returns a copy of sjp (empty when nil) with every field the diff
+// sets replaced; the stored policy is never written through.
+func (u SlashJailParametersUpdate) ApplyTo(sjp *SlashJailParameters) *SlashJailParameters {
+	out := SlashJailParameters{}
+	if sjp != nil {
+		out = *sjp
+	}
+	if u.SlashFraction != nil {
+		out.SlashFraction = *u.SlashFraction
+	}
+	if u.JailDuration != nil {
+		out.JailDuration = *u.JailDuration
+	}
+	if u.Tombstone != nil {
+		out.Tombstone = *u.Tombstone
+	}
+	return &out
 }
 
 // ValidateBasic enforces:

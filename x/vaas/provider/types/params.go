@@ -101,6 +101,7 @@ func NewParams(
 	feesPerBlockAmount math.Int,
 	minDepositBlocks uint64,
 	maxPauseDuration time.Duration,
+	infractionParameters InfractionParameters,
 ) Params {
 	return Params{
 		TrustingPeriodFraction: trustingPeriodFraction,
@@ -110,6 +111,7 @@ func NewParams(
 		FeesPerBlockAmount:     feesPerBlockAmount,
 		MinDepositBlocks:       minDepositBlocks,
 		MaxPauseDuration:       maxPauseDuration,
+		InfractionParameters:   infractionParameters,
 	}
 }
 
@@ -122,6 +124,7 @@ func DefaultParams() Params {
 		math.NewInt(DefaultFeesPerBlockAmount),
 		DefaultMinDepositBlocks,
 		DefaultMaxPauseDuration,
+		DefaultInfractionParameters(),
 	)
 }
 
@@ -225,10 +228,8 @@ func (ip InfractionParameters) ChallengeableInterval() time.Duration {
 // ValidateInfractionParamsAgainst enforces the cross-param constraint that
 // the oldest challengeable header stays light-client verifiable through its
 // challenge window: evidenceMaxAge + challengeWindow < trustingFraction *
-// defaultConsumerUnbonding. Called wherever incoming infraction params are
-// validated together with Params, since InfractionParameters is stored
-// separately from Params -- at genesis and from both governance handlers, each
-// checking the incoming half against the stored other half.
+// defaultConsumerUnbonding. Params.Validate applies it to the set as a whole,
+// at genesis and on every governance update of the merged parameters.
 //
 // The bound is the default consumer unbonding period, not the trusting period
 // of any client already adopted for a consumer. Consumer creation is
@@ -280,6 +281,12 @@ func (p Params) Validate() error {
 	}
 	if err := vaastypes.ValidateDuration(p.MaxPauseDuration); err != nil {
 		return fmt.Errorf("max pause duration is invalid: %s", err)
+	}
+	if err := p.InfractionParameters.Validate(); err != nil {
+		return fmt.Errorf("infraction parameters are invalid: %s", err)
+	}
+	if err := ValidateInfractionParamsAgainst(p.InfractionParameters, p.TrustingPeriodFraction); err != nil {
+		return err
 	}
 
 	return nil
