@@ -1188,3 +1188,54 @@ func TestExecutionWithoutTombstoningKeepsSiblingEntries(t *testing.T) {
 	require.Equal(t, 2, countEvents(matured, types.EventTypeEquivocationPunishmentExecuted))
 	require.Equal(t, 0, countEvents(matured, types.EventTypeEquivocationPunishmentDropped), "nothing is dropped without a tombstone")
 }
+
+// expectFailingExecution mocks a punishment that runs up to the tombstone and
+// fails there, the way a missing signing info would make it.
+func expectFailingExecution(t *testing.T, k providerkeeper.Keeper, mocks testkeeper.MockedKeepers, validator stakingtypes.Validator, consAddr sdk.ConsAddress) {
+	t.Helper()
+	valAddr, err := k.ValidatorAddressCodec().StringToBytes(validator.GetOperator())
+	require.NoError(t, err)
+	mocks.MockStakingKeeper.EXPECT().GetValidatorByConsAddr(gomock.Any(), consAddr).Return(validator, nil).Times(2)
+	mocks.MockSlashingKeeper.EXPECT().IsTombstoned(gomock.Any(), consAddr).Return(false).Times(2)
+	mocks.MockStakingKeeper.EXPECT().GetUnbondingDelegationsFromValidator(gomock.Any(), valAddr).Return(nil, nil)
+	mocks.MockStakingKeeper.EXPECT().GetRedelegationsFromSrcValidator(gomock.Any(), valAddr).Return(nil, nil)
+	mocks.MockStakingKeeper.EXPECT().PowerReduction(gomock.Any()).Return(math.NewInt(1))
+	mocks.MockStakingKeeper.EXPECT().SlashWithInfractionReason(gomock.Any(), consAddr, int64(0), int64(500), gomock.Any(), stakingtypes.Infraction_INFRACTION_DOUBLE_SIGN).Return(math.NewInt(25), nil)
+	mocks.MockStakingKeeper.EXPECT().Jail(gomock.Any(), consAddr)
+	mocks.MockSlashingKeeper.EXPECT().JailUntil(gomock.Any(), consAddr, gomock.Any())
+	mocks.MockSlashingKeeper.EXPECT().Tombstone(gomock.Any(), consAddr).Return(errors.New("signing info missing"))
+}
+
+// TestExecutionGivesUpAfterTheJailMargin: an execution that keeps failing is
+// retried block after block, but not forever: once the jail margin has passed
+// since maturity the entry is dropped with its reason, its holds are released
+// so the delegators' stake is no longer frozen, and the jail is left as it
+// stands.
+func TestExecutionGivesUpAfterTheJailMargin(t *testing.T) {
+	k, ctx, ctrl, mocks, validator, providerAddr := setupEquivocationQueueTest(t)
+	defer ctrl.Finish()
+	consAddr := providerAddr.ToSdkConsAddr()
+	key := queueWithHeldOp(t, k, ctx, mocks, validator, providerAddr, 0, 11)
+
+	matured := ctx.WithBlockTime(ctx.BlockTime().Add(k.GetParams(ctx).EquivocationExecutionDelay + time.Second))
+	expectFailingExecution(t, k, mocks, validator, consAddr)
+	k.SweepPendingEquivocationPunishments(matured)
+	has, err := k.PendingEquivocationPunishments.Has(matured, key)
+	require.NoError(t, err)
+	require.True(t, has, "inside the margin the entry is retried")
+
+	// Still failing a day later: the margin is spent.
+	spent := matured.WithBlockTime(matured.BlockTime().Add(24*time.Hour + time.Second))
+	expectFailingExecution(t, k, mocks, validator, consAddr)
+	mocks.MockStakingKeeper.EXPECT().UnbondingCanComplete(spent, uint64(11)).Return(nil)
+	k.SweepPendingEquivocationPunishments(spent)
+
+	has, err = k.PendingEquivocationPunishments.Has(spent, key)
+	require.NoError(t, err)
+	require.False(t, has, "the entry is dropped once the margin is spent")
+	held, err := k.HeldUnbondingOps.Has(spent, collections.Join(consAddr.Bytes(), uint64(11)))
+	require.NoError(t, err)
+	require.False(t, held, "the holds are released with the drop")
+	require.Equal(t, 1, countEvents(spent, types.EventTypeEquivocationPunishmentDropped))
+	require.Equal(t, 0, countEvents(spent, types.EventTypeEquivocationPunishmentExecuted))
+}
