@@ -67,6 +67,7 @@ func (k Keeper) MigrateStateOnConsPubKeyRotation(
 		k.migrateFeeExclusion(ctx, consumerId, oldProviderAddr, newProviderAddr)
 		k.migratePunishedEquivocations(ctx, consumerId, oldProviderAddr, newProviderAddr)
 	}
+	k.migratePendingEquivocations(ctx, oldProviderAddr, newProviderAddr)
 }
 
 // migratePunishedEquivocations moves the validator's punished-equivocation
@@ -116,7 +117,6 @@ func (k Keeper) migratePunishedEquivocations(
 				"consumerId", consumerId, "providerConsAddr", oldProviderAddr.String(), "error", err)
 		}
 	}
-	k.migratePendingEquivocations(ctx, oldProviderAddr, newProviderAddr)
 }
 
 // liveProviderConsAddr resolves providerAddr to the provider consensus address

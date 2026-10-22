@@ -1094,6 +1094,7 @@ func TestValidateGenesisState_RefusalAndEquivocationLists(t *testing.T) {
 		gs.PendingDowntimeSlashes = []types.PendingDowntimeSlash{{
 			ConsumerId:         0,
 			ProviderConsAddr:   accused,
+			ConsumerConsAddr:   accused,
 			WindowStartHeight:  100,
 			Span:               16,
 			MissedBlocksBitmap: []byte{0x00, 0x00},
