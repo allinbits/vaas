@@ -399,8 +399,10 @@ func TestHandleConsumerDoubleVotingSlashesOldButAboveMinHeightEvidence(t *testin
 			return math.NewInt(power), nil
 		}).Times(1)
 
-	mocks.MockStakingKeeper.EXPECT().Jail(gomock.Any(), sdk.ConsAddress(consAddr)).Return(nil).Times(1)
-	mocks.MockSlashingKeeper.EXPECT().JailUntil(gomock.Any(), sdk.ConsAddress(consAddr), gomock.Any()).Return(nil).Times(1)
+	// Jailed at queue time, then again when the punishment executes: the mock
+	// validator never reports itself jailed.
+	mocks.MockStakingKeeper.EXPECT().Jail(gomock.Any(), sdk.ConsAddress(consAddr)).Return(nil).Times(2)
+	mocks.MockSlashingKeeper.EXPECT().JailUntil(gomock.Any(), sdk.ConsAddress(consAddr), gomock.Any()).Return(nil).Times(2)
 	tombstoneCalled := false
 	mocks.MockSlashingKeeper.EXPECT().Tombstone(gomock.Any(), sdk.ConsAddress(consAddr)).DoAndReturn(func(_ sdk.Context, _ sdk.ConsAddress) error {
 		tombstoneCalled = true
@@ -408,6 +410,12 @@ func TestHandleConsumerDoubleVotingSlashesOldButAboveMinHeightEvidence(t *testin
 	}).Times(1)
 
 	require.NoError(t, providerKeeper.HandleConsumerDoubleVoting(ctx, consumerID, evidence, valPubkey))
+	require.False(t, slashCalled, "the submission queues the punishment; the sweep executes it")
+
+	// Once the execution delay has passed, with no removal vote in the way.
+	providerKeeper.OverrideRemovalVoteForTest(func(sdk.Context, uint64) (uint64, time.Time, bool) { return 0, time.Time{}, false })
+	matured := ctx.WithBlockTime(ctx.BlockTime().Add(providerKeeper.GetParams(ctx).EquivocationExecutionDelay + time.Hour))
+	providerKeeper.SweepPendingEquivocationPunishments(matured)
 	require.True(t, slashCalled, "an old but above-min-height double-sign must still slash")
 	require.True(t, tombstoneCalled, "an old but above-min-height double-sign must still tombstone")
 }
