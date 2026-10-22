@@ -7,6 +7,8 @@ import (
 
 	ibctmtypes "github.com/cosmos/ibc-go/v10/modules/light-clients/07-tendermint"
 
+	"cosmossdk.io/collections"
+
 	sdk "github.com/cosmos/cosmos-sdk/types"
 	govv1 "github.com/cosmos/cosmos-sdk/x/gov/types/v1"
 
@@ -77,4 +79,14 @@ func (k *Keeper) OverrideRemovalProposalStatusForTest(fn func(ctx sdk.Context, p
 // hook-placed holds without driving the full staking hook resolution.
 func (k Keeper) HoldUnbondingOpForTest(ctx sdk.Context, consAddr sdk.ConsAddress, id uint64) error {
 	return k.holdUnbondingOp(ctx, consAddr, id)
+}
+
+// HasConsumerRefusal reports, for the tests, whether the validator currently refuses the
+// consumer.
+func (k Keeper) HasConsumerRefusal(ctx sdk.Context, consumerId uint64, valAddr sdk.ValAddress) bool {
+	has, err := k.ConsumerRefusals.Has(ctx, collections.Join(consumerId, valAddr.Bytes()))
+	if err != nil {
+		return false
+	}
+	return has
 }
