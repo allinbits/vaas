@@ -1064,3 +1064,127 @@ func TestSweepCancelsAndExecutesInOneBlock(t *testing.T) {
 		require.False(t, has)
 	}
 }
+
+// countEvents returns how many events of the given type the context emitted.
+func countEvents(ctx sdk.Context, eventType string) int {
+	n := 0
+	for _, ev := range ctx.EventManager().Events() {
+		if ev.Type == eventType {
+			n++
+		}
+	}
+	return n
+}
+
+// TestSweepSkipsEntriesRemovedByAnEarlierExecution: two punishments of one
+// validator mature in the same block; executing the first tombstones the
+// validator and drops the second, which the sweep collected up front. The
+// dropped key is then skipped, not executed a second time: one executed
+// event, one dropped event, and no second round of staking calls.
+func TestSweepSkipsEntriesRemovedByAnEarlierExecution(t *testing.T) {
+	k, ctx, ctrl, mocks, validator, providerAddr := setupEquivocationQueueTest(t)
+	defer ctrl.Finish()
+	consAddr := providerAddr.ToSdkConsAddr()
+	first := queueWithHeldOp(t, k, ctx, mocks, validator, providerAddr, 0, 11)
+	k.SetConsumerPhase(ctx, 1, types.CONSUMER_PHASE_LAUNCHED)
+	expectQueueJail(k, mocks, ctx, validator, consAddr)
+	expectNoExistingUnbondings(t, k, mocks, ctx, validator, consAddr)
+	_, err := k.QueuePendingEquivocationPunishment(ctx, 1, providerAddr, 42)
+	require.NoError(t, err)
+	second := collections.Join3(uint64(1), consAddr.Bytes(), int64(42))
+
+	matured := ctx.WithBlockTime(ctx.BlockTime().Add(k.GetParams(ctx).EquivocationExecutionDelay + time.Second))
+	expectExecution(t, k, mocks, matured, validator, consAddr)
+	mocks.MockStakingKeeper.EXPECT().UnbondingCanComplete(matured, uint64(11)).Return(nil)
+	k.SweepPendingEquivocationPunishments(matured)
+
+	for _, key := range []collections.Triple[uint64, []byte, int64]{first, second} {
+		has, err := k.PendingEquivocationPunishments.Has(matured, key)
+		require.NoError(t, err)
+		require.False(t, has)
+	}
+	require.Equal(t, 1, countEvents(matured, types.EventTypeEquivocationPunishmentExecuted), "the dropped entry is not executed as well")
+	require.Equal(t, 1, countEvents(matured, types.EventTypeEquivocationPunishmentDropped))
+}
+
+// TestSweepSkipsCancellationOfAnEntryRemovedByAnExecution: an entry the
+// sweep meant to cancel (its removal vote passed) is dropped first by the
+// execution of the validator's other entry in the same block; cancelling the
+// removed key must not reopen the jail or report a cancellation.
+func TestSweepSkipsCancellationOfAnEntryRemovedByAnExecution(t *testing.T) {
+	k, ctx, ctrl, mocks, validator, providerAddr := setupEquivocationQueueTest(t)
+	defer ctrl.Finish()
+	consAddr := providerAddr.ToSdkConsAddr()
+	k.SetConsumerPhase(ctx, 0, types.CONSUMER_PHASE_LAUNCHED)
+	k.SetConsumerPhase(ctx, 1, types.CONSUMER_PHASE_STOPPED)
+	executed := collections.Join3(uint64(0), consAddr.Bytes(), int64(42))
+	require.NoError(t, k.PendingEquivocationPunishments.Set(ctx, executed, types.PendingEquivocationPunishment{
+		ConsumerId: 0, ProviderConsAddr: consAddr.Bytes(), InfractionHeight: 42, ExecutesAt: ctx.BlockTime().Add(-time.Minute),
+	}))
+	cancelled := collections.Join3(uint64(1), consAddr.Bytes(), int64(43))
+	require.NoError(t, k.PendingEquivocationPunishments.Set(ctx, cancelled, types.PendingEquivocationPunishment{
+		ConsumerId: 1, ProviderConsAddr: consAddr.Bytes(), InfractionHeight: 43, ExecutesAt: ctx.BlockTime().Add(-time.Minute),
+		ExecutesAtExtended: true, DeferredByProposalId: 5,
+	}))
+	k.OverrideRemovalProposalStatusForTest(func(_ sdk.Context, proposalId uint64) (govv1.ProposalStatus, time.Time, bool) {
+		require.Equal(t, uint64(5), proposalId)
+		return govv1.StatusPassed, time.Time{}, true
+	})
+
+	expectExecution(t, k, mocks, ctx, validator, consAddr)
+	k.SweepPendingEquivocationPunishments(ctx)
+
+	for _, key := range []collections.Triple[uint64, []byte, int64]{executed, cancelled} {
+		has, err := k.PendingEquivocationPunishments.Has(ctx, key)
+		require.NoError(t, err)
+		require.False(t, has)
+	}
+	require.Equal(t, 1, countEvents(ctx, types.EventTypeEquivocationPunishmentExecuted))
+	require.Equal(t, 1, countEvents(ctx, types.EventTypeEquivocationPunishmentDropped))
+	require.Equal(t, 0, countEvents(ctx, types.EventTypeEquivocationPunishmentCancelled), "a removed entry is not cancelled on top")
+}
+
+// TestExecutionWithoutTombstoningKeepsSiblingEntries: with the tombstone
+// switched off the validator is still punishable after one execution, so its
+// other pending punishments stay and execute on their own.
+func TestExecutionWithoutTombstoningKeepsSiblingEntries(t *testing.T) {
+	k, ctx, ctrl, mocks, validator, providerAddr := setupEquivocationQueueTest(t)
+	defer ctrl.Finish()
+	params := k.GetInfractionParams(ctx)
+	params.DoubleSign.Tombstone = false
+	params.DoubleSign.JailDuration = time.Hour
+	k.SetInfractionParams(ctx, params)
+	consAddr := providerAddr.ToSdkConsAddr()
+	valAddr, err := k.ValidatorAddressCodec().StringToBytes(validator.GetOperator())
+	require.NoError(t, err)
+	first := queueWithHeldOp(t, k, ctx, mocks, validator, providerAddr, 0, 11)
+	k.SetConsumerPhase(ctx, 1, types.CONSUMER_PHASE_LAUNCHED)
+	expectQueueJail(k, mocks, ctx, validator, consAddr)
+	expectNoExistingUnbondings(t, k, mocks, ctx, validator, consAddr)
+	_, err = k.QueuePendingEquivocationPunishment(ctx, 1, providerAddr, 42)
+	require.NoError(t, err)
+	second := collections.Join3(uint64(1), consAddr.Bytes(), int64(42))
+
+	matured := ctx.WithBlockTime(ctx.BlockTime().Add(k.GetParams(ctx).EquivocationExecutionDelay + time.Second))
+	// Two executions, each a slash and a jail, and no tombstone.
+	mocks.MockStakingKeeper.EXPECT().GetValidatorByConsAddr(gomock.Any(), consAddr).Return(validator, nil).AnyTimes()
+	mocks.MockSlashingKeeper.EXPECT().IsTombstoned(gomock.Any(), consAddr).Return(false).AnyTimes()
+	mocks.MockStakingKeeper.EXPECT().GetUnbondingDelegationsFromValidator(gomock.Any(), valAddr).Return(nil, nil).Times(2)
+	mocks.MockStakingKeeper.EXPECT().GetRedelegationsFromSrcValidator(gomock.Any(), valAddr).Return(nil, nil).Times(2)
+	mocks.MockStakingKeeper.EXPECT().PowerReduction(gomock.Any()).Return(math.NewInt(1)).Times(2)
+	mocks.MockStakingKeeper.EXPECT().SlashWithInfractionReason(
+		gomock.Any(), consAddr, int64(0), int64(500), math.LegacyNewDecWithPrec(5, 2), stakingtypes.Infraction_INFRACTION_DOUBLE_SIGN,
+	).Return(math.NewInt(25), nil).Times(2)
+	mocks.MockStakingKeeper.EXPECT().Jail(gomock.Any(), consAddr).Times(2)
+	mocks.MockSlashingKeeper.EXPECT().JailUntil(gomock.Any(), consAddr, gomock.Any()).Times(2)
+	mocks.MockStakingKeeper.EXPECT().UnbondingCanComplete(matured, uint64(11)).Return(nil)
+	k.SweepPendingEquivocationPunishments(matured)
+
+	for _, key := range []collections.Triple[uint64, []byte, int64]{first, second} {
+		has, err := k.PendingEquivocationPunishments.Has(matured, key)
+		require.NoError(t, err)
+		require.False(t, has, "both entries executed")
+	}
+	require.Equal(t, 2, countEvents(matured, types.EventTypeEquivocationPunishmentExecuted))
+	require.Equal(t, 0, countEvents(matured, types.EventTypeEquivocationPunishmentDropped), "nothing is dropped without a tombstone")
+}
