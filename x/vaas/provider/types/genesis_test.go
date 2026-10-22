@@ -985,6 +985,13 @@ func TestValidateGenesisState_RefusalAndEquivocationLists(t *testing.T) {
 			ExecutesAt:       time.Unix(300, 0).UTC(),
 		}
 	}
+	jail := func() types.PendingEquivocationJail {
+		return types.PendingEquivocationJail{
+			ProviderConsAddr: accused,
+			JailedUntil:      time.Unix(300, 0).Add(24 * time.Hour).UTC(),
+			OwedUntil:        time.Unix(200, 0).UTC(),
+		}
+	}
 
 	t.Run("valid lists", func(t *testing.T) {
 		gs := build()
@@ -995,7 +1002,43 @@ func TestValidateGenesisState_RefusalAndEquivocationLists(t *testing.T) {
 		gs.ConsumerRefusals = []types.ConsumerRefusal{{ConsumerId: 0, ValidatorAddress: valoper}}
 		gs.PendingEquivocationPunishments = []types.PendingEquivocationPunishment{punishment(), deferred}
 		gs.HeldUnbondingOps = []types.HeldUnbondingOps{{ProviderConsAddr: accused, UnbondingOpIds: []uint64{5, 6}}}
+		gs.PendingEquivocationJails = []types.PendingEquivocationJail{jail()}
 		require.NoError(t, gs.Validate())
+	})
+
+	t.Run("jail record without a pending punishment", func(t *testing.T) {
+		gs := build()
+		gs.PendingEquivocationJails = []types.PendingEquivocationJail{jail()}
+		require.ErrorContains(t, gs.Validate(), "without a pending equivocation punishment")
+	})
+
+	t.Run("jail record with an empty address, or no jail end", func(t *testing.T) {
+		gs := build()
+		gs.PendingEquivocationPunishments = []types.PendingEquivocationPunishment{punishment()}
+		bad := jail()
+		bad.ProviderConsAddr = nil
+		gs.PendingEquivocationJails = []types.PendingEquivocationJail{bad}
+		require.ErrorContains(t, gs.Validate(), "provider cons addr cannot be empty")
+		bad = jail()
+		bad.JailedUntil = time.Time{}
+		gs.PendingEquivocationJails = []types.PendingEquivocationJail{bad}
+		require.ErrorContains(t, gs.Validate(), "jailed_until must be set")
+	})
+
+	t.Run("jail record owing more than it set", func(t *testing.T) {
+		gs := build()
+		gs.PendingEquivocationPunishments = []types.PendingEquivocationPunishment{punishment()}
+		bad := jail()
+		bad.OwedUntil = bad.JailedUntil.Add(time.Second)
+		gs.PendingEquivocationJails = []types.PendingEquivocationJail{bad}
+		require.ErrorContains(t, gs.Validate(), "owed_until cannot be later than jailed_until")
+	})
+
+	t.Run("duplicate jail record", func(t *testing.T) {
+		gs := build()
+		gs.PendingEquivocationPunishments = []types.PendingEquivocationPunishment{punishment()}
+		gs.PendingEquivocationJails = []types.PendingEquivocationJail{jail(), jail()}
+		require.ErrorContains(t, gs.Validate(), "duplicate pending equivocation jail")
 	})
 
 	t.Run("refusal for unknown consumer", func(t *testing.T) {

@@ -213,9 +213,18 @@ func (s *rotationSigningInfo) at(addr sdk.ConsAddress) *slashingtypes.ValidatorS
 }
 
 // wire answers the mocked slashing keeper out of the store the way x/slashing
-// answers out of its own: a missing entry reads as not tombstoned, and makes
-// both JailUntil and Tombstone error.
+// answers out of its own: a missing entry reads as not tombstoned, is not
+// found by GetValidatorSigningInfo, and makes both JailUntil and Tombstone
+// error.
 func (s *rotationSigningInfo) wire(mocks testkeeper.MockedKeepers) {
+	mocks.MockSlashingKeeper.EXPECT().GetValidatorSigningInfo(gomock.Any(), gomock.Any()).
+		DoAndReturn(func(_ context.Context, addr sdk.ConsAddress) (slashingtypes.ValidatorSigningInfo, error) {
+			info, found := s.infos[addr.String()]
+			if !found {
+				return slashingtypes.ValidatorSigningInfo{}, slashingtypes.ErrNoSigningInfoFound
+			}
+			return *info, nil
+		}).AnyTimes()
 	mocks.MockSlashingKeeper.EXPECT().IsTombstoned(gomock.Any(), gomock.Any()).
 		DoAndReturn(func(_ context.Context, addr sdk.ConsAddress) bool {
 			info, found := s.infos[addr.String()]
@@ -915,6 +924,9 @@ func TestPreRotationEquivocationIsPunishedUnderTheLiveAddress(t *testing.T) {
 	require.Equal(t, []sdk.ConsAddress{newAddr}, jailed,
 		"the queue-time jail must land under the live address")
 	require.False(t, signing.at(newAddr).Tombstoned)
+	jailRecord, err := k.PendingEquivocationJails.Get(ctx, newAddr.Bytes())
+	require.NoError(t, err, "the jail record is keyed by the live address too")
+	require.Equal(t, signing.at(newAddr).JailedUntil, jailRecord.JailedUntil)
 
 	// The sweep executes the punishment at maturity, all of it under the
 	// address x/staking and x/slashing hold the validator under now.
