@@ -59,10 +59,13 @@ func (k Keeper) HandleConsumerEvidencePacket(ctx sdk.Context, consumerId uint64,
 //     for this consumer, and the validator is in the consumer's validator
 //     set -- under the address the accusation resolves to, or the one the
 //     validator has since rotated to (see accusedConsumerValidatorAddr).
-//  4. The window-end time -- anchored to an IBC consensus state proving the
-//     consumer chain actually reached that height, see windowEndTimestamp --
-//     is past the consumer's downtime grace period and not older than
-//     DowntimeEvidenceMaxAge.
+//  4. The window-end time -- bracketed by IBC consensus states, one proving
+//     the consumer chain reached the window end and one supplying a verified
+//     lower bound on when it did, see windowEndTimestamp -- is past the
+//     consumer's downtime grace period, not older than
+//     DowntimeEvidenceMaxAge, and leaves the whole DowntimeChallengeWindow
+//     inside the consumer client's trusting period, so the accused can still
+//     challenge at the end of it (see consumerClientTrustingPeriod).
 //  5. The window starts above the pair's pruned acceptance floor
 //     (DowntimeWindowFloors) and does not intersect any window already
 //     accepted for this (consumer, validator) pair
@@ -141,7 +144,7 @@ func (k Keeper) HandleConsumerDowntime(ctx sdk.Context, consumerId uint64, evide
 		)
 	}
 
-	// Anchor the window-end time to a real IBC consensus state so the grace
+	// Anchor the window-end time to real IBC consensus states so the grace
 	// and evidence-age checks below are judged against consumer chain time
 	// the provider can actually verify, not the packet's own unverified claim.
 	windowEndTime, err := k.windowEndTimestamp(ctx, clientId, evidencePacket.WindowEndHeight)
@@ -180,13 +183,38 @@ func (k Keeper) HandleConsumerDowntime(ctx sdk.Context, consumerId uint64, evide
 	}
 
 	// Verify the evidence isn't stale relative to when it was submitted.
-	if age := ctx.BlockTime().Sub(windowEndTime); age > infractionParams.DowntimeEvidenceMaxAge {
+	age := ctx.BlockTime().Sub(windowEndTime)
+	if age > infractionParams.DowntimeEvidenceMaxAge {
 		return errorsmod.Wrapf(
 			vaastypes.ErrInvalidPacketData,
 			"downtime evidence for consumer chain %d is too old: window ended %s ago, max age %s",
 			consumerId,
 			age,
 			infractionParams.DowntimeEvidenceMaxAge,
+		)
+	}
+
+	// The accusation must stay challengeable for its whole window against the
+	// client that verifies a challenge: the header at the claimed height is
+	// verified against a consensus state within that client's trusting
+	// period, so a window whose age plus the challenge window reaches past it
+	// would leave the accused unable to challenge late in the window. The
+	// parameter bound (types.ValidateInfractionParamsAgainst) enforces the
+	// same relation against the default trusting period only, so a client
+	// adopted with a shorter one is bounded here, at acceptance.
+	trustingPeriod, err := k.consumerClientTrustingPeriod(ctx, clientId)
+	if err != nil {
+		return errorsmod.Wrapf(
+			vaastypes.ErrInvalidConsumerState,
+			"cannot read the trusting period of client %s for consumer chain %d: %s",
+			clientId, consumerId, err,
+		)
+	}
+	if age+infractionParams.DowntimeChallengeWindow >= trustingPeriod {
+		return errorsmod.Wrapf(
+			vaastypes.ErrInvalidPacketData,
+			"downtime evidence for consumer chain %d is too old to stay challengeable against client %s: window ended %s ago, challenge window %s, client trusting period %s",
+			consumerId, clientId, age, infractionParams.DowntimeChallengeWindow, trustingPeriod,
 		)
 	}
 
@@ -258,6 +286,7 @@ func (k Keeper) HandleConsumerDowntime(ctx sdk.Context, consumerId uint64, evide
 	pending := types.PendingDowntimeSlash{
 		ConsumerId:         consumerId,
 		ProviderConsAddr:   providerAddr.ToSdkConsAddr().Bytes(),
+		ConsumerConsAddr:   consumerAddr.ToSdkConsAddr().Bytes(),
 		WindowStartHeight:  evidencePacket.WindowStartHeight,
 		Span:               evidencePacket.Span(),
 		MissedCount:        evidencePacket.MissedCount(),
@@ -382,13 +411,50 @@ func (k Keeper) checkAcceptedDowntimeWindowIntersection(
 	return nil
 }
 
+// consumerClientTrustingPeriod returns the trusting period of the consumer
+// client clientId, which bounds how old a header a downtime challenge can
+// still verify against it.
+func (k Keeper) consumerClientTrustingPeriod(ctx sdk.Context, clientId string) (time.Duration, error) {
+	clientState, found := k.clientKeeper.GetClientState(ctx, clientId)
+	if !found {
+		return 0, fmt.Errorf("client %s has no client state", clientId)
+	}
+	tmClientState, ok := clientState.(*ibctmtypes.ClientState)
+	if !ok {
+		return 0, fmt.Errorf("client %s is not a tendermint client", clientId)
+	}
+	return tmClientState.TrustingPeriod, nil
+}
+
 // windowEndTimestamp resolves the timestamp anchor for a downtime evidence
-// window: the timestamp of the smallest IBC consensus state stored for
-// clientId at a height >= windowEnd. This proves the consumer chain actually
-// reached at least that height, so the grace-period and evidence-age checks
-// in HandleConsumerDowntime are judged against verifiable consumer chain
-// time rather than the packet's own unverified claims. Returns an error if
-// no such consensus state is stored.
+// window from the IBC client's own verified history, so the grace-period and
+// evidence-age checks in HandleConsumerDowntime are judged against consumer
+// chain time the provider can verify rather than the packet's own unverified
+// claims. The window-end height must be bracketed by two stored consensus
+// states, each playing a distinct part:
+//
+//   - the smallest stored height >= windowEnd proves the consumer chain
+//     actually reached the window end;
+//   - the largest stored height <= windowEnd supplies the timestamp returned.
+//
+// Consumer block timestamps increase with height, so the lower state's
+// timestamp is a verified lower bound on the true window-end time while the
+// upper state's is an upper bound. Returning the lower bound is what keeps the
+// age check honest: the computed age is never smaller than the real one, so
+// accepted evidence is genuinely no older than DowntimeEvidenceMaxAge and the
+// challenge-data retention a validator must plan for stays exactly
+// DowntimeEvidenceMaxAge + DowntimeChallengeWindow. Anchoring to the upper
+// state instead would overstate the window-end time by however far the client
+// skipped past windowEnd, understating the evidence's age by the same amount
+// and admitting evidence whose challenge data has already been pruned.
+// Rejections are for the same reason biased safe: an anchor below the true
+// window-end time can only reject fresh evidence, never admit stale evidence.
+//
+// Both anchors are required. A missing upper state means the client cannot
+// vouch for the height at all; a missing lower state means windowEnd predates
+// every consensus state the client retains -- the states around it expired and
+// were pruned, or the client is too sparse there -- leaving no verified lower
+// bound to anchor to.
 func (k Keeper) windowEndTimestamp(ctx sdk.Context, clientId string, windowEnd int64) (time.Time, error) {
 	if k.windowEndTimestampFn != nil {
 		return k.windowEndTimestampFn(ctx, clientId, windowEnd)
@@ -396,18 +462,32 @@ func (k Keeper) windowEndTimestamp(ctx sdk.Context, clientId string, windowEnd i
 
 	clientStore := k.clientKeeper.GetStoreProvider().ClientStore(ctx, clientId)
 
-	var anchorHeight ibcexported.Height
-	found := false
+	var anchorHeight, upperHeight ibcexported.Height
+	anchorFound := false
+	upperFound := false
 	ibctmtypes.IterateConsensusStateAscending(clientStore, func(height ibcexported.Height) bool {
-		if int64(height.GetRevisionHeight()) >= windowEnd {
+		revisionHeight := int64(height.GetRevisionHeight())
+		if revisionHeight <= windowEnd {
+			// Iteration is ascending, so the last height at or below windowEnd
+			// wins; a state at exactly windowEnd anchors the window exactly.
 			anchorHeight = height
-			found = true
+			anchorFound = true
+		}
+		if revisionHeight >= windowEnd {
+			upperHeight = height
+			upperFound = true
 			return true
 		}
 		return false
 	})
-	if !found {
+	if !upperFound {
 		return time.Time{}, fmt.Errorf("cannot anchor evidence window time: no consensus state at height >= %d", windowEnd)
+	}
+	if !anchorFound {
+		return time.Time{}, fmt.Errorf(
+			"cannot anchor evidence window time: window-end height %d predates the client's retained consensus states (nearest stored is %d); evidence is too old or the client too sparse to anchor",
+			windowEnd, upperHeight.GetRevisionHeight(),
+		)
 	}
 
 	consensusState, ok := k.clientKeeper.GetClientConsensusState(ctx, clientId, anchorHeight)
