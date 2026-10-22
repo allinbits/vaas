@@ -92,10 +92,9 @@ func newDoubleVoteFixture(t *testing.T, tombstone bool) (doubleVoteFixture, *gom
 }
 
 // sweep executes whatever the fixture's validator has pending: the execution
-// delay has passed and no removal vote is in the way.
+// delay has passed and no removal vote is in the way (gov holds none).
 func (f doubleVoteFixture) sweep(t *testing.T) {
 	t.Helper()
-	f.k.OverrideRemovalVoteForTest(func(sdk.Context, uint64) (uint64, time.Time, bool) { return 0, time.Time{}, false })
 	matured := f.ctx.WithBlockTime(f.ctx.BlockTime().Add(f.k.GetParams(f.ctx).EquivocationExecutionDelay + time.Hour))
 	f.k.SweepPendingEquivocationPunishments(matured)
 }

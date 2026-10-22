@@ -413,7 +413,6 @@ func TestHandleConsumerDoubleVotingSlashesOldButAboveMinHeightEvidence(t *testin
 	require.False(t, slashCalled, "the submission queues the punishment; the sweep executes it")
 
 	// Once the execution delay has passed, with no removal vote in the way.
-	providerKeeper.OverrideRemovalVoteForTest(func(sdk.Context, uint64) (uint64, time.Time, bool) { return 0, time.Time{}, false })
 	matured := ctx.WithBlockTime(ctx.BlockTime().Add(providerKeeper.GetParams(ctx).EquivocationExecutionDelay + time.Hour))
 	providerKeeper.SweepPendingEquivocationPunishments(matured)
 	require.True(t, slashCalled, "an old but above-min-height double-sign must still slash")

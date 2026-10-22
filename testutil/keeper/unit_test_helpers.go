@@ -29,11 +29,13 @@ import (
 	"github.com/cosmos/cosmos-sdk/runtime"
 	sdk "github.com/cosmos/cosmos-sdk/types"
 	authtypes "github.com/cosmos/cosmos-sdk/x/auth/types"
+	govkeeper "github.com/cosmos/cosmos-sdk/x/gov/keeper"
 	govtypes "github.com/cosmos/cosmos-sdk/x/gov/types"
 	stakingtypes "github.com/cosmos/cosmos-sdk/x/staking/types"
 
 	consumerkeeper "github.com/allinbits/vaas/x/vaas/consumer/keeper"
 	consumertypes "github.com/allinbits/vaas/x/vaas/consumer/types"
+	"github.com/allinbits/vaas/x/vaas/provider/govadapter"
 	providerkeeper "github.com/allinbits/vaas/x/vaas/provider/keeper"
 	providertypes "github.com/allinbits/vaas/x/vaas/provider/types"
 	"github.com/allinbits/vaas/x/vaas/types"
@@ -91,6 +93,12 @@ type MockedKeepers struct {
 	*MockAccountKeeper
 	*MockBankKeeper
 	*MockDistributionKeeper
+	*MockGovKeeper
+
+	// GovKeeper is a handle on the in-memory gov keeper GetProviderKeeperAndCtx
+	// wires into the provider, so tests can seed the proposals the removal-vote
+	// scan reads; tests that want to script the scan swap in MockGovKeeper.
+	GovKeeper *govkeeper.Keeper
 
 	// ClientCounterparties backs the mocked ClientV2Keeper's
 	// GetClientCounterparty: a client id present in the map has a registered
@@ -137,6 +145,7 @@ func NewMockedKeepers(ctrl *gomock.Controller) MockedKeepers {
 		MockAccountKeeper:      NewMockAccountKeeper(ctrl),
 		MockBankKeeper:         NewMockBankKeeper(ctrl),
 		MockDistributionKeeper: NewMockDistributionKeeper(ctrl),
+		MockGovKeeper:          NewMockGovKeeper(ctrl),
 		ClientCounterparties:   map[string]clientv2types.CounterpartyInfo{},
 	}
 	mocks.ClientCounterparties = map[string]clientv2types.CounterpartyInfo{}
@@ -181,7 +190,7 @@ func NewInMemProviderKeeper(params InMemKeeperParams, mocks MockedKeepers) provi
 	// removal-vote scan runs for real in every unit test (an empty proposal
 	// store means no live vote), and tests seed proposals through
 	// NewInMemGovKeeper, which builds another handle onto the same state.
-	k.SetGovKeeper(newInMemGovKeeper(params))
+	k.SetGovKeeper(govadapter.New(newInMemGovKeeper(params)))
 	return k
 }
 
@@ -216,6 +225,7 @@ func GetProviderKeeperAndCtx(t *testing.T, params InMemKeeperParams) (
 	ctrl := gomock.NewController(t)
 	mocks := NewMockedKeepers(ctrl)
 	providerKeeper := NewInMemProviderKeeper(params, mocks)
+	mocks.GovKeeper = NewInMemGovKeeper(t, params)
 	providerKeeper.SetParams(params.Ctx, providertypes.DefaultParams())
 
 	return providerKeeper, params.Ctx, ctrl, mocks

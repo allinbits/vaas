@@ -3,8 +3,6 @@ package keeper
 import (
 	"time"
 
-	"cosmossdk.io/collections"
-
 	sdk "github.com/cosmos/cosmos-sdk/types"
 	govv1 "github.com/cosmos/cosmos-sdk/x/gov/types/v1"
 
@@ -25,19 +23,11 @@ import (
 // when their type URL is MsgRemoveConsumer's, so per-block cost stays
 // proportional to the (small) number of live proposals.
 func (k Keeper) removalVote(ctx sdk.Context, consumerId uint64) (proposalId uint64, votingEnd time.Time, active bool) {
-	if k.removalVoteFn != nil {
-		return k.removalVoteFn(ctx, consumerId)
-	}
 	k.mustHaveGovKeeper()
 
 	removeConsumerTypeURL := sdk.MsgTypeURL(&types.MsgRemoveConsumer{})
 
-	err := k.govKeeper.ActiveProposalsQueue.Walk(ctx, nil, func(key collections.Pair[time.Time, uint64], _ uint64) (bool, error) {
-		proposal, err := k.govKeeper.Proposals.Get(ctx, key.K2())
-		if err != nil {
-			k.Logger(ctx).Error("failed to read an active governance proposal", "proposalId", key.K2(), "error", err)
-			return false, nil
-		}
+	err := k.govKeeper.IterateActiveProposals(ctx, func(proposal govv1.Proposal) (bool, error) {
 		if proposal.Status != govv1.StatusVotingPeriod || proposal.VotingEndTime == nil {
 			return false, nil
 		}
@@ -94,14 +84,11 @@ func (k Keeper) HasGovKeeper() bool {
 // by the time the vote ended: the proposal's MsgRemoveConsumer cannot run
 // against a stopped consumer, but its tally is on record.
 func (k Keeper) removalProposalStatus(ctx sdk.Context, proposalId uint64) (status govv1.ProposalStatus, votingEnd time.Time, found bool) {
-	if k.removalProposalStatusFn != nil {
-		return k.removalProposalStatusFn(ctx, proposalId)
-	}
 	k.mustHaveGovKeeper()
 	if proposalId == 0 {
 		return govv1.StatusNil, time.Time{}, false
 	}
-	proposal, err := k.govKeeper.Proposals.Get(ctx, proposalId)
+	proposal, err := k.govKeeper.Proposal(ctx, proposalId)
 	if err != nil {
 		return govv1.StatusNil, time.Time{}, false
 	}

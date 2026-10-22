@@ -18,6 +18,7 @@ import (
 	math "cosmossdk.io/math"
 	types "github.com/cosmos/cosmos-sdk/types"
 	types0 "github.com/cosmos/cosmos-sdk/x/bank/types"
+	v1 "github.com/cosmos/cosmos-sdk/x/gov/types/v1"
 	types1 "github.com/cosmos/cosmos-sdk/x/staking/types"
 	types2 "github.com/cosmos/ibc-go/v10/modules/core/02-client/types"
 	types3 "github.com/cosmos/ibc-go/v10/modules/core/02-client/v2/types"
@@ -1044,4 +1045,57 @@ func (m *MockDistributionKeeper) FundCommunityPool(ctx context.Context, amount t
 func (mr *MockDistributionKeeperMockRecorder) FundCommunityPool(ctx, amount, sender any) *gomock.Call {
 	mr.mock.ctrl.T.Helper()
 	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "FundCommunityPool", reflect.TypeOf((*MockDistributionKeeper)(nil).FundCommunityPool), ctx, amount, sender)
+}
+
+// MockGovKeeper is a mock of GovKeeper interface.
+type MockGovKeeper struct {
+	ctrl     *gomock.Controller
+	recorder *MockGovKeeperMockRecorder
+	isgomock struct{}
+}
+
+// MockGovKeeperMockRecorder is the mock recorder for MockGovKeeper.
+type MockGovKeeperMockRecorder struct {
+	mock *MockGovKeeper
+}
+
+// NewMockGovKeeper creates a new mock instance.
+func NewMockGovKeeper(ctrl *gomock.Controller) *MockGovKeeper {
+	mock := &MockGovKeeper{ctrl: ctrl}
+	mock.recorder = &MockGovKeeperMockRecorder{mock}
+	return mock
+}
+
+// EXPECT returns an object that allows the caller to indicate expected use.
+func (m *MockGovKeeper) EXPECT() *MockGovKeeperMockRecorder {
+	return m.recorder
+}
+
+// IterateActiveProposals mocks base method.
+func (m *MockGovKeeper) IterateActiveProposals(ctx context.Context, cb func(v1.Proposal) (bool, error)) error {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "IterateActiveProposals", ctx, cb)
+	ret0, _ := ret[0].(error)
+	return ret0
+}
+
+// IterateActiveProposals indicates an expected call of IterateActiveProposals.
+func (mr *MockGovKeeperMockRecorder) IterateActiveProposals(ctx, cb any) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "IterateActiveProposals", reflect.TypeOf((*MockGovKeeper)(nil).IterateActiveProposals), ctx, cb)
+}
+
+// Proposal mocks base method.
+func (m *MockGovKeeper) Proposal(ctx context.Context, proposalId uint64) (v1.Proposal, error) {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "Proposal", ctx, proposalId)
+	ret0, _ := ret[0].(v1.Proposal)
+	ret1, _ := ret[1].(error)
+	return ret0, ret1
+}
+
+// Proposal indicates an expected call of Proposal.
+func (mr *MockGovKeeperMockRecorder) Proposal(ctx, proposalId any) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "Proposal", reflect.TypeOf((*MockGovKeeper)(nil).Proposal), ctx, proposalId)
 }
