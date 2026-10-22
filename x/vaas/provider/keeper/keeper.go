@@ -21,8 +21,6 @@ import (
 
 	"github.com/cosmos/cosmos-sdk/codec"
 	sdk "github.com/cosmos/cosmos-sdk/types"
-	govkeeper "github.com/cosmos/cosmos-sdk/x/gov/keeper"
-	govv1 "github.com/cosmos/cosmos-sdk/x/gov/types/v1"
 	stakingtypes "github.com/cosmos/cosmos-sdk/x/staking/types"
 
 	"github.com/allinbits/vaas/x/vaas/provider/types"
@@ -49,7 +47,7 @@ type Keeper struct {
 	// removalProposalStatus). The app constructs gov after this keeper, so it
 	// is wired afterwards through SetGovKeeper and required from the first
 	// block on (see BeginBlock).
-	govKeeper        *govkeeper.Keeper
+	govKeeper        vaastypes.GovKeeper
 	feeCollectorName string
 	// feeDenom is the denom charged to consumers per block. It is fixed at
 	// construction and cannot be changed without a binary upgrade. The amount
@@ -229,20 +227,6 @@ type Keeper struct {
 	// to bypass the real light-client call when a real client store proves
 	// impractical to fabricate.
 	verifyDowntimeChallengeHeaderFn func(ctx sdk.Context, clientId string, header *ibctmtypes.Header) error
-
-	// removalVoteFn reports whether a governance proposal carrying a
-	// MsgRemoveConsumer for the consumer is currently in its voting period,
-	// with the proposal id and the voting end. Nil in production, where
-	// removalVote falls back to scanning the gov keeper's active-proposal
-	// queue. Tests may override it via OverrideRemovalVoteForTest to steer
-	// the punishment deferrals without a real gov keeper.
-	removalVoteFn func(ctx sdk.Context, consumerId uint64) (uint64, time.Time, bool)
-
-	// removalProposalStatusFn reports a governance proposal's status, with
-	// its voting end while it is in voting. Nil in production, where
-	// removalProposalStatus reads the gov keeper. Tests may override it via
-	// OverrideRemovalProposalStatusForTest.
-	removalProposalStatusFn func(ctx sdk.Context, proposalId uint64) (govv1.ProposalStatus, time.Time, bool)
 }
 
 // NewKeeper creates a new provider Keeper instance
@@ -256,7 +240,7 @@ func NewKeeper(
 	accountKeeper vaastypes.AccountKeeper,
 	bankKeeper vaastypes.BankKeeper,
 	distributionKeeper vaastypes.DistributionKeeper,
-	govKeeper *govkeeper.Keeper,
+	govKeeper vaastypes.GovKeeper,
 	authority string,
 	validatorAddressCodec, consensusAddressCodec addresscodec.Codec,
 	feeCollectorName string,
@@ -478,7 +462,7 @@ func (k Keeper) ConsensusAddressCodec() addresscodec.Codec {
 
 // SetGovKeeper wires the gov keeper the removal-vote deferral reads; the app
 // calls it once the gov keeper exists, before the chain runs.
-func (k *Keeper) SetGovKeeper(govKeeper *govkeeper.Keeper) {
+func (k *Keeper) SetGovKeeper(govKeeper vaastypes.GovKeeper) {
 	k.govKeeper = govKeeper
 }
 

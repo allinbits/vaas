@@ -942,10 +942,7 @@ func TestSweepDefersDuringRemovalVote(t *testing.T) {
 
 	// A removal vote is live, ending an hour from now.
 	voteEnd := ctx.BlockTime().Add(time.Hour)
-	k.OverrideRemovalVoteForTest(func(_ sdk.Context, cid uint64) (uint64, time.Time, bool) {
-		require.Equal(t, consumerId, cid)
-		return 7, voteEnd, true
-	})
+	seedRemovalVote(t, mocks.GovKeeper, k, ctx, 7, consumerId, voteEnd)
 
 	// First sweep: deferred, not executed (no slashing mocks are set, so the
 	// controller also proves nothing was slashed).
@@ -965,10 +962,7 @@ func TestSweepDefersDuringRemovalVote(t *testing.T) {
 	// Past the extended maturity the recorded proposal has been rejected;
 	// the scan still reporting a live vote (a later proposal) changes
 	// nothing, and the slash executes.
-	k.OverrideRemovalProposalStatusForTest(func(_ sdk.Context, proposalId uint64) (govv1.ProposalStatus, time.Time, bool) {
-		require.Equal(t, uint64(7), proposalId)
-		return govv1.StatusRejected, time.Time{}, true
-	})
+	seedRemovalProposal(t, mocks.GovKeeper, k, ctx, 7, consumerId, govv1.StatusRejected, time.Time{})
 	lateCtx := ctx.WithBlockTime(entry.MaturesAt.Add(time.Second))
 	powerReduction := math.NewInt(1)
 	expectSlashableStakeLookup(t, k, mocks, lateCtx, validator, consAddr, 1000, powerReduction)
@@ -997,10 +991,6 @@ func TestSweepExecutesWhenNoRemovalVote(t *testing.T) {
 	consAddr := providerAddr.ToSdkConsAddr()
 	consumerId := uint64(0)
 	putPendingDowntimeSlash(t, k, ctx, consumerId, providerAddr, math.NewInt(100), ctx.BlockTime().Add(-time.Minute), 100)
-
-	k.OverrideRemovalVoteForTest(func(_ sdk.Context, _ uint64) (uint64, time.Time, bool) {
-		return 0, time.Time{}, false
-	})
 
 	powerReduction := math.NewInt(1)
 	expectSlashableStakeLookup(t, k, mocks, ctx, validator, consAddr, 1000, powerReduction)
@@ -1031,9 +1021,7 @@ func TestSweepKeepsDeferringWhileTheSameVoteIsOpen(t *testing.T) {
 	margin := k.GetParams(ctx).RemovalVoteDeferralMargin
 
 	voteEnd := ctx.BlockTime().Add(time.Hour)
-	k.OverrideRemovalVoteForTest(func(_ sdk.Context, _ uint64) (uint64, time.Time, bool) {
-		return 7, voteEnd, true
-	})
+	seedRemovalVote(t, mocks.GovKeeper, k, ctx, 7, consumerId, voteEnd)
 	k.SweepPendingDowntimeSlashes(ctx)
 	key := collections.Join3(consumerId, consAddr.Bytes(), int64(100))
 	entry, err := k.PendingDowntimeSlashes.Get(ctx, key)
@@ -1041,14 +1029,8 @@ func TestSweepKeepsDeferringWhileTheSameVoteIsOpen(t *testing.T) {
 	require.Equal(t, voteEnd.Add(margin), entry.MaturesAt)
 
 	// The vote is still open at the extended maturity, now ending later.
-	k.OverrideRemovalVoteForTest(func(_ sdk.Context, _ uint64) (uint64, time.Time, bool) {
-		return 0, time.Time{}, false
-	})
 	movedEnd := entry.MaturesAt.Add(3 * time.Hour)
-	k.OverrideRemovalProposalStatusForTest(func(_ sdk.Context, proposalId uint64) (govv1.ProposalStatus, time.Time, bool) {
-		require.Equal(t, uint64(7), proposalId)
-		return govv1.StatusVotingPeriod, movedEnd, true
-	})
+	seedRemovalProposal(t, mocks.GovKeeper, k, ctx, 7, consumerId, govv1.StatusVotingPeriod, movedEnd)
 	stillVoting := ctx.WithBlockTime(entry.MaturesAt.Add(time.Second))
 	k.SweepPendingDowntimeSlashes(stillVoting)
 	entry, err = k.PendingDowntimeSlashes.Get(stillVoting, key)
@@ -1057,9 +1039,7 @@ func TestSweepKeepsDeferringWhileTheSameVoteIsOpen(t *testing.T) {
 	require.Equal(t, uint64(7), entry.DeferredByProposalId)
 
 	// Rejected at the moved end: the slash executes.
-	k.OverrideRemovalProposalStatusForTest(func(_ sdk.Context, _ uint64) (govv1.ProposalStatus, time.Time, bool) {
-		return govv1.StatusRejected, time.Time{}, true
-	})
+	seedRemovalProposal(t, mocks.GovKeeper, k, ctx, 7, consumerId, govv1.StatusRejected, time.Time{})
 	decided := ctx.WithBlockTime(entry.MaturesAt.Add(time.Second))
 	expectSlashableStakeLookup(t, k, mocks, decided, validator, consAddr, 1000, math.NewInt(1))
 	mocks.MockStakingKeeper.EXPECT().
@@ -1079,7 +1059,7 @@ func TestSweepDeferralKeepsWithheldFeeRecordClaimable(t *testing.T) {
 	infractionParams := types.InfractionParameters{
 		Downtime: &types.SlashJailParameters{SlashFraction: math.LegacyNewDecWithPrec(5, 1)},
 	}
-	k, ctx, ctrl, _, _, providerAddr := setupSweepTest(t, infractionParams)
+	k, ctx, ctrl, mocks, _, providerAddr := setupSweepTest(t, infractionParams)
 	defer ctrl.Finish()
 
 	consAddr := providerAddr.ToSdkConsAddr()
@@ -1094,9 +1074,7 @@ func TestSweepDeferralKeepsWithheldFeeRecordClaimable(t *testing.T) {
 	}))
 
 	voteEnd := ctx.BlockTime().Add(time.Hour)
-	k.OverrideRemovalVoteForTest(func(_ sdk.Context, _ uint64) (uint64, time.Time, bool) {
-		return 7, voteEnd, true
-	})
+	seedRemovalVote(t, mocks.GovKeeper, k, ctx, 7, consumerId, voteEnd)
 	k.SweepPendingDowntimeSlashes(ctx)
 
 	entry, err := k.PendingDowntimeSlashes.Get(ctx, collections.Join3(consumerId, consAddr.Bytes(), int64(100)))
@@ -1109,9 +1087,7 @@ func TestSweepDeferralKeepsWithheldFeeRecordClaimable(t *testing.T) {
 	later := entry.MaturesAt.Add(time.Hour)
 	record.ExpiresAt = later
 	require.NoError(t, k.WithheldFeeRecords.Set(ctx, recordKey, record))
-	k.OverrideRemovalProposalStatusForTest(func(_ sdk.Context, _ uint64) (govv1.ProposalStatus, time.Time, bool) {
-		return govv1.StatusVotingPeriod, voteEnd, true
-	})
+	seedRemovalProposal(t, mocks.GovKeeper, k, ctx, 7, consumerId, govv1.StatusVotingPeriod, voteEnd)
 	k.SweepPendingDowntimeSlashes(ctx.WithBlockTime(entry.MaturesAt.Add(time.Second)))
 	record, err = k.WithheldFeeRecords.Get(ctx, recordKey)
 	require.NoError(t, err)

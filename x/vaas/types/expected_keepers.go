@@ -14,6 +14,7 @@ import (
 
 	sdk "github.com/cosmos/cosmos-sdk/types"
 	banktypes "github.com/cosmos/cosmos-sdk/x/bank/types"
+	govv1 "github.com/cosmos/cosmos-sdk/x/gov/types/v1"
 	stakingtypes "github.com/cosmos/cosmos-sdk/x/staking/types"
 )
 
@@ -128,4 +129,15 @@ type ChannelV2Keeper interface {
 type DistributionKeeper interface {
 	FundCommunityPool(ctx context.Context, amount sdk.Coins, sender sdk.AccAddress) error
 	DistributeFromFeePool(ctx context.Context, amount sdk.Coins, receiveAddr sdk.AccAddress) error
+}
+
+// GovKeeper is what the provider reads from x/gov to find the removal votes a
+// consumer-originated punishment waits out.
+type GovKeeper interface {
+	// IterateActiveProposals walks the proposals in their voting period in
+	// queue order, voting end then id; cb returns true to stop the walk.
+	IterateActiveProposals(ctx context.Context, cb func(proposal govv1.Proposal) (stop bool, err error)) error
+	// Proposal returns the proposal with the given id, or an error when gov
+	// has none.
+	Proposal(ctx context.Context, proposalId uint64) (govv1.Proposal, error)
 }

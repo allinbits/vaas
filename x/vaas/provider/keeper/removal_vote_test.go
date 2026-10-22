@@ -21,10 +21,10 @@ import (
 	"github.com/allinbits/vaas/x/vaas/provider/types"
 )
 
-// setupRemovalVoteScanTest wires a real gov keeper into the provider keeper so
-// the removal-vote scan runs against gov's own proposal store and
-// active-proposals queue, exactly as in production, rather than through the
-// test override.
+// setupRemovalVoteScanTest returns the harness's provider keeper together
+// with the in-memory gov keeper it reads proposals from, so the removal-vote
+// scan runs against gov's own proposal store and active-proposals queue,
+// exactly as in production.
 func setupRemovalVoteScanTest(t *testing.T) (
 	providerkeeper.Keeper, sdk.Context, *gomock.Controller, testkeeper.MockedKeepers, *govkeeper.Keeper,
 	stakingtypes.Validator, types.ProviderConsAddress,
@@ -36,11 +36,9 @@ func setupRemovalVoteScanTest(t *testing.T) (
 	k.SetInfractionParams(ctx, types.InfractionParameters{
 		Downtime: &types.SlashJailParameters{SlashFraction: math.LegacyNewDecWithPrec(5, 1)},
 	})
-	gk := testkeeper.NewInMemGovKeeper(t, params)
-	k.SetGovKeeper(gk)
 
 	validator, providerAddr := newSweepValidator(t)
-	return k, ctx, ctrl, mocks, gk, validator, providerAddr
+	return k, ctx, ctrl, mocks, mocks.GovKeeper, validator, providerAddr
 }
 
 // seedGovProposal stores a proposal carrying msgs in gov's collections in the
@@ -66,6 +64,39 @@ func seedGovProposal(t *testing.T, gk *govkeeper.Keeper, ctx sdk.Context, id uin
 	default:
 		require.NoError(t, gk.SetProposal(ctx, proposal))
 	}
+}
+
+// seedRemovalVote records a MsgRemoveConsumer proposal for the consumer in
+// its voting period, ending at votingEnd, in the gov keeper the provider
+// reads: the scan then finds a live removal vote for it.
+func seedRemovalVote(t *testing.T, gk *govkeeper.Keeper, k providerkeeper.Keeper, ctx sdk.Context, id, consumerID uint64, votingEnd time.Time) {
+	t.Helper()
+	seedGovProposal(t, gk, ctx, id, []sdk.Msg{&types.MsgRemoveConsumer{Signer: k.GetAuthority(), ConsumerId: consumerID}}, govv1.StatusVotingPeriod, votingEnd)
+}
+
+// removalVoteProposal builds a MsgRemoveConsumer proposal for the consumer in
+// its voting period, ending at votingEnd, without storing it: what a mocked
+// gov keeper hands the scan.
+func removalVoteProposal(t *testing.T, k providerkeeper.Keeper, ctx sdk.Context, id, consumerID uint64, votingEnd time.Time) govv1.Proposal {
+	t.Helper()
+	proposer := sdk.AccAddress(bytes.Repeat([]byte{0x01}, 20))
+	msgs := []sdk.Msg{&types.MsgRemoveConsumer{Signer: k.GetAuthority(), ConsumerId: consumerID}}
+	proposal, err := govv1.NewProposal(msgs, id, ctx.BlockTime(), ctx.BlockTime().Add(time.Hour), "", "remove", "remove", proposer)
+	require.NoError(t, err)
+	proposal.Status = govv1.StatusVotingPeriod
+	start := ctx.BlockTime()
+	proposal.VotingStartTime = &start
+	proposal.VotingEndTime = &votingEnd
+	return proposal
+}
+
+// seedRemovalProposal records a MsgRemoveConsumer proposal for the consumer
+// in the given status; a voting-period one ends at votingEnd. Recording an
+// id again replaces the proposal, which is how a test moves a vote to its
+// verdict or to a later end.
+func seedRemovalProposal(t *testing.T, gk *govkeeper.Keeper, k providerkeeper.Keeper, ctx sdk.Context, id, consumerID uint64, status govv1.ProposalStatus, votingEnd time.Time) {
+	t.Helper()
+	seedGovProposal(t, gk, ctx, id, []sdk.Msg{&types.MsgRemoveConsumer{Signer: k.GetAuthority(), ConsumerId: consumerID}}, status, votingEnd)
 }
 
 // TestRemovalVoteScanDefersBehindLiveRemovalProposal proves the production
