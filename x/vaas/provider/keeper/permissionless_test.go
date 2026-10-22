@@ -4,8 +4,9 @@ import (
 	"testing"
 	"time"
 
-	"github.com/cosmos/ibc-go/v10/modules/core/02-client/types"
 	"github.com/stretchr/testify/require"
+
+	"github.com/cosmos/ibc-go/v10/modules/core/02-client/types"
 
 	testkeeper "github.com/allinbits/vaas/testutil/keeper"
 	providertypes "github.com/allinbits/vaas/x/vaas/provider/types"

@@ -5,6 +5,8 @@ import (
 	"testing"
 	"time"
 
+	"github.com/stretchr/testify/require"
+
 	tmproto "github.com/cometbft/cometbft/proto/tendermint/types"
 	cmtversion "github.com/cometbft/cometbft/proto/tendermint/version"
 	tmtypes "github.com/cometbft/cometbft/types"
@@ -14,7 +16,6 @@ import (
 	ibctmtypes "github.com/cosmos/ibc-go/v10/modules/light-clients/07-tendermint"
 
 	sdk "github.com/cosmos/cosmos-sdk/types"
-	"github.com/stretchr/testify/require"
 
 	cryptoutil "github.com/allinbits/vaas/testutil/crypto"
 	"github.com/allinbits/vaas/x/vaas/provider/types"
@@ -79,7 +80,7 @@ func makeValidIBCTMHeader(t *testing.T, chainID string, height int64, valSet *tm
 	}
 }
 
-func makeValidDoubleVoteEvidenceAndHeader(t *testing.T, chainID string, height int64) (*tmproto.DuplicateVoteEvidence, *ibctmtypes.Header) {
+func makeValidDoubleVoteEvidenceAndHeader(t *testing.T, chainID string, height int64) (*tmproto.DuplicateVoteEvidence, *ibctmtypes.Header) { //nolint:unparam // every scenario passes the same value; the helper stays generic
 	t.Helper()
 
 	blockTime := time.Now().UTC()

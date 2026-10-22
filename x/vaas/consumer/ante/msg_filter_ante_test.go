@@ -5,14 +5,17 @@ import (
 	"context"
 	"testing"
 
+	"github.com/stretchr/testify/require"
+	protov2 "google.golang.org/protobuf/proto"
+
+	channeltypes "github.com/cosmos/ibc-go/v10/modules/core/04-channel/types"
+
 	errorsmod "cosmossdk.io/errors"
+
 	sdk "github.com/cosmos/cosmos-sdk/types"
 	"github.com/cosmos/cosmos-sdk/x/authz"
 	banktypes "github.com/cosmos/cosmos-sdk/x/bank/types"
 	govtypes "github.com/cosmos/cosmos-sdk/x/gov/types/v1"
-	channeltypes "github.com/cosmos/ibc-go/v10/modules/core/04-channel/types"
-	"github.com/stretchr/testify/require"
-	protov2 "google.golang.org/protobuf/proto"
 
 	consumertypes "github.com/allinbits/vaas/x/vaas/consumer/types"
 )

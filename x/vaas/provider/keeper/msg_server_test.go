@@ -6,13 +6,18 @@ import (
 	"testing"
 	"time"
 
+	"github.com/stretchr/testify/require"
+	"go.uber.org/mock/gomock"
+
 	tmproto "github.com/cometbft/cometbft/proto/tendermint/types"
 	cmtversion "github.com/cometbft/cometbft/proto/tendermint/version"
 	tmtypes "github.com/cometbft/cometbft/types"
 	cometversion "github.com/cometbft/cometbft/version"
+
+	clienttypes "github.com/cosmos/ibc-go/v10/modules/core/02-client/types"
+	channeltypesv2 "github.com/cosmos/ibc-go/v10/modules/core/04-channel/v2/types"
+	ibcexported "github.com/cosmos/ibc-go/v10/modules/core/exported"
 	ibctmtypes "github.com/cosmos/ibc-go/v10/modules/light-clients/07-tendermint"
-	"github.com/stretchr/testify/require"
-	"go.uber.org/mock/gomock"
 
 	"cosmossdk.io/collections"
 	"cosmossdk.io/math"
@@ -23,9 +28,6 @@ import (
 	authtypes "github.com/cosmos/cosmos-sdk/x/auth/types"
 	disttypes "github.com/cosmos/cosmos-sdk/x/distribution/types"
 	stakingtypes "github.com/cosmos/cosmos-sdk/x/staking/types"
-	clienttypes "github.com/cosmos/ibc-go/v10/modules/core/02-client/types"
-	channeltypesv2 "github.com/cosmos/ibc-go/v10/modules/core/04-channel/v2/types"
-	ibcexported "github.com/cosmos/ibc-go/v10/modules/core/exported"
 
 	cryptoutil "github.com/allinbits/vaas/testutil/crypto"
 	testkeeper "github.com/allinbits/vaas/testutil/keeper"
@@ -50,6 +52,8 @@ func validSubmitter() string {
 	setupKeeperBech32Cfg()
 	return sdk.AccAddress(make([]byte, 20)).String()
 }
+
+const testChainID1 = "chainId-1"
 
 func TestCreateConsumer(t *testing.T) {
 	providerKeeper, ctx, ctrl, mocks := testkeeper.GetProviderKeeperAndCtx(t, testkeeper.NewInMemKeeperParams(t))
@@ -169,12 +173,12 @@ func TestUpdateConsumer(t *testing.T) {
 	// try to update a non-existing consumer
 	_, err := msgServer.UpdateConsumer(ctx,
 		&providertypes.MsgUpdateConsumer{
-			Owner: "owner", ConsumerId: 0, NewOwnerAddress: "cosmos1dkas8mu4kyhl5jrh4nzvm65qz588hy9qcz08la",
+			Owner: "owner", ConsumerId: 0, NewOwnerAddress: declOwner,
 		})
 	require.Error(t, err, "cannot update consumer chain")
 
 	// create a chain before updating it
-	chainId := "chainId-1"
+	chainId := testChainID1
 	createConsumerResponse, err := msgServer.CreateConsumer(ctx,
 		&providertypes.MsgCreateConsumer{
 			Submitter: "submitter", ChainId: chainId,
@@ -190,7 +194,7 @@ func TestUpdateConsumer(t *testing.T) {
 	mocks.MockAccountKeeper.EXPECT().AddressCodec().Return(address.NewBech32Codec("cosmos")).AnyTimes()
 	_, err = msgServer.UpdateConsumer(ctx,
 		&providertypes.MsgUpdateConsumer{
-			Owner: "wrong owner", ConsumerId: consumerId, NewOwnerAddress: "cosmos1dkas8mu4kyhl5jrh4nzvm65qz588hy9qcz08la",
+			Owner: "wrong owner", ConsumerId: consumerId, NewOwnerAddress: declOwner,
 		})
 	require.Error(t, err, "expected owner address")
 
@@ -213,7 +217,7 @@ func TestUpdateConsumer(t *testing.T) {
 		Metadata:    "metadata2",
 	}
 
-	expectedOwnerAddress := "cosmos1dkas8mu4kyhl5jrh4nzvm65qz588hy9qcz08la"
+	expectedOwnerAddress := declOwner
 	_, err = msgServer.UpdateConsumer(ctx,
 		&providertypes.MsgUpdateConsumer{
 			Owner: "submitter", ConsumerId: consumerId, NewOwnerAddress: expectedOwnerAddress,
@@ -243,8 +247,8 @@ func TestUpdateConsumerDuplicateChainId(t *testing.T) {
 	msgServer := providerkeeper.NewMsgServerImpl(&providerKeeper)
 
 	// create a chain that register chainId-1
-	chainId1 := "chainId-1"
-	createConsumerResponse, err := msgServer.CreateConsumer(ctx,
+	chainId1 := testChainID1
+	_, err := msgServer.CreateConsumer(ctx,
 		&providertypes.MsgCreateConsumer{
 			Submitter: "submitter", ChainId: chainId1,
 			Metadata: providertypes.ConsumerMetadata{
@@ -257,7 +261,7 @@ func TestUpdateConsumerDuplicateChainId(t *testing.T) {
 
 	// create a chain that register chainId-2
 	chainId2 := "chainId2-1"
-	createConsumerResponse, err = msgServer.CreateConsumer(ctx,
+	createConsumerResponse, err := msgServer.CreateConsumer(ctx,
 		&providertypes.MsgCreateConsumer{
 			Submitter: "submitter", ChainId: chainId2,
 			Metadata: providertypes.ConsumerMetadata{
@@ -270,7 +274,7 @@ func TestUpdateConsumerDuplicateChainId(t *testing.T) {
 	consumerId2 := createConsumerResponse.ConsumerId
 
 	// assert that comsumerId2 cannot use a registered chain id
-	expectedChainId := "chainId-1"
+	expectedChainId := testChainID1
 	_, err = msgServer.UpdateConsumer(ctx,
 		&providertypes.MsgUpdateConsumer{
 			Owner: "submitter", ConsumerId: consumerId2,
@@ -416,7 +420,7 @@ func TestSubmitConsumerDoubleVotingHappyPath(t *testing.T) {
 		found = true
 		var sawConsumerId, sawChainId bool
 		for _, attr := range ev.Attributes {
-			if attr.Key == "consumer_id" && attr.Value == "0" {
+			if attr.Key == providertypes.AttributeConsumerId && attr.Value == "0" {
 				sawConsumerId = true
 			}
 			if attr.Key == "consumer_chain_id" && attr.Value == chainID {
@@ -1207,7 +1211,7 @@ func TestUpdateConsumerLaunchedOnlyMetadata(t *testing.T) {
 	require.ErrorIs(t, err, providertypes.ErrInvalidPhase)
 
 	// owner transfer should succeed on launched chain
-	newOwner := "cosmos1dkas8mu4kyhl5jrh4nzvm65qz588hy9qcz08la"
+	newOwner := declOwner
 	_, err = msgServer.UpdateConsumer(ctx,
 		&providertypes.MsgUpdateConsumer{
 			Owner:           "submitter",
@@ -1245,7 +1249,7 @@ func TestUpdateConsumerPreLaunchAllowsAll(t *testing.T) {
 	// create a consumer chain (REGISTERED phase)
 	createResp, err := msgServer.CreateConsumer(ctx,
 		&providertypes.MsgCreateConsumer{
-			Submitter: "submitter", ChainId: "chainId-1",
+			Submitter: "submitter", ChainId: testChainID1,
 			Metadata: providertypes.ConsumerMetadata{
 				Name:        "name",
 				Description: "description",
@@ -1262,7 +1266,7 @@ func TestUpdateConsumerPreLaunchAllowsAll(t *testing.T) {
 			Owner:           "submitter",
 			ConsumerId:      consumerId,
 			NewChainId:      "newChainId-1",
-			NewOwnerAddress: "cosmos1dkas8mu4kyhl5jrh4nzvm65qz588hy9qcz08la",
+			NewOwnerAddress: declOwner,
 			Metadata: &providertypes.ConsumerMetadata{
 				Name:        "new-name",
 				Description: "new-description",
@@ -1278,7 +1282,7 @@ func TestUpdateConsumerPreLaunchAllowsAll(t *testing.T) {
 	// verify owner updated
 	owner, err := providerKeeper.GetConsumerOwnerAddress(ctx, consumerId)
 	require.NoError(t, err)
-	require.Equal(t, "cosmos1dkas8mu4kyhl5jrh4nzvm65qz588hy9qcz08la", owner)
+	require.Equal(t, declOwner, owner)
 }
 
 func TestCreateConsumerEventsIncludeInitParams(t *testing.T) {
@@ -1402,6 +1406,7 @@ func TestFundConsumerFeePool(t *testing.T) {
 				regularSuccessMocks(mocks, ctx, poolAddr, coins)
 			},
 			postCheck: func(t *testing.T, k providerkeeper.Keeper, ctx sdk.Context, consumerId uint64) {
+				t.Helper()
 				shares, _ := k.ConsumerFeePoolShares.Get(ctx, collections.Join3(consumerId, "uphoton", alice))
 				require.Equal(t, math.NewInt(200_000), shares)
 			},
@@ -1450,6 +1455,7 @@ func TestFundConsumerFeePool(t *testing.T) {
 					ctx, coins, poolAddr).Return(nil)
 			},
 			postCheck: func(t *testing.T, k providerkeeper.Keeper, ctx sdk.Context, consumerId uint64) {
+				t.Helper()
 				shares, _ := k.ConsumerFeePoolShares.Get(ctx, collections.Join3(consumerId, "uphoton", distrAddr))
 				require.Equal(t, math.NewInt(200_000), shares)
 			},
@@ -1696,6 +1702,7 @@ func TestWithdrawConsumerFeePool(t *testing.T) {
 					ctx, providertypes.ModuleName, alice, sdk.NewCoins(sdk.NewInt64Coin("uphoton", 29))).Return(nil)
 			},
 			postCheck: func(t *testing.T, resp *providertypes.MsgWithdrawConsumerFeePoolResponse) {
+				t.Helper()
 				require.Equal(t, "29uphoton", resp.Amount.String())
 			},
 		},
@@ -2094,7 +2101,7 @@ func TestUpdateConsumerRejectsPausedConsumer(t *testing.T) {
 
 	msgServer := providerkeeper.NewMsgServerImpl(&providerKeeper)
 
-	owner := "cosmos1dkas8mu4kyhl5jrh4nzvm65qz588hy9qcz08la"
+	owner := declOwner
 	consumerId := providerKeeper.FetchAndIncrementConsumerId(ctx)
 	providerKeeper.SetConsumerOwnerAddress(ctx, consumerId, owner)
 	providerKeeper.SetConsumerPhase(ctx, consumerId, providertypes.CONSUMER_PHASE_PAUSED)

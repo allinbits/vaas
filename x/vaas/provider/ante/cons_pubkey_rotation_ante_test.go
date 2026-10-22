@@ -4,15 +4,17 @@ import (
 	"bytes"
 	"testing"
 
+	"github.com/stretchr/testify/require"
+	protov2 "google.golang.org/protobuf/proto"
+
 	errorsmod "cosmossdk.io/errors"
+
 	codectypes "github.com/cosmos/cosmos-sdk/codec/types"
 	cryptotypes "github.com/cosmos/cosmos-sdk/crypto/types"
 	sdk "github.com/cosmos/cosmos-sdk/types"
 	"github.com/cosmos/cosmos-sdk/x/authz"
 	banktypes "github.com/cosmos/cosmos-sdk/x/bank/types"
 	stakingtypes "github.com/cosmos/cosmos-sdk/x/staking/types"
-	"github.com/stretchr/testify/require"
-	protov2 "google.golang.org/protobuf/proto"
 
 	cryptotestutil "github.com/allinbits/vaas/testutil/crypto"
 	providertypes "github.com/allinbits/vaas/x/vaas/provider/types"

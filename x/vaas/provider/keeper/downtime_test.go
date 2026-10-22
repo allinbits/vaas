@@ -9,16 +9,16 @@ import (
 	"github.com/stretchr/testify/require"
 	"go.uber.org/mock/gomock"
 
+	tmtypes "github.com/cometbft/cometbft/types"
+
+	ibctmtypes "github.com/cosmos/ibc-go/v10/modules/light-clients/07-tendermint"
+
 	"cosmossdk.io/collections"
 	"cosmossdk.io/math"
 
 	cryptocodec "github.com/cosmos/cosmos-sdk/crypto/codec"
-	ibctmtypes "github.com/cosmos/ibc-go/v10/modules/light-clients/07-tendermint"
-
 	sdk "github.com/cosmos/cosmos-sdk/types"
 	stakingtypes "github.com/cosmos/cosmos-sdk/x/staking/types"
-
-	tmtypes "github.com/cometbft/cometbft/types"
 
 	testkeeper "github.com/allinbits/vaas/testutil/keeper"
 	providerkeeper "github.com/allinbits/vaas/x/vaas/provider/keeper"
@@ -115,7 +115,7 @@ func TestHandleConsumerDowntimeRejectsEvidenceTooOldToStayChallengeable(t *testi
 	const trustingPeriod = 200 * time.Hour
 
 	evidenceFor := func(providerAddr types.ProviderConsAddress) vaastypes.EvidencePacketData {
-		return vaastypes.NewEvidencePacketData(sdk.ConsAddress(providerAddr.ToSdkConsAddr()), 93, []byte{0x3F}, 8, 8, math.LegacyMustNewDecFromStr("0.5"))
+		return vaastypes.NewEvidencePacketData(providerAddr.ToSdkConsAddr(), 93, []byte{0x3F}, 8, 8, math.LegacyMustNewDecFromStr("0.5"))
 	}
 
 	t.Run("40h old: 40h + 168h reaches past the 200h trusting period", func(t *testing.T) {
@@ -146,7 +146,7 @@ func TestHandleConsumerDowntimeRejectsEvidenceTooOldToStayChallengeable(t *testi
 // HandleConsumerDowntime reads; DoubleSign/Downtime slash-jail params are
 // left nil since the downtime path queues a PendingDowntimeSlash instead of
 // slashing directly.
-func downtimeParams(window int64, minSigned string, gracePeriod, challengeWindow, maxAge time.Duration) types.InfractionParameters {
+func downtimeParams(window int64, minSigned string, gracePeriod, challengeWindow, maxAge time.Duration) types.InfractionParameters { //nolint:unparam // every scenario passes the same value; the helper stays generic
 	return types.InfractionParameters{
 		SignedBlocksWindow:      window,
 		MinSignedPerWindow:      math.LegacyMustNewDecFromStr(minSigned),
@@ -171,7 +171,7 @@ func TestHandleConsumerDowntimeAcceptsAndQueuesPricedSlash(t *testing.T) {
 
 	consAddr := providerAddr.ToSdkConsAddr()
 	evidencePacket := vaastypes.NewEvidencePacketData(
-		sdk.ConsAddress(consAddr),
+		consAddr,
 		93,
 		[]byte{0x3F}, // 6 of 8 missed; maxMissed for window=8,minSigned=0.5 is 4
 		8,
@@ -224,7 +224,7 @@ func TestHandleConsumerDowntimeCurrentEpochIsFeeExcluded(t *testing.T) {
 
 	consAddr := providerAddr.ToSdkConsAddr()
 	evidencePacket := vaastypes.NewEvidencePacketData(
-		sdk.ConsAddress(consAddr), 93, []byte{0x3F}, 8, 8, math.LegacyMustNewDecFromStr("0.5"),
+		consAddr, 93, []byte{0x3F}, 8, 8, math.LegacyMustNewDecFromStr("0.5"),
 	)
 
 	require.NoError(t, providerKeeper.HandleConsumerEvidencePacket(ctx, consumerId, evidencePacket))
@@ -242,7 +242,7 @@ func TestHandleConsumerDowntimeRejectsBelowThreshold(t *testing.T) {
 	ctx = ctx.WithBlockTime(windowEndTime)
 
 	evidencePacket := vaastypes.NewEvidencePacketData(
-		sdk.ConsAddress(providerAddr.ToSdkConsAddr()),
+		providerAddr.ToSdkConsAddr(),
 		93,
 		[]byte{0x07}, // 3 of 8 missed; maxMissed is 4, so this does not qualify
 		8,
@@ -269,7 +269,7 @@ func TestHandleConsumerDowntimeRejectsExactlyAtThreshold(t *testing.T) {
 	ctx = ctx.WithBlockTime(windowEndTime)
 
 	evidencePacket := vaastypes.NewEvidencePacketData(
-		sdk.ConsAddress(providerAddr.ToSdkConsAddr()),
+		providerAddr.ToSdkConsAddr(),
 		93,
 		[]byte{0x0F}, // exactly 4 of 8 missed == maxMissed: at the threshold, not past it
 		8,
@@ -319,7 +319,7 @@ func TestHandleConsumerDowntimeRejectsUnacceptableParams(t *testing.T) {
 	// Echoes a window (10) that matches neither the current params (8) nor
 	// any recorded previous params.
 	evidencePacket := vaastypes.NewEvidencePacketData(
-		sdk.ConsAddress(providerAddr.ToSdkConsAddr()),
+		providerAddr.ToSdkConsAddr(),
 		93,
 		[]byte{0x3F},
 		8,
@@ -351,12 +351,12 @@ func TestHandleConsumerDowntimeAcceptsMultipleDisjointPendingWindows(t *testing.
 
 	consAddr := providerAddr.ToSdkConsAddr()
 	// windowStart 93, span 8 => window end 100.
-	firstPacket := vaastypes.NewEvidencePacketData(sdk.ConsAddress(consAddr), 93, []byte{0x3F}, 8, 8, math.LegacyMustNewDecFromStr("0.5"))
+	firstPacket := vaastypes.NewEvidencePacketData(consAddr, 93, []byte{0x3F}, 8, 8, math.LegacyMustNewDecFromStr("0.5"))
 	require.NoError(t, providerKeeper.HandleConsumerEvidencePacket(ctx, consumerId, firstPacket))
 
 	// windowStart 101 > 100: disjoint from the first, accepted while it is
 	// still pending.
-	secondPacket := vaastypes.NewEvidencePacketData(sdk.ConsAddress(consAddr), 101, []byte{0x3F}, 8, 8, math.LegacyMustNewDecFromStr("0.5"))
+	secondPacket := vaastypes.NewEvidencePacketData(consAddr, 101, []byte{0x3F}, 8, 8, math.LegacyMustNewDecFromStr("0.5"))
 	require.NoError(t, providerKeeper.HandleConsumerEvidencePacket(ctx, consumerId, secondPacket))
 
 	first, err := providerKeeper.PendingDowntimeSlashes.Get(ctx, collections.Join3(consumerId, consAddr.Bytes(), int64(100)))
@@ -389,19 +389,19 @@ func TestHandleConsumerDowntimeAcceptsDisjointWindowsOutOfOrder(t *testing.T) {
 
 	consAddr := providerAddr.ToSdkConsAddr()
 	// The later window [101, 108] arrives first.
-	laterPacket := vaastypes.NewEvidencePacketData(sdk.ConsAddress(consAddr), 101, []byte{0x3F}, 8, 8, math.LegacyMustNewDecFromStr("0.5"))
+	laterPacket := vaastypes.NewEvidencePacketData(consAddr, 101, []byte{0x3F}, 8, 8, math.LegacyMustNewDecFromStr("0.5"))
 	require.NoError(t, providerKeeper.HandleConsumerEvidencePacket(ctx, consumerId, laterPacket))
 
 	// A window [95, 102] intersecting the accepted [101, 108] from below is
 	// rejected.
-	intersecting := vaastypes.NewEvidencePacketData(sdk.ConsAddress(consAddr), 95, []byte{0x3F}, 8, 8, math.LegacyMustNewDecFromStr("0.5"))
+	intersecting := vaastypes.NewEvidencePacketData(consAddr, 95, []byte{0x3F}, 8, 8, math.LegacyMustNewDecFromStr("0.5"))
 	err := providerKeeper.HandleConsumerEvidencePacket(ctx, consumerId, intersecting)
 	require.Error(t, err)
 	require.Contains(t, err.Error(), "already accepted")
 
 	// The earlier, disjoint window [93, 100] is still accepted after the
 	// later one.
-	earlierPacket := vaastypes.NewEvidencePacketData(sdk.ConsAddress(consAddr), 93, []byte{0x3F}, 8, 8, math.LegacyMustNewDecFromStr("0.5"))
+	earlierPacket := vaastypes.NewEvidencePacketData(consAddr, 93, []byte{0x3F}, 8, 8, math.LegacyMustNewDecFromStr("0.5"))
 	require.NoError(t, providerKeeper.HandleConsumerEvidencePacket(ctx, consumerId, earlierPacket))
 
 	later, err := providerKeeper.PendingDowntimeSlashes.Get(ctx, collections.Join3(consumerId, consAddr.Bytes(), int64(108)))
@@ -441,13 +441,13 @@ func TestHandleConsumerDowntimeRejectsOverlappingWhilePending(t *testing.T) {
 	mocks.MockPhotonKeeper.EXPECT().ConversionRate(ctx).Return(math.LegacyNewDec(2), nil)
 
 	consAddr := providerAddr.ToSdkConsAddr()
-	firstPacket := vaastypes.NewEvidencePacketData(sdk.ConsAddress(consAddr), 93, []byte{0x3F}, 8, 8, math.LegacyMustNewDecFromStr("0.5"))
+	firstPacket := vaastypes.NewEvidencePacketData(consAddr, 93, []byte{0x3F}, 8, 8, math.LegacyMustNewDecFromStr("0.5"))
 	require.NoError(t, providerKeeper.HandleConsumerEvidencePacket(ctx, consumerId, firstPacket))
 
 	// A second window overlapping the first (start 95 <= window end 100) is
 	// rejected while the first slash is still pending; ConversionRate is not
 	// called again (verified by the single EXPECT() above and ctrl.Finish()).
-	secondPacket := vaastypes.NewEvidencePacketData(sdk.ConsAddress(consAddr), 95, []byte{0x3F}, 8, 8, math.LegacyMustNewDecFromStr("0.5"))
+	secondPacket := vaastypes.NewEvidencePacketData(consAddr, 95, []byte{0x3F}, 8, 8, math.LegacyMustNewDecFromStr("0.5"))
 	err := providerKeeper.HandleConsumerEvidencePacket(ctx, consumerId, secondPacket)
 	require.Error(t, err)
 	require.Contains(t, err.Error(), "already accepted")
@@ -469,7 +469,7 @@ func TestHandleConsumerDowntimeRejectsOverlappingAcceptedWindow(t *testing.T) {
 	// windowStart 93, span 8 => WindowEndHeight (window end) 100.
 	pendingKey := collections.Join3(consumerId, consAddr.Bytes(), int64(100))
 
-	firstPacket := vaastypes.NewEvidencePacketData(sdk.ConsAddress(consAddr), 93, []byte{0x3F}, 8, 8, math.LegacyMustNewDecFromStr("0.5"))
+	firstPacket := vaastypes.NewEvidencePacketData(consAddr, 93, []byte{0x3F}, 8, 8, math.LegacyMustNewDecFromStr("0.5"))
 	require.NoError(t, providerKeeper.HandleConsumerEvidencePacket(ctx, consumerId, firstPacket))
 
 	// Simulate the pending slash maturing and executing: the BeginBlock sweep
@@ -480,20 +480,20 @@ func TestHandleConsumerDowntimeRejectsOverlappingAcceptedWindow(t *testing.T) {
 
 	// An exact duplicate of the accepted window (same window end 100) is
 	// rejected even though nothing is pending anymore.
-	duplicate := vaastypes.NewEvidencePacketData(sdk.ConsAddress(consAddr), 93, []byte{0x3F}, 8, 8, math.LegacyMustNewDecFromStr("0.5"))
+	duplicate := vaastypes.NewEvidencePacketData(consAddr, 93, []byte{0x3F}, 8, 8, math.LegacyMustNewDecFromStr("0.5"))
 	err := providerKeeper.HandleConsumerEvidencePacket(ctx, consumerId, duplicate)
 	require.Error(t, err)
 	require.Contains(t, err.Error(), "already accepted")
 
 	// A window [95, 102] starting inside the accepted [93, 100] and ending
 	// beyond it is likewise rejected.
-	overlapping := vaastypes.NewEvidencePacketData(sdk.ConsAddress(consAddr), 95, []byte{0x3F}, 8, 8, math.LegacyMustNewDecFromStr("0.5"))
+	overlapping := vaastypes.NewEvidencePacketData(consAddr, 95, []byte{0x3F}, 8, 8, math.LegacyMustNewDecFromStr("0.5"))
 	err = providerKeeper.HandleConsumerEvidencePacket(ctx, consumerId, overlapping)
 	require.Error(t, err)
 	require.Contains(t, err.Error(), "already accepted")
 
 	// A later, disjoint window (start 101 > 100) is accepted.
-	later := vaastypes.NewEvidencePacketData(sdk.ConsAddress(consAddr), 101, []byte{0x3F}, 8, 8, math.LegacyMustNewDecFromStr("0.5"))
+	later := vaastypes.NewEvidencePacketData(consAddr, 101, []byte{0x3F}, 8, 8, math.LegacyMustNewDecFromStr("0.5"))
 	require.NoError(t, providerKeeper.HandleConsumerEvidencePacket(ctx, consumerId, later))
 }
 
@@ -515,11 +515,11 @@ func TestHandleConsumerDowntimeRejectsWindowStartingAtAcceptedEnd(t *testing.T) 
 
 	consAddr := providerAddr.ToSdkConsAddr()
 	// windowStart 93, span 8 => window end 100.
-	accepted := vaastypes.NewEvidencePacketData(sdk.ConsAddress(consAddr), 93, []byte{0x3F}, 8, 8, math.LegacyMustNewDecFromStr("0.5"))
+	accepted := vaastypes.NewEvidencePacketData(consAddr, 93, []byte{0x3F}, 8, 8, math.LegacyMustNewDecFromStr("0.5"))
 	require.NoError(t, providerKeeper.HandleConsumerEvidencePacket(ctx, consumerId, accepted))
 
 	// [100, 107] intersects the accepted [93, 100] only at height 100.
-	touching := vaastypes.NewEvidencePacketData(sdk.ConsAddress(consAddr), 100, []byte{0x3F}, 8, 8, math.LegacyMustNewDecFromStr("0.5"))
+	touching := vaastypes.NewEvidencePacketData(consAddr, 100, []byte{0x3F}, 8, 8, math.LegacyMustNewDecFromStr("0.5"))
 	err := providerKeeper.HandleConsumerEvidencePacket(ctx, consumerId, touching)
 	require.Error(t, err)
 	require.Contains(t, err.Error(), "already accepted")
@@ -543,11 +543,11 @@ func TestHandleConsumerDowntimeRejectsWindowEndingAtAcceptedStart(t *testing.T) 
 
 	consAddr := providerAddr.ToSdkConsAddr()
 	// windowStart 101, span 8 => window end 108.
-	accepted := vaastypes.NewEvidencePacketData(sdk.ConsAddress(consAddr), 101, []byte{0x3F}, 8, 8, math.LegacyMustNewDecFromStr("0.5"))
+	accepted := vaastypes.NewEvidencePacketData(consAddr, 101, []byte{0x3F}, 8, 8, math.LegacyMustNewDecFromStr("0.5"))
 	require.NoError(t, providerKeeper.HandleConsumerEvidencePacket(ctx, consumerId, accepted))
 
 	// [94, 101] intersects the accepted [101, 108] only at height 101.
-	touching := vaastypes.NewEvidencePacketData(sdk.ConsAddress(consAddr), 94, []byte{0x3F}, 8, 8, math.LegacyMustNewDecFromStr("0.5"))
+	touching := vaastypes.NewEvidencePacketData(consAddr, 94, []byte{0x3F}, 8, 8, math.LegacyMustNewDecFromStr("0.5"))
 	err := providerKeeper.HandleConsumerEvidencePacket(ctx, consumerId, touching)
 	require.Error(t, err)
 	require.Contains(t, err.Error(), "already accepted")
@@ -563,7 +563,7 @@ func TestHandleConsumerDowntimeRejectsStaleEvidence(t *testing.T) {
 	// The evidence is submitted 2h after the window ended; max age is 1h.
 	ctx = ctx.WithBlockTime(windowEndTime.Add(2 * time.Hour))
 
-	evidencePacket := vaastypes.NewEvidencePacketData(sdk.ConsAddress(providerAddr.ToSdkConsAddr()), 93, []byte{0x3F}, 8, 8, math.LegacyMustNewDecFromStr("0.5"))
+	evidencePacket := vaastypes.NewEvidencePacketData(providerAddr.ToSdkConsAddr(), 93, []byte{0x3F}, 8, 8, math.LegacyMustNewDecFromStr("0.5"))
 
 	err := providerKeeper.HandleConsumerEvidencePacket(ctx, consumerId, evidencePacket)
 	require.Error(t, err)
@@ -580,7 +580,7 @@ func TestHandleConsumerDowntimeRejectsDuringGracePeriod(t *testing.T) {
 	defer ctrl.Finish()
 	ctx = ctx.WithBlockTime(windowEndTime)
 
-	evidencePacket := vaastypes.NewEvidencePacketData(sdk.ConsAddress(providerAddr.ToSdkConsAddr()), 93, []byte{0x3F}, 8, 8, math.LegacyMustNewDecFromStr("0.5"))
+	evidencePacket := vaastypes.NewEvidencePacketData(providerAddr.ToSdkConsAddr(), 93, []byte{0x3F}, 8, 8, math.LegacyMustNewDecFromStr("0.5"))
 
 	err := providerKeeper.HandleConsumerEvidencePacket(ctx, consumerId, evidencePacket)
 	require.Error(t, err)
@@ -599,7 +599,7 @@ func TestHandleConsumerDowntimeGracePeriodDisabledSkipsCheck(t *testing.T) {
 	providerKeeper.SetEpochShareRecord(ctx, consumerId, windowEndTime, math.NewInt(1000))
 	mocks.MockPhotonKeeper.EXPECT().ConversionRate(ctx).Return(math.LegacyNewDec(2), nil)
 
-	evidencePacket := vaastypes.NewEvidencePacketData(sdk.ConsAddress(providerAddr.ToSdkConsAddr()), 93, []byte{0x3F}, 8, 8, math.LegacyMustNewDecFromStr("0.5"))
+	evidencePacket := vaastypes.NewEvidencePacketData(providerAddr.ToSdkConsAddr(), 93, []byte{0x3F}, 8, 8, math.LegacyMustNewDecFromStr("0.5"))
 
 	err := providerKeeper.HandleConsumerEvidencePacket(ctx, consumerId, evidencePacket)
 	require.NoError(t, err)
@@ -616,7 +616,7 @@ func TestHandleConsumerDowntimeRejectsUnanchorableWindow(t *testing.T) {
 		return time.Time{}, fmt.Errorf("cannot anchor evidence window time")
 	})
 
-	evidencePacket := vaastypes.NewEvidencePacketData(sdk.ConsAddress(providerAddr.ToSdkConsAddr()), 93, []byte{0x3F}, 8, 8, math.LegacyMustNewDecFromStr("0.5"))
+	evidencePacket := vaastypes.NewEvidencePacketData(providerAddr.ToSdkConsAddr(), 93, []byte{0x3F}, 8, 8, math.LegacyMustNewDecFromStr("0.5"))
 
 	err := providerKeeper.HandleConsumerEvidencePacket(ctx, consumerId, evidencePacket)
 	require.Error(t, err)
@@ -816,7 +816,7 @@ func TestHandleConsumerDowntimeAcrossGovernanceSLAChange(t *testing.T) {
 	// this asserts both halves -- acceptance of the superseded params, and that
 	// the packet's own echoed values drive the threshold.
 	inFlight := vaastypes.NewEvidencePacketData(
-		sdk.ConsAddress(consAddr), 93, []byte{0x3F}, 8, 8, math.LegacyMustNewDecFromStr("0.5"),
+		consAddr, 93, []byte{0x3F}, 8, 8, math.LegacyMustNewDecFromStr("0.5"),
 	)
 	require.NoError(t, providerKeeper.HandleConsumerEvidencePacket(ctx, consumerId, inFlight))
 	has, err := providerKeeper.PendingDowntimeSlashes.Has(ctx, collections.Join3(consumerId, consAddr.Bytes(), inFlight.WindowEndHeight))
@@ -826,7 +826,7 @@ func TestHandleConsumerDowntimeAcrossGovernanceSLAChange(t *testing.T) {
 	// A disjoint window computed under the new SLA is accepted as well: 9
 	// missed of 16 exceeds the new maxMissed of 8.
 	underNewSLA := vaastypes.NewEvidencePacketData(
-		sdk.ConsAddress(consAddr), 201, []byte{0xFF, 0x01}, 16, 16, math.LegacyMustNewDecFromStr("0.5"),
+		consAddr, 201, []byte{0xFF, 0x01}, 16, 16, math.LegacyMustNewDecFromStr("0.5"),
 	)
 	require.NoError(t, providerKeeper.HandleConsumerEvidencePacket(ctx, consumerId, underNewSLA))
 	has, err = providerKeeper.PendingDowntimeSlashes.Has(ctx, collections.Join3(consumerId, consAddr.Bytes(), underNewSLA.WindowEndHeight))
@@ -839,7 +839,7 @@ func TestHandleConsumerDowntimeAcrossGovernanceSLAChange(t *testing.T) {
 	horizon := newSLA.DowntimeEvidenceMaxAge + newSLA.DowntimeChallengeWindow
 	stale := ctx.WithBlockTime(ctx.BlockTime().Add(horizon + time.Second))
 	late := vaastypes.NewEvidencePacketData(
-		sdk.ConsAddress(consAddr), 301, []byte{0x3F}, 8, 8, math.LegacyMustNewDecFromStr("0.5"),
+		consAddr, 301, []byte{0x3F}, 8, 8, math.LegacyMustNewDecFromStr("0.5"),
 	)
 	err = providerKeeper.HandleConsumerEvidencePacket(stale, consumerId, late)
 	require.ErrorContains(t, err, "unacceptable downtime params")

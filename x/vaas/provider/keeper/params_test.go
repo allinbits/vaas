@@ -4,14 +4,15 @@ import (
 	"testing"
 	"time"
 
-	testkeeper "github.com/allinbits/vaas/testutil/keeper"
-	providertypes "github.com/allinbits/vaas/x/vaas/provider/types"
-	vaastypes "github.com/allinbits/vaas/x/vaas/types"
 	"github.com/stretchr/testify/require"
 
 	"cosmossdk.io/math"
 
 	sdk "github.com/cosmos/cosmos-sdk/types"
+
+	testkeeper "github.com/allinbits/vaas/testutil/keeper"
+	providertypes "github.com/allinbits/vaas/x/vaas/provider/types"
+	vaastypes "github.com/allinbits/vaas/x/vaas/types"
 )
 
 // TestParams tests the getting/setting of the VAAS provider module params.

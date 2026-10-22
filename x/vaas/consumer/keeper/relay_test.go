@@ -8,9 +8,6 @@ import (
 	"github.com/stretchr/testify/require"
 	"go.uber.org/mock/gomock"
 
-	cryptocodec "github.com/cosmos/cosmos-sdk/crypto/codec"
-	"github.com/cosmos/cosmos-sdk/crypto/keys/ed25519"
-
 	abci "github.com/cometbft/cometbft/abci/types"
 
 	clientv2types "github.com/cosmos/ibc-go/v10/modules/core/02-client/v2/types"
@@ -19,6 +16,9 @@ import (
 	errorsmod "cosmossdk.io/errors"
 	"cosmossdk.io/math"
 
+	cryptocodec "github.com/cosmos/cosmos-sdk/crypto/codec"
+	"github.com/cosmos/cosmos-sdk/crypto/keys/ed25519"
+
 	testcrypto "github.com/allinbits/vaas/testutil/crypto"
 	testkeeper "github.com/allinbits/vaas/testutil/keeper"
 	consumertypes "github.com/allinbits/vaas/x/vaas/consumer/types"
@@ -26,7 +26,7 @@ import (
 )
 
 func TestOnRecvVSCPacketV2(t *testing.T) {
-	providerClientID := "07-tendermint-0"
+	providerClientID := liveProviderClientID
 
 	pk1, err := cryptocodec.ToCmtProtoPublicKey(ed25519.GenPrivKey().PubKey())
 	require.NoError(t, err)
@@ -88,7 +88,7 @@ func TestOnRecvVSCPacketV2(t *testing.T) {
 }
 
 func TestOnRecvVSCPacketV2OutOfOrder(t *testing.T) {
-	providerClientID := "07-tendermint-0"
+	providerClientID := liveProviderClientID
 
 	pk1, err := cryptocodec.ToCmtProtoPublicKey(ed25519.GenPrivKey().PubKey())
 	require.NoError(t, err)
@@ -139,7 +139,7 @@ func TestOnRecvVSCPacketV2OutOfOrder(t *testing.T) {
 }
 
 func TestOnRecvVSCPacketV2FirstPacketNotDropped(t *testing.T) {
-	providerClientID := "07-tendermint-0"
+	providerClientID := liveProviderClientID
 
 	pk1, err := cryptocodec.ToCmtProtoPublicKey(ed25519.GenPrivKey().PubKey())
 	require.NoError(t, err)
@@ -170,7 +170,7 @@ func TestOnRecvVSCPacketV2FirstPacketNotDropped(t *testing.T) {
 }
 
 func TestOnRecvVSCPacketV2AccumulatesChanges(t *testing.T) {
-	providerClientID := "07-tendermint-0"
+	providerClientID := liveProviderClientID
 
 	pk1, err := cryptocodec.ToCmtProtoPublicKey(ed25519.GenPrivKey().PubKey())
 	require.NoError(t, err)
@@ -221,7 +221,7 @@ func TestOnRecvVSCPacketV2AccumulatesChanges(t *testing.T) {
 }
 
 func TestOnRecvVSCPacketV2DuplicateUpdates(t *testing.T) {
-	providerClientID := "07-tendermint-0"
+	providerClientID := liveProviderClientID
 
 	consumerKeeper, ctx, ctrl, mocks := testkeeper.GetConsumerKeeperAndCtx(t, testkeeper.NewInMemKeeperParams(t))
 	defer ctrl.Finish()
@@ -249,7 +249,7 @@ func TestOnRecvVSCPacketV2DuplicateUpdates(t *testing.T) {
 // overwrites the consumer's in-debt flag with the value carried by the
 // packet, including on empty-update "heartbeat" packets.
 func TestOnRecvVSCPacketV2DebtStatus(t *testing.T) {
-	providerClientID := "07-tendermint-0"
+	providerClientID := liveProviderClientID
 
 	consumerKeeper, ctx, ctrl, mocks := testkeeper.GetConsumerKeeperAndCtx(t, testkeeper.NewInMemKeeperParams(t))
 	defer ctrl.Finish()
@@ -319,11 +319,11 @@ func TestSnapshotReplacesValidatorSet(t *testing.T) {
 	// Seed current CC set: A=10, B=5.
 	k.ApplyVaasValidatorChanges(ctx, []abci.ValidatorUpdate{{PubKey: tmA, Power: 10}, {PubKey: tmB, Power: 5}})
 	require.NoError(t, k.SetHighestValsetUpdateID(ctx, 1))
-	k.SetProviderClientID(ctx, "07-tendermint-0")
+	k.SetProviderClientID(ctx, liveProviderClientID)
 
 	snap := types.NewValidatorSetChangePacketData([]abci.ValidatorUpdate{{PubKey: tmA, Power: 10}}, 2)
 	snap.IsSnapshot = true
-	require.NoError(t, k.OnRecvVSCPacketV2(ctx, "07-tendermint-0", snap))
+	require.NoError(t, k.OnRecvVSCPacketV2(ctx, liveProviderClientID, snap))
 
 	pending, ok := k.GetPendingChanges(ctx)
 	require.True(t, ok)
@@ -338,7 +338,7 @@ func TestSnapshotReplacesValidatorSet(t *testing.T) {
 }
 
 func TestOnRecvVSCRecordsRecvTime(t *testing.T) {
-	providerClientID := "07-tendermint-0"
+	providerClientID := liveProviderClientID
 
 	pk1, err := cryptocodec.ToCmtProtoPublicKey(ed25519.GenPrivKey().PubKey())
 	require.NoError(t, err)
@@ -364,7 +364,7 @@ func TestOnRecvVSCRecordsRecvTime(t *testing.T) {
 // packet -- one whose ValsetUpdateId <= HighestValsetUpdateID -- returns early
 // before recording block time, so a stale replay cannot silently reset the clock.
 func TestDedupDoesNotResetLastVSCRecvTime(t *testing.T) {
-	providerClientID := "07-tendermint-0"
+	providerClientID := liveProviderClientID
 
 	pk1, err := cryptocodec.ToCmtProtoPublicKey(ed25519.GenPrivKey().PubKey())
 	require.NoError(t, err)
@@ -396,7 +396,7 @@ func TestDedupDoesNotResetLastVSCRecvTime(t *testing.T) {
 // making the last VSC receipt time appear far in the past, then delivers a
 // higher-id packet at a fresh block time and verifies IsVSCStale returns false.
 func TestRecvPacketAfterStalenessLiftsStale(t *testing.T) {
-	providerClientID := "07-tendermint-0"
+	providerClientID := liveProviderClientID
 
 	pk1, err := cryptocodec.ToCmtProtoPublicKey(ed25519.GenPrivKey().PubKey())
 	require.NoError(t, err)
@@ -437,7 +437,7 @@ func TestRecvPacketAfterStalenessLiftsStale(t *testing.T) {
 // applied live), and that a stale (already-seen) vsc id does not stage
 // anything, even if it carries different downtime params.
 func TestOnRecvVSCPacketStagesDowntimeParams(t *testing.T) {
-	providerClientID := "07-tendermint-0"
+	providerClientID := liveProviderClientID
 
 	k, ctx, ctrl, mocks := testkeeper.GetConsumerKeeperAndCtx(t, testkeeper.NewInMemKeeperParams(t))
 	defer ctrl.Finish()
@@ -502,7 +502,7 @@ func TestSnapshotResyncEmitsEvent(t *testing.T) {
 	require.NoError(t, err)
 	k.ApplyVaasValidatorChanges(ctx, []abci.ValidatorUpdate{{PubKey: tm, Power: 10}})
 	require.NoError(t, k.SetHighestValsetUpdateID(ctx, 1))
-	k.SetProviderClientID(ctx, "07-tendermint-0")
+	k.SetProviderClientID(ctx, liveProviderClientID)
 
 	countSnapshotEvents := func() int {
 		n := 0
@@ -516,13 +516,13 @@ func TestSnapshotResyncEmitsEvent(t *testing.T) {
 
 	// An ordinary diff packet must NOT emit the snapshot-resync event.
 	diff := types.NewValidatorSetChangePacketData([]abci.ValidatorUpdate{{PubKey: tm, Power: 12}}, 2)
-	require.NoError(t, k.OnRecvVSCPacketV2(ctx, "07-tendermint-0", diff))
+	require.NoError(t, k.OnRecvVSCPacketV2(ctx, liveProviderClientID, diff))
 	require.Zero(t, countSnapshotEvents(), "a diff packet must not emit a snapshot-resync event")
 
 	// A snapshot packet must emit exactly one.
 	snap := types.NewValidatorSetChangePacketData([]abci.ValidatorUpdate{{PubKey: tm, Power: 15}}, 3)
 	snap.IsSnapshot = true
-	require.NoError(t, k.OnRecvVSCPacketV2(ctx, "07-tendermint-0", snap))
+	require.NoError(t, k.OnRecvVSCPacketV2(ctx, liveProviderClientID, snap))
 	require.Equal(t, 1, countSnapshotEvents(), "a snapshot packet must emit exactly one snapshot-resync event")
 }
 
@@ -538,11 +538,11 @@ func TestSnapshotPowerChange(t *testing.T) {
 
 	k.ApplyVaasValidatorChanges(ctx, []abci.ValidatorUpdate{{PubKey: pkA, Power: 10}})
 	require.NoError(t, k.SetHighestValsetUpdateID(ctx, 1))
-	k.SetProviderClientID(ctx, "07-tendermint-0")
+	k.SetProviderClientID(ctx, liveProviderClientID)
 
 	snap := types.NewValidatorSetChangePacketData([]abci.ValidatorUpdate{{PubKey: pkA, Power: 50}}, 2)
 	snap.IsSnapshot = true
-	require.NoError(t, k.OnRecvVSCPacketV2(ctx, "07-tendermint-0", snap))
+	require.NoError(t, k.OnRecvVSCPacketV2(ctx, liveProviderClientID, snap))
 
 	pending, ok := k.GetPendingChanges(ctx)
 	require.True(t, ok)
@@ -565,14 +565,14 @@ func TestSnapshotAddsNewValidator(t *testing.T) {
 
 	k.ApplyVaasValidatorChanges(ctx, []abci.ValidatorUpdate{{PubKey: pkA, Power: 10}})
 	require.NoError(t, k.SetHighestValsetUpdateID(ctx, 1))
-	k.SetProviderClientID(ctx, "07-tendermint-0")
+	k.SetProviderClientID(ctx, liveProviderClientID)
 
 	snap := types.NewValidatorSetChangePacketData([]abci.ValidatorUpdate{
 		{PubKey: pkA, Power: 10},
 		{PubKey: pkB, Power: 20},
 	}, 2)
 	snap.IsSnapshot = true
-	require.NoError(t, k.OnRecvVSCPacketV2(ctx, "07-tendermint-0", snap))
+	require.NoError(t, k.OnRecvVSCPacketV2(ctx, liveProviderClientID, snap))
 
 	pending, ok := k.GetPendingChanges(ctx)
 	require.True(t, ok)
@@ -606,11 +606,11 @@ func TestSnapshotMultipleRemovals(t *testing.T) {
 		{PubKey: pkC, Power: 10},
 	})
 	require.NoError(t, k.SetHighestValsetUpdateID(ctx, 1))
-	k.SetProviderClientID(ctx, "07-tendermint-0")
+	k.SetProviderClientID(ctx, liveProviderClientID)
 
 	snap := types.NewValidatorSetChangePacketData([]abci.ValidatorUpdate{{PubKey: pkA, Power: 30}}, 2)
 	snap.IsSnapshot = true
-	require.NoError(t, k.OnRecvVSCPacketV2(ctx, "07-tendermint-0", snap))
+	require.NoError(t, k.OnRecvVSCPacketV2(ctx, liveProviderClientID, snap))
 
 	pending, ok := k.GetPendingChanges(ctx)
 	require.True(t, ok)
@@ -644,7 +644,7 @@ func TestEmptySnapshotRejected(t *testing.T) {
 		{PubKey: pkB, Power: 5},
 	})
 	require.NoError(t, k.SetHighestValsetUpdateID(ctx, 1))
-	k.SetProviderClientID(ctx, "07-tendermint-0")
+	k.SetProviderClientID(ctx, liveProviderClientID)
 	k.SetLastVSCRecvTime(ctx, ctx.BlockTime())
 
 	// Advance block time so a mutation to LastVSCRecvTime would be observable.
@@ -652,7 +652,7 @@ func TestEmptySnapshotRejected(t *testing.T) {
 
 	snapNoUpdates := types.NewValidatorSetChangePacketData(nil, 2)
 	snapNoUpdates.IsSnapshot = true
-	err = k.OnRecvVSCPacketV2(laterCtx, "07-tendermint-0", snapNoUpdates)
+	err = k.OnRecvVSCPacketV2(laterCtx, liveProviderClientID, snapNoUpdates)
 	require.Error(t, err, "a snapshot with no updates must be rejected")
 	require.True(t, errorsmod.IsOf(err, consumertypes.ErrEmptyValidatorSet))
 
@@ -661,7 +661,7 @@ func TestEmptySnapshotRejected(t *testing.T) {
 		{PubKey: pkB, Power: 0},
 	}, 2)
 	snapAllZero.IsSnapshot = true
-	err = k.OnRecvVSCPacketV2(laterCtx, "07-tendermint-0", snapAllZero)
+	err = k.OnRecvVSCPacketV2(laterCtx, liveProviderClientID, snapAllZero)
 	require.Error(t, err, "a snapshot with only zero-power updates must be rejected")
 	require.True(t, errorsmod.IsOf(err, consumertypes.ErrEmptyValidatorSet))
 
@@ -692,16 +692,16 @@ func TestDiffCannotEmptyValidatorSet(t *testing.T) {
 
 	k.ApplyVaasValidatorChanges(ctx, []abci.ValidatorUpdate{{PubKey: pkA, Power: 10}})
 	require.NoError(t, k.SetHighestValsetUpdateID(ctx, 1))
-	k.SetProviderClientID(ctx, "07-tendermint-0")
+	k.SetProviderClientID(ctx, liveProviderClientID)
 
 	// An empty heartbeat diff over a live set is untouched by the guard.
 	heartbeat := types.NewValidatorSetChangePacketData(nil, 2)
-	require.NoError(t, k.OnRecvVSCPacketV2(ctx, "07-tendermint-0", heartbeat),
+	require.NoError(t, k.OnRecvVSCPacketV2(ctx, liveProviderClientID, heartbeat),
 		"an empty heartbeat diff over a non-empty set must be accepted")
 
 	// A diff removing the only validator would empty the set: rejected.
 	removeAll := types.NewValidatorSetChangePacketData([]abci.ValidatorUpdate{{PubKey: pkA, Power: 0}}, 3)
-	err = k.OnRecvVSCPacketV2(ctx, "07-tendermint-0", removeAll)
+	err = k.OnRecvVSCPacketV2(ctx, liveProviderClientID, removeAll)
 	require.Error(t, err, "a diff removing every validator must be rejected")
 	require.True(t, errorsmod.IsOf(err, consumertypes.ErrEmptyValidatorSet))
 	highestID, _, err := k.GetHighestValsetUpdateID(ctx)
@@ -712,19 +712,19 @@ func TestDiffCannotEmptyValidatorSet(t *testing.T) {
 	// A and B, would still empty the resulting set even though B never made it
 	// into the applied cross-chain set.
 	addB := types.NewValidatorSetChangePacketData([]abci.ValidatorUpdate{{PubKey: pkB, Power: 5}}, 3)
-	require.NoError(t, k.OnRecvVSCPacketV2(ctx, "07-tendermint-0", addB))
+	require.NoError(t, k.OnRecvVSCPacketV2(ctx, liveProviderClientID, addB))
 
 	removeBoth := types.NewValidatorSetChangePacketData([]abci.ValidatorUpdate{
 		{PubKey: pkA, Power: 0},
 		{PubKey: pkB, Power: 0},
 	}, 4)
-	err = k.OnRecvVSCPacketV2(ctx, "07-tendermint-0", removeBoth)
+	err = k.OnRecvVSCPacketV2(ctx, liveProviderClientID, removeBoth)
 	require.Error(t, err, "a diff emptying the set together with pending changes must be rejected")
 	require.True(t, errorsmod.IsOf(err, consumertypes.ErrEmptyValidatorSet))
 
 	// Removing A alone leaves the pending B standing: accepted.
 	removeA := types.NewValidatorSetChangePacketData([]abci.ValidatorUpdate{{PubKey: pkA, Power: 0}}, 4)
-	require.NoError(t, k.OnRecvVSCPacketV2(ctx, "07-tendermint-0", removeA),
+	require.NoError(t, k.OnRecvVSCPacketV2(ctx, liveProviderClientID, removeA),
 		"a diff leaving at least one validator standing must be accepted")
 }
 
@@ -741,14 +741,14 @@ func TestSnapshotReplacesEarlierPendingChanges(t *testing.T) {
 	pkB, err := cryptocodec.ToCmtProtoPublicKey(ed25519.GenPrivKey().PubKey())
 	require.NoError(t, err)
 
-	k.SetProviderClientID(ctx, "07-tendermint-0")
+	k.SetProviderClientID(ctx, liveProviderClientID)
 
 	// First: a diff packet introducing A and B.
 	diff := types.NewValidatorSetChangePacketData([]abci.ValidatorUpdate{
 		{PubKey: pkA, Power: 10},
 		{PubKey: pkB, Power: 20},
 	}, 1)
-	require.NoError(t, k.OnRecvVSCPacketV2(ctx, "07-tendermint-0", diff))
+	require.NoError(t, k.OnRecvVSCPacketV2(ctx, liveProviderClientID, diff))
 
 	// Apply so the CC set reflects A and B.
 	k.ApplyVaasValidatorChanges(ctx, []abci.ValidatorUpdate{
@@ -760,7 +760,7 @@ func TestSnapshotReplacesEarlierPendingChanges(t *testing.T) {
 	// entry for B must not survive in PendingChanges.
 	snap := types.NewValidatorSetChangePacketData([]abci.ValidatorUpdate{{PubKey: pkA, Power: 10}}, 2)
 	snap.IsSnapshot = true
-	require.NoError(t, k.OnRecvVSCPacketV2(ctx, "07-tendermint-0", snap))
+	require.NoError(t, k.OnRecvVSCPacketV2(ctx, liveProviderClientID, snap))
 
 	pending, ok := k.GetPendingChanges(ctx)
 	require.True(t, ok)
@@ -788,11 +788,11 @@ func TestSnapshotNoDoubleEmitForUnchangedValidator(t *testing.T) {
 
 	k.ApplyVaasValidatorChanges(ctx, []abci.ValidatorUpdate{{PubKey: pkA, Power: 10}})
 	require.NoError(t, k.SetHighestValsetUpdateID(ctx, 1))
-	k.SetProviderClientID(ctx, "07-tendermint-0")
+	k.SetProviderClientID(ctx, liveProviderClientID)
 
 	snap := types.NewValidatorSetChangePacketData([]abci.ValidatorUpdate{{PubKey: pkA, Power: 10}}, 2)
 	snap.IsSnapshot = true
-	require.NoError(t, k.OnRecvVSCPacketV2(ctx, "07-tendermint-0", snap))
+	require.NoError(t, k.OnRecvVSCPacketV2(ctx, liveProviderClientID, snap))
 
 	pending, ok := k.GetPendingChanges(ctx)
 	require.True(t, ok)
@@ -808,7 +808,7 @@ func TestOnRecvVSCPacketV2PinsProviderChainIdOnFirstPacket(t *testing.T) {
 	k, ctx, ctrl, mocks := testkeeper.GetConsumerKeeperAndCtx(t, testkeeper.NewInMemKeeperParams(t))
 	defer ctrl.Finish()
 
-	clientID := "07-tendermint-0"
+	clientID := liveProviderClientID
 	k.SetProviderClientID(ctx, clientID)
 	mocks.MockClientKeeper.EXPECT().GetClientState(gomock.Any(), clientID).
 		Return(&ibctmtypes.ClientState{ChainId: "provider-chain"}, true).AnyTimes()
@@ -836,7 +836,7 @@ func TestOnRecvVSCPacketV2RejectsDifferentChainId(t *testing.T) {
 	k, ctx, ctrl, mocks := testkeeper.GetConsumerKeeperAndCtx(t, testkeeper.NewInMemKeeperParams(t))
 	defer ctrl.Finish()
 
-	legitClientID := "07-tendermint-0"
+	legitClientID := liveProviderClientID
 	rogueClientID := "07-tendermint-666"
 	mocks.MockClientKeeper.EXPECT().GetClientState(gomock.Any(), legitClientID).
 		Return(&ibctmtypes.ClientState{ChainId: "provider-chain"}, true).AnyTimes()
@@ -990,7 +990,7 @@ func TestOnRecvVSCPacketV2RejectsNonPinnedClientBeforeStateChanges(t *testing.T)
 // packets over. Production pins a provider client at genesis on both paths (a
 // new chain creates one, a restart restores the exported one), so a keeper that
 // has not pinned anything is a state these tests should not start from.
-const testProviderClientID = "07-tendermint-0"
+const testProviderClientID = liveProviderClientID
 
 // TestOnRecvVSCPacketRejectsClientOverrideOnceRoutable verifies that a second
 // IBC client cannot take over as the provider client once a routable one is
@@ -1010,7 +1010,7 @@ const testProviderClientID = "07-tendermint-0"
 // routable for good and no expiry or freeze reopens the override.
 func TestOnRecvVSCPacketRejectsClientOverrideOnceRoutable(t *testing.T) {
 	const (
-		establishedClientID = "07-tendermint-0"
+		establishedClientID = liveProviderClientID
 		attackerClientID    = "07-tendermint-9"
 		providerChainID     = "provider-0"
 	)
