@@ -1,6 +1,7 @@
 package keeper_test
 
 import (
+	"context"
 	"errors"
 	"testing"
 	"time"
@@ -211,10 +212,7 @@ func TestSweepDefersEquivocationBehindRemovalVote(t *testing.T) {
 
 	matured := ctx.WithBlockTime(ctx.BlockTime().Add(k.GetParams(ctx).EquivocationExecutionDelay + time.Second))
 	voteEnd := matured.BlockTime().Add(time.Hour)
-	k.OverrideRemovalVoteForTest(func(_ sdk.Context, cid uint64) (uint64, time.Time, bool) {
-		require.Equal(t, consumerID, cid)
-		return 7, voteEnd, true
-	})
+	seedRemovalVote(t, mocks.GovKeeper, k, ctx, 7, consumerID, voteEnd)
 
 	// Deferral extends the jail horizon too.
 	mocks.MockStakingKeeper.EXPECT().GetValidatorByConsAddr(matured, consAddr).Return(validator, nil)
@@ -379,9 +377,7 @@ func deferEquivocationBehindVote(t *testing.T, k providerkeeper.Keeper, ctx sdk.
 
 	matured := ctx.WithBlockTime(ctx.BlockTime().Add(k.GetParams(ctx).EquivocationExecutionDelay + time.Second))
 	voteEnd := matured.BlockTime().Add(time.Hour)
-	k.OverrideRemovalVoteForTest(func(_ sdk.Context, _ uint64) (uint64, time.Time, bool) {
-		return 7, voteEnd, true
-	})
+	seedRemovalVote(t, mocks.GovKeeper, k, ctx, 7, consumerID, voteEnd)
 	mocks.MockStakingKeeper.EXPECT().GetValidatorByConsAddr(matured, consAddr).Return(validator, nil)
 	mocks.MockSlashingKeeper.EXPECT().JailUntil(matured, consAddr, voteEnd.Add(k.GetParams(ctx).RemovalVoteDeferralMargin).Add(24*time.Hour))
 	k.SweepPendingEquivocationPunishments(matured)
@@ -389,11 +385,6 @@ func deferEquivocationBehindVote(t *testing.T, k providerkeeper.Keeper, ctx sdk.
 	require.NoError(t, err)
 	require.Equal(t, uint64(7), entry.DeferredByProposalId)
 
-	// The scan is not consulted again for an extended entry; only the
-	// recorded proposal's status is.
-	k.OverrideRemovalVoteForTest(func(_ sdk.Context, _ uint64) (uint64, time.Time, bool) {
-		return 0, time.Time{}, false
-	})
 	return key, entry, matured
 }
 
@@ -414,10 +405,7 @@ func TestPassedRemovalVoteCancelsDeferredEquivocation(t *testing.T) {
 	consAddr := providerAddr.ToSdkConsAddr()
 
 	key, entry, matured := deferEquivocationBehindVote(t, k, ctx, mocks, validator, providerAddr, 0, 23)
-	k.OverrideRemovalProposalStatusForTest(func(_ sdk.Context, proposalId uint64) (govv1.ProposalStatus, time.Time, bool) {
-		require.Equal(t, uint64(7), proposalId)
-		return govv1.StatusPassed, time.Time{}, true
-	})
+	seedRemovalProposal(t, mocks.GovKeeper, k, ctx, 7, 0, govv1.StatusPassed, time.Time{})
 
 	decided := matured.WithBlockTime(entry.ExecutesAt.Add(time.Second))
 	expectCancellation(mocks, decided, validator, consAddr, 23)
@@ -444,9 +432,7 @@ func TestFailedRemovalOfStoppedConsumerCancelsDeferredEquivocation(t *testing.T)
 	const consumerID = uint64(0)
 	key, entry, matured := deferEquivocationBehindVote(t, k, ctx, mocks, validator, providerAddr, consumerID, 23)
 	k.SetConsumerPhase(ctx, consumerID, types.CONSUMER_PHASE_STOPPED)
-	k.OverrideRemovalProposalStatusForTest(func(_ sdk.Context, _ uint64) (govv1.ProposalStatus, time.Time, bool) {
-		return govv1.StatusFailed, time.Time{}, true
-	})
+	seedRemovalProposal(t, mocks.GovKeeper, k, ctx, 7, consumerID, govv1.StatusFailed, time.Time{})
 
 	decided := matured.WithBlockTime(entry.ExecutesAt.Add(time.Second))
 	expectCancellation(mocks, decided, validator, consAddr, 23)
@@ -467,9 +453,7 @@ func TestFailedRemovalOfRunningConsumerExecutesDeferredEquivocation(t *testing.T
 	consAddr := providerAddr.ToSdkConsAddr()
 
 	key, entry, matured := deferEquivocationBehindVote(t, k, ctx, mocks, validator, providerAddr, 0, 29)
-	k.OverrideRemovalProposalStatusForTest(func(_ sdk.Context, _ uint64) (govv1.ProposalStatus, time.Time, bool) {
-		return govv1.StatusFailed, time.Time{}, true
-	})
+	seedRemovalProposal(t, mocks.GovKeeper, k, ctx, 7, 0, govv1.StatusFailed, time.Time{})
 
 	decided := matured.WithBlockTime(entry.ExecutesAt.Add(time.Second))
 	expectExecution(t, k, mocks, decided, validator, consAddr)
@@ -492,9 +476,7 @@ func TestRejectedRemovalVoteExecutesDeferredEquivocation(t *testing.T) {
 	const consumerID = uint64(0)
 	key, entry, matured := deferEquivocationBehindVote(t, k, ctx, mocks, validator, providerAddr, consumerID, 29)
 	k.SetConsumerPhase(ctx, consumerID, types.CONSUMER_PHASE_STOPPED)
-	k.OverrideRemovalProposalStatusForTest(func(_ sdk.Context, _ uint64) (govv1.ProposalStatus, time.Time, bool) {
-		return govv1.StatusRejected, time.Time{}, true
-	})
+	seedRemovalProposal(t, mocks.GovKeeper, k, ctx, 7, consumerID, govv1.StatusRejected, time.Time{})
 
 	decided := matured.WithBlockTime(entry.ExecutesAt.Add(time.Second))
 	expectExecution(t, k, mocks, decided, validator, consAddr)
@@ -520,10 +502,7 @@ func TestOpenRemovalVoteAtExtendedMaturityKeepsDeferring(t *testing.T) {
 	key, entry, matured := deferEquivocationBehindVote(t, k, ctx, mocks, validator, providerAddr, 0, 31)
 
 	extendedEnd := entry.ExecutesAt.Add(2 * time.Hour)
-	k.OverrideRemovalProposalStatusForTest(func(_ sdk.Context, proposalId uint64) (govv1.ProposalStatus, time.Time, bool) {
-		require.Equal(t, uint64(7), proposalId)
-		return govv1.StatusVotingPeriod, extendedEnd, true
-	})
+	seedRemovalProposal(t, mocks.GovKeeper, k, ctx, 7, 0, govv1.StatusVotingPeriod, extendedEnd)
 
 	margin := k.GetParams(ctx).RemovalVoteDeferralMargin
 	stillVoting := matured.WithBlockTime(entry.ExecutesAt.Add(time.Second))
@@ -808,9 +787,7 @@ func TestSecondQueueDoesNotShortenJail(t *testing.T) {
 	// First entry, deferred behind a vote ending far out.
 	_, entry, matured := deferEquivocationBehindVote(t, k, ctx, mocks, validator, providerAddr, 0, 23)
 	farEnd := matured.BlockTime().Add(60 * 24 * time.Hour)
-	k.OverrideRemovalProposalStatusForTest(func(_ sdk.Context, _ uint64) (govv1.ProposalStatus, time.Time, bool) {
-		return govv1.StatusVotingPeriod, farEnd, true
-	})
+	seedRemovalProposal(t, mocks.GovKeeper, k, ctx, 7, 0, govv1.StatusVotingPeriod, farEnd)
 	margin := k.GetParams(ctx).RemovalVoteDeferralMargin
 	later := matured.WithBlockTime(entry.ExecutesAt.Add(time.Second))
 	mocks.MockStakingKeeper.EXPECT().GetValidatorByConsAddr(later, consAddr).Return(validator, nil)
@@ -1004,15 +981,18 @@ func TestSweepConsultsTheVoteOncePerConsumer(t *testing.T) {
 	}
 
 	matured := ctx.WithBlockTime(ctx.BlockTime().Add(k.GetParams(ctx).EquivocationExecutionDelay + time.Second))
-	lookups := map[uint64]int{}
-	k.OverrideRemovalVoteForTest(func(_ sdk.Context, cid uint64) (uint64, time.Time, bool) {
-		lookups[cid]++
-		return 7, matured.BlockTime().Add(time.Hour), true
-	})
+	// One scan of the active proposals per consumer per sweep, however many
+	// of its entries mature: the mock gov keeper counts the walks.
+	k.SetGovKeeper(mocks.MockGovKeeper)
+	vote := removalVoteProposal(t, k, ctx, 7, 0, matured.BlockTime().Add(time.Hour))
+	mocks.MockGovKeeper.EXPECT().IterateActiveProposals(gomock.Any(), gomock.Any()).
+		DoAndReturn(func(_ context.Context, cb func(govv1.Proposal) (bool, error)) error {
+			_, err := cb(vote)
+			return err
+		}).Times(1)
 	mocks.MockStakingKeeper.EXPECT().GetValidatorByConsAddr(matured, consAddr).Return(validator, nil).Times(2)
 	mocks.MockSlashingKeeper.EXPECT().JailUntil(matured, consAddr, gomock.Any()).Times(2)
 	k.SweepPendingEquivocationPunishments(matured)
-	require.Equal(t, map[uint64]int{0: 1}, lookups, "one scan per consumer per sweep")
 }
 
 // TestSweepCancelsAndExecutesInOneBlock: two validators, two consumers, both
@@ -1042,16 +1022,8 @@ func TestSweepCancelsAndExecutesInOneBlock(t *testing.T) {
 	}
 	cancelledKey := seed(0, cancelledAddr, 5, 51)
 	executedKey := seed(1, executedAddr, 6, 61)
-	k.OverrideRemovalProposalStatusForTest(func(_ sdk.Context, proposalId uint64) (govv1.ProposalStatus, time.Time, bool) {
-		switch proposalId {
-		case 5:
-			return govv1.StatusFailed, time.Time{}, true
-		case 6:
-			return govv1.StatusRejected, time.Time{}, true
-		}
-		t.Fatalf("unexpected proposal %d", proposalId)
-		return govv1.StatusNil, time.Time{}, false
-	})
+	seedRemovalProposal(t, mocks.GovKeeper, k, ctx, 5, 0, govv1.StatusFailed, time.Time{})
+	seedRemovalProposal(t, mocks.GovKeeper, k, ctx, 6, 1, govv1.StatusRejected, time.Time{})
 
 	expectCancellation(mocks, ctx, cancelledVal, cancelledAddr.ToSdkConsAddr(), 51)
 	expectExecution(t, k, mocks, ctx, executedVal, executedAddr.ToSdkConsAddr())
@@ -1126,10 +1098,7 @@ func TestSweepSkipsCancellationOfAnEntryRemovedByAnExecution(t *testing.T) {
 		ConsumerId: 1, ProviderConsAddr: consAddr.Bytes(), InfractionHeight: 43, ExecutesAt: ctx.BlockTime().Add(-time.Minute),
 		ExecutesAtExtended: true, DeferredByProposalId: 5,
 	}))
-	k.OverrideRemovalProposalStatusForTest(func(_ sdk.Context, proposalId uint64) (govv1.ProposalStatus, time.Time, bool) {
-		require.Equal(t, uint64(5), proposalId)
-		return govv1.StatusPassed, time.Time{}, true
-	})
+	seedRemovalProposal(t, mocks.GovKeeper, k, ctx, 5, 1, govv1.StatusPassed, time.Time{})
 
 	expectExecution(t, k, mocks, ctx, validator, consAddr)
 	k.SweepPendingEquivocationPunishments(ctx)
