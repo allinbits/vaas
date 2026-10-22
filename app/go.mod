@@ -9,7 +9,10 @@ replace (
 	github.com/allinbits/vaas => ../
 	github.com/bytedance/sonic => github.com/bytedance/sonic v1.15.0
 	github.com/cometbft/cometbft => github.com/atomone-hub/cometbft v0.0.0-20251216151559-a24cfa28b916
-	github.com/cosmos/cosmos-sdk => github.com/atomone-hub/cosmos-sdk v0.500.2
+	// TEMPORARY: pinned to the commit of atomone-hub/atomone-sdk#137 (the
+	// pre-rotation staking hook) until that ships in a release; switch this
+	// replace to the release tag then.
+	github.com/cosmos/cosmos-sdk => github.com/atomone-hub/cosmos-sdk v0.500.3-0.20261022115533-76e95d4f17a3
 	github.com/syndtr/goleveldb => github.com/syndtr/goleveldb v1.0.1-0.20210819022825-2ae1ddf74ef7
 )
 
