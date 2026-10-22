@@ -24,18 +24,36 @@ func TestValidateParams(t *testing.T) {
 		expPass bool
 	}{
 		{"default params", types.DefaultParams(), true},
-		{"custom valid params", types.NewParams("0.33", "0.5", time.Hour, 1000, math.NewInt(42), types.DefaultMinDepositBlocks, types.DefaultMaxPauseDuration), true},
-		{"zero fees per block", types.NewParams("0.33", "0.5", time.Hour, 1000, math.NewInt(0), types.DefaultMinDepositBlocks, types.DefaultMaxPauseDuration), false},
+		// 0.6 of the default consumer unbonding period covers the default
+		// challengeable interval; a smaller fraction would not (see below).
+		{"custom valid params", types.NewParams("0.6", "0.5", time.Hour, 1000, math.NewInt(42), types.DefaultMinDepositBlocks, types.DefaultMaxPauseDuration, types.DefaultInfractionParameters()), true},
+		{"zero fees per block", types.NewParams("0.33", "0.5", time.Hour, 1000, math.NewInt(0), types.DefaultMinDepositBlocks, types.DefaultMaxPauseDuration, types.DefaultInfractionParameters()), false},
 		{"0 trusting period fraction", types.NewParams(
-			"0.00", "0.5", time.Hour, 1000, math.NewInt(1), types.DefaultMinDepositBlocks, types.DefaultMaxPauseDuration), false},
+			"0.00", "0.5", time.Hour, 1000, math.NewInt(1), types.DefaultMinDepositBlocks, types.DefaultMaxPauseDuration,
+			types.DefaultInfractionParameters(),
+		), false},
 		{"0 liveness grace fraction", types.NewParams(
-			"0.33", "0.00", time.Hour, 1000, math.NewInt(1), types.DefaultMinDepositBlocks, types.DefaultMaxPauseDuration), false},
+			"0.33", "0.00", time.Hour, 1000, math.NewInt(1), types.DefaultMinDepositBlocks, types.DefaultMaxPauseDuration,
+			types.DefaultInfractionParameters(),
+		), false},
 		{"0 VAAS timeout period", types.NewParams(
-			"0.33", "0.5", 0, 1000, math.NewInt(1), types.DefaultMinDepositBlocks, types.DefaultMaxPauseDuration), false},
+			"0.33", "0.5", 0, 1000, math.NewInt(1), types.DefaultMinDepositBlocks, types.DefaultMaxPauseDuration,
+			types.DefaultInfractionParameters(),
+		), false},
 		{"0 max pause duration", types.NewParams(
-			"0.33", "0.5", time.Hour, 1000, math.NewInt(1), types.DefaultMinDepositBlocks, 0), false},
+			"0.33", "0.5", time.Hour, 1000, math.NewInt(1), types.DefaultMinDepositBlocks, 0,
+			types.DefaultInfractionParameters(),
+		), false},
+		{"invalid infraction parameters", withInfraction(func(ip *types.InfractionParameters) { ip.DoubleSign = nil }), false},
+		{"infraction horizon at the trusting period", withInfraction(func(ip *types.InfractionParameters) {
+			// 120h + 120h against 0.5 * 480h: the strict inequality rejects it.
+			ip.DowntimeChallengeWindow = 120 * time.Hour
+			ip.DowntimeEvidenceMaxAge = 120 * time.Hour
+		}, "0.5"), false},
 		{"negative max pause duration", types.NewParams(
-			"0.33", "0.5", time.Hour, 1000, math.NewInt(1), types.DefaultMinDepositBlocks, -time.Hour), false},
+			"0.33", "0.5", time.Hour, 1000, math.NewInt(1), types.DefaultMinDepositBlocks, -time.Hour,
+			types.DefaultInfractionParameters(),
+		), false},
 	}
 
 	for _, tc := range testCases {
@@ -194,4 +212,15 @@ func TestInfractionParametersAllowsZeroDowntimeSlashFraction(t *testing.T) {
 
 	require.NoError(t, ip.Validate(),
 		"a zero downtime slash fraction is a jail-only policy, not a misconfiguration")
+}
+
+// withInfraction returns the default params with the infraction parameters
+// changed by mutate, and the trusting period fraction overridden when given.
+func withInfraction(mutate func(*types.InfractionParameters), fraction ...string) types.Params {
+	p := types.DefaultParams()
+	mutate(&p.InfractionParameters)
+	if len(fraction) > 0 {
+		p.TrustingPeriodFraction = fraction[0]
+	}
+	return p
 }
