@@ -211,6 +211,12 @@ type Keeper struct {
 	// (provider consensus address, unbonding op id).
 	HeldUnbondingOps collections.KeySet[collections.Pair[[]byte, uint64]]
 
+	// PendingEquivocationJails records, per accused validator (provider
+	// consensus address), the jail end this module last set on account of
+	// its pending equivocation punishments and the jail end it owes
+	// regardless of them. See jailValidatorUntil.
+	PendingEquivocationJails collections.Map[[]byte, types.PendingEquivocationJail]
+
 	// windowEndTimestampFn resolves the timestamp anchor for a downtime
 	// evidence window. Nil in production, where NewKeeper leaves it unset and
 	// windowEndTimestamp falls back to the real IBC-client-backed
@@ -413,6 +419,13 @@ func NewKeeper(
 		sb, types.HeldUnbondingOpsPrefix,
 		"held_unbonding_ops",
 		collections.PairKeyCodec(collections.BytesKey, collections.Uint64Key),
+	)
+
+	k.PendingEquivocationJails = collections.NewMap(
+		sb, types.PendingEquivocationJailsPrefix,
+		"pending_equivocation_jails",
+		collections.BytesKey,
+		codec.CollValue[types.PendingEquivocationJail](cdc),
 	)
 
 	k.WithheldFeeRecords = collections.NewMap(

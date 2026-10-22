@@ -536,6 +536,12 @@ func TestGenesisRoundTrip(t *testing.T) {
 	for _, id := range []uint64{31, 32} {
 		require.NoError(t, pkA.HeldUnbondingOps.Set(ctxA, collections.Join(accusedAddr.ToSdkConsAddr().Bytes(), id)))
 	}
+	accusedJail := providertypes.PendingEquivocationJail{
+		ProviderConsAddr: accusedAddr.ToSdkConsAddr().Bytes(),
+		JailedUntil:      time.Unix(1_956_100_000, 0).UTC(),
+		OwedUntil:        time.Unix(1_955_500_000, 0).UTC(),
+	}
+	require.NoError(t, pkA.PendingEquivocationJails.Set(ctxA, accusedAddr.ToSdkConsAddr().Bytes(), accusedJail))
 
 	pkA.SetParams(ctxA, providertypes.DefaultParams())
 	pkA.SetValidatorSetUpdateId(ctxA, 1)
@@ -613,6 +619,7 @@ func TestGenesisRoundTrip(t *testing.T) {
 		ProviderConsAddr: accusedAddr.ToSdkConsAddr().Bytes(),
 		UnbondingOpIds:   []uint64{31, 32},
 	}}, expA.HeldUnbondingOps)
+	require.Equal(t, []providertypes.PendingEquivocationJail{accusedJail}, expA.PendingEquivocationJails)
 
 	// Sanity: the PAUSED consumer (zeta) carries its pause-expiration time.
 	byChainId := map[string]providertypes.ConsumerState{}
@@ -709,6 +716,9 @@ func TestGenesisRoundTrip(t *testing.T) {
 		require.NoError(t, err)
 		require.True(t, held, "HeldUnbondingOps lost across round-trip")
 	}
+	gotJail, err := pkB.PendingEquivocationJails.Get(ctxB, accusedAddr.ToSdkConsAddr().Bytes())
+	require.NoError(t, err, "PendingEquivocationJails lost across round-trip")
+	require.Equal(t, accusedJail, gotJail)
 
 	// The PAUSED consumer's pause-expiration queue must be rebuilt from the
 	// per-consumer pause_expiration_time, mirroring the removal-time queue.

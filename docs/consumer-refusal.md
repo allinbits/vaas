@@ -125,7 +125,13 @@ or tombstone in the submission transaction. Instead:
    change to the entry moves it: an extension behind a vote carries it past
    the new execution time, a pause moves it to the pause's expiration, and
    nothing ever shortens it while a punishment is pending (a second
-   accusation, or any other jail, only extends).
+   accusation, or any other jail, only extends). x/slashing holds a single
+   jail end per validator, shared with every other reason it may be jailed
+   for, so the provider records what it set there and what the validator
+   owes regardless of its pending punishments: a jail found already in
+   place, one someone else lengthened since (provider downtime, say), and
+   the jail of a punishment that executed. A cancellation opens the jail
+   down to that, never further.
 2. **The slash and tombstone queue** behind `EquivocationExecutionDelay`
    (default 7 days, mirroring the downtime challenge window), extended past a
    live removal vote for the consumer exactly like a downtime slash, with the

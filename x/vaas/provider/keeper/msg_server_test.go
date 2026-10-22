@@ -22,6 +22,7 @@ import (
 	sdk "github.com/cosmos/cosmos-sdk/types"
 	authtypes "github.com/cosmos/cosmos-sdk/x/auth/types"
 	disttypes "github.com/cosmos/cosmos-sdk/x/distribution/types"
+	slashingtypes "github.com/cosmos/cosmos-sdk/x/slashing/types"
 	stakingtypes "github.com/cosmos/cosmos-sdk/x/staking/types"
 	clienttypes "github.com/cosmos/ibc-go/v10/modules/core/02-client/types"
 	channeltypesv2 "github.com/cosmos/ibc-go/v10/modules/core/04-channel/v2/types"
@@ -379,9 +380,10 @@ func TestSubmitConsumerDoubleVotingHappyPath(t *testing.T) {
 	// once up front; the queue path then jails the validator and holds its
 	// unbonding operations. The slash and tombstone are deferred to the sweep,
 	// so no expectations for them exist and the controller proves they never ran.
-	mocks.MockStakingKeeper.EXPECT().GetValidatorByConsAddr(ctx, consAddr).Return(stakingValidator, nil).Times(3)
+	mocks.MockStakingKeeper.EXPECT().GetValidatorByConsAddr(ctx, consAddr).Return(stakingValidator, nil).Times(2)
 	mocks.MockSlashingKeeper.EXPECT().IsTombstoned(ctx, consAddr).Return(false).Times(1)
 	mocks.MockStakingKeeper.EXPECT().Jail(ctx, consAddr).Return(nil).Times(1)
+	mocks.MockSlashingKeeper.EXPECT().GetValidatorSigningInfo(ctx, consAddr).Return(slashingtypes.ValidatorSigningInfo{}, nil).Times(1)
 	mocks.MockSlashingKeeper.EXPECT().JailUntil(ctx, consAddr, gomock.Any()).Return(nil).Times(1)
 	mocks.MockStakingKeeper.EXPECT().GetUnbondingDelegationsFromValidator(ctx, valOperBytes).Return([]stakingtypes.UnbondingDelegation{}, nil).Times(1)
 	mocks.MockStakingKeeper.EXPECT().GetRedelegationsFromSrcValidator(ctx, valOperBytes).Return([]stakingtypes.Redelegation{}, nil).Times(1)

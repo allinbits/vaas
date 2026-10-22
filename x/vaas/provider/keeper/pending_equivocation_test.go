@@ -14,6 +14,7 @@ import (
 
 	sdk "github.com/cosmos/cosmos-sdk/types"
 	govv1 "github.com/cosmos/cosmos-sdk/x/gov/types/v1"
+	slashingtypes "github.com/cosmos/cosmos-sdk/x/slashing/types"
 	stakingtypes "github.com/cosmos/cosmos-sdk/x/staking/types"
 
 	testkeeper "github.com/allinbits/vaas/testutil/keeper"
@@ -46,11 +47,13 @@ func setupEquivocationQueueTest(t *testing.T) (
 }
 
 // expectQueueJail mocks the queue-time jail: validator lookup, tombstone
-// check, jail, and a jail horizon of the execution time plus the 24h margin.
+// check, jail, the read of the (empty) jail in place, and a jail horizon of
+// the execution time plus the 24h margin.
 func expectQueueJail(k providerkeeper.Keeper, mocks testkeeper.MockedKeepers, ctx sdk.Context, validator stakingtypes.Validator, consAddr sdk.ConsAddress) {
 	mocks.MockStakingKeeper.EXPECT().GetValidatorByConsAddr(ctx, consAddr).Return(validator, nil)
 	mocks.MockSlashingKeeper.EXPECT().IsTombstoned(ctx, consAddr).Return(false)
 	mocks.MockStakingKeeper.EXPECT().Jail(ctx, consAddr)
+	expectSigningInfo(mocks, ctx, consAddr, time.Time{})
 	mocks.MockSlashingKeeper.EXPECT().JailUntil(ctx, consAddr, ctx.BlockTime().Add(k.GetParams(ctx).EquivocationExecutionDelay).Add(24*time.Hour))
 }
 
@@ -60,7 +63,6 @@ func expectNoExistingUnbondings(t *testing.T, k providerkeeper.Keeper, mocks tes
 	t.Helper()
 	valAddr, err := k.ValidatorAddressCodec().StringToBytes(validator.GetOperator())
 	require.NoError(t, err)
-	mocks.MockStakingKeeper.EXPECT().GetValidatorByConsAddr(ctx, consAddr).Return(validator, nil)
 	mocks.MockStakingKeeper.EXPECT().GetUnbondingDelegationsFromValidator(ctx, valAddr).Return(nil, nil)
 	mocks.MockStakingKeeper.EXPECT().GetRedelegationsFromSrcValidator(ctx, valAddr).Return(nil, nil)
 }
@@ -84,9 +86,10 @@ func TestQueuePendingEquivocationJailsWithoutPunishing(t *testing.T) {
 	// entry and reads the tombstone flag to report it.
 	valAddr, err := k.ValidatorAddressCodec().StringToBytes(validator.GetOperator())
 	require.NoError(t, err)
-	mocks.MockStakingKeeper.EXPECT().GetValidatorByConsAddr(ctx, consAddr).Return(validator, nil).Times(4)
+	mocks.MockStakingKeeper.EXPECT().GetValidatorByConsAddr(ctx, consAddr).Return(validator, nil).Times(3)
 	mocks.MockSlashingKeeper.EXPECT().IsTombstoned(ctx, consAddr).Return(false).Times(2)
 	mocks.MockStakingKeeper.EXPECT().Jail(ctx, consAddr)
+	mocks.MockSlashingKeeper.EXPECT().GetValidatorSigningInfo(ctx, consAddr).Return(slashingtypes.ValidatorSigningInfo{}, nil)
 	mocks.MockSlashingKeeper.EXPECT().JailUntil(ctx, consAddr, ctx.BlockTime().Add(k.GetParams(ctx).EquivocationExecutionDelay).Add(24*time.Hour))
 	mocks.MockStakingKeeper.EXPECT().GetUnbondingDelegationsFromValidator(ctx, valAddr).Return([]stakingtypes.UnbondingDelegation{
 		{Entries: []stakingtypes.UnbondingDelegationEntry{{UnbondingId: 7}, {UnbondingId: 9}}},
@@ -132,7 +135,7 @@ func TestQueuePendingEquivocationTombstonedIsIdempotent(t *testing.T) {
 	defer ctrl.Finish()
 
 	consAddr := providerAddr.ToSdkConsAddr()
-	mocks.MockStakingKeeper.EXPECT().GetValidatorByConsAddr(ctx, consAddr).Return(validator, nil).Times(2)
+	mocks.MockStakingKeeper.EXPECT().GetValidatorByConsAddr(ctx, consAddr).Return(validator, nil)
 	mocks.MockSlashingKeeper.EXPECT().IsTombstoned(ctx, consAddr).Return(true)
 
 	alreadyTombstoned, err := k.QueuePendingEquivocationPunishment(ctx, 0, providerAddr, 42)
@@ -181,6 +184,7 @@ func TestSweepExecutesMaturedEquivocation(t *testing.T) {
 		gomock.Any(), consAddr, int64(0), int64(500), gomock.Any(), stakingtypes.Infraction_INFRACTION_DOUBLE_SIGN,
 	).Return(math.NewInt(25), nil)
 	mocks.MockStakingKeeper.EXPECT().Jail(gomock.Any(), consAddr)
+	mocks.MockSlashingKeeper.EXPECT().GetValidatorSigningInfo(gomock.Any(), consAddr).Return(slashingtypes.ValidatorSigningInfo{}, nil)
 	mocks.MockSlashingKeeper.EXPECT().JailUntil(gomock.Any(), consAddr, gomock.Any())
 	mocks.MockSlashingKeeper.EXPECT().Tombstone(gomock.Any(), consAddr)
 	mocks.MockStakingKeeper.EXPECT().UnbondingCanComplete(lateCtx, uint64(11)).Return(nil)
@@ -216,6 +220,7 @@ func TestSweepDefersEquivocationBehindRemovalVote(t *testing.T) {
 
 	// Deferral extends the jail horizon too.
 	mocks.MockStakingKeeper.EXPECT().GetValidatorByConsAddr(matured, consAddr).Return(validator, nil)
+	mocks.MockSlashingKeeper.EXPECT().GetValidatorSigningInfo(matured, consAddr).Return(slashingtypes.ValidatorSigningInfo{}, nil)
 	mocks.MockSlashingKeeper.EXPECT().JailUntil(matured, consAddr, gomock.Any())
 
 	k.SweepPendingEquivocationPunishments(matured)
@@ -252,6 +257,7 @@ func expectExecution(t *testing.T, k providerkeeper.Keeper, mocks testkeeper.Moc
 		gomock.Any(), consAddr, int64(0), int64(500), math.LegacyNewDecWithPrec(5, 2), stakingtypes.Infraction_INFRACTION_DOUBLE_SIGN,
 	).Return(math.NewInt(25), nil)
 	mocks.MockStakingKeeper.EXPECT().Jail(gomock.Any(), consAddr)
+	expectSigningInfo(mocks, gomock.Any(), consAddr, time.Time{})
 	mocks.MockSlashingKeeper.EXPECT().JailUntil(gomock.Any(), consAddr, gomock.Any())
 	mocks.MockSlashingKeeper.EXPECT().Tombstone(gomock.Any(), consAddr)
 }
@@ -293,6 +299,7 @@ func TestGovernanceRemovalCancelsPendingEquivocation(t *testing.T) {
 	// The governance verdict does.
 	mocks.MockStakingKeeper.EXPECT().UnbondingCanComplete(ctx, uint64(13)).Return(nil)
 	mocks.MockStakingKeeper.EXPECT().GetValidatorByConsAddr(ctx, consAddr).Return(validator, nil)
+	mocks.MockSlashingKeeper.EXPECT().GetValidatorSigningInfo(ctx, consAddr).Return(slashingtypes.ValidatorSigningInfo{}, nil)
 	mocks.MockSlashingKeeper.EXPECT().JailUntil(ctx, consAddr, ctx.BlockTime())
 	k.CancelPendingEquivocationPunishmentsForConsumer(ctx, consumerID)
 
@@ -319,6 +326,7 @@ func TestRemoveConsumerHandlerCancelsPendingEquivocation(t *testing.T) {
 	mocks.MockStakingKeeper.EXPECT().UnbondingTime(gomock.Any()).Return(21*24*time.Hour, nil).AnyTimes()
 	mocks.MockStakingKeeper.EXPECT().UnbondingCanComplete(ctx, uint64(17)).Return(nil)
 	mocks.MockStakingKeeper.EXPECT().GetValidatorByConsAddr(ctx, consAddr).Return(validator, nil)
+	mocks.MockSlashingKeeper.EXPECT().GetValidatorSigningInfo(ctx, consAddr).Return(slashingtypes.ValidatorSigningInfo{}, nil)
 	mocks.MockSlashingKeeper.EXPECT().JailUntil(ctx, consAddr, ctx.BlockTime())
 
 	msgServer := providerkeeper.NewMsgServerImpl(&k)
@@ -379,6 +387,7 @@ func deferEquivocationBehindVote(t *testing.T, k providerkeeper.Keeper, ctx sdk.
 	voteEnd := matured.BlockTime().Add(time.Hour)
 	seedRemovalVote(t, mocks.GovKeeper, k, ctx, 7, consumerID, voteEnd)
 	mocks.MockStakingKeeper.EXPECT().GetValidatorByConsAddr(matured, consAddr).Return(validator, nil)
+	expectSigningInfo(mocks, matured, consAddr, time.Time{})
 	mocks.MockSlashingKeeper.EXPECT().JailUntil(matured, consAddr, voteEnd.Add(k.GetParams(ctx).RemovalVoteDeferralMargin).Add(24*time.Hour))
 	k.SweepPendingEquivocationPunishments(matured)
 	entry, err := k.PendingEquivocationPunishments.Get(matured, key)
@@ -393,6 +402,7 @@ func deferEquivocationBehindVote(t *testing.T, k providerkeeper.Keeper, ctx sdk.
 func expectCancellation(mocks testkeeper.MockedKeepers, ctx sdk.Context, validator stakingtypes.Validator, consAddr sdk.ConsAddress, opID uint64) {
 	mocks.MockStakingKeeper.EXPECT().UnbondingCanComplete(ctx, opID).Return(nil)
 	mocks.MockStakingKeeper.EXPECT().GetValidatorByConsAddr(ctx, consAddr).Return(validator, nil)
+	expectSigningInfo(mocks, ctx, consAddr, time.Time{})
 	mocks.MockSlashingKeeper.EXPECT().JailUntil(ctx, consAddr, ctx.BlockTime())
 }
 
@@ -507,6 +517,7 @@ func TestOpenRemovalVoteAtExtendedMaturityKeepsDeferring(t *testing.T) {
 	margin := k.GetParams(ctx).RemovalVoteDeferralMargin
 	stillVoting := matured.WithBlockTime(entry.ExecutesAt.Add(time.Second))
 	mocks.MockStakingKeeper.EXPECT().GetValidatorByConsAddr(stillVoting, consAddr).Return(validator, nil)
+	mocks.MockSlashingKeeper.EXPECT().GetValidatorSigningInfo(stillVoting, consAddr).Return(slashingtypes.ValidatorSigningInfo{}, nil)
 	mocks.MockSlashingKeeper.EXPECT().JailUntil(stillVoting, consAddr, extendedEnd.Add(margin).Add(24*time.Hour))
 	k.SweepPendingEquivocationPunishments(stillVoting)
 
@@ -559,6 +570,7 @@ func TestExecutionSlashesBondedStakeOfJailedValidator(t *testing.T) {
 	mocks.MockStakingKeeper.EXPECT().SlashWithInfractionReason(
 		gomock.Any(), consAddr, int64(0), int64(1200), math.LegacyNewDecWithPrec(5, 2), stakingtypes.Infraction_INFRACTION_DOUBLE_SIGN,
 	).Return(math.NewInt(60), nil)
+	mocks.MockSlashingKeeper.EXPECT().GetValidatorSigningInfo(gomock.Any(), consAddr).Return(slashingtypes.ValidatorSigningInfo{}, nil)
 	mocks.MockSlashingKeeper.EXPECT().JailUntil(gomock.Any(), consAddr, gomock.Any())
 	mocks.MockSlashingKeeper.EXPECT().Tombstone(gomock.Any(), consAddr)
 
@@ -582,9 +594,10 @@ func TestQueueToleratesCompletedValidatorUnbondingIds(t *testing.T) {
 	validator.UnbondingIds = []uint64{3, 8}
 	valAddr, err := k.ValidatorAddressCodec().StringToBytes(validator.GetOperator())
 	require.NoError(t, err)
-	mocks.MockStakingKeeper.EXPECT().GetValidatorByConsAddr(ctx, consAddr).Return(validator, nil).Times(2)
+	mocks.MockStakingKeeper.EXPECT().GetValidatorByConsAddr(ctx, consAddr).Return(validator, nil)
 	mocks.MockSlashingKeeper.EXPECT().IsTombstoned(ctx, consAddr).Return(false)
 	mocks.MockStakingKeeper.EXPECT().Jail(ctx, consAddr)
+	mocks.MockSlashingKeeper.EXPECT().GetValidatorSigningInfo(ctx, consAddr).Return(slashingtypes.ValidatorSigningInfo{}, nil)
 	mocks.MockSlashingKeeper.EXPECT().JailUntil(ctx, consAddr, gomock.Any())
 	mocks.MockStakingKeeper.EXPECT().GetUnbondingDelegationsFromValidator(ctx, valAddr).Return(nil, nil)
 	mocks.MockStakingKeeper.EXPECT().GetRedelegationsFromSrcValidator(ctx, valAddr).Return(nil, nil)
@@ -621,9 +634,9 @@ func TestQueueKeysPunishmentByTheLiveAddressAndHooksHoldThere(t *testing.T) {
 	// x/staking answers for the rotated-away address through the old-to-new
 	// mapping and for the live one directly, with the same validator.
 	mocks.MockStakingKeeper.EXPECT().GetValidatorByConsAddr(ctx, oldAddr).Return(rotated, nil)
-	mocks.MockStakingKeeper.EXPECT().GetValidatorByConsAddr(ctx, newAddr).Return(rotated, nil)
 	mocks.MockSlashingKeeper.EXPECT().IsTombstoned(ctx, newAddr).Return(false)
 	mocks.MockStakingKeeper.EXPECT().Jail(ctx, newAddr)
+	mocks.MockSlashingKeeper.EXPECT().GetValidatorSigningInfo(ctx, newAddr).Return(slashingtypes.ValidatorSigningInfo{}, nil)
 	mocks.MockSlashingKeeper.EXPECT().JailUntil(ctx, newAddr, gomock.Any())
 	mocks.MockStakingKeeper.EXPECT().GetUnbondingDelegationsFromValidator(ctx, valAddr).Return(nil, nil)
 	mocks.MockStakingKeeper.EXPECT().GetRedelegationsFromSrcValidator(ctx, valAddr).Return(nil, nil)
@@ -680,15 +693,27 @@ func TestRotationAfterQueueMovesPunishmentAndHolds(t *testing.T) {
 	require.NoError(t, err)
 	require.True(t, newHold)
 
+	oldJail, err := k.PendingEquivocationJails.Has(ctx, oldAddr.Bytes())
+	require.NoError(t, err)
+	require.False(t, oldJail, "the jail record moves with the punishment")
+	newJail, err := k.PendingEquivocationJails.Get(ctx, newAddr.Bytes())
+	require.NoError(t, err)
+	require.Equal(t, newAddr.Bytes(), newJail.ProviderConsAddr)
+
 	// Governance removes the consumer: the cancellation releases the moved
-	// hold and opens the jail under the live address.
+	// hold and opens the jail under the live address, where x/slashing moved
+	// the signing info.
 	mocks.MockStakingKeeper.EXPECT().UnbondingCanComplete(ctx, uint64(11)).Return(nil)
 	mocks.MockStakingKeeper.EXPECT().GetValidatorByConsAddr(ctx, newAddr).Return(rotated, nil)
+	expectSigningInfo(mocks, ctx, newAddr, newJail.JailedUntil)
 	mocks.MockSlashingKeeper.EXPECT().JailUntil(ctx, newAddr, ctx.BlockTime())
 	k.CancelPendingEquivocationPunishmentsForConsumer(ctx, 0)
 	newHold, err = k.HeldUnbondingOps.Has(ctx, collections.Join(newAddr.Bytes(), uint64(11)))
 	require.NoError(t, err)
 	require.False(t, newHold)
+	newJailStill, err := k.PendingEquivocationJails.Has(ctx, newAddr.Bytes())
+	require.NoError(t, err)
+	require.False(t, newJailStill, "the record goes with the last pending punishment")
 }
 
 // TestAfterUnbondingInitiatedHoldsOnlyAccusedValidatorsOps covers the three
@@ -764,6 +789,7 @@ func TestPauseExtendsJailOfPendingPunishments(t *testing.T) {
 
 	pauseExpiration := ctx.BlockTime().Add(k.GetMaxPauseDuration(ctx))
 	mocks.MockStakingKeeper.EXPECT().GetValidatorByConsAddr(ctx, consAddr).Return(validator, nil)
+	mocks.MockSlashingKeeper.EXPECT().GetValidatorSigningInfo(ctx, consAddr).Return(slashingtypes.ValidatorSigningInfo{}, nil)
 	mocks.MockSlashingKeeper.EXPECT().JailUntil(ctx, consAddr, pauseExpiration.Add(24*time.Hour))
 	require.NoError(t, k.PauseConsumerChain(ctx, consumerID, types.PAUSE_REASON_REFUSAL_THRESHOLD))
 
@@ -791,6 +817,7 @@ func TestSecondQueueDoesNotShortenJail(t *testing.T) {
 	margin := k.GetParams(ctx).RemovalVoteDeferralMargin
 	later := matured.WithBlockTime(entry.ExecutesAt.Add(time.Second))
 	mocks.MockStakingKeeper.EXPECT().GetValidatorByConsAddr(later, consAddr).Return(validator, nil)
+	mocks.MockSlashingKeeper.EXPECT().GetValidatorSigningInfo(later, consAddr).Return(slashingtypes.ValidatorSigningInfo{}, nil)
 	mocks.MockSlashingKeeper.EXPECT().JailUntil(later, consAddr, farEnd.Add(margin).Add(24*time.Hour))
 	k.SweepPendingEquivocationPunishments(later)
 
@@ -800,9 +827,10 @@ func TestSecondQueueDoesNotShortenJail(t *testing.T) {
 	k.SetConsumerPhase(later, 1, types.CONSUMER_PHASE_LAUNCHED)
 	valAddr, err := k.ValidatorAddressCodec().StringToBytes(validator.GetOperator())
 	require.NoError(t, err)
-	mocks.MockStakingKeeper.EXPECT().GetValidatorByConsAddr(later, consAddr).Return(validator, nil).Times(2)
+	mocks.MockStakingKeeper.EXPECT().GetValidatorByConsAddr(later, consAddr).Return(validator, nil)
 	mocks.MockSlashingKeeper.EXPECT().IsTombstoned(later, consAddr).Return(false)
 	mocks.MockStakingKeeper.EXPECT().Jail(later, consAddr)
+	mocks.MockSlashingKeeper.EXPECT().GetValidatorSigningInfo(later, consAddr).Return(slashingtypes.ValidatorSigningInfo{}, nil)
 	mocks.MockSlashingKeeper.EXPECT().JailUntil(later, consAddr, farEnd.Add(margin).Add(24*time.Hour))
 	mocks.MockStakingKeeper.EXPECT().GetUnbondingDelegationsFromValidator(later, valAddr).Return(nil, nil)
 	mocks.MockStakingKeeper.EXPECT().GetRedelegationsFromSrcValidator(later, valAddr).Return(nil, nil)
@@ -890,6 +918,7 @@ func TestExecutionRetriesWhenTombstoneFails(t *testing.T) {
 	mocks.MockStakingKeeper.EXPECT().PowerReduction(gomock.Any()).Return(math.NewInt(1))
 	mocks.MockStakingKeeper.EXPECT().SlashWithInfractionReason(gomock.Any(), consAddr, int64(0), int64(500), gomock.Any(), stakingtypes.Infraction_INFRACTION_DOUBLE_SIGN).Return(math.NewInt(25), nil)
 	mocks.MockStakingKeeper.EXPECT().Jail(gomock.Any(), consAddr)
+	mocks.MockSlashingKeeper.EXPECT().GetValidatorSigningInfo(gomock.Any(), consAddr).Return(slashingtypes.ValidatorSigningInfo{}, nil)
 	mocks.MockSlashingKeeper.EXPECT().JailUntil(gomock.Any(), consAddr, gomock.Any())
 	mocks.MockSlashingKeeper.EXPECT().Tombstone(gomock.Any(), consAddr).Return(errors.New("signing info missing"))
 	k.SweepPendingEquivocationPunishments(matured)
@@ -954,6 +983,7 @@ func TestCancellingOneOfTwoEntriesKeepsHoldsAndJail(t *testing.T) {
 	// Governance removes consumer 1: only its entry goes; no hold is
 	// released, and the jail is set to what the first entry still requires.
 	mocks.MockStakingKeeper.EXPECT().GetValidatorByConsAddr(laterCtx, consAddr).Return(validator, nil)
+	mocks.MockSlashingKeeper.EXPECT().GetValidatorSigningInfo(laterCtx, consAddr).Return(slashingtypes.ValidatorSigningInfo{}, nil)
 	mocks.MockSlashingKeeper.EXPECT().JailUntil(laterCtx, consAddr, ctx.BlockTime().Add(k.GetParams(ctx).EquivocationExecutionDelay).Add(24*time.Hour))
 	k.CancelPendingEquivocationPunishmentsForConsumer(laterCtx, 1)
 
@@ -991,6 +1021,7 @@ func TestSweepConsultsTheVoteOncePerConsumer(t *testing.T) {
 			return err
 		}).Times(1)
 	mocks.MockStakingKeeper.EXPECT().GetValidatorByConsAddr(matured, consAddr).Return(validator, nil).Times(2)
+	mocks.MockSlashingKeeper.EXPECT().GetValidatorSigningInfo(matured, consAddr).Return(slashingtypes.ValidatorSigningInfo{}, nil).Times(2)
 	mocks.MockSlashingKeeper.EXPECT().JailUntil(matured, consAddr, gomock.Any()).Times(2)
 	k.SweepPendingEquivocationPunishments(matured)
 }
@@ -1145,6 +1176,7 @@ func TestExecutionWithoutTombstoningKeepsSiblingEntries(t *testing.T) {
 		gomock.Any(), consAddr, int64(0), int64(500), math.LegacyNewDecWithPrec(5, 2), stakingtypes.Infraction_INFRACTION_DOUBLE_SIGN,
 	).Return(math.NewInt(25), nil).Times(2)
 	mocks.MockStakingKeeper.EXPECT().Jail(gomock.Any(), consAddr).Times(2)
+	mocks.MockSlashingKeeper.EXPECT().GetValidatorSigningInfo(gomock.Any(), consAddr).Return(slashingtypes.ValidatorSigningInfo{}, nil).Times(2)
 	mocks.MockSlashingKeeper.EXPECT().JailUntil(gomock.Any(), consAddr, gomock.Any()).Times(2)
 	mocks.MockStakingKeeper.EXPECT().UnbondingCanComplete(matured, uint64(11)).Return(nil)
 	k.SweepPendingEquivocationPunishments(matured)
@@ -1171,6 +1203,7 @@ func expectFailingExecution(t *testing.T, k providerkeeper.Keeper, mocks testkee
 	mocks.MockStakingKeeper.EXPECT().PowerReduction(gomock.Any()).Return(math.NewInt(1))
 	mocks.MockStakingKeeper.EXPECT().SlashWithInfractionReason(gomock.Any(), consAddr, int64(0), int64(500), gomock.Any(), stakingtypes.Infraction_INFRACTION_DOUBLE_SIGN).Return(math.NewInt(25), nil)
 	mocks.MockStakingKeeper.EXPECT().Jail(gomock.Any(), consAddr)
+	mocks.MockSlashingKeeper.EXPECT().GetValidatorSigningInfo(gomock.Any(), consAddr).Return(slashingtypes.ValidatorSigningInfo{}, nil)
 	mocks.MockSlashingKeeper.EXPECT().JailUntil(gomock.Any(), consAddr, gomock.Any())
 	mocks.MockSlashingKeeper.EXPECT().Tombstone(gomock.Any(), consAddr).Return(errors.New("signing info missing"))
 }
@@ -1207,4 +1240,197 @@ func TestExecutionGivesUpAfterTheJailMargin(t *testing.T) {
 	require.False(t, held, "the holds are released with the drop")
 	require.Equal(t, 1, countEvents(spent, types.EventTypeEquivocationPunishmentDropped))
 	require.Equal(t, 0, countEvents(spent, types.EventTypeEquivocationPunishmentExecuted))
+}
+
+// expectSigningInfo answers the signing-info read every jail update makes
+// with jailedUntil as the jail end x/slashing currently holds for the
+// validator.
+func expectSigningInfo(mocks testkeeper.MockedKeepers, ctx any, consAddr sdk.ConsAddress, jailedUntil time.Time) {
+	mocks.MockSlashingKeeper.EXPECT().GetValidatorSigningInfo(ctx, consAddr).
+		Return(slashingtypes.ValidatorSigningInfo{Address: consAddr.String(), JailedUntil: jailedUntil}, nil)
+}
+
+// TestQueueKeepsALongerJailAlreadyInPlace: x/slashing already holds the
+// validator jailed past the horizon the queue would set (a provider-side
+// downtime jail, say). The queue leaves that end in place and records it as
+// owed, so cancelling the punishment later does not open it either.
+func TestQueueKeepsALongerJailAlreadyInPlace(t *testing.T) {
+	k, ctx, ctrl, mocks, validator, providerAddr := setupEquivocationQueueTest(t)
+	defer ctrl.Finish()
+	consAddr := providerAddr.ToSdkConsAddr()
+	k.SetConsumerPhase(ctx, 0, types.CONSUMER_PHASE_LAUNCHED)
+
+	inPlace := ctx.BlockTime().Add(30 * 24 * time.Hour)
+	mocks.MockStakingKeeper.EXPECT().GetValidatorByConsAddr(ctx, consAddr).Return(validator, nil)
+	mocks.MockSlashingKeeper.EXPECT().IsTombstoned(ctx, consAddr).Return(false)
+	mocks.MockStakingKeeper.EXPECT().Jail(ctx, consAddr)
+	expectSigningInfo(mocks, ctx, consAddr, inPlace)
+	mocks.MockSlashingKeeper.EXPECT().JailUntil(ctx, consAddr, inPlace)
+	expectNoExistingUnbondings(t, k, mocks, ctx, validator, consAddr)
+	_, err := k.QueuePendingEquivocationPunishment(ctx, 0, providerAddr, 42)
+	require.NoError(t, err)
+
+	rec, err := k.PendingEquivocationJails.Get(ctx, consAddr.Bytes())
+	require.NoError(t, err)
+	require.Equal(t, inPlace, rec.JailedUntil)
+	require.Equal(t, inPlace, rec.OwedUntil, "a jail found in place is owed regardless of the punishment")
+
+	mocks.MockStakingKeeper.EXPECT().GetValidatorByConsAddr(ctx, consAddr).Return(validator, nil)
+	expectSigningInfo(mocks, ctx, consAddr, inPlace)
+	mocks.MockSlashingKeeper.EXPECT().JailUntil(ctx, consAddr, inPlace)
+	k.CancelPendingEquivocationPunishmentsForConsumer(ctx, 0)
+	has, err := k.PendingEquivocationJails.Has(ctx, consAddr.Bytes())
+	require.NoError(t, err)
+	require.False(t, has, "the record goes with the last pending punishment")
+}
+
+// TestCancellationKeepsAJailSetBySomeoneElse: after the queue, someone else
+// jailed the validator for longer (x/slashing reads later than what this
+// module last set). The cancellation opens nothing: it keeps that end.
+func TestCancellationKeepsAJailSetBySomeoneElse(t *testing.T) {
+	k, ctx, ctrl, mocks, validator, providerAddr := setupEquivocationQueueTest(t)
+	defer ctrl.Finish()
+	consAddr := providerAddr.ToSdkConsAddr()
+	queueWithHeldOp(t, k, ctx, mocks, validator, providerAddr, 0, 11)
+
+	horizon := ctx.BlockTime().Add(k.GetParams(ctx).EquivocationExecutionDelay).Add(24 * time.Hour)
+	rec, err := k.PendingEquivocationJails.Get(ctx, consAddr.Bytes())
+	require.NoError(t, err)
+	require.Equal(t, horizon, rec.JailedUntil)
+	require.True(t, rec.OwedUntil.IsZero(), "nothing owed beyond the punishment")
+
+	later := ctx.WithBlockTime(ctx.BlockTime().Add(time.Hour))
+	foreign := later.BlockTime().Add(60 * 24 * time.Hour)
+	mocks.MockStakingKeeper.EXPECT().UnbondingCanComplete(later, uint64(11)).Return(nil)
+	mocks.MockStakingKeeper.EXPECT().GetValidatorByConsAddr(later, consAddr).Return(validator, nil)
+	expectSigningInfo(mocks, later, consAddr, foreign)
+	mocks.MockSlashingKeeper.EXPECT().JailUntil(later, consAddr, foreign)
+	k.CancelPendingEquivocationPunishmentsForConsumer(later, 0)
+	has, err := k.PendingEquivocationJails.Has(later, consAddr.Bytes())
+	require.NoError(t, err)
+	require.False(t, has)
+}
+
+// TestExtensionKeepsALongerForeignJail: the deferral behind a removal vote
+// moves the jail to the extended horizon, unless someone else's jail already
+// reaches further, which it then keeps and records as owed.
+func TestExtensionKeepsALongerForeignJail(t *testing.T) {
+	k, ctx, ctrl, mocks, validator, providerAddr := setupEquivocationQueueTest(t)
+	defer ctrl.Finish()
+	consAddr := providerAddr.ToSdkConsAddr()
+	queueWithHeldOp(t, k, ctx, mocks, validator, providerAddr, 0, 11)
+
+	matured := ctx.WithBlockTime(ctx.BlockTime().Add(k.GetParams(ctx).EquivocationExecutionDelay + time.Second))
+	voteEnd := matured.BlockTime().Add(time.Hour)
+	seedRemovalVote(t, mocks.GovKeeper, k, ctx, 7, 0, voteEnd)
+	foreign := voteEnd.Add(90 * 24 * time.Hour)
+	mocks.MockStakingKeeper.EXPECT().GetValidatorByConsAddr(matured, consAddr).Return(validator, nil)
+	expectSigningInfo(mocks, matured, consAddr, foreign)
+	mocks.MockSlashingKeeper.EXPECT().JailUntil(matured, consAddr, foreign)
+	k.SweepPendingEquivocationPunishments(matured)
+
+	rec, err := k.PendingEquivocationJails.Get(matured, consAddr.Bytes())
+	require.NoError(t, err)
+	require.Equal(t, foreign, rec.JailedUntil)
+	require.Equal(t, foreign, rec.OwedUntil)
+}
+
+// TestCancellationKeepsTheJailOfAnExecutedSibling (tombstoning off): one of
+// two entries executes with the double-sign jail while the other waits on a
+// removal vote. When that vote passes, the cancellation opens the jail down
+// to the executed punishment's end, not to now.
+func TestCancellationKeepsTheJailOfAnExecutedSibling(t *testing.T) {
+	k, ctx, ctrl, mocks, validator, providerAddr := setupEquivocationQueueTest(t)
+	defer ctrl.Finish()
+	params := k.GetInfractionParams(ctx)
+	params.DoubleSign.Tombstone = false
+	params.DoubleSign.JailDuration = 10 * time.Hour
+	k.SetInfractionParams(ctx, params)
+	consAddr := providerAddr.ToSdkConsAddr()
+	valAddr, err := k.ValidatorAddressCodec().StringToBytes(validator.GetOperator())
+	require.NoError(t, err)
+	horizon := ctx.BlockTime().Add(k.GetParams(ctx).EquivocationExecutionDelay).Add(24 * time.Hour)
+
+	// Two entries queued in one block, on consumers 0 and 1; the second
+	// queue finds the first's jail in place and leaves it.
+	for _, cid := range []uint64{0, 1} {
+		k.SetConsumerPhase(ctx, cid, types.CONSUMER_PHASE_LAUNCHED)
+		mocks.MockStakingKeeper.EXPECT().GetValidatorByConsAddr(ctx, consAddr).Return(validator, nil)
+		mocks.MockSlashingKeeper.EXPECT().IsTombstoned(ctx, consAddr).Return(false)
+		mocks.MockStakingKeeper.EXPECT().Jail(ctx, consAddr)
+		if cid == 0 {
+			expectSigningInfo(mocks, ctx, consAddr, time.Time{})
+		} else {
+			expectSigningInfo(mocks, ctx, consAddr, horizon)
+		}
+		mocks.MockSlashingKeeper.EXPECT().JailUntil(ctx, consAddr, horizon)
+		expectNoExistingUnbondings(t, k, mocks, ctx, validator, consAddr)
+		_, err := k.QueuePendingEquivocationPunishment(ctx, cid, providerAddr, 42)
+		require.NoError(t, err)
+	}
+
+	// Consumer 1 is up for removal, the vote ending an hour after maturity.
+	matured := ctx.WithBlockTime(ctx.BlockTime().Add(k.GetParams(ctx).EquivocationExecutionDelay + time.Second))
+	voteEnd := matured.BlockTime().Add(time.Hour)
+	margin := k.GetParams(ctx).RemovalVoteDeferralMargin
+	seedRemovalVote(t, mocks.GovKeeper, k, ctx, 7, 1, voteEnd)
+	extended := voteEnd.Add(margin).Add(24 * time.Hour)
+	executedUntil := matured.BlockTime().Add(params.DoubleSign.JailDuration)
+
+	// The sweep defers consumer 1's entry, then executes consumer 0's: a
+	// slash and a jail of DoubleSign.JailDuration, no tombstone. That jail
+	// ends before the extended horizon, so the jail end stays there and the
+	// executed jail is owed underneath it.
+	mocks.MockStakingKeeper.EXPECT().GetValidatorByConsAddr(gomock.Any(), consAddr).Return(validator, nil).AnyTimes()
+	mocks.MockSlashingKeeper.EXPECT().IsTombstoned(gomock.Any(), consAddr).Return(false).AnyTimes()
+	mocks.MockStakingKeeper.EXPECT().GetUnbondingDelegationsFromValidator(gomock.Any(), valAddr).Return(nil, nil)
+	mocks.MockStakingKeeper.EXPECT().GetRedelegationsFromSrcValidator(gomock.Any(), valAddr).Return(nil, nil)
+	mocks.MockStakingKeeper.EXPECT().PowerReduction(gomock.Any()).Return(math.NewInt(1))
+	mocks.MockStakingKeeper.EXPECT().SlashWithInfractionReason(
+		gomock.Any(), consAddr, int64(0), int64(500), math.LegacyNewDecWithPrec(5, 2), stakingtypes.Infraction_INFRACTION_DOUBLE_SIGN,
+	).Return(math.NewInt(25), nil)
+	mocks.MockStakingKeeper.EXPECT().Jail(gomock.Any(), consAddr)
+	gomock.InOrder(
+		mocks.MockSlashingKeeper.EXPECT().GetValidatorSigningInfo(gomock.Any(), consAddr).
+			Return(slashingtypes.ValidatorSigningInfo{Address: consAddr.String(), JailedUntil: horizon}, nil),
+		mocks.MockSlashingKeeper.EXPECT().JailUntil(gomock.Any(), consAddr, extended),
+		mocks.MockSlashingKeeper.EXPECT().GetValidatorSigningInfo(gomock.Any(), consAddr).
+			Return(slashingtypes.ValidatorSigningInfo{Address: consAddr.String(), JailedUntil: extended}, nil),
+		mocks.MockSlashingKeeper.EXPECT().JailUntil(gomock.Any(), consAddr, extended),
+	)
+	k.SweepPendingEquivocationPunishments(matured)
+	rec, err := k.PendingEquivocationJails.Get(matured, consAddr.Bytes())
+	require.NoError(t, err)
+	require.Equal(t, extended, rec.JailedUntil)
+	require.Equal(t, executedUntil, rec.OwedUntil, "the executed punishment's jail is owed")
+
+	// The vote passes: consumer 1's entry is cancelled at its extended
+	// maturity and the jail opens down to the executed punishment's end.
+	seedRemovalProposal(t, mocks.GovKeeper, k, ctx, 7, 1, govv1.StatusPassed, time.Time{})
+	decided := matured.WithBlockTime(voteEnd.Add(margin).Add(time.Second))
+	expectSigningInfo(mocks, decided, consAddr, extended)
+	mocks.MockSlashingKeeper.EXPECT().JailUntil(decided, consAddr, executedUntil)
+	k.SweepPendingEquivocationPunishments(decided)
+	has, err := k.PendingEquivocationJails.Has(decided, consAddr.Bytes())
+	require.NoError(t, err)
+	require.False(t, has)
+}
+
+// TestQueueFailsWhenTheSigningInfoCannotBeRead: the jail update reads the
+// jail in place before writing; a read that fails for any reason but a
+// missing signing info fails the queue rather than guessing at no jail, since
+// a guess could later open a jail someone else closed.
+func TestQueueFailsWhenTheSigningInfoCannotBeRead(t *testing.T) {
+	k, ctx, ctrl, mocks, validator, providerAddr := setupEquivocationQueueTest(t)
+	defer ctrl.Finish()
+	consAddr := providerAddr.ToSdkConsAddr()
+	k.SetConsumerPhase(ctx, 0, types.CONSUMER_PHASE_LAUNCHED)
+
+	mocks.MockStakingKeeper.EXPECT().GetValidatorByConsAddr(ctx, consAddr).Return(validator, nil)
+	mocks.MockSlashingKeeper.EXPECT().IsTombstoned(ctx, consAddr).Return(false)
+	mocks.MockStakingKeeper.EXPECT().Jail(ctx, consAddr)
+	mocks.MockSlashingKeeper.EXPECT().GetValidatorSigningInfo(ctx, consAddr).
+		Return(slashingtypes.ValidatorSigningInfo{}, errors.New("store unavailable"))
+	_, err := k.QueuePendingEquivocationPunishment(ctx, 0, providerAddr, 42)
+	require.ErrorContains(t, err, "store unavailable")
 }
