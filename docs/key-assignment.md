@@ -166,22 +166,24 @@ forces its own snapshot resync anyway
 
 ### Rotating onto a key already assigned as a consumer key is rejected
 
-The provider's `ConsPubKeyRotationDecorator`
-(`x/vaas/provider/ante/cons_pubkey_rotation_ante.go`)
-inspects every `MsgRotateConsPubKey` at **transaction admission** -- including
-one nested inside an `authz.MsgExec` -- and fails it with `ErrConsumerKeyInUse`
-if the new consensus key is already some validator's assigned consumer key on
-any consumer that is not deleted. Paused and stopped consumers count: they keep
-their key assignments, and a paused one can be resumed.
+`x/staking` asks its hooks before it records a rotation
+(`BeforeConsensusPubKeyRotation`, the hook atomone-sdk adds to the
+`MsgRotateConsPubKey` handler), and the provider's hook
+(`x/vaas/provider/keeper/hooks.go`) fails the rotation with
+`ErrConsumerKeyInUse` if the new consensus key is already some validator's
+assigned consumer key on any consumer that is not deleted. Paused and stopped
+consumers count: they keep their key assignments, and a paused one can be
+resumed. The check runs wherever the message executes, so wrapping the
+rotation in an `authz.MsgExec` changes nothing.
 
-Admission is the enforcement point because it is the last one available.
+The hook is the enforcement point because it is the last one available.
 `x/staking` applies a recorded rotation from `EndBlock`, not from the message
 handler, so by the time VAAS observes it in `AfterConsensusPubKeyUpdate` the
 rotation is already committed and there is nothing left to refuse. A rejection
-therefore costs you the transaction and nothing else. Note this holds only on a
-chain that wired the decorator; without it such a rotation succeeds and one of
-the two colliding validators is silently dropped from that consumer's validator
-set ([embedding.md](embedding.md) section 7).
+therefore costs you the transaction and nothing else. Under a staking module
+that does not ask the hook such a rotation succeeds, and one of the two
+colliding validators is silently dropped from that consumer's validator set
+([embedding.md](embedding.md) section 7).
 
 ### Where your state ends up
 
