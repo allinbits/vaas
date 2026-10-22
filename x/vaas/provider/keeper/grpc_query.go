@@ -753,21 +753,19 @@ func (k Keeper) QueryConsumerRefusals(goCtx context.Context, req *types.QueryCon
 		bech = append(bech, a.String())
 	}
 
-	refused, total, _, err := k.refusedPowerOf(ctx, addrs)
+	// The same measure EvaluateConsumerRefusals pauses on and
+	// ResumeConsumerChain refuses on, so the query cannot drift from them.
+	standing, err := k.consumerRefusalStanding(ctx, req.ConsumerId)
 	if err != nil {
 		return nil, status.Error(codes.Internal, err.Error())
-	}
-	fraction := math.LegacyZeroDec()
-	if total > 0 {
-		fraction = math.LegacyNewDec(refused).Quo(math.LegacyNewDec(total))
 	}
 
 	return &types.QueryConsumerRefusalsResponse{
 		ValidatorAddresses: bech,
-		RefusedPower:       refused,
-		TotalPower:         total,
-		RefusedFraction:    fraction.String(),
-		PauseThreshold:     k.GetParams(ctx).RefusalPauseThreshold,
+		RefusedPower:       standing.refused,
+		TotalPower:         standing.total,
+		RefusedFraction:    standing.fraction.String(),
+		PauseThreshold:     standing.threshold.String(),
 	}, nil
 }
 

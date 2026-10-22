@@ -34,16 +34,6 @@ func (k Keeper) RecordConsumerRefusal(ctx sdk.Context, consumerId uint64, valAdd
 	return nil
 }
 
-// HasConsumerRefusal reports whether the validator currently refuses the
-// consumer.
-func (k Keeper) HasConsumerRefusal(ctx sdk.Context, consumerId uint64, valAddr sdk.ValAddress) bool {
-	has, err := k.ConsumerRefusals.Has(ctx, collections.Join(consumerId, valAddr.Bytes()))
-	if err != nil {
-		return false
-	}
-	return has
-}
-
 // GetConsumerRefusals returns the operator addresses currently refusing the
 // consumer.
 func (k Keeper) GetConsumerRefusals(ctx sdk.Context, consumerId uint64) ([]sdk.ValAddress, error) {
@@ -63,19 +53,6 @@ func (k Keeper) GetConsumerRefusals(ctx sdk.Context, consumerId uint64) ([]sdk.V
 func (k Keeper) DeleteConsumerRefusals(ctx sdk.Context, consumerId uint64) error {
 	rng := collections.NewPrefixedPairRange[uint64, []byte](consumerId)
 	return k.ConsumerRefusals.Clear(ctx, rng)
-}
-
-// RefusedPower sums the bonded power behind the consumer's refusal signals,
-// as last recorded by x/staking, and returns it with the total bonded power.
-// Signals from validators that have since lost all bonded power contribute
-// zero; power is read at evaluation time, never at signal time.
-func (k Keeper) RefusedPower(ctx sdk.Context, consumerId uint64) (refused int64, total int64, err error) {
-	addrs, err := k.GetConsumerRefusals(ctx, consumerId)
-	if err != nil {
-		return 0, 0, err
-	}
-	refused, total, _, err = k.refusedPowerOf(ctx, addrs)
-	return refused, total, err
 }
 
 // refusedPowerOf sums the last recorded power of the given validators and
