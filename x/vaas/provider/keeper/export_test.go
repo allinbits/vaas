@@ -3,13 +3,13 @@ package keeper
 import (
 	"time"
 
-	"github.com/allinbits/vaas/x/vaas/provider/types"
-
 	tmtypes "github.com/cometbft/cometbft/types"
 
+	"cosmossdk.io/collections"
+	sdk "github.com/cosmos/cosmos-sdk/types"
 	ibctmtypes "github.com/cosmos/ibc-go/v10/modules/light-clients/07-tendermint"
 
-	sdk "github.com/cosmos/cosmos-sdk/types"
+	"github.com/allinbits/vaas/x/vaas/provider/types"
 )
 
 // OverrideWindowEndTimestampForTest replaces the downtime-evidence window-end
@@ -55,4 +55,20 @@ func (k Keeper) VerifyDowntimeChallengeHeaderForTest(ctx sdk.Context, clientId s
 // CheckMisbehaviour and GetByzantineValidators to verify.
 func (k Keeper) ContainLightClientAttackForTest(ctx sdk.Context, consumerId uint64, misbehaviour *ibctmtypes.Misbehaviour, byzantineValidators []*tmtypes.Validator) ([]types.ProviderConsAddress, error) {
 	return k.containLightClientAttack(ctx, consumerId, misbehaviour, byzantineValidators)
+}
+
+// HoldUnbondingOpForTest exposes holdUnbondingOp so unit tests can seed
+// hook-placed holds without driving the full staking hook resolution.
+func (k Keeper) HoldUnbondingOpForTest(ctx sdk.Context, consAddr sdk.ConsAddress, id uint64) error {
+	return k.holdUnbondingOp(ctx, consAddr, id)
+}
+
+// HasConsumerRefusal reports, for the tests, whether the validator currently refuses the
+// consumer.
+func (k Keeper) HasConsumerRefusal(ctx sdk.Context, consumerId uint64, valAddr sdk.ValAddress) bool {
+	has, err := k.ConsumerRefusals.Has(ctx, collections.Join(consumerId, valAddr.Bytes()))
+	if err != nil {
+		return false
+	}
+	return has
 }
