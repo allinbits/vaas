@@ -80,9 +80,13 @@ func TestEvaluateConsumerRefusalsPausesAtThreshold(t *testing.T) {
 	require.NoError(t, err)
 	require.Equal(t, wantExpiration, gotExpiration)
 
-	// A paused consumer is skipped on the next evaluation: no power reads.
+	// A paused consumer is still read on the next evaluation, so the signals
+	// of validators since removed get pruned, but it is not paused again.
+	mocks.MockStakingKeeper.EXPECT().GetLastValidatorPower(gomock.Any(), val).Return(int64(34), nil)
+	mocks.MockStakingKeeper.EXPECT().GetLastTotalPower(gomock.Any()).Return(math.NewInt(100), nil)
 	k.EvaluateConsumerRefusals(ctx)
 	require.Equal(t, providertypes.CONSUMER_PHASE_PAUSED, k.GetConsumerPhase(ctx, cid))
+	require.Equal(t, 1, countEvents(ctx, providertypes.EventTypeConsumerRefusalThresholdReached), "paused once")
 }
 
 // TestEvaluateConsumerRefusalsIgnoresPowerlessSignals proves a signal from a
@@ -336,4 +340,28 @@ func TestQueryConsumerRefusals(t *testing.T) {
 	require.Equal(t, int64(100), res.TotalPower)
 	require.Equal(t, math.LegacyNewDecWithPrec(25, 2).String(), res.RefusedFraction)
 	require.Equal(t, k.GetParams(ctx).RefusalPauseThreshold, res.PauseThreshold)
+}
+
+// TestEvaluateConsumerRefusalsPrunesWhilePaused: pruning the signals of
+// validators x/staking no longer knows does not wait for the consumer to be
+// launched again; a paused consumer's refusers are pruned on the same
+// evaluation, so a validator re-created under a gone operator address never
+// inherits a stance that would block the resume.
+func TestEvaluateConsumerRefusalsPrunesWhilePaused(t *testing.T) {
+	k, ctx, ctrl, mocks := testkeeper.GetProviderKeeperAndCtx(t, testkeeper.NewInMemKeeperParams(t))
+	defer ctrl.Finish()
+	ctx = ctx.WithBlockTime(time.Now())
+
+	cid := k.FetchAndIncrementConsumerId(ctx)
+	k.SetConsumerPhase(ctx, cid, providertypes.CONSUMER_PHASE_PAUSED)
+
+	gone := refusalValAddr(3)
+	require.NoError(t, k.RecordConsumerRefusal(ctx, cid, gone, true))
+	mocks.MockStakingKeeper.EXPECT().GetLastValidatorPower(gomock.Any(), gone).Return(int64(0), nil)
+	mocks.MockStakingKeeper.EXPECT().GetLastTotalPower(gomock.Any()).Return(math.NewInt(100), nil)
+	mocks.MockStakingKeeper.EXPECT().GetValidator(gomock.Any(), gone).Return(stakingtypes.Validator{}, stakingtypes.ErrNoValidatorFound)
+
+	k.EvaluateConsumerRefusals(ctx)
+	require.Equal(t, providertypes.CONSUMER_PHASE_PAUSED, k.GetConsumerPhase(ctx, cid))
+	require.False(t, k.HasConsumerRefusal(ctx, cid, gone), "a removed validator's signal is pruned while the consumer is paused")
 }
