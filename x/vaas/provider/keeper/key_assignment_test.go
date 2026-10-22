@@ -21,7 +21,6 @@ import (
 
 	cryptotestutil "github.com/allinbits/vaas/testutil/crypto"
 	testkeeper "github.com/allinbits/vaas/testutil/keeper"
-	providerante "github.com/allinbits/vaas/x/vaas/provider/ante"
 	providerkeeper "github.com/allinbits/vaas/x/vaas/provider/keeper"
 	"github.com/allinbits/vaas/x/vaas/provider/types"
 	vaastypes "github.com/allinbits/vaas/x/vaas/types"
@@ -149,6 +148,34 @@ func TestMigrateStateOnConsPubKeyRotationCoversEveryConsumerAndMapping(t *testin
 	}
 }
 
+// TestBeforeConsensusPubKeyRotationRefusesAnAssignedConsumerKey pins the
+// enforcement point: x/staking asks this hook before it records a rotation,
+// and the provider refuses one onto a consensus key some validator holds as
+// an assigned consumer key on any consumer that is not deleted, paused and
+// stopped ones included. A key no consumer holds passes, and so does the key
+// of a deleted consumer, whose assignments are gone with it.
+func TestBeforeConsensusPubKeyRotationRefusesAnAssignedConsumerKey(t *testing.T) {
+	keeper, ctx, ctrl, _ := testkeeper.GetProviderKeeperAndCtx(t, testkeeper.NewInMemKeeperParams(t))
+	defer ctrl.Finish()
+
+	consumerID := keeper.FetchAndIncrementConsumerId(ctx)
+	keeper.SetConsumerPhase(ctx, consumerID, types.CONSUMER_PHASE_PAUSED)
+	takenKey := cryptotestutil.NewCryptoIdentityFromIntSeed(1)
+	holder := cryptotestutil.NewCryptoIdentityFromIntSeed(5).ProviderConsAddress()
+	keeper.SetValidatorByConsumerAddr(ctx, consumerID, takenKey.ConsumerConsAddress(), holder)
+
+	rotating := cryptotestutil.NewCryptoIdentityFromIntSeed(2)
+	err := keeper.Hooks().BeforeConsensusPubKeyRotation(ctx, rotating.SDKValOpAddress(), rotating.ConsensusSDKPubKey(), takenKey.ConsensusSDKPubKey())
+	require.ErrorIs(t, err, types.ErrConsumerKeyInUse, "a paused consumer keeps its assignments")
+
+	fresh := cryptotestutil.NewCryptoIdentityFromIntSeed(3)
+	require.NoError(t, keeper.Hooks().BeforeConsensusPubKeyRotation(ctx, rotating.SDKValOpAddress(), rotating.ConsensusSDKPubKey(), fresh.ConsensusSDKPubKey()))
+
+	keeper.SetConsumerPhase(ctx, consumerID, types.CONSUMER_PHASE_DELETED)
+	require.NoError(t, keeper.Hooks().BeforeConsensusPubKeyRotation(ctx, rotating.SDKValOpAddress(), rotating.ConsensusSDKPubKey(), takenKey.ConsensusSDKPubKey()),
+		"a deleted consumer's assignments count no more")
+}
+
 // TestAfterConsensusPubKeyUpdateNeverErrorsOnCollision pins the hook's contract.
 // It fires in EndBlock, from x/staking's ApplyAndReturnValidatorSetUpdates, once
 // the rotation is already committed: an error returned there propagates out of
@@ -156,8 +183,9 @@ func TestMigrateStateOnConsPubKeyRotationCoversEveryConsumerAndMapping(t *testin
 // it by rotating onto a public consumer key. So even a rotation onto a key
 // already assigned as another validator's consumer key -- which the hook can
 // observe but no longer prevent -- must return nil and still migrate the
-// rotating validator's own assignment state. Admission-time rejection lives in
-// the provider ante decorator instead.
+// rotating validator's own assignment state. The rejection lives in
+// BeforeConsensusPubKeyRotation instead, which x/staking asks before it
+// records the rotation.
 func TestAfterConsensusPubKeyUpdateNeverErrorsOnCollision(t *testing.T) {
 	keeper, ctx, ctrl, _ := testkeeper.GetProviderKeeperAndCtx(t, testkeeper.NewInMemKeeperParams(t))
 	defer ctrl.Finish()
@@ -200,9 +228,9 @@ func TestAfterConsensusPubKeyUpdateNeverErrorsOnCollision(t *testing.T) {
 }
 
 // TestConsumerKeyGuardsCoverPausedConsumers: a paused consumer keeps all of its
-// key assignments and can be resumed, so both the admission-time collision check
-// and the rotation migration must see it. Missing it would let a second validator
-// take a paused consumer's assigned consumer key as its own provider key, putting
+// key assignments and can be resumed, so both the rotation refusal and the
+// rotation migration must see it. Missing it would let a second validator take
+// a paused consumer's assigned consumer key as its own provider key, putting
 // two validators at one consensus address on that consumer the moment it resumes.
 func TestConsumerKeyGuardsCoverPausedConsumers(t *testing.T) {
 	keeper, ctx, ctrl, _ := testkeeper.GetProviderKeeperAndCtx(t, testkeeper.NewInMemKeeperParams(t))
@@ -219,18 +247,10 @@ func TestConsumerKeyGuardsCoverPausedConsumers(t *testing.T) {
 	keeper.SetValidatorConsumerPubKey(ctx, consumerID, holderAddr, victimKey.TMProtoCryptoPublicKey())
 	keeper.SetValidatorByConsumerAddr(ctx, consumerID, victimKey.ConsumerConsAddress(), holderAddr)
 
-	// The ante decorator must reject a rotation onto the paused consumer's
-	// assigned key, reading the real keeper state.
-	pkAny, err := codectypes.NewAnyWithValue(victimKey.ConsensusSDKPubKey())
-	require.NoError(t, err)
-	rotation := &stakingtypes.MsgRotateConsPubKey{
-		ValidatorAddress: cryptotestutil.NewCryptoIdentityFromIntSeed(14).SDKValOpAddressString(),
-		NewPubkey:        pkAny,
-	}
-	_, err = providerante.NewConsPubKeyRotationDecorator(keeper).AnteHandle(
-		ctx, rotationTx{msgs: []sdk.Msg{rotation}}, false,
-		func(ctx sdk.Context, _ sdk.Tx, _ bool) (sdk.Context, error) { return ctx, nil },
-	)
+	// The hook must refuse a rotation onto the paused consumer's assigned
+	// key, reading the real keeper state.
+	rotating := cryptotestutil.NewCryptoIdentityFromIntSeed(14)
+	err := keeper.Hooks().BeforeConsensusPubKeyRotation(ctx, rotating.SDKValOpAddress(), rotating.ConsensusSDKPubKey(), victimKey.ConsensusSDKPubKey())
 	require.ErrorIs(t, err, types.ErrConsumerKeyInUse,
 		"a paused consumer's assigned key must still be treated as in use")
 
