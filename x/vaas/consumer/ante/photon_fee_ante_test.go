@@ -6,14 +6,17 @@ import (
 	"strings"
 	"testing"
 
-	errorsmod "cosmossdk.io/errors"
-	sdk "github.com/cosmos/cosmos-sdk/types"
-	govtypes "github.com/cosmos/cosmos-sdk/x/gov/types/v1"
+	"github.com/stretchr/testify/require"
+	protov2 "google.golang.org/protobuf/proto"
+
 	transfertypes "github.com/cosmos/ibc-go/v10/modules/apps/transfer/types"
 	clienttypes "github.com/cosmos/ibc-go/v10/modules/core/02-client/types"
 	channeltypesv2 "github.com/cosmos/ibc-go/v10/modules/core/04-channel/v2/types"
-	"github.com/stretchr/testify/require"
-	protov2 "google.golang.org/protobuf/proto"
+
+	errorsmod "cosmossdk.io/errors"
+
+	sdk "github.com/cosmos/cosmos-sdk/types"
+	govtypes "github.com/cosmos/cosmos-sdk/x/gov/types/v1"
 
 	consumertypes "github.com/allinbits/vaas/x/vaas/consumer/types"
 )

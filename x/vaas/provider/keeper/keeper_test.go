@@ -3,13 +3,14 @@ package keeper_test
 import (
 	"testing"
 
-	ibctesting "github.com/cosmos/ibc-go/v10/testing"
 	"github.com/stretchr/testify/require"
-
-	cryptocodec "github.com/cosmos/cosmos-sdk/crypto/codec"
 
 	abci "github.com/cometbft/cometbft/abci/types"
 	tmprotocrypto "github.com/cometbft/cometbft/proto/tendermint/crypto"
+
+	ibctesting "github.com/cosmos/ibc-go/v10/testing"
+
+	cryptocodec "github.com/cosmos/cosmos-sdk/crypto/codec"
 
 	testkeeper "github.com/allinbits/vaas/testutil/keeper"
 	vaastypes "github.com/allinbits/vaas/x/vaas/types"

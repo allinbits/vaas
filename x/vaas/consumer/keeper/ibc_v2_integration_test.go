@@ -25,7 +25,7 @@ func TestIBCV2ConsumerFullVSCFlow(t *testing.T) {
 	defer ctrl.Finish()
 	testkeeper.StubClientState(mocks, "provider-0")
 
-	providerClientID := "07-tendermint-0"
+	providerClientID := liveProviderClientID
 	consumerKeeper.SetProviderClientID(ctx, providerClientID)
 
 	// Create validator updates
@@ -86,7 +86,7 @@ func TestIBCV2ConsumerOutOfOrderHandling(t *testing.T) {
 	defer ctrl.Finish()
 	testkeeper.StubClientState(mocks, "provider-0")
 
-	providerClientID := "07-tendermint-0"
+	providerClientID := liveProviderClientID
 	consumerKeeper.SetProviderClientID(ctx, providerClientID)
 
 	pk1, err := cryptocodec.ToCmtProtoPublicKey(ed25519.GenPrivKey().PubKey())
@@ -145,7 +145,7 @@ func TestIBCV2ConsumerRejectsUnknownProvider(t *testing.T) {
 	defer ctrl.Finish()
 	testkeeper.StubClientState(mocks, "provider-0")
 
-	providerClientID := "07-tendermint-0"
+	providerClientID := liveProviderClientID
 	consumerKeeper.SetProviderClientID(ctx, providerClientID)
 	unknownClientID := "07-tendermint-999"
 	consumerKeeper.SetProviderClientID(ctx, providerClientID)
@@ -186,7 +186,7 @@ func TestIBCV2ConsumerProviderInfoQuery(t *testing.T) {
 	consumerKeeper, ctx, ctrl, mocks := testkeeper.GetConsumerKeeperAndCtx(t, testkeeper.NewInMemKeeperParams(t))
 	defer ctrl.Finish()
 
-	providerClientID := "07-tendermint-0"
+	providerClientID := liveProviderClientID
 
 	// Initially, no provider client - v2 query should fail
 	_, err := consumerKeeper.GetProviderInfoV2(ctx)
@@ -210,7 +210,7 @@ func TestIBCV2ConsumerDuplicatePacketHandling(t *testing.T) {
 	defer ctrl.Finish()
 	testkeeper.StubClientState(mocks, "provider-0")
 
-	providerClientID := "07-tendermint-0"
+	providerClientID := liveProviderClientID
 	consumerKeeper.SetProviderClientID(ctx, providerClientID)
 
 	pk, err := cryptocodec.ToCmtProtoPublicKey(ed25519.GenPrivKey().PubKey())

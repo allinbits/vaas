@@ -1,10 +1,10 @@
 package keeper_test
 
 import (
-	"go.uber.org/mock/gomock"
 	"testing"
 
 	"github.com/stretchr/testify/require"
+	"go.uber.org/mock/gomock"
 
 	tmproto "github.com/cometbft/cometbft/proto/tendermint/types"
 

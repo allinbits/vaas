@@ -8,11 +8,9 @@ import (
 	"github.com/stretchr/testify/require"
 	"go.uber.org/mock/gomock"
 
-	"github.com/allinbits/vaas/x/vaas/consumer/keeper"
-	vaastypes "github.com/allinbits/vaas/x/vaas/types"
-
 	abci "github.com/cometbft/cometbft/abci/types"
 	cmtproto "github.com/cometbft/cometbft/proto/tendermint/types"
+
 	channeltypesv2 "github.com/cosmos/ibc-go/v10/modules/core/04-channel/v2/types"
 	ibcexported "github.com/cosmos/ibc-go/v10/modules/core/exported"
 
@@ -21,6 +19,8 @@ import (
 	sdk "github.com/cosmos/cosmos-sdk/types"
 
 	testkeeper "github.com/allinbits/vaas/testutil/keeper"
+	"github.com/allinbits/vaas/x/vaas/consumer/keeper"
+	vaastypes "github.com/allinbits/vaas/x/vaas/types"
 )
 
 // countBitmaps returns the number of validators with a tracked missed-block

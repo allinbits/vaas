@@ -7,15 +7,15 @@ import (
 	"github.com/stretchr/testify/require"
 	"go.uber.org/mock/gomock"
 
-	"cosmossdk.io/collections"
-	"cosmossdk.io/math"
-
 	tmproto "github.com/cometbft/cometbft/proto/tendermint/types"
 	tmtypes "github.com/cometbft/cometbft/types"
 
 	channeltypesv2 "github.com/cosmos/ibc-go/v10/modules/core/04-channel/v2/types"
 	ibcexported "github.com/cosmos/ibc-go/v10/modules/core/exported"
 	ibctmtypes "github.com/cosmos/ibc-go/v10/modules/light-clients/07-tendermint"
+
+	"cosmossdk.io/collections"
+	"cosmossdk.io/math"
 
 	cryptocodec "github.com/cosmos/cosmos-sdk/crypto/codec"
 	sdk "github.com/cosmos/cosmos-sdk/types"
@@ -101,7 +101,7 @@ func TestResumeThenReaccuse_SameWindowRejectedLaterWindowChallengeable(t *testin
 	firstWindowKey := collections.Join3(cid, consAddr.Bytes(), int64(100))
 
 	// --- accept evidence for window [93, 100] (span 8), 6 of 8 missed ---
-	firstEvidence := vaastypes.NewEvidencePacketData(sdk.ConsAddress(consAddr), 93, []byte{0x3F}, 8, 8, math.LegacyMustNewDecFromStr("0.5"))
+	firstEvidence := vaastypes.NewEvidencePacketData(consAddr, 93, []byte{0x3F}, 8, 8, math.LegacyMustNewDecFromStr("0.5"))
 	require.NoError(t, k.HandleConsumerEvidencePacket(ctx, cid, firstEvidence))
 
 	pending, err := k.PendingDowntimeSlashes.Get(ctx, firstWindowKey)
@@ -178,18 +178,18 @@ func TestResumeThenReaccuse_SameWindowRejectedLaterWindowChallengeable(t *testin
 
 	// (1) the disproven window, and anything intersecting it, is rejected
 	// post-resume even though PendingDowntimeSlashes for it is long gone.
-	duplicate := vaastypes.NewEvidencePacketData(sdk.ConsAddress(consAddr), 93, []byte{0x3F}, 8, 8, math.LegacyMustNewDecFromStr("0.5"))
+	duplicate := vaastypes.NewEvidencePacketData(consAddr, 93, []byte{0x3F}, 8, 8, math.LegacyMustNewDecFromStr("0.5"))
 	err = k.HandleConsumerEvidencePacket(ctx, cid, duplicate)
 	require.Error(t, err)
 	require.Contains(t, err.Error(), "already accepted")
 
-	overlapping := vaastypes.NewEvidencePacketData(sdk.ConsAddress(consAddr), 95, []byte{0x3F}, 8, 8, math.LegacyMustNewDecFromStr("0.5"))
+	overlapping := vaastypes.NewEvidencePacketData(consAddr, 95, []byte{0x3F}, 8, 8, math.LegacyMustNewDecFromStr("0.5"))
 	err = k.HandleConsumerEvidencePacket(ctx, cid, overlapping)
 	require.Error(t, err)
 	require.Contains(t, err.Error(), "already accepted")
 
 	// (2) a later, disjoint window (start 101 > 100) is accepted...
-	laterEvidence := vaastypes.NewEvidencePacketData(sdk.ConsAddress(consAddr), 101, []byte{0x3F}, 8, 8, math.LegacyMustNewDecFromStr("0.5"))
+	laterEvidence := vaastypes.NewEvidencePacketData(consAddr, 101, []byte{0x3F}, 8, 8, math.LegacyMustNewDecFromStr("0.5"))
 	require.NoError(t, k.HandleConsumerEvidencePacket(ctx, cid, laterEvidence))
 
 	// windowEnd = windowStart(101) + span(8) - 1 = 108.

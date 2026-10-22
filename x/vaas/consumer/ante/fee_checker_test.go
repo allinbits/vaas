@@ -5,10 +5,11 @@ import (
 
 	"github.com/stretchr/testify/require"
 
+	channeltypesv2 "github.com/cosmos/ibc-go/v10/modules/core/04-channel/v2/types"
+
 	sdkmath "cosmossdk.io/math"
 
 	sdk "github.com/cosmos/cosmos-sdk/types"
-	channeltypesv2 "github.com/cosmos/ibc-go/v10/modules/core/04-channel/v2/types"
 )
 
 // TestInfrastructureExemptTxFeeChecker covers the consumer's TxFeeChecker: the

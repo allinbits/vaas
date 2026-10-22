@@ -47,7 +47,7 @@ func TestOnAckRecordsLiveness(t *testing.T) {
 	defer ctrl.Finish()
 
 	const cid = uint64(0)
-	clientId := "07-tendermint-0"
+	clientId := ibcTestClientID
 	k.SetConsumerClientId(ctx, cid, clientId)
 	k.SetConsumerPhase(ctx, cid, providertypes.CONSUMER_PHASE_LAUNCHED)
 
@@ -151,7 +151,7 @@ func TestTimeoutDoesNotRemove(t *testing.T) {
 	defer ctrl.Finish()
 
 	const cid = uint64(0)
-	clientId := "07-tendermint-0"
+	clientId := ibcTestClientID
 	k.SetConsumerClientId(ctx, cid, clientId)
 	k.SetConsumerPhase(ctx, cid, providertypes.CONSUMER_PHASE_LAUNCHED)
 
@@ -164,7 +164,7 @@ func TestErrorAckDoesNotRemove(t *testing.T) {
 	defer ctrl.Finish()
 
 	const cid = uint64(0)
-	clientId := "07-tendermint-0"
+	clientId := ibcTestClientID
 	k.SetConsumerClientId(ctx, cid, clientId)
 	k.SetConsumerPhase(ctx, cid, providertypes.CONSUMER_PHASE_LAUNCHED)
 
@@ -179,7 +179,7 @@ func TestDeleteConsumerChainClearsLivenessState(t *testing.T) {
 
 	const cid = uint64(0)
 	poolAddr := k.GetConsumerFeePoolAddress(cid)
-	k.SetConsumerClientId(ctx, cid, "07-tendermint-0")
+	k.SetConsumerClientId(ctx, cid, ibcTestClientID)
 	require.NoError(t, k.FeePoolAddressToConsumerId.Set(ctx, poolAddr, cid))
 	mocks.MockBankKeeper.EXPECT().GetAllBalances(ctx, poolAddr).Return(sdk.NewCoins())
 

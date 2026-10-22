@@ -108,4 +108,4 @@ Import groups (enforced by gci in `.golangci.yml`):
 4. `github.com/cosmos/*`, `cosmossdk.io/*`, `github.com/cosmos/cosmos-sdk`
 5. `github.com/allinbits/vaas` (this module)
 
-Generated files (`*.pb.go`, `*.pb.gw.go`) and `tests/` directory are excluded from linting.
+Generated files (`*.pb.go`, `*.pb.gw.go`) are excluded from linting; test files and the e2e and app modules are linted.
