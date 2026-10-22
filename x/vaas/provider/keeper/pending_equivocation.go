@@ -360,7 +360,24 @@ func (k Keeper) consumerStopped(ctx sdk.Context, consumerId uint64) bool {
 // state safe meanwhile. Once the validator is tombstoned its other pending
 // entries are moot and are dropped too, so their holds do not outlive the
 // punishment.
+// pendingEquivocationExists reports whether the entry is still pending. The
+// sweep collects its keys up front and one resolution can remove others of
+// the same validator (a tombstone drops its siblings), so every resolution
+// path checks before acting: a key already gone is settled, not re-executed,
+// re-cancelled or re-dropped.
+func (k Keeper) pendingEquivocationExists(ctx sdk.Context, key collections.Triple[uint64, []byte, int64]) bool {
+	has, err := k.PendingEquivocationPunishments.Has(ctx, key)
+	if err != nil {
+		k.Logger(ctx).Error("failed to read pending equivocation punishment", "error", err)
+		return false
+	}
+	return has
+}
+
 func (k Keeper) executePendingEquivocation(ctx sdk.Context, key collections.Triple[uint64, []byte, int64]) {
+	if !k.pendingEquivocationExists(ctx, key) {
+		return
+	}
 	providerAddr := types.NewProviderConsAddress(sdk.ConsAddress(key.K2()))
 	infractionParams := k.GetInfractionParams(ctx)
 
@@ -384,8 +401,15 @@ func (k Keeper) executePendingEquivocation(ctx sdk.Context, key collections.Trip
 		k.Logger(ctx).Error("failed to delete executed equivocation punishment", "error", err)
 	}
 	consAddr := providerAddr.ToSdkConsAddr()
-	k.dropEntriesOfTombstonedValidator(ctx, consAddr)
-	k.releaseValidatorHolds(ctx, consAddr)
+	// A tombstone ends the validator's punishability, so its other entries go
+	// with this one; without it each remaining entry is a further infraction
+	// that executes on its own, and the holds stay until the last one has.
+	if alreadyTombstoned || infractionParams.DoubleSign.Tombstone {
+		k.dropEntriesOfTombstonedValidator(ctx, consAddr)
+	}
+	if !k.hasPendingEquivocationFor(ctx, consAddr) {
+		k.releaseValidatorHolds(ctx, consAddr)
+	}
 
 	ctx.EventManager().EmitEvent(sdk.NewEvent(
 		types.EventTypeEquivocationPunishmentExecuted,
@@ -423,6 +447,9 @@ func (k Keeper) dropEntriesOfTombstonedValidator(ctx sdk.Context, consAddr sdk.C
 // says why in an event. Unlike a cancellation it is not a verdict on the
 // evidence, so the jail is left as it stands.
 func (k Keeper) dropPendingEquivocation(ctx sdk.Context, key collections.Triple[uint64, []byte, int64], reason string) {
+	if !k.pendingEquivocationExists(ctx, key) {
+		return
+	}
 	if err := k.PendingEquivocationPunishments.Remove(ctx, key); err != nil {
 		k.Logger(ctx).Error("failed to delete dropped equivocation punishment", "error", err)
 		return
@@ -451,6 +478,9 @@ func (k Keeper) dropPendingEquivocation(ctx sdk.Context, key collections.Triple[
 // shrinks the jail horizon to what its remaining entries require, opening it
 // when none remain so the validator can unjail immediately.
 func (k Keeper) cancelPendingEquivocation(ctx sdk.Context, key collections.Triple[uint64, []byte, int64], reason string) {
+	if !k.pendingEquivocationExists(ctx, key) {
+		return
+	}
 	if err := k.PendingEquivocationPunishments.Remove(ctx, key); err != nil {
 		k.Logger(ctx).Error("failed to delete cancelled equivocation punishment", "error", err)
 		return
