@@ -196,22 +196,24 @@ func (s *LivenessIntegrationTestSuite) SetupSuite() {
 				// that; the challenge window must be >= the max age and, at
 				// 180s, also keeps accepted windows visibly pending long enough
 				// for the test's state assertions.
-				provider["infraction_parameters"] = map[string]any{
-					"double_sign": map[string]any{
-						"slash_fraction": "0.050000000000000000",
-						"jail_duration":  "315360000s",
-						"tombstone":      true,
-					},
-					"downtime": map[string]any{
-						"slash_fraction": "0.010000000000000000",
-						"jail_duration":  "0s",
-						"tombstone":      false,
-					},
-					"downtime_grace_period":     "604800s",
-					"signed_blocks_window":      strconv.FormatInt(downtimeSignedBlocksWindow, 10),
-					"min_signed_per_window":     "0.500000000000000000",
-					"downtime_challenge_window": "180s",
-					"downtime_evidence_max_age": "180s",
+				if params, ok := provider["params"].(map[string]any); ok {
+					params["infraction_parameters"] = map[string]any{
+						"double_sign": map[string]any{
+							"slash_fraction": "0.050000000000000000",
+							"jail_duration":  "315360000s",
+							"tombstone":      true,
+						},
+						"downtime": map[string]any{
+							"slash_fraction": "0.010000000000000000",
+							"jail_duration":  "0s",
+							"tombstone":      false,
+						},
+						"downtime_grace_period":     "604800s",
+						"signed_blocks_window":      strconv.FormatInt(downtimeSignedBlocksWindow, 10),
+						"min_signed_per_window":     "0.500000000000000000",
+						"downtime_challenge_window": "180s",
+						"downtime_evidence_max_age": "180s",
+					}
 				}
 			}
 

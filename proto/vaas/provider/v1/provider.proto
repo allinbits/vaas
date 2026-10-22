@@ -62,6 +62,11 @@ message Params {
   // to STOPPED (and eventually DELETED) rather than hanging indefinitely.
   google.protobuf.Duration max_pause_duration = 7
       [ (gogoproto.nullable) = false, (gogoproto.stdduration) = true ];
+
+  // The slash and jail policy for consumer double-signs and downtime, the
+  // downtime SLA window, the challenge window and the evidence max age.
+  InfractionParameters infraction_parameters = 11
+      [ (gogoproto.nullable) = false ];
 }
 
 // AddressList contains a list of consensus addresses
@@ -244,7 +249,13 @@ enum PauseReason {
   PAUSE_REASON_LIGHT_CLIENT_ATTACK = 2;
 }
 
-//
+// InfractionParameters is the part of Params that governs consumer-sourced
+// infractions. A change to signed_blocks_window or min_signed_per_window
+// redefines the downtime SLA consumers compute their bitmaps against:
+// consumers learn the new values from the next VSC packet and activate them
+// at their next window boundary, while evidence already in flight echoes the
+// old values, which the provider keeps accepting for downtime_evidence_max_age
+// + downtime_challenge_window after the change (see AcceptableDowntimeParams).
 message InfractionParameters {
   SlashJailParameters double_sign = 1;
   SlashJailParameters downtime = 2;

@@ -195,10 +195,7 @@ func (k Keeper) QueryParams(goCtx context.Context, req *types.QueryParamsRequest
 
 	ctx := sdk.UnwrapSDKContext(goCtx)
 
-	return &types.QueryParamsResponse{
-		Params:               k.GetParams(ctx),
-		InfractionParameters: k.GetInfractionParams(ctx),
-	}, nil
+	return &types.QueryParamsResponse{Params: k.GetParams(ctx)}, nil
 }
 
 func (k Keeper) QueryConsumerValidators(goCtx context.Context, req *types.QueryConsumerValidatorsRequest) (*types.QueryConsumerValidatorsResponse, error) {

@@ -130,15 +130,6 @@ func (gs GenesisState) Validate() error {
 		return errorsmod.Wrap(vaastypes.ErrInvalidGenesis, err.Error())
 	}
 
-	if gs.InfractionParameters != nil {
-		if err := gs.InfractionParameters.Validate(); err != nil {
-			return errorsmod.Wrap(vaastypes.ErrInvalidGenesis, fmt.Sprintf("infraction_parameters: %s", err))
-		}
-		if err := ValidateInfractionParamsAgainst(*gs.InfractionParameters, gs.Params.TrustingPeriodFraction); err != nil {
-			return errorsmod.Wrap(vaastypes.ErrInvalidGenesis, err.Error())
-		}
-	}
-
 	return nil
 }
 

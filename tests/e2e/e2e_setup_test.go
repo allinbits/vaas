@@ -121,29 +121,31 @@ func (s *IntegrationTestSuite) SetupSuite() {
 				// than the shipped default so the fee-priced slash this test
 				// observes (~2500 tokens on a 5,000,000-token self-bond, a
 				// 0.0005 fraction) executes uncapped and clearly visible.
-				provider["infraction_parameters"] = map[string]any{
-					"double_sign": map[string]any{
-						"slash_fraction": "0.050000000000000000",
-						"jail_duration":  "315360000s",
-						"tombstone":      true,
-					},
-					"downtime": map[string]any{
-						"slash_fraction": "0.010000000000000000",
-						"jail_duration":  "0s",
-						"tombstone":      false,
-					},
-					"downtime_grace_period": "604800s",
-					"signed_blocks_window":  "30",
-					"min_signed_per_window": "0.500000000000000000",
-					// Both are wide enough to absorb relay latency plus the
-					// window-end anchoring lag: the anchor is the newest
-					// consensus state at or below the window end, so a window's
-					// computed age includes however long the client went without
-					// an update before it. At 30s a slower run can push an
-					// otherwise-fresh window past the age check, and the
-					// consumer drops the error-acked evidence without retrying.
-					"downtime_challenge_window": "120s",
-					"downtime_evidence_max_age": "120s",
+				if params, ok := provider["params"].(map[string]any); ok {
+					params["infraction_parameters"] = map[string]any{
+						"double_sign": map[string]any{
+							"slash_fraction": "0.050000000000000000",
+							"jail_duration":  "315360000s",
+							"tombstone":      true,
+						},
+						"downtime": map[string]any{
+							"slash_fraction": "0.010000000000000000",
+							"jail_duration":  "0s",
+							"tombstone":      false,
+						},
+						"downtime_grace_period": "604800s",
+						"signed_blocks_window":  "30",
+						"min_signed_per_window": "0.500000000000000000",
+						// Both are wide enough to absorb relay latency plus the
+						// window-end anchoring lag: the anchor is the newest
+						// consensus state at or below the window end, so a window's
+						// computed age includes however long the client went without
+						// an update before it. At 30s a slower run can push an
+						// otherwise-fresh window past the age check, and the
+						// consumer drops the error-acked evidence without retrying.
+						"downtime_challenge_window": "120s",
+						"downtime_evidence_max_age": "120s",
+					}
 				}
 			}
 

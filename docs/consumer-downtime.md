@@ -72,7 +72,7 @@ on, so the provider owns them:
 - The consumer's `MsgUpdateParams` preserves the stored values; they are not locally
   changeable.
 
-Governance changes them with `MsgUpdateInfractionParams` (section 8). Because a change can
+Governance changes them with `MsgUpdateParams` (section 8). Because a change can
 race in-flight evidence, packets echo the params they were computed under, and the provider
 accepts evidence computed under either its current values or the immediately previous ones.
 The superseded pair is recorded with the block time of the change and stays acceptable for
@@ -367,10 +367,10 @@ them along with the escrow records.
 | `MaxPauseDuration` | provider module param | `> 0` | 45 days |
 
 Every `InfractionParameters` row is governance-updatable on a running chain with
-`MsgUpdateInfractionParams`, which replaces the set in full and revalidates it; the values in
-force are readable from the provider `params` query. They live outside the module `Params`
-because they are stored (and exported) as their own state item, so a fee or epoch change need
-not restate the slashing policy and vice versa.
+`MsgUpdateParams`, a diff of the module `Params` they are part of: only the fields the proposal
+sets change, so a slash-policy change need not restate the fee or epoch settings and vice
+versa, and the merged set is revalidated before it is stored. The values in force are readable
+from the provider `params` query.
 
 What an update reaches differs by parameter, which matters when governance is responding to an
 incident with slashes already queued. A pending slash carries the maturity timestamp it was
@@ -387,10 +387,9 @@ whose previous slash had already matured while the window was still fresh enough
 The sum of the two -- the *challengeable interval*, how far back a challenge may have to reach
 -- must also stay below the consumer client trusting period, so the oldest challengeable header
 remains light-client verifiable through the end of its challenge window. That constraint spans
-both halves of the configuration, so both governance messages enforce it against the stored
-other half: `MsgUpdateInfractionParams` against the stored `Params.TrustingPeriodFraction`, and
-`MsgUpdateParams` against the stored infraction parameters. Neither half can be moved out from
-under the other one proposal at a time.
+both halves of the configuration, and `MsgUpdateParams` validates the merged parameters, so a
+diff touching either half is checked against the stored other half. Neither half can be moved
+out from under the other one proposal at a time.
 
 That check bounds the interval by the trusting period derived from the *default* consumer
 unbonding period, i.e. it constrains the parameters in the abstract, and deliberately not by

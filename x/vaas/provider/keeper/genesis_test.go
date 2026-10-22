@@ -458,7 +458,6 @@ func TestGenesisRoundTrip(t *testing.T) {
 		},
 		ChangedAt: time.Unix(1_960_000_000, 0).UTC(),
 	}
-	require.NoError(t, pkA.PreviousDowntimeParams.Set(ctxA, previousDowntimeParams))
 
 	const otherConsumerID uint64 = 3 // consumer-delta
 	require.NoError(t, pkA.EpochShareRecords.Set(ctxA,
@@ -498,20 +497,22 @@ func TestGenesisRoundTrip(t *testing.T) {
 	pkA.SetParams(ctxA, providertypes.DefaultParams())
 	pkA.SetValidatorSetUpdateId(ctxA, 1)
 
-	// Seed a non-default InfractionParameters so the round-trip covers the
-	// optional genesis override (a real chain always has these set by
-	// InitGenesis; this asserts the values survive an export/import cycle).
+	// Seed non-default infraction parameters so the round-trip covers them
+	// with the rest of Params.
 	customInfractionParams := providertypes.DefaultInfractionParameters()
 	customInfractionParams.DowntimeChallengeWindow = 1 * time.Hour
 	customInfractionParams.DowntimeEvidenceMaxAge = 1 * time.Hour
 	customInfractionParams.SignedBlocksWindow = 30
 	customInfractionParams.MinSignedPerWindow = math.LegacyNewDecWithPrec(5, 1)
 	pkA.SetInfractionParams(ctxA, customInfractionParams)
+	// Seeded after the infraction parameters, which SetParams stages a
+	// superseded window for on its own; the seed is the one the round trip
+	// must carry.
+	require.NoError(t, pkA.PreviousDowntimeParams.Set(ctxA, previousDowntimeParams))
 
 	expA := pkA.ExportGenesis(ctxA)
 	require.NoError(t, expA.Validate(), "first export must validate")
-	require.NotNil(t, expA.InfractionParameters, "infraction params lost at export")
-	require.Equal(t, customInfractionParams, *expA.InfractionParameters)
+	require.Equal(t, customInfractionParams, expA.Params.InfractionParameters, "infraction params lost at export")
 
 	// Sanity: the export must carry the key-assignment / prune entries
 	// keyed by the actual consumer id (matching the original alloc).
@@ -905,9 +906,7 @@ func TestInitGenesisPanicsOnNilDowntimeSlashFraction(t *testing.T) {
 	defer ctrl.Finish()
 
 	gs := providertypes.DefaultGenesisState()
-	ip := providertypes.DefaultInfractionParameters()
-	ip.Downtime.SlashFraction = math.LegacyDec{}
-	gs.InfractionParameters = &ip
+	gs.Params.InfractionParameters.Downtime.SlashFraction = math.LegacyDec{}
 
 	var recovered any
 	func() {
