@@ -46,8 +46,14 @@ import (
 // is bounded by one voting period of grace per accusation. The pair's
 // withheld fee record stays claimable for as long as the entry is pending,
 // so a challenge won during the deferral still repays it.
+//
+// A paused consumer's entries are frozen: a refusal pause keeps them (the
+// other pauses cancel them) and the resume moves their maturities past the
+// pause, so until then they are measured against the moment the pause began
+// (see consumerClock).
 func (k Keeper) SweepPendingDowntimeSlashes(ctx sdk.Context) {
 	ip := k.GetInfractionParams(ctx)
+	clock := k.consumerClock(ctx)
 
 	iter, err := k.PendingDowntimeSlashes.Iterate(ctx, nil)
 	if err != nil {
@@ -76,10 +82,10 @@ func (k Keeper) SweepPendingDowntimeSlashes(ctx sdk.Context) {
 			k.Logger(ctx).Error("failed to read pending downtime slash entry", "error", err)
 			continue
 		}
-		if kv.Value.MaturesAt.After(ctx.BlockTime()) {
+		consumerId := kv.Key.K1()
+		if kv.Value.MaturesAt.After(clock(consumerId)) {
 			continue
 		}
-		consumerId := kv.Key.K1()
 		if kv.Value.MaturesAtExtended {
 			// Only the proposal the entry deferred behind can keep it
 			// waiting, and only while its vote is still open. A passed

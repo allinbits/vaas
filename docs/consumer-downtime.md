@@ -272,6 +272,10 @@ in the consumer, one false bit indicts everything from that source. On success, 
    downtime marks are cleared.
 3. The consumer is paused (section 7).
 
+A challenge against a consumer a refusal coalition has already paused, whose accusations
+that pause froze rather than cancelled (see [consumer-refusal.md](consumer-refusal.md)),
+does the first two and leaves the pause as it is.
+
 A failed challenge changes nothing; transaction gas is the anti-spam. There is no challenger
 reward: the challenged validator's own recovery is the incentive.
 
@@ -295,9 +299,13 @@ packet proven against the fork lands any more; `MsgSubmitConsumerMisbehaviour` d
 transaction (see `HandleConsumerMisbehaviour`), and a client frozen through ibc-go's
 `MsgUpdateClient` is caught by the provider's BeginBlock, which pauses the consumer. A refusal
 coalition reaching `RefusalPauseThreshold` pauses the consumer the same way (see
-[consumer-refusal.md](consumer-refusal.md)). Whichever way it came, a pause first repays the
-fees withheld from accused validators: their accusations are cancelled with it and could not
-be challenged any more. The `vaas_consumer_paused` event names the reason. While paused:
+[consumer-refusal.md](consumer-refusal.md)). A challenge or light-client pause first repays
+the fees withheld from accused validators: their accusations are cancelled with it and could
+not be challenged any more. A refusal pause proves nothing about the accusations and freezes
+them instead: pending slashes and withheld records keep their state with their clocks
+stopped, a resume restarts the clocks where the pause stopped them, and a challenge proven
+meanwhile discards them as above. The `vaas_consumer_paused` event names the reason. While
+paused:
 
 - No VSC packets are queued or sent; no fees are distributed; downtime evidence from the
   consumer is rejected.
@@ -347,9 +355,10 @@ Two governance exits:
 - **`MsgRemoveConsumer`** accepts a paused consumer and routes it into the ordinary
   `STOPPED -> DELETED` teardown.
 
-Pausing, stopping, or deleting a consumer cancels its in-flight downtime state (pending
-slashes and epoch marks): once no epoch or challenge window remains to resolve them against,
-they are cancelled outright. The accepted-window records and the pruned floor survive a
+Stopping or deleting a consumer cancels its in-flight downtime state (pending slashes and
+epoch marks), as does a pause for a disproven or discredited source: once no epoch or
+challenge window remains to resolve them against, they are cancelled outright. A refusal
+pause freezes them instead. The accepted-window records and the pruned floor survive a
 pause or stop -- a disproven or cancelled window must not become re-submittable, while
 later disjoint windows remain submittable after a resume as usual. Full deletion erases
 them along with the escrow records.
