@@ -15,6 +15,7 @@ import (
 	sdk "github.com/cosmos/cosmos-sdk/types"
 	banktypes "github.com/cosmos/cosmos-sdk/x/bank/types"
 	govv1 "github.com/cosmos/cosmos-sdk/x/gov/types/v1"
+	slashingtypes "github.com/cosmos/cosmos-sdk/x/slashing/types"
 	stakingtypes "github.com/cosmos/cosmos-sdk/x/staking/types"
 )
 
@@ -65,6 +66,7 @@ type StakingKeeper interface {
 // SlashingKeeper defines the contract VAAS expects in order to perform slashing
 type SlashingKeeper interface {
 	JailUntil(context.Context, sdk.ConsAddress, time.Time) error // called from provider keeper only
+	GetValidatorSigningInfo(context.Context, sdk.ConsAddress) (slashingtypes.ValidatorSigningInfo, error)
 	Tombstone(context.Context, sdk.ConsAddress) error
 	IsTombstoned(context.Context, sdk.ConsAddress) bool
 }

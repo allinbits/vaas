@@ -107,6 +107,11 @@ message GenesisState {
   // refcounts itself.
   repeated HeldUnbondingOps held_unbonding_ops = 20
       [ (gogoproto.nullable) = false ];
+
+  // The jail ends recorded for the validators with pending equivocation
+  // punishments (see PendingEquivocationJail); empty for a new chain.
+  repeated PendingEquivocationJail pending_equivocation_jails = 21
+      [ (gogoproto.nullable) = false ];
 }
 
 // AcceptedDowntimeWindowRecord is a single (consumer_id, provider_cons_addr,

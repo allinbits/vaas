@@ -624,13 +624,10 @@ func (k Keeper) JailAndTombstoneValidator(ctx sdk.Context, providerAddr types.Pr
 		}
 	}
 
-	// Never shorten a jail the validator's pending equivocation punishments
-	// still need closed: a second queue, or any other jail, only extends.
-	jailEndTime := ctx.BlockTime().Add(jailingParams.JailDuration)
-	if horizon, ok := k.pendingEquivocationJailHorizon(ctx, liveAddr); ok && horizon.After(jailEndTime) {
-		jailEndTime = horizon
-	}
-	if err := k.slashingKeeper.JailUntil(ctx, liveAddr, jailEndTime); err != nil {
+	// The jail of a punishment is owed whatever happens to the validator's
+	// pending punishments, and never shortens a longer jail already in place
+	// (see jailValidatorUntil).
+	if err := k.jailValidatorUntil(ctx, liveAddr, ctx.BlockTime().Add(jailingParams.JailDuration), true); err != nil {
 		return fmt.Errorf("fail to set jail duration for validator: %s: %s", providerAddr.String(), err)
 	}
 

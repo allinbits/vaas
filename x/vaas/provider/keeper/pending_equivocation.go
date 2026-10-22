@@ -27,11 +27,11 @@ import (
 const pendingEquivocationJailMargin = 24 * time.Hour
 
 // QueuePendingEquivocationPunishment records a verified consumer equivocation
-// for deferred execution: the validator is jailed immediately (reversible)
-// and its unbonding operations are put on hold, while the irreversible slash
-// and tombstone wait out EquivocationExecutionDelay so a removal proposal
-// against the consumer can reach its voting period first (see
-// SweepPendingEquivocationPunishments for the resolution paths).
+// for deferred execution: the validator is jailed immediately (reversible,
+// see jailValidatorUntil) and its unbonding operations are put on hold, while
+// the irreversible slash and tombstone wait out EquivocationExecutionDelay so
+// a removal proposal against the consumer can reach its voting period first
+// (see SweepPendingEquivocationPunishments for the resolution paths).
 //
 // The entry and its holds are keyed by the consensus address the validator
 // runs now, which is not providerAddr when the evidence names a key the
@@ -66,27 +66,14 @@ func (k Keeper) QueuePendingEquivocationPunishment(
 		return k.slashingKeeper.IsTombstoned(ctx, consAddr), nil
 	}
 
+	if validator.IsUnbonded() {
+		return false, errorsmod.Wrapf(stakingtypes.ErrNoUnbondingDelegation, "validator is unbonded. provider consensus address: %s", providerAddr.String())
+	}
+	if k.slashingKeeper.IsTombstoned(ctx, consAddr) {
+		return true, nil
+	}
+
 	executesAt := ctx.BlockTime().Add(k.GetParams(ctx).EquivocationExecutionDelay)
-
-	// Jail now, tombstone later: jailing is reversible, so it can neutralize
-	// the validator during the window without prejudging the evidence. The
-	// tombstone decision of the double-sign parameters is deliberately not
-	// consulted here; it applies at execution.
-	jailParams := &types.SlashJailParameters{
-		JailDuration: executesAt.Add(pendingEquivocationJailMargin).Sub(ctx.BlockTime()),
-		Tombstone:    false,
-	}
-	if err := k.JailAndTombstoneValidator(ctx, liveAddr, jailParams); err != nil {
-		if errors.Is(err, slashingtypes.ErrValidatorTombstoned) {
-			return true, nil
-		}
-		return false, err
-	}
-
-	if err := k.holdValidatorUnbondings(ctx, validator, consAddr); err != nil {
-		return false, err
-	}
-
 	entry := types.PendingEquivocationPunishment{
 		ConsumerId:       consumerId,
 		ProviderConsAddr: consAddr.Bytes(),
@@ -95,6 +82,24 @@ func (k Keeper) QueuePendingEquivocationPunishment(
 	}
 	if err := k.PendingEquivocationPunishments.Set(ctx, key, entry); err != nil {
 		return false, fmt.Errorf("queueing equivocation punishment: %w", err)
+	}
+
+	// Jail now, tombstone later: jailing is reversible, so it can neutralize
+	// the validator during the window without prejudging the evidence. The
+	// tombstone decision of the double-sign parameters is deliberately not
+	// consulted here; it applies at execution. The entry is stored first so
+	// the jail update finds it and keeps its record.
+	if !validator.IsJailed() {
+		if err := k.stakingKeeper.Jail(ctx, consAddr); err != nil {
+			return false, err
+		}
+	}
+	if err := k.jailValidatorUntil(ctx, consAddr, executesAt.Add(pendingEquivocationJailMargin), false); err != nil {
+		return false, fmt.Errorf("jailing for the pending equivocation punishment: %w", err)
+	}
+
+	if err := k.holdValidatorUnbondings(ctx, validator, consAddr); err != nil {
+		return false, err
 	}
 
 	ctx.EventManager().EmitEvent(sdk.NewEvent(
@@ -418,9 +423,7 @@ func (k Keeper) executePendingEquivocation(ctx sdk.Context, key collections.Trip
 	if alreadyTombstoned || infractionParams.DoubleSign.Tombstone {
 		k.dropEntriesOfTombstonedValidator(ctx, consAddr)
 	}
-	if !k.hasPendingEquivocationFor(ctx, consAddr) {
-		k.releaseValidatorHolds(ctx, consAddr)
-	}
+	k.settleValidatorWithNothingPending(ctx, consAddr)
 
 	ctx.EventManager().EmitEvent(sdk.NewEvent(
 		types.EventTypeEquivocationPunishmentExecuted,
@@ -467,9 +470,7 @@ func (k Keeper) dropPendingEquivocation(ctx sdk.Context, key collections.Triple[
 	}
 	providerAddr := types.NewProviderConsAddress(sdk.ConsAddress(key.K2()))
 	consAddr := providerAddr.ToSdkConsAddr()
-	if !k.hasPendingEquivocationFor(ctx, consAddr) {
-		k.releaseValidatorHolds(ctx, consAddr)
-	}
+	k.settleValidatorWithNothingPending(ctx, consAddr)
 	ctx.EventManager().EmitEvent(sdk.NewEvent(
 		types.EventTypeEquivocationPunishmentDropped,
 		sdk.NewAttribute(sdk.AttributeKeyModule, types.ModuleName),
@@ -485,9 +486,12 @@ func (k Keeper) dropPendingEquivocation(ctx sdk.Context, key collections.Triple[
 }
 
 // cancelPendingEquivocation removes one pending punishment on a governance
-// verdict, releases the validator's holds when it was its last one, and
-// shrinks the jail horizon to what its remaining entries require, opening it
-// when none remain so the validator can unjail immediately.
+// verdict, shrinks the jail to what the validator's remaining entries require
+// (down to what it owes for other reasons when none remain, so it can unjail
+// at once if it owes nothing), and releases its holds when it was its last
+// one. The jail is refreshed before the holds are settled: the refresh tells
+// the jail this module set from everyone else's by the record the settlement
+// drops.
 func (k Keeper) cancelPendingEquivocation(ctx sdk.Context, key collections.Triple[uint64, []byte, int64], reason string) {
 	if !k.pendingEquivocationExists(ctx, key) {
 		return
@@ -498,10 +502,8 @@ func (k Keeper) cancelPendingEquivocation(ctx sdk.Context, key collections.Tripl
 	}
 	providerAddr := types.NewProviderConsAddress(sdk.ConsAddress(key.K2()))
 	consAddr := providerAddr.ToSdkConsAddr()
-	if !k.hasPendingEquivocationFor(ctx, consAddr) {
-		k.releaseValidatorHolds(ctx, consAddr)
-	}
 	k.refreshPendingEquivocationJail(ctx, providerAddr)
+	k.settleValidatorWithNothingPending(ctx, consAddr)
 
 	ctx.EventManager().EmitEvent(sdk.NewEvent(
 		types.EventTypeEquivocationPunishmentCancelled,
@@ -571,10 +573,10 @@ func (k Keeper) pendingEquivocationJailHorizon(ctx sdk.Context, consAddr sdk.Con
 	return horizon.Add(pendingEquivocationJailMargin), true
 }
 
-// refreshPendingEquivocationJail sets the validator's jail horizon to what
-// its pending punishments require (see pendingEquivocationJailHorizon),
-// opening the jail when none remain. The address is resolved the way
-// JailAndTombstoneValidator resolves it.
+// refreshPendingEquivocationJail sets the validator's jail to what its
+// pending punishments require (see pendingEquivocationJailHorizon), down to
+// what it owes for other reasons when none remain. The address is resolved
+// the way JailAndTombstoneValidator resolves it.
 func (k Keeper) refreshPendingEquivocationJail(ctx sdk.Context, providerAddr types.ProviderConsAddress) {
 	validator, err := k.stakingKeeper.GetValidatorByConsAddr(ctx, providerAddr.ToSdkConsAddr())
 	if err != nil {
@@ -582,12 +584,86 @@ func (k Keeper) refreshPendingEquivocationJail(ctx sdk.Context, providerAddr typ
 		return
 	}
 	liveAddr := liveConsAddrOf(validator, providerAddr)
-	target, ok := k.pendingEquivocationJailHorizon(ctx, liveAddr)
-	if !ok {
-		target = ctx.BlockTime()
-	}
-	if err := k.slashingKeeper.JailUntil(ctx, liveAddr, target); err != nil {
+	if err := k.jailValidatorUntil(ctx, liveAddr, time.Time{}, false); err != nil {
 		k.Logger(ctx).Error("failed to update jail for pending equivocation", "error", err)
+	}
+}
+
+// jailValidatorUntil moves the validator's jail end to the latest of until,
+// the horizon its pending punishments require and the jail it owes for other
+// reasons, and records what it set (PendingEquivocationJails). x/slashing
+// holds a single jail end per validator, shared with every other reason it
+// may be jailed for, and the record is what lets the next update tell the
+// jail this module closed on account of the pending punishments, which a
+// cancellation may open again, from a jail it must never shorten: a current
+// end later than the one last recorded was set by someone else (provider
+// downtime, say) and becomes owed, as does the end found in place at the
+// first update. owed marks until itself as owed regardless of the pending
+// punishments, which is what a punishment executing passes; the queue-time
+// jail and the refresh pass false. The record lives exactly as long as the
+// validator has pending punishments.
+func (k Keeper) jailValidatorUntil(ctx sdk.Context, consAddr sdk.ConsAddress, until time.Time, owed bool) error {
+	record, err := k.PendingEquivocationJails.Get(ctx, consAddr.Bytes())
+	recorded := err == nil
+	if err != nil && !errors.Is(err, collections.ErrNotFound) {
+		return fmt.Errorf("reading the pending equivocation jail record: %w", err)
+	}
+	current, err := k.currentJailedUntil(ctx, consAddr)
+	if err != nil {
+		return err
+	}
+	if !recorded || current.After(record.JailedUntil) {
+		record.OwedUntil = laterOf(record.OwedUntil, current)
+	}
+	if owed {
+		record.OwedUntil = laterOf(record.OwedUntil, until)
+	}
+	target := laterOf(laterOf(ctx.BlockTime(), record.OwedUntil), until)
+	if horizon, ok := k.pendingEquivocationJailHorizon(ctx, consAddr); ok {
+		target = laterOf(target, horizon)
+	}
+	if err := k.slashingKeeper.JailUntil(ctx, consAddr, target); err != nil {
+		return err
+	}
+	if !k.hasPendingEquivocationFor(ctx, consAddr) {
+		return k.PendingEquivocationJails.Remove(ctx, consAddr.Bytes())
+	}
+	record.ProviderConsAddr = consAddr.Bytes()
+	record.JailedUntil = target
+	return k.PendingEquivocationJails.Set(ctx, consAddr.Bytes(), record)
+}
+
+// currentJailedUntil reads the jail end x/slashing holds for the validator:
+// zero when it has no signing info, and an error for any other failure, which
+// the caller must not read as "no jail".
+func (k Keeper) currentJailedUntil(ctx sdk.Context, consAddr sdk.ConsAddress) (time.Time, error) {
+	info, err := k.slashingKeeper.GetValidatorSigningInfo(ctx, consAddr)
+	switch {
+	case errors.Is(err, slashingtypes.ErrNoSigningInfoFound), errors.Is(err, collections.ErrNotFound):
+		return time.Time{}, nil
+	case err != nil:
+		return time.Time{}, fmt.Errorf("reading the validator's signing info: %w", err)
+	}
+	return info.JailedUntil, nil
+}
+
+func laterOf(a, b time.Time) time.Time {
+	if b.After(a) {
+		return b
+	}
+	return a
+}
+
+// settleValidatorWithNothingPending releases the validator's unbonding holds
+// and drops its jail record once its last pending punishment is gone; a no-op
+// while any remains.
+func (k Keeper) settleValidatorWithNothingPending(ctx sdk.Context, consAddr sdk.ConsAddress) {
+	if k.hasPendingEquivocationFor(ctx, consAddr) {
+		return
+	}
+	k.releaseValidatorHolds(ctx, consAddr)
+	if err := k.PendingEquivocationJails.Remove(ctx, consAddr.Bytes()); err != nil {
+		k.Logger(ctx).Error("failed to delete the pending equivocation jail record", "error", err)
 	}
 }
 
@@ -706,6 +782,20 @@ func (k Keeper) migratePendingEquivocations(ctx sdk.Context, oldProviderAddr, ne
 			k.Logger(ctx).Error("cannot delete pending equivocation punishment left at the old provider consensus address",
 				"consumerId", key.K1(), "providerConsAddr", oldProviderAddr.String(), "error", err)
 		}
+	}
+
+	if record, err := k.PendingEquivocationJails.Get(ctx, oldAddrBz); err == nil {
+		record.ProviderConsAddr = newAddrBz
+		if err := k.PendingEquivocationJails.Set(ctx, newAddrBz, record); err != nil {
+			k.Logger(ctx).Error("cannot move the pending equivocation jail record to the rotated provider consensus address",
+				"providerConsAddr", newProviderAddr.String(), "error", err)
+		} else if err := k.PendingEquivocationJails.Remove(ctx, oldAddrBz); err != nil {
+			k.Logger(ctx).Error("cannot delete the pending equivocation jail record left at the old provider consensus address",
+				"providerConsAddr", oldProviderAddr.String(), "error", err)
+		}
+	} else if !errors.Is(err, collections.ErrNotFound) {
+		k.Logger(ctx).Error("cannot read the rotating validator's pending equivocation jail record",
+			"providerConsAddr", oldProviderAddr.String(), "error", err)
 	}
 
 	var ids []uint64

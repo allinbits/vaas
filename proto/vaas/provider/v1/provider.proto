@@ -422,3 +422,21 @@ message PendingEquivocationPunishment {
   // punishment execute.
   uint64 deferred_by_proposal_id = 6;
 }
+
+// PendingEquivocationJail is the provider's record of the jail it keeps
+// closed on a validator while that validator has pending equivocation
+// punishments. x/slashing holds one jail end per validator, shared with every
+// other reason the validator may be jailed for, so the provider records what
+// it last set there (jailed_until) and the end the validator owes regardless
+// of its pending punishments (owed_until: a jail found already in place or
+// set by someone else since, and the jail of a punishment that executed). A
+// cancellation then opens the jail down to owed_until, never further, and
+// never below a jail the provider did not set. The record lives exactly as
+// long as the validator has pending punishments.
+message PendingEquivocationJail {
+  bytes provider_cons_addr = 1;
+  google.protobuf.Timestamp jailed_until = 2
+      [ (gogoproto.nullable) = false, (gogoproto.stdtime) = true ];
+  google.protobuf.Timestamp owed_until = 3
+      [ (gogoproto.nullable) = false, (gogoproto.stdtime) = true ];
+}

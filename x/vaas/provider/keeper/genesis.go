@@ -366,6 +366,11 @@ func (k Keeper) InitGenesis(ctx sdk.Context, genState *types.GenesisState) []abc
 			}
 		}
 	}
+	for _, j := range genState.PendingEquivocationJails {
+		if err := k.PendingEquivocationJails.Set(ctx, j.ProviderConsAddr, j); err != nil {
+			panic(fmt.Errorf("init: set pending equivocation jail for %x: %w", j.ProviderConsAddr, err))
+		}
+	}
 	for _, r := range genState.ConsumerRefusals {
 		valAddr, err := sdk.ValAddressFromBech32(r.ValidatorAddress)
 		if err != nil {
@@ -586,6 +591,7 @@ func (k Keeper) ExportGenesis(ctx sdk.Context) *types.GenesisState {
 	consumerRefusals := k.exportConsumerRefusals(ctx)
 	pendingEquivocations := k.exportPendingEquivocationPunishments(ctx)
 	heldUnbondingOps := k.exportHeldUnbondingOps(ctx)
+	pendingEquivocationJails := k.exportPendingEquivocationJails(ctx)
 
 	// Only export infraction params if they have actually been set (e.g. a
 	// keeper built directly via setters in a test, without ever running
@@ -621,6 +627,7 @@ func (k Keeper) ExportGenesis(ctx sdk.Context) *types.GenesisState {
 	genState.ConsumerRefusals = consumerRefusals
 	genState.PendingEquivocationPunishments = pendingEquivocations
 	genState.HeldUnbondingOps = heldUnbondingOps
+	genState.PendingEquivocationJails = pendingEquivocationJails
 	return genState
 }
 
@@ -911,6 +918,19 @@ func (k Keeper) exportPendingEquivocationPunishments(ctx sdk.Context) []types.Pe
 		return false, nil
 	}); err != nil {
 		panic(fmt.Errorf("export: failed to iterate pending equivocation punishments: %w", err))
+	}
+	return entries
+}
+
+// exportPendingEquivocationJails walks PendingEquivocationJails into the
+// flat list carried by genesis.
+func (k Keeper) exportPendingEquivocationJails(ctx sdk.Context) []types.PendingEquivocationJail {
+	entries := []types.PendingEquivocationJail{}
+	if err := k.PendingEquivocationJails.Walk(ctx, nil, func(_ []byte, record types.PendingEquivocationJail) (bool, error) {
+		entries = append(entries, record)
+		return false, nil
+	}); err != nil {
+		panic(fmt.Errorf("export: failed to iterate pending equivocation jails: %w", err))
 	}
 	return entries
 }

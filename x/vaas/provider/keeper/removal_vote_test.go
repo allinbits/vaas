@@ -192,6 +192,7 @@ func TestRemovalProposalStatusReadFromGovState(t *testing.T) {
 		DeferredByProposalId: 5,
 	}))
 	mocks.MockStakingKeeper.EXPECT().GetValidatorByConsAddr(ctx, consAddr).Return(validator, nil)
+	expectSigningInfo(mocks, ctx, consAddr, time.Time{})
 	mocks.MockSlashingKeeper.EXPECT().JailUntil(ctx, consAddr, ctx.BlockTime())
 	k.SweepPendingEquivocationPunishments(ctx)
 	has, err := k.PendingEquivocationPunishments.Has(ctx, eqKey)

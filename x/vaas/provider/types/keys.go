@@ -67,5 +67,6 @@ var (
 	ConsumerRefusalsPrefix                 = collections.NewPrefix(40)
 	PendingEquivocationPunishmentsPrefix   = collections.NewPrefix(41)
 	HeldUnbondingOpsPrefix                 = collections.NewPrefix(42)
+	PendingEquivocationJailsPrefix         = collections.NewPrefix(46)
 	ParametersPrefix                       = collections.NewPrefix(0xFF)
 )

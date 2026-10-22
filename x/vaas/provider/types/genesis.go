@@ -138,6 +138,9 @@ func (gs GenesisState) Validate() error {
 	if err := validateHeldUnbondingOps(gs.HeldUnbondingOps, gs.PendingEquivocationPunishments); err != nil {
 		return errorsmod.Wrap(vaastypes.ErrInvalidGenesis, err.Error())
 	}
+	if err := validatePendingEquivocationJails(gs.PendingEquivocationJails, gs.PendingEquivocationPunishments); err != nil {
+		return errorsmod.Wrap(vaastypes.ErrInvalidGenesis, err.Error())
+	}
 
 	if gs.InfractionParameters != nil {
 		if err := gs.InfractionParameters.Validate(); err != nil {
@@ -700,6 +703,39 @@ func validatePendingEquivocationPunishments(entries []PendingEquivocationPunishm
 			return fmt.Errorf("duplicate pending equivocation punishment for consumer %d validator %x height %d", e.ConsumerId, e.ProviderConsAddr, e.InfractionHeight)
 		}
 		seen[k] = true
+	}
+	return nil
+}
+
+// validatePendingEquivocationJails rejects empty validator addresses,
+// duplicate records, a record with no jail end, one owing a later end than
+// it set (the end set is never below what is owed), and a record for a
+// validator with no pending equivocation punishment: the record only ever
+// lives alongside one.
+func validatePendingEquivocationJails(entries []PendingEquivocationJail, pending []PendingEquivocationPunishment) error {
+	accused := map[string]bool{}
+	for _, e := range pending {
+		accused[string(e.ProviderConsAddr)] = true
+	}
+	seen := map[string]bool{}
+	for _, j := range entries {
+		if len(j.ProviderConsAddr) == 0 {
+			return fmt.Errorf("pending equivocation jail: provider cons addr cannot be empty")
+		}
+		addr := string(j.ProviderConsAddr)
+		if seen[addr] {
+			return fmt.Errorf("duplicate pending equivocation jail for validator %x", j.ProviderConsAddr)
+		}
+		seen[addr] = true
+		if !accused[addr] {
+			return fmt.Errorf("pending equivocation jail for validator %x without a pending equivocation punishment", j.ProviderConsAddr)
+		}
+		if j.JailedUntil.IsZero() {
+			return fmt.Errorf("pending equivocation jail for validator %x: jailed_until must be set", j.ProviderConsAddr)
+		}
+		if j.OwedUntil.After(j.JailedUntil) {
+			return fmt.Errorf("pending equivocation jail for validator %x: owed_until cannot be later than jailed_until", j.ProviderConsAddr)
+		}
 	}
 	return nil
 }
