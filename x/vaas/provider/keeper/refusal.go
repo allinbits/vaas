@@ -169,7 +169,11 @@ func (k Keeper) EvaluateConsumerRefusals(ctx sdk.Context) {
 	}
 
 	for _, consumerId := range consumerIds {
-		if k.GetConsumerPhase(ctx, consumerId) != types.CONSUMER_PHASE_LAUNCHED {
+		// Only a launched or paused consumer can still be refused into, or
+		// resumed out of, a pause; the signals of the others go with the
+		// consumer at deletion.
+		phase := k.GetConsumerPhase(ctx, consumerId)
+		if phase != types.CONSUMER_PHASE_LAUNCHED && phase != types.CONSUMER_PHASE_PAUSED {
 			continue
 		}
 		standing, err := k.consumerRefusalStanding(ctx, consumerId)
@@ -178,8 +182,12 @@ func (k Keeper) EvaluateConsumerRefusals(ctx sdk.Context) {
 				"consumerId", consumerId, "error", err)
 			continue
 		}
+		// Pruning does not wait for the consumer to be launched: a paused
+		// consumer's refusers are pruned too, so a validator re-created under
+		// a gone operator address never inherits a stance that would block
+		// the resume.
 		k.pruneRefusalsOfGoneValidators(ctx, consumerId, standing.powerless)
-		if !standing.atThreshold() {
+		if phase != types.CONSUMER_PHASE_LAUNCHED || !standing.atThreshold() {
 			continue
 		}
 		if err := k.PauseConsumerChain(ctx, consumerId, types.PAUSE_REASON_REFUSAL_THRESHOLD); err != nil {
