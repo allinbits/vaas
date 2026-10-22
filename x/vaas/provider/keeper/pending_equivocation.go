@@ -375,7 +375,11 @@ func (k Keeper) pendingEquivocationExists(ctx sdk.Context, key collections.Tripl
 }
 
 func (k Keeper) executePendingEquivocation(ctx sdk.Context, key collections.Triple[uint64, []byte, int64]) {
-	if !k.pendingEquivocationExists(ctx, key) {
+	entry, err := k.PendingEquivocationPunishments.Get(ctx, key)
+	if err != nil {
+		if !errors.Is(err, collections.ErrNotFound) {
+			k.Logger(ctx).Error("failed to read pending equivocation punishment", "error", err)
+		}
 		return
 	}
 	providerAddr := types.NewProviderConsAddress(sdk.ConsAddress(key.K2()))
@@ -390,6 +394,13 @@ func (k Keeper) executePendingEquivocation(ctx sdk.Context, key collections.Trip
 		write()
 	case errors.Is(err, slashingtypes.ErrNoValidatorForAddress), errors.Is(err, stakingtypes.ErrNoUnbondingDelegation):
 		k.dropPendingEquivocation(ctx, key, err.Error())
+		return
+	case ctx.BlockTime().After(entry.ExecutesAt.Add(pendingEquivocationJailMargin)):
+		// Retried every block since maturity and still failing: a fault this
+		// persistent is not going away by itself, and the holds behind the
+		// entry freeze every delegator's unbondings for as long as it stays.
+		// The entry is dropped, its holds released, the jail left as it is.
+		k.dropPendingEquivocation(ctx, key, "execution kept failing past the jail margin: "+err.Error())
 		return
 	default:
 		k.Logger(ctx).Error("failed to execute pending equivocation punishment; retrying next block",
