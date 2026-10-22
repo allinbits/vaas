@@ -776,7 +776,7 @@ func TestHandleConsumerEvidencePacketRejectsPausedConsumer(t *testing.T) {
 
 // TestHandleConsumerDowntimeAcrossGovernanceSLAChange exercises the
 // change-tolerance machinery end to end from the governance path: after
-// MsgUpdateInfractionParams redefines the downtime SLA, evidence still in
+// A MsgUpdateParams diff redefines the downtime SLA, evidence still in
 // flight -- computed and echoed under the superseded window -- keeps being
 // accepted and is judged against the threshold it was computed under, evidence
 // under the new window is accepted too, and once the tolerance horizon elapses
@@ -801,12 +801,11 @@ func TestHandleConsumerDowntimeAcrossGovernanceSLAChange(t *testing.T) {
 
 	// Governance doubles the SLA window, which also doubles the tolerated
 	// misses: maxMissed goes from 8 - ceil(0.5*8) = 4 to 16 - ceil(0.5*16) = 8.
-	newSLA := oldSLA
-	newSLA.SignedBlocksWindow = 16
+	newWindow := int64(16)
 	msgSrv := providerkeeper.NewMsgServerImpl(&providerKeeper)
-	_, err := msgSrv.UpdateInfractionParams(ctx, &types.MsgUpdateInfractionParams{
+	_, err := msgSrv.UpdateParams(ctx, &types.MsgUpdateParams{
 		Authority:            providerKeeper.GetAuthority(),
-		InfractionParameters: newSLA,
+		InfractionParameters: &types.InfractionParametersUpdate{SignedBlocksWindow: &newWindow},
 	})
 	require.NoError(t, err)
 
@@ -836,7 +835,7 @@ func TestHandleConsumerDowntimeAcrossGovernanceSLAChange(t *testing.T) {
 	// Once the tolerance horizon has elapsed the superseded SLA is no longer
 	// accepted: nothing computed under it can still be inside its challenge
 	// window, so a consumer echoing it is stating something impossible.
-	horizon := newSLA.DowntimeEvidenceMaxAge + newSLA.DowntimeChallengeWindow
+	horizon := oldSLA.DowntimeEvidenceMaxAge + oldSLA.DowntimeChallengeWindow
 	stale := ctx.WithBlockTime(ctx.BlockTime().Add(horizon + time.Second))
 	late := vaastypes.NewEvidencePacketData(
 		consAddr, 301, []byte{0x3F}, 8, 8, math.LegacyMustNewDecFromStr("0.5"),
