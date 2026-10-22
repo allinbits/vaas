@@ -4,12 +4,13 @@ import (
 	"fmt"
 	"testing"
 
-	providerkeeper "github.com/allinbits/vaas/x/vaas/provider/keeper"
 	"github.com/stretchr/testify/require"
 
 	"cosmossdk.io/math"
 
 	sdk "github.com/cosmos/cosmos-sdk/types"
+
+	providerkeeper "github.com/allinbits/vaas/x/vaas/provider/keeper"
 )
 
 // NewKeeper fixes the per-block fee denom at construction. The guard exists so

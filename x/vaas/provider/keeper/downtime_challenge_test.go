@@ -7,14 +7,14 @@ import (
 	"github.com/stretchr/testify/require"
 	"go.uber.org/mock/gomock"
 
-	"cosmossdk.io/collections"
-	"cosmossdk.io/math"
-
 	tmproto "github.com/cometbft/cometbft/proto/tendermint/types"
 	tmtypes "github.com/cometbft/cometbft/types"
 
 	ibcexported "github.com/cosmos/ibc-go/v10/modules/core/exported"
 	ibctmtypes "github.com/cosmos/ibc-go/v10/modules/light-clients/07-tendermint"
+
+	"cosmossdk.io/collections"
+	"cosmossdk.io/math"
 
 	"github.com/cosmos/cosmos-sdk/codec/address"
 	sdk "github.com/cosmos/cosmos-sdk/types"

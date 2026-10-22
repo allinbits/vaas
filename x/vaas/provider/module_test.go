@@ -5,16 +5,19 @@ import (
 	"testing"
 	"time"
 
+	"github.com/stretchr/testify/require"
+	"go.uber.org/mock/gomock"
+
 	"cosmossdk.io/math"
-	testkeeper "github.com/allinbits/vaas/testutil/keeper"
-	providertypes "github.com/allinbits/vaas/x/vaas/provider/types"
+
 	"github.com/cosmos/cosmos-sdk/codec/address"
 	"github.com/cosmos/cosmos-sdk/crypto/keys/ed25519"
 	sdk "github.com/cosmos/cosmos-sdk/types"
 	banktypes "github.com/cosmos/cosmos-sdk/x/bank/types"
 	stakingtypes "github.com/cosmos/cosmos-sdk/x/staking/types"
-	"github.com/stretchr/testify/require"
-	"go.uber.org/mock/gomock"
+
+	testkeeper "github.com/allinbits/vaas/testutil/keeper"
+	providertypes "github.com/allinbits/vaas/x/vaas/provider/types"
 )
 
 // TestBeginBlockCommitsDebtStateWhenDistributionFails verifies that when
@@ -77,7 +80,7 @@ func TestBeginBlockCommitsDebtStateWhenDistributionFails(t *testing.T) {
 			},
 		).Return(nil)
 
-	require.NoError(t, appModule.BeginBlock(sdk.WrapSDKContext(ctx)))
+	require.NoError(t, appModule.BeginBlock(ctx))
 
 	require.True(t, k.IsConsumerInDebt(ctx, consumerInDebt))
 	require.False(t, k.IsConsumerInDebt(ctx, consumerPaying))
@@ -107,7 +110,7 @@ func TestBeginBlockSkipsFeeCollectionWhenNotAtEpochBoundary(t *testing.T) {
 	// SweepUnresponsiveConsumers calls UnbondingTime on every block.
 	mocks.MockStakingKeeper.EXPECT().UnbondingTime(gomock.Any()).Return(21*24*time.Hour, nil).AnyTimes()
 
-	require.NoError(t, appModule.BeginBlock(sdk.WrapSDKContext(ctx)))
+	require.NoError(t, appModule.BeginBlock(ctx))
 }
 
 // TestBeginBlockCollectsFeesAtEpochBoundary verifies that fee distribution
@@ -163,5 +166,5 @@ func TestBeginBlockCollectsFeesAtEpochBoundary(t *testing.T) {
 			},
 		).Return(nil)
 
-	require.NoError(t, appModule.BeginBlock(sdk.WrapSDKContext(ctx)))
+	require.NoError(t, appModule.BeginBlock(ctx))
 }

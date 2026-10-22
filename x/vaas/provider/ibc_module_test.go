@@ -3,15 +3,17 @@ package provider_test
 import (
 	"testing"
 
+	"github.com/stretchr/testify/require"
+
+	channeltypesv2 "github.com/cosmos/ibc-go/v10/modules/core/04-channel/v2/types"
+
+	"github.com/cosmos/cosmos-sdk/crypto/keys/ed25519"
+	sdk "github.com/cosmos/cosmos-sdk/types"
+
 	testkeeper "github.com/allinbits/vaas/testutil/keeper"
 	"github.com/allinbits/vaas/x/vaas/provider"
 	providertypes "github.com/allinbits/vaas/x/vaas/provider/types"
 	vaastypes "github.com/allinbits/vaas/x/vaas/types"
-	"github.com/stretchr/testify/require"
-
-	"github.com/cosmos/cosmos-sdk/crypto/keys/ed25519"
-	sdk "github.com/cosmos/cosmos-sdk/types"
-	channeltypesv2 "github.com/cosmos/ibc-go/v10/modules/core/04-channel/v2/types"
 )
 
 func TestIBCModuleOnSendPacketRequiresAuthority(t *testing.T) {

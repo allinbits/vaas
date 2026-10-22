@@ -4,20 +4,22 @@ import (
 	"strconv"
 	"testing"
 
-	testkeeper "github.com/allinbits/vaas/testutil/keeper"
-	"github.com/allinbits/vaas/x/vaas/consumer"
-	vaastypes "github.com/allinbits/vaas/x/vaas/types"
 	"github.com/stretchr/testify/require"
 
 	abci "github.com/cometbft/cometbft/abci/types"
 	cmtprotocrypto "github.com/cometbft/cometbft/proto/tendermint/crypto"
+
+	channeltypesv2 "github.com/cosmos/ibc-go/v10/modules/core/04-channel/v2/types"
 
 	"cosmossdk.io/math"
 
 	cryptocodec "github.com/cosmos/cosmos-sdk/crypto/codec"
 	"github.com/cosmos/cosmos-sdk/crypto/keys/ed25519"
 	sdk "github.com/cosmos/cosmos-sdk/types"
-	channeltypesv2 "github.com/cosmos/ibc-go/v10/modules/core/04-channel/v2/types"
+
+	testkeeper "github.com/allinbits/vaas/testutil/keeper"
+	"github.com/allinbits/vaas/x/vaas/consumer"
+	vaastypes "github.com/allinbits/vaas/x/vaas/types"
 )
 
 // TestIBCModuleOnRecvPacketMatchesPinAgainstDestinationClient guards against

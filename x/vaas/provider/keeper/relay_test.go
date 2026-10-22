@@ -25,7 +25,7 @@ func TestOnAcknowledgementPacketV2(t *testing.T) {
 	defer ctrl.Finish()
 
 	consumerId := uint64(0)
-	clientId := "07-tendermint-0"
+	clientId := ibcTestClientID
 
 	// Setup consumer with client mapping
 	providerKeeper.SetConsumerClientId(ctx, consumerId, clientId)
@@ -74,7 +74,7 @@ func TestOnTimeoutPacketV2(t *testing.T) {
 	defer ctrl.Finish()
 
 	consumerId := uint64(0)
-	clientId := "07-tendermint-0"
+	clientId := ibcTestClientID
 
 	// Setup consumer with client mapping
 	providerKeeper.SetConsumerClientId(ctx, consumerId, clientId)
@@ -113,7 +113,7 @@ func TestClientIdToConsumerIdMapping(t *testing.T) {
 	defer ctrl.Finish()
 
 	consumerId := uint64(1)
-	clientId := "07-tendermint-0"
+	clientId := ibcTestClientID
 
 	// Initially no mapping
 	_, found := providerKeeper.GetClientIdToConsumerId(ctx, clientId)
@@ -148,7 +148,7 @@ func TestSendVSCPacketsToChainNoHandler(t *testing.T) {
 	defer ctrl.Finish()
 
 	consumerId := uint64(0)
-	clientId := "07-tendermint-0"
+	clientId := ibcTestClientID
 
 	// Setup consumer with pending packets
 	providerKeeper.SetConsumerClientId(ctx, consumerId, clientId)
@@ -180,7 +180,7 @@ func TestOnAckHighestAckedDoesNotRegress(t *testing.T) {
 	defer ctrl.Finish()
 
 	consumerId := k.FetchAndIncrementConsumerId(ctx)
-	clientId := "07-tendermint-0"
+	clientId := ibcTestClientID
 	k.SetConsumerClientId(ctx, consumerId, clientId)
 	k.SetConsumerPhase(ctx, consumerId, providertypes.CONSUMER_PHASE_LAUNCHED)
 
@@ -198,7 +198,7 @@ func TestOnAckHighestAckedDoesNotRegress(t *testing.T) {
 // and that they are updated correctly on success.
 func TestHighestSentAdvancesOnlyOnSuccess(t *testing.T) {
 	consumerId := uint64(0)
-	clientId := "07-tendermint-0"
+	clientId := ibcTestClientID
 
 	t.Run("send error leaves state unchanged", func(t *testing.T) {
 		k, ctx, ctrl, mocks := testkeeper.GetProviderKeeperAndCtx(t, testkeeper.NewInMemKeeperParams(t))

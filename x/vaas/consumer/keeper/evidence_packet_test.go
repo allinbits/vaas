@@ -7,13 +7,12 @@ import (
 	"github.com/stretchr/testify/require"
 	"go.uber.org/mock/gomock"
 
+	channeltypesv2 "github.com/cosmos/ibc-go/v10/modules/core/04-channel/v2/types"
 	ibcexported "github.com/cosmos/ibc-go/v10/modules/core/exported"
 
-	channeltypesv2 "github.com/cosmos/ibc-go/v10/modules/core/04-channel/v2/types"
+	"cosmossdk.io/math"
 
 	sdk "github.com/cosmos/cosmos-sdk/types"
-
-	"cosmossdk.io/math"
 
 	testkeeper "github.com/allinbits/vaas/testutil/keeper"
 	vaastypes "github.com/allinbits/vaas/x/vaas/types"

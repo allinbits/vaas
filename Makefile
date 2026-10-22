@@ -20,8 +20,7 @@ test:
 
 # The e2e suite and the apps are their own Go modules, so a run from the root
 # never sees them: each is linted from its own directory against the root
-# config, test files included. The root run leaves its own test files out
-# (run.tests in .golangci.yml).
+# config, test files included, as the root module's own are.
 lint_cmd=$(rundep) github.com/golangci/golangci-lint/cmd/golangci-lint
 lint_e2e_cmd=cd tests/e2e && $(lint_cmd) run --config $(CURDIR)/.golangci.yml --tests=true
 lint_app_cmd=cd app && $(lint_cmd) run --config $(CURDIR)/.golangci.yml --tests=true

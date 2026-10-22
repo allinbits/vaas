@@ -3,13 +3,13 @@ package keeper
 import (
 	"time"
 
-	"github.com/allinbits/vaas/x/vaas/provider/types"
-
 	tmtypes "github.com/cometbft/cometbft/types"
 
 	ibctmtypes "github.com/cosmos/ibc-go/v10/modules/light-clients/07-tendermint"
 
 	sdk "github.com/cosmos/cosmos-sdk/types"
+
+	"github.com/allinbits/vaas/x/vaas/provider/types"
 )
 
 // OverrideWindowEndTimestampForTest replaces the downtime-evidence window-end

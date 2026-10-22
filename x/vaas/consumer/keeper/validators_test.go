@@ -5,15 +5,15 @@ import (
 
 	"github.com/stretchr/testify/require"
 
+	abci "github.com/cometbft/cometbft/abci/types"
+	tmrand "github.com/cometbft/cometbft/libs/rand"
+	tmtypes "github.com/cometbft/cometbft/types"
+
 	"cosmossdk.io/math"
 
 	cryptocodec "github.com/cosmos/cosmos-sdk/crypto/codec"
 	sdk "github.com/cosmos/cosmos-sdk/types"
 	stakingtypes "github.com/cosmos/cosmos-sdk/x/staking/types"
-
-	abci "github.com/cometbft/cometbft/abci/types"
-	tmrand "github.com/cometbft/cometbft/libs/rand"
-	tmtypes "github.com/cometbft/cometbft/types"
 
 	"github.com/allinbits/vaas/testutil/crypto"
 	testkeeper "github.com/allinbits/vaas/testutil/keeper"

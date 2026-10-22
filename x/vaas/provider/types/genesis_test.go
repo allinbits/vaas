@@ -4,19 +4,24 @@ import (
 	"testing"
 	"time"
 
-	"cosmossdk.io/math"
+	"github.com/stretchr/testify/require"
 
 	tmtypes "github.com/cometbft/cometbft/types"
-	sdk "github.com/cosmos/cosmos-sdk/types"
+
 	clienttypes "github.com/cosmos/ibc-go/v10/modules/core/02-client/types"
 	commitmenttypes "github.com/cosmos/ibc-go/v10/modules/core/23-commitment/types"
 	ibctmtypes "github.com/cosmos/ibc-go/v10/modules/light-clients/07-tendermint"
-	"github.com/stretchr/testify/require"
+
+	"cosmossdk.io/math"
+
+	sdk "github.com/cosmos/cosmos-sdk/types"
 
 	"github.com/allinbits/vaas/testutil/crypto"
 	"github.com/allinbits/vaas/x/vaas/provider/types"
 	vaastypes "github.com/allinbits/vaas/x/vaas/types"
 )
+
+const testClientID = "07-tendermint-0"
 
 func TestValidateGenesisState(t *testing.T) {
 	// minimal init params required for LAUNCHED/STOPPED/DELETED consumer states
@@ -740,7 +745,7 @@ func TestConsumerStateValidatePerPhase(t *testing.T) {
 		}, "invalid owner address"},
 		{"REGISTERED with stray client_id", func(cs *types.ConsumerState) {
 			*cs = base(types.CONSUMER_PHASE_REGISTERED)
-			cs.ClientId = "07-tendermint-0"
+			cs.ClientId = testClientID
 		}, "client id must be empty"},
 
 		// INITIALIZED: requires init_params; client_id absent.
@@ -756,7 +761,7 @@ func TestConsumerStateValidatePerPhase(t *testing.T) {
 		{"LAUNCHED valid", func(cs *types.ConsumerState) {
 			*cs = base(types.CONSUMER_PHASE_LAUNCHED)
 			cs.InitParams = validInit
-			cs.ClientId = "07-tendermint-0"
+			cs.ClientId = testClientID
 			cs.ConsumerGenesis = nonDefaultConsumerGenesis()
 		}, ""},
 		{"LAUNCHED missing client_id", func(cs *types.ConsumerState) {
@@ -769,14 +774,14 @@ func TestConsumerStateValidatePerPhase(t *testing.T) {
 		{"STOPPED valid", func(cs *types.ConsumerState) {
 			*cs = base(types.CONSUMER_PHASE_STOPPED)
 			cs.InitParams = validInit
-			cs.ClientId = "07-tendermint-0"
+			cs.ClientId = testClientID
 			cs.ConsumerGenesis = nonDefaultConsumerGenesis()
 			cs.RemovalTime = &rt
 		}, ""},
 		{"STOPPED missing removal_time", func(cs *types.ConsumerState) {
 			*cs = base(types.CONSUMER_PHASE_STOPPED)
 			cs.InitParams = validInit
-			cs.ClientId = "07-tendermint-0"
+			cs.ClientId = testClientID
 			cs.ConsumerGenesis = nonDefaultConsumerGenesis()
 		}, "removal time"},
 
@@ -784,7 +789,7 @@ func TestConsumerStateValidatePerPhase(t *testing.T) {
 		{"PAUSED valid", func(cs *types.ConsumerState) {
 			*cs = base(types.CONSUMER_PHASE_PAUSED)
 			cs.InitParams = validInit
-			cs.ClientId = "07-tendermint-0"
+			cs.ClientId = testClientID
 			cs.ConsumerGenesis = nonDefaultConsumerGenesis()
 			cs.PauseExpirationTime = &rt
 			cs.PauseReason = types.PAUSE_REASON_DOWNTIME_CHALLENGE
@@ -793,7 +798,7 @@ func TestConsumerStateValidatePerPhase(t *testing.T) {
 		{"PAUSED missing pause_reason", func(cs *types.ConsumerState) {
 			*cs = base(types.CONSUMER_PHASE_PAUSED)
 			cs.InitParams = validInit
-			cs.ClientId = "07-tendermint-0"
+			cs.ClientId = testClientID
 			cs.ConsumerGenesis = nonDefaultConsumerGenesis()
 			cs.PauseExpirationTime = &rt
 			cs.PausedAt = &rt
@@ -801,7 +806,7 @@ func TestConsumerStateValidatePerPhase(t *testing.T) {
 		{"PAUSED missing paused_at", func(cs *types.ConsumerState) {
 			*cs = base(types.CONSUMER_PHASE_PAUSED)
 			cs.InitParams = validInit
-			cs.ClientId = "07-tendermint-0"
+			cs.ClientId = testClientID
 			cs.ConsumerGenesis = nonDefaultConsumerGenesis()
 			cs.PauseExpirationTime = &rt
 			cs.PauseReason = types.PAUSE_REASON_DOWNTIME_CHALLENGE
@@ -809,13 +814,13 @@ func TestConsumerStateValidatePerPhase(t *testing.T) {
 		{"PAUSED missing pause_expiration_time", func(cs *types.ConsumerState) {
 			*cs = base(types.CONSUMER_PHASE_PAUSED)
 			cs.InitParams = validInit
-			cs.ClientId = "07-tendermint-0"
+			cs.ClientId = testClientID
 			cs.ConsumerGenesis = nonDefaultConsumerGenesis()
 		}, "pause expiration time"},
 		{"PAUSED with stray removal_time", func(cs *types.ConsumerState) {
 			*cs = base(types.CONSUMER_PHASE_PAUSED)
 			cs.InitParams = validInit
-			cs.ClientId = "07-tendermint-0"
+			cs.ClientId = testClientID
 			cs.ConsumerGenesis = nonDefaultConsumerGenesis()
 			cs.PauseExpirationTime = &rt
 			cs.RemovalTime = &rt
@@ -823,14 +828,14 @@ func TestConsumerStateValidatePerPhase(t *testing.T) {
 		{"LAUNCHED with stray pause_reason", func(cs *types.ConsumerState) {
 			*cs = base(types.CONSUMER_PHASE_LAUNCHED)
 			cs.InitParams = validInit
-			cs.ClientId = "07-tendermint-0"
+			cs.ClientId = testClientID
 			cs.ConsumerGenesis = nonDefaultConsumerGenesis()
 			cs.PauseReason = types.PAUSE_REASON_LIGHT_CLIENT_ATTACK
 		}, "pause reason must be unspecified"},
 		{"LAUNCHED with stray paused_at", func(cs *types.ConsumerState) {
 			*cs = base(types.CONSUMER_PHASE_LAUNCHED)
 			cs.InitParams = validInit
-			cs.ClientId = "07-tendermint-0"
+			cs.ClientId = testClientID
 			cs.ConsumerGenesis = nonDefaultConsumerGenesis()
 			cs.PausedAt = &rt
 		}, "paused at must be empty"},

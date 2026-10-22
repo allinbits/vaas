@@ -8,6 +8,9 @@ import (
 	"github.com/stretchr/testify/require"
 	"go.uber.org/mock/gomock"
 
+	abci "github.com/cometbft/cometbft/abci/types"
+	tmtypes "github.com/cometbft/cometbft/types"
+
 	clienttypes "github.com/cosmos/ibc-go/v10/modules/core/02-client/types"
 	commitmenttypes "github.com/cosmos/ibc-go/v10/modules/core/23-commitment/types"
 	ibctmtypes "github.com/cosmos/ibc-go/v10/modules/light-clients/07-tendermint"
@@ -19,9 +22,6 @@ import (
 	"github.com/cosmos/cosmos-sdk/crypto/keys/ed25519"
 	sdk "github.com/cosmos/cosmos-sdk/types"
 	stakingtypes "github.com/cosmos/cosmos-sdk/x/staking/types"
-
-	abci "github.com/cometbft/cometbft/abci/types"
-	tmtypes "github.com/cometbft/cometbft/types"
 
 	"github.com/allinbits/vaas/testutil/crypto"
 	testkeeper "github.com/allinbits/vaas/testutil/keeper"
@@ -41,9 +41,17 @@ func expectProviderClientExists(mocks testkeeper.MockedKeepers) {
 	mocks.MockClientKeeper.EXPECT().GetClientState(gomock.Any(), gomock.Any()).Return(nil, true).AnyTimes()
 }
 
+// genesisProviderClientID is the provider client id the genesis fixtures
+// declare; its shape is deliberately not the one a live relayer would create.
+const genesisProviderClientID = "tendermint-07"
+
+// liveProviderClientID is the provider client id a relayer creates on a live
+// consumer, the first tendermint client on the chain.
+const liveProviderClientID = "07-tendermint-0"
+
 func TestInitGenesis(t *testing.T) {
 	// mock the consumer genesis state values
-	provClientID := "tendermint-07"
+	provClientID := genesisProviderClientID
 
 	// create validator set
 	cId := crypto.NewCryptoIdentityFromIntSeed(234234)
@@ -133,7 +141,7 @@ func TestInitGenesis(t *testing.T) {
 }
 
 func TestExportGenesis(t *testing.T) {
-	provClientID := "tendermint-07"
+	provClientID := genesisProviderClientID
 
 	pubKey := ed25519.GenPrivKey().PubKey()
 	tmPK, err := cryptocodec.ToCmtPubKeyInterface(pubKey)
@@ -186,7 +194,7 @@ func TestExportGenesis(t *testing.T) {
 // last-VSC-recv time, and InitGenesis restores it on a fresh keeper (rather than
 // falling back to the current block time, which would reset the safe-mode clock).
 func TestGenesisRoundTripLastVSCRecvTime(t *testing.T) {
-	provClientID := "tendermint-07"
+	provClientID := genesisProviderClientID
 	params := vaastypes.DefaultConsumerParams()
 
 	pubKey := ed25519.GenPrivKey().PubKey()
@@ -228,7 +236,7 @@ func TestGenesisRoundTripLastVSCRecvTime(t *testing.T) {
 // chains stay unarmed until their changeover, since the standalone staking
 // keeper still runs the chain there and VSC staleness is not yet meaningful.
 func TestVSCStalenessClockArmsAtFirstWallClockBlock(t *testing.T) {
-	provClientID := "07-tendermint-0"
+	provClientID := liveProviderClientID
 
 	cId := crypto.NewCryptoIdentityFromIntSeed(893243)
 	validator := tmtypes.NewValidator(cId.TMCryptoPubKey(), 1)
@@ -343,7 +351,7 @@ func TestVSCStalenessClockArmsAtFirstWallClockBlock(t *testing.T) {
 // would come back admitting ordinary transactions until the next VSC packet
 // re-asserted it.
 func TestGenesisRoundTripConsumerInDebt(t *testing.T) {
-	provClientID := "tendermint-07"
+	provClientID := genesisProviderClientID
 	params := vaastypes.DefaultConsumerParams()
 
 	pubKey := ed25519.GenPrivKey().PubKey()
@@ -393,7 +401,7 @@ func TestGenesisRoundTripConsumerInDebt(t *testing.T) {
 // heights, staged downtime params, and queued evidence packets) survives an
 // export/import restart.
 func TestGenesisRoundTripDowntimeState(t *testing.T) {
-	provClientID := "tendermint-07"
+	provClientID := genesisProviderClientID
 	params := vaastypes.DefaultConsumerParams()
 
 	pubKey := ed25519.GenPrivKey().PubKey()
@@ -491,7 +499,7 @@ func TestGenesisRoundTripDowntimeState(t *testing.T) {
 // on a fresh keeper rather than leaving it unset until the next VSC packet
 // lazily re-establishes it via authenticateProviderChainID.
 func TestGenesisRoundTripProviderChainId(t *testing.T) {
-	provClientID := "tendermint-07"
+	provClientID := genesisProviderClientID
 	params := vaastypes.DefaultConsumerParams()
 
 	pubKey := ed25519.GenPrivKey().PubKey()
@@ -533,7 +541,7 @@ func TestGenesisRoundTripProviderChainId(t *testing.T) {
 // restart preserves the opt-in rather than silently reverting the chain to the
 // default (off) policy.
 func TestGenesisRoundTripPhotonFeesEnabled(t *testing.T) {
-	provClientID := "tendermint-07"
+	provClientID := genesisProviderClientID
 	params := vaastypes.DefaultConsumerParams()
 	params.PhotonFeesEnabled = true
 
@@ -584,19 +592,19 @@ func TestHighestValsetUpdateID(t *testing.T) {
 	require.False(t, found)
 	require.Equal(t, uint64(0), highestID)
 
-	consumerKeeper.SetHighestValsetUpdateID(ctx, 5)
+	require.NoError(t, consumerKeeper.SetHighestValsetUpdateID(ctx, 5))
 	highestID, found, err = consumerKeeper.GetHighestValsetUpdateID(ctx)
 	require.NoError(t, err)
 	require.True(t, found)
 	require.Equal(t, uint64(5), highestID)
 
-	consumerKeeper.SetHighestValsetUpdateID(ctx, 10)
+	require.NoError(t, consumerKeeper.SetHighestValsetUpdateID(ctx, 10))
 	highestID, found, err = consumerKeeper.GetHighestValsetUpdateID(ctx)
 	require.NoError(t, err)
 	require.True(t, found)
 	require.Equal(t, uint64(10), highestID)
 
-	consumerKeeper.SetHighestValsetUpdateID(ctx, 3)
+	require.NoError(t, consumerKeeper.SetHighestValsetUpdateID(ctx, 3))
 	highestID, found, err = consumerKeeper.GetHighestValsetUpdateID(ctx)
 	require.NoError(t, err)
 	require.True(t, found)
@@ -619,7 +627,7 @@ func TestInitGenesisPanicsOnInvalidStagedDowntimeParams(t *testing.T) {
 
 	params := vaastypes.DefaultConsumerParams()
 	genesis := consumertypes.NewRestartGenesisState(
-		"07-tendermint-0",
+		liveProviderClientID,
 		valset,
 		params,
 	)
