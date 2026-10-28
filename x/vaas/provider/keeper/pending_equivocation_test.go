@@ -9,6 +9,8 @@ import (
 	"github.com/stretchr/testify/require"
 	"go.uber.org/mock/gomock"
 
+	ibcexported "github.com/cosmos/ibc-go/v10/modules/core/exported"
+
 	"cosmossdk.io/collections"
 	"cosmossdk.io/math"
 
@@ -1433,4 +1435,57 @@ func TestQueueFailsWhenTheSigningInfoCannotBeRead(t *testing.T) {
 		Return(slashingtypes.ValidatorSigningInfo{}, errors.New("store unavailable"))
 	_, err := k.QueuePendingEquivocationPunishment(ctx, 0, providerAddr, 42)
 	require.ErrorContains(t, err, "store unavailable")
+}
+
+// TestResumeThawsPendingEquivocationPunishments: a refusal pause freezes a
+// consumer's pending punishments, and the resume moves their execution times
+// forward by the length of the pause, as it does for downtime accusations.
+// The jail follows: it shrinks from the pause's expiration to the moved
+// execution time plus the margin.
+func TestResumeThawsPendingEquivocationPunishments(t *testing.T) {
+	k, ctx, ctrl, mocks, validator, providerAddr := setupEquivocationQueueTest(t)
+	defer ctrl.Finish()
+	consAddr := providerAddr.ToSdkConsAddr()
+	const consumerID = uint64(0)
+	k.SetConsumerClientId(ctx, consumerID, "07-tendermint-0")
+	key := queueWithHeldOp(t, k, ctx, mocks, validator, providerAddr, consumerID, 11)
+	queued, err := k.PendingEquivocationPunishments.Get(ctx, key)
+	require.NoError(t, err)
+	horizon := queued.ExecutesAt.Add(24 * time.Hour)
+
+	pauseExpiration := ctx.BlockTime().Add(k.GetMaxPauseDuration(ctx))
+	mocks.MockStakingKeeper.EXPECT().GetValidatorByConsAddr(ctx, consAddr).Return(validator, nil)
+	expectSigningInfo(mocks, ctx, consAddr, horizon)
+	mocks.MockSlashingKeeper.EXPECT().JailUntil(ctx, consAddr, pauseExpiration.Add(24*time.Hour))
+	require.NoError(t, k.PauseConsumerChain(ctx, consumerID, types.PAUSE_REASON_REFUSAL_THRESHOLD))
+
+	// Resumed after three hours: the entry executes three hours later than
+	// it would have, and the jail closes until then plus the margin rather
+	// than until the pause's expiration.
+	pausedFor := 3 * time.Hour
+	resumed := ctx.WithBlockTime(ctx.BlockTime().Add(pausedFor))
+	mocks.MockClientKeeper.EXPECT().GetClientStatus(gomock.Any(), "07-tendermint-0").Return(ibcexported.Active)
+	resumeMocks(mocks)
+	mocks.MockStakingKeeper.EXPECT().GetValidatorByConsAddr(resumed, consAddr).Return(validator, nil)
+	expectSigningInfo(mocks, resumed, consAddr, pauseExpiration.Add(24*time.Hour))
+	mocks.MockSlashingKeeper.EXPECT().JailUntil(resumed, consAddr, queued.ExecutesAt.Add(pausedFor).Add(24*time.Hour))
+	require.NoError(t, k.ResumeConsumerChain(resumed, consumerID))
+	thawed, err := k.PendingEquivocationPunishments.Get(resumed, key)
+	require.NoError(t, err)
+	require.Equal(t, queued.ExecutesAt.Add(pausedFor), thawed.ExecutesAt)
+
+	// At what used to be the maturity the entry is not due yet; at the moved
+	// maturity it executes.
+	early := resumed.WithBlockTime(queued.ExecutesAt.Add(time.Second))
+	k.SweepPendingEquivocationPunishments(early)
+	has, err := k.PendingEquivocationPunishments.Has(early, key)
+	require.NoError(t, err)
+	require.True(t, has, "the pause's length is added to the delay")
+	due := resumed.WithBlockTime(thawed.ExecutesAt.Add(time.Second))
+	expectExecution(t, k, mocks, validator, consAddr)
+	mocks.MockStakingKeeper.EXPECT().UnbondingCanComplete(due, uint64(11)).Return(nil)
+	k.SweepPendingEquivocationPunishments(due)
+	has, err = k.PendingEquivocationPunishments.Has(due, key)
+	require.NoError(t, err)
+	require.False(t, has)
 }
