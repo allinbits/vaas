@@ -251,6 +251,10 @@ anteDecorators := []sdk.AnteDecorator{
     ante.NewValidateBasicDecorator(),
     consumerante.NewMsgFilterDecorator(options.ConsumerKeeper),
     // ...
+    consumerante.NewPhotonFeeDecorator(options.ConsumerKeeper),
+    ante.NewDeductFeeDecorator(options.AccountKeeper, options.BankKeeper, options.FeegrantKeeper,
+        consumerante.InfrastructureExemptTxFeeChecker),
+    // ...
 }
 ```
 
@@ -280,6 +284,20 @@ traffic. There is no observable symptom until the day it matters.
 
 Related: `safe_mode_threshold` must be positive. Zero makes `IsVSCStale`
 trivially true and pins the chain in restricted mode forever.
+
+The two fee entries belong together. `NewPhotonFeeDecorator` enforces the
+photon-only fee policy while the `photon_fees_enabled` consumer param is on and
+is a no-op otherwise, so it is wired unconditionally; it sits immediately
+before fee deduction so the denom it vets is the one deducted
+([photon_fee_ante.go](../x/vaas/consumer/ante/photon_fee_ante.go)).
+`InfrastructureExemptTxFeeChecker` is the `TxFeeChecker` handed to
+`NewDeductFeeDecorator`: the SDK's minimum-gas-prices floor at CheckTx, except
+that a transaction made up only of `/ibc.core.*` and `/cosmos.gov.*` messages
+skips it ([fee_checker.go](../x/vaas/consumer/ante/fee_checker.go)). The only
+floor a photon-fees chain can run is one in the voucher denom, which the
+relayer never pays; with the SDK default checker in its place, such a floor
+turns the relayer, and with it every VSC packet and every voucher, away at that
+node's mempool.
 
 ## 7. The provider's consensus-key rotation ante decorator
 
@@ -434,6 +452,8 @@ Two further order traps, both silent:
 | Governance wired *and* set as IBC client authority | silent until recovery is needed, then terminal | `MsgRecoverClient` unreachable; a dead client is permanent |
 | `x/evidence` on the provider | silent | provider-native double-signs unpunished |
 | `consumerante.NewMsgFilterDecorator` | silent | safe mode and debt gating cease to exist |
+| `consumerante.NewPhotonFeeDecorator` | silent | the photon-only fee policy ceases to exist; any denom pays |
+| `consumerante.InfrastructureExemptTxFeeChecker` in `NewDeductFeeDecorator` | silent, per node | a voucher-denom floor turns the relayer away at that node's mempool |
 | `providerante.NewConsPubKeyRotationDecorator` | silent | a colliding rotation succeeds; the validator is dropped from that consumer's set |
 | `no_valupdates_staking` / `no_valupdates_genutil` on the provider | **fatal at genesis** | "validator InitGenesis updates already set by a previous module" |
 | Provider module after staking in `SetOrderEndBlockers` | silent | provider valset and every VSC packet lag one block |
