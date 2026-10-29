@@ -55,31 +55,35 @@ type PhotonFeeKeeper interface {
 // config files would disagree on whether a transaction is valid and diverge on
 // the app hash.
 //
-// The expected voucher denom is derived, per transaction, from the currently
-// pinned provider client id (see ExpectedPhotonDenom). That derivation is
-// deliberate: the consumer pins its provider client at genesis to a client it
-// created itself, which can never carry packets, and moves the pin exactly
-// once -- to the first relayer-created client that delivers a VSC packet --
-// after which the pin never moves again (see enforcePinnedProviderClient in
-// x/vaas/consumer/keeper/relay.go). ICS-20 vouchers can only ever arrive over
-// that adopted, routable client, so the denom derived from the live pin is
-// exactly the denom real photon vouchers carry. A static genesis-time
-// parameter could not provide this: the adopted client id is not knowable at
-// genesis (it depends on which relayer client delivers the first VSC), so any
-// pre-declared denom would name a voucher that can never exist.
+// The expected voucher denom is derived, per transaction, from the pinned
+// provider client id (see ExpectedPhotonDenom). That derivation is
+// deliberate: a new chain starts with no pin and no provider client at all;
+// the owner seeded into the consumer params (or governance) pins the
+// relayer-created client exactly once via MsgSetProviderClient, which only
+// accepts an active client of the provider's chain id with a registered IBC
+// v2 counterparty, and from then on the pin never moves (see
+// enforcePinnedProviderClient in x/vaas/consumer/keeper/relay.go). ICS-20
+// vouchers can only ever arrive over that pinned, routable client, so the
+// denom derived from the live pin is exactly the denom real photon vouchers
+// carry. A static genesis-time parameter could not provide this: the relayer
+// creates the client after genesis, so its id is not knowable when the
+// genesis is written, and any pre-declared denom would name a voucher that
+// can never exist.
 //
-// The decorator runs in two phases, split at the moment the pinned provider
-// client becomes routable:
+// The decorator runs in two phases, split at the moment a routable provider
+// client is pinned:
 //
-//   - bootstrap (no pin, or the pin still rests on the unroutable genesis
-//     client): a no-op. No photon voucher can exist yet -- vouchers only
-//     travel over a routable client -- so there is nothing for a fee policy
-//     to protect, while rejecting fee-less transactions here would block the
-//     very relayer traffic that delivers the first VSC and moves the pin.
-//     This mirrors MsgFilterDecorator's pre-client behavior of staying out of
-//     the way of IBC bootstrap (that decorator additionally restricts
-//     pre-client traffic to IBC messages when wired, as the reference
-//     consumer app does).
+//   - bootstrap (no pin yet, or a pin whose client has no registered
+//     counterparty, which only a hand-authored restart genesis can produce
+//     since MsgSetProviderClient refuses such a client): a no-op. No photon
+//     voucher can exist yet -- vouchers only travel over a routable client --
+//     so there is nothing for a fee policy to protect, while rejecting
+//     fee-less transactions here would block the very relayer traffic that
+//     creates the client the owner then pins. This mirrors
+//     MsgFilterDecorator's pre-pin behavior of staying out of the way of IBC
+//     bootstrap (that decorator additionally restricts pre-pin traffic to IBC
+//     messages, the pin message itself and governance when wired, as the
+//     reference consumer app does).
 //
 //   - enforcing (the pin is routable, so vouchers can exist): every fee coin
 //     must be the derived voucher denom, and the fee must not be empty --
