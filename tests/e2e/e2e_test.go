@@ -15,6 +15,10 @@ func (s *IntegrationTestSuite) TestVAAS() {
 	// the pool funded, so the photon test observes the fee policy rather than
 	// the debt gate.
 	s.testPhotonFeeEnforcement()
+	// Needs the vouchers and the enforcing policy the photon test leaves
+	// behind. Restarts the consumer validator with a voucher-denom fee floor
+	// that stays on for every later scenario.
+	s.testNodeFeeFloor()
 	s.testDowntimeSlash()
 	s.testFeePoolSendRestriction()
 	s.testFeePoolFundAndLockEnforcement()
