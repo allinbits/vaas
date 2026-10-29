@@ -72,7 +72,10 @@ type baseSuiteConfig struct {
 	// the flag cannot be flipped later) and launches the consumer node with
 	// zero min-gas-prices, the launch configuration the policy assumes: the
 	// photon ante polices the fee denom in consensus, while the relayer's
-	// exempt traffic must stay admissible whatever it pays.
+	// exempt traffic must stay admissible whatever it pays. The voucher denom
+	// a floor could be set in is only knowable once the provider client is
+	// pinned; testNodeFeeFloor raises the floor to it then, by restarting the
+	// node.
 	enableConsumerPhotonFees bool
 }
 

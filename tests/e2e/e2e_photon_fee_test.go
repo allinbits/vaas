@@ -76,31 +76,7 @@ func (s *IntegrationTestSuite) testPhotonFeeEnforcement() {
 	voucherDenom := photonVoucherDenom(consumerClientID)
 
 	s.Run("bridged photon arrives while enforcement is on", func() {
-		providerClientID := s.tendermintClientTracking(
-			s.providerValRes[0].Container.ID, providerBinary, providerHomePath, s.cfg.consumerChainID)
-
-		stdout, stderr, err := s.dockerExec(s.providerValRes[0].Container.ID, []string{
-			providerBinary, "tx", "ibc-transfer", "transfer", "transfer", providerClientID,
-			user, "500000" + feeDenom,
-			"--from", "val",
-			"--home", providerHomePath,
-			"--keyring-backend", "test",
-			"--chain-id", s.cfg.providerChainID,
-			// IBC v2 packets carry only a timestamp timeout, in unix seconds.
-			// The CLI's relative-timeout path emits nanoseconds (the v1 unit),
-			// which channelv2 reads as seconds and rejects as beyond its 24h
-			// cap, so the timeout must be passed as an absolute seconds value.
-			"--absolute-timeouts",
-			"--packet-timeout-height", "0-0",
-			"--packet-timeout-timestamp", fmt.Sprintf("%d", time.Now().Add(10*time.Minute).Unix()),
-			"--gas", "300000",
-			"--fees", "10000" + bondDenom,
-			"--broadcast-mode", "sync",
-			"-y",
-			"-o", "json",
-		})
-		s.Require().NoError(err, "ibc-transfer failed to run: %s", stderr.String())
-		s.requireTxCommittedOn(s.providerValRes[0].Container.ID, providerBinary, providerHomePath, stdout.Bytes())
+		s.transferPhotonToConsumer(user, "500000")
 
 		s.Require().Eventuallyf(func() bool {
 			amount, err := s.queryBalance(s.consumerRESTEndpoint(), user, voucherDenom)
@@ -128,4 +104,37 @@ func (s *IntegrationTestSuite) testPhotonFeeEnforcement() {
 		s.Require().NoError(err, "broadcast failed to run: %s", stderr.String())
 		s.requireTxCommittedOn(s.consumerValRes[0].Container.ID, consumerBinary, consumerHomePath, stdout.Bytes())
 	})
+}
+
+// transferPhotonToConsumer bridges amount uphoton from the provider's val key
+// to recipient on the consumer, over the relayer-created client, and waits
+// for the transfer transaction to commit on the provider. The vouchers land
+// on the consumer whenever the relayer delivers the packet; callers watch the
+// recipient's balance for that.
+func (s *IntegrationTestSuite) transferPhotonToConsumer(recipient, amount string) {
+	providerClientID := s.tendermintClientTracking(
+		s.providerValRes[0].Container.ID, providerBinary, providerHomePath, s.cfg.consumerChainID)
+
+	stdout, stderr, err := s.dockerExec(s.providerValRes[0].Container.ID, []string{
+		providerBinary, "tx", "ibc-transfer", "transfer", "transfer", providerClientID,
+		recipient, amount + feeDenom,
+		"--from", "val",
+		"--home", providerHomePath,
+		"--keyring-backend", "test",
+		"--chain-id", s.cfg.providerChainID,
+		// IBC v2 packets carry only a timestamp timeout, in unix seconds.
+		// The CLI's relative-timeout path emits nanoseconds (the v1 unit),
+		// which channelv2 reads as seconds and rejects as beyond its 24h
+		// cap, so the timeout must be passed as an absolute seconds value.
+		"--absolute-timeouts",
+		"--packet-timeout-height", "0-0",
+		"--packet-timeout-timestamp", fmt.Sprintf("%d", time.Now().Add(10*time.Minute).Unix()),
+		"--gas", "300000",
+		"--fees", "10000" + bondDenom,
+		"--broadcast-mode", "sync",
+		"-y",
+		"-o", "json",
+	})
+	s.Require().NoError(err, "ibc-transfer failed to run: %s", stderr.String())
+	s.requireTxCommittedOn(s.providerValRes[0].Container.ID, providerBinary, providerHomePath, stdout.Bytes())
 }

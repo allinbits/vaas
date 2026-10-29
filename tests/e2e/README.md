@@ -4,8 +4,8 @@ Docker-based integration tests that spin up a real provider chain, a real
 consumer chain, and the `ibc-v2-ts-relayer`, then exercise the full VAAS
 lifecycle: consumer registration, genesis bootstrapping, IBC v2 client
 discovery, VSC synchronization, downtime slashing and challenges, fee pooling
-and distribution, key assignment, refusal and punishment deferral, liveness, and
-genesis round-trip.
+and distribution, the photon fee policy and the node fee floor, key assignment,
+refusal and punishment deferral, liveness, and genesis round-trip.
 
 This directory is its own Go module (`tests/e2e/go.mod`) and is excluded from the
 top-level `make test` and from linting. It runs via the `make test-e2e` target
@@ -97,6 +97,8 @@ and the header comment of that file documents the timing rationale in detail.
 | `e2e_downtime_challenge_test.go` | challenging a queued downtime slash with real consumer chain data |
 | `e2e_fee_pool_test.go` | fee-pool send restriction, locks, gov clawback |
 | `e2e_fee_distribution_test.go` | per-epoch validator payout out of a consumer's fee pool |
+| `e2e_photon_fee_test.go` | photon-only fee policy: native fees rejected, vouchers bridged in while enforcing, voucher fees commit |
+| `e2e_fee_floor_test.go` | node fee floor in the voucher denom, set by restarting the consumer validator: below-floor rejection at CheckTx, relayer traffic exempt |
 | `e2e_key_assignment_test.go` | consumer key assignment and the consumer switching onto it |
 | `e2e_consumer_liveness_test.go` | liveness / safe-mode scenarios |
 | `e2e_refusal_and_deferral_test.go` | refusal pause and resume, downtime and equivocation deferral behind removal votes, cancellation on removal; fabricated double-vote evidence helpers |
