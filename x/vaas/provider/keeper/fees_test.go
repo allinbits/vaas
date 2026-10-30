@@ -5,20 +5,23 @@ import (
 	"testing"
 	"time"
 
+	"github.com/stretchr/testify/require"
+	"go.uber.org/mock/gomock"
+
 	"cosmossdk.io/collections"
 	addresscodec "cosmossdk.io/core/address"
 	"cosmossdk.io/math"
-	testkeeper "github.com/allinbits/vaas/testutil/keeper"
-	providerkeeper "github.com/allinbits/vaas/x/vaas/provider/keeper"
-	providertypes "github.com/allinbits/vaas/x/vaas/provider/types"
-	vaastypes "github.com/allinbits/vaas/x/vaas/types"
+
 	"github.com/cosmos/cosmos-sdk/codec/address"
 	"github.com/cosmos/cosmos-sdk/crypto/keys/ed25519"
 	sdk "github.com/cosmos/cosmos-sdk/types"
 	banktypes "github.com/cosmos/cosmos-sdk/x/bank/types"
 	stakingtypes "github.com/cosmos/cosmos-sdk/x/staking/types"
-	"github.com/stretchr/testify/require"
-	"go.uber.org/mock/gomock"
+
+	testkeeper "github.com/allinbits/vaas/testutil/keeper"
+	providerkeeper "github.com/allinbits/vaas/x/vaas/provider/keeper"
+	providertypes "github.com/allinbits/vaas/x/vaas/provider/types"
+	vaastypes "github.com/allinbits/vaas/x/vaas/types"
 )
 
 const epochMultiplier = providertypes.DefaultBlocksPerEpoch // 600
@@ -395,15 +398,15 @@ func TestDistributeConsumerFeesExcludesDowntime(t *testing.T) {
 
 	// The excluded validator's share is escrowed as a WithheldFeeRecord; the
 	// eligible one gets none.
-	record, err := k.WithheldFeeRecords.Get(ctx, collections.Join(consumer0, []byte(consAddr2)))
+	record, err := k.WithheldFeeRecords.Get(ctx, collections.Join(consumer0, consAddr2))
 	require.NoError(t, err)
 	require.Equal(t, consumer0, record.ConsumerId)
-	require.Equal(t, []byte(consAddr2), record.ProviderConsAddr)
+	require.Equal(t, consAddr2, record.ProviderConsAddr)
 	wantAmount := sdk.NewCoin("uphoton", share)
 	require.True(t, wantAmount.Equal(record.Amount))
 	require.True(t, blockTime.Add(infractionParams.DowntimeChallengeWindow).Equal(record.ExpiresAt))
 
-	_, err = k.WithheldFeeRecords.Get(ctx, collections.Join(consumer0, []byte(consAddr1)))
+	_, err = k.WithheldFeeRecords.Get(ctx, collections.Join(consumer0, consAddr1))
 	require.Error(t, err)
 }
 
@@ -477,7 +480,7 @@ func TestDistributeConsumerFeesWithheldFeeRecordExtendsOnRepeatedExclusion(t *te
 	ctx = ctx.WithBlockTime(secondRun)
 	require.NoError(t, k.DistributeConsumerFees(ctx))
 
-	record, err := k.WithheldFeeRecords.Get(ctx, collections.Join(consumer0, []byte(consAddr2)))
+	record, err := k.WithheldFeeRecords.Get(ctx, collections.Join(consumer0, consAddr2))
 	require.NoError(t, err)
 	wantAmount := sdk.NewCoin("uphoton", share.MulRaw(2))
 	require.True(t, wantAmount.Equal(record.Amount), "want summed amount, got %s", record.Amount)
@@ -1272,7 +1275,7 @@ func TestDistributeConsumerFeesReservesWithheldEscrow(t *testing.T) {
 	require.True(t, k.IsConsumerInDebt(ctx, consumer0),
 		"an unreserved balance below the epoch fee must flag debt")
 
-	rec, err := k.WithheldFeeRecords.Get(ctx, collections.Join(consumer0, []byte(consAddr2)))
+	rec, err := k.WithheldFeeRecords.Get(ctx, collections.Join(consumer0, consAddr2))
 	require.NoError(t, err)
 	require.True(t, escrow.Equal(rec.Amount), "escrow record must be untouched")
 }
@@ -1346,7 +1349,7 @@ func TestWithheldEscrowSurvivesDistributionAndPaidInFull(t *testing.T) {
 	// Epoch N: exclude val2.
 	k.MarkEpochDowntime(ctx, consumer0, consAddr2)
 	require.NoError(t, k.DistributeConsumerFees(ctx))
-	rec, err := k.WithheldFeeRecords.Get(ctx, collections.Join(consumer0, []byte(consAddr2)))
+	rec, err := k.WithheldFeeRecords.Get(ctx, collections.Join(consumer0, consAddr2))
 	require.NoError(t, err)
 	require.True(t, shareCoin.Equal(rec.Amount), "epoch N must escrow val2's share")
 
@@ -1355,13 +1358,13 @@ func TestWithheldEscrowSurvivesDistributionAndPaidInFull(t *testing.T) {
 	ctx = ctx.WithBlockTime(epochN.Add(time.Hour))
 	require.NoError(t, k.DistributeConsumerFees(ctx))
 	require.False(t, k.IsConsumerInDebt(ctx, consumer0))
-	rec, err = k.WithheldFeeRecords.Get(ctx, collections.Join(consumer0, []byte(consAddr2)))
+	rec, err = k.WithheldFeeRecords.Get(ctx, collections.Join(consumer0, consAddr2))
 	require.NoError(t, err)
 	require.True(t, shareCoin.Equal(rec.Amount), "epoch N+1 distribution must not draw the escrow")
 
 	// Successful challenge pays val2 the withheld share in full and clears it.
 	require.NoError(t, k.PayWithheldFees(ctx, consumer0))
-	has, err := k.WithheldFeeRecords.Has(ctx, collections.Join(consumer0, []byte(consAddr2)))
+	has, err := k.WithheldFeeRecords.Has(ctx, collections.Join(consumer0, consAddr2))
 	require.NoError(t, err)
 	require.False(t, has, "record cleared after full payout")
 }

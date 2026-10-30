@@ -9,10 +9,10 @@ import (
 	"github.com/stretchr/testify/require"
 	"go.uber.org/mock/gomock"
 
+	clienttypes "github.com/cosmos/ibc-go/v10/modules/core/02-client/types"
+
 	"cosmossdk.io/collections"
 	"cosmossdk.io/math"
-
-	clienttypes "github.com/cosmos/ibc-go/v10/modules/core/02-client/types"
 
 	sdk "github.com/cosmos/cosmos-sdk/types"
 	stakingtypes "github.com/cosmos/cosmos-sdk/x/staking/types"
@@ -1017,8 +1017,10 @@ func TestInitGenesisPanicsOnWithheldFeeDenomMismatch(t *testing.T) {
 		ValsetUpdateId: 1,
 		Params:         providertypes.DefaultParams(),
 		ConsumerStates: []providertypes.ConsumerState{
-			{ConsumerId: 0, ChainId: "consumer-alpha", Phase: providertypes.CONSUMER_PHASE_REGISTERED,
-				OwnerAddress: owner, Metadata: &md},
+			{
+				ConsumerId: 0, ChainId: "consumer-alpha", Phase: providertypes.CONSUMER_PHASE_REGISTERED,
+				OwnerAddress: owner, Metadata: &md,
+			},
 		},
 		WithheldFeeRecords: []providertypes.WithheldFeeRecord{{
 			ConsumerId:       0,

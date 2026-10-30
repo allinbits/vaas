@@ -12,8 +12,6 @@ import (
 
 	"github.com/stretchr/testify/require"
 
-	tmtypes "github.com/cometbft/cometbft/types"
-
 	sdk "github.com/cosmos/cosmos-sdk/types"
 	stakingtypes "github.com/cosmos/cosmos-sdk/x/staking/types"
 
@@ -79,7 +77,7 @@ func TestTrackHistoricalInfoPrunesAndStoresLatest(t *testing.T) {
 	for _, stored := range latest.Valset {
 		pk, err := stored.ConsPubKey()
 		require.NoError(t, err)
-		want, ok := wantTokens[tmtypes.Address(pk.Address()).String()]
+		want, ok := wantTokens[pk.Address().String()]
 		require.Truef(t, ok, "historical entry holds unknown validator %X", pk.Address())
 		require.Equalf(t, want, stored.Tokens.String(),
 			"historical entry has wrong tokens for validator %X", pk.Address())

@@ -8,14 +8,14 @@ import (
 	"github.com/stretchr/testify/require"
 	"go.uber.org/mock/gomock"
 
+	tmtypes "github.com/cometbft/cometbft/types"
+
 	"cosmossdk.io/collections"
 	"cosmossdk.io/math"
 
 	cryptocodec "github.com/cosmos/cosmos-sdk/crypto/codec"
 	sdk "github.com/cosmos/cosmos-sdk/types"
 	stakingtypes "github.com/cosmos/cosmos-sdk/x/staking/types"
-
-	tmtypes "github.com/cometbft/cometbft/types"
 
 	testkeeper "github.com/allinbits/vaas/testutil/keeper"
 	providerkeeper "github.com/allinbits/vaas/x/vaas/provider/keeper"
@@ -635,7 +635,7 @@ func TestPruneAcceptedDowntimeWindowsSetsFloorAndRejectsBelowIt(t *testing.T) {
 	// Accept the window [93, 100], then simulate its slash maturing and
 	// executing (the sweep removes the pending entry; the accepted record
 	// stays).
-	packet := vaastypes.NewEvidencePacketData(sdk.ConsAddress(consAddr), 93, []byte{0x3F}, 8, 8, math.LegacyMustNewDecFromStr("0.5"))
+	packet := vaastypes.NewEvidencePacketData(consAddr, 93, []byte{0x3F}, 8, 8, math.LegacyMustNewDecFromStr("0.5"))
 	require.NoError(t, k.HandleConsumerEvidencePacket(ctx, consumerId, packet))
 	acceptedKey := collections.Join3(consumerId, consAddr.Bytes(), int64(100))
 	require.NoError(t, k.PendingDowntimeSlashes.Remove(ctx, acceptedKey))
@@ -669,19 +669,19 @@ func TestPruneAcceptedDowntimeWindowsSetsFloorAndRejectsBelowIt(t *testing.T) {
 	// A window starting inside the pruned range ([95, 102]) and one starting
 	// exactly at the floor ([100, 107]) are both rejected with the floor
 	// error.
-	belowFloor := vaastypes.NewEvidencePacketData(sdk.ConsAddress(consAddr), 95, []byte{0x3F}, 8, 8, math.LegacyMustNewDecFromStr("0.5"))
+	belowFloor := vaastypes.NewEvidencePacketData(consAddr, 95, []byte{0x3F}, 8, 8, math.LegacyMustNewDecFromStr("0.5"))
 	err = k.HandleConsumerEvidencePacket(prunedCtx, consumerId, belowFloor)
 	require.Error(t, err)
 	require.Contains(t, err.Error(), "pruned acceptance floor")
 
-	atFloor := vaastypes.NewEvidencePacketData(sdk.ConsAddress(consAddr), 100, []byte{0x3F}, 8, 8, math.LegacyMustNewDecFromStr("0.5"))
+	atFloor := vaastypes.NewEvidencePacketData(consAddr, 100, []byte{0x3F}, 8, 8, math.LegacyMustNewDecFromStr("0.5"))
 	err = k.HandleConsumerEvidencePacket(prunedCtx, consumerId, atFloor)
 	require.Error(t, err)
 	require.Contains(t, err.Error(), "pruned acceptance floor")
 
 	// A fresh window above the floor ([101, 108]) is accepted.
 	k.SetEpochShareRecord(prunedCtx, consumerId, freshWindowEnd, math.NewInt(1000))
-	fresh := vaastypes.NewEvidencePacketData(sdk.ConsAddress(consAddr), 101, []byte{0x3F}, 8, 8, math.LegacyMustNewDecFromStr("0.5"))
+	fresh := vaastypes.NewEvidencePacketData(consAddr, 101, []byte{0x3F}, 8, 8, math.LegacyMustNewDecFromStr("0.5"))
 	require.NoError(t, k.HandleConsumerEvidencePacket(prunedCtx, consumerId, fresh))
 	freshPending, err := k.PendingDowntimeSlashes.Get(prunedCtx, collections.Join3(consumerId, consAddr.Bytes(), int64(108)))
 	require.NoError(t, err)
@@ -786,7 +786,7 @@ func TestPruneAcceptedDowntimeWindowsKeepsRecordWhilePendingSlashMatures(t *test
 	// windowEndTime + 7d) and the accepted record is written.
 	k.SetEpochShareRecord(ctx, consumerId, windowEndTime, math.NewInt(1000))
 	mocks.MockPhotonKeeper.EXPECT().ConversionRate(ctx).Return(math.LegacyNewDec(2), nil)
-	packet := vaastypes.NewEvidencePacketData(sdk.ConsAddress(consAddr), 93, []byte{0x3F}, 8, 8, math.LegacyMustNewDecFromStr("0.5"))
+	packet := vaastypes.NewEvidencePacketData(consAddr, 93, []byte{0x3F}, 8, 8, math.LegacyMustNewDecFromStr("0.5"))
 	require.NoError(t, k.HandleConsumerEvidencePacket(ctx, consumerId, packet))
 	key := collections.Join3(consumerId, consAddr.Bytes(), int64(100))
 	pairKey := collections.Join(consumerId, consAddr.Bytes())

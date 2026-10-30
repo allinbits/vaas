@@ -8,10 +8,10 @@ import (
 
 	abci "github.com/cometbft/cometbft/abci/types"
 
+	clienttypes "github.com/cosmos/ibc-go/v10/modules/core/02-client/types"
+
 	cryptocodec "github.com/cosmos/cosmos-sdk/crypto/codec"
 	"github.com/cosmos/cosmos-sdk/crypto/keys/ed25519"
-
-	clienttypes "github.com/cosmos/ibc-go/v10/modules/core/02-client/types"
 
 	testkeeper "github.com/allinbits/vaas/testutil/keeper"
 	providertypes "github.com/allinbits/vaas/x/vaas/provider/types"
@@ -20,12 +20,14 @@ import (
 
 // TestIBCV2PacketQueueing tests that VSC packets are correctly queued
 // and stored for later sending via IBC v2 client-based routing.
+const ibcTestClientID = "07-tendermint-0"
+
 func TestIBCV2PacketQueueing(t *testing.T) {
 	providerKeeper, ctx, ctrl, mocks := testkeeper.GetProviderKeeperAndCtx(t, testkeeper.NewInMemKeeperParams(t))
 	defer ctrl.Finish()
 
 	consumerId := uint64(0)
-	clientId := "07-tendermint-0"
+	clientId := ibcTestClientID
 
 	providerKeeper.SetConsumerClientId(ctx, consumerId, clientId)
 	providerKeeper.SetConsumerPhase(ctx, consumerId, providertypes.CONSUMER_PHASE_LAUNCHED)
@@ -70,7 +72,7 @@ func TestIBCV2MultipleConsumers(t *testing.T) {
 		clientId string
 		chainId  string
 	}{
-		{0, "07-tendermint-0", "consumer-1"},
+		{0, ibcTestClientID, "consumer-1"},
 		{1, "07-tendermint-1", "consumer-2"},
 		{2, "07-tendermint-2", "consumer-3"},
 	}
@@ -102,7 +104,7 @@ func TestIBCV2TimeoutIsLogOnly(t *testing.T) {
 	defer ctrl.Finish()
 
 	consumerId := uint64(0)
-	clientId := "07-tendermint-0"
+	clientId := ibcTestClientID
 
 	providerKeeper.SetConsumerClientId(ctx, consumerId, clientId)
 	providerKeeper.SetConsumerPhase(ctx, consumerId, providertypes.CONSUMER_PHASE_LAUNCHED)
@@ -129,7 +131,7 @@ func TestIBCV2ErrorAckIsLogOnly(t *testing.T) {
 	defer ctrl.Finish()
 
 	consumerId := uint64(0)
-	clientId := "07-tendermint-0"
+	clientId := ibcTestClientID
 
 	providerKeeper.SetConsumerClientId(ctx, consumerId, clientId)
 	providerKeeper.SetConsumerPhase(ctx, consumerId, providertypes.CONSUMER_PHASE_LAUNCHED)
@@ -153,7 +155,7 @@ func TestIBCV2DualModeRouting(t *testing.T) {
 	defer ctrl.Finish()
 
 	consumerId := uint64(0)
-	clientId := "07-tendermint-0"
+	clientId := ibcTestClientID
 
 	providerKeeper.SetConsumerClientId(ctx, consumerId, clientId)
 	providerKeeper.SetConsumerPhase(ctx, consumerId, providertypes.CONSUMER_PHASE_LAUNCHED)
