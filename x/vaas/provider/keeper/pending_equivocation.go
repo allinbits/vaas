@@ -272,7 +272,9 @@ func (k Keeper) SweepPendingEquivocationPunishments(ctx sdk.Context) {
 		if k.GetConsumerPhase(ctx, consumerId) == types.CONSUMER_PHASE_PAUSED {
 			// Frozen. The jail horizon was moved to the pause's expiration
 			// when the consumer was paused (see PauseConsumerChain), so the
-			// accused validator cannot unjail into the active set mid-pause.
+			// accused validator cannot unjail into the active set mid-pause,
+			// and the resume moves the execution time past the pause
+			// (thawConsumerAccusations).
 			return false, nil
 		}
 		if entry.ExecutesAt.After(ctx.BlockTime()) {
@@ -669,9 +671,11 @@ func (k Keeper) settleValidatorWithNothingPending(ctx sdk.Context, consAddr sdk.
 
 // refreshPendingEquivocationJailsForConsumer refreshes the jail of every
 // validator with a pending punishment sourced from the consumer. Called when
-// the consumer is paused: the pause freezes those entries for up to
-// MaxPauseDuration, and the queue-time jail, sized for ExecutesAt, would
-// otherwise open mid-pause with the punishment still pending.
+// the consumer is paused, since the pause freezes those entries for up to
+// MaxPauseDuration and the queue-time jail, sized for ExecutesAt, would
+// otherwise open mid-pause with the punishment still pending; and when it is
+// resumed, so the jail follows the execution time the thaw moved instead of
+// outlasting it until the pause's former expiration.
 func (k Keeper) refreshPendingEquivocationJailsForConsumer(ctx sdk.Context, consumerId uint64) {
 	seen := map[string]bool{}
 	var addrs []sdk.ConsAddress

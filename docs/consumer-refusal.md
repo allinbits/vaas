@@ -130,7 +130,8 @@ or tombstone in the submission transaction. Instead:
    prejudging evidence a malicious binary can fabricate wholesale. The jail
    lasts until the execution time plus a 24-hour margin, and every later
    change to the entry moves it: an extension behind a vote carries it past
-   the new execution time, a pause moves it to the pause's expiration, and
+   the new execution time, a pause moves it to the pause's expiration, a
+   resume brings it back to the moved execution time (see below), and
    nothing ever shortens it while a punishment is pending (a second
    accusation, or any other jail, only extends). x/slashing holds a single
    jail end per validator, shared with every other reason it may be jailed
@@ -167,7 +168,10 @@ or tombstone in the submission transaction. Instead:
 
    A paused consumer freezes its entries in place until the pause resolves:
    the pause is a governance deliberation window and an irreversible
-   punishment must not pre-empt the verdict. A consumer stopped for any other
+   punishment must not pre-empt the verdict. A resume moves each entry's
+   execution time forward by the length of the pause, as it does for the
+   consumer's downtime accusations, so the deliberation window is not
+   deducted from the delay. A consumer stopped for any other
    reason, by the liveness sweep or by a lapsed pause, is not a verdict on its
    evidence, and its entries keep running on their own clock: the punishment
    executes at maturity, slash and tombstone at the double-sign parameters as

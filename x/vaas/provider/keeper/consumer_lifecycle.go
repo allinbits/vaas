@@ -471,11 +471,16 @@ func (k Keeper) DiscardConsumerAccusations(ctx sdk.Context, consumerId uint64) e
 	return nil
 }
 
-// thawConsumerAccusations moves the consumer's downtime accusations forward
-// by the length of the pause that froze them: every pending slash matures,
-// and every withheld fee record expires, as long after the resume as it would
-// have after the pause. Only a refusal pause freezes them (see
-// PauseConsumerChain); after the other pauses there is nothing left to move.
+// thawConsumerAccusations moves the consumer's accusations forward by the
+// length of the pause that froze them: every pending downtime slash matures,
+// every withheld fee record expires, and every pending equivocation
+// punishment executes, as long after the resume as it would have after the
+// pause. Only a refusal pause freezes the downtime accusations (see
+// PauseConsumerChain); every pause freezes the pending equivocation
+// punishments (see SweepPendingEquivocationPunishments). The jails behind
+// the punishments are refreshed by the caller once the consumer is launched
+// again, since the horizon of a paused consumer's entries is the pause's
+// expiration.
 func (k Keeper) thawConsumerAccusations(ctx sdk.Context, consumerId uint64, pausedFor time.Duration) error {
 	var slashKeys []collections.Triple[uint64, []byte, int64]
 	var slashes []types.PendingDowntimeSlash
@@ -506,6 +511,22 @@ func (k Keeper) thawConsumerAccusations(ctx sdk.Context, consumerId uint64, paus
 		records[i].ExpiresAt = records[i].ExpiresAt.Add(pausedFor)
 		if err := k.WithheldFeeRecords.Set(ctx, key, records[i]); err != nil {
 			return fmt.Errorf("moving a withheld fee record of consumer %d past its pause: %w", consumerId, err)
+		}
+	}
+
+	var punishmentKeys []collections.Triple[uint64, []byte, int64]
+	var punishments []types.PendingEquivocationPunishment
+	if err := k.PendingEquivocationPunishments.Walk(ctx, collections.NewPrefixedTripleRange[uint64, []byte, int64](consumerId), func(key collections.Triple[uint64, []byte, int64], entry types.PendingEquivocationPunishment) (bool, error) {
+		punishmentKeys = append(punishmentKeys, key)
+		punishments = append(punishments, entry)
+		return false, nil
+	}); err != nil {
+		return fmt.Errorf("reading the pending equivocation punishments of consumer %d: %w", consumerId, err)
+	}
+	for i, key := range punishmentKeys {
+		punishments[i].ExecutesAt = punishments[i].ExecutesAt.Add(pausedFor)
+		if err := k.PendingEquivocationPunishments.Set(ctx, key, punishments[i]); err != nil {
+			return fmt.Errorf("moving a pending equivocation punishment of consumer %d past its pause: %w", consumerId, err)
 		}
 	}
 	return nil
@@ -648,8 +669,8 @@ func (k Keeper) ResumeConsumerChain(ctx sdk.Context, consumerId uint64) error {
 		}
 	}
 
-	// The accusations a refusal pause froze resume their clocks where the
-	// pause stopped them.
+	// The accusations the pause froze resume their clocks where the pause
+	// stopped them.
 	pausedAt, err := k.GetConsumerPausedAt(ctx, consumerId)
 	if err != nil {
 		return err
@@ -665,6 +686,11 @@ func (k Keeper) ResumeConsumerChain(ctx sdk.Context, consumerId uint64) error {
 	}
 
 	k.SetConsumerPhase(ctx, consumerId, types.CONSUMER_PHASE_LAUNCHED)
+
+	// The jails behind the consumer's pending equivocation punishments were
+	// closed until the pause's expiration; now the consumer is launched
+	// again they follow the moved execution times.
+	k.refreshPendingEquivocationJailsForConsumer(ctx, consumerId)
 
 	if err := k.SetConsumerLastAckTime(ctx, consumerId, ctx.BlockTime()); err != nil {
 		return fmt.Errorf("reseeding liveness clock for consumer %d: %w", consumerId, err)
