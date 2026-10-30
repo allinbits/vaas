@@ -59,7 +59,7 @@ func expectQueueJail(k providerkeeper.Keeper, mocks testkeeper.MockedKeepers, ct
 
 // expectNoExistingUnbondings mocks empty unbonding/redelegation sets for the
 // hold placement at queue time.
-func expectNoExistingUnbondings(t *testing.T, k providerkeeper.Keeper, mocks testkeeper.MockedKeepers, ctx sdk.Context, validator stakingtypes.Validator, consAddr sdk.ConsAddress) {
+func expectNoExistingUnbondings(t *testing.T, k providerkeeper.Keeper, mocks testkeeper.MockedKeepers, ctx sdk.Context, validator stakingtypes.Validator) {
 	t.Helper()
 	valAddr, err := k.ValidatorAddressCodec().StringToBytes(validator.GetOperator())
 	require.NoError(t, err)
@@ -160,7 +160,7 @@ func TestSweepExecutesMaturedEquivocation(t *testing.T) {
 
 	// Queue with no existing unbondings.
 	expectQueueJail(k, mocks, ctx, validator, consAddr)
-	expectNoExistingUnbondings(t, k, mocks, ctx, validator, consAddr)
+	expectNoExistingUnbondings(t, k, mocks, ctx, validator)
 	_, err := k.QueuePendingEquivocationPunishment(ctx, consumerID, providerAddr, 42)
 	require.NoError(t, err)
 
@@ -210,7 +210,7 @@ func TestSweepDefersEquivocationBehindRemovalVote(t *testing.T) {
 	k.SetConsumerPhase(ctx, consumerID, types.CONSUMER_PHASE_LAUNCHED)
 
 	expectQueueJail(k, mocks, ctx, validator, consAddr)
-	expectNoExistingUnbondings(t, k, mocks, ctx, validator, consAddr)
+	expectNoExistingUnbondings(t, k, mocks, ctx, validator)
 	_, err := k.QueuePendingEquivocationPunishment(ctx, consumerID, providerAddr, 42)
 	require.NoError(t, err)
 
@@ -244,7 +244,7 @@ func TestSweepDefersEquivocationBehindRemovalVote(t *testing.T) {
 // expectExecution mocks the slash + tombstone path executePendingEquivocation
 // runs for a bonded validator with no unbondings. Execution runs inside a
 // cache context, so the calls are matched on any context.
-func expectExecution(t *testing.T, k providerkeeper.Keeper, mocks testkeeper.MockedKeepers, ctx sdk.Context, validator stakingtypes.Validator, consAddr sdk.ConsAddress) {
+func expectExecution(t *testing.T, k providerkeeper.Keeper, mocks testkeeper.MockedKeepers, validator stakingtypes.Validator, consAddr sdk.ConsAddress) {
 	t.Helper()
 	valAddr, err := k.ValidatorAddressCodec().StringToBytes(validator.GetOperator())
 	require.NoError(t, err)
@@ -269,7 +269,7 @@ func queueWithHeldOp(t *testing.T, k providerkeeper.Keeper, ctx sdk.Context, moc
 	consAddr := providerAddr.ToSdkConsAddr()
 	k.SetConsumerPhase(ctx, consumerID, types.CONSUMER_PHASE_LAUNCHED)
 	expectQueueJail(k, mocks, ctx, validator, consAddr)
-	expectNoExistingUnbondings(t, k, mocks, ctx, validator, consAddr)
+	expectNoExistingUnbondings(t, k, mocks, ctx, validator)
 	_, err := k.QueuePendingEquivocationPunishment(ctx, consumerID, providerAddr, 42)
 	require.NoError(t, err)
 	mocks.MockStakingKeeper.EXPECT().PutUnbondingOnHold(ctx, opID).Return(nil)
@@ -366,7 +366,7 @@ func TestNonGovernanceStopDoesNotCancelPendingEquivocation(t *testing.T) {
 
 	// Matured: it executes.
 	lateCtx := ctx.WithBlockTime(ctx.BlockTime().Add(k.GetParams(ctx).EquivocationExecutionDelay + time.Second))
-	expectExecution(t, k, mocks, lateCtx, validator, consAddr)
+	expectExecution(t, k, mocks, validator, consAddr)
 	mocks.MockStakingKeeper.EXPECT().UnbondingCanComplete(lateCtx, uint64(19)).Return(nil)
 	k.SweepPendingEquivocationPunishments(lateCtx)
 
@@ -378,7 +378,7 @@ func TestNonGovernanceStopDoesNotCancelPendingEquivocation(t *testing.T) {
 // deferEquivocationBehindVote queues a punishment with one held op, lets it
 // mature while a removal vote for the consumer (proposal 7) is live, and
 // returns the entry key, the deferred entry, and the matured context.
-func deferEquivocationBehindVote(t *testing.T, k providerkeeper.Keeper, ctx sdk.Context, mocks testkeeper.MockedKeepers, validator stakingtypes.Validator, providerAddr types.ProviderConsAddress, consumerID, opID uint64) (collections.Triple[uint64, []byte, int64], types.PendingEquivocationPunishment, sdk.Context) {
+func deferEquivocationBehindVote(t *testing.T, k providerkeeper.Keeper, ctx sdk.Context, mocks testkeeper.MockedKeepers, validator stakingtypes.Validator, providerAddr types.ProviderConsAddress, consumerID, opID uint64) (collections.Triple[uint64, []byte, int64], types.PendingEquivocationPunishment, sdk.Context) { //nolint:unparam // every scenario defers on the fixture's consumer 0; the helper stays generic
 	t.Helper()
 	consAddr := providerAddr.ToSdkConsAddr()
 	key := queueWithHeldOp(t, k, ctx, mocks, validator, providerAddr, consumerID, opID)
@@ -466,7 +466,7 @@ func TestFailedRemovalOfRunningConsumerExecutesDeferredEquivocation(t *testing.T
 	seedRemovalProposal(t, mocks.GovKeeper, k, ctx, 7, 0, govv1.StatusFailed, time.Time{})
 
 	decided := matured.WithBlockTime(entry.ExecutesAt.Add(time.Second))
-	expectExecution(t, k, mocks, decided, validator, consAddr)
+	expectExecution(t, k, mocks, validator, consAddr)
 	mocks.MockStakingKeeper.EXPECT().UnbondingCanComplete(decided, uint64(29)).Return(nil)
 	k.SweepPendingEquivocationPunishments(decided)
 
@@ -489,7 +489,7 @@ func TestRejectedRemovalVoteExecutesDeferredEquivocation(t *testing.T) {
 	seedRemovalProposal(t, mocks.GovKeeper, k, ctx, 7, consumerID, govv1.StatusRejected, time.Time{})
 
 	decided := matured.WithBlockTime(entry.ExecutesAt.Add(time.Second))
-	expectExecution(t, k, mocks, decided, validator, consAddr)
+	expectExecution(t, k, mocks, validator, consAddr)
 	mocks.MockStakingKeeper.EXPECT().UnbondingCanComplete(decided, uint64(29)).Return(nil)
 	k.SweepPendingEquivocationPunishments(decided)
 
@@ -542,7 +542,7 @@ func TestExecutionSlashesBondedStakeOfJailedValidator(t *testing.T) {
 	k.SetConsumerPhase(ctx, consumerID, types.CONSUMER_PHASE_LAUNCHED)
 
 	expectQueueJail(k, mocks, ctx, validator, consAddr)
-	expectNoExistingUnbondings(t, k, mocks, ctx, validator, consAddr)
+	expectNoExistingUnbondings(t, k, mocks, ctx, validator)
 	_, err := k.QueuePendingEquivocationPunishment(ctx, consumerID, providerAddr, 42)
 	require.NoError(t, err)
 
@@ -878,14 +878,14 @@ func TestExecutionDropsSiblingEntriesOnceTombstoned(t *testing.T) {
 	laterCtx := ctx.WithBlockTime(ctx.BlockTime().Add(time.Hour))
 	k.SetConsumerPhase(laterCtx, 1, types.CONSUMER_PHASE_LAUNCHED)
 	expectQueueJail(k, mocks, laterCtx, validator, consAddr)
-	expectNoExistingUnbondings(t, k, mocks, laterCtx, validator, consAddr)
+	expectNoExistingUnbondings(t, k, mocks, laterCtx, validator)
 	_, err := k.QueuePendingEquivocationPunishment(laterCtx, 1, providerAddr, 42)
 	require.NoError(t, err)
 	second := collections.Join3(uint64(1), consAddr.Bytes(), int64(42))
 
 	// The first entry matures and executes: the validator is tombstoned.
 	matured := ctx.WithBlockTime(ctx.BlockTime().Add(k.GetParams(ctx).EquivocationExecutionDelay + time.Second))
-	expectExecution(t, k, mocks, matured, validator, consAddr)
+	expectExecution(t, k, mocks, validator, consAddr)
 	mocks.MockStakingKeeper.EXPECT().UnbondingCanComplete(matured, uint64(11)).Return(nil)
 	k.SweepPendingEquivocationPunishments(matured)
 
@@ -931,7 +931,7 @@ func TestExecutionRetriesWhenTombstoneFails(t *testing.T) {
 	require.True(t, held, "the holds stay while the punishment is pending")
 
 	next := matured.WithBlockTime(matured.BlockTime().Add(5 * time.Second))
-	expectExecution(t, k, mocks, next, validator, consAddr)
+	expectExecution(t, k, mocks, validator, consAddr)
 	mocks.MockStakingKeeper.EXPECT().UnbondingCanComplete(next, uint64(11)).Return(nil)
 	k.SweepPendingEquivocationPunishments(next)
 	has, err = k.PendingEquivocationPunishments.Has(next, key)
@@ -974,7 +974,7 @@ func TestCancellingOneOfTwoEntriesKeepsHoldsAndJail(t *testing.T) {
 	laterCtx := ctx.WithBlockTime(ctx.BlockTime().Add(time.Hour))
 	k.SetConsumerPhase(laterCtx, 1, types.CONSUMER_PHASE_LAUNCHED)
 	expectQueueJail(k, mocks, laterCtx, validator, consAddr)
-	expectNoExistingUnbondings(t, k, mocks, laterCtx, validator, consAddr)
+	expectNoExistingUnbondings(t, k, mocks, laterCtx, validator)
 	_, err := k.QueuePendingEquivocationPunishment(laterCtx, 1, providerAddr, 42)
 	require.NoError(t, err)
 	second, err := k.PendingEquivocationPunishments.Get(laterCtx, collections.Join3(uint64(1), consAddr.Bytes(), int64(42)))
@@ -1005,7 +1005,7 @@ func TestSweepConsultsTheVoteOncePerConsumer(t *testing.T) {
 	k.SetConsumerPhase(ctx, 0, types.CONSUMER_PHASE_LAUNCHED)
 	for _, height := range []int64{42, 43} {
 		expectQueueJail(k, mocks, ctx, validator, consAddr)
-		expectNoExistingUnbondings(t, k, mocks, ctx, validator, consAddr)
+		expectNoExistingUnbondings(t, k, mocks, ctx, validator)
 		_, err := k.QueuePendingEquivocationPunishment(ctx, 0, providerAddr, height)
 		require.NoError(t, err)
 	}
@@ -1057,7 +1057,7 @@ func TestSweepCancelsAndExecutesInOneBlock(t *testing.T) {
 	seedRemovalProposal(t, mocks.GovKeeper, k, ctx, 6, 1, govv1.StatusRejected, time.Time{})
 
 	expectCancellation(mocks, ctx, cancelledVal, cancelledAddr.ToSdkConsAddr(), 51)
-	expectExecution(t, k, mocks, ctx, executedVal, executedAddr.ToSdkConsAddr())
+	expectExecution(t, k, mocks, executedVal, executedAddr.ToSdkConsAddr())
 	mocks.MockStakingKeeper.EXPECT().UnbondingCanComplete(ctx, uint64(61)).Return(nil)
 	k.SweepPendingEquivocationPunishments(ctx)
 
@@ -1091,13 +1091,13 @@ func TestSweepSkipsEntriesRemovedByAnEarlierExecution(t *testing.T) {
 	first := queueWithHeldOp(t, k, ctx, mocks, validator, providerAddr, 0, 11)
 	k.SetConsumerPhase(ctx, 1, types.CONSUMER_PHASE_LAUNCHED)
 	expectQueueJail(k, mocks, ctx, validator, consAddr)
-	expectNoExistingUnbondings(t, k, mocks, ctx, validator, consAddr)
+	expectNoExistingUnbondings(t, k, mocks, ctx, validator)
 	_, err := k.QueuePendingEquivocationPunishment(ctx, 1, providerAddr, 42)
 	require.NoError(t, err)
 	second := collections.Join3(uint64(1), consAddr.Bytes(), int64(42))
 
 	matured := ctx.WithBlockTime(ctx.BlockTime().Add(k.GetParams(ctx).EquivocationExecutionDelay + time.Second))
-	expectExecution(t, k, mocks, matured, validator, consAddr)
+	expectExecution(t, k, mocks, validator, consAddr)
 	mocks.MockStakingKeeper.EXPECT().UnbondingCanComplete(matured, uint64(11)).Return(nil)
 	k.SweepPendingEquivocationPunishments(matured)
 
@@ -1131,7 +1131,7 @@ func TestSweepSkipsCancellationOfAnEntryRemovedByAnExecution(t *testing.T) {
 	}))
 	seedRemovalProposal(t, mocks.GovKeeper, k, ctx, 5, 1, govv1.StatusPassed, time.Time{})
 
-	expectExecution(t, k, mocks, ctx, validator, consAddr)
+	expectExecution(t, k, mocks, validator, consAddr)
 	k.SweepPendingEquivocationPunishments(ctx)
 
 	for _, key := range []collections.Triple[uint64, []byte, int64]{executed, cancelled} {
@@ -1160,7 +1160,7 @@ func TestExecutionWithoutTombstoningKeepsSiblingEntries(t *testing.T) {
 	first := queueWithHeldOp(t, k, ctx, mocks, validator, providerAddr, 0, 11)
 	k.SetConsumerPhase(ctx, 1, types.CONSUMER_PHASE_LAUNCHED)
 	expectQueueJail(k, mocks, ctx, validator, consAddr)
-	expectNoExistingUnbondings(t, k, mocks, ctx, validator, consAddr)
+	expectNoExistingUnbondings(t, k, mocks, ctx, validator)
 	_, err = k.QueuePendingEquivocationPunishment(ctx, 1, providerAddr, 42)
 	require.NoError(t, err)
 	second := collections.Join3(uint64(1), consAddr.Bytes(), int64(42))
@@ -1266,7 +1266,7 @@ func TestQueueKeepsALongerJailAlreadyInPlace(t *testing.T) {
 	mocks.MockStakingKeeper.EXPECT().Jail(ctx, consAddr)
 	expectSigningInfo(mocks, ctx, consAddr, inPlace)
 	mocks.MockSlashingKeeper.EXPECT().JailUntil(ctx, consAddr, inPlace)
-	expectNoExistingUnbondings(t, k, mocks, ctx, validator, consAddr)
+	expectNoExistingUnbondings(t, k, mocks, ctx, validator)
 	_, err := k.QueuePendingEquivocationPunishment(ctx, 0, providerAddr, 42)
 	require.NoError(t, err)
 
@@ -1364,7 +1364,7 @@ func TestCancellationKeepsTheJailOfAnExecutedSibling(t *testing.T) {
 			expectSigningInfo(mocks, ctx, consAddr, horizon)
 		}
 		mocks.MockSlashingKeeper.EXPECT().JailUntil(ctx, consAddr, horizon)
-		expectNoExistingUnbondings(t, k, mocks, ctx, validator, consAddr)
+		expectNoExistingUnbondings(t, k, mocks, ctx, validator)
 		_, err := k.QueuePendingEquivocationPunishment(ctx, cid, providerAddr, 42)
 		require.NoError(t, err)
 	}

@@ -69,7 +69,7 @@ func seedGovProposal(t *testing.T, gk *govkeeper.Keeper, ctx sdk.Context, id uin
 // seedRemovalVote records a MsgRemoveConsumer proposal for the consumer in
 // its voting period, ending at votingEnd, in the gov keeper the provider
 // reads: the scan then finds a live removal vote for it.
-func seedRemovalVote(t *testing.T, gk *govkeeper.Keeper, k providerkeeper.Keeper, ctx sdk.Context, id, consumerID uint64, votingEnd time.Time) {
+func seedRemovalVote(t *testing.T, gk *govkeeper.Keeper, k providerkeeper.Keeper, ctx sdk.Context, id, consumerID uint64, votingEnd time.Time) { //nolint:unparam // every scenario seeds the vote as proposal 7; the helper stays generic
 	t.Helper()
 	seedGovProposal(t, gk, ctx, id, []sdk.Msg{&types.MsgRemoveConsumer{Signer: k.GetAuthority(), ConsumerId: consumerID}}, govv1.StatusVotingPeriod, votingEnd)
 }
