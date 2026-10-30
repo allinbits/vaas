@@ -35,6 +35,7 @@ func TestParams(t *testing.T) {
 		math.NewInt(50),
 		providertypes.DefaultMinDepositBlocks,
 		providertypes.DefaultMaxPauseDuration,
+		providertypes.DefaultInfractionParameters(),
 	)
 	providerKeeper.SetParams(ctx, newParams)
 	params = providerKeeper.GetParams(ctx)

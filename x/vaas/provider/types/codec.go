@@ -20,7 +20,6 @@ func RegisterLegacyAminoCodec(cdc *codec.LegacyAmino) {
 	legacy.RegisterAminoMsg(cdc, &MsgUpdateConsumer{}, "vaas/MsgUpdateConsumer")
 	legacy.RegisterAminoMsg(cdc, &MsgRemoveConsumer{}, "vaas/MsgRemoveConsumer")
 	legacy.RegisterAminoMsg(cdc, &MsgUpdateParams{}, "vaas/MsgUpdateProviderParams")
-	legacy.RegisterAminoMsg(cdc, &MsgUpdateInfractionParams{}, "vaas/MsgUpdateInfractionParams")
 	legacy.RegisterAminoMsg(cdc, &MsgSubmitConsumerMisbehaviour{}, "vaas/MsgSubmitConsumerMisbehaviour")
 	legacy.RegisterAminoMsg(cdc, &MsgSubmitConsumerDoubleVoting{}, "vaas/MsgSubmitConsumerDoubleVoting")
 	legacy.RegisterAminoMsg(cdc, &MsgSetConsumerFeesPerBlock{}, "vaas/MsgSetConsumerFeesPerBlock")
@@ -40,7 +39,6 @@ func RegisterInterfaces(registry codectypes.InterfaceRegistry) {
 		&MsgUpdateConsumer{},
 		&MsgRemoveConsumer{},
 		&MsgUpdateParams{},
-		&MsgUpdateInfractionParams{},
 		&MsgSubmitConsumerMisbehaviour{},
 		&MsgSubmitConsumerDoubleVoting{},
 		&MsgSetConsumerFeesPerBlock{},

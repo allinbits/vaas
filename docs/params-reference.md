@@ -8,8 +8,9 @@ Three parameter sets exist:
 
 1. **Provider module `Params`** -- global provider settings, one set for the
    whole chain.
-2. **Provider `InfractionParameters`** -- global slashing/jailing settings, one
-   set applied to every consumer.
+2. **Provider `Params.infraction_parameters`** -- global slashing/jailing
+   settings, one set applied to every consumer; part of `Params`, with its
+   own section below because of its size.
 3. **Consumer module `ConsumerParams`** -- the per-consumer-chain settings that
    the provider ships to each consumer at launch.
 
@@ -77,15 +78,16 @@ standalone provider app in this repository wires `uphoton`. Only the amount
 
 ---
 
-## 2. Provider `InfractionParameters`
+## 2. Provider `Params.infraction_parameters`
 
-One global set applied to every consumer -- not per-consumer. It is read
-everywhere through `GetInfractionParams(ctx)` with no consumer id
-([x/vaas/provider/keeper/params.go](../x/vaas/provider/keeper/params.go) lines
-154-161). Source of defaults and validation:
+One global set applied to every consumer -- not per-consumer. It is the
+`infraction_parameters` field of the provider `Params`, read everywhere
+through `GetInfractionParams(ctx)` with no consumer id
+([x/vaas/provider/keeper/params.go](../x/vaas/provider/keeper/params.go)).
+Source of defaults and validation:
 [x/vaas/provider/types/params.go](../x/vaas/provider/types/params.go)
-(`DefaultInfractionParameters` lines 128-150, `InfractionParameters.Validate`
-lines 168-212, `SlashJailParameters.Validate` lines 253-262).
+(`DefaultInfractionParameters`, `InfractionParameters.Validate`,
+`SlashJailParameters.Validate`).
 
 | Parameter | Type | Bound | Default |
 |---|---|---|---|
@@ -113,32 +115,30 @@ is `true`, so a double-signer is permanently removed regardless of the jail
 timer. A downtime slash uses `jail_duration = 0` and `tombstone = false`
 because it never jails.
 
-Two cross-parameter constraints are enforced when infraction params are
-validated:
+Two cross-parameter constraints are enforced whenever `Params` is validated,
+at genesis and on every governance update of the merged set:
 
-- `downtime_evidence_max_age <= downtime_challenge_window` (`Validate`, lines
-  205-210).
+- `downtime_evidence_max_age <= downtime_challenge_window`
+  (`InfractionParameters.Validate`).
 - `downtime_evidence_max_age + downtime_challenge_window < trusting_period_fraction
-  * default_consumer_unbonding` (`ValidateInfractionParamsAgainst`, lines
-  225-251), so the oldest challengeable header stays light-client verifiable
-  through the end of its challenge window. Both governance messages enforce it
-  against the stored other half: `MsgUpdateInfractionParams` against the stored
-  `trusting_period_fraction`, `MsgUpdateParams` against the stored infraction
-  parameters. The bound is the trusting period the *default* consumer unbonding
-  period implies, deliberately not the trusting period of any client already
-  adopted for a consumer, which could otherwise veto a provider-wide change; the
-  client that verifies a challenge bounds evidence at acceptance instead (see
-  [consumer-downtime.md](consumer-downtime.md) section 3).
+  * default_consumer_unbonding` (`ValidateInfractionParamsAgainst`, called from
+  `Params.Validate`), so the oldest challengeable header stays light-client
+  verifiable through the end of its challenge window. Because `MsgUpdateParams`
+  validates the merged set, a diff touching either side is checked against the
+  stored other side. The bound is the trusting period the *default* consumer
+  unbonding period implies, deliberately not the trusting period of any client
+  already adopted for a consumer, which could otherwise veto a provider-wide
+  change; the client that verifies a challenge bounds evidence at acceptance
+  instead (see [consumer-downtime.md](consumer-downtime.md) section 3).
 
-**Where set:** the provider genesis field `infraction_parameters`, defaulting
-to `DefaultInfractionParameters()` when omitted (`InitGenesis` in
+**Where set:** `params.infraction_parameters` in the provider genesis (the
+genesis `Params` is validated as a whole at InitChain, see `InitGenesis` in
 [x/vaas/provider/keeper/genesis.go](../x/vaas/provider/keeper/genesis.go)), and
-on a running chain by governance through `MsgUpdateInfractionParams`
-(authority-gated; `UpdateInfractionParams` in
-[msg_server.go](../x/vaas/provider/keeper/msg_server.go) lines 79-115), which
-replaces the set in full and revalidates it. `MsgUpdateParams` carries only
-`Params` ([proto/vaas/provider/v1/tx.proto](../proto/vaas/provider/v1/tx.proto)),
-and `MsgCreateConsumer` neither carries nor stores per-consumer infraction
+on a running chain by governance through `MsgUpdateParams`, a diff: every field
+is optional, only the fields set change, and the merged set is revalidated
+(`UpdateParams` in [msg_server.go](../x/vaas/provider/keeper/msg_server.go);
+[proto/vaas/provider/v1/tx.proto](../proto/vaas/provider/v1/tx.proto)).
+`MsgCreateConsumer` neither carries nor stores per-consumer infraction
 parameters -- every consumer is validated under the single global set
 (`msgServer.CreateConsumer` in
 [msg_server.go](../x/vaas/provider/keeper/msg_server.go)). A change to
@@ -147,7 +147,7 @@ next VSC packet and takes effect at their next window boundary; evidence
 echoing the superseded pair stays acceptable for `downtime_evidence_max_age +
 downtime_challenge_window` after the change (see
 [consumer-downtime.md](consumer-downtime.md) section 2). The values in force
-are in the provider `params` query, next to `Params`.
+are in the provider `params` query, inside `Params`.
 
 ---
 

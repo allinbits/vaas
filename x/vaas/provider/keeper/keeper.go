@@ -58,7 +58,6 @@ type Keeper struct {
 
 	// State collections
 	Params                        collections.Item[types.Params]
-	InfractionParams              collections.Item[types.InfractionParameters]
 	ValidatorSetUpdateId          collections.Sequence
 	ConsumerId                    collections.Sequence
 	ConsumerClients               *collections.IndexedMap[uint64, string, ConsumerClientIndexes]
@@ -125,7 +124,7 @@ type Keeper struct {
 	EpochDowntime collections.Map[collections.Pair[uint64, []byte], bool]
 
 	// PreviousDowntimeParams retains the downtime-window params that were in
-	// effect immediately before the last change to InfractionParams, along
+	// effect immediately before the last change to the infraction parameters, along
 	// with the time of that change, so evidence computed under the old
 	// params is still accepted for a bounded grace window.
 	PreviousDowntimeParams collections.Item[types.PreviousDowntimeParams]
@@ -254,7 +253,6 @@ func NewKeeper(
 
 		// Initialize collections
 		Params:               collections.NewItem(sb, types.ParametersPrefix, "params", codec.CollValue[types.Params](cdc)),
-		InfractionParams:     collections.NewItem(sb, types.InfractionParamsPrefix, "infraction_params", codec.CollValue[types.InfractionParameters](cdc)),
 		ValidatorSetUpdateId: collections.NewSequence(sb, types.ValidatorSetUpdateIdPrefix, "validator_set_update_id"),
 		ConsumerId:           collections.NewSequence(sb, types.ConsumerIdPrefix, "consumer_id"),
 		ConsumerClients: collections.NewIndexedMap(

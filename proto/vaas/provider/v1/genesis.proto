@@ -56,12 +56,6 @@ message GenesisState {
   repeated EpochShareRecord epoch_share_records = 11
       [ (gogoproto.nullable) = false ];
 
-  // Optional override for the module's infraction parameters (double-sign /
-  // downtime slash+jail settings, the downtime detection window, and the
-  // downtime challenge window / evidence max age). Absent means
-  // DefaultInfractionParameters().
-  InfractionParameters infraction_parameters = 12;
-
   // Fee shares withheld from validators pending a downtime challenge window,
   // or already forfeited. Empty for a new chain.
   repeated WithheldFeeRecord withheld_fee_records = 13

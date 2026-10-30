@@ -265,22 +265,14 @@ func (k Keeper) InitGenesis(ctx sdk.Context, genState *types.GenesisState) []abc
 		}
 	}
 
+	// Halt InitChain on malformed parameters rather than store them: a
+	// genesis JSON whose downtime object omits slash_fraction deserializes to
+	// a nil LegacyDec, which the store round-trip would turn into an explicit
+	// zero, silently capping every downtime slash at zero.
+	if err := genState.Params.Validate(); err != nil {
+		panic(fmt.Errorf("invalid parameters in genesis: %w", err))
+	}
 	k.SetParams(ctx, genState.Params)
-	infractionParams := types.DefaultInfractionParameters()
-	if genState.InfractionParameters != nil {
-		infractionParams = *genState.InfractionParameters
-	}
-	// Halt InitChain on malformed infraction parameters rather than store
-	// them: a genesis JSON whose downtime object omits slash_fraction
-	// deserializes to a nil LegacyDec, which the store round-trip would turn
-	// into an explicit zero, silently capping every downtime slash at zero.
-	if err := infractionParams.Validate(); err != nil {
-		panic(fmt.Errorf("invalid infraction parameters in genesis: %w", err))
-	}
-	if err := types.ValidateInfractionParamsAgainst(infractionParams, genState.Params.TrustingPeriodFraction); err != nil {
-		panic(fmt.Errorf("infraction parameters incompatible with genesis trusting period fraction: %w", err))
-	}
-	k.SetInfractionParams(ctx, infractionParams)
 
 	// Import downtime-detection state: pending slashes, the previous downtime
 	// params (only when present -- absent means the params have never
@@ -559,18 +551,6 @@ func (k Keeper) ExportGenesis(ctx sdk.Context) *types.GenesisState {
 	punishedEquivocations := k.exportPunishedEquivocations(ctx)
 	epochDowntimeEntries := k.exportEpochDowntimeEntries(ctx)
 
-	// Only export infraction params if they have actually been set (e.g. a
-	// keeper built directly via setters in a test, without ever running
-	// InitGenesis, may never have called SetInfractionParams). A real chain
-	// always has them set by InitGenesis.
-	var infractionParams *types.InfractionParameters
-	if has, err := k.InfractionParams.Has(ctx); err == nil && has {
-		ip := k.GetInfractionParams(ctx)
-		infractionParams = &ip
-	} else if err != nil {
-		panic(fmt.Errorf("export: failed to check infraction params: %w", err))
-	}
-
 	genState := types.NewGenesisState(
 		k.GetValidatorSetUpdateId(ctx),
 		consumerStates,
@@ -584,7 +564,6 @@ func (k Keeper) ExportGenesis(ctx sdk.Context) *types.GenesisState {
 	genState.PendingDowntimeSlashes = pendingDowntimeSlashes
 	genState.PreviousDowntimeParams = previousDowntimeParams
 	genState.EpochShareRecords = epochShareRecords
-	genState.InfractionParameters = infractionParams
 	genState.WithheldFeeRecords = withheldFeeRecords
 	genState.AcceptedDowntimeWindows = acceptedDowntimeWindows
 	genState.DowntimeWindowFloors = downtimeWindowFloors
