@@ -3,6 +3,7 @@ package keeper
 import (
 	"context"
 
+	errorsmod "cosmossdk.io/errors"
 	"cosmossdk.io/math"
 
 	cryptotypes "github.com/cosmos/cosmos-sdk/crypto/types"
@@ -99,6 +100,27 @@ func (h Hooks) BeforeTokenizeShareRecordRemoved(_ context.Context, _ uint64) err
 	return nil
 }
 
+// BeforeConsensusPubKeyRotation runs from the MsgRotateConsPubKey handler,
+// before x/staking records the rotation, and refuses one onto a consensus key
+// already assigned as some validator's consumer key on any consumer that is
+// not deleted (paused and stopped ones keep their assignments). Such a
+// rotation would put two validators at one consensus address on that
+// consumer, and nothing else can refuse it: x/staking's own uniqueness check
+// does not see VAAS key assignments, the message carries no proof of
+// possession of the new key (consumer keys are public), and once the rotation
+// is recorded it is committed before AfterConsensusPubKeyUpdate observes it.
+// The error fails the rotating transaction and nothing else, however the
+// message reached the handler (through an authz grant included).
+func (h Hooks) BeforeConsensusPubKeyRotation(goCtx context.Context, _ sdk.ValAddress, _, newPk cryptotypes.PubKey) error {
+	ctx := sdk.UnwrapSDKContext(goCtx)
+	consAddr := sdk.ConsAddress(newPk.Address())
+	if h.k.IsConsumerConsAddrInUse(ctx, consAddr) {
+		return errorsmod.Wrapf(providertypes.ErrConsumerKeyInUse,
+			"cannot rotate to consensus key %s: already assigned as a consumer key", consAddr.String())
+	}
+	return nil
+}
+
 // AfterConsensusPubKeyUpdate fires when a provider validator rotates its
 // consensus key. VAAS state that is keyed by the provider consensus address is
 // migrated to the new address (MigrateStateOnConsPubKeyRotation), and every
@@ -114,11 +136,12 @@ func (h Hooks) BeforeTokenizeShareRecordRemoved(_ context.Context, _ uint64) err
 // steps log what they cannot do rather than reporting it upwards.
 //
 // Rotating onto a consensus key already assigned as some validator's consumer
-// key is therefore refused at tx admission instead, by the ante decorator in
-// x/vaas/provider/ante. If such a rotation lands anyway -- on a chain that did
-// not wire that decorator -- it is logged here, and the consumer validator set
-// computation drops the colliding entry so neither chain is handed a set with
-// two validators at one consensus address (see CreateConsumerValidators).
+// key is therefore refused before the rotation is recorded, by
+// BeforeConsensusPubKeyRotation. If such a rotation lands anyway -- under a
+// staking module that does not ask that hook -- it is logged here, and the
+// consumer validator set computation drops the colliding entry so neither
+// chain is handed a set with two validators at one consensus address (see
+// CreateConsumerValidators).
 func (h Hooks) AfterConsensusPubKeyUpdate(goCtx context.Context, oldPk, newPk cryptotypes.PubKey, _ sdk.Coin) error {
 	ctx := sdk.UnwrapSDKContext(goCtx)
 	oldAddr := providertypes.NewProviderConsAddress(sdk.ConsAddress(oldPk.Address()))
