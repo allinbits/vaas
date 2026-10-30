@@ -187,10 +187,11 @@ func (k *Keeper) SetHooks(sh vaastypes.ConsumerHooks) *Keeper {
 }
 
 // SetProviderClientID sets the clientID for the client to the provider.
-// Written at InitGenesis (the genesis client on NewChain, the exported pin on
-// a restart) and by the one-time bootstrap adoption in
-// enforcePinnedProviderClient (relay.go), which also documents why the pin
-// never moves after that.
+// Written by MsgSetProviderClient, the owner's (or governance's) one-time
+// explicit pin of the relayer-created client, and at InitGenesis on a
+// restart, which restores the exported pin. A new chain starts with none;
+// enforcePinnedProviderClient (relay.go) documents why the pin never moves
+// once set.
 func (k Keeper) SetProviderClientID(ctx context.Context, clientID string) {
 	if err := k.ProviderClientID.Set(ctx, clientID); err != nil {
 		panic(fmt.Errorf("failed to set provider client ID: %w", err))
@@ -208,12 +209,14 @@ func (k Keeper) GetProviderClientID(ctx context.Context) (string, bool) {
 
 // HasRoutableProviderClient reports whether the pinned provider client has a
 // registered IBC v2 counterparty, i.e. whether packets can actually be routed
-// over it. On a new chain this is false while the pin still rests on the
-// unroutable genesis client and becomes true -- permanently -- once the first
-// VSC delivery re-pins the consumer to a counterparty-linked client (see
-// enforcePinnedProviderClient in relay.go). Because ICS-20 vouchers can only
-// arrive over a routable client, this is also the earliest point at which a
-// voucher denominated over the provider client can exist on this chain.
+// over it. False while no pin exists. MsgSetProviderClient refuses a client
+// without a counterparty, so a pin set through it is routable from the start
+// and stays so: ibc-go registers a counterparty once and never removes it,
+// and MsgRecoverClient keeps the client id. What the check still guards is a
+// restart genesis whose IBC fragment carries the pinned client but not its
+// counterparty. Because ICS-20 vouchers can only arrive over a routable
+// client, a true answer also marks the earliest point at which a voucher
+// denominated over the provider client can exist on this chain.
 func (k Keeper) HasRoutableProviderClient(ctx context.Context) bool {
 	pinned, found := k.GetProviderClientID(ctx)
 	if !found {
