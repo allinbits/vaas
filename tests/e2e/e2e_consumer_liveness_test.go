@@ -155,9 +155,8 @@ func (s *IntegrationTestSuite) testLivenessTransientOutage() {
 // removal path.
 //
 // Ordering: this test must run after all other sub-tests that depend on
-// consumer "0" being LAUNCHED, and before testGenesisRoundTrip (which still
-// succeeds because verifyExportedGenesis only requires consumer fields to be
-// present, not a specific phase).
+// consumer "0" being LAUNCHED. It needs nothing from the consumer itself, so
+// it also runs after the provider restart of testGenesisRoundTrip.
 //
 // Approximation note: the STOPPED -> DELETED transition requires
 // removal_time to elapse (unbonding * 0.66).  With the 20-day unbonding period

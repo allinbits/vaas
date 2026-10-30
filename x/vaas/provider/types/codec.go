@@ -29,6 +29,7 @@ func RegisterLegacyAminoCodec(cdc *codec.LegacyAmino) {
 	legacy.RegisterAminoMsg(cdc, &MsgSweepConsumerFeePool{}, "vaas/MsgSweepConsumerFeePool")
 	legacy.RegisterAminoMsg(cdc, &MsgChallengeConsumerDowntime{}, "vaas/MsgChallengeConsumerDowntime")
 	legacy.RegisterAminoMsg(cdc, &MsgResumeConsumer{}, "vaas/MsgResumeConsumer")
+	legacy.RegisterAminoMsg(cdc, &MsgSetConsumerRefusal{}, "vaas/MsgSetConsumerRefusal")
 }
 
 // RegisterInterfaces registers the provider message types to the interface registry
@@ -49,6 +50,7 @@ func RegisterInterfaces(registry codectypes.InterfaceRegistry) {
 		&MsgSweepConsumerFeePool{},
 		&MsgChallengeConsumerDowntime{},
 		&MsgResumeConsumer{},
+		&MsgSetConsumerRefusal{},
 	)
 	registry.RegisterImplementations(
 		(*exported.ClientMessage)(nil),
