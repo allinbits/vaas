@@ -338,12 +338,13 @@ func (s *baseTestSuite) nodeHeight(containerID, binary, homePath string) (int64,
 }
 
 // waitForNodesCaughtUp fails the suite unless every node of resources reaches
-// height 3 and sits within two blocks of resources[0] before timeout.
+// height 3 and sits within two blocks of resources[0] before timeout, logging
+// every node's last log lines first when it does fail.
 func (s *baseTestSuite) waitForNodesCaughtUp(resources []*dockertest.Resource, binary, homePath string, timeout time.Duration) {
 	if len(resources) < 2 {
 		return
 	}
-	s.Require().Eventuallyf(func() bool {
+	caughtUp := func() bool {
 		head, err := s.nodeHeight(resources[0].Container.ID, binary, homePath)
 		if err != nil || head < 3 {
 			return false
@@ -355,7 +356,34 @@ func (s *baseTestSuite) waitForNodesCaughtUp(resources []*dockertest.Resource, b
 			}
 		}
 		return true
-	}, timeout, 3*time.Second, "not every node caught up with val0 within %s", timeout)
+	}
+	deadline := time.Now().Add(timeout)
+	for time.Now().Before(deadline) {
+		if caughtUp() {
+			return
+		}
+		time.Sleep(3 * time.Second)
+	}
+	s.logNodeTails(resources, 40)
+	s.Require().Failf("nodes not caught up", "not every node caught up with val0 within %s", timeout)
+}
+
+// logNodeTails logs the last lines of every node's container output. A
+// bring-up that fails purges its nodes with the suite, so this is the only
+// record of why they produced no blocks.
+func (s *baseTestSuite) logNodeTails(resources []*dockertest.Resource, lines int) {
+	for i, r := range resources {
+		var buf bytes.Buffer
+		_ = s.dkrPool.Client.Logs(docker.LogsOptions{
+			Container:    r.Container.ID,
+			OutputStream: &buf,
+			ErrorStream:  &buf,
+			Stdout:       true,
+			Stderr:       true,
+			Tail:         strconv.Itoa(lines),
+		})
+		s.T().Logf("val%d (%s), last %d log lines:\n%s", i, r.Container.ID[:12], lines, buf.String())
+	}
 }
 
 // stopConsumerNode stops consumer node i, the way a validator's node goes
@@ -420,6 +448,9 @@ func (s *baseTestSuite) initAndStartProvider() {
 	waitCtx, waitCancel := context.WithTimeout(context.Background(), 2*time.Minute)
 	defer waitCancel()
 	err := s.waitForChainHeight(waitCtx, "http://localhost:"+s.cfg.providerRPCPort, 3)
+	if err != nil {
+		s.logNodeTails(s.providerValRes, 40)
+	}
 	s.Require().NoError(err, "provider failed to produce blocks")
 	s.waitForNodesCaughtUp(s.providerValRes, providerBinary, providerHomePath, 2*time.Minute)
 	s.T().Log("provider chain is producing blocks")
@@ -579,6 +610,9 @@ func (s *baseTestSuite) initAndStartConsumer(consumerGenesisJSON []byte) {
 	waitCtx, waitCancel := context.WithTimeout(context.Background(), 2*time.Minute)
 	defer waitCancel()
 	err = s.waitForChainHeight(waitCtx, "http://localhost:"+s.cfg.consumerRPCPort, 3)
+	if err != nil {
+		s.logNodeTails(s.consumerValRes, 40)
+	}
 	s.Require().NoError(err, "consumer failed to produce blocks")
 	s.waitForNodesCaughtUp(s.consumerValRes, consumerBinary, consumerHomePath, 2*time.Minute)
 	s.T().Log("consumer chain is producing blocks")
