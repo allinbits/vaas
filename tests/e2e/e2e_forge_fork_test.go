@@ -120,7 +120,7 @@ func (s *ByzantineConsumerIntegrationTestSuite) fabricateFork(clientID string) s
 				BlockID:          blockID.ToProto(),
 				Timestamp:        stamp,
 				ValidatorAddress: v.Address,
-				ValidatorIndex:   int32(idx), //nolint:gosec // four validators
+				ValidatorIndex:   int32(idx),
 			}
 			sig, err := priv.Sign(tmtypes.VoteSignBytes(chainID, vote))
 			s.Require().NoError(err, "failed to sign a fork vote")
@@ -131,7 +131,7 @@ func (s *ByzantineConsumerIntegrationTestSuite) fabricateFork(clientID string) s
 		return &ibctmtypes.Header{
 			SignedHeader:      signed.ToProto(),
 			ValidatorSet:      valsetProto,
-			TrustedHeight:     clienttypes.NewHeight(revision, uint64(trusted)), //nolint:gosec // a positive height
+			TrustedHeight:     clienttypes.NewHeight(revision, uint64(trusted)),
 			TrustedValidators: valsetProto,
 		}
 	}

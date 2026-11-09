@@ -88,6 +88,7 @@ func (s *ByzantineConsumerIntegrationTestSuite) TestByzantineConsumerVAAS() {
 	s.testForgedDowntimeIsChallenged()
 	s.testFabricatedDoubleSignJailsAndDefers()
 	s.testForkFreezesAndPausesWithoutPunishing()
+	s.testRemovalCancelsTheFabricatedPunishment()
 }
 
 // switchConsumerToForge recreates the four consumer nodes on consumer-forge,

@@ -256,7 +256,7 @@ func (s *baseTestSuite) queryPendingEquivocations(consumerID string) ([]pendingE
 }
 
 // mustPendingEquivocations is queryPendingEquivocations for assertions.
-func (s *baseTestSuite) mustPendingEquivocations(consumerID string) []pendingEquivocationJSON { //nolint:unparam // the suite drives one consumer; the helper stays generic
+func (s *baseTestSuite) mustPendingEquivocations(consumerID string) []pendingEquivocationJSON {
 	pending, err := s.queryPendingEquivocations(consumerID)
 	s.Require().NoError(err)
 	return pending
@@ -264,7 +264,7 @@ func (s *baseTestSuite) mustPendingEquivocations(consumerID string) []pendingEqu
 
 // pendingEquivocationsEmpty reports whether the consumer's queue reads back
 // empty; a failing query does not count as empty.
-func (s *baseTestSuite) pendingEquivocationsEmpty(consumerID string) bool {
+func (s *baseTestSuite) pendingEquivocationsEmpty(consumerID string) bool { //nolint:unparam // the suites drive one consumer; the helper stays generic
 	pending, err := s.queryPendingEquivocations(consumerID)
 	return err == nil && len(pending) == 0
 }
@@ -406,7 +406,7 @@ func (s *baseTestSuite) mustUnjail(key, valoper string) {
 }
 
 // removalProposalJSON builds a MsgRemoveConsumer gov proposal body.
-func (s *baseTestSuite) removalProposalJSON(consumerID, title string) string {
+func (s *baseTestSuite) removalProposalJSON(consumerID, title string) string { //nolint:unparam // the suites drive one consumer; the helper stays generic
 	govAddr := s.queryGovAuthority()
 	return fmt.Sprintf(`{
   "messages": [{
