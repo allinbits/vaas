@@ -121,21 +121,25 @@ func (h Hooks) BeforeTokenizeShareRecordRemoved(_ context.Context, _ uint64) err
 
 // BeforeConsensusPubKeyRotation runs from the MsgRotateConsPubKey handler,
 // before x/staking records the rotation, and refuses one onto a consensus key
-// already assigned as some validator's consumer key on any consumer that is
+// another validator holds as an assigned consumer key on any consumer that is
 // not deleted (paused and stopped ones keep their assignments). Such a
 // rotation would put two validators at one consensus address on that
 // consumer, and nothing else can refuse it: x/staking's own uniqueness check
 // does not see VAAS key assignments, the message carries no proof of
 // possession of the new key (consumer keys are public), and once the rotation
 // is recorded it is committed before AfterConsensusPubKeyUpdate observes it.
-// The error fails the rotating transaction and nothing else, however the
-// message reached the handler (through an authz grant included).
-func (h Hooks) BeforeConsensusPubKeyRotation(goCtx context.Context, _ sdk.ValAddress, _, newPk cryptotypes.PubKey) error {
+// A key the rotating validator holds itself passes: AssignConsumerKey lets a
+// validator run matching provider and consumer keys, and one validator cannot
+// collide with itself. The error fails the rotating transaction and nothing
+// else, however the message reached the handler (through an authz grant
+// included).
+func (h Hooks) BeforeConsensusPubKeyRotation(goCtx context.Context, _ sdk.ValAddress, oldPk, newPk cryptotypes.PubKey) error {
 	ctx := sdk.UnwrapSDKContext(goCtx)
 	consAddr := sdk.ConsAddress(newPk.Address())
-	if h.k.IsConsumerConsAddrInUse(ctx, consAddr) {
+	own := providertypes.NewProviderConsAddress(sdk.ConsAddress(oldPk.Address()))
+	if h.k.IsConsumerConsAddrHeldByAnother(ctx, consAddr, own) {
 		return errorsmod.Wrapf(providertypes.ErrConsumerKeyInUse,
-			"cannot rotate to consensus key %s: already assigned as a consumer key", consAddr.String())
+			"cannot rotate to consensus key %s: already assigned as another validator's consumer key", consAddr.String())
 	}
 	return nil
 }
@@ -166,9 +170,9 @@ func (h Hooks) AfterConsensusPubKeyUpdate(goCtx context.Context, oldPk, newPk cr
 	oldAddr := providertypes.NewProviderConsAddress(sdk.ConsAddress(oldPk.Address()))
 	newAddr := providertypes.NewProviderConsAddress(sdk.ConsAddress(newPk.Address()))
 
-	if h.k.IsConsumerConsAddrInUse(ctx, newAddr.ToSdkConsAddr()) {
+	if h.k.IsConsumerConsAddrHeldByAnother(ctx, newAddr.ToSdkConsAddr(), oldAddr) {
 		h.k.Logger(ctx).Error(
-			"validator rotated its provider consensus key onto a key already assigned as a consumer key",
+			"validator rotated its provider consensus key onto a key already assigned as another validator's consumer key",
 			"providerConsAddr", newAddr.String(),
 		)
 	}

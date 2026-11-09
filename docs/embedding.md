@@ -300,6 +300,11 @@ VAAS's `AfterConsensusPubKeyUpdate` hook runs, the rotation is already
 committed and there is nothing left to reject. The hook exists in atomone-sdk's
 `x/staking` (upstream has no pre-rotation hook), which the reference apps
 replace the SDK with; a staking module that does not ask it refuses nothing.
+That staking module also charges the rotation fee into the community pool
+through a distribution keeper handed to it after construction
+(`StakingKeeper.SetDistributionKeeper`); without that call every rotation
+fails at the fee step, refused or not, so the hook never gets a rotation to
+admit.
 
 **A staking module that does not ask the hook is silent, and cannot halt the
 chain.** `AfterConsensusPubKeyUpdate` logs the anomaly it can no longer
@@ -430,7 +435,7 @@ Two further order traps, both silent:
 | Governance wired *and* set as IBC client authority | silent until recovery is needed, then terminal | `MsgRecoverClient` unreachable; a dead client is permanent |
 | `x/evidence` on the provider | silent | provider-native double-signs unpunished |
 | `consumerante.NewMsgFilterDecorator` | silent | safe mode and debt gating cease to exist |
-| `providerante.NewConsPubKeyRotationDecorator` | silent | a colliding rotation succeeds; the validator is dropped from that consumer's set |
+| `x/staking` from atomone-sdk, which asks `BeforeConsensusPubKeyRotation` | silent | a colliding rotation succeeds; the validator is dropped from that consumer's set |
 | `no_valupdates_staking` / `no_valupdates_genutil` on the provider | **fatal at genesis** | "validator InitGenesis updates already set by a previous module" |
 | Provider module after staking in `SetOrderEndBlockers` | silent | provider valset and every VSC packet lag one block |
 | Provider module after staking/genutil in `SetOrderInitGenesis` | **fatal at genesis** | "validator set is empty after InitGenesis" |

@@ -393,6 +393,9 @@ func New(
 			app.ProviderKeeper.Hooks(),
 		),
 	)
+	// The consensus-key rotation fee goes to the community pool, through a
+	// distribution keeper the staking keeper is handed after construction.
+	app.StakingKeeper.SetDistributionKeeper(app.DistrKeeper)
 
 	app.IBCKeeper = ibckeeper.NewKeeper(
 		appCodec,

@@ -140,29 +140,41 @@ func TestMigrateStateOnConsPubKeyRotationCoversEveryConsumerAndMapping(t *testin
 
 // TestBeforeConsensusPubKeyRotationRefusesAnAssignedConsumerKey pins the
 // enforcement point: x/staking asks this hook before it records a rotation,
-// and the provider refuses one onto a consensus key some validator holds as
-// an assigned consumer key on any consumer that is not deleted, paused and
-// stopped ones included. A key no consumer holds passes, and so does the key
-// of a deleted consumer, whose assignments are gone with it.
+// and the provider refuses one onto a consensus key another validator holds
+// as an assigned consumer key on any consumer that is not deleted, paused and
+// stopped ones included. A key no consumer holds passes; so does the key of a
+// deleted consumer, whose assignments are gone with it, and so does a key the
+// rotating validator holds itself, since AssignConsumerKey lets one validator
+// run matching keys and only two different validators can collide on a
+// consumer.
 func TestBeforeConsensusPubKeyRotationRefusesAnAssignedConsumerKey(t *testing.T) {
 	keeper, ctx, ctrl, _ := testkeeper.GetProviderKeeperAndCtx(t, testkeeper.NewInMemKeeperParams(t))
 	defer ctrl.Finish()
 
 	consumerID := keeper.FetchAndIncrementConsumerId(ctx)
-	keeper.SetConsumerPhase(ctx, consumerID, types.CONSUMER_PHASE_PAUSED)
 	takenKey := cryptotestutil.NewCryptoIdentityFromIntSeed(1)
-	holder := cryptotestutil.NewCryptoIdentityFromIntSeed(5).ProviderConsAddress()
-	keeper.SetValidatorByConsumerAddr(ctx, consumerID, takenKey.ConsumerConsAddress(), holder)
+	holder := cryptotestutil.NewCryptoIdentityFromIntSeed(5)
+	keeper.SetValidatorByConsumerAddr(ctx, consumerID, takenKey.ConsumerConsAddress(), holder.ProviderConsAddress())
 
 	rotating := cryptotestutil.NewCryptoIdentityFromIntSeed(2)
-	err := keeper.Hooks().BeforeConsensusPubKeyRotation(ctx, rotating.SDKValOpAddress(), rotating.ConsensusSDKPubKey(), takenKey.ConsensusSDKPubKey())
-	require.ErrorIs(t, err, types.ErrConsumerKeyInUse, "a paused consumer keeps its assignments")
+	rotateOnto := func(validator, newKey *cryptotestutil.CryptoIdentity) error {
+		return keeper.Hooks().BeforeConsensusPubKeyRotation(ctx, validator.SDKValOpAddress(), validator.ConsensusSDKPubKey(), newKey.ConsensusSDKPubKey())
+	}
+
+	for _, phase := range []types.ConsumerPhase{types.CONSUMER_PHASE_LAUNCHED, types.CONSUMER_PHASE_PAUSED, types.CONSUMER_PHASE_STOPPED} {
+		keeper.SetConsumerPhase(ctx, consumerID, phase)
+		require.ErrorIs(t, rotateOnto(rotating, takenKey), types.ErrConsumerKeyInUse,
+			"a %s consumer keeps its assignments", phase)
+	}
 
 	fresh := cryptotestutil.NewCryptoIdentityFromIntSeed(3)
-	require.NoError(t, keeper.Hooks().BeforeConsensusPubKeyRotation(ctx, rotating.SDKValOpAddress(), rotating.ConsensusSDKPubKey(), fresh.ConsensusSDKPubKey()))
+	require.NoError(t, rotateOnto(rotating, fresh))
+
+	require.NoError(t, rotateOnto(holder, takenKey),
+		"a validator may rotate its provider key onto a consumer key it holds itself")
 
 	keeper.SetConsumerPhase(ctx, consumerID, types.CONSUMER_PHASE_DELETED)
-	require.NoError(t, keeper.Hooks().BeforeConsensusPubKeyRotation(ctx, rotating.SDKValOpAddress(), rotating.ConsensusSDKPubKey(), takenKey.ConsensusSDKPubKey()),
+	require.NoError(t, rotateOnto(rotating, takenKey),
 		"a deleted consumer's assignments count no more")
 }
 

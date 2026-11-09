@@ -247,11 +247,12 @@ func (k Keeper) ValidatorConsensusKeyInUse(ctx sdk.Context, valAddr sdk.ValAddre
 
 // IsConsumerConsAddrInUse reports whether consAddr is already assigned as some
 // validator's consumer consensus key on a consumer chain that still holds key
-// assignments. It backs both the validator-creation check above and the
-// consensus-key-rotation check the provider ante handler runs at tx admission
-// (see x/vaas/provider/ante), keeping a key already in use as a consumer key
-// from becoming a second validator's provider consensus address -- which would
-// put two validators at the same consensus address on that consumer.
+// assignments. It backs the validator-creation check above, keeping a key
+// already in use as a consumer key from becoming a new validator's provider
+// consensus address -- which would put two validators at the same consensus
+// address on that consumer. The consensus-key-rotation check
+// (Hooks.BeforeConsensusPubKeyRotation) asks IsConsumerConsAddrHeldByAnother
+// instead, since the rotating validator may hold the key itself.
 //
 // The scan deliberately spans every consumer that is not deleted rather than
 // only the active ones: a paused consumer keeps all of its key assignments (only
@@ -260,6 +261,25 @@ func (k Keeper) ValidatorConsensusKeyInUse(ctx sdk.Context, valAddr sdk.ValAddre
 func (k Keeper) IsConsumerConsAddrInUse(ctx sdk.Context, consAddr sdk.ConsAddress) bool {
 	for _, consumerId := range k.nonDeletedConsumerIds(ctx) {
 		if _, exist := k.GetValidatorByConsumerAddr(ctx, consumerId, types.NewConsumerConsAddress(consAddr)); exist {
+			return true
+		}
+	}
+	return false
+}
+
+// IsConsumerConsAddrHeldByAnother reports whether consAddr is assigned as a
+// consumer consensus key by a validator other than the one at providerAddr, on
+// any consumer that is not deleted (the same scan as IsConsumerConsAddrInUse).
+// It backs the consensus-key-rotation check: only two different validators can
+// collide at one consensus address on a consumer (CreateConsumerValidators),
+// and AssignConsumerKey already lets a validator run matching provider and
+// consumer keys, so a validator rotating its provider key onto a consumer key
+// it holds itself, current or superseded, is not refused.
+func (k Keeper) IsConsumerConsAddrHeldByAnother(ctx sdk.Context, consAddr sdk.ConsAddress, providerAddr types.ProviderConsAddress) bool {
+	own := providerAddr.ToSdkConsAddr()
+	for _, consumerId := range k.nonDeletedConsumerIds(ctx) {
+		holder, exist := k.GetValidatorByConsumerAddr(ctx, consumerId, types.NewConsumerConsAddress(consAddr))
+		if exist && !holder.ToSdkConsAddr().Equals(own) {
 			return true
 		}
 	}
