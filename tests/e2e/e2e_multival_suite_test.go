@@ -170,4 +170,5 @@ func (s *MultiValidatorIntegrationTestSuite) SetupSuite() {
 // for the next.
 func (s *MultiValidatorIntegrationTestSuite) TestMultiValidatorVAAS() {
 	s.testValidatorSetMirror()
+	s.testDelegationReachesConsumer()
 }
