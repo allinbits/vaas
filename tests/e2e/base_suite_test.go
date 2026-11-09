@@ -293,12 +293,27 @@ func (s *baseTestSuite) consumerPorts() nodePorts {
 // ports: the other nodes are reached through docker exec, and the relayer
 // and the suite's queries address val0 by container name and host port.
 func (s *baseTestSuite) startChainNode(chainID, binary, homePath, hostHome string, index int, ports nodePorts) *dockertest.Resource {
+	return s.startChainNodeWith(chainID, homePath, hostHome, index, ports,
+		nodeRun{image: e2eChainImage, cmd: []string{binary, "start", "--home", homePath}})
+}
+
+// nodeRun is what a node container runs: its image, its command, and any
+// environment the command reads.
+type nodeRun struct {
+	image string
+	cmd   []string
+	env   []string
+}
+
+// startChainNodeWith is startChainNode running the given image and command.
+func (s *baseTestSuite) startChainNodeWith(chainID, homePath, hostHome string, index int, ports nodePorts, run nodeRun) *dockertest.Resource {
 	opts := &dockertest.RunOptions{
 		Name:       fmt.Sprintf("%s-val%d", chainID, index),
-		Repository: e2eChainImage,
+		Repository: run.image,
 		NetworkID:  s.dkrNet.Network.ID,
 		Mounts:     []string{fmt.Sprintf("%s:%s", hostHome, homePath)},
-		Cmd:        []string{binary, "start", "--home", homePath},
+		Cmd:        run.cmd,
+		Env:        run.env,
 	}
 	if index == 0 {
 		opts.PortBindings = map[docker.Port][]docker.PortBinding{
@@ -394,6 +409,23 @@ func (s *baseTestSuite) stopConsumerNode(i int) {
 	s.Require().NoErrorf(s.dkrPool.Client.StopContainer(s.consumerValRes[i].Container.ID, 5),
 		"failed to stop consumer val%d", i)
 	s.T().Logf("consumer val%d stopped in %s", i, time.Since(started).Round(time.Millisecond))
+}
+
+// recreateConsumerNodes replaces every consumer node's container with one
+// running run, on the same home, name and ports: every node is stopped
+// first (the chain halts meanwhile and resumes from its own state), then all
+// are started again and waited on until they have caught up with val0.
+func (s *baseTestSuite) recreateConsumerNodes(run nodeRun) {
+	for i := range s.consumerValRes {
+		s.stopConsumerNode(i)
+	}
+	for i, r := range s.consumerValRes {
+		s.Require().NoErrorf(s.dkrPool.Purge(r), "failed to remove consumer val%d's container", i)
+	}
+	for i := range s.consumerValRes {
+		s.consumerValRes[i] = s.startChainNodeWith(s.cfg.consumerChainID, consumerHomePath, s.consumerHome(i), i, s.consumerPorts(), run)
+	}
+	s.waitForNodesCaughtUp(s.consumerValRes, consumerBinary, consumerHomePath, 3*time.Minute)
 }
 
 // startConsumerNode starts consumer node i again and waits until every
