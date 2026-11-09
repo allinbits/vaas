@@ -250,6 +250,11 @@ func (s *baseTestSuite) providerHome(i int) string {
 	return s.provider.homes[i]
 }
 
+// consumerHome returns the host home directory of consumer node i.
+func (s *baseTestSuite) consumerHome(i int) string {
+	return s.consumer.homes[i]
+}
+
 // newChainHomes creates the host directory an init container fills with one
 // node home per validator, and returns it with the home paths it will hold
 // (val0, val1, ...), in validator order.
