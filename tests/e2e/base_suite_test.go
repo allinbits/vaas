@@ -704,7 +704,7 @@ func (s *baseTestSuite) waitForChainHeight(ctx context.Context, rpcEndpoint stri
 // delivered. Without this gate a test could assert against a consumer that has
 // launched but never synced. The grace (~150s) is sized to exceed this
 // first-sync latency, so the consumer is not swept while we wait here.
-func (s *baseTestSuite) waitForConsumerSync(consumerID string) {
+func (s *baseTestSuite) waitForConsumerSync(consumerID string) { //nolint:unparam // the suites drive one consumer; the helper stays generic
 	livenessURL := fmt.Sprintf("http://localhost:%s/vaas/provider/consumer_liveness/%s",
 		s.cfg.providerRESTPort, consumerID)
 

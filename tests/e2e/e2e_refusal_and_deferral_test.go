@@ -438,7 +438,7 @@ func (s *baseTestSuite) setConsumerRefusal(consumerID string, refused bool) {
 }
 
 // resumeProposalJSON builds a MsgResumeConsumer gov proposal body.
-func (s *baseTestSuite) resumeProposalJSON(consumerID, title string) string {
+func (s *baseTestSuite) resumeProposalJSON(consumerID, title string) string { //nolint:unparam // the suites drive one consumer; the helper stays generic
 	return fmt.Sprintf(`{
   "messages": [{
     "@type": "/vaas.provider.v1.MsgResumeConsumer",
