@@ -59,6 +59,7 @@ jobs:
         suite:
           - TestIntegrationTestSuite
           - TestLivenessIntegrationTestSuite
+          - TestMultiValidatorIntegrationTestSuite
     steps:
       - uses: actions/checkout@v4
 

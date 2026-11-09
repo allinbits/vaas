@@ -4,8 +4,10 @@ Docker-based integration tests that spin up a real provider chain, a real
 consumer chain, and the `ibc-v2-ts-relayer`, then exercise the full VAAS
 lifecycle: consumer registration, genesis bootstrapping, IBC v2 client
 discovery, VSC synchronization, downtime slashing and challenges, fee pooling
-and distribution, key assignment, refusal and punishment deferral, liveness, and
-genesis round-trip.
+and distribution, key assignment, refusal and punishment deferral, liveness,
+genesis round-trip, and, on four validator nodes per chain, the validator set
+mirror, a delegation change, an offline validator's slash and recovery, and a
+key assignment under a node restart.
 
 This directory is its own Go module (`tests/e2e/go.mod`) and is excluded from the
 top-level `make test` and from linting. It runs via the `make test-e2e` target
@@ -40,9 +42,9 @@ make test-e2e-suite SUITE=TestIntegrationTestSuite
 make test-e2e-suite SUITE=TestLivenessIntegrationTestSuite
 ```
 
-## The two suites
+## The three suites
 
-Both are `testify` suites that embed a shared `baseTestSuite`
+All are `testify` suites that embed a shared `baseTestSuite`
 ([base_suite_test.go](base_suite_test.go)) providing container lifecycle, chain
 init, ts-relayer wiring, and exec/query helpers. Each suite launches its own
 isolated set of containers (distinct chain IDs, Docker network, and host ports)
@@ -83,6 +85,19 @@ in order in `TestLivenessVAAS`, each with its doc comment;
 `equivocation_execution_delay` is 420s and the gov voting period 180s here,
 and the header comment of that file documents the timing rationale in detail.
 
+### `MultiValidatorIntegrationTestSuite` -- four validator nodes per chain
+
+Entry point `TestMultiValidatorIntegrationTestSuite`
+([e2e_multival_suite_test.go](e2e_multival_suite_test.go)). The base suite
+starts N validator nodes per chain from `baseSuiteConfig.validators` (one
+consumer node per provider validator, zero or one meaning the single node the
+other suites run); this suite runs four of equal power, on fast blocks and the
+main suite's downtime parameters, with photon fees off. Only val0 of each chain
+binds host ports and holds the keys the suite transacts from; the other nodes
+are reached through `docker exec`. Four is the smallest set where one node can
+stop and both chains keep producing blocks. Scenarios run in order in
+`TestMultiValidatorVAAS`, each leaving the set whole for the next.
+
 ## File layout
 
 | File | Purpose |
@@ -92,6 +107,8 @@ and the header comment of that file documents the timing rationale in detail.
 | `e2e_setup_test.go` | `IntegrationTestSuite` + its `SetupSuite` / config |
 | `e2e_test.go` | `TestVAAS` ordered scenario list |
 | `e2e_liveness_suite_test.go` | `LivenessIntegrationTestSuite` + `TestLivenessVAAS` |
+| `e2e_multival_suite_test.go` | `MultiValidatorIntegrationTestSuite` + `TestMultiValidatorVAAS` |
+| `e2e_multival_valset_test.go` | validator identities, consumer powers, and the set mirror |
 | `e2e_tsrelayer_test.go` | ts-relayer container start/stop, `add-path`, relay control |
 | `e2e_vaas_test.go` | core VSC / valset-sync scenarios |
 | `e2e_debt_test.go` | fee-pool debt-gating scenario |
