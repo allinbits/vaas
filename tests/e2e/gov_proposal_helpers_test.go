@@ -107,8 +107,10 @@ func (s *baseTestSuite) submitAndRejectProposal(proposalJSON string) {
 	s.submitProposalWithVote(proposalJSON, "no", "PROPOSAL_STATUS_REJECTED")
 }
 
-// submitProposalWithVote submits a gov v1 proposal, votes the given option
-// from val, and waits until the proposal reaches wantStatus; any other
+// submitProposalWithVote submits a gov v1 proposal from val0's val key, votes
+// the given option from every validator node's val key (one node holds all
+// of the bonded power, four a quarter each, and the vote must clear quorum
+// either way), and waits until the proposal reaches wantStatus; any other
 // terminal status fails the test. It returns the proposal ID.
 func (s *baseTestSuite) submitProposalWithVote(proposalJSON, voteOption, wantStatus string) uint64 {
 	containerID := s.providerValRes[0].Container.ID
@@ -165,18 +167,20 @@ func (s *baseTestSuite) submitProposalWithVote(proposalJSON, voteOption, wantSta
 		"could not parse proposal_id from tx events for %s: last stdout=%s",
 		submitRes.TxHash, lastTxOut)
 
-	// 3. Vote from val.
-	voteStdout, voteStderr, err := s.dockerExec(containerID, []string{
-		providerBinary, "tx", "gov", "vote", fmt.Sprintf("%d", proposalID), voteOption,
-		"--from", "val",
-		"--home", providerHomePath,
-		"--keyring-backend", "test",
-		"--chain-id", s.cfg.providerChainID,
-		"--fees", "10000" + bondDenom,
-		"--yes",
-	})
-	s.Require().NoErrorf(err, "failed to vote on proposal %d: stdout=%s stderr=%s",
-		proposalID, voteStdout.String(), voteStderr.String())
+	// 3. Vote from every validator's val key, each in its own node.
+	for i, node := range s.providerValRes {
+		voteStdout, voteStderr, err := s.dockerExec(node.Container.ID, []string{
+			providerBinary, "tx", "gov", "vote", fmt.Sprintf("%d", proposalID), voteOption,
+			"--from", "val",
+			"--home", providerHomePath,
+			"--keyring-backend", "test",
+			"--chain-id", s.cfg.providerChainID,
+			"--fees", "10000" + bondDenom,
+			"--yes",
+		})
+		s.Require().NoErrorf(err, "val%d failed to vote on proposal %d: stdout=%s stderr=%s",
+			i, proposalID, voteStdout.String(), voteStderr.String())
+	}
 
 	// 4. Wait for tally: the voting period plus a buffer for the proposal to
 	//    land and the tally block to commit, 2s tick.

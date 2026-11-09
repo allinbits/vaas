@@ -112,6 +112,7 @@ stop and both chains keep producing blocks. Scenarios run in order in
 | `e2e_multival_delegation_test.go` | consumer powers and a delegation reaching the consumer's set |
 | `e2e_multival_key_assignment_test.go` | a key assignment with the node restarted under the new key |
 | `e2e_multival_offline_test.go` | an offline validator's downtime slash and recovery; pending-slash filters |
+| `e2e_multival_refusal_test.go` | the stake-weighted refusal pause threshold, and the resume after withdrawal |
 | `e2e_tsrelayer_test.go` | ts-relayer container start/stop, `add-path`, relay control |
 | `e2e_vaas_test.go` | core VSC / valset-sync scenarios |
 | `e2e_debt_test.go` | fee-pool debt-gating scenario |

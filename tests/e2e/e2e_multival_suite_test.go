@@ -173,4 +173,5 @@ func (s *MultiValidatorIntegrationTestSuite) TestMultiValidatorVAAS() {
 	s.testDelegationReachesConsumer()
 	s.testKeyAssignmentWithNodeRestart()
 	s.testOfflineValidatorIsSlashedAndRecovers()
+	s.testRefusalThresholdIsStakeWeighted()
 }

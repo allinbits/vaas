@@ -423,7 +423,7 @@ func (s *baseTestSuite) removalProposalJSON(consumerID, title string) string {
 
 // setConsumerRefusal records or withdraws val's refusal of the consumer and
 // waits for the tx to commit.
-func (s *IntegrationTestSuite) setConsumerRefusal(consumerID string, refused bool) {
+func (s *baseTestSuite) setConsumerRefusal(consumerID string, refused bool) {
 	stdout, stderr, err := s.dockerExec(s.providerValRes[0].Container.ID, []string{
 		providerBinary, "tx", "vaasprovider", "set-consumer-refusal", consumerID, strconv.FormatBool(refused),
 		"--from", "val",
@@ -438,7 +438,7 @@ func (s *IntegrationTestSuite) setConsumerRefusal(consumerID string, refused boo
 }
 
 // resumeProposalJSON builds a MsgResumeConsumer gov proposal body.
-func (s *IntegrationTestSuite) resumeProposalJSON(consumerID, title string) string {
+func (s *baseTestSuite) resumeProposalJSON(consumerID, title string) string {
 	return fmt.Sprintf(`{
   "messages": [{
     "@type": "/vaas.provider.v1.MsgResumeConsumer",
