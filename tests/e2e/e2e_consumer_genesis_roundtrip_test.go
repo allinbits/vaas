@@ -283,7 +283,7 @@ func (s *IntegrationTestSuite) valPowerMap(vals []*cmtservice.Validator) map[str
 // provider-side set can be compared against a consumer-side one after
 // rewriting assigned consumer keys through the provider's key-assignment
 // pairs.
-func (s *IntegrationTestSuite) valAddrPowerMap(vals []*cmtservice.Validator) map[string]int64 {
+func (s *baseTestSuite) valAddrPowerMap(vals []*cmtservice.Validator) map[string]int64 {
 	m := make(map[string]int64, len(vals))
 	for _, v := range vals {
 		m[v.Address] = v.VotingPower
@@ -508,27 +508,7 @@ func (s *IntegrationTestSuite) bootstrapRestartedConsumerDir(oldDir string, expo
 func (s *IntegrationTestSuite) startRestartedConsumer(dataDir string) *dockertest.Resource {
 	// Update so subsequent helpers find the new data dir.
 	s.consumer.dataDir = dataDir
+	s.consumer.homes[0] = dataDir
 
-	resource, err := s.dkrPool.RunWithOptions(
-		&dockertest.RunOptions{
-			Name:       fmt.Sprintf("%s-val0", consumerChainID),
-			Repository: e2eChainImage,
-			NetworkID:  s.dkrNet.Network.ID,
-			Mounts: []string{
-				fmt.Sprintf("%s:%s", dataDir, consumerHomePath),
-			},
-			PortBindings: map[docker.Port][]docker.PortBinding{
-				"26657/tcp": {{HostIP: "", HostPort: s.cfg.consumerRPCPort}},
-				"9090/tcp":  {{HostIP: "", HostPort: s.cfg.consumerGRPCPort}},
-				"1317/tcp":  {{HostIP: "", HostPort: s.cfg.consumerRESTPort}},
-				"26656/tcp": {{HostIP: "", HostPort: s.cfg.consumerP2PPort}},
-			},
-			Cmd: []string{consumerBinary, "start", "--home", consumerHomePath},
-		},
-		func(config *docker.HostConfig) {
-			config.RestartPolicy = docker.RestartPolicy{Name: "no"}
-		},
-	)
-	s.Require().NoError(err, "failed to start restarted consumer container")
-	return resource
+	return s.startChainNode(consumerChainID, consumerBinary, consumerHomePath, dataDir, 0, s.consumerPorts())
 }
