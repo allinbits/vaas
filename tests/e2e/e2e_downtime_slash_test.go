@@ -359,7 +359,7 @@ func (p pendingDowntimeSlashJSON) coversWindowEnd(windowEnd int64) bool {
 // queryPendingDowntimeSlashes returns the pending downtime slashes queued for
 // a consumer, awaiting the challenge window before execution. Returns nil on
 // any query/decode error so callers can poll it directly inside Eventually.
-func (s *baseTestSuite) queryPendingDowntimeSlashes(consumerID string) []pendingDowntimeSlashJSON { //nolint:unparam // the suite drives one consumer; the helper stays generic
+func (s *baseTestSuite) queryPendingDowntimeSlashes(consumerID string) []pendingDowntimeSlashJSON {
 	stdout, _, err := s.dockerExec(s.providerValRes[0].Container.ID, []string{
 		providerBinary, "query", "vaasprovider", "pending-downtime-slashes", consumerID,
 		"--home", providerHomePath,

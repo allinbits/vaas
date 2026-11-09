@@ -171,4 +171,5 @@ func (s *MultiValidatorIntegrationTestSuite) SetupSuite() {
 func (s *MultiValidatorIntegrationTestSuite) TestMultiValidatorVAAS() {
 	s.testValidatorSetMirror()
 	s.testDelegationReachesConsumer()
+	s.testOfflineValidatorIsSlashedAndRecovers()
 }

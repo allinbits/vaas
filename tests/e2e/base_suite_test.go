@@ -353,6 +353,22 @@ func (s *baseTestSuite) waitForNodesCaughtUp(resources []*dockertest.Resource, b
 	}, timeout, 3*time.Second, "not every node caught up with val0 within %s", timeout)
 }
 
+// stopConsumerNode stops consumer node i, the way a validator's node goes
+// offline; its container and data stay, so startConsumerNode brings the same
+// node back.
+func (s *baseTestSuite) stopConsumerNode(i int) {
+	s.Require().NoErrorf(s.dkrPool.Client.StopContainer(s.consumerValRes[i].Container.ID, 30),
+		"failed to stop consumer val%d", i)
+}
+
+// startConsumerNode starts consumer node i again and waits until every
+// consumer node has caught up with val0.
+func (s *baseTestSuite) startConsumerNode(i int) {
+	s.Require().NoErrorf(s.dkrPool.Client.StartContainer(s.consumerValRes[i].Container.ID, nil),
+		"failed to start consumer val%d", i)
+	s.waitForNodesCaughtUp(s.consumerValRes, consumerBinary, consumerHomePath, 3*time.Minute)
+}
+
 // initAndStartProvider initializes the provider chain's node homes using a
 // temporary Docker container that runs provider-init.sh, then starts one
 // chain container per validator.
