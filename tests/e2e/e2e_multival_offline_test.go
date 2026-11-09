@@ -25,6 +25,21 @@ func (s *MultiValidatorIntegrationTestSuite) pendingSlashesStartingAtOrAfter(con
 	return n
 }
 
+// pendingSlashesOf counts the consumer's pending downtime slashes that accuse
+// the validator at consAddr, its provider consensus address, which is what
+// an accusation names even when the validator runs the consumer under an
+// assigned key.
+func (s *MultiValidatorIntegrationTestSuite) pendingSlashesOf(consumerID, consAddr string) int {
+	n := 0
+	for _, slash := range s.queryPendingDowntimeSlashes(consumerID) {
+		accused, err := consAddrFromBase64(slash.ProviderConsAddr)
+		if err == nil && accused == consAddr {
+			n++
+		}
+	}
+	return n
+}
+
 // testOfflineValidatorIsSlashedAndRecovers: val2's consumer node stops while
 // the other three keep the consumer live; its real missed blocks become
 // downtime evidence, the provider slashes it without jailing it, the
@@ -53,17 +68,20 @@ func (s *MultiValidatorIntegrationTestSuite) testOfflineValidatorIsSlashedAndRec
 	})
 
 	s.Run("the provider queues and executes a downtime slash for val2", func() {
-		s.T().Log("waiting for the provider to queue a pending downtime slash...")
-		s.Require().Eventuallyf(func() bool {
-			return len(s.queryPendingDowntimeSlashes(consumerID)) > 0
-		}, 6*time.Minute, 5*time.Second,
-			"the provider never queued a pending downtime slash for consumer %s", consumerID)
+		s.Require().False(tokensBefore.IsNil(), "val2's stake before the outage was not read")
 
+		s.T().Log("waiting for the provider to queue a pending downtime slash against val2...")
+		s.Require().Eventuallyf(func() bool {
+			return s.pendingSlashesOf(consumerID, val2.consAddr) > 0
+		}, 6*time.Minute, 5*time.Second,
+			"the provider never queued a pending downtime slash against val2 on consumer %s", consumerID)
+
+		// The challenge window is 120s; the execution lands at the sweep after it.
 		s.T().Log("waiting for the challenge window to mature and the slash to execute...")
 		s.Require().Eventuallyf(func() bool {
 			tokens, err := s.getProviderValidatorTokensByAddr(val2.valoper)
 			return err == nil && tokens.LT(tokensBefore)
-		}, 3*time.Minute, 5*time.Second,
+		}, 4*time.Minute, 5*time.Second,
 			"val2's stake was never reduced by the matured downtime slash")
 
 		vals, err := s.queryProviderValidators()
@@ -77,7 +95,7 @@ func (s *MultiValidatorIntegrationTestSuite) testOfflineValidatorIsSlashedAndRec
 			s.Require().Equal(stakingtypes.Bonded, v.Status, "a downtime slash must leave val2 bonded")
 			s.Require().False(v.Jailed, "a downtime slash must not jail val2")
 		}
-		s.Require().True(found, "val2 (%s) disappeared from the provider's validators", val2.valoper)
+		s.Require().Truef(found, "val2 (%s) disappeared from the provider's validators", val2.valoper)
 	})
 
 	s.Run("the consumer sees val2's reduced power", func() {

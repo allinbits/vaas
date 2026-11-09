@@ -388,18 +388,26 @@ func (s *baseTestSuite) logNodeTails(resources []*dockertest.Resource, lines int
 
 // stopConsumerNode stops consumer node i, the way a validator's node goes
 // offline; its container and data stay, so startConsumerNode brings the same
-// node back.
+// node back. The node gets five seconds to exit on its own before the kill:
+// CometBFT recovers from its write-ahead log, and the scenarios that restart
+// a node need the gap short, since a validator away for more than half a
+// downtime window is accused for it. The stop's duration is logged so a node
+// that ignores the signal shows.
 func (s *baseTestSuite) stopConsumerNode(i int) {
-	s.Require().NoErrorf(s.dkrPool.Client.StopContainer(s.consumerValRes[i].Container.ID, 30),
+	started := time.Now()
+	s.Require().NoErrorf(s.dkrPool.Client.StopContainer(s.consumerValRes[i].Container.ID, 5),
 		"failed to stop consumer val%d", i)
+	s.T().Logf("consumer val%d stopped in %s", i, time.Since(started).Round(time.Millisecond))
 }
 
 // startConsumerNode starts consumer node i again and waits until every
 // consumer node has caught up with val0.
 func (s *baseTestSuite) startConsumerNode(i int) {
+	started := time.Now()
 	s.Require().NoErrorf(s.dkrPool.Client.StartContainer(s.consumerValRes[i].Container.ID, nil),
 		"failed to start consumer val%d", i)
 	s.waitForNodesCaughtUp(s.consumerValRes, consumerBinary, consumerHomePath, 3*time.Minute)
+	s.T().Logf("consumer val%d started and caught up in %s", i, time.Since(started).Round(time.Millisecond))
 }
 
 // initAndStartProvider initializes the provider chain's node homes using a

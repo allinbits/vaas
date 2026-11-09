@@ -335,6 +335,7 @@ func generateEd25519PubKeyJSON() string {
 // serialized as strings by the proto JSON marshaler.
 type pendingDowntimeSlashJSON struct {
 	ConsumerId        string `json:"consumer_id"`
+	ProviderConsAddr  string `json:"provider_cons_addr"`
 	WindowStartHeight string `json:"window_start_height"`
 	Span              string `json:"span"`
 	SlashTokens       string `json:"slash_tokens"`

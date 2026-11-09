@@ -81,13 +81,18 @@ func (s *MultiValidatorIntegrationTestSuite) restartConsumerNodeWithKey(i int, p
 // generated and restarts its consumer node under it right after the
 // assignment commits; the next epoch's VSC switches the consumer's set to
 // the assigned address, the chain never stops, and val3 is accused of no
-// downtime for the switch. The order matters: the old address misses at
-// most the blocks between the assignment and the switch, and the new one
-// misses none because the node already runs under it.
+// downtime for the switch. What the scenario measures is the gap: the old
+// address misses the blocks between the assignment and the switch, the new
+// one the blocks the node is down for, and both stay under the window's
+// missed-block bar only if the stop and the start are quick. An accusation
+// against val3 would show as a pending slash naming its provider address,
+// then as a drop of its stake; neither may appear.
 func (s *MultiValidatorIntegrationTestSuite) testKeyAssignmentWithNodeRestart() {
 	s.Run("a key assignment survives val3's node restarting under the new key", func() {
 		const consumerID = "0"
 		val3 := s.validator(3)
+		tokensBefore, err := s.getProviderValidatorTokensByAddr(val3.valoper)
+		s.Require().NoError(err, "failed to read val3's tokens before the key assignment")
 		pubKeyJSON, assigned, keyDoc := generateConsumerConsensusKeyPair(s.T())
 		s.T().Logf("assigning val3 (%s) the consumer key %s", val3.consAddr, assigned)
 
@@ -96,8 +101,6 @@ func (s *MultiValidatorIntegrationTestSuite) testKeyAssignmentWithNodeRestart() 
 			"the provider does not report val3's assigned consumer address")
 
 		s.restartConsumerNodeWithKey(3, keyDoc)
-		restartHeight, err := s.queryConsumerBlockHeight()
-		s.Require().NoError(err, "failed to read the consumer height after restarting val3")
 
 		s.Require().Eventuallyf(func() bool {
 			addrs, err := s.consumerValsetConsAddrs()
@@ -105,21 +108,25 @@ func (s *MultiValidatorIntegrationTestSuite) testKeyAssignmentWithNodeRestart() 
 		}, 4*time.Minute, 5*time.Second,
 			"the consumer's set never switched val3 from %s to %s", val3.consAddr, assigned)
 
-		switchHeight, err := s.queryConsumerBlockHeight()
+		// Over the next windows no accusation names val3, and the chain keeps
+		// producing blocks under the switched set.
+		loopStart, err := s.queryConsumerBlockHeight()
 		s.Require().NoError(err, "failed to read the consumer height after the switch")
-		s.Require().Eventuallyf(func() bool {
-			now, err := s.queryConsumerBlockHeight()
-			return err == nil && now > switchHeight+1
-		}, 90*time.Second, 3*time.Second,
-			"the consumer stopped producing blocks after the switch (stuck at height %d)", switchHeight)
-
-		// No accusation may name a window that began after the restart.
 		deadline := time.Now().Add(120 * time.Second)
 		for time.Now().Before(deadline) {
-			s.Require().Zerof(s.pendingSlashesStartingAtOrAfter(consumerID, restartHeight),
-				"a downtime accusation names a window that began after val3's restart at height %d", restartHeight)
+			s.Require().Zerof(s.pendingSlashesOf(consumerID, val3.consAddr),
+				"a downtime accusation names val3 (%s) after its key assignment", val3.consAddr)
 			time.Sleep(5 * time.Second)
 		}
+		loopEnd, err := s.queryConsumerBlockHeight()
+		s.Require().NoError(err, "failed to read the consumer height after the watch")
+		s.Require().Greaterf(loopEnd, loopStart+30,
+			"the consumer produced too few blocks under the switched set (%d to %d in two minutes)", loopStart, loopEnd)
+
+		tokensAfter, err := s.getProviderValidatorTokensByAddr(val3.valoper)
+		s.Require().NoError(err, "failed to read val3's tokens after the key assignment")
+		s.Require().Truef(tokensAfter.Equal(tokensBefore),
+			"val3 was slashed across the key assignment: %s before, %s after", tokensBefore, tokensAfter)
 
 		s.Require().Equalf(phaseLaunched, s.queryProviderConsumerPhase(consumerID),
 			"consumer %s left the LAUNCHED phase during the key assignment", consumerID)
