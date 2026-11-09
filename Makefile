@@ -385,4 +385,10 @@ test-e2e: docker-build-all
 	@echo "Running e2e tests..."
 	cd tests/e2e && go test -timeout=60m -v ./... --count=1
 
-.PHONY: docker-build-debug docker-build-all test-e2e
+# Run one e2e suite by its top-level test name, as CI does per job:
+#   make test-e2e-suite SUITE=TestLivenessIntegrationTestSuite
+test-e2e-suite: docker-build-all
+	@echo "Running e2e suite $(SUITE)..."
+	cd tests/e2e && go test -timeout=60m -v -run '^$(SUITE)$$' ./... --count=1
+
+.PHONY: docker-build-debug docker-build-all test-e2e test-e2e-suite

@@ -15,7 +15,8 @@ described below. Docker is required.
 
 ```
 make docker-build-all   # build the chain image (cosmos/vaas-e2e); ts-relayer image is pulled
-make test-e2e           # docker-build-all, then go test in this directory
+make test-e2e           # docker-build-all, then go test in this directory (every suite, in sequence)
+make test-e2e-suite SUITE=TestLivenessIntegrationTestSuite   # one suite, as each CI job runs it
 ```
 
 `make test-e2e`
@@ -31,11 +32,12 @@ and consumer binaries. The relayer image is
 `ghcr.io/allinbits/ibc-v2-ts-relayer:latest`, pulled at runtime
 ([e2e_tsrelayer_test.go](e2e_tsrelayer_test.go) lines 17-18).
 
-To run a single suite:
+CI runs each suite as its own job, in parallel, through `make test-e2e-suite`
+with the suite's top-level test name; the same target runs one suite locally:
 
 ```
-cd tests/e2e && go test -run TestIntegrationTestSuite -v --count=1
-cd tests/e2e && go test -run TestLivenessIntegrationTestSuite -v --count=1
+make test-e2e-suite SUITE=TestIntegrationTestSuite
+make test-e2e-suite SUITE=TestLivenessIntegrationTestSuite
 ```
 
 ## The two suites
