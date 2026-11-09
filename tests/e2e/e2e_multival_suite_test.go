@@ -84,23 +84,23 @@ func (s *MultiValidatorIntegrationTestSuite) SetupSuite() {
 				if params, ok := provider["params"].(map[string]any); ok {
 					params["blocks_per_epoch"] = "5"
 					params["fees_per_block_amount"] = "1000"
-					params["infraction_parameters"] = map[string]any{
-						"double_sign": map[string]any{
-							"slash_fraction": "0.050000000000000000",
-							"jail_duration":  "315360000s",
-							"tombstone":      true,
-						},
-						"downtime": map[string]any{
-							"slash_fraction": "0.010000000000000000",
-							"jail_duration":  "0s",
-							"tombstone":      false,
-						},
-						"downtime_grace_period":     "604800s",
-						"signed_blocks_window":      "30",
-						"min_signed_per_window":     "0.500000000000000000",
-						"downtime_challenge_window": "120s",
-						"downtime_evidence_max_age": "120s",
-					}
+				}
+				provider["infraction_parameters"] = map[string]any{
+					"double_sign": map[string]any{
+						"slash_fraction": "0.050000000000000000",
+						"jail_duration":  "315360000s",
+						"tombstone":      true,
+					},
+					"downtime": map[string]any{
+						"slash_fraction": "0.010000000000000000",
+						"jail_duration":  "0s",
+						"tombstone":      false,
+					},
+					"downtime_grace_period":     "604800s",
+					"signed_blocks_window":      "30",
+					"min_signed_per_window":     "0.500000000000000000",
+					"downtime_challenge_window": "120s",
+					"downtime_evidence_max_age": "120s",
 				}
 			}
 

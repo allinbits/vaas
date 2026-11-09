@@ -364,7 +364,7 @@ func (s *baseTestSuite) waitForNodesCaughtUp(resources []*dockertest.Resource, b
 		}
 		time.Sleep(3 * time.Second)
 	}
-	s.logNodeTails(resources, 40)
+	s.logNodeTails(resources, 80)
 	s.Require().Failf("nodes not caught up", "not every node caught up with val0 within %s", timeout)
 }
 
@@ -449,7 +449,7 @@ func (s *baseTestSuite) initAndStartProvider() {
 	defer waitCancel()
 	err := s.waitForChainHeight(waitCtx, "http://localhost:"+s.cfg.providerRPCPort, 3)
 	if err != nil {
-		s.logNodeTails(s.providerValRes, 40)
+		s.logNodeTails(s.providerValRes, 80)
 	}
 	s.Require().NoError(err, "provider failed to produce blocks")
 	s.waitForNodesCaughtUp(s.providerValRes, providerBinary, providerHomePath, 2*time.Minute)
@@ -611,7 +611,7 @@ func (s *baseTestSuite) initAndStartConsumer(consumerGenesisJSON []byte) {
 	defer waitCancel()
 	err = s.waitForChainHeight(waitCtx, "http://localhost:"+s.cfg.consumerRPCPort, 3)
 	if err != nil {
-		s.logNodeTails(s.consumerValRes, 40)
+		s.logNodeTails(s.consumerValRes, 80)
 	}
 	s.Require().NoError(err, "consumer failed to produce blocks")
 	s.waitForNodesCaughtUp(s.consumerValRes, consumerBinary, consumerHomePath, 2*time.Minute)
