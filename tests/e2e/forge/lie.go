@@ -8,6 +8,7 @@ import (
 	"strconv"
 
 	abci "github.com/cometbft/cometbft/abci/types"
+	"github.com/cometbft/cometbft/crypto"
 	cmtproto "github.com/cometbft/cometbft/proto/tendermint/types"
 )
 
@@ -34,6 +35,9 @@ func lieFromEnv() (lie, error) {
 	absent, err := hex.DecodeString(addr)
 	if err != nil {
 		return lie{}, fmt.Errorf("FORGE_ABSENT_ADDRESS %q is not hex: %w", addr, err)
+	}
+	if len(absent) != crypto.AddressSize {
+		return lie{}, fmt.Errorf("FORGE_ABSENT_ADDRESS %q is %d bytes, not a %d-byte validator address", addr, len(absent), crypto.AddressSize)
 	}
 	from, err := strconv.ParseInt(os.Getenv("FORGE_FROM_HEIGHT"), 10, 64)
 	if err != nil {

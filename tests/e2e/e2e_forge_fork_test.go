@@ -174,15 +174,23 @@ func (s *ByzantineConsumerIntegrationTestSuite) testForkFreezesAndPausesWithoutP
 		const consumerID = "0"
 		clientID := s.queryConsumerClientID(consumerID)
 
+		// Punishment comes in four forms here: a jail, a slash, a tombstone,
+		// and a deferred punishment queued for later (an equivocation entry or
+		// a downtime accusation), which moves no stake when it is queued. The
+		// fork must add none of them.
 		type state struct {
-			jailed bool
-			tokens string
+			jailed     bool
+			tokens     string
+			tombstoned bool
 		}
 		before := map[int]state{}
 		for i := range s.validatorCount() {
-			jailed, tokens := s.stakingValidatorState(s.validator(i).valoper)
-			before[i] = state{jailed, tokens}
+			v := s.validator(i)
+			jailed, tokens := s.stakingValidatorState(v.valoper)
+			before[i] = state{jailed, tokens, s.signingInfoTombstoned(v.consAddr)}
 		}
+		equivocationsBefore := len(s.mustPendingEquivocations(consumerID))
+		downtimeBefore := len(s.queryPendingDowntimeSlashes(consumerID))
 
 		path := s.fabricateFork(clientID)
 		stdout, stderr, err := s.dockerExec(s.providerValRes[0].Container.ID, []string{
@@ -202,14 +210,25 @@ func (s *ByzantineConsumerIntegrationTestSuite) testForkFreezesAndPausesWithoutP
 		s.Require().Equalf("Frozen", s.clientStatus(clientID), "the fork must freeze client %s", clientID)
 		s.Require().Equalf(phasePaused, s.queryProviderConsumerPhase(consumerID), "the fork must pause the consumer")
 		for i, was := range before {
-			jailed, tokens := s.stakingValidatorState(s.validator(i).valoper)
+			v := s.validator(i)
+			jailed, tokens := s.stakingValidatorState(v.valoper)
 			s.Require().Equalf(was.jailed, jailed, "the fork changed val%d's jail", i)
 			s.Require().Equalf(was.tokens, tokens, "the fork changed val%d's stake", i)
+			s.Require().Equalf(was.tombstoned, s.signingInfoTombstoned(v.consAddr), "the fork changed val%d's tombstone", i)
 		}
+		s.Require().Equalf(equivocationsBefore, len(s.mustPendingEquivocations(consumerID)),
+			"the fork must queue no equivocation punishment")
+		// The pause cancels the consumer's pending downtime accusations, so
+		// their count may only fall.
+		s.Require().LessOrEqualf(len(s.queryPendingDowntimeSlashes(consumerID)), downtimeBefore,
+			"the fork must queue no downtime accusation")
 
 		proposalID := s.submitProposalWithVote(s.resumeProposalJSON(consumerID, "Resume consumer (forked)"), "yes", "PROPOSAL_STATUS_FAILED")
-		s.Require().Truef(strings.Contains(s.dumpProposal(proposalID), "consumer client is not active"),
-			"the resume must fail because the client is frozen: %s", s.dumpProposal(proposalID))
+		// An expired client would refuse the resume too; the status in the
+		// reason shows it is the fork's freeze.
+		failure := s.dumpProposal(proposalID)
+		s.Require().Truef(strings.Contains(failure, "consumer client is not active") && strings.Contains(failure, "Frozen"),
+			"the resume must fail because the client is frozen: %s", failure)
 		s.Require().Equalf(phasePaused, s.queryProviderConsumerPhase(consumerID), "a refused resume must leave the consumer paused")
 	})
 }

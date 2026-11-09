@@ -412,13 +412,25 @@ func (s *baseTestSuite) stopConsumerNode(i int) {
 }
 
 // recreateConsumerNodes replaces every consumer node's container with one
-// running run, on the same home, name and ports: every node is stopped
-// first (the chain halts meanwhile and resumes from its own state), then all
-// are started again and waited on until they have caught up with val0.
-func (s *baseTestSuite) recreateConsumerNodes(run nodeRun) {
-	for i := range s.consumerValRes {
+// running what plan returns, on the same home, name and ports: every node is
+// stopped first (the chain halts meanwhile and resumes from its own state),
+// then all are started again and waited on until they have caught up with
+// val0.
+//
+// plan builds what the nodes run from the height the consumer halted at:
+// every node but the last is stopped first, which halts the chain, and the
+// last node's height, read before it stops too, is the highest any node
+// committed. A plan that depends on heights (the forge's lie range) is then
+// independent of how long each stop took.
+func (s *baseTestSuite) recreateConsumerNodes(plan func(haltedHeight int64) nodeRun) {
+	last := len(s.consumerValRes) - 1
+	for i := range last {
 		s.stopConsumerNode(i)
 	}
+	halted, err := s.nodeHeight(s.consumerValRes[last].Container.ID, consumerBinary, consumerHomePath)
+	s.Require().NoError(err, "failed to read the halted consumer's height")
+	s.stopConsumerNode(last)
+	run := plan(halted)
 	for i, r := range s.consumerValRes {
 		s.Require().NoErrorf(s.dkrPool.Purge(r), "failed to remove consumer val%d's container", i)
 	}

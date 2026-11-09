@@ -17,8 +17,9 @@ func (s *ByzantineConsumerIntegrationTestSuite) testForgedDowntimeIsChallenged()
 		val1 := s.validator(1)
 		tokensBefore, err := s.getProviderValidatorTokensByAddr(val1.valoper)
 		s.Require().NoError(err, "failed to read val1's stake before the lie")
+		_, s.val1StakeBeforeLie = s.stakingValidatorState(val1.valoper)
 
-		_, until := s.switchConsumerToForge(val1, 60)
+		from, until := s.switchConsumerToForge(val1, 60)
 
 		s.T().Log("waiting for the consumer's accusation of val1 to reach the provider...")
 		s.Require().Eventuallyf(func() bool {
@@ -36,6 +37,10 @@ func (s *ByzantineConsumerIntegrationTestSuite) testForgedDowntimeIsChallenged()
 			return false
 		}, 2*time.Minute, 5*time.Second,
 			"no challengeable pending downtime slash against val1 appeared")
+		// The block at height h tells the app who signed h-1, so the lie
+		// covers the votes for heights from-1 to until-1.
+		s.Require().Truef(target.claimedHeight >= from-1 && target.claimedHeight <= until-1,
+			"the accusation to challenge claims height %d, outside the lie's votes %d..%d", target.claimedHeight, from-1, until-1)
 		s.T().Logf("challenging the accusation of val1 at claimed height %d", target.claimedHeight)
 
 		clientID := s.queryConsumerClientID(consumerID)
@@ -70,11 +75,18 @@ func (s *ByzantineConsumerIntegrationTestSuite) testForgedDowntimeIsChallenged()
 		s.Require().Truef(tokensAfter.Equal(tokensBefore),
 			"val1 lost stake to a forged accusation: %s before, %s after", tokensBefore, tokensAfter)
 
-		s.T().Log("waiting for the lie to end before resuming...")
+		// The last downtime window the lie touched (the one holding the vote
+		// for until-1) closes at the block after its last vote; its
+		// accusation is sent then. Resuming only once that block is past
+		// means the accusation reaches a paused consumer's provider, which
+		// rejects it, instead of racing the resume.
+		const window = 30 // signed_blocks_window in patchFourValidatorProviderGenesis
+		lastWindowClose := ((until-1)/window)*window + window
+		s.T().Logf("waiting for the last window the lie touched to close (block %d) before resuming...", lastWindowClose)
 		s.Require().Eventuallyf(func() bool {
 			h, err := s.queryConsumerBlockHeight()
-			return err == nil && h > until+1
-		}, 3*time.Minute, 3*time.Second, "the consumer never got past the forge's range (block %d)", until)
+			return err == nil && h > lastWindowClose+5
+		}, 3*time.Minute, 3*time.Second, "the consumer never got past block %d", lastWindowClose)
 
 		s.submitAndPassProposal(s.resumeProposalJSON(consumerID, "Resume consumer (forged downtime challenged)"))
 		s.Require().Eventuallyf(func() bool {

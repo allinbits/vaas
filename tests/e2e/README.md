@@ -19,8 +19,9 @@ described below. Docker is required.
 
 ```
 make docker-build-all   # build the chain image (cosmos/vaas-e2e); ts-relayer image is pulled
-make test-e2e           # every suite, one at a time, each through test-e2e-suite
+make test-e2e           # every suite but the forge one, one at a time, each through test-e2e-suite
 make test-e2e-suite SUITE=TestLivenessIntegrationTestSuite   # one suite, as each CI job runs it
+make test-e2e-forge     # build the forge image too, then run the byzantine-consumer suite
 ```
 
 `make test-e2e-suite` ([Makefile](../../Makefile)) builds the image and runs:
@@ -31,8 +32,9 @@ cd tests/e2e && go test -timeout=60m -v -run '^$(SUITE)$' ./... --count=1
 
 It first refuses a `SUITE` that names no top-level test in this directory,
 since `go test -run` passes when it matches nothing. `make test-e2e` lists the
-`Test*Suite` functions and runs each through it, so every suite gets its own
-timeout; a failed suite does not stop the others.
+`Test*Suite` functions and runs each but the byzantine-consumer suite through
+it, so every suite gets its own timeout; a failed suite does not stop the
+others.
 
 The chain image is built from
 [docker/e2e.Dockerfile](docker/e2e.Dockerfile) and contains both the provider

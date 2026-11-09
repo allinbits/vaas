@@ -7,8 +7,11 @@ on:
   workflow_dispatch:
   pull_request:
     paths:
+      - x/vaas/consumer/module.go
       - x/vaas/consumer/keeper/downtime.go
       - x/vaas/consumer/keeper/evidence_packet.go
+      - x/vaas/provider/module.go
+      - x/vaas/provider/keeper/msg_server.go
       - x/vaas/provider/keeper/downtime.go
       - x/vaas/provider/keeper/downtime_challenge.go
       - x/vaas/provider/keeper/downtime_slash.go
@@ -20,6 +23,10 @@ on:
       - app/cmd/consumer/**
       - tests/e2e/forge/**
       - tests/e2e/e2e_forge_*
+      - tests/e2e/base_suite_test.go
+      - tests/e2e/four_validator_helpers_test.go
+      - tests/e2e/docker/**
+      - Makefile
       - .github/workflows/e2e-forge.yml
 
 concurrency:

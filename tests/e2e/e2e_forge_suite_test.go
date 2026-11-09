@@ -38,6 +38,11 @@ const (
 
 type ByzantineConsumerIntegrationTestSuite struct {
 	baseTestSuite
+
+	// val1StakeBeforeLie is val1's stake before the forge accused it, which
+	// the suite's last check compares against: nothing the lying consumer
+	// did may have cost val1 anything.
+	val1StakeBeforeLie string
 }
 
 func TestByzantineConsumerIntegrationTestSuite(t *testing.T) {
@@ -92,28 +97,29 @@ func (s *ByzantineConsumerIntegrationTestSuite) TestByzantineConsumerVAAS() {
 }
 
 // switchConsumerToForge recreates the four consumer nodes on consumer-forge,
-// lying that target did not sign any block finalized in the blocks heights
-// starting 20 above the consumer's current height. The margin keeps every
-// node, even one stopped a block or two after the others, outside the lie
-// when it replays: the four agree on every block under either binary. Past
-// the range the forge lies about nothing, so the nodes stay on it.
+// lying that target signed none of the next blocks blocks, counted from 20
+// above the height the consumer halted at for the switch. Every node replays
+// at most up to that height on restart, so the four agree on every block
+// under either binary; the margin is spare. Past the range the forge lies
+// about nothing, so the nodes stay on it.
 func (s *ByzantineConsumerIntegrationTestSuite) switchConsumerToForge(target validatorIdentity, blocks int64) (from, until int64) {
-	h, err := s.queryConsumerBlockHeight()
-	s.Require().NoError(err, "failed to read the consumer height before the switch")
-	from = h + 20
-	until = from + blocks - 1
 	hexAddr, err := consAddrToCometHex(target.consAddr)
 	s.Require().NoErrorf(err, "failed to convert %s to its CometBFT address", target.consAddr)
 
-	s.T().Logf("switching the consumer to the forge: val%d (%s) absent in blocks %d..%d", target.index, hexAddr, from, until)
-	s.recreateConsumerNodes(nodeRun{
-		image: forgeImage,
-		cmd:   []string{forgeBinary, "start", "--home", consumerHomePath},
-		env: []string{
-			"FORGE_ABSENT_ADDRESS=" + hexAddr,
-			fmt.Sprintf("FORGE_FROM_HEIGHT=%d", from),
-			fmt.Sprintf("FORGE_UNTIL_HEIGHT=%d", until),
-		},
+	s.recreateConsumerNodes(func(halted int64) nodeRun {
+		from = halted + 20
+		until = from + blocks - 1
+		s.T().Logf("switching the consumer to the forge at height %d: val%d (%s) absent in blocks %d..%d",
+			halted, target.index, hexAddr, from, until)
+		return nodeRun{
+			image: forgeImage,
+			cmd:   []string{forgeBinary, "start", "--home", consumerHomePath},
+			env: []string{
+				"FORGE_ABSENT_ADDRESS=" + hexAddr,
+				fmt.Sprintf("FORGE_FROM_HEIGHT=%d", from),
+				fmt.Sprintf("FORGE_UNTIL_HEIGHT=%d", until),
+			},
+		}
 	})
 	return from, until
 }

@@ -56,6 +56,8 @@ func main() {
 	// app.
 	rootCmd := cmd.NewRootCmd()
 	rootCmd.Use = "consumer-forge"
+	rootCmd.Short = "Deliberately lying VAAS consumer node, for the byzantine-consumer e2e suite only"
+	rootCmd.Long = ""
 	for _, sub := range rootCmd.Commands() {
 		rootCmd.RemoveCommand(sub)
 	}

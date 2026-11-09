@@ -58,5 +58,12 @@ func (s *ByzantineConsumerIntegrationTestSuite) testRemovalCancelsTheFabricatedP
 		s.Require().Falsef(s.signingInfoTombstoned(val2.consAddr), "val2 must never be tombstoned for the fabricated double-sign")
 
 		s.unjailFrom(2, val2.valoper)
+
+		// The suite's thesis, end to end: the validator the forge accused of
+		// downtime was never accused for good, and lost nothing.
+		val1 := s.validator(1)
+		s.Require().Zerof(s.pendingSlashesOf(consumerID, val1.consAddr), "val1 is still accused of downtime")
+		_, val1Stake := s.stakingValidatorState(val1.valoper)
+		s.Require().Equalf(s.val1StakeBeforeLie, val1Stake, "val1 lost stake to the lying consumer")
 	})
 }

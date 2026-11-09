@@ -38,6 +38,14 @@ func TestLieOutsideTheRangeChangesNothing(t *testing.T) {
 	require.Same(t, req, lie{absent: addrA, from: 11, until: 20}.apply(req))
 }
 
+func TestLieFromEnvRejectsAnAddressOfTheWrongLength(t *testing.T) {
+	t.Setenv("FORGE_ABSENT_ADDRESS", "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA") // 19 bytes
+	t.Setenv("FORGE_FROM_HEIGHT", "5")
+	t.Setenv("FORGE_UNTIL_HEIGHT", "15")
+	_, err := lieFromEnv()
+	require.Error(t, err, "an address that can match no vote must be refused, not silently lie about nothing")
+}
+
 func TestNoTargetLiesAboutNothing(t *testing.T) {
 	req := requestAtHeight10()
 	require.Same(t, req, lie{}.apply(req))
