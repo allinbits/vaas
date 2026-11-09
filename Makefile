@@ -417,4 +417,14 @@ check-e2e-matrix:
 	done; \
 	if [ -n "$$missing" ]; then echo "e2e suites missing from the e2e matrix in .github/workflows/ci.yml:$$missing"; exit 1; fi
 
-.PHONY: docker-build-debug docker-build-all test-e2e test-e2e-suite require-suite check-e2e-matrix
+# The byzantine-consumer suite runs a deliberately lying consumer node built
+# only into its own image (see tests/e2e/forge); only its workflow builds it.
+docker-build-forge: docker-build-all
+	@echo "Building VAAS e2e forge image..."
+	docker build -t cosmos/vaas-e2e-forge -f tests/e2e/forge/Dockerfile .
+
+test-e2e-forge: docker-build-forge
+	@echo "Running the byzantine-consumer e2e suite..."
+	cd tests/e2e && go test -timeout=60m -v -run '^TestByzantineConsumerIntegrationTestSuite$$' ./... --count=1
+
+.PHONY: docker-build-debug docker-build-all test-e2e test-e2e-suite require-suite check-e2e-matrix docker-build-forge test-e2e-forge
