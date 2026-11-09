@@ -215,6 +215,19 @@ func (s *baseTestSuite) runInitContainer(name, scriptPath, containerScriptPath, 
 
 // initAndStartProvider initializes the provider chain using a temporary Docker
 // container that runs provider-init.sh, then starts the actual chain container.
+// genesisSection returns the object at path in a genesis app state, failing
+// the suite when any step is missing: a patch that skipped a missing section
+// would leave the suite running on the shipped defaults it exists to replace.
+func (s *baseTestSuite) genesisSection(appState map[string]any, path ...string) map[string]any {
+	section := appState
+	for i, key := range path {
+		next, ok := section[key].(map[string]any)
+		s.Require().Truef(ok, "provider genesis has no %q object at %v", key, path[:i+1])
+		section = next
+	}
+	return section
+}
+
 func (s *baseTestSuite) initAndStartProvider() {
 	// Create host directory for provider data
 	providerDir, err := os.MkdirTemp("", s.cfg.tmpDirPrefix+"provider-")

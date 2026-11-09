@@ -141,101 +141,89 @@ func (s *LivenessIntegrationTestSuite) SetupSuite() {
 			// Long enough for a removal vote submitted after the liveness stop
 			// to still be open when the mid-outage punishment matures (see
 			// testDeferredEquivocationCancelledByVotePassedAfterStop).
-			if gov, ok := appState["gov"].(map[string]any); ok {
-				if params, ok := gov["params"].(map[string]any); ok {
-					params["voting_period"] = "180s"
-				}
-			}
+			s.genesisSection(appState, "gov", "params")["voting_period"] = "180s"
 
-			if provider, ok := appState["vaasprovider"].(map[string]any); ok {
-				if params, ok := provider["params"].(map[string]any); ok {
-					// One block per epoch so a VSC packet (and its ack) flows every
-					// block. Combined with the fast block time (see patchConfigToml)
-					// this refreshes the provider's lastAck every few seconds, well
-					// inside the grace, so a healthy consumer is never swept between
-					// acks.
-					params["blocks_per_epoch"] = "1"
-					params["fees_per_block_amount"] = "1000"
-					// Short VSC packet timeout so testForcedTimeoutSnapshotResync can
-					// make a packet actually time out within a CI run (the relayer is
-					// paused while the consumer keeps producing blocks past this
-					// deadline). Timeouts are log-only, so this does not perturb the
-					// other liveness tests.
-					params["vaas_timeout_period"] = "20s"
-					// Long enough for a queued equivocation punishment to
-					// still be pending when the liveness sweep stops the
-					// consumer (grace ~225s plus the sweep poll), short
-					// enough to then execute within the run; see
-					// testEquivocationSurvivesLivenessStop.
-					params["equivocation_execution_delay"] = "420s"
-					params["removal_vote_deferral_margin"] = removalVoteDeferralMargin.String()
-					// Shrink the liveness grace fraction so the grace period
-					// (unbonding * fraction = 600s * 0.375 = ~225s) is observable in
-					// a CI run, while keeping the unbonding itself long enough that
-					// the relayer-derived IBC client trusting period (unbonding *
-					// 0.66 = ~396s) clears the declaration check: the declared
-					// consumer client's trusting period must exceed the downtime
-					// challenge horizon (180s + 180s below).
-					//
-					// The grace must exceed the time from consumer launch to first
-					// VSC sync (the provider seeds lastAck at launch, so the clock
-					// starts before the relayer has delivered anything). With fast
-					// blocks that first sync is ~60-90s; 225s leaves margin. The
-					// suite also waits for that first sync explicitly before
-					// asserting (see waitForConsumerSync).
-					params["liveness_grace_fraction"] = "0.375"
-				}
-			}
+			params := s.genesisSection(appState, "vaasprovider", "params")
+			// One block per epoch so a VSC packet (and its ack) flows every
+			// block. Combined with the fast block time (see patchConfigToml)
+			// this refreshes the provider's lastAck every few seconds, well
+			// inside the grace, so a healthy consumer is never swept between
+			// acks.
+			params["blocks_per_epoch"] = "1"
+			params["fees_per_block_amount"] = "1000"
+			// Short VSC packet timeout so testForcedTimeoutSnapshotResync can
+			// make a packet actually time out within a CI run (the relayer is
+			// paused while the consumer keeps producing blocks past this
+			// deadline). Timeouts are log-only, so this does not perturb the
+			// other liveness tests.
+			params["vaas_timeout_period"] = "20s"
+			// Long enough for a queued equivocation punishment to still be
+			// pending when the liveness sweep stops the consumer (grace ~225s
+			// plus the sweep poll), short enough to then execute within the
+			// run; see testEquivocationSurvivesLivenessStop.
+			params["equivocation_execution_delay"] = "420s"
+			params["removal_vote_deferral_margin"] = removalVoteDeferralMargin.String()
+			// Shrink the liveness grace fraction so the grace period
+			// (unbonding * fraction = 600s * 0.375 = ~225s) is observable in
+			// a CI run, while keeping the unbonding itself long enough that
+			// the relayer-derived IBC client trusting period (unbonding *
+			// 0.66 = ~396s) clears the declaration check: the declared
+			// consumer client's trusting period must exceed the downtime
+			// challenge horizon (180s + 180s below).
+			//
+			// The grace must exceed the time from consumer launch to first
+			// VSC sync (the provider seeds lastAck at launch, so the clock
+			// starts before the relayer has delivered anything). With fast
+			// blocks that first sync is ~60-90s; 225s leaves margin. The
+			// suite also waits for that first sync explicitly before
+			// asserting (see waitForConsumerSync).
+			params["liveness_grace_fraction"] = "0.375"
 
-			if provider, ok := appState["vaasprovider"].(map[string]any); ok {
-				// The suite's whole clock is the 600s unbonding: consumer
-				// registration requires the unbonding period to exceed the
-				// downtime challenge horizon (evidence max age + challenge
-				// window), and declaring the consumer client requires the
-				// declared client's trusting period to exceed it too -- at the
-				// shipped defaults that horizon is 10 days, so this provider
-				// must carry proportionally short values or no consumer can be
-				// registered at all. Evidence age must not exceed the challenge
-				// window (InfractionParameters.Validate).
-				//
-				// Shortened downtime detection params, mirroring the main suite's
-				// patch (see e2e_setup_test.go) so testEvidenceRequeueOnTimeout's
-				// silent validator produces provider-accepted downtime evidence
-				// within a CI run. signed_blocks_window is echoed into the
-				// consumer genesis at launch, so the consumer closes a tumbling
-				// window every 30 of its ~1s blocks.
-				//
-				// downtime_challenge_window / downtime_evidence_max_age diverge
-				// from the main suite's 120s: evidence that survives an IBC
-				// timeout is only delivered a full timeout-and-requeue cycle
-				// after the relayer outage ends, and its window-end time is
-				// anchored to the first post-outage client update -- the
-				// provider-side age check must tolerate the relayer's whole
-				// post-outage backlog (VSC timeouts, snapshot resync, evidence
-				// timeouts, possibly a second timeout-and-requeue round)
-				// between that anchor and the eventual delivery. 180s absorbs
-				// that; the challenge window must be >= the max age and, at
-				// 180s, also keeps accepted windows visibly pending long enough
-				// for the test's state assertions.
-				if params, ok := provider["params"].(map[string]any); ok {
-					params["infraction_parameters"] = map[string]any{
-						"double_sign": map[string]any{
-							"slash_fraction": "0.050000000000000000",
-							"jail_duration":  "315360000s",
-							"tombstone":      true,
-						},
-						"downtime": map[string]any{
-							"slash_fraction": "0.010000000000000000",
-							"jail_duration":  "0s",
-							"tombstone":      false,
-						},
-						"downtime_grace_period":     "604800s",
-						"signed_blocks_window":      strconv.FormatInt(downtimeSignedBlocksWindow, 10),
-						"min_signed_per_window":     "0.500000000000000000",
-						"downtime_challenge_window": "180s",
-						"downtime_evidence_max_age": "180s",
-					}
-				}
+			// The suite's whole clock is the 600s unbonding: consumer
+			// registration requires the unbonding period to exceed the
+			// downtime challenge horizon (evidence max age + challenge
+			// window), and declaring the consumer client requires the
+			// declared client's trusting period to exceed it too -- at the
+			// shipped defaults that horizon is 10 days, so this provider
+			// must carry proportionally short values or no consumer can be
+			// registered at all. Evidence age must not exceed the challenge
+			// window (InfractionParameters.Validate).
+			//
+			// Shortened downtime detection params, mirroring the main suite's
+			// patch (see e2e_setup_test.go) so testEvidenceRequeueOnTimeout's
+			// silent validator produces provider-accepted downtime evidence
+			// within a CI run. signed_blocks_window is echoed into the
+			// consumer genesis at launch, so the consumer closes a tumbling
+			// window every 30 of its ~1s blocks.
+			//
+			// downtime_challenge_window / downtime_evidence_max_age diverge
+			// from the main suite's 120s: evidence that survives an IBC
+			// timeout is only delivered a full timeout-and-requeue cycle
+			// after the relayer outage ends, and its window-end time is
+			// anchored to the first post-outage client update -- the
+			// provider-side age check must tolerate the relayer's whole
+			// post-outage backlog (VSC timeouts, snapshot resync, evidence
+			// timeouts, possibly a second timeout-and-requeue round)
+			// between that anchor and the eventual delivery. 180s absorbs
+			// that; the challenge window must be >= the max age and, at
+			// 180s, also keeps accepted windows visibly pending long enough
+			// for the test's state assertions.
+			params["infraction_parameters"] = map[string]any{
+				"double_sign": map[string]any{
+					"slash_fraction": "0.050000000000000000",
+					"jail_duration":  "315360000s",
+					"tombstone":      true,
+				},
+				"downtime": map[string]any{
+					"slash_fraction": "0.010000000000000000",
+					"jail_duration":  "0s",
+					"tombstone":      false,
+				},
+				"downtime_grace_period":     "604800s",
+				"signed_blocks_window":      strconv.FormatInt(downtimeSignedBlocksWindow, 10),
+				"min_signed_per_window":     "0.500000000000000000",
+				"downtime_challenge_window": "180s",
+				"downtime_evidence_max_age": "180s",
 			}
 
 			// Loosen the provider's own native x/slashing downtime window so the
@@ -244,20 +232,12 @@ func (s *LivenessIntegrationTestSuite) SetupSuite() {
 			// the bonded set and void its consumer-side downtime evidence). At
 			// this suite's ~1s blocks the default 100-block window would jail it
 			// within ~2 minutes of bonding.
-			if slashing, ok := appState["slashing"].(map[string]any); ok {
-				if params, ok := slashing["params"].(map[string]any); ok {
-					params["signed_blocks_window"] = "100000"
-				}
-			}
+			s.genesisSection(appState, "slashing", "params")["signed_blocks_window"] = "100000"
 
 			// Keep unbonding long enough for a viable IBC client trusting period
 			// (see liveness_grace_fraction note above); the short grace comes from
 			// the fraction, not from a short unbonding.
-			if staking, ok := appState["staking"].(map[string]any); ok {
-				if params, ok := staking["params"].(map[string]any); ok {
-					params["unbonding_time"] = "600s"
-				}
-			}
+			s.genesisSection(appState, "staking", "params")["unbonding_time"] = "600s"
 		},
 
 		// Fast blocks so add-path, epochs, and VSC delivery all complete well

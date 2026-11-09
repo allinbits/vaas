@@ -150,14 +150,19 @@ func (k Keeper) GetParams(ctx context.Context) types.Params {
 // PreviousDowntimeParams so downtime evidence computed under them remains
 // acceptable for a bounded grace window; see AcceptableDowntimeParams.
 func (k Keeper) SetParams(ctx context.Context, params types.Params) {
-	if has, err := k.Params.Has(ctx); err == nil && has {
-		old := k.GetInfractionParams(ctx)
-		next := params.InfractionParameters
-		if old.SignedBlocksWindow != next.SignedBlocksWindow || !old.MinSignedPerWindow.Equal(next.MinSignedPerWindow) {
+	old, err := k.Params.Get(ctx)
+	switch {
+	case errors.Is(err, collections.ErrNotFound):
+		// First write (genesis): no previous window to keep.
+	case err != nil:
+		panic(fmt.Sprintf("error getting module parameters: %v", err))
+	default:
+		prev, next := old.InfractionParameters, params.InfractionParameters
+		if prev.SignedBlocksWindow != next.SignedBlocksWindow || !prev.MinSignedPerWindow.Equal(next.MinSignedPerWindow) {
 			previous := types.PreviousDowntimeParams{
 				Params: vaastypes.DowntimeParams{
-					SignedBlocksWindow: old.SignedBlocksWindow,
-					MinSignedPerWindow: old.MinSignedPerWindow,
+					SignedBlocksWindow: prev.SignedBlocksWindow,
+					MinSignedPerWindow: prev.MinSignedPerWindow,
 				},
 				ChangedAt: sdk.UnwrapSDKContext(ctx).BlockTime(),
 			}
