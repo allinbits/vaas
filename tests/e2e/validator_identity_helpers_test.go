@@ -86,7 +86,7 @@ func consAddrFromBase64(b64 string) (string, error) {
 // providerValidatorConsAddr returns the bech32 consensus address of the
 // provider validator with the given operator address, failing the test if it
 // cannot be resolved.
-func (s *IntegrationTestSuite) providerValidatorConsAddr(valoperAddr string) string {
+func (s *baseTestSuite) providerValidatorConsAddr(valoperAddr string) string {
 	consAddr, err := s.tryProviderValidatorConsAddr(valoperAddr)
 	s.Require().NoErrorf(err, "failed to resolve the consensus address of validator %s", valoperAddr)
 	return consAddr
@@ -96,7 +96,7 @@ func (s *IntegrationTestSuite) providerValidatorConsAddr(valoperAddr string) str
 // address from the consensus pubkey the staking module stores for it. It
 // returns an error instead of failing the test so it can be called from inside
 // an Eventually condition.
-func (s *IntegrationTestSuite) tryProviderValidatorConsAddr(valoperAddr string) (string, error) {
+func (s *baseTestSuite) tryProviderValidatorConsAddr(valoperAddr string) (string, error) {
 	stdout, _, err := s.dockerExec(s.providerValRes[0].Container.ID, []string{
 		providerBinary, "query", "staking", "validator", valoperAddr,
 		"--home", providerHomePath,
@@ -150,7 +150,7 @@ func (s *IntegrationTestSuite) tryProviderValidatorConsAddr(valoperAddr string) 
 
 // providerValoperForConsAddr returns the operator address of the provider
 // validator whose consensus address is consAddr, or "" when none matches.
-func (s *IntegrationTestSuite) providerValoperForConsAddr(consAddr string) string {
+func (s *baseTestSuite) providerValoperForConsAddr(consAddr string) string {
 	vals, err := s.queryProviderValidators()
 	if err != nil {
 		return ""
@@ -166,7 +166,7 @@ func (s *IntegrationTestSuite) providerValoperForConsAddr(consAddr string) strin
 
 // consumerValsetConsAddrs returns the bech32 consensus addresses of the
 // consumer chain's current CometBFT validator set.
-func (s *IntegrationTestSuite) consumerValsetConsAddrs() ([]string, error) {
+func (s *baseTestSuite) consumerValsetConsAddrs() ([]string, error) {
 	vals, err := s.queryConsumerNetValidators()
 	if err != nil {
 		return nil, err

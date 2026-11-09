@@ -457,7 +457,7 @@ func (s *IntegrationTestSuite) getProviderValidatorTokens() (string, math.Int) {
 }
 
 // getProviderValidatorTokensByAddr returns the token amount for a specific validator by operator address.
-func (s *IntegrationTestSuite) getProviderValidatorTokensByAddr(valoperAddr string) (math.Int, error) {
+func (s *baseTestSuite) getProviderValidatorTokensByAddr(valoperAddr string) (math.Int, error) {
 	vals, err := s.queryProviderValidators()
 	if err != nil {
 		return math.ZeroInt(), err

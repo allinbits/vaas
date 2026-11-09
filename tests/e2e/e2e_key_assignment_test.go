@@ -125,7 +125,7 @@ func (s *IntegrationTestSuite) ensureSilentValidator(key, selfBondAmount string)
 // queryValidatorConsumerAddr returns the consumer consensus address currently
 // assigned to the provider validator with the given provider consensus
 // address, or "" when it has no assignment for that consumer.
-func (s *IntegrationTestSuite) queryValidatorConsumerAddr(consumerID, providerConsAddr string) string {
+func (s *baseTestSuite) queryValidatorConsumerAddr(consumerID, providerConsAddr string) string {
 	stdout, _, err := s.dockerExec(s.providerValRes[0].Container.ID, []string{
 		providerBinary, "query", "vaasprovider", "validator-consumer-key", consumerID, providerConsAddr,
 		"--home", providerHomePath,
@@ -145,7 +145,7 @@ func (s *IntegrationTestSuite) queryValidatorConsumerAddr(consumerID, providerCo
 
 // queryValidatorProviderAddr returns the provider consensus address a consumer
 // consensus address maps back to, or "" when the mapping is unknown.
-func (s *IntegrationTestSuite) queryValidatorProviderAddr(consumerID, consumerConsAddr string) string {
+func (s *baseTestSuite) queryValidatorProviderAddr(consumerID, consumerConsAddr string) string {
 	stdout, _, err := s.dockerExec(s.providerValRes[0].Container.ID, []string{
 		providerBinary, "query", "vaasprovider", "validator-provider-key", consumerID, consumerConsAddr,
 		"--home", providerHomePath,
