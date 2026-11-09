@@ -472,16 +472,25 @@ func (k Keeper) DiscardConsumerAccusations(ctx sdk.Context, consumerId uint64) e
 }
 
 // thawConsumerAccusations moves the consumer's accusations forward by the
-// length of the pause that froze them: every pending downtime slash matures,
-// every withheld fee record expires, and every pending equivocation
-// punishment executes, as long after the resume as it would have after the
-// pause. Only a refusal pause freezes the downtime accusations (see
-// PauseConsumerChain); every pause freezes the pending equivocation
-// punishments (see SweepPendingEquivocationPunishments). The jails behind
-// the punishments are refreshed by the caller once the consumer is launched
-// again, since the horizon of a paused consumer's entries is the pause's
-// expiration.
-func (k Keeper) thawConsumerAccusations(ctx sdk.Context, consumerId uint64, pausedFor time.Duration) error {
+// length of the pause that froze them, which began at pausedAt: every pending
+// downtime slash matures, every withheld fee record expires, and every
+// pending equivocation punishment executes, as long after the resume as it
+// would have after the pause. Two kinds of equivocation entry are not moved.
+// Those of a validator tombstoned meanwhile (by provider-native evidence,
+// say) are dropped and their holds released, since nothing more can be taken
+// from it and moving them would only keep its delegators' unbonding
+// operations on hold for the pause's length more. Those that had matured
+// before the pause began stay where they are, for the next sweep to decide
+// as it would have (executing them, or dropping them as ones that kept
+// failing) instead of retrying them for the pause's length on top. Only a
+// refusal pause freezes the downtime accusations (see PauseConsumerChain);
+// every pause freezes the pending equivocation punishments (see
+// SweepPendingEquivocationPunishments). The jails behind the punishments are
+// refreshed by the caller once the consumer is launched again, since the
+// horizon of a paused consumer's entries is the pause's expiration.
+func (k Keeper) thawConsumerAccusations(ctx sdk.Context, consumerId uint64, pausedAt time.Time) error {
+	pausedFor := ctx.BlockTime().Sub(pausedAt)
+
 	var slashKeys []collections.Triple[uint64, []byte, int64]
 	var slashes []types.PendingDowntimeSlash
 	if err := k.PendingDowntimeSlashes.Walk(ctx, collections.NewPrefixedTripleRange[uint64, []byte, int64](consumerId), func(key collections.Triple[uint64, []byte, int64], entry types.PendingDowntimeSlash) (bool, error) {
@@ -523,7 +532,18 @@ func (k Keeper) thawConsumerAccusations(ctx sdk.Context, consumerId uint64, paus
 	}); err != nil {
 		return fmt.Errorf("reading the pending equivocation punishments of consumer %d: %w", consumerId, err)
 	}
+	tombstoned := map[string]bool{}
 	for i, key := range punishmentKeys {
+		consAddr := sdk.ConsAddress(key.K2())
+		if _, checked := tombstoned[string(consAddr)]; !checked {
+			tombstoned[string(consAddr)] = k.slashingKeeper.IsTombstoned(ctx, consAddr)
+			if tombstoned[string(consAddr)] {
+				k.dropEntriesOfTombstonedValidator(ctx, consAddr)
+			}
+		}
+		if tombstoned[string(consAddr)] || !punishments[i].ExecutesAt.After(pausedAt) {
+			continue
+		}
 		punishments[i].ExecutesAt = punishments[i].ExecutesAt.Add(pausedFor)
 		if err := k.PendingEquivocationPunishments.Set(ctx, key, punishments[i]); err != nil {
 			return fmt.Errorf("moving a pending equivocation punishment of consumer %d past its pause: %w", consumerId, err)
@@ -675,7 +695,7 @@ func (k Keeper) ResumeConsumerChain(ctx sdk.Context, consumerId uint64) error {
 	if err != nil {
 		return err
 	}
-	if err := k.thawConsumerAccusations(ctx, consumerId, ctx.BlockTime().Sub(pausedAt)); err != nil {
+	if err := k.thawConsumerAccusations(ctx, consumerId, pausedAt); err != nil {
 		return err
 	}
 	k.DeleteConsumerPauseReason(ctx, consumerId)

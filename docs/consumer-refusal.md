@@ -171,7 +171,10 @@ or tombstone in the submission transaction. Instead:
    punishment must not pre-empt the verdict. A resume moves each entry's
    execution time forward by the length of the pause, as it does for the
    consumer's downtime accusations, so the deliberation window is not
-   deducted from the delay. A consumer stopped for any other
+   deducted from the delay; an entry that had matured before the pause is
+   left for the next sweep to decide, and the entries of a validator
+   tombstoned during the pause are dropped on resume, their holds released,
+   since nothing more can be taken from it. A consumer stopped for any other
    reason, by the liveness sweep or by a lapsed pause, is not a verdict on its
    evidence, and its entries keep running on their own clock: the punishment
    executes at maturity, slash and tombstone at the double-sign parameters as

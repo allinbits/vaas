@@ -1466,6 +1466,7 @@ func TestResumeThawsPendingEquivocationPunishments(t *testing.T) {
 	resumed := ctx.WithBlockTime(ctx.BlockTime().Add(pausedFor))
 	mocks.MockClientKeeper.EXPECT().GetClientStatus(gomock.Any(), "07-tendermint-0").Return(ibcexported.Active)
 	resumeMocks(mocks)
+	mocks.MockSlashingKeeper.EXPECT().IsTombstoned(resumed, consAddr).Return(false)
 	mocks.MockStakingKeeper.EXPECT().GetValidatorByConsAddr(resumed, consAddr).Return(validator, nil)
 	expectSigningInfo(mocks, resumed, consAddr, pauseExpiration.Add(24*time.Hour))
 	mocks.MockSlashingKeeper.EXPECT().JailUntil(resumed, consAddr, queued.ExecutesAt.Add(pausedFor).Add(24*time.Hour))
@@ -1486,6 +1487,86 @@ func TestResumeThawsPendingEquivocationPunishments(t *testing.T) {
 	mocks.MockStakingKeeper.EXPECT().UnbondingCanComplete(due, uint64(11)).Return(nil)
 	k.SweepPendingEquivocationPunishments(due)
 	has, err = k.PendingEquivocationPunishments.Has(due, key)
+	require.NoError(t, err)
+	require.False(t, has)
+}
+
+// TestResumeDropsTheEntriesOfAValidatorTombstonedDuringThePause: a validator
+// tombstoned while its consumer was paused (by provider-native evidence, say)
+// has nothing left to take, so the resume drops its frozen entries instead of
+// moving them, and its delegators' unbonding operations are released at once
+// rather than held for the pause's length more.
+func TestResumeDropsTheEntriesOfAValidatorTombstonedDuringThePause(t *testing.T) {
+	k, ctx, ctrl, mocks, validator, providerAddr := setupEquivocationQueueTest(t)
+	defer ctrl.Finish()
+	consAddr := providerAddr.ToSdkConsAddr()
+	const consumerID = uint64(0)
+	k.SetConsumerClientId(ctx, consumerID, "07-tendermint-0")
+	key := queueWithHeldOp(t, k, ctx, mocks, validator, providerAddr, consumerID, 13)
+	queued, err := k.PendingEquivocationPunishments.Get(ctx, key)
+	require.NoError(t, err)
+
+	pauseExpiration := ctx.BlockTime().Add(k.GetMaxPauseDuration(ctx))
+	mocks.MockStakingKeeper.EXPECT().GetValidatorByConsAddr(ctx, consAddr).Return(validator, nil)
+	expectSigningInfo(mocks, ctx, consAddr, queued.ExecutesAt.Add(24*time.Hour))
+	mocks.MockSlashingKeeper.EXPECT().JailUntil(ctx, consAddr, pauseExpiration.Add(24*time.Hour))
+	require.NoError(t, k.PauseConsumerChain(ctx, consumerID, types.PAUSE_REASON_REFUSAL_THRESHOLD))
+
+	resumed := ctx.WithBlockTime(ctx.BlockTime().Add(3 * time.Hour))
+	mocks.MockClientKeeper.EXPECT().GetClientStatus(gomock.Any(), "07-tendermint-0").Return(ibcexported.Active)
+	resumeMocks(mocks)
+	mocks.MockSlashingKeeper.EXPECT().IsTombstoned(resumed, consAddr).Return(true)
+	mocks.MockStakingKeeper.EXPECT().UnbondingCanComplete(resumed, uint64(13)).Return(nil)
+	require.NoError(t, k.ResumeConsumerChain(resumed, consumerID))
+
+	has, err := k.PendingEquivocationPunishments.Has(resumed, key)
+	require.NoError(t, err)
+	require.False(t, has, "a tombstoned validator's entry is dropped on resume")
+	_, err = k.PendingEquivocationJails.Get(resumed, consAddr.Bytes())
+	require.ErrorIs(t, err, collections.ErrNotFound, "the jail record goes with the last entry")
+}
+
+// TestResumeLeavesAnEntryMaturedBeforeThePauseInPlace: an entry whose delay
+// had run out before the pause began is decided by the first sweep after the
+// resume as it would have been, instead of being retried for the pause's
+// length on top; its execution time is not moved, and the jail follows it as
+// due now.
+func TestResumeLeavesAnEntryMaturedBeforeThePauseInPlace(t *testing.T) {
+	k, ctx, ctrl, mocks, validator, providerAddr := setupEquivocationQueueTest(t)
+	defer ctrl.Finish()
+	consAddr := providerAddr.ToSdkConsAddr()
+	const consumerID = uint64(0)
+	k.SetConsumerClientId(ctx, consumerID, "07-tendermint-0")
+	key := queueWithHeldOp(t, k, ctx, mocks, validator, providerAddr, consumerID, 17)
+	queued, err := k.PendingEquivocationPunishments.Get(ctx, key)
+	require.NoError(t, err)
+
+	// The pause lands after the maturity with the entry still pending (its
+	// execution kept failing, say).
+	paused := ctx.WithBlockTime(queued.ExecutesAt.Add(time.Minute))
+	pauseExpiration := paused.BlockTime().Add(k.GetMaxPauseDuration(paused))
+	mocks.MockStakingKeeper.EXPECT().GetValidatorByConsAddr(paused, consAddr).Return(validator, nil)
+	expectSigningInfo(mocks, paused, consAddr, queued.ExecutesAt.Add(24*time.Hour))
+	mocks.MockSlashingKeeper.EXPECT().JailUntil(paused, consAddr, pauseExpiration.Add(24*time.Hour))
+	require.NoError(t, k.PauseConsumerChain(paused, consumerID, types.PAUSE_REASON_REFUSAL_THRESHOLD))
+
+	resumed := paused.WithBlockTime(paused.BlockTime().Add(3 * time.Hour))
+	mocks.MockClientKeeper.EXPECT().GetClientStatus(gomock.Any(), "07-tendermint-0").Return(ibcexported.Active)
+	resumeMocks(mocks)
+	mocks.MockSlashingKeeper.EXPECT().IsTombstoned(resumed, consAddr).Return(false)
+	mocks.MockStakingKeeper.EXPECT().GetValidatorByConsAddr(resumed, consAddr).Return(validator, nil)
+	expectSigningInfo(mocks, resumed, consAddr, pauseExpiration.Add(24*time.Hour))
+	mocks.MockSlashingKeeper.EXPECT().JailUntil(resumed, consAddr, resumed.BlockTime().Add(24*time.Hour))
+	require.NoError(t, k.ResumeConsumerChain(resumed, consumerID))
+	kept, err := k.PendingEquivocationPunishments.Get(resumed, key)
+	require.NoError(t, err)
+	require.Equal(t, queued.ExecutesAt, kept.ExecutesAt, "an entry matured before the pause is not moved")
+
+	// The first sweep after the resume decides it.
+	expectExecution(t, k, mocks, validator, consAddr)
+	mocks.MockStakingKeeper.EXPECT().UnbondingCanComplete(resumed, uint64(17)).Return(nil)
+	k.SweepPendingEquivocationPunishments(resumed)
+	has, err := k.PendingEquivocationPunishments.Has(resumed, key)
 	require.NoError(t, err)
 	require.False(t, has)
 }
