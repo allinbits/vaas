@@ -1,50 +1,11 @@
 package e2e
 
 import (
-	"crypto/ed25519"
-	"crypto/rand"
-	"crypto/sha256"
-	"encoding/base64"
-	"encoding/hex"
-	"encoding/json"
-	"fmt"
 	"os"
 	"path/filepath"
 	"slices"
-	"strings"
-	"testing"
 	"time"
 )
-
-// generateConsumerConsensusKeyPair is generateConsumerConsensusKey keeping
-// the private half: besides the assignable pubkey blob and the consensus
-// address, it returns the priv_validator_key.json document a consumer node
-// runs under to sign with the key.
-func generateConsumerConsensusKeyPair(t *testing.T) (pubKeyJSON, consAddr string, privValidatorKeyJSON []byte) {
-	t.Helper()
-	pub, priv, err := ed25519.GenerateKey(rand.Reader)
-	if err != nil {
-		t.Fatalf("failed to generate ed25519 key: %v", err)
-	}
-	pubKeyJSON = fmt.Sprintf(`{"@type":"/cosmos.crypto.ed25519.PubKey","key":%q}`,
-		base64.StdEncoding.EncodeToString(pub))
-	digest := sha256.Sum256(pub)
-	privValidatorKeyJSON, err = json.Marshal(map[string]any{
-		"address": strings.ToUpper(hex.EncodeToString(digest[:20])),
-		"pub_key": map[string]string{
-			"type":  "tendermint/PubKeyEd25519",
-			"value": base64.StdEncoding.EncodeToString(pub),
-		},
-		"priv_key": map[string]string{
-			"type":  "tendermint/PrivKeyEd25519",
-			"value": base64.StdEncoding.EncodeToString(priv),
-		},
-	})
-	if err != nil {
-		t.Fatalf("failed to encode priv_validator_key.json: %v", err)
-	}
-	return pubKeyJSON, consAddrFromEd25519PubKey(pub), privValidatorKeyJSON
-}
 
 // assignConsumerKey assigns pubKeyJSON as validator i's consumer key on the
 // consumer, signed by that validator's operator key in its own provider

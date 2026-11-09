@@ -382,13 +382,17 @@ docker-build-all: docker-build-debug
 
 # Run the e2e integration test suite
 test-e2e: docker-build-all
-	@echo "Running e2e tests..."
-	cd tests/e2e && go test -timeout=60m -v ./... --count=1
+	@echo "Running e2e tests (every suite, in sequence)..."
+	cd tests/e2e && go test -timeout=90m -v ./... --count=1
 
 # Run one e2e suite by its top-level test name, as CI does per job:
 #   make test-e2e-suite SUITE=TestLivenessIntegrationTestSuite
-test-e2e-suite: docker-build-all
+test-e2e-suite: require-suite docker-build-all
 	@echo "Running e2e suite $(SUITE)..."
 	cd tests/e2e && go test -timeout=60m -v -run '^$(SUITE)$$' ./... --count=1
 
-.PHONY: docker-build-debug docker-build-all test-e2e test-e2e-suite
+# An empty SUITE would run no test and exit 0; refuse it before building anything.
+require-suite:
+	$(if $(SUITE),,$(error SUITE is required, e.g. make test-e2e-suite SUITE=TestIntegrationTestSuite))
+
+.PHONY: docker-build-debug docker-build-all test-e2e test-e2e-suite require-suite

@@ -108,7 +108,10 @@ stop and both chains keep producing blocks. Scenarios run in order in
 | `e2e_test.go` | `TestVAAS` ordered scenario list |
 | `e2e_liveness_suite_test.go` | `LivenessIntegrationTestSuite` + `TestLivenessVAAS` |
 | `e2e_multival_suite_test.go` | `MultiValidatorIntegrationTestSuite` + `TestMultiValidatorVAAS` |
-| `e2e_multival_valset_test.go` | validator identities, consumer powers, and the set mirror |
+| `e2e_multival_valset_test.go` | validator identities and the set mirror |
+| `e2e_multival_delegation_test.go` | consumer powers and a delegation reaching the consumer's set |
+| `e2e_multival_key_assignment_test.go` | a key assignment with the node restarted under the new key |
+| `e2e_multival_offline_test.go` | an offline validator's downtime slash and recovery; pending-slash filters |
 | `e2e_tsrelayer_test.go` | ts-relayer container start/stop, `add-path`, relay control |
 | `e2e_vaas_test.go` | core VSC / valset-sync scenarios |
 | `e2e_debt_test.go` | fee-pool debt-gating scenario |
@@ -135,7 +138,8 @@ stop and both chains keep producing blocks. Scenarios run in order in
    a new or existing `e2e_*.go` file. Use the base-suite helpers for container
    exec, chain queries, gov proposals, and ts-relayer control (start, pause,
    resume, `add-path`) rather than driving Docker directly.
-2. Call it from the ordered sequence in `TestVAAS` (or `TestLivenessVAAS`) at
+2. Call it from the ordered sequence in `TestVAAS` (or `TestLivenessVAAS`,
+   or `TestMultiValidatorVAAS` for a scenario that needs several nodes) at
    the right point. Ordering matters: the suite shares one set of containers and
    one consumer across all scenarios, so place your test where the chain is in
    the state it needs, and before anything that tears that state down.
