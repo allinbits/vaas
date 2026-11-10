@@ -734,28 +734,27 @@ func (s *IntegrationTestSuite) testEquivocationCancelledByRemoval() {
 }
 
 // setEquivocationExecutionDelay moves the provider's equivocation execution
-// delay to d through governance, keeping every other parameter as queried.
+// delay to d through governance. MsgUpdateParams is a diff, so the proposal
+// names that one field, and every other parameter must come out as it was.
 func (s *IntegrationTestSuite) setEquivocationExecutionDelay(d time.Duration) {
 	delay := fmt.Sprintf("%ds", int64(d.Seconds()))
-	params := s.queryProviderParamsJSON()
-	params["equivocation_execution_delay"] = delay
-	paramsJSON, err := json.Marshal(params)
-	s.Require().NoError(err)
+	want := s.queryProviderParamsJSON()
+	want["equivocation_execution_delay"] = delay
 
 	s.T().Logf("setting the equivocation execution delay to %s through governance...", delay)
 	s.submitAndPassProposal(fmt.Sprintf(`{
   "messages": [{
     "@type": "/vaas.provider.v1.MsgUpdateParams",
     "authority": %q,
-    "params": %s
+    "equivocation_execution_delay": %q
   }],
   "metadata": "ipfs://test",
   "deposit": "10000000%s",
   "title": "Set the equivocation execution delay to %s",
   "summary": "e2e: the punishment queued next must outlive the provider restart"
-}`, s.queryGovAuthority(), paramsJSON, bondDenom, delay))
-	s.Require().Equalf(delay, s.queryProviderParamsJSON()["equivocation_execution_delay"],
-		"the provider did not take the new equivocation execution delay")
+}`, s.queryGovAuthority(), delay, bondDenom, delay))
+	s.Require().Equal(want, s.queryProviderParamsJSON(),
+		"the update must change the equivocation execution delay and nothing else")
 }
 
 // queryProviderParamsJSON returns the provider params as the CLI prints them,
