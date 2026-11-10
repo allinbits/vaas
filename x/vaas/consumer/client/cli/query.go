@@ -22,6 +22,7 @@ func NewQueryCmd() *cobra.Command {
 	cmd.AddCommand(
 		CmdProviderInfo(),
 		CmdParams(),
+		CmdOwnerAuthority(),
 	)
 
 	return cmd
@@ -78,5 +79,27 @@ func CmdParams() *cobra.Command {
 
 	flags.AddQueryFlagsToCmd(cmd)
 
+	return cmd
+}
+
+// CmdOwnerAuthority prints the account the owner's messages execute as.
+func CmdOwnerAuthority() *cobra.Command {
+	cmd := &cobra.Command{
+		Use:   "owner-authority",
+		Short: "Query the consumer module account owner-exec messages are signed by, and the owner",
+		Args:  cobra.ExactArgs(0),
+		RunE: func(cmd *cobra.Command, args []string) error {
+			clientCtx, err := client.GetClientQueryContext(cmd)
+			if err != nil {
+				return err
+			}
+			res, err := types.NewQueryClient(clientCtx).QueryOwnerAuthority(cmd.Context(), &types.QueryOwnerAuthorityRequest{})
+			if err != nil {
+				return err
+			}
+			return clientCtx.PrintProto(res)
+		},
+	}
+	flags.AddQueryFlagsToCmd(cmd)
 	return cmd
 }

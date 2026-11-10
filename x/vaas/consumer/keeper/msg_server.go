@@ -3,6 +3,9 @@ package keeper
 import (
 	"bytes"
 	"context"
+	"fmt"
+
+	abci "github.com/cometbft/cometbft/abci/types"
 
 	ibcexported "github.com/cosmos/ibc-go/v10/modules/core/exported"
 	ibctmtypes "github.com/cosmos/ibc-go/v10/modules/light-clients/07-tendermint"
@@ -11,6 +14,7 @@ import (
 
 	sdk "github.com/cosmos/cosmos-sdk/types"
 	"github.com/cosmos/cosmos-sdk/types/bech32"
+	sdkerrors "github.com/cosmos/cosmos-sdk/types/errors"
 	govtypes "github.com/cosmos/cosmos-sdk/x/gov/types"
 
 	"github.com/allinbits/vaas/x/vaas/consumer/types"
@@ -134,9 +138,15 @@ func (k msgServer) SetProviderClient(goCtx context.Context, msg *types.MsgSetPro
 // signer is rendered under the consumer's; the same key must match under
 // either.
 func (k msgServer) isProviderClientAuthority(ctx sdk.Context, signer string) bool {
-	if signer == k.GetAuthority() {
-		return true
-	}
+	return signer == k.GetAuthority() || k.isConsumerOwner(ctx, signer)
+}
+
+// isConsumerOwner reports whether signer is the owner the provider seeded
+// into the consumer params, comparing raw address bytes: the provider renders
+// the owner under its own bech32 prefix, the signer arrives under the
+// consumer's, and the same key must match under either. No seeded owner
+// means no one is.
+func (k msgServer) isConsumerOwner(ctx sdk.Context, signer string) bool {
 	owner := k.GetConsumerParams(ctx).OwnerAddress
 	if owner == "" {
 		return false
@@ -150,4 +160,88 @@ func (k msgServer) isProviderClientAuthority(ctx sdk.Context, signer string) boo
 		return false
 	}
 	return bytes.Equal(ownerBytes, signerBytes)
+}
+
+// OwnerExec executes the messages the consumer's owner submits, in order, as
+// the consumer module account (types.OwnerExecAuthority), through the app's
+// message router. It is the authority of a consumer that has no governance
+// of its own: whatever keepers the embedding app names the consumer module
+// the authority of (the reference app: IBC, upgrades, consensus and every
+// module's parameters, the consumer's included), the owner may act on, and
+// nothing else, since every carried message must be signed by that account
+// alone and no other module account can be impersonated. The owner is the
+// one the provider seeded into the consumer params, matched on raw address
+// bytes like the pin's; the message cannot nest.
+//
+// Execution is all or nothing: the transaction fails on the first message
+// that is refused or fails, and the events of the executed messages are
+// emitted with the index of the message they came from.
+func (k msgServer) OwnerExec(goCtx context.Context, msg *types.MsgOwnerExec) (*types.MsgOwnerExecResponse, error) {
+	ctx := sdk.UnwrapSDKContext(goCtx)
+
+	if !k.isConsumerOwner(ctx, msg.Signer) {
+		return nil, errorsmod.Wrapf(types.ErrInvalidOwnerExec, "signer %s is not the consumer owner", msg.Signer)
+	}
+	if k.router == nil {
+		return nil, errorsmod.Wrap(types.ErrInvalidOwnerExec, "the app wires no message router for the consumer module")
+	}
+	msgs, err := msg.GetMsgs()
+	if err != nil {
+		return nil, errorsmod.Wrap(types.ErrInvalidOwnerExec, err.Error())
+	}
+	if len(msgs) == 0 {
+		return nil, errorsmod.Wrap(types.ErrInvalidOwnerExec, "no messages to execute")
+	}
+
+	authority := types.OwnerExecAuthority()
+	for i, inner := range msgs {
+		typeURL := sdk.MsgTypeURL(inner)
+		if _, nested := inner.(*types.MsgOwnerExec); nested {
+			return nil, errorsmod.Wrapf(types.ErrInvalidOwnerExec, "message %d nests another owner exec", i)
+		}
+		signers, _, err := k.cdc.GetMsgV1Signers(inner)
+		if err != nil {
+			return nil, errorsmod.Wrapf(types.ErrInvalidOwnerExec, "message %d (%s): reading its signers: %s", i, typeURL, err)
+		}
+		if len(signers) != 1 || !bytes.Equal(signers[0], authority) {
+			return nil, errorsmod.Wrapf(types.ErrInvalidOwnerExec,
+				"message %d (%s) must be signed by the consumer module account %s alone", i, typeURL, authority.String())
+		}
+		if v, ok := inner.(sdk.HasValidateBasic); ok {
+			if err := v.ValidateBasic(); err != nil {
+				return nil, errorsmod.Wrapf(types.ErrInvalidOwnerExec, "message %d (%s): %s", i, typeURL, err)
+			}
+		}
+		handler := k.router.Handler(inner)
+		if handler == nil {
+			return nil, errorsmod.Wrapf(sdkerrors.ErrUnknownRequest, "message %d: unrecognized message route %s", i, typeURL)
+		}
+		res, err := handler(ctx, inner)
+		if err != nil {
+			return nil, errorsmod.Wrapf(err, "executing message %d (%s)", i, typeURL)
+		}
+		ctx.EventManager().EmitEvents(ownerExecEvents(res.Events, i))
+	}
+
+	k.Logger(ctx).Info("owner exec", "signer", msg.Signer, "messages", len(msgs))
+	ctx.EventManager().EmitEvent(sdk.NewEvent(
+		vaastypes.EventTypeOwnerExec,
+		sdk.NewAttribute(sdk.AttributeKeyModule, types.ModuleName),
+		sdk.NewAttribute(vaastypes.AttributeOwner, msg.Signer),
+		sdk.NewAttribute(vaastypes.AttributeNumMessages, fmt.Sprintf("%d", len(msgs))),
+	))
+	return &types.MsgOwnerExecResponse{}, nil
+}
+
+// ownerExecEvents returns the events an executed message produced, each
+// tagged with the index of the message in the owner exec it came from: the
+// router hands them back in the result rather than emitting them on the
+// context.
+func ownerExecEvents(events []abci.Event, index int) sdk.Events {
+	out := make(sdk.Events, 0, len(events))
+	for _, event := range events {
+		event.Attributes = append(event.Attributes, abci.EventAttribute{Key: vaastypes.AttributeOwnerExecMsgIndex, Value: fmt.Sprintf("%d", index)})
+		out = append(out, sdk.Event(event))
+	}
+	return out
 }

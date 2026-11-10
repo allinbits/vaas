@@ -67,9 +67,12 @@ chain-id string, can steer either side onto a client of its choosing. A
 dishonest owner can only mis-declare the consumer that owner registered.
 
 **Re-keying.** The only path to replace a dead client, on either side, is
-IBC's governance client recovery (`MsgRecoverClient`), which substitutes the
-client state under the same client id -- so the pin and the latch survive it.
-No automatic re-binding exists.
+IBC's client recovery by the chain's authority (`MsgRecoverClient`), which
+substitutes the client state under the same client id -- so the pin and the
+latch survive it. On the provider that authority is governance; on the
+reference consumer it is the consumer module account, which the consumer's
+owner acts as through `MsgOwnerExec` (see [embedding.md](embedding.md)). No
+automatic re-binding exists.
 
 ## Infractions and punishment
 

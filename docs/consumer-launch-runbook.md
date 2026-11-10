@@ -13,7 +13,10 @@ transactions.** Do not skip it.
 Roles in this flow:
 
 - **Consumer owner** -- the account that submits `MsgCreateConsumer`; drives
-  registration and funds the fee pool.
+  registration, funds the fee pool, declares the clients and, on the reference
+  consumer, holds the chain's authority afterwards (`owner-exec`, see
+  [embedding.md](embedding.md)): it is the owner that recovers an expired
+  provider client, updates the consumer's parameters or schedules an upgrade.
 - **Relayer** -- creates the IBC v2 clients; the provider never creates them.
 - **Provider governance** -- only needed for pause/resume/removal, not for a
   normal launch.
@@ -163,7 +166,11 @@ consumer's fee payers in between when the consumer enforces photon-only fees
 Each declaration is validated before it binds (an active tendermint client of
 the right chain id with a registered counterparty; on the provider side also a
 trusting period above the downtime challenge horizon) and is permanent once
-accepted ([security-model.md](security-model.md)). VSC delivery starts at the
+accepted ([security-model.md](security-model.md)). A pinned client that later
+expires is recovered in place, under the same id, by the chain's authority:
+on the reference consumer the owner wraps ibc-go's `MsgRecoverClient`, signed
+by the consumer module account that `query vaasconsumer owner-authority`
+prints, in `consumerd tx vaasconsumer owner-exec recover.json --from <owner>`. VSC delivery starts at the
 first epoch boundary after the provider-side declaration. In localnet and e2e
 the relayer is the `ts-relayer` and the declarations are scripted (the e2e
 setup of the photon-fees suite funds the relayer and the owner before the pin

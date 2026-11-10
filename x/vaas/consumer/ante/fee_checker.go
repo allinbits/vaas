@@ -114,14 +114,15 @@ func NewBootstrapExemptTxFeeChecker(k BootstrapKeeper) authante.TxFeeChecker {
 // and packet deliveries) minus the user-originated raw send, the pin, and
 // governance. Narrower than the admission filter's pre-pin allowance, which
 // also lets the transfer application's own messages through: those are user
-// traffic and pay the floor from the first block.
+// traffic and pay the floor from the first block. An owner exec counts as
+// the messages it carries (ownerExecFlattened).
 func isBootstrapInfrastructureTx(msgs []sdk.Msg) bool {
 	if len(msgs) == 0 {
 		return false
 	}
 	sendPacketURL := sdk.MsgTypeURL(&channeltypesv2.MsgSendPacket{})
 	pinURL := sdk.MsgTypeURL(&consumertypes.MsgSetProviderClient{})
-	for _, msg := range msgs {
+	for _, msg := range ownerExecFlattened(msgs) {
 		url := sdk.MsgTypeURL(msg)
 		switch {
 		case url == sendPacketURL:

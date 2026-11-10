@@ -8,6 +8,7 @@ import (
 	"github.com/stretchr/testify/require"
 	protov2 "google.golang.org/protobuf/proto"
 
+	clienttypes "github.com/cosmos/ibc-go/v10/modules/core/02-client/types"
 	channeltypes "github.com/cosmos/ibc-go/v10/modules/core/04-channel/types"
 	channeltypesv2 "github.com/cosmos/ibc-go/v10/modules/core/04-channel/v2/types"
 
@@ -17,6 +18,7 @@ import (
 	"github.com/cosmos/cosmos-sdk/x/authz"
 	banktypes "github.com/cosmos/cosmos-sdk/x/bank/types"
 	govtypes "github.com/cosmos/cosmos-sdk/x/gov/types/v1"
+	slashingtypes "github.com/cosmos/cosmos-sdk/x/slashing/types"
 
 	consumertypes "github.com/allinbits/vaas/x/vaas/consumer/types"
 )
@@ -252,6 +254,58 @@ func TestMsgFilterDecoratorPrePinAllowsSetProviderClient(t *testing.T) {
 func TestMsgFilterDecoratorPrePinAllowsGov(t *testing.T) {
 	k := mockConsumerKeeper{providerClientFound: false}
 	nextCalled, err := runDecorator(t, k, []sdk.Msg{&govtypes.MsgVote{}})
+	require.NoError(t, err)
+	require.True(t, nextCalled)
+}
+
+// The owner's exec is judged by what it carries: pre-pin, a client recovery
+// passes like any IBC message and a parameter update is refused like any
+// other message; in restricted mode, the raw send it carries is refused like
+// a bare one and the recovery passes.
+func TestMsgFilterDecoratorJudgesOwnerExecByItsMessages(t *testing.T) {
+	recovery := ownerExecCarrying(t, &clienttypes.MsgRecoverClient{})
+	params := ownerExecCarrying(t, &consumertypes.MsgUpdateParams{})
+	rawSend := ownerExecCarrying(t, &channeltypesv2.MsgSendPacket{})
+	nested := ownerExecCarrying(t, recovery)
+
+	prePin := mockConsumerKeeper{providerClientFound: false}
+	nextCalled, err := runDecorator(t, prePin, []sdk.Msg{recovery})
+	require.NoError(t, err)
+	require.True(t, nextCalled)
+	nextCalled, err = runDecorator(t, prePin, []sdk.Msg{params})
+	require.Error(t, err)
+	require.False(t, nextCalled)
+	nextCalled, err = runDecorator(t, prePin, []sdk.Msg{nested})
+	require.Error(t, err, "a nested owner exec is not admitted")
+	require.False(t, nextCalled)
+
+	inDebt := mockConsumerKeeper{providerClientFound: true, inDebt: true}
+	nextCalled, err = runDecorator(t, inDebt, []sdk.Msg{recovery})
+	require.NoError(t, err)
+	require.True(t, nextCalled)
+	nextCalled, err = runDecorator(t, inDebt, []sdk.Msg{rawSend})
+	require.Error(t, err)
+	require.True(t, errorsmod.IsOf(err, consumertypes.ErrConsumerInDebt))
+	require.False(t, nextCalled)
+	nextCalled, err = runDecorator(t, inDebt, []sdk.Msg{params})
+	require.Error(t, err)
+	require.False(t, nextCalled)
+}
+
+// The disabled modules stay disabled inside an owner exec.
+func TestDisabledModulesDecoratorLooksIntoOwnerExec(t *testing.T) {
+	decorator := NewDisabledModulesDecorator("/cosmos.slashing")
+	nextCalled := false
+	next := func(ctx sdk.Context, _ sdk.Tx, _ bool) (sdk.Context, error) {
+		nextCalled = true
+		return ctx, nil
+	}
+
+	_, err := decorator.AnteHandle(sdk.Context{}, mockTx{msgs: []sdk.Msg{ownerExecCarrying(t, &slashingtypes.MsgUpdateParams{})}}, false, next)
+	require.Error(t, err)
+	require.False(t, nextCalled)
+
+	_, err = decorator.AnteHandle(sdk.Context{}, mockTx{msgs: []sdk.Msg{ownerExecCarrying(t, &clienttypes.MsgRecoverClient{})}}, false, next)
 	require.NoError(t, err)
 	require.True(t, nextCalled)
 }

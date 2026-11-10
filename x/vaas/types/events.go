@@ -50,6 +50,14 @@ const (
 	// challenge (see PayWithheldFees).
 	EventTypeWithheldFeePaid = "vaas_withheld_fee_paid"
 
+	// EventTypeOwnerExec is emitted by the consumer when its owner executes
+	// messages as the consumer module account (MsgOwnerExec); the executed
+	// messages' own events carry AttributeOwnerExecMsgIndex.
+	EventTypeOwnerExec = "vaas_owner_exec"
+
+	AttributeOwner                    = "owner"
+	AttributeNumMessages              = "num_messages"
+	AttributeOwnerExecMsgIndex        = "owner_exec_msg_index"
 	AttributeKeyAckSuccess            = "success"
 	AttributeKeyAckError              = "error"
 	AttributeWindowEndHeight          = "window_end_height"

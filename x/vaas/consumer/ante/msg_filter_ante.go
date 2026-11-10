@@ -53,11 +53,37 @@ func NewMsgFilterDecorator(k ConsumerKeeper) MsgFilterDecorator {
 	}
 }
 
+// ownerExecFlattened returns msgs with every MsgOwnerExec replaced by the
+// messages it carries, so the admission and fee rules judge the owner's
+// transactions by what they execute (a recovery of the provider client is
+// IBC core traffic whoever submits it; a parameter change is not). An owner
+// exec whose messages cannot be unpacked is kept as is, and no rule admits
+// it; the handler refuses a nested one, which stays an owner exec here for
+// the same reason.
+func ownerExecFlattened(msgs []sdk.Msg) []sdk.Msg {
+	out := make([]sdk.Msg, 0, len(msgs))
+	for _, msg := range msgs {
+		exec, ok := msg.(*consumertypes.MsgOwnerExec)
+		if !ok {
+			out = append(out, msg)
+			continue
+		}
+		inner, err := exec.GetMsgs()
+		if err != nil || len(inner) == 0 {
+			out = append(out, msg)
+			continue
+		}
+		out = append(out, inner...)
+	}
+	return out
+}
+
 // isAllowedBootstrapTx reports whether every message in the tx is allowed
 // while no provider client is pinned: IBC messages, the pin message itself,
-// and governance.
+// and governance. An owner exec counts as the messages it carries
+// (ownerExecFlattened).
 func isAllowedBootstrapTx(msgs []sdk.Msg) bool {
-	for _, msg := range msgs {
+	for _, msg := range ownerExecFlattened(msgs) {
 		msgType := sdk.MsgTypeURL(msg)
 		switch {
 		case strings.HasPrefix(msgType, "/ibc."):
@@ -142,9 +168,10 @@ func (mfd MsgFilterDecorator) voucherDenom(ctx sdk.Context) string {
 // voucher, a relayer with none cannot deliver its own refill, and restricted
 // mode is exactly when deliveries matter most, so any account holding
 // vouchers on the chain may hand it some. The vouchers stay on the chain.
+// An owner exec counts as the messages it carries (ownerExecFlattened).
 func isAllowedRestrictedTx(msgs []sdk.Msg, voucherDenom string) bool {
 	sendPacketURL := sdk.MsgTypeURL(&channeltypesv2.MsgSendPacket{})
-	for _, msg := range msgs {
+	for _, msg := range ownerExecFlattened(msgs) {
 		url := sdk.MsgTypeURL(msg)
 		switch {
 		case url == sendPacketURL:

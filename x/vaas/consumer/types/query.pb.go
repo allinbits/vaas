@@ -254,45 +254,144 @@ func (m *ChainInfo) GetClientID() string {
 	return ""
 }
 
+type QueryOwnerAuthorityRequest struct {
+}
+
+func (m *QueryOwnerAuthorityRequest) Reset()         { *m = QueryOwnerAuthorityRequest{} }
+func (m *QueryOwnerAuthorityRequest) String() string { return proto.CompactTextString(m) }
+func (*QueryOwnerAuthorityRequest) ProtoMessage()    {}
+func (*QueryOwnerAuthorityRequest) Descriptor() ([]byte, []int) {
+	return fileDescriptor_e4bec0ed3ab6003b, []int{5}
+}
+func (m *QueryOwnerAuthorityRequest) XXX_Unmarshal(b []byte) error {
+	return m.Unmarshal(b)
+}
+func (m *QueryOwnerAuthorityRequest) XXX_Marshal(b []byte, deterministic bool) ([]byte, error) {
+	if deterministic {
+		return xxx_messageInfo_QueryOwnerAuthorityRequest.Marshal(b, m, deterministic)
+	} else {
+		b = b[:cap(b)]
+		n, err := m.MarshalToSizedBuffer(b)
+		if err != nil {
+			return nil, err
+		}
+		return b[:n], nil
+	}
+}
+func (m *QueryOwnerAuthorityRequest) XXX_Merge(src proto.Message) {
+	xxx_messageInfo_QueryOwnerAuthorityRequest.Merge(m, src)
+}
+func (m *QueryOwnerAuthorityRequest) XXX_Size() int {
+	return m.Size()
+}
+func (m *QueryOwnerAuthorityRequest) XXX_DiscardUnknown() {
+	xxx_messageInfo_QueryOwnerAuthorityRequest.DiscardUnknown(m)
+}
+
+var xxx_messageInfo_QueryOwnerAuthorityRequest proto.InternalMessageInfo
+
+type QueryOwnerAuthorityResponse struct {
+	// authority is the consumer module account, under the chain's bech32
+	// prefix: the signer of every message a MsgOwnerExec carries.
+	Authority string `protobuf:"bytes,1,opt,name=authority,proto3" json:"authority,omitempty"`
+	// owner is the account that may submit MsgOwnerExec, as seeded in the
+	// consumer params by the provider (empty when none is).
+	Owner string `protobuf:"bytes,2,opt,name=owner,proto3" json:"owner,omitempty"`
+}
+
+func (m *QueryOwnerAuthorityResponse) Reset()         { *m = QueryOwnerAuthorityResponse{} }
+func (m *QueryOwnerAuthorityResponse) String() string { return proto.CompactTextString(m) }
+func (*QueryOwnerAuthorityResponse) ProtoMessage()    {}
+func (*QueryOwnerAuthorityResponse) Descriptor() ([]byte, []int) {
+	return fileDescriptor_e4bec0ed3ab6003b, []int{6}
+}
+func (m *QueryOwnerAuthorityResponse) XXX_Unmarshal(b []byte) error {
+	return m.Unmarshal(b)
+}
+func (m *QueryOwnerAuthorityResponse) XXX_Marshal(b []byte, deterministic bool) ([]byte, error) {
+	if deterministic {
+		return xxx_messageInfo_QueryOwnerAuthorityResponse.Marshal(b, m, deterministic)
+	} else {
+		b = b[:cap(b)]
+		n, err := m.MarshalToSizedBuffer(b)
+		if err != nil {
+			return nil, err
+		}
+		return b[:n], nil
+	}
+}
+func (m *QueryOwnerAuthorityResponse) XXX_Merge(src proto.Message) {
+	xxx_messageInfo_QueryOwnerAuthorityResponse.Merge(m, src)
+}
+func (m *QueryOwnerAuthorityResponse) XXX_Size() int {
+	return m.Size()
+}
+func (m *QueryOwnerAuthorityResponse) XXX_DiscardUnknown() {
+	xxx_messageInfo_QueryOwnerAuthorityResponse.DiscardUnknown(m)
+}
+
+var xxx_messageInfo_QueryOwnerAuthorityResponse proto.InternalMessageInfo
+
+func (m *QueryOwnerAuthorityResponse) GetAuthority() string {
+	if m != nil {
+		return m.Authority
+	}
+	return ""
+}
+
+func (m *QueryOwnerAuthorityResponse) GetOwner() string {
+	if m != nil {
+		return m.Owner
+	}
+	return ""
+}
+
 func init() {
 	proto.RegisterType((*QueryParamsRequest)(nil), "vaas.consumer.v1.QueryParamsRequest")
 	proto.RegisterType((*QueryParamsResponse)(nil), "vaas.consumer.v1.QueryParamsResponse")
 	proto.RegisterType((*QueryProviderInfoRequest)(nil), "vaas.consumer.v1.QueryProviderInfoRequest")
 	proto.RegisterType((*QueryProviderInfoResponse)(nil), "vaas.consumer.v1.QueryProviderInfoResponse")
 	proto.RegisterType((*ChainInfo)(nil), "vaas.consumer.v1.ChainInfo")
+	proto.RegisterType((*QueryOwnerAuthorityRequest)(nil), "vaas.consumer.v1.QueryOwnerAuthorityRequest")
+	proto.RegisterType((*QueryOwnerAuthorityResponse)(nil), "vaas.consumer.v1.QueryOwnerAuthorityResponse")
 }
 
 func init() { proto.RegisterFile("vaas/consumer/v1/query.proto", fileDescriptor_e4bec0ed3ab6003b) }
 
 var fileDescriptor_e4bec0ed3ab6003b = []byte{
-	// 422 bytes of a gzipped FileDescriptorProto
-	0x1f, 0x8b, 0x08, 0x00, 0x00, 0x00, 0x00, 0x00, 0x02, 0xff, 0x8c, 0x52, 0xb1, 0xae, 0xd3, 0x30,
-	0x14, 0x4d, 0x2a, 0x78, 0xbc, 0xfa, 0x2d, 0x60, 0x1e, 0x6a, 0x08, 0x6d, 0x40, 0x51, 0x91, 0x10,
-	0x08, 0x5b, 0x29, 0x62, 0x64, 0x80, 0x76, 0xa9, 0xc4, 0x00, 0x19, 0x59, 0x90, 0x9b, 0x9a, 0xd4,
-	0x52, 0x6a, 0xa7, 0xb1, 0x13, 0xd1, 0x95, 0x2f, 0x40, 0x30, 0x20, 0xfe, 0xa8, 0x63, 0x25, 0x16,
-	0x26, 0x84, 0x5a, 0x3e, 0x04, 0xc5, 0x71, 0x22, 0xda, 0x80, 0xe8, 0xe6, 0x7b, 0xcf, 0x3d, 0xf7,
-	0x1c, 0x1f, 0x1b, 0xf4, 0x0b, 0x42, 0x24, 0x8e, 0x04, 0x97, 0xf9, 0x92, 0x66, 0xb8, 0x08, 0xf0,
-	0x2a, 0xa7, 0xd9, 0x1a, 0xa5, 0x99, 0x50, 0x02, 0x5e, 0x2f, 0x51, 0x54, 0xa3, 0xa8, 0x08, 0xdc,
-	0x81, 0x9e, 0x2f, 0x02, 0x2c, 0x17, 0x24, 0xa3, 0xf3, 0xb7, 0x0d, 0xa6, 0x09, 0xee, 0x65, 0x2c,
-	0x62, 0xa1, 0x8f, 0xb8, 0x3c, 0x99, 0x6e, 0x3f, 0x16, 0x22, 0x4e, 0x28, 0x26, 0x29, 0xc3, 0x84,
-	0x73, 0xa1, 0x88, 0x62, 0x82, 0xcb, 0x0a, 0xf5, 0x2f, 0x01, 0x7c, 0x5d, 0x6a, 0xbe, 0x22, 0x19,
-	0x59, 0xca, 0x90, 0xae, 0x72, 0x2a, 0x95, 0xff, 0x12, 0xdc, 0x3c, 0xe8, 0xca, 0x54, 0x70, 0x49,
-	0xe1, 0x53, 0x70, 0x96, 0xea, 0x8e, 0x63, 0xdf, 0xb3, 0x1f, 0x5c, 0x8c, 0x7a, 0x48, 0x5b, 0x2c,
-	0x02, 0x34, 0x36, 0x4e, 0x2a, 0xc2, 0x8b, 0x2b, 0x9b, 0x1f, 0x77, 0xad, 0xd0, 0x0c, 0xfb, 0x2e,
-	0x70, 0xaa, 0x6d, 0x99, 0x28, 0xd8, 0x9c, 0x66, 0x53, 0xfe, 0x4e, 0xd4, 0x4a, 0x5f, 0x6d, 0x70,
-	0xfb, 0x2f, 0xa0, 0x11, 0x7c, 0x06, 0xce, 0xeb, 0x3b, 0x1a, 0xc9, 0x3b, 0xe8, 0x38, 0x15, 0x34,
-	0x5e, 0x10, 0xc6, 0x4b, 0x9a, 0x91, 0x6d, 0x28, 0x25, 0x3d, 0x35, 0x6b, 0x9d, 0xce, 0xc9, 0xf4,
-	0x9a, 0xe2, 0x3f, 0x07, 0xdd, 0x06, 0x84, 0x0e, 0xb8, 0x16, 0xe9, 0x62, 0xa2, 0x9d, 0x74, 0xc3,
-	0xba, 0x84, 0x2e, 0x38, 0x8f, 0x12, 0x46, 0xb9, 0x9a, 0x4e, 0xb4, 0x4a, 0x37, 0x6c, 0xea, 0xd1,
-	0x97, 0x0e, 0xb8, 0xaa, 0xaf, 0x07, 0xd7, 0xe0, 0xe2, 0x8f, 0x48, 0xe1, 0xb0, 0x6d, 0xa4, 0xfd,
-	0x0e, 0xee, 0xfd, 0xff, 0x4c, 0x55, 0x31, 0xf9, 0x83, 0x0f, 0xdf, 0x7e, 0x7d, 0xee, 0xf4, 0xe0,
-	0x2d, 0x7c, 0xf8, 0xa1, 0xaa, 0xfc, 0xe1, 0x27, 0x1b, 0xdc, 0x68, 0x65, 0x0c, 0x1f, 0xfe, 0x6b,
-	0x77, 0xfb, 0x95, 0xdc, 0x47, 0x27, 0xcd, 0x1a, 0x37, 0x43, 0xed, 0xc6, 0x83, 0xfd, 0x63, 0x37,
-	0x66, 0xf8, 0x31, 0x2b, 0xc3, 0x9e, 0x6e, 0x76, 0x9e, 0xbd, 0xdd, 0x79, 0xf6, 0xcf, 0x9d, 0x67,
-	0x7f, 0xdc, 0x7b, 0xd6, 0x76, 0xef, 0x59, 0xdf, 0xf7, 0x9e, 0xf5, 0x06, 0xc7, 0x4c, 0x2d, 0xf2,
-	0x19, 0x8a, 0xc4, 0x12, 0x93, 0x24, 0x61, 0x7c, 0xc6, 0x94, 0xac, 0x76, 0xbd, 0x3f, 0x5a, 0xa9,
-	0xd6, 0x29, 0x95, 0xb3, 0x33, 0xfd, 0x95, 0x9f, 0xfc, 0x0e, 0x00, 0x00, 0xff, 0xff, 0x42, 0xb1,
-	0xd8, 0x33, 0x4f, 0x03, 0x00, 0x00,
+	// 501 bytes of a gzipped FileDescriptorProto
+	0x1f, 0x8b, 0x08, 0x00, 0x00, 0x00, 0x00, 0x00, 0x02, 0xff, 0x8c, 0x53, 0xcb, 0x6e, 0x13, 0x31,
+	0x14, 0xcd, 0x14, 0x5a, 0x9a, 0xdb, 0x0d, 0x98, 0xa0, 0x86, 0xe9, 0x74, 0xa8, 0x46, 0x05, 0x21,
+	0x20, 0xb6, 0x52, 0xc4, 0x92, 0x45, 0x1f, 0x9b, 0x48, 0x48, 0xd0, 0x2c, 0xd9, 0x20, 0x27, 0x35,
+	0x13, 0x4b, 0x89, 0x3d, 0xb5, 0x3d, 0x03, 0xd9, 0xf2, 0x05, 0x08, 0x56, 0xf0, 0x1d, 0x7c, 0x44,
+	0x97, 0x95, 0xd8, 0xb0, 0x42, 0x28, 0xe1, 0x43, 0xd0, 0x78, 0x3c, 0x03, 0x79, 0x54, 0x64, 0x37,
+	0xbe, 0xe7, 0x9e, 0x7b, 0xce, 0xf5, 0xf1, 0x40, 0x90, 0x51, 0xaa, 0x49, 0x5f, 0x0a, 0x9d, 0x8e,
+	0x98, 0x22, 0x59, 0x9b, 0x9c, 0xa7, 0x4c, 0x8d, 0x71, 0xa2, 0xa4, 0x91, 0xe8, 0x66, 0x8e, 0xe2,
+	0x12, 0xc5, 0x59, 0xdb, 0xdf, 0xb5, 0xfd, 0x59, 0x9b, 0xe8, 0x01, 0x55, 0xec, 0xec, 0x4d, 0x85,
+	0x59, 0x82, 0xdf, 0x88, 0x65, 0x2c, 0xed, 0x27, 0xc9, 0xbf, 0x5c, 0x35, 0x88, 0xa5, 0x8c, 0x87,
+	0x8c, 0xd0, 0x84, 0x13, 0x2a, 0x84, 0x34, 0xd4, 0x70, 0x29, 0x74, 0x81, 0x46, 0x0d, 0x40, 0xa7,
+	0xb9, 0xe6, 0x2b, 0xaa, 0xe8, 0x48, 0x77, 0xd9, 0x79, 0xca, 0xb4, 0x89, 0x5e, 0xc0, 0xed, 0x99,
+	0xaa, 0x4e, 0xa4, 0xd0, 0x0c, 0x3d, 0x83, 0x8d, 0xc4, 0x56, 0x9a, 0xde, 0x9e, 0xf7, 0x70, 0xeb,
+	0x60, 0x1b, 0x5b, 0x8b, 0x59, 0x1b, 0x1f, 0x3b, 0x27, 0x05, 0xe1, 0xe8, 0xfa, 0xc5, 0xcf, 0x7b,
+	0xb5, 0xae, 0x6b, 0x8e, 0x7c, 0x68, 0x16, 0xd3, 0x94, 0xcc, 0xf8, 0x19, 0x53, 0x1d, 0xf1, 0x56,
+	0x96, 0x4a, 0x5f, 0x3c, 0xb8, 0xbb, 0x04, 0x74, 0x82, 0xcf, 0x61, 0xb3, 0xdc, 0xd1, 0x49, 0xee,
+	0xe0, 0xf9, 0x5b, 0xc1, 0xc7, 0x03, 0xca, 0x45, 0x4e, 0x73, 0xb2, 0x15, 0x25, 0xa7, 0x27, 0x6e,
+	0x6c, 0x73, 0x6d, 0x65, 0x7a, 0x49, 0x89, 0x0e, 0xa1, 0x5e, 0x81, 0xa8, 0x09, 0x37, 0xfa, 0xf6,
+	0x70, 0x62, 0x9d, 0xd4, 0xbb, 0xe5, 0x11, 0xf9, 0xb0, 0xd9, 0x1f, 0x72, 0x26, 0x4c, 0xe7, 0xc4,
+	0xaa, 0xd4, 0xbb, 0xd5, 0x39, 0x0a, 0xc0, 0xb7, 0xdb, 0xbd, 0x7c, 0x27, 0x98, 0x3a, 0x4c, 0xcd,
+	0x40, 0x2a, 0x6e, 0xc6, 0xe5, 0xf2, 0xa7, 0xb0, 0xb3, 0x14, 0x75, 0xdb, 0x07, 0x50, 0xa7, 0x65,
+	0xd1, 0x89, 0xfe, 0x2d, 0xa0, 0x06, 0xac, 0xcb, 0x9c, 0xe7, 0x34, 0x8b, 0xc3, 0xc1, 0xb7, 0x6b,
+	0xb0, 0x6e, 0x67, 0xa2, 0x31, 0x6c, 0xfd, 0x93, 0x21, 0xda, 0x5f, 0xdc, 0x7c, 0x31, 0x78, 0xff,
+	0xfe, 0x7f, 0xba, 0x0a, 0x67, 0xd1, 0xee, 0x87, 0xef, 0xbf, 0x3f, 0xaf, 0x6d, 0xa3, 0x3b, 0x64,
+	0xf6, 0x05, 0x17, 0x81, 0xa3, 0x4f, 0x1e, 0xdc, 0x5a, 0x08, 0x15, 0x3d, 0xba, 0x6a, 0xf6, 0xe2,
+	0xb3, 0xf0, 0x1f, 0xaf, 0xd4, 0xeb, 0xdc, 0xec, 0x5b, 0x37, 0x21, 0x0a, 0xe6, 0xdd, 0xb8, 0xe6,
+	0x16, 0xcf, 0xe5, 0xbf, 0x7a, 0xee, 0x51, 0xcf, 0xde, 0x36, 0x7a, 0x72, 0x85, 0xd4, 0xd2, 0xc8,
+	0xfc, 0xd6, 0x8a, 0xdd, 0xce, 0xda, 0x03, 0x6b, 0x6d, 0x0f, 0x85, 0x73, 0xd6, 0x6c, 0x58, 0xad,
+	0x2a, 0xcc, 0xa3, 0xce, 0xc5, 0x24, 0xf4, 0x2e, 0x27, 0xa1, 0xf7, 0x6b, 0x12, 0x7a, 0x1f, 0xa7,
+	0x61, 0xed, 0x72, 0x1a, 0xd6, 0x7e, 0x4c, 0xc3, 0xda, 0x6b, 0x12, 0x73, 0x33, 0x48, 0x7b, 0xb8,
+	0x2f, 0x47, 0x84, 0x0e, 0x87, 0x5c, 0xf4, 0xb8, 0xd1, 0xc5, 0xb4, 0xf7, 0x73, 0x43, 0xcd, 0x38,
+	0x61, 0xba, 0xb7, 0x61, 0x7f, 0xec, 0xa7, 0x7f, 0x02, 0x00, 0x00, 0xff, 0xff, 0x00, 0x22, 0x5a,
+	0x00, 0x5d, 0x04, 0x00, 0x00,
 }
 
 // Reference imports to suppress errors if they are not otherwise used.
@@ -311,6 +410,10 @@ type QueryClient interface {
 	QueryParams(ctx context.Context, in *QueryParamsRequest, opts ...grpc.CallOption) (*QueryParamsResponse, error)
 	// QueryProviderInfo returns information about the provider chain connection.
 	QueryProviderInfo(ctx context.Context, in *QueryProviderInfoRequest, opts ...grpc.CallOption) (*QueryProviderInfoResponse, error)
+	// QueryOwnerAuthority returns the account the owner's MsgOwnerExec messages
+	// are signed by (the consumer module account) and the owner that may
+	// submit them.
+	QueryOwnerAuthority(ctx context.Context, in *QueryOwnerAuthorityRequest, opts ...grpc.CallOption) (*QueryOwnerAuthorityResponse, error)
 }
 
 type queryClient struct {
@@ -339,12 +442,25 @@ func (c *queryClient) QueryProviderInfo(ctx context.Context, in *QueryProviderIn
 	return out, nil
 }
 
+func (c *queryClient) QueryOwnerAuthority(ctx context.Context, in *QueryOwnerAuthorityRequest, opts ...grpc.CallOption) (*QueryOwnerAuthorityResponse, error) {
+	out := new(QueryOwnerAuthorityResponse)
+	err := c.cc.Invoke(ctx, "/vaas.consumer.v1.Query/QueryOwnerAuthority", in, out, opts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
 // QueryServer is the server API for Query service.
 type QueryServer interface {
 	// QueryParams queries the vaas/consumer module parameters.
 	QueryParams(context.Context, *QueryParamsRequest) (*QueryParamsResponse, error)
 	// QueryProviderInfo returns information about the provider chain connection.
 	QueryProviderInfo(context.Context, *QueryProviderInfoRequest) (*QueryProviderInfoResponse, error)
+	// QueryOwnerAuthority returns the account the owner's MsgOwnerExec messages
+	// are signed by (the consumer module account) and the owner that may
+	// submit them.
+	QueryOwnerAuthority(context.Context, *QueryOwnerAuthorityRequest) (*QueryOwnerAuthorityResponse, error)
 }
 
 // UnimplementedQueryServer can be embedded to have forward compatible implementations.
@@ -356,6 +472,9 @@ func (*UnimplementedQueryServer) QueryParams(ctx context.Context, req *QueryPara
 }
 func (*UnimplementedQueryServer) QueryProviderInfo(ctx context.Context, req *QueryProviderInfoRequest) (*QueryProviderInfoResponse, error) {
 	return nil, status.Errorf(codes.Unimplemented, "method QueryProviderInfo not implemented")
+}
+func (*UnimplementedQueryServer) QueryOwnerAuthority(ctx context.Context, req *QueryOwnerAuthorityRequest) (*QueryOwnerAuthorityResponse, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method QueryOwnerAuthority not implemented")
 }
 
 func RegisterQueryServer(s grpc1.Server, srv QueryServer) {
@@ -398,6 +517,24 @@ func _Query_QueryProviderInfo_Handler(srv interface{}, ctx context.Context, dec 
 	return interceptor(ctx, in, info, handler)
 }
 
+func _Query_QueryOwnerAuthority_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(QueryOwnerAuthorityRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(QueryServer).QueryOwnerAuthority(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: "/vaas.consumer.v1.Query/QueryOwnerAuthority",
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(QueryServer).QueryOwnerAuthority(ctx, req.(*QueryOwnerAuthorityRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
 var _Query_serviceDesc = grpc.ServiceDesc{
 	ServiceName: "vaas.consumer.v1.Query",
 	HandlerType: (*QueryServer)(nil),
@@ -409,6 +546,10 @@ var _Query_serviceDesc = grpc.ServiceDesc{
 		{
 			MethodName: "QueryProviderInfo",
 			Handler:    _Query_QueryProviderInfo_Handler,
+		},
+		{
+			MethodName: "QueryOwnerAuthority",
+			Handler:    _Query_QueryOwnerAuthority_Handler,
 		},
 	},
 	Streams:  []grpc.StreamDesc{},
@@ -574,6 +715,66 @@ func (m *ChainInfo) MarshalToSizedBuffer(dAtA []byte) (int, error) {
 	return len(dAtA) - i, nil
 }
 
+func (m *QueryOwnerAuthorityRequest) Marshal() (dAtA []byte, err error) {
+	size := m.Size()
+	dAtA = make([]byte, size)
+	n, err := m.MarshalToSizedBuffer(dAtA[:size])
+	if err != nil {
+		return nil, err
+	}
+	return dAtA[:n], nil
+}
+
+func (m *QueryOwnerAuthorityRequest) MarshalTo(dAtA []byte) (int, error) {
+	size := m.Size()
+	return m.MarshalToSizedBuffer(dAtA[:size])
+}
+
+func (m *QueryOwnerAuthorityRequest) MarshalToSizedBuffer(dAtA []byte) (int, error) {
+	i := len(dAtA)
+	_ = i
+	var l int
+	_ = l
+	return len(dAtA) - i, nil
+}
+
+func (m *QueryOwnerAuthorityResponse) Marshal() (dAtA []byte, err error) {
+	size := m.Size()
+	dAtA = make([]byte, size)
+	n, err := m.MarshalToSizedBuffer(dAtA[:size])
+	if err != nil {
+		return nil, err
+	}
+	return dAtA[:n], nil
+}
+
+func (m *QueryOwnerAuthorityResponse) MarshalTo(dAtA []byte) (int, error) {
+	size := m.Size()
+	return m.MarshalToSizedBuffer(dAtA[:size])
+}
+
+func (m *QueryOwnerAuthorityResponse) MarshalToSizedBuffer(dAtA []byte) (int, error) {
+	i := len(dAtA)
+	_ = i
+	var l int
+	_ = l
+	if len(m.Owner) > 0 {
+		i -= len(m.Owner)
+		copy(dAtA[i:], m.Owner)
+		i = encodeVarintQuery(dAtA, i, uint64(len(m.Owner)))
+		i--
+		dAtA[i] = 0x12
+	}
+	if len(m.Authority) > 0 {
+		i -= len(m.Authority)
+		copy(dAtA[i:], m.Authority)
+		i = encodeVarintQuery(dAtA, i, uint64(len(m.Authority)))
+		i--
+		dAtA[i] = 0xa
+	}
+	return len(dAtA) - i, nil
+}
+
 func encodeVarintQuery(dAtA []byte, offset int, v uint64) int {
 	offset -= sovQuery(v)
 	base := offset
@@ -638,6 +839,32 @@ func (m *ChainInfo) Size() (n int) {
 		n += 1 + l + sovQuery(uint64(l))
 	}
 	l = len(m.ClientID)
+	if l > 0 {
+		n += 1 + l + sovQuery(uint64(l))
+	}
+	return n
+}
+
+func (m *QueryOwnerAuthorityRequest) Size() (n int) {
+	if m == nil {
+		return 0
+	}
+	var l int
+	_ = l
+	return n
+}
+
+func (m *QueryOwnerAuthorityResponse) Size() (n int) {
+	if m == nil {
+		return 0
+	}
+	var l int
+	_ = l
+	l = len(m.Authority)
+	if l > 0 {
+		n += 1 + l + sovQuery(uint64(l))
+	}
+	l = len(m.Owner)
 	if l > 0 {
 		n += 1 + l + sovQuery(uint64(l))
 	}
@@ -1041,6 +1268,170 @@ func (m *ChainInfo) Unmarshal(dAtA []byte) error {
 				return io.ErrUnexpectedEOF
 			}
 			m.ClientID = string(dAtA[iNdEx:postIndex])
+			iNdEx = postIndex
+		default:
+			iNdEx = preIndex
+			skippy, err := skipQuery(dAtA[iNdEx:])
+			if err != nil {
+				return err
+			}
+			if (skippy < 0) || (iNdEx+skippy) < 0 {
+				return ErrInvalidLengthQuery
+			}
+			if (iNdEx + skippy) > l {
+				return io.ErrUnexpectedEOF
+			}
+			iNdEx += skippy
+		}
+	}
+
+	if iNdEx > l {
+		return io.ErrUnexpectedEOF
+	}
+	return nil
+}
+func (m *QueryOwnerAuthorityRequest) Unmarshal(dAtA []byte) error {
+	l := len(dAtA)
+	iNdEx := 0
+	for iNdEx < l {
+		preIndex := iNdEx
+		var wire uint64
+		for shift := uint(0); ; shift += 7 {
+			if shift >= 64 {
+				return ErrIntOverflowQuery
+			}
+			if iNdEx >= l {
+				return io.ErrUnexpectedEOF
+			}
+			b := dAtA[iNdEx]
+			iNdEx++
+			wire |= uint64(b&0x7F) << shift
+			if b < 0x80 {
+				break
+			}
+		}
+		fieldNum := int32(wire >> 3)
+		wireType := int(wire & 0x7)
+		if wireType == 4 {
+			return fmt.Errorf("proto: QueryOwnerAuthorityRequest: wiretype end group for non-group")
+		}
+		if fieldNum <= 0 {
+			return fmt.Errorf("proto: QueryOwnerAuthorityRequest: illegal tag %d (wire type %d)", fieldNum, wire)
+		}
+		switch fieldNum {
+		default:
+			iNdEx = preIndex
+			skippy, err := skipQuery(dAtA[iNdEx:])
+			if err != nil {
+				return err
+			}
+			if (skippy < 0) || (iNdEx+skippy) < 0 {
+				return ErrInvalidLengthQuery
+			}
+			if (iNdEx + skippy) > l {
+				return io.ErrUnexpectedEOF
+			}
+			iNdEx += skippy
+		}
+	}
+
+	if iNdEx > l {
+		return io.ErrUnexpectedEOF
+	}
+	return nil
+}
+func (m *QueryOwnerAuthorityResponse) Unmarshal(dAtA []byte) error {
+	l := len(dAtA)
+	iNdEx := 0
+	for iNdEx < l {
+		preIndex := iNdEx
+		var wire uint64
+		for shift := uint(0); ; shift += 7 {
+			if shift >= 64 {
+				return ErrIntOverflowQuery
+			}
+			if iNdEx >= l {
+				return io.ErrUnexpectedEOF
+			}
+			b := dAtA[iNdEx]
+			iNdEx++
+			wire |= uint64(b&0x7F) << shift
+			if b < 0x80 {
+				break
+			}
+		}
+		fieldNum := int32(wire >> 3)
+		wireType := int(wire & 0x7)
+		if wireType == 4 {
+			return fmt.Errorf("proto: QueryOwnerAuthorityResponse: wiretype end group for non-group")
+		}
+		if fieldNum <= 0 {
+			return fmt.Errorf("proto: QueryOwnerAuthorityResponse: illegal tag %d (wire type %d)", fieldNum, wire)
+		}
+		switch fieldNum {
+		case 1:
+			if wireType != 2 {
+				return fmt.Errorf("proto: wrong wireType = %d for field Authority", wireType)
+			}
+			var stringLen uint64
+			for shift := uint(0); ; shift += 7 {
+				if shift >= 64 {
+					return ErrIntOverflowQuery
+				}
+				if iNdEx >= l {
+					return io.ErrUnexpectedEOF
+				}
+				b := dAtA[iNdEx]
+				iNdEx++
+				stringLen |= uint64(b&0x7F) << shift
+				if b < 0x80 {
+					break
+				}
+			}
+			intStringLen := int(stringLen)
+			if intStringLen < 0 {
+				return ErrInvalidLengthQuery
+			}
+			postIndex := iNdEx + intStringLen
+			if postIndex < 0 {
+				return ErrInvalidLengthQuery
+			}
+			if postIndex > l {
+				return io.ErrUnexpectedEOF
+			}
+			m.Authority = string(dAtA[iNdEx:postIndex])
+			iNdEx = postIndex
+		case 2:
+			if wireType != 2 {
+				return fmt.Errorf("proto: wrong wireType = %d for field Owner", wireType)
+			}
+			var stringLen uint64
+			for shift := uint(0); ; shift += 7 {
+				if shift >= 64 {
+					return ErrIntOverflowQuery
+				}
+				if iNdEx >= l {
+					return io.ErrUnexpectedEOF
+				}
+				b := dAtA[iNdEx]
+				iNdEx++
+				stringLen |= uint64(b&0x7F) << shift
+				if b < 0x80 {
+					break
+				}
+			}
+			intStringLen := int(stringLen)
+			if intStringLen < 0 {
+				return ErrInvalidLengthQuery
+			}
+			postIndex := iNdEx + intStringLen
+			if postIndex < 0 {
+				return ErrInvalidLengthQuery
+			}
+			if postIndex > l {
+				return io.ErrUnexpectedEOF
+			}
+			m.Owner = string(dAtA[iNdEx:postIndex])
 			iNdEx = postIndex
 		default:
 			iNdEx = preIndex

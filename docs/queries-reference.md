@@ -14,8 +14,12 @@ providerd tx     vaasprovider <command>
 consumerd query  vaasconsumer <command>
 ```
 
-There is no consumer tx root -- the consumer module's only message
-(`MsgUpdateParams`) is governance-authority-signed and has no CLI command.
+The consumer tx root, `consumerd tx vaasconsumer <command>`, carries the
+owner's two commands: the provider-client pin and `owner-exec`, through which
+the owner exercises the authority the reference consumer app grants the
+consumer module account (see [embedding.md](embedding.md)). `MsgUpdateParams`
+is authority-signed and has no command of its own; the owner carries it in an
+`owner-exec`.
 
 Every query command accepts the standard query flags (`--node`, `--height`,
 `--output/-o`, `--grpc-addr`). Commands marked *paginated* also take
@@ -88,6 +92,7 @@ REST: `/vaas/provider/v1/consumer_refusals/{consumer_id}` and
 | Command | Args | Returns |
 |---|---|---|
 | `params` | -- | The consumer's `ConsumerParams`: `vaas_timeout_period`, `historical_entries`, `unbonding_period`, `safe_mode_threshold`, `signed_blocks_window`, `min_signed_per_window`. The last two are provider-owned, arrive via VSC packets, and cannot be changed locally. |
+| `owner-authority` | -- | `authority`, the consumer module account under the chain's bech32 prefix: the signer every message an `owner-exec` carries must name; and `owner`, the account the provider seeded into the consumer params, the only one that may submit an `owner-exec` (empty when none was seeded). |
 | `provider-info` | -- | `consumer` and `provider` `ChainInfo` pairs, derived from IBC state. This is the "is my consumer wired up yet" probe: it errors `NotFound` until the provider client exists. **Read the fields carefully:** `consumer.chainID` is the local chain id but `consumer.clientID` is the id of the client *on the consumer that tracks the provider*; `provider.chainID` comes from that client's state, and `provider.clientID` is never populated. |
 
 ---

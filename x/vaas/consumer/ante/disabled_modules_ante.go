@@ -6,6 +6,8 @@ import (
 
 	sdk "github.com/cosmos/cosmos-sdk/types"
 	"github.com/cosmos/cosmos-sdk/x/authz"
+
+	consumertypes "github.com/allinbits/vaas/x/vaas/consumer/types"
 )
 
 type DisabledModulesDecorator struct {
@@ -24,13 +26,33 @@ func (dmd DisabledModulesDecorator) AnteHandle(ctx sdk.Context, tx sdk.Tx, simul
 		}
 
 		// Check if there is an attempt to bypass disabled module msg
-		// with authz MsgExec
-		if nestedAuthzMsgExecCheck(msg, dmd.prefixes...) {
+		// with authz MsgExec, or with the owner's exec
+		if nestedAuthzMsgExecCheck(msg, dmd.prefixes...) || nestedOwnerExecCheck(msg, dmd.prefixes...) {
 			return ctx, fmt.Errorf("tx contains message types from unsupported modules at height %d", currHeight)
 		}
 	}
 
 	return next(ctx, tx, simulate)
+}
+
+// nestedOwnerExecCheck reports whether msg is an owner exec carrying a
+// message of a disabled module. The handler refuses a nested owner exec, so
+// one level is looked into.
+func nestedOwnerExecCheck(msg sdk.Msg, prefixes ...string) bool {
+	exec, ok := msg.(*consumertypes.MsgOwnerExec)
+	if !ok {
+		return false
+	}
+	inner, err := exec.GetMsgs()
+	if err != nil {
+		return false
+	}
+	for _, msg := range inner {
+		if hasDisabledModuleMsgs(msg, prefixes...) || nestedAuthzMsgExecCheck(msg, prefixes...) {
+			return true
+		}
+	}
+	return false
 }
 
 func nestedAuthzMsgExecCheck(msg sdk.Msg, prefixes ...string) bool {
