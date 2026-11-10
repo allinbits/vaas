@@ -107,6 +107,9 @@ for (with several removal votes live at once, the latest-ending one).
   period of grace per accusation is the ceiling.
 - Only the voting period shields. A proposal in its deposit period, or one
   that reaches its voting period after the entry matured, defers nothing.
+- Only a `MsgRemoveConsumer` carried directly among the proposal's messages
+  counts (`removalVote` matches on the message type URL); one wrapped in
+  another message, an `authz.MsgExec` say, defers nothing.
 - The pair's withheld fee record stays claimable for as long as the entry is
   pending, so a challenge won during the deferral still repays it.
 

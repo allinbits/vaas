@@ -167,9 +167,11 @@ func (k Keeper) SendVSCPacketsToChain(ctx sdk.Context, consumerId uint64, client
 // sendVSCPacketsToChainStrict sends every pending VSC packet for a consumer
 // over the given IBC v2 client, in order, stopping at and returning the
 // first send error instead of swallowing it. On success all pending packets
-// have been sent and are cleared; on failure the packets from the failing
-// one onward remain queued untouched, so a retry (next epoch, or a repeated
-// call) resends exactly what did not go through.
+// have been sent and are cleared; on failure the queue is left as it was,
+// the packets sent before the failure included, so a retry (next epoch, or a
+// repeated call) resends those too. That is harmless: the consumer drops a
+// packet whose ValsetUpdateId it has already applied, and a non-empty queue
+// makes the next epoch's packet a snapshot anyway (see QueueVSCPackets).
 //
 // This is the shared implementation behind two callers with different error
 // contracts: SendVSCPacketsToChain (the EndBlock wrapper above) swallows the
