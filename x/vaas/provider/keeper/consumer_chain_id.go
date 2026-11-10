@@ -169,7 +169,7 @@ func (k Keeper) latestRenameBoundary(ctx sdk.Context, consumerId uint64) (height
 		return 0, false, fmt.Errorf("reading the previous chain ids of consumer %d: %w", consumerId, err)
 	}
 	for _, p := range previous {
-		if h := int64(p.Boundary.RevisionHeight); h > height { //nolint:gosec // a client height is far below the int64 range
+		if h := int64(p.Boundary.RevisionHeight); h > height {
 			height = h
 		}
 	}

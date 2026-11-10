@@ -34,8 +34,8 @@ const (
 // launchedWithRecoveredClient seeds a launched consumer with a chain id and a declared
 // client, and makes the client report the given chain id at the given height.
 func launchedWithRecoveredClient(t *testing.T, k providerkeeper.Keeper, ctx sdk.Context, mocks testkeeper.MockedKeepers, height uint64) uint64 {
-	clientChainID := chainIDTestNew
 	t.Helper()
+	clientChainID := chainIDTestNew
 	cid := k.FetchAndIncrementConsumerId(ctx)
 	k.SetConsumerPhase(ctx, cid, types.CONSUMER_PHASE_LAUNCHED)
 	k.SetConsumerChainId(ctx, cid, chainIDTestOld)
