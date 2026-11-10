@@ -6,6 +6,8 @@ import (
 	"sort"
 	"strings"
 
+	"github.com/cometbft/cometbft/crypto/encoding"
+
 	errorsmod "cosmossdk.io/errors"
 	"cosmossdk.io/math"
 
@@ -496,6 +498,34 @@ func validateEpochDowntimeEntries(entries []EpochDowntimeEntry, knownConsumerIds
 	return nil
 }
 
+// validateConsumerValidatorSet checks the exported per-consumer validator
+// set: every entry names a provider consensus address once, carries positive
+// power, and a consensus pubkey CometBFT can decode (the set is what the
+// consumer's CometBFT runs, and what a restarted provider judges evidence
+// against).
+func validateConsumerValidatorSet(set []ConsensusValidator) error {
+	seen := map[string]bool{}
+	for i, v := range set {
+		if len(v.ProviderConsAddr) == 0 {
+			return fmt.Errorf("validator set entry %d: provider cons addr cannot be empty", i)
+		}
+		if seen[string(v.ProviderConsAddr)] {
+			return fmt.Errorf("validator set entry %d: duplicate provider cons addr %x", i, v.ProviderConsAddr)
+		}
+		seen[string(v.ProviderConsAddr)] = true
+		if v.Power <= 0 {
+			return fmt.Errorf("validator set entry %d: power must be positive, got %d", i, v.Power)
+		}
+		if v.PublicKey == nil {
+			return fmt.Errorf("validator set entry %d: consensus pubkey cannot be nil", i)
+		}
+		if _, err := encoding.PubKeyFromProto(*v.PublicKey); err != nil {
+			return fmt.Errorf("validator set entry %d: undecodable consensus pubkey: %w", i, err)
+		}
+	}
+	return nil
+}
+
 // Validate performs a phase-aware consumer state validation.
 // Each phase has different required and forbidden fields, mirroring the
 // invariants the keeper maintains (see x/vaas/provider/keeper/consumer_lifecycle.go).
@@ -516,27 +546,37 @@ func (cs ConsumerState) Validate() error {
 	if _, err := sdk.AccAddressFromBech32(cs.OwnerAddress); err != nil {
 		return fmt.Errorf("invalid owner address %q: %w", cs.OwnerAddress, err)
 	}
-	for _, pVSC := range cs.PendingValsetChanges {
-		if pVSC.ValsetUpdateId == 0 {
-			return errors.New("valset update ID cannot be equal to zero")
+	for i, pVSC := range cs.PendingValsetChanges {
+		if err := pVSC.Validate(); err != nil {
+			return fmt.Errorf("pending valset change %d: %w", i, err)
 		}
+	}
+	if err := validateConsumerValidatorSet(cs.ValidatorSet); err != nil {
+		return err
+	}
+	if cs.HighestAckedVscId > cs.HighestSentVscId {
+		return fmt.Errorf("highest acked vsc id %d exceeds highest sent vsc id %d", cs.HighestAckedVscId, cs.HighestSentVscId)
 	}
 
 	switch cs.Phase {
 	case CONSUMER_PHASE_REGISTERED:
-		// Pre-launch: no IBC client, no consumer genesis, no init params, no removal time.
+		// Pre-launch: no IBC client, no consumer genesis, no removal time, no
+		// validator set. Initialization parameters are allowed: CreateConsumer
+		// stores them (defaulted when the message carries none) and a consumer
+		// without a spawn time stays registered with them.
 		if cs.ClientId != "" {
 			return fmt.Errorf("client id must be empty for phase %s", cs.Phase)
-		}
-		if cs.InitParams != nil {
-			return fmt.Errorf("init params must be empty for phase %s", cs.Phase)
 		}
 		if cs.RemovalTime != nil {
 			return fmt.Errorf("removal time must be empty for phase %s", cs.Phase)
 		}
+		if len(cs.ValidatorSet) > 0 {
+			return fmt.Errorf("validator set must be empty for phase %s", cs.Phase)
+		}
 
 	case CONSUMER_PHASE_INITIALIZED:
-		// Pre-launch but configured: init_params required; still no IBC client.
+		// Pre-launch but configured: init_params required; still no IBC client
+		// and no validator set.
 		if cs.InitParams == nil {
 			return fmt.Errorf("init params required for phase %s", cs.Phase)
 		}
@@ -545,6 +585,9 @@ func (cs ConsumerState) Validate() error {
 		}
 		if cs.RemovalTime != nil {
 			return fmt.Errorf("removal time must be empty for phase %s", cs.Phase)
+		}
+		if len(cs.ValidatorSet) > 0 {
+			return fmt.Errorf("validator set must be empty for phase %s", cs.Phase)
 		}
 
 	case CONSUMER_PHASE_LAUNCHED:

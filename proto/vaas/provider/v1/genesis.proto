@@ -243,6 +243,12 @@ message ConsumerState {
   // period from it, so the fork's evidence can no longer pause the consumer.
   google.protobuf.Timestamp paused_at = 19
       [ (gogoproto.stdtime) = true ];
+  // validator_set is the consumer's validator set as the provider last sent
+  // it (the ConsumerValidators collection). It is exported so a restarted
+  // provider serves and judges evidence from its first block: an empty set
+  // would refuse every accused validator as not in the set until the next
+  // epoch boundary rebuilt it.
+  repeated ConsensusValidator validator_set = 20 [ (gogoproto.nullable) = false ];
 }
 
 // ConsumerFeesPerBlockOverride is a single per-consumer override entry for

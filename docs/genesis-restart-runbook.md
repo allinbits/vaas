@@ -46,7 +46,11 @@ consumer genesis validate consumer_exported.json
 
 Validation runs the module `GenesisState.Validate` checks. It is a CLI-only
 gate; nodes do not re-run it at boot, so a genesis that skips this step can
-still fail (or panic) at `InitChain`.
+still fail (or panic) at `InitChain`. Both e2e round trips run it on their
+exports, so an export the binaries produce is one they validate; the IBC
+module's step goes through `app/ibcshim` on both reference apps, as `InitChain`
+does, because upstream's check rejects the normal `07-tendermint-0` client
+pairing (ibc-go#9063).
 
 ## Provider module
 
@@ -54,9 +58,13 @@ still fail (or panic) at `InitChain`.
 
 - the global valset-update-id counter;
 - every consumer's `ConsumerState`: phase, owner, metadata, init params,
-  client id, consumer genesis, pending VSC packets, removal / pause-expiration
-  times, the liveness clock (`LastAckTime`, `HighestSentVscId`,
+  client id, consumer genesis, pending VSC packets, the validator set as last
+  sent to the consumer, removal / pause-expiration times, the pause reason and
+  time, the liveness clock (`LastAckTime`, `HighestSentVscId`,
   `HighestAckedVscId`), and the in-debt flag;
+- the refusal signals, the pending equivocation punishments with the
+  unbonding operations held and the jails closed behind them, and the record
+  of punished equivocations;
 - key-assignment state (per-consumer consensus keys, the reverse address index,
   and the addresses-to-prune queue);
 - params, per-consumer `fees_per_block` overrides, and fee-pool shares;
@@ -140,10 +148,12 @@ For a coordinated stop-and-restart (state-export upgrade):
 4. Distribute the genesis, reset only Tendermint/CometBFT block state
    (`comet unsafe-reset-all` / a fresh data dir), keep validator and node keys,
    and start the new binaries.
-5. Restart the relayer against the same IBC clients. The provider rediscovers
-   each consumer client at the next epoch boundary and, per the must-snapshot
-   rule above, its first post-restart VSC to each launched consumer is a full
-   snapshot.
+5. Restart the relayer against the same IBC clients. The declared client of
+   each consumer is restored with its state, nothing is discovered, and per
+   the must-snapshot rule above the provider's first post-restart VSC to each
+   launched consumer is a full snapshot. The consumer validator sets are
+   restored too, so accusations that arrive right after the restart are
+   judged against the set the consumer runs, not refused for an empty one.
 
 **The relayer needs the restarted chain's pre-restart history.** Advancing an
 IBC client past the restart requires a client update whose trusted validators

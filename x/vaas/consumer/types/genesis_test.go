@@ -6,6 +6,7 @@ import (
 
 	"github.com/stretchr/testify/require"
 
+	abci "github.com/cometbft/cometbft/abci/types"
 	tmtypes "github.com/cometbft/cometbft/types"
 
 	clienttypes "github.com/cosmos/ibc-go/v10/modules/core/02-client/types"
@@ -96,6 +97,11 @@ func TestValidateInitialGenesisState(t *testing.T) {
 		{
 			"invalid new consumer genesis state: nil initial validator set",
 			types.NewInitialGenesisState(cs, consensusState, nil, params),
+			true,
+		},
+		{
+			"invalid new consumer genesis state: undecodable initial validator pubkey",
+			types.NewInitialGenesisState(cs, consensusState, []abci.ValidatorUpdate{{Power: 1}}, params),
 			true,
 		},
 		{

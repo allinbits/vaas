@@ -6,6 +6,8 @@ import (
 
 	"github.com/stretchr/testify/require"
 
+	abci "github.com/cometbft/cometbft/abci/types"
+	tmprotocrypto "github.com/cometbft/cometbft/proto/tendermint/crypto"
 	tmtypes "github.com/cometbft/cometbft/types"
 
 	clienttypes "github.com/cosmos/ibc-go/v10/modules/core/02-client/types"
@@ -721,6 +723,16 @@ func TestConsumerStateValidatePerPhase(t *testing.T) {
 	}
 	rt := time.Unix(200, 0).UTC()
 
+	validSet := func() []types.ConsensusValidator {
+		identity := crypto.NewCryptoIdentityFromIntSeed(1234)
+		key := identity.TMProtoCryptoPublicKey()
+		return []types.ConsensusValidator{{
+			ProviderConsAddr: identity.SDKValConsAddress().Bytes(),
+			Power:            5,
+			PublicKey:        &key,
+		}}
+	}
+
 	base := func(phase types.ConsumerPhase) types.ConsumerState {
 		return types.ConsumerState{
 			ConsumerId:      0,
@@ -750,6 +762,26 @@ func TestConsumerStateValidatePerPhase(t *testing.T) {
 			*cs = base(types.CONSUMER_PHASE_REGISTERED)
 			cs.ClientId = testClientID
 		}, "client id must be empty"},
+		{"REGISTERED with init params (what CreateConsumer stores)", func(cs *types.ConsumerState) {
+			*cs = base(types.CONSUMER_PHASE_REGISTERED)
+			cs.InitParams = validInit
+		}, ""},
+		{"REGISTERED with a validator set", func(cs *types.ConsumerState) {
+			*cs = base(types.CONSUMER_PHASE_REGISTERED)
+			cs.ValidatorSet = validSet()
+		}, "validator set must be empty"},
+		{"pending valset change with an undecodable pubkey", func(cs *types.ConsumerState) {
+			*cs = base(types.CONSUMER_PHASE_REGISTERED)
+			cs.PendingValsetChanges = []vaastypes.ValidatorSetChangePacketData{{
+				ValidatorUpdates: []abci.ValidatorUpdate{{Power: 1}},
+				ValsetUpdateId:   1,
+			}}
+		}, "undecodable consensus pubkey"},
+		{"highest acked above highest sent", func(cs *types.ConsumerState) {
+			*cs = base(types.CONSUMER_PHASE_REGISTERED)
+			cs.HighestSentVscId = 3
+			cs.HighestAckedVscId = 4
+		}, "exceeds highest sent"},
 
 		// INITIALIZED: requires init_params; client_id absent.
 		{"INITIALIZED valid", func(cs *types.ConsumerState) {
@@ -767,6 +799,36 @@ func TestConsumerStateValidatePerPhase(t *testing.T) {
 			cs.ClientId = testClientID
 			cs.ConsumerGenesis = nonDefaultConsumerGenesis()
 		}, ""},
+		{"LAUNCHED with its validator set", func(cs *types.ConsumerState) {
+			*cs = base(types.CONSUMER_PHASE_LAUNCHED)
+			cs.InitParams = validInit
+			cs.ClientId = testClientID
+			cs.ConsumerGenesis = nonDefaultConsumerGenesis()
+			cs.ValidatorSet = validSet()
+		}, ""},
+		{"LAUNCHED validator set with a duplicate address", func(cs *types.ConsumerState) {
+			*cs = base(types.CONSUMER_PHASE_LAUNCHED)
+			cs.InitParams = validInit
+			cs.ClientId = testClientID
+			cs.ConsumerGenesis = nonDefaultConsumerGenesis()
+			cs.ValidatorSet = append(validSet(), validSet()...)
+		}, "duplicate provider cons addr"},
+		{"LAUNCHED validator set with zero power", func(cs *types.ConsumerState) {
+			*cs = base(types.CONSUMER_PHASE_LAUNCHED)
+			cs.InitParams = validInit
+			cs.ClientId = testClientID
+			cs.ConsumerGenesis = nonDefaultConsumerGenesis()
+			cs.ValidatorSet = validSet()
+			cs.ValidatorSet[0].Power = 0
+		}, "power must be positive"},
+		{"LAUNCHED validator set with an undecodable pubkey", func(cs *types.ConsumerState) {
+			*cs = base(types.CONSUMER_PHASE_LAUNCHED)
+			cs.InitParams = validInit
+			cs.ClientId = testClientID
+			cs.ConsumerGenesis = nonDefaultConsumerGenesis()
+			cs.ValidatorSet = validSet()
+			cs.ValidatorSet[0].PublicKey = &tmprotocrypto.PublicKey{}
+		}, "undecodable consensus pubkey"},
 		{"LAUNCHED missing client_id", func(cs *types.ConsumerState) {
 			*cs = base(types.CONSUMER_PHASE_LAUNCHED)
 			cs.InitParams = validInit

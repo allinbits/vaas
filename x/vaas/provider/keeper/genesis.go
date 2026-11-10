@@ -118,6 +118,14 @@ func (k Keeper) InitGenesis(ctx sdk.Context, genState *types.GenesisState) []abc
 		if len(cs.PendingValsetChanges) > 0 {
 			k.AppendPendingVSCPackets(ctx, consumerId, cs.PendingValsetChanges...)
 		}
+		// Restore the consumer's validator set as last sent, so evidence is
+		// judged against it from the first block (see ExportGenesis). An
+		// empty set still forces a snapshot at the next epoch (QueueVSCPackets).
+		if len(cs.ValidatorSet) > 0 {
+			if err := k.SetConsumerValSet(ctx, consumerId, cs.ValidatorSet); err != nil {
+				panic(fmt.Errorf("init: set validator set for %d: %w", consumerId, err))
+			}
+		}
 	}
 
 	// Second pass: derive queue and equivocation-min-height state from the
@@ -481,6 +489,17 @@ func (k Keeper) ExportGenesis(ctx sdk.Context) *types.GenesisState {
 		} else if !errors.Is(err, collections.ErrNotFound) {
 			panic(fmt.Errorf("export: failed to read init params for consumer %d: %w", consumerId, err))
 		}
+
+		// The validator set as last sent to the consumer. Without it a
+		// restarted provider has an empty set until the next epoch boundary
+		// rebuilds it, and HandleConsumerDowntime refuses every accusation
+		// meanwhile as naming a validator not in the set, which the consumer
+		// then drops for good.
+		valSet, err := k.GetConsumerValSet(ctx, consumerId)
+		if err != nil {
+			panic(fmt.Errorf("export: failed to read validator set for consumer %d: %w", consumerId, err))
+		}
+		cs.ValidatorSet = valSet
 
 		if clientId, ok := k.GetConsumerClientId(ctx, consumerId); ok {
 			cs.ClientId = clientId

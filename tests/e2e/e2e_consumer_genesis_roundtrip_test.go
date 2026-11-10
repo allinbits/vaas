@@ -121,6 +121,10 @@ func (s *IntegrationTestSuite) testConsumerGenesisRoundTrip() {
 		s.T().Log("bootstrapping new consumer data dir from exported genesis...")
 		newDataDir := s.bootstrapRestartedConsumerDir(oldDataDir, exportedJSON)
 
+		// 6b. The runbook's gate, on the consumer's export too.
+		s.T().Log("validating the exported consumer genesis...")
+		s.validateGenesisInContainer(ctx, consumerBinary, consumerHomePath, newDataDir)
+
 		// 7. Purge the old container so its name and port bindings are freed
 		//    for the replacement (the relayer reaches the consumer by
 		//    container name, so the replacement must reuse it).
