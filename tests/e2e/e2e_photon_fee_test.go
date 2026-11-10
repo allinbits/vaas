@@ -106,6 +106,27 @@ func (s *IntegrationTestSuite) testPhotonFeeEnforcement() {
 	})
 }
 
+// fundPhotonFeePayersBeforePin bridges photon to the relayer's and the
+// owner's consumer accounts over the relayer-created client, before the pin
+// ends the bootstrap exemption, and returns the voucher denom. The relayer's
+// share covers every delivery of the suite at its voucher gas price; the
+// owner's covers its own transactions.
+func (s *IntegrationTestSuite) fundPhotonFeePayersBeforePin() string {
+	consumerClientID := s.tendermintClientTracking(
+		s.consumerValRes[0].Container.ID, consumerBinary, consumerHomePath, s.cfg.providerChainID)
+	voucherDenom := photonVoucherDenom(consumerClientID)
+	for _, payer := range []struct{ key, amount string }{{"relayer", "200000000"}, {"owner", "20000000"}} {
+		addr := s.consumerKeyBech32(payer.key)
+		s.transferPhotonToConsumer(addr, payer.amount)
+		s.Require().Eventuallyf(func() bool {
+			amount, err := s.queryBalance(s.consumerRESTEndpoint(), addr, voucherDenom)
+			return err == nil && amount != "0"
+		}, 5*time.Minute, 5*time.Second,
+			"photon vouchers for the %s never arrived on the consumer before the pin", payer.key)
+	}
+	return voucherDenom
+}
+
 // transferPhotonToConsumer bridges amount uphoton from the provider's val key
 // to recipient on the consumer, over the relayer-created client, and waits
 // for the transfer transaction to commit on the provider. The vouchers land

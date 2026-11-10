@@ -1,64 +1,109 @@
 package ante
 
 import (
+	"context"
 	"math"
+	"strings"
+
+	channeltypesv2 "github.com/cosmos/ibc-go/v10/modules/core/04-channel/v2/types"
 
 	errorsmod "cosmossdk.io/errors"
 	sdkmath "cosmossdk.io/math"
 
 	sdk "github.com/cosmos/cosmos-sdk/types"
 	sdkerrors "github.com/cosmos/cosmos-sdk/types/errors"
+	authante "github.com/cosmos/cosmos-sdk/x/auth/ante"
+
+	consumertypes "github.com/allinbits/vaas/x/vaas/consumer/types"
 )
 
-// InfrastructureExemptTxFeeChecker is the consumer's TxFeeChecker for
+// BootstrapKeeper is the fee checker's dependency: whether the consumer still
+// bootstraps, i.e. has no routable provider client pinned.
+type BootstrapKeeper interface {
+	HasRoutableProviderClient(ctx context.Context) bool
+}
+
+// NewBootstrapExemptTxFeeChecker returns the consumer's TxFeeChecker for
 // ante.NewDeductFeeDecorator. It mirrors the SDK default (the node's
 // minimum-gas-prices floor enforced at CheckTx, priority derived from the gas
-// price) with one change: a transaction made up exclusively of infrastructure
-// messages (see isInfrastructureTx) skips the floor.
+// price) with one exception, in time: while the consumer has no routable
+// provider client, a transaction made up exclusively of bootstrap
+// infrastructure messages (isBootstrapInfrastructureTx) skips the floor, so a
+// chain that starts with no token at all can have its clients created, its
+// counterparties registered, its first fee vouchers delivered and its
+// provider client pinned, at mempools that already run a floor.
 //
-// The photon policy exempts those messages in consensus so the relayer
-// traffic that carries the fee vouchers in can always flow; without this
-// checker, a validator raising minimum-gas-prices would price that same
-// traffic at its own mempool door, recreating the bootstrap problem one node
-// at a time. The trade is that infrastructure traffic is feeless at every
-// mempool by code rather than by node configuration -- the accepted cost of
-// relayer exemptions, bounded by the proof work those messages demand of
-// their sender.
+// The exemption ends with the pin. From then on every transaction pays the
+// floor like it pays the photon policy, the relayer's deliveries included:
+// a standing exemption for infrastructure messages let anyone grow the
+// chain's state for free (creating clients, updating clients of their own)
+// at a cost no node setting could put back. The relayer of a photon-fees
+// consumer is therefore funded with vouchers before the pin and runs with a
+// gas price in the voucher denom after it (docs/consumer-launch-runbook.md).
 //
 // Floors on a photon-only chain belong in the voucher denom, or at zero: a
 // native-denom floor would reject the photon fees user transactions must pay.
-func InfrastructureExemptTxFeeChecker(ctx sdk.Context, tx sdk.Tx) (sdk.Coins, int64, error) {
-	feeTx, ok := tx.(sdk.FeeTx)
-	if !ok {
-		return nil, 0, errorsmod.Wrap(sdkerrors.ErrTxDecode, "Tx must be a FeeTx")
-	}
+func NewBootstrapExemptTxFeeChecker(k BootstrapKeeper) authante.TxFeeChecker {
+	return func(ctx sdk.Context, tx sdk.Tx) (sdk.Coins, int64, error) {
+		feeTx, ok := tx.(sdk.FeeTx)
+		if !ok {
+			return nil, 0, errorsmod.Wrap(sdkerrors.ErrTxDecode, "Tx must be a FeeTx")
+		}
 
-	feeCoins := feeTx.GetFee()
-	gas := feeTx.GetGas()
+		feeCoins := feeTx.GetFee()
+		gas := feeTx.GetGas()
 
-	// The floor is local mempool policy, so it only runs on CheckTx, and the
-	// infrastructure carve-out applies here and nowhere else: everything
-	// below matches the SDK's default checker.
-	if ctx.IsCheckTx() && !isInfrastructureTx(tx.GetMsgs()) {
-		minGasPrices := ctx.MinGasPrices()
-		if !minGasPrices.IsZero() {
-			requiredFees := make(sdk.Coins, len(minGasPrices))
+		// The floor is local mempool policy, so it only runs on CheckTx; the
+		// bootstrap carve-out applies here and nowhere else. Everything below
+		// matches the SDK's default checker.
+		exempt := !k.HasRoutableProviderClient(ctx) && isBootstrapInfrastructureTx(tx.GetMsgs())
+		if ctx.IsCheckTx() && !exempt {
+			minGasPrices := ctx.MinGasPrices()
+			if !minGasPrices.IsZero() {
+				requiredFees := make(sdk.Coins, len(minGasPrices))
 
-			// fee = ceil(minGasPrice * gasLimit), per required denom.
-			glDec := sdkmath.LegacyNewDec(int64(gas))
-			for i, gp := range minGasPrices {
-				fee := gp.Amount.Mul(glDec)
-				requiredFees[i] = sdk.NewCoin(gp.Denom, fee.Ceil().RoundInt())
-			}
+				// fee = ceil(minGasPrice * gasLimit), per required denom.
+				glDec := sdkmath.LegacyNewDec(int64(gas))
+				for i, gp := range minGasPrices {
+					fee := gp.Amount.Mul(glDec)
+					requiredFees[i] = sdk.NewCoin(gp.Denom, fee.Ceil().RoundInt())
+				}
 
-			if !feeCoins.IsAnyGTE(requiredFees) {
-				return nil, 0, errorsmod.Wrapf(sdkerrors.ErrInsufficientFee,
-					"insufficient fees; got: %s required: %s", feeCoins, requiredFees)
+				if !feeCoins.IsAnyGTE(requiredFees) {
+					return nil, 0, errorsmod.Wrapf(sdkerrors.ErrInsufficientFee,
+						"insufficient fees; got: %s required: %s", feeCoins, requiredFees)
+				}
 			}
 		}
-	}
 
-	return feeCoins, txPriority(feeCoins, int64(gas)), nil
+		return feeCoins, txPriority(feeCoins, int64(gas)), nil
+	}
+}
+
+// isBootstrapInfrastructureTx reports whether every message in the tx is
+// what the bootstrap itself sends: IBC core messages (clients, counterparties
+// and packet deliveries) minus the user-originated raw send, the pin, and
+// governance. Narrower than the admission filter's pre-pin allowance, which
+// also lets the transfer application's own messages through: those are user
+// traffic and pay the floor from the first block.
+func isBootstrapInfrastructureTx(msgs []sdk.Msg) bool {
+	if len(msgs) == 0 {
+		return false
+	}
+	sendPacketURL := sdk.MsgTypeURL(&channeltypesv2.MsgSendPacket{})
+	pinURL := sdk.MsgTypeURL(&consumertypes.MsgSetProviderClient{})
+	for _, msg := range msgs {
+		url := sdk.MsgTypeURL(msg)
+		switch {
+		case url == sendPacketURL:
+			return false
+		case url == pinURL:
+		case strings.HasPrefix(url, "/ibc.core."), strings.HasPrefix(url, "/cosmos.gov."):
+		default:
+			return false
+		}
+	}
+	return true
 }
 
 // txPriority mirrors the SDK default's naive priority: the smallest
@@ -68,16 +113,15 @@ func txPriority(fee sdk.Coins, gas int64) int64 {
 	if gas == 0 {
 		return 0
 	}
-	var priority int64
+	priority := int64(math.MaxInt64)
 	for _, c := range fee {
-		p := int64(math.MaxInt64)
-		gasPrice := c.Amount.QuoRaw(gas)
-		if gasPrice.IsInt64() {
-			p = gasPrice.Int64()
-		}
-		if priority == 0 || p < priority {
+		p := c.Amount.QuoRaw(gas).Int64()
+		if p < priority {
 			priority = p
 		}
+	}
+	if priority == math.MaxInt64 {
+		return 0
 	}
 	return priority
 }

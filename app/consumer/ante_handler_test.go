@@ -345,9 +345,10 @@ func TestConsumerAnteHandlerPhotonFees(t *testing.T) {
 // reference consumer app's full ante chain at CheckTx under a node fee floor
 // set in the photon voucher denom, the floor a photon-fees consumer's
 // validators configure once the provider client is pinned. The floor is the
-// node's minimum-gas-prices as InfrastructureExemptTxFeeChecker applies it:
-// user transactions pay it, infrastructure transactions do not, and it is
-// mempool policy only, so it never runs outside CheckTx.
+// node's minimum-gas-prices as the bootstrap-exempt checker applies it:
+// bootstrap traffic skips it while no provider client is routable, every
+// transaction pays it once one is, and it is mempool policy only, so it
+// never runs outside CheckTx.
 func TestConsumerAnteHandlerNodeFeeFloor(t *testing.T) {
 	photonDenom := consumerante.ExpectedPhotonDenom(providerClientID)
 	// 0.01 voucher per gas unit prices a transaction at 3000 vouchers under
@@ -361,9 +362,11 @@ func TestConsumerAnteHandlerNodeFeeFloor(t *testing.T) {
 		name      string
 		checkTx   bool
 		infra     bool
+		bootstrap bool
 		fee       sdk.Coins
 		funds     sdk.Coins
 		expectErr bool
+		photonErr bool
 	}{
 		{
 			name:      "user tx below the floor is rejected at CheckTx",
@@ -379,10 +382,21 @@ func TestConsumerAnteHandlerNodeFeeFloor(t *testing.T) {
 			funds:   sdk.NewCoins(sdk.NewInt64Coin(photonDenom, requiredFee)),
 		},
 		{
-			name:    "fee-less infrastructure tx is admitted under the floor",
-			checkTx: true,
-			infra:   true,
-			fee:     sdk.NewCoins(),
+			name:      "fee-less infrastructure tx is admitted under the floor during bootstrap",
+			checkTx:   true,
+			infra:     true,
+			bootstrap: true,
+			fee:       sdk.NewCoins(),
+		},
+		{
+			// The photon policy, which sits before fee deduction, refuses the
+			// empty fee first; the floor would refuse it next.
+			name:      "fee-less infrastructure tx is rejected once the pin is routable",
+			checkTx:   true,
+			infra:     true,
+			fee:       sdk.NewCoins(),
+			expectErr: true,
+			photonErr: true,
 		},
 		{
 			name:  "the floor does not apply outside CheckTx",
@@ -394,11 +408,15 @@ func TestConsumerAnteHandlerNodeFeeFloor(t *testing.T) {
 	for _, tc := range testCases {
 		t.Run(tc.name, func(t *testing.T) {
 			ctx := anteTestContext(capp).WithIsCheckTx(tc.checkTx).WithMinGasPrices(floor)
-			// The pinned provider client is routable, so the photon policy
-			// is enforcing and every user fee below is a voucher fee.
-			capp.IBCKeeper.ClientV2Keeper.SetClientCounterparty(ctx, providerClientID, clientv2types.CounterpartyInfo{
-				ClientId: "07-tendermint-9",
-			})
+			// With a registered counterparty the pinned provider client is
+			// routable, so the bootstrap is over: the photon policy is
+			// enforcing and every user fee below is a voucher fee. Without
+			// one the chain still bootstraps and its traffic is free.
+			if !tc.bootstrap {
+				capp.IBCKeeper.ClientV2Keeper.SetClientCounterparty(ctx, providerClientID, clientv2types.CounterpartyInfo{
+					ClientId: "07-tendermint-9",
+				})
+			}
 
 			priv, addr := fundedSigner(t, capp, ctx, tc.funds)
 			msg := bankSendMsg(addr)
@@ -416,6 +434,11 @@ func TestConsumerAnteHandlerNodeFeeFloor(t *testing.T) {
 			_, err := newAppAnteHandler(t, capp)(ctx, tx, false)
 			if tc.expectErr {
 				require.Error(t, err)
+				if tc.photonErr {
+					require.True(t, errorsmod.IsOf(err, consumertypes.ErrInvalidFeeDenom),
+						"rejection must come from the photon policy, got: %v", err)
+					return
+				}
 				require.True(t, errorsmod.IsOf(err, sdkerrors.ErrInsufficientFee),
 					"rejection must come from the fee floor, got: %v", err)
 				return

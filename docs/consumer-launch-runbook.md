@@ -211,13 +211,23 @@ consumerd query ibc-transfer denom-hash transfer/<pinned-client-id>/uphoton
     # -> <HASH>; set minimum-gas-prices = "0.01ibc/<HASH>" and restart
 ```
 
-The floor is mempool policy only, and the reference app's fee checker
-(`InfrastructureExemptTxFeeChecker` in
+The floor is mempool policy only. The reference app's fee checker
+(`NewBootstrapExemptTxFeeChecker` in
 [x/vaas/consumer/ante/fee_checker.go](../x/vaas/consumer/ante/fee_checker.go))
-exempts transactions made up of `/ibc.core.*` and `/cosmos.gov.*` messages from
-it, so a raised floor never prices the relayer traffic that carries VSC packets
-and the vouchers themselves in. `testNodeFeeFloor` in the e2e suite runs this
-exact sequence.
+waives it for bootstrap traffic (IBC, governance, the pin) only while no
+provider client is pinned, and the photon policy prices nothing until then
+either; after the pin every transaction pays, the relayer's deliveries
+included. So, before pinning: bridge `uphoton` to the relayer's consumer
+account (and to the owner's) over the freshly created client, while the
+deliveries are still free, and once the pin is in, restart the relayer with a
+gas price in the voucher denom (`add-gas-price` with `0.025ibc/<HASH>`, then
+`relay` again). Keep the relayer's voucher balance topped up: a relayer with
+none cannot deliver its own refill, so refill it from any account that holds
+vouchers on the consumer (a plain bank send of vouchers, which the restricted
+mode of a consumer in debt or with a stale validator set lets through for
+this reason), or run a second relayer. `testNodeFeeFloor` in the e2e suite runs this exact sequence, and the
+suite's setup funds the relayer and switches its gas price the way this
+section describes.
 
 Watch the consumer's liveness (last ack, removal ETA, degraded flag) as
 described in [consumer-liveness.md](consumer-liveness.md) section 6, and keep a

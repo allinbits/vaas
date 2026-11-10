@@ -98,10 +98,10 @@ func (s *IntegrationTestSuite) testNodeFeeFloor() {
 		s.requireTxCommittedOn(s.consumerValRes[0].Container.ID, consumerBinary, consumerHomePath, stdout)
 	})
 
-	s.Run("relayer traffic is exempt from the floor", func() {
+	s.Run("relayer traffic pays the floor in vouchers", func() {
 		// VSC packets reach the consumer in relayer transactions paying the
-		// native denom: the flow resuming past the restart means they are
-		// still admitted.
+		// voucher denom at a gas price above the floor: the flow resuming
+		// past the restart means they are admitted and paid.
 		s.waitForConsumerSync("0")
 
 		// The sharper proof: the packet delivering a fresh transfer must pass

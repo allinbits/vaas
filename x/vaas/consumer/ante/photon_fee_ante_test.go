@@ -9,7 +9,6 @@ import (
 	"github.com/stretchr/testify/require"
 	protov2 "google.golang.org/protobuf/proto"
 
-	transfertypes "github.com/cosmos/ibc-go/v10/modules/apps/transfer/types"
 	clienttypes "github.com/cosmos/ibc-go/v10/modules/core/02-client/types"
 	channeltypesv2 "github.com/cosmos/ibc-go/v10/modules/core/04-channel/v2/types"
 
@@ -188,86 +187,37 @@ func TestPhotonFeeDecorator(t *testing.T) {
 	}
 }
 
-// TestPhotonFeeDecoratorInfrastructureExemption covers the enforcing-phase
-// message exemption: transactions made up exclusively of chain-infrastructure
-// messages (IBC core relayer plumbing and governance) pass whatever their fee,
-// including none. Without the exemption the policy deadlocks the chain: photon
-// vouchers can only arrive in relayer-submitted packet deliveries, which would
-// themselves need photon fees. User-originating messages stay enforced, and
-// /ibc.core.channel.v2.MsgSendPacket counts as user-originating (it is the raw
-// form of an outbound ICS-20 v2 transfer).
-func TestPhotonFeeDecoratorInfrastructureExemption(t *testing.T) {
+// TestPhotonFeeDecoratorPricesEveryTransactionOnceEnforcing: with a routable
+// pin, no message class is exempt from the photon policy, the relayer's
+// deliveries and governance included; during bootstrap nothing is priced.
+func TestPhotonFeeDecoratorPricesEveryTransactionOnceEnforcing(t *testing.T) {
 	photon := ExpectedPhotonDenom("07-tendermint-0")
 	uatone := sdk.NewCoins(sdk.NewInt64Coin("uatone", 100))
+	inPhoton := sdk.NewCoins(sdk.NewInt64Coin(photon, 100))
 	testCases := []struct {
 		name      string
+		bootstrap bool
 		msgs      []sdk.Msg
 		fee       sdk.Coins
 		expectErr bool
 	}{
-		{
-			name: "relayer packet delivery with a non-photon fee is exempt",
-			msgs: []sdk.Msg{&channeltypesv2.MsgRecvPacket{}},
-			fee:  uatone,
-		},
-		{
-			name: "relayer packet delivery with an empty fee is exempt",
-			msgs: []sdk.Msg{&channeltypesv2.MsgRecvPacket{}},
-			fee:  sdk.NewCoins(),
-		},
-		{
-			name: "client update with an empty fee is exempt",
-			msgs: []sdk.Msg{&clienttypes.MsgUpdateClient{}},
-			fee:  sdk.NewCoins(),
-		},
-		{
-			name: "governance with a non-photon fee is exempt",
-			msgs: []sdk.Msg{&govtypes.MsgVote{}},
-			fee:  uatone,
-		},
-		{
-			name: "exempt messages still pass with a photon fee",
-			msgs: []sdk.Msg{&channeltypesv2.MsgRecvPacket{}},
-			fee:  sdk.NewCoins(sdk.NewInt64Coin(photon, 100)),
-		},
-		{
-			name:      "outbound ICS-20 transfer is not exempt",
-			msgs:      []sdk.Msg{&transfertypes.MsgTransfer{}},
-			fee:       uatone,
-			expectErr: true,
-		},
-		{
-			name:      "raw v2 send packet is not exempt (user-originating)",
-			msgs:      []sdk.Msg{&channeltypesv2.MsgSendPacket{}},
-			fee:       uatone,
-			expectErr: true,
-		},
-		{
-			name:      "mixing exempt and non-exempt messages is not exempt",
-			msgs:      []sdk.Msg{&channeltypesv2.MsgRecvPacket{}, bankSendMsg()},
-			fee:       uatone,
-			expectErr: true,
-		},
-		{
-			name:      "no messages is not exempt",
-			msgs:      nil,
-			fee:       uatone,
-			expectErr: true,
-		},
+		{name: "enforcing: a relayer packet delivery with a non-photon fee is rejected", msgs: []sdk.Msg{&channeltypesv2.MsgRecvPacket{}}, fee: uatone, expectErr: true},
+		{name: "enforcing: a relayer packet delivery with an empty fee is rejected", msgs: []sdk.Msg{&channeltypesv2.MsgRecvPacket{}}, fee: sdk.NewCoins(), expectErr: true},
+		{name: "enforcing: a client update with an empty fee is rejected", msgs: []sdk.Msg{&clienttypes.MsgUpdateClient{}}, fee: sdk.NewCoins(), expectErr: true},
+		{name: "enforcing: governance with a non-photon fee is rejected", msgs: []sdk.Msg{&govtypes.MsgVote{}}, fee: uatone, expectErr: true},
+		{name: "enforcing: a relayer packet delivery paying photon passes", msgs: []sdk.Msg{&channeltypesv2.MsgRecvPacket{}}, fee: inPhoton},
+		{name: "bootstrap: a relayer packet delivery with an empty fee passes", bootstrap: true, msgs: []sdk.Msg{&channeltypesv2.MsgRecvPacket{}}, fee: sdk.NewCoins()},
+		{name: "bootstrap: creating a client with a non-photon fee passes", bootstrap: true, msgs: []sdk.Msg{&clienttypes.MsgCreateClient{}}, fee: uatone},
 	}
-
 	for _, tc := range testCases {
 		t.Run(tc.name, func(t *testing.T) {
-			k := mockConsumerKeeper{providerClientFound: true, routableClient: true, photonFees: true}
-			nextCalled, err := runPhotonDecorator(t, k, mockFeeTx{fee: tc.fee, msgs: tc.msgs}, false)
+			keeper := mockConsumerKeeper{providerClientFound: true, routableClient: !tc.bootstrap, photonFees: true}
+			_, err := runPhotonDecorator(t, keeper, mockFeeTx{msgs: tc.msgs, fee: tc.fee, gas: 100000}, false)
 			if tc.expectErr {
-				require.Error(t, err)
-				require.True(t, errorsmod.IsOf(err, consumertypes.ErrInvalidFeeDenom))
-				require.False(t, nextCalled)
+				require.ErrorIs(t, err, consumertypes.ErrInvalidFeeDenom)
 				return
 			}
 			require.NoError(t, err)
-			require.True(t, nextCalled)
 		})
 	}
 }

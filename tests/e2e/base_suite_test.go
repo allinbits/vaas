@@ -484,6 +484,29 @@ func (s *baseTestSuite) initAndStartConsumer(consumerGenesisJSON []byte) {
 	s.T().Log("consumer chain is producing blocks")
 }
 
+// consumerKeyBech32 returns the bech32 address of a key in the consumer
+// node's keyring.
+func (s *baseTestSuite) consumerKeyBech32(name string) string {
+	stdout, _, err := s.dockerExec(s.consumerValRes[0].Container.ID, []string{
+		consumerBinary, "keys", "show", name, "-a",
+		"--home", consumerHomePath,
+		"--keyring-backend", "test",
+	})
+	s.Require().NoErrorf(err, "failed to get the consumer %s address", name)
+	return strings.TrimSpace(stdout.String())
+}
+
+// switchTSRelayerToVoucherFees makes the relayer pay the consumer in the
+// photon voucher denom, as every transaction must once the provider client
+// is pinned (the bootstrap exemption ends with the pin). The relay process
+// reads its gas prices at start, so it is restarted.
+func (s *baseTestSuite) switchTSRelayerToVoucherFees(voucherDenom string) {
+	s.T().Logf("ts-relayer: switching the consumer gas price to the voucher denom %s", voucherDenom)
+	s.killTSRelayerRelayProcess()
+	s.tsRelayerAddGasPrice(s.cfg.consumerChainID, "0.025"+voucherDenom)
+	s.startTSRelayerRelay()
+}
+
 // setupTSRelayer starts the ts-relayer container, configures it with
 // mnemonics and gas prices for both chains, and creates an IBC v2 path.
 // The ts-relayer handles counterparty registration and packet relaying.
