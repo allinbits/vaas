@@ -358,7 +358,7 @@ func (s *ByzantineConsumerIntegrationTestSuite) recoverAndResumeProposalJSON(con
 // resumableAtFromFailure reads, from a failed resume's reason, the time the
 // provider said the resume is allowed at ("resume at or after <RFC3339>").
 func resumableAtFromFailure(failure string) time.Time {
-	m := regexp.MustCompile(`resume at or after (\S+?)[":,\s]`).FindStringSubmatch(failure + " ")
+	m := regexp.MustCompile(`resume at or after (\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}Z)`).FindStringSubmatch(failure)
 	if len(m) != 2 {
 		return time.Time{}
 	}
