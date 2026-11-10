@@ -518,7 +518,7 @@ func (s *IntegrationTestSuite) testDowntimeDeferralBehindRejectedRemoval() {
 				if err != nil {
 					continue
 				}
-				// A fresh entry matures downtime_challenge_window (30s) after
+				// A fresh entry matures downtime_challenge_window (120s) after
 				// acceptance; leave room to submit the vote 20s before that.
 				if !p.MaturesAtExtended && time.Until(maturity) > 22*time.Second {
 					target = p

@@ -229,10 +229,8 @@ func (k msgServer) SubmitConsumerDoubleVoting(goCtx context.Context, msg *types.
 // and derives the grace from it:
 //
 //   - UnbondingPeriod must not exceed the provider's unbonding, so the consumer
-//     cannot outlive the provider's slashable window. No lower floor is imposed:
-//     an unbonding short enough to make the relayer-derived trusting period
-//     impractical is an operator concern (and useful for test/dev chains), not
-//     a protocol minimum.
+//     cannot outlive the provider's slashable window, and must exceed the
+//     downtime challenge horizon (below), so a declarable client exists at all.
 //   - SafeModeThreshold must be strictly shorter than the provider's liveness
 //     grace (unbonding * LivenessGraceFraction), so a lagging consumer enters
 //     safe mode -- and stops value-bearing work under a possibly-stale set --

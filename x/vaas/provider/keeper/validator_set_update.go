@@ -103,7 +103,7 @@ func (k Keeper) CreateConsumerValidator(ctx sdk.Context, consumerId uint64, vali
 // Two bonded validators collide when one's consumer consensus key equals the
 // other's: a validator rotated its provider consensus key onto a key another
 // validator had assigned as its consumer key, or a hand-assembled genesis wired
-// the two that way. Key assignment and the provider ante handler refuse to
+// the two that way. Key assignment and the pre-rotation staking hook refuse to
 // create such a state, but a set that does contain a duplicate is fatal on both
 // sides -- the provider panics hashing it (a CometBFT validator set rejects
 // duplicate addresses) and the consumer halts when its consensus engine applies

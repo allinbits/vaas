@@ -278,8 +278,8 @@ where create_consumer.json has the following structure:
 }
 
 Note that both 'chain_id' and 'metadata' are mandatory;
-and 'initialization_parameters' is optional.
-The parameters not provided are set to their zero value.
+'initialization_parameters' is optional: omit the whole block and it is
+defaulted, supply it and every field in it is validated.
 `, version.AppName)),
 		Args: cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
@@ -329,15 +329,15 @@ func NewUpdateConsumerCmd() *cobra.Command {
 		Use:   "update-consumer [consumer-parameters]",
 		Short: "update a consumer chain",
 		Long: strings.TrimSpace(
-			fmt.Sprintf(`Update a consumer chain to change its parameters (e.g., spawn time, infraction parameters, etc.).
-Note that only the owner of the chain can initialize it.
+			fmt.Sprintf(`Update a consumer chain to change its parameters (e.g., spawn time, metadata, owner), or to declare its IBC client once a relayer has created it.
+Note that only the owner of the chain can update it.
 
 Example:
 %s tx vaasprovider update-consumer [path/to/update_consumer.json]
 
 where update_consumer.json has the following structure:
 {
-   "consumer_id": "0",
+   "consumer_id": 0, // a JSON number, not a string
    "new_owner_address": "cosmos10d07y265gmmuvt4z0w9aw880jnsr700j6zn9kn",
    "metadata": {
     "name": "chain consumer",

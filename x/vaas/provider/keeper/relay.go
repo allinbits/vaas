@@ -74,7 +74,7 @@ func (k Keeper) EndBlockVSU(ctx sdk.Context) ([]abci.ValidatorUpdate, error) {
 		}
 
 		// try sending VSC packets to all launched consumer chains;
-		// if a consumer's IBC client has not been discovered yet,
+		// if a consumer's IBC client has not been declared yet,
 		// the updates remain queued until it is
 		if err := k.SendVSCPackets(ctx); err != nil {
 			return []abci.ValidatorUpdate{}, fmt.Errorf("sending consumer validator updates: %w", err)
@@ -267,7 +267,7 @@ func (k Keeper) QueueVSCPackets(ctx sdk.Context) error {
 
 		// Send a full snapshot when the consumer is behind (i.e. it has
 		// unacknowledged packets) or still has a packet stuck in the local
-		// send queue (e.g. a client that hasn't been discovered yet, or a
+		// send queue (e.g. a client that hasn't been declared yet, or a
 		// prior send that failed and left highestSent unadvanced). Invariant:
 		// never stack a diff behind an undelivered packet -- a diff assumes
 		// the consumer already applied everything before it, which may never
@@ -373,10 +373,9 @@ func (k Keeper) QueueImmediateSnapshotVSCPacket(ctx sdk.Context, consumerId uint
 // out too: they have no client to send over, and resuming a paused one forces
 // its own snapshot (see ResumeConsumerChain).
 //
-// The snapshot goes out over the client already discovered for the consumer,
-// without re-running client discovery: that scan belongs to the epoch path,
-// which runs it for every consumer anyway, and a rotation must not pay for it.
-// A consumer with no discovered client yet simply keeps the packet queued.
+// The snapshot goes out over the client the owner declared for the consumer
+// (see SetConsumerClient). A consumer with no declared client yet simply keeps
+// the packet queued.
 //
 // Called from Hooks.AfterConsensusPubKeyUpdate in EndBlock, so nothing here may
 // fail the block: a snapshot that cannot be computed is logged and skipped, and

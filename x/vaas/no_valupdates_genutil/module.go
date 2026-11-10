@@ -1,8 +1,9 @@
 // Package genutil wraps the Cosmos SDK x/genutil module for use on a VAAS
-// consumer chain. It is identical to x/genutil except that its InitGenesis
-// returns no validator updates: on a consumer chain the validator set is driven
-// by VSC packets from the provider module rather than seeded from gentxs at
-// genesis.
+// provider chain. It is identical to x/genutil except that its InitGenesis
+// returns no validator updates: the gentxs still create the validators in
+// x/staking, but the genesis validator set handed to CometBFT comes from the
+// VAAS provider module's InitGenesis, which builds it from the staking bonded
+// set, since the module manager accepts validator updates from one module only.
 package genutil
 
 import (

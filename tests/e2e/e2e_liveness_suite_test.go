@@ -51,7 +51,18 @@ package e2e
 //                                and the consumer re-queues the evidence (per
 //                                window) instead of losing it, and the provider
 //                                eventually accepts both windows.
-//   6. testAutoSweepRemoval    - relayer stopped indefinitely; poll until STOPPED.
+//   6. testQueueEquivocationBeforeLivenessStop - bonds an equivocating validator
+//                                and queues a fabricated punishment against it
+//                                right before the sweep stops the consumer.
+//   7. testAutoSweepRemoval    - relayer stopped indefinitely; poll until STOPPED.
+//   8. testEquivocationSurvivesLivenessStop - the stop was no verdict: the
+//                                punishment is still pending and executes at
+//                                maturity (tombstone, slash).
+//   9. testDeferredEquivocationCancelledByVotePassedAfterStop - a punishment
+//                                maturing during a removal vote submitted after
+//                                the stop defers behind it; the vote passes (gov
+//                                records the proposal FAILED, the consumer being
+//                                STOPPED already) and cancels it.
 //
 // The STOPPED -> DELETED edge (deletion at stop-time + unbonding) is unit-tested
 // (TestSweepRemovesStaleConsumer), not exercised here -- see the note above
@@ -361,11 +372,10 @@ func (s *LivenessIntegrationTestSuite) testRecoverBeforeGrace() {
 //
 // Delivery is frozen by *pausing the relayer container* (docker pause), not by
 // purging and rebuilding it. The distinction is essential: a rebuild runs
-// add-path, which creates brand-new IBC clients. The provider, however, keeps
-// using its already-discovered client as long as that client stays Active and
-// has a counterparty (see discoverActiveConsumerClient) -- which it does for
-// the ~132s trusting period. So a rebuild would leave the provider sending VSCs
-// to the original, now-unrelayed client and the consumer would never recover
+// add-path, which creates brand-new IBC clients that nobody declares. The
+// provider sends only over the client the owner declared, permanently (see
+// SetConsumerClient), so a rebuild would leave the provider sending VSCs to
+// the original, now-unrelayed client and the consumer would never recover
 // within grace. Pausing the relayer leaves the original client untouched, so on
 // unpause the relay loop resumes on the same client and delivery continues. It
 // also keeps the outage short, decoupling this consumer-side test from the

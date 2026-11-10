@@ -46,7 +46,7 @@ func (k Keeper) HandleConsumerDoubleVoting(
 	}
 
 	// Reject evidence below the per-consumer minimum height (set at launch and
-	// on each resync), which is the ONLY age bound on equivocation. Unlike
+	// restored at genesis), which is the ONLY age bound on equivocation. Unlike
 	// downtime -- which additionally bounds evidence by DowntimeEvidenceMaxAge
 	// (see HandleConsumerDowntime) -- double-signing has no maximum-age bound,
 	// and this asymmetry is intentional:
