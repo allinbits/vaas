@@ -33,9 +33,10 @@ const (
 
 // launchedWithRecoveredClient seeds a launched consumer with a chain id and a declared
 // client, and makes the client report the given chain id at the given height.
-func launchedWithRecoveredClient(t *testing.T, k providerkeeper.Keeper, ctx sdk.Context, mocks testkeeper.MockedKeepers, height uint64) uint64 {
+func launchedWithRecoveredClient(t *testing.T, k providerkeeper.Keeper, ctx sdk.Context, mocks testkeeper.MockedKeepers) uint64 {
 	t.Helper()
 	clientChainID := chainIDTestNew
+	const height = 500
 	cid := k.FetchAndIncrementConsumerId(ctx)
 	k.SetConsumerPhase(ctx, cid, types.CONSUMER_PHASE_LAUNCHED)
 	k.SetConsumerChainId(ctx, cid, chainIDTestOld)
@@ -59,7 +60,7 @@ func launchedWithRecoveredClient(t *testing.T, k providerkeeper.Keeper, ctx sdk.
 func TestSendVSCPacketsSkipsAConsumerWhoseClientTracksAnotherChainId(t *testing.T) {
 	k, ctx, ctrl, mocks := testkeeper.GetProviderKeeperAndCtx(t, testkeeper.NewInMemKeeperParams(t))
 	defer ctrl.Finish()
-	cid := launchedWithRecoveredClient(t, k, ctx, mocks, 500)
+	cid := launchedWithRecoveredClient(t, k, ctx, mocks)
 	k.AppendPendingVSCPackets(ctx, cid, vaastypes.ValidatorSetChangePacketData{
 		ValidatorUpdates: []abci.ValidatorUpdate{}, ValsetUpdateId: 1,
 	})
@@ -125,7 +126,7 @@ func TestSweepsWaitOnAConsumerWhoseClientTracksAnotherChainId(t *testing.T) {
 	k, ctx, ctrl, mocks := testkeeper.GetProviderKeeperAndCtx(t, testkeeper.NewInMemKeeperParams(t))
 	defer ctrl.Finish()
 	ctx = ctx.WithBlockTime(time.Date(2025, 6, 1, 0, 0, 0, 0, time.UTC))
-	cid := launchedWithRecoveredClient(t, k, ctx, mocks, 500)
+	cid := launchedWithRecoveredClient(t, k, ctx, mocks)
 	_, accused := newSweepValidator(t)
 	matured := ctx.BlockTime().Add(-time.Minute)
 	putPendingDowntimeSlash(t, k, ctx, cid, accused, math.NewInt(100), matured, 100)
@@ -151,7 +152,7 @@ func TestSweepsWaitOnAConsumerWhoseClientTracksAnotherChainId(t *testing.T) {
 func TestResumeRefusesAConsumerWhoseClientTracksAnotherChainId(t *testing.T) {
 	k, ctx, ctrl, mocks := testkeeper.GetProviderKeeperAndCtx(t, testkeeper.NewInMemKeeperParams(t))
 	defer ctrl.Finish()
-	cid := launchedWithRecoveredClient(t, k, ctx, mocks, 500)
+	cid := launchedWithRecoveredClient(t, k, ctx, mocks)
 	require.NoError(t, k.PauseConsumerChain(ctx, cid, types.PAUSE_REASON_DOWNTIME_CHALLENGE))
 	mocks.MockClientKeeper.EXPECT().GetClientStatus(gomock.Any(), chainIDTestClient).Return(ibcexported.Active).AnyTimes()
 
@@ -192,7 +193,7 @@ func TestGovernanceRenamesALaunchedConsumerToItsClientsChainId(t *testing.T) {
 	k, ctx, ctrl, mocks := testkeeper.GetProviderKeeperAndCtx(t, testkeeper.NewInMemKeeperParams(t))
 	defer ctrl.Finish()
 	msgServer := providerkeeper.NewMsgServerImpl(&k)
-	cid := launchedWithRecoveredClient(t, k, ctx, mocks, 500)
+	cid := launchedWithRecoveredClient(t, k, ctx, mocks)
 	_, accused := newSweepValidator(t)
 	putPendingDowntimeSlash(t, k, ctx, cid, accused, math.NewInt(100), ctx.BlockTime().Add(time.Hour), 100)
 	k.MarkEpochDowntime(ctx, cid, accused.ToSdkConsAddr())
