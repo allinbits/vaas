@@ -12,6 +12,7 @@ import (
 
 	"github.com/ory/dockertest/v3"
 	"github.com/ory/dockertest/v3/docker"
+
 	govv1 "github.com/cosmos/cosmos-sdk/x/gov/types/v1"
 )
 
