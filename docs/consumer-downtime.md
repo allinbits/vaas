@@ -38,11 +38,10 @@ exists.
 The consumer's VAAS module tracks missed blocks itself, reading each block's `LastCommit`
 vote flags in `BeginBlock`. Detection does not use `x/slashing`'s sliding window: consumers
 cannot jail (the validator set is provider-owned), and a sliding window without jail
-re-triggers on every block once below threshold. The consumer's `x/slashing` tracks no
-liveness at all: the VAAS keeper stands in as its staking keeper and reports every validator
-as jailed, so its per-vote handler returns before it counts a missed block, emits a
-`liveness` or `slash` event, or asks for a slash. Operators read downtime from the VAAS
-events, not from `x/slashing`'s signing infos.
+re-triggers on every block once below threshold. The reference consumer wires no
+`x/slashing` at all (its messages are refused by the ante handler), so there are no signing
+infos, no `liveness` or `slash` events and no slashing parameters on the consumer: operators
+read downtime from the VAAS events.
 
 Windows are **tumbling**: heights `[k*W, (k+1)*W)` where `W = SignedBlocksWindow`. Each
 validator gets one bit per height (`1` = missed, absent from the commit). When the window

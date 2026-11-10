@@ -442,29 +442,6 @@ func (s *baseTestSuite) queryWithheldFeeRecordsWith(consumerID string, flags ...
 	return res.Records
 }
 
-func (s *baseTestSuite) patchConsumerSlashingParams() {
-	s.patchGenesisJSON(s.consumer.dataDir+"/config/genesis.json", func(genesis map[string]any) {
-		appState, ok := genesis["app_state"].(map[string]any)
-		if !ok {
-			return
-		}
-		slashing, ok := appState["slashing"].(map[string]any)
-		if !ok {
-			slashing = make(map[string]any)
-		}
-		params, ok := slashing["params"].(map[string]any)
-		if !ok {
-			params = make(map[string]any)
-		}
-		params["signed_blocks_window"] = "5"
-		params["min_signed_per_window"] = "0.050000000000000000"
-		params["slash_fraction_downtime"] = "0.000000000000000000"
-		params["downtime_jail_duration"] = "60s"
-		slashing["params"] = params
-		appState["slashing"] = slashing
-	})
-}
-
 func (s *IntegrationTestSuite) isProviderValidatorJailed() bool {
 	vals, err := s.queryProviderValidators()
 	if err != nil {

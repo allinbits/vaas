@@ -2,7 +2,6 @@ package keeper_test
 
 import (
 	"testing"
-	"time"
 
 	"github.com/stretchr/testify/require"
 
@@ -10,18 +9,10 @@ import (
 	tmrand "github.com/cometbft/cometbft/libs/rand"
 	tmtypes "github.com/cometbft/cometbft/types"
 
-	"cosmossdk.io/core/comet"
 	"cosmossdk.io/math"
-	storetypes "cosmossdk.io/store/types"
 
 	cryptocodec "github.com/cosmos/cosmos-sdk/crypto/codec"
-	"github.com/cosmos/cosmos-sdk/runtime"
-	sdktestutil "github.com/cosmos/cosmos-sdk/testutil"
 	sdk "github.com/cosmos/cosmos-sdk/types"
-	moduletestutil "github.com/cosmos/cosmos-sdk/types/module/testutil"
-	"github.com/cosmos/cosmos-sdk/x/slashing"
-	slashingkeeper "github.com/cosmos/cosmos-sdk/x/slashing/keeper"
-	slashingtypes "github.com/cosmos/cosmos-sdk/x/slashing/types"
 	stakingtypes "github.com/cosmos/cosmos-sdk/x/staking/types"
 
 	"github.com/allinbits/vaas/testutil/crypto"
@@ -125,8 +116,8 @@ func TestApplyVaasValidatorChanges(t *testing.T) {
 	}
 }
 
-// TestValidatorByConsAddr pins the stand-in x/slashing sees on a consumer:
-// every validator reads as jailed, through ValidatorByConsAddr and
+// TestValidatorByConsAddr pins the stand-in the SDK sees on a consumer: no
+// validator reads as jailed, through ValidatorByConsAddr and
 // IsValidatorJailed alike, and the stub answers GetConsAddr with the queried
 // address itself, since the consumer runs no consensus-key rotation. A zero
 // staking validator instead panics inside GetConsAddr (nil consensus pubkey
@@ -139,58 +130,14 @@ func TestValidatorByConsAddr(t *testing.T) {
 	val, err := consumerKeeper.ValidatorByConsAddr(ctx, consAddr)
 	require.NoError(t, err)
 	require.NotNil(t, val)
-	require.True(t, val.IsJailed(), "x/slashing leaves a jailed validator's liveness alone")
+	require.False(t, val.IsJailed(), "nothing on a consumer jails")
 	isJailed, err := consumerKeeper.IsValidatorJailed(ctx, consAddr)
 	require.NoError(t, err)
-	require.True(t, isJailed)
+	require.False(t, isJailed)
 
 	got, err := val.GetConsAddr()
 	require.NoError(t, err)
 	require.Equal(t, consAddr.Bytes(), got, "the rotation remap must be the identity on a consumer")
-}
-
-// TestSlashingLivenessTrackingIsInertOnTheConsumer drives x/slashing's
-// per-vote HandleValidatorSignature with the consumer keeper standing in as
-// its staking keeper, as the consumer app wires it, and pins that absent
-// votes leave no trace there: no liveness or slash event, no missed-block
-// counter, no bitmap bit. Downtime detection lives in the consumer's own
-// tumbling windows (downtime.go), under the VAAS downtime parameters.
-func TestSlashingLivenessTrackingIsInertOnTheConsumer(t *testing.T) {
-	consumerKeeper, _, ctrl, _ := testkeeper.GetConsumerKeeperAndCtx(t, testkeeper.NewInMemKeeperParams(t))
-	defer ctrl.Finish()
-
-	key := storetypes.NewKVStoreKey(slashingtypes.StoreKey)
-	ctx := sdktestutil.DefaultContextWithDB(t, key, storetypes.NewTransientStoreKey("transient_test")).Ctx.WithBlockHeight(50)
-	encCfg := moduletestutil.MakeTestEncodingConfig(slashing.AppModuleBasic{})
-	slashingKeeper := slashingkeeper.NewKeeper(encCfg.Codec, encCfg.Amino, runtime.NewKVStoreService(key), consumerKeeper, "")
-	params := slashingtypes.DefaultParams()
-	params.SignedBlocksWindow = 4
-	require.NoError(t, slashingKeeper.SetParams(ctx, params))
-
-	consAddr := sdk.ConsAddress([]byte("consumer-validator-1"))
-	require.NoError(t, slashingKeeper.SetValidatorSigningInfo(ctx, consAddr,
-		slashingtypes.NewValidatorSigningInfo(consAddr, 1, 0, time.Unix(0, 0).UTC(), false, 0)))
-
-	// Well past the window with every vote absent: x/slashing on its own
-	// would have counted, flagged, and slashed by now.
-	for range 3 * params.SignedBlocksWindow {
-		require.NoError(t, slashingKeeper.HandleValidatorSignature(ctx, consAddr.Bytes(), 10, comet.BlockIDFlagAbsent))
-	}
-
-	info, err := slashingKeeper.GetValidatorSigningInfo(ctx, consAddr)
-	require.NoError(t, err)
-	require.Zero(t, info.MissedBlocksCounter)
-	require.Zero(t, info.IndexOffset)
-	require.True(t, info.JailedUntil.IsZero() || info.JailedUntil.Equal(time.Unix(0, 0).UTC()))
-	for i := range params.SignedBlocksWindow {
-		missed, err := slashingKeeper.GetMissedBlockBitmapValue(ctx, consAddr, i)
-		require.NoError(t, err)
-		require.False(t, missed)
-	}
-	for _, ev := range ctx.EventManager().Events() {
-		require.NotEqual(t, slashingtypes.EventTypeLiveness, ev.Type)
-		require.NotEqual(t, slashingtypes.EventTypeSlash, ev.Type)
-	}
 }
 
 // TestSlash asserts that SlashWithInfractionReason never queues an evidence

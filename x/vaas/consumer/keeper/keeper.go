@@ -32,8 +32,6 @@ type Keeper struct {
 	clientKeeper     vaastypes.ClientKeeper
 	clientV2Keeper   vaastypes.ClientV2Keeper
 	channelKeeperV2  vaastypes.ChannelV2Keeper
-	slashingKeeper   vaastypes.SlashingKeeper
-	hooks            vaastypes.ConsumerHooks
 	bankKeeper       vaastypes.BankKeeper
 	authKeeper       vaastypes.AccountKeeper
 	feeCollectorName string
@@ -73,7 +71,7 @@ func NewKeeper(
 	clientKeeper vaastypes.ClientKeeper,
 	clientV2Keeper vaastypes.ClientV2Keeper,
 	channelKeeperV2 vaastypes.ChannelV2Keeper,
-	slashingKeeper vaastypes.SlashingKeeper, bankKeeper vaastypes.BankKeeper, accountKeeper vaastypes.AccountKeeper,
+	bankKeeper vaastypes.BankKeeper, accountKeeper vaastypes.AccountKeeper,
 	feeCollectorName, authority string, validatorAddressCodec,
 	consensusAddressCodec addresscodec.Codec,
 ) Keeper {
@@ -86,7 +84,6 @@ func NewKeeper(
 		clientKeeper:          clientKeeper,
 		clientV2Keeper:        clientV2Keeper,
 		channelKeeperV2:       channelKeeperV2,
-		slashingKeeper:        slashingKeeper,
 		bankKeeper:            bankKeeper,
 		authKeeper:            accountKeeper,
 		feeCollectorName:      feeCollectorName,
@@ -172,18 +169,6 @@ func (k Keeper) ConsensusAddressCodec() addresscodec.Codec {
 // Logger returns a module-specific logger.
 func (k Keeper) Logger(ctx sdk.Context) log.Logger {
 	return ctx.Logger().With("module", "x/"+host.SubModuleName+"-"+types.ModuleName)
-}
-
-func (k *Keeper) SetHooks(sh vaastypes.ConsumerHooks) *Keeper {
-	if k.hooks != nil {
-		// This should never happen as SetHooks is expected
-		// to be called only once in app.go
-		panic("cannot set validator hooks twice")
-	}
-
-	k.hooks = sh
-
-	return k
 }
 
 // SetProviderClientID sets the clientID for the client to the provider.

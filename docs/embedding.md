@@ -413,15 +413,11 @@ dependency the host must break the same way the reference app does:
 
 Skip the pre-initialization and the app panics at startup.
 
-Two further order traps, both silent:
-
-- the slashing keeper must be given `&app.ConsumerKeeper` (a pointer), so the
-  later reassignment is visible to it;
-- `ibcconsumer.NewAppModule` takes the keeper **by value**, so it must be
-  constructed *after* `SetHooks`. Build it earlier and the module holds a
-  pre-hooks copy and the slashing hooks never fire. The provider's
-  `NewAppModule` takes a pointer, so order does not matter there -- the two
-  modules differ, and it is easy to get backwards.
+One further order trap, silent: `ibcconsumer.NewAppModule` takes the keeper
+**by value**, so it must be constructed after the keeper is complete; a module
+built from an earlier copy keeps that copy. The provider's `NewAppModule`
+takes a pointer, so order does not matter there -- the two modules differ,
+and it is easy to get backwards.
 
 ---
 
@@ -442,4 +438,4 @@ Two further order traps, both silent:
 | `ibcRouterV2` app-id routes | silent at startup, total at packet time | no VSC or evidence packet routes |
 | Consumer two-phase keeper init | **panic at startup** | `ibckeeper.NewKeeper` on a zero keeper |
 | Provider fee denom | **fatal at startup** if malformed; silent if valid-but-wrong | `NewKeeper` panics, or pools use a denom nobody holds |
-| Consumer module built before `SetHooks` | silent | slashing hooks never fire |
+| Consumer module built from an incomplete keeper | silent | the module keeps the early copy |

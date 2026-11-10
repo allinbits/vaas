@@ -10,7 +10,6 @@ import (
 	cryptocodec "github.com/cosmos/cosmos-sdk/crypto/codec"
 	servertypes "github.com/cosmos/cosmos-sdk/server/types"
 	sdk "github.com/cosmos/cosmos-sdk/types"
-	slashingtypes "github.com/cosmos/cosmos-sdk/x/slashing/types"
 )
 
 // ExportAppStateAndValidators implements the simapp app interface
@@ -61,35 +60,11 @@ func (app *App) ExportAppStateAndValidators(
 //
 //	in favour of export at a block height
 //
-// A consumer chain wires no staking module: its validator set comes from the
-// provider over VSC packets, so the exporter's jail-allowed list has nothing to
-// act on here. What is height-relative is the slashing signing-info start
-// heights and the VAAS downtime window in progress.
+// A consumer chain wires no staking module and no x/slashing: its validator
+// set comes from the provider over VSC packets, so the exporter's jail-allowed
+// list has nothing to act on here. What is height-relative is the VAAS
+// downtime window in progress.
 func (app *App) prepForZeroHeightGenesis(ctx sdk.Context) {
-	/* Handle slashing state. */
-
-	// reset start height on signing infos
-	var setErr error
-	err := app.SlashingKeeper.IterateValidatorSigningInfos(
-		ctx,
-		func(addr sdk.ConsAddress, info slashingtypes.ValidatorSigningInfo) (stop bool) {
-			info.StartHeight = 0
-			if err := app.SlashingKeeper.SetValidatorSigningInfo(ctx, addr, info); err != nil {
-				setErr = err
-				return true
-			}
-			return false
-		},
-	)
-	if setErr != nil {
-		panic(setErr)
-	}
-	if err != nil {
-		panic(err)
-	}
-
-	/* Handle VAAS downtime detection state. */
-
 	// The open window's bitmaps and first-tracked heights are keyed on the
 	// exporting chain's heights; the relaunch starts a fresh window.
 	app.ConsumerKeeper.ResetMissedBlockTracking(ctx)

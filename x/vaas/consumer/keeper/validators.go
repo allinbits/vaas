@@ -42,8 +42,6 @@ func (k Keeper) ApplyVaasValidatorChanges(ctx context.Context, changes []abci.Va
 			}
 		} else if 0 < change.Power {
 			// create a new validator
-			consAddr := sdk.ConsAddress(addr)
-
 			vaasVal, err := types.NewVaasValidator(addr, change.Power, pubkey)
 			if err != nil {
 				// An error here would indicate that the validator updates
@@ -52,12 +50,6 @@ func (k Keeper) ApplyVaasValidatorChanges(ctx context.Context, changes []abci.Va
 			}
 
 			k.SetVaasValidator(ctx, vaasVal)
-			valAddr := sdk.ValAddress(vaasVal.Address)
-			err = k.AfterValidatorBonded(ctx, consAddr, valAddr)
-			if err != nil {
-				// AfterValidatorBonded is called by the Slashing module and should not return an error.
-				panic(err)
-			}
 		} else {
 			// edge case: we received an update for 0 power
 			// but the validator is already deleted. Do not forward
@@ -82,26 +74,19 @@ func (k Keeper) Validator(sdkCtx context.Context, addr sdk.ValAddress) (stakingt
 	return stakingtypes.Validator{}, errors.New("unimplemented on the VAAS consumer keeper")
 }
 
-// IsValidatorJailed reports every validator as jailed, the same answer the
-// validator ValidatorByConsAddr returns gives: see stubValidator.
+// IsValidatorJailed reports no validator as jailed: nothing on a consumer
+// jails, its validator set being the provider's over VSC packets.
 func (k Keeper) IsValidatorJailed(goCtx context.Context, addr sdk.ConsAddress) (bool, error) {
-	return true, nil
+	return false, nil
 }
 
 // stubValidator is the stakingtypes.ValidatorI the consumer keeper hands to
-// x/slashing, which looks validators up by consensus address once per vote
-// per block (HandleValidatorSignature). It reports the validator as jailed,
-// the one answer that makes x/slashing leave liveness alone: the handler
-// returns before it reads a signing info, flips a bitmap bit, emits a
-// liveness or slash event, or asks the staking keeper for a slash. The
-// consumer's own tumbling windows (downtime.go) are the sole source of
-// downtime evidence, judged by the VAAS downtime parameters rather than
-// x/slashing's, so x/slashing's bookkeeping here would only mislead an
-// operator reading its events or signing infos. It still answers GetConsAddr
-// with the address it was looked up under, since a consumer runs no
-// consensus-key rotation and an address is therefore always its own current
-// identity (the same invariant ValidatorIdentifier encodes); the zero
-// validator panics there, its consensus pubkey Any being nil.
+// the SDK code that looks validators up by consensus address (the staking
+// query service relayers read). It is the zero staking validator except that
+// it answers GetConsAddr with the address it was looked up under, since a
+// consumer runs no consensus-key rotation and an address is therefore always
+// its own current identity (the same invariant ValidatorIdentifier encodes);
+// the zero validator panics there, its consensus pubkey Any being nil.
 type stubValidator struct {
 	stakingtypes.Validator
 	consAddr sdk.ConsAddress
@@ -111,10 +96,10 @@ func (v stubValidator) GetConsAddr() ([]byte, error) {
 	return v.consAddr, nil
 }
 
-// ValidatorByConsAddr returns a jailed stub validator echoing the queried
-// address; see stubValidator.
+// ValidatorByConsAddr returns a stub validator echoing the queried address;
+// see stubValidator.
 func (k Keeper) ValidatorByConsAddr(_ context.Context, addr sdk.ConsAddress) (stakingtypes.ValidatorI, error) {
-	return stubValidator{Validator: stakingtypes.Validator{Jailed: true}, consAddr: addr}, nil
+	return stubValidator{consAddr: addr}, nil
 }
 
 // ValidatorIdentifier maps a consensus address to the identifier the slashing
@@ -131,11 +116,11 @@ func (k Keeper) Slash(ctx context.Context, addr sdk.ConsAddress, infractionHeigh
 	return k.SlashWithInfractionReason(ctx, addr, infractionHeight, power, slashFactor, stakingtypes.Infraction_INFRACTION_UNSPECIFIED)
 }
 
-// SlashWithInfractionReason satisfies the staking keeper interface x/slashing
-// expects. x/slashing never reaches it on a consumer, where every validator
-// reads as jailed (see stubValidator); VAAS-owned tumbling-window tracking
-// (downtime.go) is the sole source of downtime evidence sent to the provider,
-// so this method never queues an evidence packet and only logs a request.
+// SlashWithInfractionReason satisfies the staking keeper interface the
+// consumer keeper stands in for. Nothing on a consumer calls it (no
+// x/slashing is wired); VAAS-owned tumbling-window tracking (downtime.go) is
+// the sole source of downtime evidence sent to the provider, so this method
+// never queues an evidence packet and only logs a request.
 func (k Keeper) SlashWithInfractionReason(goCtx context.Context, addr sdk.ConsAddress, infractionHeight, power int64, slashFactor math.LegacyDec, infraction stakingtypes.Infraction) (math.Int, error) {
 	ctx := sdk.UnwrapSDKContext(goCtx)
 
