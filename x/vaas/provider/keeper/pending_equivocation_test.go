@@ -1570,3 +1570,58 @@ func TestResumeLeavesAnEntryMaturedBeforeThePauseInPlace(t *testing.T) {
 	require.NoError(t, err)
 	require.False(t, has)
 }
+
+// TestAnEntryQueuedDuringAPauseThawsToOneDelayAfterTheResume: evidence
+// accepted while the consumer is paused queues an entry whose clock starts at
+// the pause, with its jail spanning the pause like every frozen entry's, so
+// the thaw lands it one full delay after the resume, exactly like an entry
+// queued the block before the pause.
+func TestAnEntryQueuedDuringAPauseThawsToOneDelayAfterTheResume(t *testing.T) {
+	k, ctx, ctrl, mocks, validator, providerAddr := setupEquivocationQueueTest(t)
+	defer ctrl.Finish()
+	consAddr := providerAddr.ToSdkConsAddr()
+	const consumerID = uint64(0)
+	k.SetConsumerClientId(ctx, consumerID, "07-tendermint-0")
+	k.SetConsumerPhase(ctx, consumerID, types.CONSUMER_PHASE_LAUNCHED)
+	delay := k.GetParams(ctx).EquivocationExecutionDelay
+
+	pausedAt := ctx.BlockTime()
+	pauseExpiration := pausedAt.Add(k.GetMaxPauseDuration(ctx))
+	require.NoError(t, k.PauseConsumerChain(ctx, consumerID, types.PAUSE_REASON_REFUSAL_THRESHOLD))
+
+	// One hour into the pause the evidence lands: the entry's clock starts
+	// at the pause, and the jail closes until the pause's expiration.
+	during := ctx.WithBlockTime(pausedAt.Add(time.Hour))
+	mocks.MockStakingKeeper.EXPECT().GetValidatorByConsAddr(during, consAddr).Return(validator, nil)
+	mocks.MockSlashingKeeper.EXPECT().IsTombstoned(during, consAddr).Return(false)
+	mocks.MockStakingKeeper.EXPECT().Jail(during, consAddr)
+	expectSigningInfo(mocks, during, consAddr, time.Time{})
+	mocks.MockSlashingKeeper.EXPECT().JailUntil(during, consAddr, pauseExpiration.Add(24*time.Hour))
+	expectNoExistingUnbondings(t, k, mocks, during, validator)
+	_, err := k.QueuePendingEquivocationPunishment(during, consumerID, providerAddr, 42)
+	require.NoError(t, err)
+	key := collections.Join3(consumerID, consAddr.Bytes(), int64(42))
+	queued, err := k.PendingEquivocationPunishments.Get(during, key)
+	require.NoError(t, err)
+	require.Equal(t, pausedAt.Add(delay), queued.ExecutesAt)
+
+	// Frozen while paused, whatever the clock says.
+	k.SweepPendingEquivocationPunishments(during.WithBlockTime(pausedAt.Add(delay).Add(time.Hour)))
+	has, err := k.PendingEquivocationPunishments.Has(during, key)
+	require.NoError(t, err)
+	require.True(t, has)
+
+	// Resumed three hours after the pause: the entry executes one full delay
+	// after the resume, and the jail follows it.
+	resumed := ctx.WithBlockTime(pausedAt.Add(3 * time.Hour))
+	mocks.MockClientKeeper.EXPECT().GetClientStatus(gomock.Any(), "07-tendermint-0").Return(ibcexported.Active)
+	resumeMocks(mocks)
+	mocks.MockSlashingKeeper.EXPECT().IsTombstoned(resumed, consAddr).Return(false)
+	mocks.MockStakingKeeper.EXPECT().GetValidatorByConsAddr(resumed, consAddr).Return(validator, nil)
+	expectSigningInfo(mocks, resumed, consAddr, pauseExpiration.Add(24*time.Hour))
+	mocks.MockSlashingKeeper.EXPECT().JailUntil(resumed, consAddr, resumed.BlockTime().Add(delay).Add(24*time.Hour))
+	require.NoError(t, k.ResumeConsumerChain(resumed, consumerID))
+	thawed, err := k.PendingEquivocationPunishments.Get(resumed, key)
+	require.NoError(t, err)
+	require.Equal(t, resumed.BlockTime().Add(delay), thawed.ExecutesAt)
+}

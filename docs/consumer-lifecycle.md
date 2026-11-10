@@ -167,7 +167,8 @@ by the provider's BeginBlock (see [equivocation-evidence.md](equivocation-eviden
    marks cleared.
 4. An automatic stop is scheduled at `block_time + MaxPauseDuration` (default 45 days).
 5. No further VSC packets are queued or sent; fee distribution and downtime evidence from
-   this consumer stop; the liveness sweep skips it.
+   this consumer stop (double-voting evidence is still accepted); the liveness sweep skips
+   it.
 
 **Exits:** `MsgResumeConsumer` (gov) returns the consumer to `LAUNCHED` with an immediate
 snapshot resync (the resume pre-flights the IBC client and fails with `MsgRecoverClient`

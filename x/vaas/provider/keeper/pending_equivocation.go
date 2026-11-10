@@ -74,6 +74,18 @@ func (k Keeper) QueuePendingEquivocationPunishment(
 	}
 
 	executesAt := ctx.BlockTime().Add(k.GetParams(ctx).EquivocationExecutionDelay)
+	if k.GetConsumerPhase(ctx, consumerId) == types.CONSUMER_PHASE_PAUSED {
+		// A paused consumer's entries are frozen, and the thaw moves every
+		// one of them forward by the pause's length (thawConsumerAccusations).
+		// An entry queued during the pause starts its clock at the pause, so
+		// the thaw lands it one full delay after the resume, like an entry
+		// queued the block before the pause; a pause that lapses into a stop
+		// instead lets it run on that clock from the stop. The jail behind it
+		// spans the pause either way (pendingEquivocationJailHorizon).
+		if pausedAt, err := k.GetConsumerPausedAt(ctx, consumerId); err == nil {
+			executesAt = pausedAt.Add(k.GetParams(ctx).EquivocationExecutionDelay)
+		}
+	}
 	entry := types.PendingEquivocationPunishment{
 		ConsumerId:       consumerId,
 		ProviderConsAddr: consAddr.Bytes(),

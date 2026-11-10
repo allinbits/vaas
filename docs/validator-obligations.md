@@ -96,10 +96,11 @@ while the coalition still stands.
 ## 5. Keep IBC clients fresh, especially during a PAUSE
 
 VSC packets and evidence flow over IBC v2 clients maintained by relayers. Under
-normal traffic the clients stay updated as a side effect of relaying. During a
-`PAUSED` consumer there is no packet traffic, so nothing refreshes the clients;
-with the default `MaxPauseDuration` (30 days) exceeding the client trusting
-period, a long pause with idle relayers can expire the provider's client to that
+normal traffic the clients stay updated as a side effect of relaying. While a
+consumer is `PAUSED` no VSC packet flows (the consumer's own evidence packets
+still arrive, to be rejected), so little refreshes the clients; with the
+default `MaxPauseDuration` (45 days) exceeding the client trusting period, a
+long pause with idle relayers can expire the provider's client to that
 consumer. Keep relayers updating the clients through a pause so a governance
 resume does not have to bundle `MsgRecoverClient`
 ([consumer-downtime.md](consumer-downtime.md) sections 7 and 9;

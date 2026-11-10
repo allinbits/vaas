@@ -51,7 +51,12 @@ Both files are decoded with the proto-JSON codec. CLI source:
 `HandleConsumerDoubleVoting` in
 [x/vaas/provider/keeper/consumer_equivocation.go](../x/vaas/provider/keeper/consumer_equivocation.go):
 
-1. Requires the consumer to be `LAUNCHED`.
+1. Requires a consumer that has launched and is not yet deleted: `LAUNCHED`,
+   `PAUSED` or `STOPPED`. A pause or a stop does not void a double-sign: the
+   punishment it queues is frozen with a pause and runs on its own clock
+   through a stop, and the evidence is self-contained, so refusing it off
+   `LAUNCHED` would let a validator whose consumer is paused or stopped
+   before its evidence lands escape.
 2. Rejects evidence older than the consumer's equivocation-evidence minimum
    height. Note the *age* of the vote is not otherwise bounded -- there is no
    max-age on double-vote evidence.
@@ -135,7 +140,8 @@ this path:
    already frozen or expired is left alone), so no packet proven against the
    fork lands on the provider, and the consumer is **paused**
    (`PauseConsumerChain` under `PAUSE_REASON_LIGHT_CLIENT_ATTACK`): VSC service
-   stops, both evidence paths reject the consumer (they gate on `LAUNCHED`), its
+   stops, the downtime path rejects the consumer (double-voting evidence is
+   still accepted and queues a punishment frozen with the pause), its
    pending downtime accusations are cancelled and the fees withheld on their
    account repaid, and an auto-stop is scheduled at `MaxPauseDuration` so
    governance silence converges to `STOPPED`.

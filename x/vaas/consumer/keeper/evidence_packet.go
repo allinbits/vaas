@@ -104,15 +104,18 @@ func (k Keeper) RequeueEvidencePacket(ctx sdk.Context, payload []byte) error {
 
 // ReportRejectedEvidencePacket surfaces a provider rejection of a
 // previously-sent evidence packet, used when the packet came back with an
-// error acknowledgement. The provider error-acks only after evaluating and
-// rejecting that exact packet (unacceptable echoed params, missed count below
-// threshold, unknown or renamed validator, window too old, window already
-// accepted, or below the pruned acceptance floor); every one of those is
-// permanent for a given packet, so re-sending the identical evidence could
-// never be accepted and would loop forever. The packet left the queue when it
-// was sent, so there is nothing to remove: this emits the event surfacing the
-// rejection (validator, window-end height) and deliberately does not
-// re-queue. The ack bytes themselves are not reported: an IBC v2 error
+// error acknowledgement. The provider error-acks a packet it evaluated and
+// rejected (unacceptable echoed params, missed count below threshold, unknown
+// or renamed validator, window too old, window already accepted, or below the
+// pruned acceptance floor), every one of which is permanent for that packet,
+// or any packet of a consumer it is not serving (paused, or stopped). Neither
+// is retried: re-sending evaluated evidence could never be accepted and would
+// loop forever, and downtime that falls inside a pause is deliberately not
+// punished (the provider is not serving the consumer, and the validators a
+// refusal pause protects are not to be accused for it). The packet left the
+// queue when it was sent, so there is nothing to remove: this emits the event
+// surfacing the rejection (validator, window-end height) and deliberately does
+// not re-queue. The ack bytes themselves are not reported: an IBC v2 error
 // acknowledgement is a sentinel constant carrying no application error.
 func (k Keeper) ReportRejectedEvidencePacket(ctx sdk.Context, payload []byte) {
 	validatorAddr := ""

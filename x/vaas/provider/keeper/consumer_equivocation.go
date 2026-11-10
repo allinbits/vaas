@@ -36,11 +36,19 @@ func (k Keeper) HandleConsumerDoubleVoting(
 	evidence *tmtypes.DuplicateVoteEvidence,
 	pubkey cryptotypes.PubKey,
 ) error {
-	// check that the evidence is for an ICS consumer chain
-	if k.GetConsumerPhase(ctx, consumerId) != types.CONSUMER_PHASE_LAUNCHED {
+	// The evidence needs a consumer that has launched and still holds its
+	// state: LAUNCHED, PAUSED or STOPPED. A pause or a stop does not void a
+	// double-sign: the punishment it queues is frozen with a pause and keeps
+	// its own clock through a stop (see SweepPendingEquivocationPunishments),
+	// and the evidence is self-contained signatures that need nothing from
+	// the chain to stand. Refusing it off LAUNCHED would hand a validator
+	// whose consumer is paused or stopped before its evidence lands an escape.
+	switch k.GetConsumerPhase(ctx, consumerId) {
+	case types.CONSUMER_PHASE_LAUNCHED, types.CONSUMER_PHASE_PAUSED, types.CONSUMER_PHASE_STOPPED:
+	default:
 		return errorsmod.Wrapf(
 			vaastypes.ErrInvalidDoubleVotingEvidence,
-			"consumer chain %d is not launched",
+			"consumer chain %d has not launched or is deleted",
 			consumerId,
 		)
 	}

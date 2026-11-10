@@ -308,7 +308,10 @@ meanwhile discards them as above. The `vaas_consumer_paused` event names the rea
 paused:
 
 - No VSC packets are queued or sent; no fees are distributed; downtime evidence from the
-  consumer is rejected.
+  consumer is rejected, and the consumer drops it: downtime inside a pause is deliberately
+  not punished, since the provider is not serving the consumer and the validators a
+  refusal pause protects are not to be accused for it. Double-voting evidence is still
+  accepted (see [equivocation-evidence.md](equivocation-evidence.md)).
 - The liveness sweep skips it (the pause is not ack-silence), and the consumer side needs no
   new mechanism: its VSC clock goes stale and the existing safe mode restricts it
   automatically.

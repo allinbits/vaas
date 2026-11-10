@@ -55,7 +55,7 @@ func (k Keeper) ParseConsumerKey(consumerKey string) (tmprotocrypto.PublicKey, e
 
 // AssignConsumerKey assigns the consumerKey to the validator with providerAddr on the
 // consumer chain with the given `consumerId`, provided that consumer is registered,
-// initialized, or launched.
+// initialized, launched or paused.
 func (k Keeper) AssignConsumerKey(
 	ctx sdk.Context,
 	consumerId uint64,
@@ -63,10 +63,11 @@ func (k Keeper) AssignConsumerKey(
 	consumerKey tmprotocrypto.PublicKey,
 ) error {
 	if !k.IsConsumerActive(ctx, consumerId) {
-		// check that the consumer chain is either registered, initialized, or launched
+		// Registered, initialized, launched or paused: a paused consumer keeps
+		// its assignments and can be resumed, so they stay editable.
 		return errorsmod.Wrapf(
 			types.ErrInvalidPhase,
-			"cannot assign a key to a consumer chain that is not in the registered, initialized, or launched phase: %d", consumerId)
+			"cannot assign a key to a consumer chain that is not registered, initialized, launched or paused: %d", consumerId)
 	}
 
 	consAddrTmp, err := vaastypes.TMCryptoPublicKeyToConsAddr(consumerKey)
@@ -118,6 +119,18 @@ func (k Keeper) AssignConsumerKey(
 		// reusing a consumer key that it used in the past and is now to be pruned.
 		return errorsmod.Wrapf(
 			types.ErrConsumerKeyInUse, "a validator has or had assigned this consumer key already",
+		)
+	}
+
+	// One assigned key serves one consumer. The same key on a second consumer,
+	// even for the same validator, would let the node that holds it for one
+	// consumer sign for the other, and a punishment it earns there would not
+	// follow the removal of the consumer that caused it. A validator's own
+	// provider key is not an assigned key: reverting to it is allowed on every
+	// consumer (see the default-key check above).
+	if !consumerAddr.ToSdkConsAddr().Equals(providerAddr.ToSdkConsAddr()) && k.IsConsumerConsAddrInUse(ctx, consumerAddr.ToSdkConsAddr()) {
+		return errorsmod.Wrapf(
+			types.ErrConsumerKeyInUse, "the consumer key is already assigned on another consumer",
 		)
 	}
 

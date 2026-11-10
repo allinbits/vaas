@@ -57,7 +57,10 @@ consumer's accusations and discard them, repaying the fee shares withheld
 under them (see [consumer-downtime.md](consumer-downtime.md)); the refusal
 pause proves nothing about them and **freezes** them instead. Every pending
 downtime slash and withheld fee record stays as it is, its maturity or
-expiry stopped for the length of the pause. A resume restarts those clocks
+expiry stopped for the length of the pause. Accusations the consumer raises
+during the pause are another matter: the provider rejects them and the
+consumer drops them, so downtime inside a pause goes unpunished, which is
+the point of the pause for a refuser. A resume restarts those clocks
 where the pause stopped them; a challenge proven during the pause discards
 the accusations as it would on a launched consumer; a lapsed pause stops the
 consumer, which cancels them like every stop. Discarding them at the pause

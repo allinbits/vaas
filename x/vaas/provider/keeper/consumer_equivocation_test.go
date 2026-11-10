@@ -14,6 +14,7 @@ import (
 	ibcexported "github.com/cosmos/ibc-go/v10/modules/core/exported"
 	ibctmtypes "github.com/cosmos/ibc-go/v10/modules/light-clients/07-tendermint"
 
+	"cosmossdk.io/collections"
 	"cosmossdk.io/math"
 
 	cryptocodec "github.com/cosmos/cosmos-sdk/crypto/codec"
@@ -25,6 +26,7 @@ import (
 	cryptotestutil "github.com/allinbits/vaas/testutil/crypto"
 	testkeeper "github.com/allinbits/vaas/testutil/keeper"
 	"github.com/allinbits/vaas/x/vaas/provider/types"
+	vaastypes "github.com/allinbits/vaas/x/vaas/types"
 )
 
 func TestVerifyDoubleVotingEvidence(t *testing.T) {
@@ -1113,4 +1115,93 @@ func TestContainLightClientAttackFailsWhenTheFreezeFails(t *testing.T) {
 	_, err := keeper.ContainLightClientAttackForTest(ctx, consumerID, misbehaviour, nil)
 	require.ErrorContains(t, err, "client refused the update")
 	require.Equal(t, types.CONSUMER_PHASE_LAUNCHED, keeper.GetConsumerPhase(ctx, consumerID))
+}
+
+// TestHandleConsumerDoubleVotingAcceptsPausedAndStoppedConsumers: a pause or
+// a stop does not void a double-sign. Evidence against a paused consumer
+// queues a punishment whose clock starts at the pause, so the thaw lands it
+// one full delay after the resume; evidence against a stopped consumer queues
+// one on the ordinary clock.
+func TestHandleConsumerDoubleVotingAcceptsPausedAndStoppedConsumers(t *testing.T) {
+	for _, phase := range []types.ConsumerPhase{types.CONSUMER_PHASE_PAUSED, types.CONSUMER_PHASE_STOPPED} {
+		t.Run(phase.String(), func(t *testing.T) {
+			providerKeeper, ctx, ctrl, mocks := testkeeper.GetProviderKeeperAndCtx(t, testkeeper.NewInMemKeeperParams(t))
+			defer ctrl.Finish()
+
+			const (
+				chainID        = "consumer-chain-0"
+				consumerID     = uint64(0)
+				evidenceHeight = int64(100)
+			)
+			now := time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC)
+			pausedAt := now.Add(-time.Hour)
+			ctx = ctx.WithBlockTime(now)
+
+			providerKeeper.SetConsumerPhase(ctx, consumerID, phase)
+			providerKeeper.SetConsumerChainId(ctx, consumerID, chainID)
+			providerKeeper.SetEquivocationEvidenceMinHeight(ctx, consumerID, 5)
+			providerKeeper.SetInfractionParams(ctx, *getTestInfractionParameters())
+			require.NoError(t, providerKeeper.SetConsumerPausedAt(ctx, consumerID, pausedAt))
+
+			signer := tmtypes.NewMockPV()
+			val := tmtypes.NewValidator(signer.PrivKey.PubKey(), 1)
+			valSet := tmtypes.NewValidatorSet([]*tmtypes.Validator{val})
+			valPubkey, err := cryptocodec.FromCmtPubKeyInterface(val.PubKey)
+			require.NoError(t, err)
+			blockID1 := cryptotestutil.MakeBlockID([]byte("blockhash1"), 1000, []byte("partshash"))
+			blockID2 := cryptotestutil.MakeBlockID([]byte("blockhash2"), 1000, []byte("partshash"))
+			evidence := &tmtypes.DuplicateVoteEvidence{
+				VoteA:            cryptotestutil.MakeAndSignVote(blockID1, evidenceHeight, now, valSet, signer, chainID),
+				VoteB:            cryptotestutil.MakeAndSignVote(blockID2, evidenceHeight, now, valSet, signer, chainID),
+				ValidatorPower:   val.VotingPower,
+				TotalVotingPower: val.VotingPower,
+				Timestamp:        now,
+			}
+
+			stakingVal, err := stakingtypes.NewValidator(
+				sdk.ValAddress(valPubkey.Address()).String(), valPubkey, stakingtypes.NewDescription("", "", "", "", ""))
+			require.NoError(t, err)
+			stakingVal.Status = stakingtypes.Bonded
+			stakingVal.Tokens = sdk.DefaultPowerReduction
+			stakingVal.DelegatorShares = math.LegacyNewDecFromInt(sdk.DefaultPowerReduction)
+			consAddr, err := stakingVal.GetConsAddr()
+			require.NoError(t, err)
+
+			mocks.MockStakingKeeper.EXPECT().GetValidatorByConsAddr(gomock.Any(), sdk.ConsAddress(consAddr)).Return(stakingVal, nil).AnyTimes()
+			mocks.MockSlashingKeeper.EXPECT().IsTombstoned(gomock.Any(), sdk.ConsAddress(consAddr)).Return(false).AnyTimes()
+			mocks.MockStakingKeeper.EXPECT().GetUnbondingDelegationsFromValidator(gomock.Any(), gomock.Any()).Return([]stakingtypes.UnbondingDelegation{}, nil).AnyTimes()
+			mocks.MockStakingKeeper.EXPECT().GetRedelegationsFromSrcValidator(gomock.Any(), gomock.Any()).Return([]stakingtypes.Redelegation{}, nil).AnyTimes()
+			mocks.MockStakingKeeper.EXPECT().Jail(gomock.Any(), sdk.ConsAddress(consAddr)).Return(nil).Times(1)
+			mocks.MockSlashingKeeper.EXPECT().GetValidatorSigningInfo(gomock.Any(), sdk.ConsAddress(consAddr)).Return(slashingtypes.ValidatorSigningInfo{}, nil).Times(1)
+			mocks.MockSlashingKeeper.EXPECT().JailUntil(gomock.Any(), sdk.ConsAddress(consAddr), gomock.Any()).Return(nil).Times(1)
+
+			require.NoError(t, providerKeeper.HandleConsumerDoubleVoting(ctx, consumerID, evidence, valPubkey))
+
+			entry, err := providerKeeper.PendingEquivocationPunishments.Get(ctx, collections.Join3(consumerID, sdk.ConsAddress(consAddr).Bytes(), evidenceHeight))
+			require.NoError(t, err, "the evidence must queue a punishment")
+			delay := providerKeeper.GetParams(ctx).EquivocationExecutionDelay
+			if phase == types.CONSUMER_PHASE_PAUSED {
+				require.Equal(t, pausedAt.Add(delay), entry.ExecutesAt, "an entry queued during a pause starts its clock at the pause")
+			} else {
+				require.Equal(t, now.Add(delay), entry.ExecutesAt)
+			}
+		})
+	}
+}
+
+// TestHandleConsumerDoubleVotingRejectsUnlaunchedAndDeletedConsumers: before
+// a launch there is no consumer set to have signed for, and after a deletion
+// the state the evidence resolves through is gone, so both are refused up
+// front, with no validator lookups (nothing is mocked).
+func TestHandleConsumerDoubleVotingRejectsUnlaunchedAndDeletedConsumers(t *testing.T) {
+	for _, phase := range []types.ConsumerPhase{types.CONSUMER_PHASE_REGISTERED, types.CONSUMER_PHASE_INITIALIZED, types.CONSUMER_PHASE_DELETED} {
+		t.Run(phase.String(), func(t *testing.T) {
+			providerKeeper, ctx, ctrl, _ := testkeeper.GetProviderKeeperAndCtx(t, testkeeper.NewInMemKeeperParams(t))
+			defer ctrl.Finish()
+			const consumerID = uint64(0)
+			providerKeeper.SetConsumerPhase(ctx, consumerID, phase)
+			err := providerKeeper.HandleConsumerDoubleVoting(ctx, consumerID, &tmtypes.DuplicateVoteEvidence{}, nil)
+			require.ErrorIs(t, err, vaastypes.ErrInvalidDoubleVotingEvidence)
+		})
+	}
 }
