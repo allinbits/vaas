@@ -140,6 +140,47 @@ func TestInitGenesis(t *testing.T) {
 	}
 }
 
+// TestInitGenesisCollapsesRepeatedPubkeys: a genesis validator set naming
+// one pubkey twice collapses to its last entry, as the packet paths do,
+// instead of handing CometBFT two InitChain validators for one address.
+func TestInitGenesisCollapsesRepeatedPubkeys(t *testing.T) {
+	consumerKeeper, ctx, ctrl, mocks := testkeeper.GetConsumerKeeperAndCtx(t, testkeeper.NewInMemKeeperParams(t))
+	defer ctrl.Finish()
+	expectProviderClientExists(mocks)
+
+	pkA, err := cryptocodec.ToCmtProtoPublicKey(ed25519.GenPrivKey().PubKey())
+	require.NoError(t, err)
+	pkB, err := cryptocodec.ToCmtProtoPublicKey(ed25519.GenPrivKey().PubKey())
+	require.NoError(t, err)
+	valset := []abci.ValidatorUpdate{
+		{PubKey: pkA, Power: 5},
+		{PubKey: pkA, Power: 9},
+		{PubKey: pkB, Power: 3},
+	}
+
+	updates := consumerKeeper.InitGenesis(ctx, consumertypes.NewRestartGenesisState(
+		genesisProviderClientID, valset, vaastypes.DefaultConsumerParams(),
+	))
+
+	require.Len(t, updates, 2, "one InitChain validator per address")
+	powers := map[string]int64{}
+	for _, u := range updates {
+		powers[u.PubKey.String()] = u.Power
+	}
+	require.Equal(t, int64(9), powers[pkA.String()], "the last entry for a repeated pubkey wins")
+	require.Equal(t, int64(3), powers[pkB.String()])
+
+	stored := consumerKeeper.GetAllVaasValidator(ctx)
+	require.Len(t, stored, 2)
+	for _, v := range stored {
+		pk, err := v.ConsPubKey()
+		require.NoError(t, err)
+		tmPk, err := cryptocodec.ToCmtProtoPublicKey(pk)
+		require.NoError(t, err)
+		require.Equal(t, powers[tmPk.String()], v.Power)
+	}
+}
+
 func TestExportGenesis(t *testing.T) {
 	provClientID := genesisProviderClientID
 

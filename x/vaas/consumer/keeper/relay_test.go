@@ -550,6 +550,43 @@ func TestSnapshotPowerChange(t *testing.T) {
 	require.Equal(t, int64(50), pending.ValidatorUpdates[0].Power)
 }
 
+// TestSnapshotCollapsesRepeatedPubkeys: a snapshot naming one pubkey twice
+// collapses to its last entry, as a diff does (see
+// TestOnRecvVSCPacketV2DuplicateUpdates), instead of handing CometBFT two
+// updates for one address, which halts the consumer at EndBlock.
+func TestSnapshotCollapsesRepeatedPubkeys(t *testing.T) {
+	k, ctx, ctrl, mocks := testkeeper.GetConsumerKeeperAndCtx(t, testkeeper.NewInMemKeeperParams(t))
+	defer ctrl.Finish()
+	testkeeper.StubClientState(mocks, "provider-0")
+
+	pkA, err := cryptocodec.ToCmtProtoPublicKey(ed25519.GenPrivKey().PubKey())
+	require.NoError(t, err)
+	pkB, err := cryptocodec.ToCmtProtoPublicKey(ed25519.GenPrivKey().PubKey())
+	require.NoError(t, err)
+
+	k.ApplyVaasValidatorChanges(ctx, []abci.ValidatorUpdate{{PubKey: pkA, Power: 10}})
+	require.NoError(t, k.SetHighestValsetUpdateID(ctx, 1))
+	k.SetProviderClientID(ctx, liveProviderClientID)
+
+	snap := types.NewValidatorSetChangePacketData([]abci.ValidatorUpdate{
+		{PubKey: pkA, Power: 0},
+		{PubKey: pkA, Power: 50},
+		{PubKey: pkB, Power: 7},
+	}, 2)
+	snap.IsSnapshot = true
+	require.NoError(t, k.OnRecvVSCPacketV2(ctx, liveProviderClientID, snap))
+
+	pending, ok := k.GetPendingChanges(ctx)
+	require.True(t, ok)
+	require.Len(t, pending.ValidatorUpdates, 2, "one update per address")
+	powers := map[string]int64{}
+	for _, u := range pending.ValidatorUpdates {
+		powers[u.PubKey.String()] = u.Power
+	}
+	require.Equal(t, int64(50), powers[pkA.String()], "the last entry for a repeated pubkey wins")
+	require.Equal(t, int64(7), powers[pkB.String()])
+}
+
 // TestSnapshotAddsNewValidator seeds {A} and delivers a snapshot {A, B}.
 // PendingChanges must contain both A and B at their snapshot powers, with no
 // power-0 entry for A.

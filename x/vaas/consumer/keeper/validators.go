@@ -14,6 +14,7 @@ import (
 	stakingtypes "github.com/cosmos/cosmos-sdk/x/staking/types"
 
 	"github.com/allinbits/vaas/x/vaas/consumer/types"
+	vaastypes "github.com/allinbits/vaas/x/vaas/types"
 )
 
 // ApplyVaasValidatorChanges applies the given changes to the VAAS validators states
@@ -308,7 +309,13 @@ func (k Keeper) GetBondedValidatorsByPower(goCtx context.Context) ([]stakingtype
 //
 // Identity matching uses the cmt proto public key string, which is the same
 // identity used by MustGetCurrentValidatorsAsABCIUpdates and ApplyVaasValidatorChanges.
+//
+// A pubkey repeated in the target collapses to its last entry, as the diff
+// path collapses repeats through AccumulateChanges: CometBFT rejects a
+// validator update list that names one address twice, which would halt every
+// consumer node at EndBlock.
 func (k Keeper) computeReplaceUpdates(ctx context.Context, target []abci.ValidatorUpdate) []abci.ValidatorUpdate {
+	target = vaastypes.AccumulateChanges(nil, target)
 	inTarget := make(map[string]struct{}, len(target))
 	for _, u := range target {
 		inTarget[u.PubKey.String()] = struct{}{}

@@ -147,9 +147,13 @@ func (k Keeper) InitGenesis(ctx sdk.Context, state *types.GenesisState) []abci.V
 		}
 	}
 
-	// populate VAAS validators states with initial valset
-	k.ApplyVaasValidatorChanges(ctx, state.Provider.InitialValSet)
-	return state.Provider.InitialValSet
+	// Populate the VAAS validator states with the initial valset. A pubkey
+	// repeated in it collapses to its last entry, as on the packet paths
+	// (see AccumulateChanges and computeReplaceUpdates): CometBFT refuses to
+	// build a validator set that names one address twice.
+	valset := vaastypes.AccumulateChanges(nil, state.Provider.InitialValSet)
+	k.ApplyVaasValidatorChanges(ctx, valset)
+	return valset
 }
 
 // ExportGenesis returns the VAAS consumer module's exported genesis
