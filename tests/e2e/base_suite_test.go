@@ -325,13 +325,6 @@ func (s *baseTestSuite) startChainNodeWith(chainID, homePath, hostHome string, i
 	}
 	resource, err := s.dkrPool.RunWithOptions(opts, func(config *docker.HostConfig) {
 		config.RestartPolicy = docker.RestartPolicy{Name: "no"}
-		// An init process (docker-init) as the container's first process,
-		// forwarding the stop signal to the node: run as the first process
-		// itself, the node shows no reaction to the signal on the CI runner
-		// (it keeps committing blocks until the kill at the deadline) while
-		// it exits within a second on a developer host, so the harness runs
-		// nodes the way a container deployment should.
-		config.Init = true
 	})
 	s.Require().NoErrorf(err, "failed to start %s container", opts.Name)
 	return resource
@@ -462,11 +455,12 @@ func (s *baseTestSuite) waitContainerExit(id string, timeout time.Duration) bool
 }
 
 // nodeStopTimeoutSeconds is how long a node gets to exit on SIGTERM before
-// Docker kills it. The binary exits in well under a second on a host and as
-// PID 1 in the e2e image, yet every stop in CI used to run to a 5 s timeout
-// and end in a kill, so the scenarios measured recovery from a killed node
-// (WAL replay) rather than a shutdown; the time each stop took is logged,
-// and the timeout is what an operator's unit should give a node.
+// its goroutines are dumped and it is killed. The signal is sent with the
+// kill endpoint (docker kill -s TERM) rather than the stop one: on the CI
+// runner the stop endpoint never delivered it, whatever the timeout, and the
+// node kept committing blocks until the kill at the deadline, while the same
+// node exits in half a second on the signal the kill endpoint sends. The
+// time each stop took is logged, so a shutdown that stalls is visible.
 const nodeStopTimeoutSeconds = 60
 
 // recreateConsumerNodes replaces every consumer node's container with one
