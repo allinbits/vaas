@@ -63,7 +63,8 @@ func (app *App) ExportAppStateAndValidators(
 //
 // A consumer chain wires no staking module: its validator set comes from the
 // provider over VSC packets, so the exporter's jail-allowed list has nothing to
-// act on here and only the slashing state needs a reset.
+// act on here. What is height-relative is the slashing signing-info start
+// heights and the VAAS downtime window in progress.
 func (app *App) prepForZeroHeightGenesis(ctx sdk.Context) {
 	/* Handle slashing state. */
 
@@ -86,6 +87,12 @@ func (app *App) prepForZeroHeightGenesis(ctx sdk.Context) {
 	if err != nil {
 		panic(err)
 	}
+
+	/* Handle VAAS downtime detection state. */
+
+	// The open window's bitmaps and first-tracked heights are keyed on the
+	// exporting chain's heights; the relaunch starts a fresh window.
+	app.ConsumerKeeper.ResetMissedBlockTracking(ctx)
 }
 
 // GetValidatorSet returns the consumer's cross-chain validators. The set may be

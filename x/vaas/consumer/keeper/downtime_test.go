@@ -14,6 +14,7 @@ import (
 	channeltypesv2 "github.com/cosmos/ibc-go/v10/modules/core/04-channel/v2/types"
 	ibcexported "github.com/cosmos/ibc-go/v10/modules/core/exported"
 
+	"cosmossdk.io/collections"
 	"cosmossdk.io/math"
 
 	sdk "github.com/cosmos/cosmos-sdk/types"
@@ -47,6 +48,37 @@ func setDowntimeParams(ctx sdk.Context, k keeper.Keeper, window int64, minSigned
 	params.SignedBlocksWindow = window
 	params.MinSignedPerWindow = math.LegacyMustNewDecFromStr(minSigned)
 	k.SetParams(ctx, params)
+}
+
+// TestResetMissedBlockTrackingStartsAFreshWindow: the reset a zero-height
+// export runs drops the open window's bitmaps and first-tracked heights, so a
+// validator carried over from the exporting chain is tracked from its first
+// sighting on the relaunched chain instead of from a pre-restart height that
+// closeWindow would trim its whole span away against.
+func TestResetMissedBlockTrackingStartsAFreshWindow(t *testing.T) {
+	consumerKeeper, ctx, ctrl, _ := testkeeper.GetConsumerKeeperAndCtx(t, testkeeper.NewInMemKeeperParams(t))
+	defer ctrl.Finish()
+	setDowntimeParams(ctx, consumerKeeper, 4, "0.5")
+
+	addr := []byte{0x0A}
+	require.NoError(t, consumerKeeper.MissedBlockBitmaps.Set(ctx, addr, []byte{0x0F}))
+	require.NoError(t, consumerKeeper.FirstTrackedHeights.Set(ctx, addr, 5_000))
+
+	consumerKeeper.ResetMissedBlockTracking(ctx)
+
+	require.Equal(t, 0, countBitmaps(ctx, consumerKeeper))
+	_, err := consumerKeeper.FirstTrackedHeights.Get(ctx, addr)
+	require.ErrorIs(t, err, collections.ErrNotFound)
+
+	// The relaunched chain, at height 2, sees the validator for the first time
+	// at vote height 1.
+	ctx = ctx.WithBlockHeight(2).WithVoteInfos([]abci.VoteInfo{
+		{Validator: abci.Validator{Address: addr, Power: 1}, BlockIdFlag: cmtproto.BlockIDFlagAbsent},
+	})
+	consumerKeeper.TrackMissedBlocks(ctx)
+	first, err := consumerKeeper.FirstTrackedHeights.Get(ctx, addr)
+	require.NoError(t, err)
+	require.Equal(t, int64(1), first)
 }
 
 func TestTrackMissedBlocksQueuesEvidenceAtWindowClose(t *testing.T) {
