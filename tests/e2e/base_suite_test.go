@@ -405,10 +405,31 @@ func (s *baseTestSuite) logNodeTails(resources []*dockertest.Resource, lines int
 // downtime window is accused for it. The stop's duration is logged so a node
 // that ignores the signal shows.
 func (s *baseTestSuite) stopConsumerNode(i int) {
+	// What the signal is sent to: the node must be the container's first
+	// process, or it never receives the stop.
+	if top, err := s.dkrPool.Client.TopContainer(s.consumerValRes[i].Container.ID, ""); err == nil {
+		s.T().Logf("consumer val%d processes before the stop: %v", i, top.Processes)
+	}
 	started := time.Now()
 	s.Require().NoErrorf(s.dkrPool.Client.StopContainer(s.consumerValRes[i].Container.ID, nodeStopTimeoutSeconds),
 		"failed to stop consumer val%d", i)
-	s.T().Logf("consumer val%d stopped in %s", i, time.Since(started).Round(time.Millisecond))
+	took := time.Since(started)
+	s.T().Logf("consumer val%d stopped in %s", i, took.Round(time.Millisecond))
+	if took >= nodeStopTimeoutSeconds*time.Second {
+		// Killed at the deadline: the node's last lines say whether the
+		// signal reached it at all (CometBFT logs its shutdown sequence) or
+		// which step it was stuck in.
+		var tail bytes.Buffer
+		_ = s.dkrPool.Client.Logs(docker.LogsOptions{
+			Container:    s.consumerValRes[i].Container.ID,
+			OutputStream: &tail,
+			ErrorStream:  &tail,
+			Stdout:       true,
+			Stderr:       true,
+			Tail:         "20",
+		})
+		s.T().Logf("consumer val%d ran to the stop deadline; its last lines:\n%s", i, tail.String())
+	}
 }
 
 // nodeStopTimeoutSeconds is how long a node gets to exit on SIGTERM before
