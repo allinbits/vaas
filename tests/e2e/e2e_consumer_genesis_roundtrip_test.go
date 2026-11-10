@@ -123,7 +123,7 @@ func (s *IntegrationTestSuite) testConsumerGenesisRoundTrip() {
 
 		// 6b. The runbook's gate, on the consumer's export too.
 		s.T().Log("validating the exported consumer genesis...")
-		s.validateGenesisInContainer(ctx, consumerBinary, consumerHomePath, newDataDir)
+		s.validateGenesisInContainer(ctx, consumerBinary, consumerHomePath, newDataDir, "genesis.json")
 
 		// 7. Purge the old container so its name and port bindings are freed
 		//    for the replacement (the relayer reaches the consumer by

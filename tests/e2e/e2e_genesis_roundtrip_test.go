@@ -80,8 +80,12 @@ func (s *IntegrationTestSuite) testGenesisRoundTrip() {
 
 		// 4b. The runbook's gate: the export must pass `genesis validate`,
 		//     which runs every module's GenesisState.Validate (a node does not).
+		//     The one field the suite sets below what a chain may run with,
+		//     the governance voting period, is lifted to the floor in the
+		//     copy validated, and only there.
 		s.T().Log("validating the exported provider genesis...")
-		s.validateGenesisInContainer(ctx, providerBinary, providerHomePath, newDataDir)
+		s.writeValidatableProviderGenesis(newDataDir, exportedJSON)
+		s.validateGenesisInContainer(ctx, providerBinary, providerHomePath, newDataDir, validatableGenesisFile)
 
 		// 5. Purge the old container so its port bindings are released and
 		//    the teardown step doesn't try to purge a stopped container.
@@ -142,7 +146,7 @@ func (s *IntegrationTestSuite) testGenesisRoundTrip() {
 // check docs/genesis-restart-runbook.md tells operators to run before a
 // restart, so an export that a node would import but the CLI rejects (every
 // module's Validate runs here, not at InitChain) is caught in CI.
-func (s *IntegrationTestSuite) validateGenesisInContainer(ctx context.Context, binary, homePath, dataDir string) {
+func (s *IntegrationTestSuite) validateGenesisInContainer(ctx context.Context, binary, homePath, dataDir, file string) {
 	res, err := s.dkrPool.RunWithOptions(
 		&dockertest.RunOptions{
 			Name:       fmt.Sprintf("%s-validate-%d", binary, time.Now().UnixNano()),
@@ -153,7 +157,7 @@ func (s *IntegrationTestSuite) validateGenesisInContainer(ctx context.Context, b
 				fmt.Sprintf("%s:%s", dataDir, homePath),
 			},
 			Cmd: []string{
-				binary, "genesis", "validate", homePath + "/config/genesis.json",
+				binary, "genesis", "validate", homePath + "/config/" + file,
 				"--home", homePath,
 			},
 		},
@@ -334,6 +338,34 @@ func (s *IntegrationTestSuite) verifyExportedLiveHold(exportedJSON []byte) {
 // reuses the old chain's validator and node keys, keyring and config files,
 // but uses the exported JSON as its genesis.json and starts with an empty
 // data/.
+// validatableGenesisFile is the copy of the provider's export that `genesis
+// validate` runs on (writeValidatableProviderGenesis); the node starts from
+// genesis.json, the export as it is.
+const validatableGenesisFile = "genesis.validate.json"
+
+// writeValidatableProviderGenesis writes the export with the governance
+// voting period lifted to the floor the SDK's gov module validates
+// (MinVotingPeriod, 21 days): the suite runs with a 30 s period so votes
+// settle in a test's time, which no chain may start with, and `genesis
+// validate` refuses it as such. Everything else is validated as exported.
+func (s *IntegrationTestSuite) writeValidatableProviderGenesis(dataDir string, exportedJSON []byte) {
+	var genesis map[string]any
+	s.Require().NoError(json.Unmarshal(exportedJSON, &genesis), "decode the exported provider genesis")
+	appState, ok := genesis["app_state"].(map[string]any)
+	s.Require().True(ok, "the export has no app_state")
+	gov, ok := appState["gov"].(map[string]any)
+	s.Require().True(ok, "the export has no gov state")
+	params, ok := gov["params"].(map[string]any)
+	s.Require().True(ok, "the export has no gov params")
+	floor, err := time.ParseDuration(govv1.MinVotingPeriod)
+	s.Require().NoError(err, "the gov module's minimum voting period")
+	params["voting_period"] = fmt.Sprintf("%ds", int64(floor.Seconds()))
+	patched, err := json.Marshal(genesis)
+	s.Require().NoError(err)
+	s.Require().NoError(os.WriteFile(filepath.Join(dataDir, "config", validatableGenesisFile), patched, 0o644), //nolint:gosec // the node runs as nonroot in its container and must read this bind-mounted file
+		"write the validatable provider genesis")
+}
+
 func (s *IntegrationTestSuite) bootstrapRestartedProviderDir(oldDir string, exportedJSON []byte) string {
 	newDir, err := os.MkdirTemp("", "vaas-e2e-provider-restart-")
 	s.Require().NoError(err)

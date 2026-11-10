@@ -460,7 +460,10 @@ func New(
 		app.IBCKeeper.ChannelKeeper,
 		app.MsgServiceRouter(),
 		app.AccountKeeper,
-		app.BankKeeper,
+		// ibcshim, not the bank keeper directly: ibc-go writes voucher
+		// metadata the bank module's validation refuses, which makes an
+		// export fail `genesis validate`. See app/ibcshim.
+		ibcshim.NewTransferBankKeeper(app.BankKeeper),
 		authtypes.NewModuleAddress(govtypes.ModuleName).String(),
 	)
 
