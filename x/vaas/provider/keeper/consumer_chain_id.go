@@ -159,6 +159,23 @@ func (k Keeper) EvidenceChainIdFor(ctx sdk.Context, consumerId uint64, headerCha
 		headerChainId, consumerId, current, height)
 }
 
+// latestRenameBoundary returns the highest height at which the consumer was
+// renamed, when it was: the declared client's height at the time, recorded
+// with the previous chain id (RenameLaunchedConsumer). A downtime window
+// starting at or below it is refused (HandleConsumerDowntime).
+func (k Keeper) latestRenameBoundary(ctx sdk.Context, consumerId uint64) (height int64, renamed bool, err error) {
+	previous, err := k.GetConsumerPreviousChainIds(ctx, consumerId)
+	if err != nil {
+		return 0, false, fmt.Errorf("reading the previous chain ids of consumer %d: %w", consumerId, err)
+	}
+	for _, p := range previous {
+		if h := int64(p.Boundary.RevisionHeight); h > height { //nolint:gosec // a client height is far below the int64 range
+			height = h
+		}
+	}
+	return height, len(previous) > 0, nil
+}
+
 // chainIdIsAPreviousOne reports whether any consumer carried chainId before a
 // rename: it stays an evidence domain of that consumer until its deletion,
 // so no other consumer may register it meanwhile (ChainIdInUse).

@@ -31,9 +31,10 @@ const (
 	chainIDTestNew    = "consumer-2"
 )
 
-// launchedWithClient seeds a launched consumer with a chain id and a declared
+// launchedWithRecoveredClient seeds a launched consumer with a chain id and a declared
 // client, and makes the client report the given chain id at the given height.
-func launchedWithClient(t *testing.T, k providerkeeper.Keeper, ctx sdk.Context, mocks testkeeper.MockedKeepers, clientChainID string, height uint64) uint64 {
+func launchedWithRecoveredClient(t *testing.T, k providerkeeper.Keeper, ctx sdk.Context, mocks testkeeper.MockedKeepers, height uint64) uint64 {
+	clientChainID := chainIDTestNew
 	t.Helper()
 	cid := k.FetchAndIncrementConsumerId(ctx)
 	k.SetConsumerPhase(ctx, cid, types.CONSUMER_PHASE_LAUNCHED)
@@ -58,7 +59,7 @@ func launchedWithClient(t *testing.T, k providerkeeper.Keeper, ctx sdk.Context, 
 func TestSendVSCPacketsSkipsAConsumerWhoseClientTracksAnotherChainId(t *testing.T) {
 	k, ctx, ctrl, mocks := testkeeper.GetProviderKeeperAndCtx(t, testkeeper.NewInMemKeeperParams(t))
 	defer ctrl.Finish()
-	cid := launchedWithClient(t, k, ctx, mocks, chainIDTestNew, 500)
+	cid := launchedWithRecoveredClient(t, k, ctx, mocks, 500)
 	k.AppendPendingVSCPackets(ctx, cid, vaastypes.ValidatorSetChangePacketData{
 		ValidatorUpdates: []abci.ValidatorUpdate{}, ValsetUpdateId: 1,
 	})
@@ -90,6 +91,32 @@ func TestHandleConsumerDowntimeRefusesAConsumerWhoseClientTracksAnotherChainId(t
 	require.ErrorIs(t, err, collections.ErrNotFound, "nothing may be queued for a refused accusation")
 }
 
+// TestHandleConsumerDowntimeRefusesAWindowFromBeforeARename: once renamed,
+// a consumer cannot accuse a validator over a window reaching back to the
+// heights sealed under its old chain id (at or below the client's height at
+// the rename), which no header the recovered client verifies could disprove;
+// a window starting right above the boundary is accepted as before.
+func TestHandleConsumerDowntimeRefusesAWindowFromBeforeARename(t *testing.T) {
+	windowEndTime := time.Date(2025, 6, 1, 0, 0, 0, 0, time.UTC)
+	k, ctx, ctrl, mocks, cid, providerAddr := setupDowntimeTest(t, downtimeParams(8, "0.5", 0, 7*24*time.Hour, 72*time.Hour), windowEndTime.Add(-30*24*time.Hour), windowEndTime)
+	defer ctrl.Finish()
+	ctx = ctx.WithBlockTime(windowEndTime)
+	require.NoError(t, k.ConsumerPreviousChainIds.Set(ctx, collections.Join(cid, "consumer-chain-0"), clienttypes.NewHeight(0, 93)))
+	consAddr := providerAddr.ToSdkConsAddr()
+
+	err := k.HandleConsumerEvidencePacket(ctx, cid, vaastypes.NewEvidencePacketData(consAddr, 93, []byte{0x3F}, 8, 8, math.LegacyMustNewDecFromStr("0.5")))
+	require.ErrorIs(t, err, vaastypes.ErrInvalidPacketData)
+	require.ErrorContains(t, err, "before its rename")
+	_, err = k.PendingDowntimeSlashes.Get(ctx, collections.Join3(cid, consAddr.Bytes(), int64(100)))
+	require.ErrorIs(t, err, collections.ErrNotFound)
+
+	k.SetEpochShareRecord(ctx, cid, windowEndTime, math.NewInt(1000))
+	mocks.MockPhotonKeeper.EXPECT().ConversionRate(ctx).Return(math.LegacyNewDec(2), nil)
+	require.NoError(t, k.HandleConsumerEvidencePacket(ctx, cid, vaastypes.NewEvidencePacketData(consAddr, 94, []byte{0x3F}, 8, 8, math.LegacyMustNewDecFromStr("0.5"))))
+	_, err = k.PendingDowntimeSlashes.Get(ctx, collections.Join3(cid, consAddr.Bytes(), int64(101)))
+	require.NoError(t, err, "a window starting above the boundary is accepted")
+}
+
 // TestSweepsWaitOnAConsumerWhoseClientTracksAnotherChainId: a pending slash
 // and a withheld fee record that mature during the mismatch (the recovery
 // landed, the rename has not) wait for the rename, which discards and repays
@@ -98,7 +125,7 @@ func TestSweepsWaitOnAConsumerWhoseClientTracksAnotherChainId(t *testing.T) {
 	k, ctx, ctrl, mocks := testkeeper.GetProviderKeeperAndCtx(t, testkeeper.NewInMemKeeperParams(t))
 	defer ctrl.Finish()
 	ctx = ctx.WithBlockTime(time.Date(2025, 6, 1, 0, 0, 0, 0, time.UTC))
-	cid := launchedWithClient(t, k, ctx, mocks, chainIDTestNew, 500)
+	cid := launchedWithRecoveredClient(t, k, ctx, mocks, 500)
 	_, accused := newSweepValidator(t)
 	matured := ctx.BlockTime().Add(-time.Minute)
 	putPendingDowntimeSlash(t, k, ctx, cid, accused, math.NewInt(100), matured, 100)
@@ -124,7 +151,7 @@ func TestSweepsWaitOnAConsumerWhoseClientTracksAnotherChainId(t *testing.T) {
 func TestResumeRefusesAConsumerWhoseClientTracksAnotherChainId(t *testing.T) {
 	k, ctx, ctrl, mocks := testkeeper.GetProviderKeeperAndCtx(t, testkeeper.NewInMemKeeperParams(t))
 	defer ctrl.Finish()
-	cid := launchedWithClient(t, k, ctx, mocks, chainIDTestNew, 500)
+	cid := launchedWithRecoveredClient(t, k, ctx, mocks, 500)
 	require.NoError(t, k.PauseConsumerChain(ctx, cid, types.PAUSE_REASON_DOWNTIME_CHALLENGE))
 	mocks.MockClientKeeper.EXPECT().GetClientStatus(gomock.Any(), chainIDTestClient).Return(ibcexported.Active).AnyTimes()
 
@@ -165,7 +192,7 @@ func TestGovernanceRenamesALaunchedConsumerToItsClientsChainId(t *testing.T) {
 	k, ctx, ctrl, mocks := testkeeper.GetProviderKeeperAndCtx(t, testkeeper.NewInMemKeeperParams(t))
 	defer ctrl.Finish()
 	msgServer := providerkeeper.NewMsgServerImpl(&k)
-	cid := launchedWithClient(t, k, ctx, mocks, chainIDTestNew, 500)
+	cid := launchedWithRecoveredClient(t, k, ctx, mocks, 500)
 	_, accused := newSweepValidator(t)
 	putPendingDowntimeSlash(t, k, ctx, cid, accused, math.NewInt(100), ctx.BlockTime().Add(time.Hour), 100)
 	k.MarkEpochDowntime(ctx, cid, accused.ToSdkConsAddr())

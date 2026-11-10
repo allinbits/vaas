@@ -237,9 +237,10 @@ records mature, and refuses to resume it (`vaas_consumer_client_chain_id_mismatc
 The old chain ID stays on record with the client's height at the rename, so
 double-voting evidence from a block at or below it is still accepted (see
 [equivocation-evidence.md](equivocation-evidence.md)); the downtime accusations pending
-at the rename are discarded instead, and the fees withheld under them repaid, since the
-recovered client verifies headers over the chain ID it tracks now and none signed over
-the old one could disprove them (see [consumer-downtime.md](consumer-downtime.md)).
+at the rename are discarded instead, and the fees withheld under them repaid, and no
+window starting at or below that height is accepted afterwards, since the recovered
+client verifies headers over the chain ID it tracks now and none signed over the old one
+could disprove them (see [consumer-downtime.md](consumer-downtime.md)).
 Before launch, the owner renames freely until the client is declared; the client tracks
 a chain ID, so the rename comes first.
 

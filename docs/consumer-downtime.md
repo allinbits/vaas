@@ -368,7 +368,9 @@ challenge header over the chain id it tracks now, so no header signed over the o
 could disprove an accusation from before the rename, and an accusation that cannot be
 disproved does not stand. While the declared client tracks a chain id the consumer does
 not yet carry (the recovery landed, the rename has not), no downtime evidence is accepted
-from the consumer and no pending slash or withheld fee record of it matures. A refusal
+from the consumer and no pending slash or withheld fee record of it matures; after the
+rename, none is accepted whose window starts at or below the client's height at it. A
+refusal
 pause freezes them instead. The accepted-window records and the pruned floor survive a
 pause or stop -- a disproven or cancelled window must not become re-submittable, while
 later disjoint windows remain submittable after a resume as usual. Full deletion erases
