@@ -68,7 +68,7 @@ The file holds the messages proto-JSON encoded, like a governance proposal's:
 // parseOwnerExecMessages reads the messages file: a JSON object whose
 // "messages" array holds proto-JSON encoded messages, each with its "@type".
 func parseOwnerExecMessages(cdc codec.Codec, path string) ([]sdk.Msg, error) {
-	contents, err := os.ReadFile(path) //nolint:gosec // the operator names the file
+	contents, err := os.ReadFile(path)
 	if err != nil {
 		return nil, err
 	}

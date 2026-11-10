@@ -6,7 +6,6 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/cosmos/gogoproto/proto"
-
 	clienttypes "github.com/cosmos/ibc-go/v10/modules/core/02-client/types"
 
 	"cosmossdk.io/x/tx/signing"
