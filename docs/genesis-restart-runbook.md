@@ -46,7 +46,12 @@ consumer genesis validate consumer_exported.json
 
 Validation runs the module `GenesisState.Validate` checks. It is a CLI-only
 gate; nodes do not re-run it at boot, so a genesis that skips this step can
-still fail (or panic) at `InitChain`.
+still fail (or panic) at `InitChain`. One rule a hand-edited provider genesis
+can break and a chain-produced export never does: the `consumer_states` ids
+must be exactly `0..n-1` (deleted consumers included, as the export writes
+them). The provider enumerates consumers from its id sequence, so a gap would
+export a phantom consumer and never round-trip; both the CLI and `InitChain`
+reject it.
 
 ## Provider module
 

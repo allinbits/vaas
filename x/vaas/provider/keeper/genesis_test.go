@@ -843,7 +843,7 @@ func TestGenesisState_Validate_OverrideRejections(t *testing.T) {
 	owner := sdk.AccAddress([]byte("vaas-test-owner-1234")).String()
 	md := providertypes.ConsumerMetadata{Name: "n", Description: "d", Metadata: "m"}
 	knownConsumer := providertypes.ConsumerState{
-		ConsumerId: 1, ChainId: "test-1", Phase: providertypes.CONSUMER_PHASE_REGISTERED,
+		ConsumerId: 0, ChainId: "test-1", Phase: providertypes.CONSUMER_PHASE_REGISTERED,
 		OwnerAddress: owner, Metadata: &md,
 	}
 
@@ -864,19 +864,19 @@ func TestGenesisState_Validate_OverrideRejections(t *testing.T) {
 		{
 			name:       "malformed amount",
 			consumers:  []providertypes.ConsumerState{knownConsumer},
-			override:   providertypes.ConsumerFeesPerBlockOverride{ConsumerId: 1, Amount: "garbage"},
+			override:   providertypes.ConsumerFeesPerBlockOverride{ConsumerId: 0, Amount: "garbage"},
 			wantErrMsg: "not a valid integer",
 		},
 		{
 			name:       "negative amount is below the floor",
 			consumers:  []providertypes.ConsumerState{knownConsumer},
-			override:   providertypes.ConsumerFeesPerBlockOverride{ConsumerId: 1, Amount: "-1"},
+			override:   providertypes.ConsumerFeesPerBlockOverride{ConsumerId: 0, Amount: "-1"},
 			wantErrMsg: "must be greater than",
 		},
 		{
 			name:       "positive amount below the floor",
 			consumers:  []providertypes.ConsumerState{knownConsumer},
-			override:   providertypes.ConsumerFeesPerBlockOverride{ConsumerId: 1, Amount: "500"},
+			override:   providertypes.ConsumerFeesPerBlockOverride{ConsumerId: 0, Amount: "500"},
 			wantErrMsg: "must be greater than",
 		},
 	}
@@ -991,6 +991,43 @@ func TestInitGenesisPanicsOnNilDowntimeSlashFraction(t *testing.T) {
 	}()
 	require.NotNil(t, recovered)
 	require.Contains(t, fmt.Sprint(recovered), "slash_fraction")
+}
+
+// TestInitGenesisPanicsOnNonContiguousConsumerIds verifies that InitGenesis
+// halts on consumer ids that are not exactly 0..n-1: the keeper derives every
+// consumer id from the ConsumerId sequence, so a gap would export a phantom
+// consumer with no phase, chain id, or owner, and the export would never
+// validate again. GenesisState.Validate rejects the same genesis for the CLI.
+func TestInitGenesisPanicsOnNonContiguousConsumerIds(t *testing.T) {
+	owner := sdk.AccAddress([]byte("vaas-test-owner-1234")).String()
+	consumer := func(id uint64, chainId string) providertypes.ConsumerState {
+		return providertypes.ConsumerState{
+			ConsumerId: id, ChainId: chainId, Phase: providertypes.CONSUMER_PHASE_REGISTERED, OwnerAddress: owner,
+		}
+	}
+
+	for name, states := range map[string][]providertypes.ConsumerState{
+		"a gap":          {consumer(0, "chain-a"), consumer(2, "chain-b")},
+		"not from zero":  {consumer(1, "chain-a")},
+		"a duplicate id": {consumer(0, "chain-a"), consumer(0, "chain-b")},
+	} {
+		t.Run(name, func(t *testing.T) {
+			k, ctx, ctrl, _ := testkeeper.GetProviderKeeperAndCtx(t, testkeeper.NewInMemKeeperParams(t))
+			defer ctrl.Finish()
+
+			gs := providertypes.DefaultGenesisState()
+			gs.ConsumerStates = states
+			require.Error(t, gs.Validate())
+
+			var recovered any
+			func() {
+				defer func() { recovered = recover() }()
+				k.InitGenesis(ctx, gs)
+			}()
+			require.NotNil(t, recovered)
+			require.Contains(t, fmt.Sprint(recovered), "contiguous")
+		})
+	}
 }
 
 // TestInitGenesisAcceptsDefaultGenesis verifies that the infraction-parameter
