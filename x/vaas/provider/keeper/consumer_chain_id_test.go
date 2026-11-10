@@ -15,6 +15,7 @@ import (
 	ibctmtypes "github.com/cosmos/ibc-go/v10/modules/light-clients/07-tendermint"
 
 	"cosmossdk.io/collections"
+	"cosmossdk.io/math"
 
 	sdk "github.com/cosmos/cosmos-sdk/types"
 
@@ -68,6 +69,56 @@ func TestSendVSCPacketsSkipsAConsumerWhoseClientTracksAnotherChainId(t *testing.
 	require.Equal(t, 1, countEvents(ctx, types.EventTypeConsumerClientChainIdMismatch))
 }
 
+// TestHandleConsumerDowntimeRefusesAConsumerWhoseClientTracksAnotherChainId:
+// an accusation the accused could not disprove (no header the recovered
+// client verifies is signed over the consumer's chain id) is refused, not
+// accepted undisprovable.
+func TestHandleConsumerDowntimeRefusesAConsumerWhoseClientTracksAnotherChainId(t *testing.T) {
+	windowEndTime := time.Date(2025, 6, 1, 0, 0, 0, 0, time.UTC)
+	k, ctx, ctrl, _, cid, providerAddr := setupDowntimeTest(t, downtimeParams(8, "0.5", 0, 7*24*time.Hour, 72*time.Hour), windowEndTime.Add(-30*24*time.Hour), windowEndTime)
+	defer ctrl.Finish()
+	ctx = ctx.WithBlockTime(windowEndTime)
+	// The fixture's client tracks "consumer-chain"; the consumer is renamed
+	// under it, as a recovery onto the consumer's new chain id leaves it.
+	k.SetConsumerChainId(ctx, cid, "consumer-chain-2")
+
+	evidence := vaastypes.NewEvidencePacketData(providerAddr.ToSdkConsAddr(), 93, []byte{0x3F}, 8, 8, math.LegacyMustNewDecFromStr("0.5"))
+	err := k.HandleConsumerEvidencePacket(ctx, cid, evidence)
+	require.ErrorIs(t, err, vaastypes.ErrInvalidConsumerState)
+	require.ErrorContains(t, err, "tracks chain id consumer-chain")
+	_, err = k.PendingDowntimeSlashes.Get(ctx, collections.Join3(cid, providerAddr.ToSdkConsAddr().Bytes(), int64(100)))
+	require.ErrorIs(t, err, collections.ErrNotFound, "nothing may be queued for a refused accusation")
+}
+
+// TestSweepsWaitOnAConsumerWhoseClientTracksAnotherChainId: a pending slash
+// and a withheld fee record that mature during the mismatch (the recovery
+// landed, the rename has not) wait for the rename, which discards and repays
+// them; neither executes nor expires meanwhile.
+func TestSweepsWaitOnAConsumerWhoseClientTracksAnotherChainId(t *testing.T) {
+	k, ctx, ctrl, mocks := testkeeper.GetProviderKeeperAndCtx(t, testkeeper.NewInMemKeeperParams(t))
+	defer ctrl.Finish()
+	ctx = ctx.WithBlockTime(time.Date(2025, 6, 1, 0, 0, 0, 0, time.UTC))
+	cid := launchedWithClient(t, k, ctx, mocks, chainIDTestNew, 500)
+	_, accused := newSweepValidator(t)
+	matured := ctx.BlockTime().Add(-time.Minute)
+	putPendingDowntimeSlash(t, k, ctx, cid, accused, math.NewInt(100), matured, 100)
+	recordKey := collections.Join(cid, accused.ToSdkConsAddr().Bytes())
+	require.NoError(t, k.WithheldFeeRecords.Set(ctx, recordKey, types.WithheldFeeRecord{
+		ConsumerId: cid, ProviderConsAddr: accused.ToSdkConsAddr().Bytes(), Amount: sdk.NewInt64Coin("uphoton", 5), ExpiresAt: matured,
+	}))
+
+	// No staking expectations: an execution would fail on the mock.
+	k.SweepPendingDowntimeSlashes(ctx)
+	k.SweepExpiredWithheldFeeRecords(ctx)
+
+	pending, err := k.PendingDowntimeSlashes.Get(ctx, collections.Join3(cid, accused.ToSdkConsAddr().Bytes(), int64(100)))
+	require.NoError(t, err, "the matured slash waits")
+	require.Equal(t, matured, pending.MaturesAt)
+	has, err := k.WithheldFeeRecords.Has(ctx, recordKey)
+	require.NoError(t, err)
+	require.True(t, has, "the expired withheld fee record waits")
+}
+
 // TestResumeRefusesAConsumerWhoseClientTracksAnotherChainId: the resume of a
 // paused consumer waits for governance to rename it to its client's chain id.
 func TestResumeRefusesAConsumerWhoseClientTracksAnotherChainId(t *testing.T) {
@@ -107,12 +158,17 @@ func TestResumeRefusesAClientWhoseTrustingPeriodIsUnderTheHorizon(t *testing.T) 
 
 // TestGovernanceRenamesALaunchedConsumerToItsClientsChainId: the governance
 // half of a rename follows the declared client and nothing else; the old id
-// is kept with the client's height at the rename, and the owner cannot do it.
+// is kept with the client's height at the rename, the pending downtime
+// accusations (which no header the recovered client verifies can disprove
+// any more) are discarded, and the owner cannot do it.
 func TestGovernanceRenamesALaunchedConsumerToItsClientsChainId(t *testing.T) {
 	k, ctx, ctrl, mocks := testkeeper.GetProviderKeeperAndCtx(t, testkeeper.NewInMemKeeperParams(t))
 	defer ctrl.Finish()
 	msgServer := providerkeeper.NewMsgServerImpl(&k)
 	cid := launchedWithClient(t, k, ctx, mocks, chainIDTestNew, 500)
+	_, accused := newSweepValidator(t)
+	putPendingDowntimeSlash(t, k, ctx, cid, accused, math.NewInt(100), ctx.BlockTime().Add(time.Hour), 100)
+	k.MarkEpochDowntime(ctx, cid, accused.ToSdkConsAddr())
 
 	_, err := msgServer.UpdateConsumer(ctx, &types.MsgUpdateConsumer{Owner: declOwner, ConsumerId: cid, NewChainId: chainIDTestNew})
 	require.ErrorIs(t, err, types.ErrUnauthorized, "the owner cannot rename a launched consumer")
@@ -129,6 +185,10 @@ func TestGovernanceRenamesALaunchedConsumerToItsClientsChainId(t *testing.T) {
 	require.NoError(t, err)
 	require.Equal(t, []types.PreviousChainId{{ChainId: chainIDTestOld, Boundary: clienttypes.NewHeight(2, 500)}}, previous)
 	require.Error(t, k.ValidateConsumerChainIdFree(ctx, chainIDTestOld), "the old id stays reserved as an evidence domain")
+	has, err := k.PendingDowntimeSlashes.Has(ctx, collections.Join3(cid, accused.ToSdkConsAddr().Bytes(), int64(100)))
+	require.NoError(t, err)
+	require.False(t, has, "the pending downtime slash is discarded at the rename")
+	require.False(t, k.IsEpochDowntime(ctx, cid, accused.ToSdkConsAddr()), "the epoch downtime mark is discarded at the rename")
 
 	// Served again: the client and the consumer agree.
 	k.AppendPendingVSCPackets(ctx, cid, vaastypes.ValidatorSetChangePacketData{ValsetUpdateId: 1})

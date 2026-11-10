@@ -52,6 +52,26 @@ func (k Keeper) consumerClientChainIdMismatch(ctx sdk.Context, consumerId uint64
 	return tmClientState.ChainId, true
 }
 
+// consumerAccusationsUndisprovable returns a per-sweep memo of whether a
+// consumer's declared client tracks another chain id. The block sweeps leave
+// such a consumer's pending downtime slashes and withheld fee records alone:
+// no challenge header can disprove them until governance renames the
+// consumer, and the rename discards them (RenameLaunchedConsumer).
+func (k Keeper) consumerAccusationsUndisprovable(ctx sdk.Context) func(consumerId uint64) bool {
+	memo := map[uint64]bool{}
+	return func(consumerId uint64) bool {
+		if undisprovable, seen := memo[consumerId]; seen {
+			return undisprovable
+		}
+		undisprovable := false
+		if clientId, found := k.GetConsumerClientId(ctx, consumerId); found {
+			_, undisprovable = k.consumerClientChainIdMismatch(ctx, consumerId, clientId)
+		}
+		memo[consumerId] = undisprovable
+		return undisprovable
+	}
+}
+
 // validateConsumerClientTrustingPeriod refuses a client whose trusting period
 // cannot cover the downtime challenge horizon: every accepted downtime
 // accusation must stay disprovable by a header the client can still verify.
@@ -73,7 +93,11 @@ func (k Keeper) validateConsumerClientTrustingPeriod(ctx sdk.Context, clientId s
 // id must be the one the declared client tracks, and free. The old id is kept
 // with the client's height at the rename, so double-voting evidence from a
 // block at or below that height, signed over the old id, is still accepted
-// (SubmitConsumerDoubleVoting).
+// (SubmitConsumerDoubleVoting). The consumer's pending downtime accusations
+// are discarded instead: a challenge header is verified by the client over
+// the chain id it now tracks, so none signed over the old id can disprove
+// them any more, and an accusation that cannot be disproved does not stand
+// (DiscardConsumerAccusations, as after a pause that discredits the source).
 func (k Keeper) RenameLaunchedConsumer(ctx sdk.Context, consumerId uint64, newChainId string) error {
 	clientId, found := k.GetConsumerClientId(ctx, consumerId)
 	if !found {
@@ -100,6 +124,9 @@ func (k Keeper) RenameLaunchedConsumer(ctx sdk.Context, consumerId uint64, newCh
 		return fmt.Errorf("recording the previous chain id of consumer %d: %w", consumerId, err)
 	}
 	k.SetConsumerChainId(ctx, consumerId, newChainId)
+	if err := k.DiscardConsumerAccusations(ctx, consumerId); err != nil {
+		return fmt.Errorf("discarding the downtime accusations of consumer %d at its rename: %w", consumerId, err)
+	}
 	k.Logger(ctx).Info("consumer renamed to its client's chain id",
 		"consumerId", consumerId, "from", oldChainId, "to", newChainId, "boundary", tmClientState.LatestHeight.String())
 	return nil

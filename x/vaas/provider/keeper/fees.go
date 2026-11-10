@@ -588,6 +588,7 @@ func (k Keeper) SweepExpiredWithheldFeeRecords(ctx sdk.Context) {
 	}
 
 	clock := k.consumerClock(ctx)
+	undisprovable := k.consumerAccusationsUndisprovable(ctx)
 	var expiredKeys []collections.Pair[uint64, []byte]
 	for ; iter.Valid(); iter.Next() {
 		kv, err := iter.KeyValue()
@@ -595,7 +596,7 @@ func (k Keeper) SweepExpiredWithheldFeeRecords(ctx sdk.Context) {
 			k.Logger(ctx).Error("failed to read withheld fee record", "error", err)
 			continue
 		}
-		if kv.Value.ExpiresAt.After(clock(kv.Key.K1())) {
+		if kv.Value.ExpiresAt.After(clock(kv.Key.K1())) || undisprovable(kv.Key.K1()) {
 			continue
 		}
 		expiredKeys = append(expiredKeys, kv.Key)

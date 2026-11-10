@@ -95,14 +95,19 @@ func (k Keeper) HandleChallengeConsumerDowntime(ctx sdk.Context, msg *types.MsgC
 	}
 
 	// 2. the header is for claimed_height+1 on the consumer's own chain id.
-	// The chain id the header (and the sealed commit) is signed over: the
-	// consumer's, or one it carried before a governance rename when the
-	// claimed height falls under it (EvidenceChainIdFor), so a window from
-	// before the rename stays disprovable.
-	consumerChainId, err := k.EvidenceChainIdFor(ctx, msg.ConsumerId, msg.Header.Header.ChainID, msg.ClaimedHeight)
+	// Only the current one: the client verifies the header below over the
+	// chain id it tracks, so a header signed over a chain id the consumer
+	// carried before a governance rename could never pass, and the rename
+	// discarded the accusations from before it (RenameLaunchedConsumer).
+	consumerChainId, err := k.GetConsumerChainId(ctx, msg.ConsumerId)
 	if err != nil {
 		return errorsmod.Wrapf(types.ErrDowntimeChallengeFailed,
-			"header chain id (%s): %s", msg.Header.Header.ChainID, err)
+			"no registered chain id for consumer %d: %s", msg.ConsumerId, err)
+	}
+	if msg.Header.Header.ChainID != consumerChainId {
+		return errorsmod.Wrapf(types.ErrDowntimeChallengeFailed,
+			"header chain id (%s) does not match consumer chain id (%s) (consumerId: %d)",
+			msg.Header.Header.ChainID, consumerChainId, msg.ConsumerId)
 	}
 	if msg.Header.Header.Height != msg.ClaimedHeight+1 {
 		return errorsmod.Wrapf(types.ErrDowntimeChallengeFailed,

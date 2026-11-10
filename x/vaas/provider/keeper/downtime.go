@@ -143,6 +143,18 @@ func (k Keeper) HandleConsumerDowntime(ctx sdk.Context, consumerId uint64, evide
 			consumerId,
 		)
 	}
+	// An accusation must stay disprovable, and a challenge header is
+	// verified by the declared client over the chain id it tracks: while
+	// that is not the consumer's, no header the accused could submit would
+	// pass (see consumerClientChainIdMismatch), so the accusation is refused
+	// rather than accepted undisprovable.
+	if clientChainId, mismatch := k.consumerClientChainIdMismatch(ctx, consumerId, clientId); mismatch {
+		return errorsmod.Wrapf(
+			vaastypes.ErrInvalidConsumerState,
+			"downtime evidence for consumer chain %d cannot be disproved while its client %s tracks chain id %s: rename the consumer (UpdateConsumer by governance)",
+			consumerId, clientId, clientChainId,
+		)
+	}
 
 	// Anchor the window-end time to real IBC consensus states so the grace
 	// and evidence-age checks below are judged against consumer chain time
