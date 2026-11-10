@@ -558,11 +558,10 @@ func TestQueryWithheldFeeRecords_UnknownConsumer(t *testing.T) {
 	require.Equal(t, codes.InvalidArgument, status.Code(err))
 }
 
-// TestQueryParamsIncludesInfractionParameters verifies that QueryParams
-// reports the infraction parameters alongside Params. They are stored as their
-// own state item and updated by their own governance message, so a proposer
-// needs a way to read the values in force.
-func TestQueryParamsIncludesInfractionParameters(t *testing.T) {
+// TestQueryParamsCarriesInfractionParameters verifies that QueryParams
+// reports the infraction parameters in force as part of Params, so a
+// proposer reads every value a MsgUpdateParams diff can change in one place.
+func TestQueryParamsCarriesInfractionParameters(t *testing.T) {
 	k, ctx, ctrl, _ := testkeeper.GetProviderKeeperAndCtx(t, testkeeper.NewInMemKeeperParams(t))
 	defer ctrl.Finish()
 
@@ -576,6 +575,6 @@ func TestQueryParamsIncludesInfractionParameters(t *testing.T) {
 
 	resp, err := k.QueryParams(ctx, &providertypes.QueryParamsRequest{})
 	require.NoError(t, err)
-	require.Equal(t, params, resp.Params)
-	require.Equal(t, infractionParams, resp.InfractionParameters)
+	require.Equal(t, int64(900), resp.Params.BlocksPerEpoch)
+	require.Equal(t, infractionParams, resp.Params.InfractionParameters)
 }

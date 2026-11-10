@@ -144,35 +144,25 @@ func (k Keeper) GetParams(ctx context.Context) types.Params {
 	return params
 }
 
-// SetParams sets the params for the provider module
-func (k Keeper) SetParams(ctx context.Context, params types.Params) {
-	if err := k.Params.Set(ctx, params); err != nil {
-		panic(fmt.Sprintf("error setting module parameters: %v", err))
-	}
-}
-
-// GetInfractionParams returns the infraction parameters for consumer chain slashing.
-func (k Keeper) GetInfractionParams(ctx context.Context) types.InfractionParameters {
-	params, err := k.InfractionParams.Get(ctx)
-	if err != nil {
-		panic(fmt.Sprintf("error getting infraction parameters: %v", err))
-	}
-	return params
-}
-
-// SetInfractionParams sets the infraction parameters for consumer chain slashing.
-// If the downtime-window fields (SignedBlocksWindow, MinSignedPerWindow) differ
-// from the currently stored params, the old values are recorded in
+// SetParams sets the params for the provider module. If the downtime-window
+// fields of the infraction parameters (SignedBlocksWindow, MinSignedPerWindow)
+// differ from the currently stored ones, the old values are recorded in
 // PreviousDowntimeParams so downtime evidence computed under them remains
 // acceptable for a bounded grace window; see AcceptableDowntimeParams.
-func (k Keeper) SetInfractionParams(ctx context.Context, params types.InfractionParameters) {
-	if has, err := k.InfractionParams.Has(ctx); err == nil && has {
-		old := k.GetInfractionParams(ctx)
-		if old.SignedBlocksWindow != params.SignedBlocksWindow || !old.MinSignedPerWindow.Equal(params.MinSignedPerWindow) {
+func (k Keeper) SetParams(ctx context.Context, params types.Params) {
+	old, err := k.Params.Get(ctx)
+	switch {
+	case errors.Is(err, collections.ErrNotFound):
+		// First write (genesis): no previous window to keep.
+	case err != nil:
+		panic(fmt.Sprintf("error getting module parameters: %v", err))
+	default:
+		prev, next := old.InfractionParameters, params.InfractionParameters
+		if prev.SignedBlocksWindow != next.SignedBlocksWindow || !prev.MinSignedPerWindow.Equal(next.MinSignedPerWindow) {
 			previous := types.PreviousDowntimeParams{
 				Params: vaastypes.DowntimeParams{
-					SignedBlocksWindow: old.SignedBlocksWindow,
-					MinSignedPerWindow: old.MinSignedPerWindow,
+					SignedBlocksWindow: prev.SignedBlocksWindow,
+					MinSignedPerWindow: prev.MinSignedPerWindow,
 				},
 				ChangedAt: sdk.UnwrapSDKContext(ctx).BlockTime(),
 			}
@@ -181,9 +171,23 @@ func (k Keeper) SetInfractionParams(ctx context.Context, params types.Infraction
 			}
 		}
 	}
-	if err := k.InfractionParams.Set(ctx, params); err != nil {
-		panic(fmt.Sprintf("error setting infraction parameters: %v", err))
+	if err := k.Params.Set(ctx, params); err != nil {
+		panic(fmt.Sprintf("error setting module parameters: %v", err))
 	}
+}
+
+// GetInfractionParams returns the infraction parameters for consumer chain
+// slashing, the part of Params that governs consumer-sourced infractions.
+func (k Keeper) GetInfractionParams(ctx context.Context) types.InfractionParameters {
+	return k.GetParams(ctx).InfractionParameters
+}
+
+// SetInfractionParams replaces the infraction parameters, leaving the rest of
+// Params as it is (see SetParams for the downtime-window bookkeeping).
+func (k Keeper) SetInfractionParams(ctx context.Context, params types.InfractionParameters) {
+	p := k.GetParams(ctx)
+	p.InfractionParameters = params
+	k.SetParams(ctx, p)
 }
 
 // CurrentDowntimeParams returns the provider's current downtime detection

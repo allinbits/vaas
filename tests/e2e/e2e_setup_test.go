@@ -89,79 +89,71 @@ func (s *IntegrationTestSuite) SetupSuite() {
 			// A fast voting period, still wide enough for the deferral tests
 			// to land a removal proposal inside it with room to spare on both
 			// sides of the punishment maturity they time it over.
-			if gov, ok := appState["gov"].(map[string]any); ok {
-				if params, ok := gov["params"].(map[string]any); ok {
-					params["voting_period"] = "30s"
-				}
-			}
+			s.genesisSection(appState, "gov", "params")["voting_period"] = "30s"
 
 			// Set fast epoch for VSC and a small per-block fee amount. The fee
 			// denom is fixed to feeDenom at module wiring, only the amount is
 			// configurable here. val is funded with feeDenom in provider-init.sh
-			if provider, ok := appState["vaasprovider"].(map[string]any); ok {
-				if params, ok := provider["params"].(map[string]any); ok {
-					params["blocks_per_epoch"] = "5"
-					params["fees_per_block_amount"] = "1000"
-					// Shrink the equivocation execution delay and the
-					// removal-vote deferral margin so the pending-punishment
-					// tests (queue, defer behind a vote, execute or cancel)
-					// complete within a CI run. The delay comfortably covers
-					// submitting a removal proposal and its voting period;
-					// the margin covers proposal execution.
-					params["equivocation_execution_delay"] = "120s"
-					params["removal_vote_deferral_margin"] = removalVoteDeferralMargin.String()
-				}
+			params := s.genesisSection(appState, "vaasprovider", "params")
+			params["blocks_per_epoch"] = "5"
+			params["fees_per_block_amount"] = "1000"
+			// Shrink the equivocation execution delay and the removal-vote
+			// deferral margin so the pending-punishment tests (queue, defer
+			// behind a vote, execute or cancel) complete within a CI run. The
+			// delay comfortably covers submitting a removal proposal and its
+			// voting period; the margin covers proposal execution.
+			params["equivocation_execution_delay"] = "120s"
+			params["removal_vote_deferral_margin"] = removalVoteDeferralMargin.String()
 
-				// Shrink the downtime detection window and the challenge window so
-				// testDowntimeSlash's queue-then-execute flow (x/vaas-owned tumbling
-				// window bitmap tracking, then a challenge-window-gated slash) completes
-				// within the test run instead of the multi-day production defaults.
-				// downtime_evidence_max_age must not exceed downtime_challenge_window
-				// (see InfractionParameters.Validate); both are 120s, see the note at
-				// the values. The challenge window also keeps a pending slash
-				// challengeable long enough for
-				// testDowntimeChallengeWithoutSealedSignature to assemble a challenge
-				// from consumer chain data and land the tx while the slash is still
-				// pending -- keep it in sync with downtimeChallengeWindow in
-				// e2e_downtime_slash_test.go, which the negative control's watch
-				// duration is derived from.
-				// downtime_grace_period is left at its default: the fixed 2024 spawn_time
-				// in testdata/create_consumer.json is already years in the past by any
-				// real test run, so the grace period has already elapsed regardless.
-				// downtime.slash_fraction must be set explicitly: the genesis JSON
-				// is unmarshaled directly into InfractionParameters with no
-				// defaulting pass, so an absent key deserializes to a nil
-				// LegacyDec that the keeper's store round-trip turns into zero --
-				// not DefaultDowntimeSlashFraction -- silently capping every
-				// downtime slash at zero. It is pinned to a deliberately
-				// test-sized value (like window/challenge/max-age above) rather
-				// than the shipped default so the fee-priced slash this test
-				// observes (~2500 tokens on a 5,000,000-token self-bond, a
-				// 0.0005 fraction) executes uncapped and clearly visible.
-				provider["infraction_parameters"] = map[string]any{
-					"double_sign": map[string]any{
-						"slash_fraction": "0.050000000000000000",
-						"jail_duration":  "315360000s",
-						"tombstone":      true,
-					},
-					"downtime": map[string]any{
-						"slash_fraction": "0.010000000000000000",
-						"jail_duration":  "0s",
-						"tombstone":      false,
-					},
-					"downtime_grace_period": "604800s",
-					"signed_blocks_window":  "30",
-					"min_signed_per_window": "0.500000000000000000",
-					// Both are wide enough to absorb relay latency plus the
-					// window-end anchoring lag: the anchor is the newest
-					// consensus state at or below the window end, so a window's
-					// computed age includes however long the client went without
-					// an update before it. At 30s a slower run can push an
-					// otherwise-fresh window past the age check, and the
-					// consumer drops the error-acked evidence without retrying.
-					"downtime_challenge_window": "120s",
-					"downtime_evidence_max_age": "120s",
-				}
+			// Shrink the downtime detection window and the challenge window so
+			// testDowntimeSlash's queue-then-execute flow (x/vaas-owned tumbling
+			// window bitmap tracking, then a challenge-window-gated slash) completes
+			// within the test run instead of the multi-day production defaults.
+			// downtime_evidence_max_age must not exceed downtime_challenge_window
+			// (see InfractionParameters.Validate); both are 120s, see the note at
+			// the values. The challenge window also keeps a pending slash
+			// challengeable long enough for
+			// testDowntimeChallengeWithoutSealedSignature to assemble a challenge
+			// from consumer chain data and land the tx while the slash is still
+			// pending -- keep it in sync with downtimeChallengeWindow in
+			// e2e_downtime_slash_test.go, which the negative control's watch
+			// duration is derived from.
+			// downtime_grace_period is left at its default: the fixed 2024 spawn_time
+			// in testdata/create_consumer.json is already years in the past by any
+			// real test run, so the grace period has already elapsed regardless.
+			// downtime.slash_fraction must be set explicitly: the genesis JSON
+			// is unmarshaled directly into InfractionParameters with no
+			// defaulting pass, so an absent key deserializes to a nil
+			// LegacyDec that the keeper's store round-trip turns into zero --
+			// not DefaultDowntimeSlashFraction -- silently capping every
+			// downtime slash at zero. It is pinned to a deliberately
+			// test-sized value (like window/challenge/max-age above) rather
+			// than the shipped default so the fee-priced slash this test
+			// observes (~2500 tokens on a 5,000,000-token self-bond, a
+			// 0.0005 fraction) executes uncapped and clearly visible.
+			params["infraction_parameters"] = map[string]any{
+				"double_sign": map[string]any{
+					"slash_fraction": "0.050000000000000000",
+					"jail_duration":  "315360000s",
+					"tombstone":      true,
+				},
+				"downtime": map[string]any{
+					"slash_fraction": "0.010000000000000000",
+					"jail_duration":  "0s",
+					"tombstone":      false,
+				},
+				"downtime_grace_period": "604800s",
+				"signed_blocks_window":  "30",
+				"min_signed_per_window": "0.500000000000000000",
+				// Both are wide enough to absorb relay latency plus the
+				// window-end anchoring lag: the anchor is the newest
+				// consensus state at or below the window end, so a window's
+				// computed age includes however long the client went without
+				// an update before it. At 30s a slower run can push an
+				// otherwise-fresh window past the age check, and the
+				// consumer drops the error-acked evidence without retrying.
+				"downtime_challenge_window": "120s",
+				"downtime_evidence_max_age": "120s",
 			}
 
 			// Loosen the provider's own native x/slashing downtime window so the
@@ -170,11 +162,7 @@ func (s *IntegrationTestSuite) SetupSuite() {
 			// the VAAS-owned downtime tracking above) is never natively jailed on the
 			// provider chain itself during the test run; that would remove it from the
 			// bonded set before it can accumulate consumer-side downtime evidence.
-			if slashing, ok := appState["slashing"].(map[string]any); ok {
-				if params, ok := slashing["params"].(map[string]any); ok {
-					params["signed_blocks_window"] = "100000"
-				}
-			}
+			s.genesisSection(appState, "slashing", "params")["signed_blocks_window"] = "100000"
 		},
 	}
 

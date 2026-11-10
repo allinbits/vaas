@@ -38,6 +38,7 @@ func TestParams(t *testing.T) {
 		providertypes.DefaultRefusalPauseThreshold,
 		providertypes.DefaultEquivocationExecutionDelay,
 		providertypes.DefaultRemovalVoteDeferralMargin,
+		providertypes.DefaultInfractionParameters(),
 	)
 	providerKeeper.SetParams(ctx, newParams)
 	params = providerKeeper.GetParams(ctx)

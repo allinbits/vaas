@@ -44,7 +44,6 @@ var (
 	// communication.
 	ClientIdToConsumerIdPrefix             = collections.NewPrefix(21)
 	ConsumerIdToDebtPrefix                 = collections.NewPrefix(22)
-	InfractionParamsPrefix                 = collections.NewPrefix(23)
 	ConsumerIdToFeesPerBlockOverridePrefix = collections.NewPrefix(24)
 	ConsumerFeePoolSharesPrefix            = collections.NewPrefix(25)
 	ConsumerFeePoolTotalSharesPrefix       = collections.NewPrefix(26)
