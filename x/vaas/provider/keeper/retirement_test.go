@@ -82,8 +82,6 @@ func requireConsumerTornDown(
 
 	_, found = k.GetConsumerGenesis(ctx, consumerId)
 	require.False(t, found, "consumer genesis must be deleted")
-	_, found = k.GetInitChainHeight(ctx, consumerId)
-	require.False(t, found, "init chain height must be deleted")
 	require.Zero(t, k.GetEquivocationEvidenceMinHeight(ctx, consumerId))
 	require.Empty(t, k.GetPendingVSCPackets(ctx, consumerId), "pending VSC packets must be deleted")
 
@@ -464,7 +462,6 @@ func TestDeleteConsumerChainReleasesChainIdOnStoppedPath(t *testing.T) {
 	require.NoError(t, k.SetConsumerValSet(ctx, consumerId,
 		[]providertypes.ConsensusValidator{{PublicKey: &tmPubKey, Power: 10}}))
 	require.NoError(t, k.SetConsumerGenesis(ctx, consumerId, *vaastypes.DefaultConsumerGenesisState()))
-	k.SetInitChainHeight(ctx, consumerId, 100)
 	k.SetEquivocationEvidenceMinHeight(ctx, consumerId, 1)
 	k.AppendPendingVSCPackets(ctx, consumerId,
 		vaastypes.ValidatorSetChangePacketData{ValsetUpdateId: 3})

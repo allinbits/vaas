@@ -849,7 +849,6 @@ func (k Keeper) DeleteConsumerChain(ctx sdk.Context, consumerId uint64) (err err
 	k.DeleteKeyAssignments(ctx, consumerId)
 	k.DeleteEquivocationEvidenceMinHeight(ctx, consumerId)
 
-	k.DeleteInitChainHeight(ctx, consumerId)
 	k.DeletePendingVSCPackets(ctx, consumerId)
 
 	k.DeleteConsumerValSet(ctx, consumerId)

@@ -56,6 +56,8 @@ message GenesisState {
   repeated EpochShareRecord epoch_share_records = 11
       [ (gogoproto.nullable) = false ];
 
+  reserved 12;
+
   // Fee shares withheld from validators pending a downtime challenge window,
   // or already forfeited. Empty for a new chain.
   repeated WithheldFeeRecord withheld_fee_records = 13
@@ -170,6 +172,8 @@ message EpochShareRecord {
 //
 // Note this type is only used internally to the provider VAAS module.
 message ConsumerState {
+  reserved 4, 7;
+
   // ConsumerID is the internal numeric consumer id.
   uint64 consumer_id = 1;
   // ChainID is the external chain identifier of the consumer chain (e.g.
@@ -177,15 +181,12 @@ message ConsumerState {
   string chain_id = 2;
   // ClientID defines the IBC client ID for the consumer chain.
   string client_id = 3;
-  // InitialHeight defines the initial block height for the consumer chain
-  uint64 initial_height = 4;
   // ConsumerGenesis defines the initial consumer chain genesis states
   vaas.v1.ConsumerGenesisState consumer_genesis = 5
       [ (gogoproto.nullable) = false ];
   // PendingValsetChanges defines the pending validator set changes for the
   // consumer chain
   repeated vaas.v1.ValidatorSetChangePacketData pending_valset_changes = 6 [ (gogoproto.nullable) = false ];
-  repeated string slash_downtime_ack = 7;
   // the phase of the consumer chain
   ConsumerPhase phase = 8;
   // OwnerAddress is the bech32 address that authorises owner-only operations

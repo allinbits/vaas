@@ -67,7 +67,6 @@ type Keeper struct {
 	ConsumerId                    collections.Sequence
 	ConsumerClients               *collections.IndexedMap[uint64, string, ConsumerClientIndexes]
 	ConsumerGenesis               collections.Map[uint64, vaastypes.ConsumerGenesisState]
-	InitChainHeight               collections.Map[uint64, uint64]
 	PendingVSCPackets             collections.Map[uint64, types.ValidatorSetChangePackets]
 	ConsumerChainId               collections.Map[uint64, string]
 	ConsumerOwnerAddress          collections.Map[uint64, string]
@@ -302,7 +301,6 @@ func NewKeeper(
 			},
 		),
 		ConsumerGenesis:                  collections.NewMap(sb, types.ConsumerGenesisPrefix, "consumer_genesis", collections.Uint64Key, codec.CollValue[vaastypes.ConsumerGenesisState](cdc)),
-		InitChainHeight:                  collections.NewMap(sb, types.InitChainHeightPrefix, "init_chain_height", collections.Uint64Key, collections.Uint64Value),
 		PendingVSCPackets:                collections.NewMap(sb, types.PendingVSCsPrefix, "pending_vsc_packets", collections.Uint64Key, codec.CollValue[types.ValidatorSetChangePackets](cdc)),
 		ConsumerChainId:                  collections.NewMap(sb, types.ConsumerIdToChainIdPrefix, "consumer_chain_id", collections.Uint64Key, collections.StringValue),
 		ConsumerOwnerAddress:             collections.NewMap(sb, types.ConsumerIdToOwnerAddressPrefix, "consumer_owner_address", collections.Uint64Key, collections.StringValue),
@@ -518,29 +516,6 @@ func (k Keeper) GetValidatorSetUpdateId(ctx context.Context) (validatorSetUpdate
 		return 0
 	}
 	return val
-}
-
-// SetInitChainHeight sets the provider block height when the given consumer chain was initiated
-func (k Keeper) SetInitChainHeight(ctx context.Context, consumerId uint64, height uint64) {
-	if err := k.InitChainHeight.Set(ctx, consumerId, height); err != nil {
-		panic(fmt.Errorf("failed to set init chain height: %w", err))
-	}
-}
-
-// GetInitChainHeight returns the provider block height when the given consumer chain was initiated
-func (k Keeper) GetInitChainHeight(ctx context.Context, consumerId uint64) (uint64, bool) {
-	height, err := k.InitChainHeight.Get(ctx, consumerId)
-	if err != nil {
-		return 0, false
-	}
-	return height, true
-}
-
-// DeleteInitChainHeight deletes the stored block height at which the given consumer chain was initialized
-func (k Keeper) DeleteInitChainHeight(ctx context.Context, consumerId uint64) {
-	if err := k.InitChainHeight.Remove(ctx, consumerId); err != nil {
-		panic(fmt.Errorf("failed to delete init chain height: %w", err))
-	}
 }
 
 // GetPendingVSCPackets returns the list of pending ValidatorSetChange packets stored under consumer id
