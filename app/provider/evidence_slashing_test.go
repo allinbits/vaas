@@ -1,7 +1,6 @@
 package app_test
 
 import (
-	"encoding/json"
 	"testing"
 	"time"
 
@@ -9,24 +8,8 @@ import (
 
 	abci "github.com/cometbft/cometbft/abci/types"
 	cmtproto "github.com/cometbft/cometbft/proto/tendermint/types"
-	cmttypes "github.com/cometbft/cometbft/types"
 
-	dbm "github.com/cosmos/cosmos-db"
-
-	"cosmossdk.io/log"
-	sdkmath "cosmossdk.io/math"
-
-	"github.com/cosmos/cosmos-sdk/baseapp"
-	codectypes "github.com/cosmos/cosmos-sdk/codec/types"
-	cryptocodec "github.com/cosmos/cosmos-sdk/crypto/codec"
-	simtestutil "github.com/cosmos/cosmos-sdk/testutil/sims"
 	sdk "github.com/cosmos/cosmos-sdk/types"
-	authtypes "github.com/cosmos/cosmos-sdk/x/auth/types"
-	banktypes "github.com/cosmos/cosmos-sdk/x/bank/types"
-	slashingtypes "github.com/cosmos/cosmos-sdk/x/slashing/types"
-	stakingtypes "github.com/cosmos/cosmos-sdk/x/staking/types"
-
-	app "github.com/allinbits/vaas/app/provider"
 )
 
 // TestProviderPunishesNativeEquivocation is the C1 regression test: it proves
@@ -47,119 +30,14 @@ func TestProviderPunishesNativeEquivocation(t *testing.T) {
 		chainID = "provider-test-1"
 	)
 
-	providerApp := app.New(log.NewNopLogger(), dbm.NewMemDB(), nil, true, simtestutil.EmptyAppOptions{}, baseapp.SetChainID(chainID))
-	appCodec := providerApp.AppCodec()
-
-	// One shared delegator account backs every validator's self-delegation.
-	delegatorPriv := cmttypes.NewMockPV()
-	delegatorPub, err := delegatorPriv.GetPubKey()
-	require.NoError(t, err)
-	delegatorSDKPub, err := cryptocodec.FromCmtPubKeyInterface(delegatorPub)
-	require.NoError(t, err)
-	delegatorAcc := authtypes.NewBaseAccount(delegatorSDKPub.Address().Bytes(), delegatorSDKPub, 0, 0)
-
-	bondAmt := sdk.TokensFromConsensusPower(10, sdk.DefaultPowerReduction)
-
-	genesis := app.NewDefaultGenesisState(appCodec)
-
-	// Pull the bond denom out of the default staking genesis.
-	var stakingGen stakingtypes.GenesisState
-	appCodec.MustUnmarshalJSON(genesis[stakingtypes.ModuleName], &stakingGen)
-	bondDenom := stakingGen.Params.BondDenom
-
-	var (
-		validators   []stakingtypes.Validator
-		delegations  []stakingtypes.Delegation
-		signingInfos []slashingtypes.SigningInfo
-		consAddrs    []sdk.ConsAddress
-	)
-
-	for i := 0; i < numVals; i++ {
-		privVal := cmttypes.NewMockPV()
-		pubKey, err := privVal.GetPubKey()
-		require.NoError(t, err)
-
-		sdkPub, err := cryptocodec.FromCmtPubKeyInterface(pubKey)
-		require.NoError(t, err)
-		pkAny, err := codectypes.NewAnyWithValue(sdkPub)
-		require.NoError(t, err)
-
-		valAddr := sdk.ValAddress(pubKey.Address())
-		consAddr := sdk.ConsAddress(pubKey.Address())
-		consAddrs = append(consAddrs, consAddr)
-
-		validators = append(validators, stakingtypes.Validator{
-			OperatorAddress:   valAddr.String(),
-			ConsensusPubkey:   pkAny,
-			Jailed:            false,
-			Status:            stakingtypes.Bonded,
-			Tokens:            bondAmt,
-			DelegatorShares:   sdkmath.LegacyOneDec(),
-			Description:       stakingtypes.Description{Moniker: "val"},
-			UnbondingHeight:   0,
-			UnbondingTime:     time.Unix(0, 0).UTC(),
-			Commission:        stakingtypes.NewCommission(sdkmath.LegacyZeroDec(), sdkmath.LegacyZeroDec(), sdkmath.LegacyZeroDec()),
-			MinSelfDelegation: sdkmath.ZeroInt(),
-		})
-		delegations = append(delegations, stakingtypes.NewDelegation(
-			delegatorAcc.GetAddress().String(), valAddr.String(), sdkmath.LegacyOneDec(),
-		))
-		// Signing info is what the evidence handler requires to punish; genesis
-		// bonding alone does not create it, so seed it here.
-		signingInfos = append(signingInfos, slashingtypes.SigningInfo{
-			Address:              consAddr.String(),
-			ValidatorSigningInfo: slashingtypes.NewValidatorSigningInfo(consAddr, 0, 0, time.Unix(0, 0).UTC(), false, 0),
-		})
-	}
-
-	// auth: the delegator account.
-	authGen := authtypes.NewGenesisState(authtypes.DefaultParams(), []authtypes.GenesisAccount{delegatorAcc})
-	genesis[authtypes.ModuleName] = appCodec.MustMarshalJSON(authGen)
-
-	// staking: the bonded validators and their self-delegations.
-	stakingGen = *stakingtypes.NewGenesisState(stakingGen.Params, validators, delegations)
-	genesis[stakingtypes.ModuleName] = appCodec.MustMarshalJSON(&stakingGen)
-
-	// slashing: a non-zero double-sign fraction plus per-validator signing info.
-	var slashingGen slashingtypes.GenesisState
-	appCodec.MustUnmarshalJSON(genesis[slashingtypes.ModuleName], &slashingGen)
-	slashingGen.Params.SlashFractionDoubleSign = sdkmath.LegacyNewDecWithPrec(5, 2) // 5%
-	slashingGen.SigningInfos = signingInfos
-	genesis[slashingtypes.ModuleName] = appCodec.MustMarshalJSON(&slashingGen)
-
-	// bank: fund the bonded pool with the staked tokens.
-	bondedPoolCoins := sdk.NewCoins(sdk.NewCoin(bondDenom, bondAmt.MulRaw(numVals)))
-	balances := []banktypes.Balance{{
-		Address: authtypes.NewModuleAddress(stakingtypes.BondedPoolName).String(),
-		Coins:   bondedPoolCoins,
-	}}
-	bankGen := banktypes.NewGenesisState(
-		banktypes.DefaultGenesisState().Params, balances, bondedPoolCoins, nil, nil,
-	)
-	genesis[banktypes.ModuleName] = appCodec.MustMarshalJSON(bankGen)
-
-	stateBytes, err := json.MarshalIndent(genesis, "", " ")
-	require.NoError(t, err)
-
-	_, err = providerApp.InitChain(&abci.RequestInitChain{
-		ChainId:         chainID,
-		Validators:      []abci.ValidatorUpdate{},
-		ConsensusParams: simtestutil.DefaultConsensusParams,
-		AppStateBytes:   stateBytes,
-	})
-	require.NoError(t, err)
-
-	// Commit an empty block so the genesis state is persisted and can be read
-	// back and referenced as the (past) infraction height.
+	// The committed genesis block is referenced as the (past) infraction height.
 	infractionTime := time.Now().UTC()
-	_, err = providerApp.FinalizeBlock(&abci.RequestFinalizeBlock{
-		Height: providerApp.LastBlockHeight() + 1,
-		Time:   infractionTime,
-	})
-	require.NoError(t, err)
-	_, err = providerApp.Commit()
-	require.NoError(t, err)
+	providerApp, vals := newProviderAppWithBondedValidators(t, chainID, numVals, infractionTime)
 	infractionHeight := providerApp.LastBlockHeight()
+	consAddrs := make([]sdk.ConsAddress, 0, numVals)
+	for _, val := range vals {
+		consAddrs = append(consAddrs, val.consAddr)
+	}
 
 	// Sanity: the target validator is bonded, not jailed, not tombstoned.
 	target := consAddrs[0]

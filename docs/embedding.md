@@ -126,11 +126,14 @@ app.StakingKeeper.SetHooks(
 )
 ```
 
-Three of the provider's hook methods carry real behavior; the rest are no-ops:
+Four of the provider's hook methods carry real behavior; the rest are no-ops:
 
 - `AfterValidatorCreated` -- rejects creating a validator whose consensus key is
   already in use as some validator's assigned consumer key. This is the *only*
   enforcement point for that rule at validator creation.
+- `BeforeConsensusPubKeyRotation` -- refuses a consensus-key rotation onto a key
+  already in use as some validator's assigned consumer key, before `x/staking`
+  records the rotation (section 7).
 - `AfterConsensusPubKeyUpdate` -- after a consensus-key rotation, migrates the
   validator's per-consumer provider-consensus-address-keyed state onto the new
   address (`MigrateStateOnConsPubKeyRotation`) and hands the rotated key to the
@@ -281,37 +284,35 @@ traffic. There is no observable symptom until the day it matters.
 Related: `safe_mode_threshold` must be positive. Zero makes `IsVSCStale`
 trivially true and pins the chain in restricted mode forever.
 
-## 7. The provider's consensus-key rotation ante decorator
+## 7. The provider's consensus-key rotation refusal
 
-```go
-anteDecorators := []sdk.AnteDecorator{
-    ante.NewSetUpContextDecorator(),
-    ante.NewExtensionOptionsDecorator(nil),
-    ante.NewValidateBasicDecorator(),
-    providerante.NewConsPubKeyRotationDecorator(options.ProviderKeeper),
-    // ...
-}
-```
+The refusal is one of the staking hooks of section 3, not an ante decorator:
+`BeforeConsensusPubKeyRotation` runs from the `MsgRotateConsPubKey` handler,
+before `x/staking` records the rotation, and fails one whose new consensus key
+is already assigned as some validator's consumer key, with
+`ErrConsumerKeyInUse`. It runs wherever the message executes, so a rotation
+wrapped in `authz.MsgExec` is covered, and a rejected rotation costs the sender
+its transaction and nothing else.
 
-`providerante` is `x/vaas/provider/ante`, in
-`cons_pubkey_rotation_ante.go`. The decorator inspects
-`MsgRotateConsPubKey`, including nested inside
-`authz.MsgExec`, and rejects a rotation whose new consensus key is already
-assigned as some validator's consumer key, with `ErrConsumerKeyInUse`. It sits
-immediately after `NewValidateBasicDecorator` so a rejected rotation costs the
-sender its transaction and nothing else.
+The hook is the right enforcement point because the staking module applies a
+recorded rotation from `EndBlock`, not from the message handler -- by the time
+VAAS's `AfterConsensusPubKeyUpdate` hook runs, the rotation is already
+committed and there is nothing left to reject. The hook exists in atomone-sdk's
+`x/staking` (upstream has no pre-rotation hook), which the reference apps
+replace the SDK with; a staking module that does not ask it refuses nothing.
+That staking module also charges the rotation fee into the community pool
+through a distribution keeper handed to it after construction
+(`StakingKeeper.SetDistributionKeeper`); without that call every rotation
+fails at the fee step, refused or not, so the hook never gets a rotation to
+admit.
 
-Transaction admission is the right enforcement point because the staking module
-applies a recorded rotation from `EndBlock`, not from the message handler -- by
-the time VAAS's `AfterConsensusPubKeyUpdate` hook runs, the rotation is already
-committed and there is nothing left to reject.
-
-**Omitting it is silent, and it cannot halt the chain.** The hook logs the
-anomaly it can no longer prevent, and the consumer validator-set computation
-deterministically drops one of two entries that would collide on a consumer
-consensus address, so no chain is ever handed a duplicate set. What you get
-instead is a rotation that succeeds when it should have been refused, and an
-affected validator quietly dropped from that consumer's validator set.
+**A staking module that does not ask the hook is silent, and cannot halt the
+chain.** `AfterConsensusPubKeyUpdate` logs the anomaly it can no longer
+prevent, and the consumer validator-set computation deterministically drops
+one of two entries that would collide on a consumer consensus address, so no
+chain is ever handed a duplicate set. What you get instead is a rotation that
+succeeds when it should have been refused, and an affected validator quietly
+dropped from that consumer's validator set.
 
 For the operator-facing side of a rotation -- what changes on the consumers, when
 to swap the node signing key, and where the validator's state ends up -- see
@@ -434,7 +435,7 @@ Two further order traps, both silent:
 | Governance wired *and* set as IBC client authority | silent until recovery is needed, then terminal | `MsgRecoverClient` unreachable; a dead client is permanent |
 | `x/evidence` on the provider | silent | provider-native double-signs unpunished |
 | `consumerante.NewMsgFilterDecorator` | silent | safe mode and debt gating cease to exist |
-| `providerante.NewConsPubKeyRotationDecorator` | silent | a colliding rotation succeeds; the validator is dropped from that consumer's set |
+| `x/staking` from atomone-sdk, which asks `BeforeConsensusPubKeyRotation` | silent | a colliding rotation succeeds; the validator is dropped from that consumer's set |
 | `no_valupdates_staking` / `no_valupdates_genutil` on the provider | **fatal at genesis** | "validator InitGenesis updates already set by a previous module" |
 | Provider module after staking in `SetOrderEndBlockers` | silent | provider valset and every VSC packet lag one block |
 | Provider module after staking/genutil in `SetOrderInitGenesis` | **fatal at genesis** | "validator set is empty after InitGenesis" |

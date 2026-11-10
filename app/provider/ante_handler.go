@@ -9,18 +9,14 @@ import (
 	sdk "github.com/cosmos/cosmos-sdk/types"
 	sdkerrors "github.com/cosmos/cosmos-sdk/types/errors"
 	"github.com/cosmos/cosmos-sdk/x/auth/ante"
-
-	providerante "github.com/allinbits/vaas/x/vaas/provider/ante"
-	ibcproviderkeeper "github.com/allinbits/vaas/x/vaas/provider/keeper"
 )
 
-// HandlerOptions extend the SDK's AnteHandler options by requiring the VAAS
-// provider keeper and the IBC keeper.
+// HandlerOptions extend the SDK's AnteHandler options by requiring the IBC
+// keeper.
 type HandlerOptions struct {
 	ante.HandlerOptions
 
-	ProviderKeeper ibcproviderkeeper.Keeper
-	IBCKeeper      *ibckeeper.Keeper
+	IBCKeeper *ibckeeper.Keeper
 }
 
 func NewAnteHandler(options HandlerOptions) (sdk.AnteHandler, error) {
@@ -46,7 +42,6 @@ func NewAnteHandler(options HandlerOptions) (sdk.AnteHandler, error) {
 		ante.NewSetUpContextDecorator(),
 		ante.NewExtensionOptionsDecorator(nil),
 		ante.NewValidateBasicDecorator(),
-		providerante.NewConsPubKeyRotationDecorator(options.ProviderKeeper),
 		ante.NewTxTimeoutHeightDecorator(),
 		ante.NewValidateMemoDecorator(options.AccountKeeper),
 		ante.NewConsumeGasForTxSizeDecorator(options.AccountKeeper),
