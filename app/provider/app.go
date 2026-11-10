@@ -123,28 +123,10 @@ var (
 	// DefaultNodeHome default home directories for the application daemon
 	DefaultNodeHome string
 
-	// ModuleBasics defines the module BasicManager is in charge of setting up basic,
-	// non-dependant module elements, such as codec registration
-	// and genesis verification.
-	ModuleBasics = module.NewBasicManager(
-		genutil.NewAppModuleBasic(genutiltypes.DefaultMessageValidator),
-		auth.AppModuleBasic{},
-		vesting.AppModuleBasic{},
-		bank.AppModuleBasic{},
-		consensus.AppModuleBasic{},
-		gov.NewAppModuleBasic(
-			[]govclient.ProposalHandler{
-				paramsclient.ProposalHandler,
-			},
-		),
-		mint.AppModuleBasic{},
-		slashing.AppModuleBasic{},
-		distr.AppModuleBasic{},
-		no_valupdates_staking.AppModuleBasic{},
-		upgrade.AppModuleBasic{},
-
-		params.AppModuleBasic{},
-	)
+	// ModuleBasics is the basic manager New builds from the module manager:
+	// codec registration, CLI commands and default genesis for the modules the
+	// app actually runs. The root command builds an app before using it.
+	ModuleBasics module.BasicManager
 
 	// module account permissions
 	maccPerms = map[string][]string{
@@ -188,9 +170,6 @@ type App struct { //nolint:golint
 	EvidenceKeeper evidencekeeper.Keeper
 	MintKeeper     mintkeeper.Keeper
 
-	// NOTE the distribution keeper should either be removed
-	// from consumer chain or set to use an independent
-	// different fee-pool from the consumer chain ConsumerKeeper
 	DistrKeeper           distrkeeper.Keeper
 	GovKeeper             *govkeeper.Keeper // Gov Keeper must be a pointer in the app, so we can SetRouter on it correctly
 	UpgradeKeeper         upgradekeeper.Keeper
@@ -514,7 +493,8 @@ func New(
 		providerModule,
 	)
 
-	// NOTE: @Msalopek -> ModuleBasic override is happening because Tx commands don't work without it
+	// The basic manager the CLI and the default genesis use, from the modules
+	// the app runs; genutil and gov carry their CLI-side handlers.
 	ModuleBasics = module.NewBasicManagerFromManager(
 		app.MM,
 		map[string]module.AppModuleBasic{

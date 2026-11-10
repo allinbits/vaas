@@ -20,7 +20,6 @@ import (
 	ibctransferkeeper "github.com/cosmos/ibc-go/v10/modules/apps/transfer/keeper"
 	ibctransfertypes "github.com/cosmos/ibc-go/v10/modules/apps/transfer/types"
 	transferv2 "github.com/cosmos/ibc-go/v10/modules/apps/transfer/v2"
-	ibc "github.com/cosmos/ibc-go/v10/modules/core"
 	porttypes "github.com/cosmos/ibc-go/v10/modules/core/05-port/types"
 	ibcapi "github.com/cosmos/ibc-go/v10/modules/core/api"
 	ibchost "github.com/cosmos/ibc-go/v10/modules/core/exported"
@@ -110,21 +109,10 @@ var (
 	// DefaultNodeHome default home directories for the application daemon
 	DefaultNodeHome string
 
-	// ModuleBasics defines the module BasicManager is in charge of setting up basic,
-	// non-dependant module elements, such as codec registration
-	// and genesis verification.
-	ModuleBasics = module.NewBasicManager(
-		genutil.NewAppModuleBasic(genutiltypes.DefaultMessageValidator),
-		auth.AppModuleBasic{},
-		vesting.AppModuleBasic{},
-		bank.AppModuleBasic{},
-		params.AppModuleBasic{},
-		ibc.AppModuleBasic{},
-		upgrade.AppModuleBasic{},
-		transfer.AppModuleBasic{},
-		ibctm.AppModuleBasic{},
-		ibcconsumer.AppModuleBasic{},
-	)
+	// ModuleBasics is the basic manager New builds from the module manager:
+	// codec registration, CLI commands and default genesis for the modules the
+	// app actually runs. The root command builds an app before using it.
+	ModuleBasics module.BasicManager
 
 	// module account permissions
 	maccPerms = map[string][]string{
@@ -223,7 +211,6 @@ func New(
 		ibcconsumertypes.StoreKey,
 	)
 
-	// register streaming services TOCHECK
 	if err := bApp.RegisterStreamingServices(appOpts, keys); err != nil {
 		panic(err)
 	}
@@ -373,7 +360,8 @@ func New(
 		consumerModule,
 	)
 
-	// NOTE: @Msalopek -> ModuleBasic override is happening because Tx commands don't work without it
+	// The basic manager the CLI and the default genesis use, from the modules
+	// the app runs; genutil carries its CLI-side message validator.
 	ModuleBasics = module.NewBasicManagerFromManager(
 		app.MM,
 		map[string]module.AppModuleBasic{
