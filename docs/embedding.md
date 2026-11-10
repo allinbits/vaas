@@ -6,7 +6,7 @@ modules depend on host wiring they cannot install themselves, and most of that
 wiring fails *silently* when it is missing -- the app builds, boots, syncs, and
 behaves normally until the specific situation the missing piece was protecting
 against arrives. One omission halts the provider chain outright, at an event
-that is guaranteed to happen eventually.
+that is guaranteed to happen eventually; another stops it at its first block.
 
 This document is the checklist. For each duty it states what to wire, what
 breaks without it, and whether the failure is silent, fatal at startup, or a
@@ -50,7 +50,7 @@ No permissions are needed -- the provider module account never mints, burns, or
 stakes. It is a pass-through that money hops through for exactly one step.
 `providertypes.ModuleName` is `"vaasprovider"`.
 
-**Why it is load-bearing.** The fee-pool sweep drains a consumer's whole pool
+**Why it matters.** The fee-pool sweep drains a consumer's whole pool
 balance into the provider module account and fans it back out to depositors in
 the same transaction (`SweepConsumerFeePoolDenom` in
 [x/vaas/provider/keeper/fee_pool_shares.go](../x/vaas/provider/keeper/fee_pool_shares.go)).
@@ -126,7 +126,7 @@ app.StakingKeeper.SetHooks(
 )
 ```
 
-Four of the provider's hook methods carry real behavior; the rest are no-ops:
+Five of the provider's hook methods carry real behavior; the rest are no-ops:
 
 - `AfterValidatorCreated` -- rejects creating a validator whose consensus key is
   already in use as some validator's assigned consumer key. This is the *only*
@@ -142,6 +142,10 @@ Four of the provider's hook methods carry real behavior; the rest are no-ops:
   [key-assignment.md](key-assignment.md#rotating-your-provider-consensus-key).
 - `AfterValidatorRemoved` -- deletes the removed validator's key assignments and
   reverse mappings.
+- `AfterUnbondingInitiated` -- holds every unbonding operation (an undelegation,
+  a redelegation, the validator's own unbonding) started by a validator with a
+  pending equivocation punishment, so the deferred slash finds the stake it was
+  queued against ([consumer-refusal.md](consumer-refusal.md) section 3).
 
 **Omitting the hooks is entirely silent.** `ValidatorConsensusKeyInUse`
 ([key_assignment.go](../x/vaas/provider/keeper/key_assignment.go)),
@@ -154,16 +158,21 @@ validator's assigned consumer key silently stops resolving, so cross-chain
 evidence stops attributing to it; its downtime and fee bookkeeping is left
 stranded at the old address, so an epoch's downtime exclusion goes unseen and a
 withheld fee share is never reconciled; consumers learn a rotated key only at the
-next epoch boundary, so the validator accrues missed blocks in the meantime; and
+next epoch boundary, so the validator accrues missed blocks in the meantime;
 key-assignment rows leak for removed validators, keeping a dead validator's old
-consumer address resolvable.
+consumer address resolvable; and stake accused of a consumer double-sign can
+start unbonding unheld while the punishment waits out
+`equivocation_execution_delay`, so the deferred slash finds less than it was
+queued against.
 
 **A wiring hazard specific to this line.** `Keeper.Hooks()` has a pointer
 receiver, so `app.ProviderKeeper.Hooks()` captures `&app.ProviderKeeper`. That
 is what makes it legal to register the hooks *before* assigning the keeper --
 the reference app does exactly that, because the staking keeper must exist first.
-If your app stores the provider keeper in a local variable, or copies it by
-value, the hooks object points at a zero keeper and every hook nil-dereferences.
+Take the hooks from a copy instead (a local variable, a keeper passed by value)
+and they run against that copy: a never-assigned zero keeper nil-dereferences on
+the first hook, and a copy of a constructed keeper shares the store but misses
+whatever is set on the original afterwards, `SetGovKeeper` included (section 12).
 
 ## 4. Governance as the IBC client authority
 
@@ -262,8 +271,9 @@ interface (`GetProviderClientID`, `IsConsumerInDebt`, `IsVSCStale`), so a host
 can satisfy it with the consumer keeper or its own adapter. It has three modes
 ([msg_filter_ante.go](../x/vaas/consumer/ante/msg_filter_ante.go)):
 
-- **Before the provider client exists**, only `/ibc.`-prefixed messages are
-  admitted -- the chain can be wired up and nothing else.
+- **Before the provider client is pinned**, only `/ibc.`-prefixed messages,
+  `/cosmos.gov.` messages, and the pin itself (`MsgSetProviderClient`) are
+  admitted -- the chain can be wired up and pinned, and nothing else.
 - **While the consumer is in debt or its validator set is stale**, only
   `/ibc.core.` and `/cosmos.gov.` messages are admitted, rejected otherwise with
   `ErrConsumerInDebt`. Note the narrower `/ibc.core.` prefix: ICS-20 v1
@@ -402,26 +412,68 @@ pin the rate.
 ## 11. Consumer keeper construction order
 
 The consumer has no staking module: `ConsumerKeeper` stands in as the staking
-keeper for `x/slashing` and `x/genutil`. That creates a genuine circular
-dependency the host must break the same way the reference app does:
+keeper for `x/slashing` and `x/genutil`, and it in turn takes the IBC client
+and channel keepers and the slashing keeper. The reference app constructs it in
+three steps:
 
-1. `NewNonZeroKeeper` -- a collections-only consumer keeper, because
-   `ibckeeper.NewKeeper` panics on a zero keeper;
+1. `NewNonZeroKeeper` -- a collections-only placeholder assigned to
+   `app.ConsumerKeeper` before the IBC keeper exists;
 2. `ibckeeper.NewKeeper`;
 3. the real `ibcconsumerkeeper.NewKeeper`, taking the IBC client and channel
-   keepers and the slashing keeper.
+   keepers and the slashing keeper, assigned over the placeholder.
 
-Skip the pre-initialization and the app panics at startup.
+Step 1 is not what keeps the app up. ibc-go v10's `ibckeeper.NewKeeper` takes
+the codec, store service, param subspace, upgrade keeper and authority, and
+panics only on an empty upgrade keeper or an empty authority; nothing between
+the placeholder and the real constructor reads the consumer keeper, so an app
+that skips the placeholder starts the same. What the order protects is the
+slashing keeper, constructed before any of this and handed
+`&app.ConsumerKeeper`.
 
-Two further order traps, both silent:
+Two order traps:
 
 - the slashing keeper must be given `&app.ConsumerKeeper` (a pointer), so the
-  later reassignment is visible to it;
+  assignment in step 3 is visible to it. Hand it a copy and `x/slashing` runs
+  against the zero keeper the field held at that line, and panics the first
+  time it reads it;
 - `ibcconsumer.NewAppModule` takes the keeper **by value**, so it must be
   constructed *after* `SetHooks`. Build it earlier and the module holds a
-  pre-hooks copy and the slashing hooks never fire. The provider's
-  `NewAppModule` takes a pointer, so order does not matter there -- the two
-  modules differ, and it is easy to get backwards.
+  pre-hooks copy, so `ApplyVaasValidatorChanges` creates no signing info when a
+  validator joins; `x/slashing` then fails on that validator's first vote (no
+  signing info), its `BeginBlocker` returns the error out of `FinalizeBlock`,
+  and the node halts at the second block. The provider's `NewAppModule` takes a
+  pointer, so order does not matter there -- the two modules differ, and it is
+  easy to get backwards.
+
+## 12. The provider's gov keeper
+
+```go
+app.ProviderKeeper = ibcproviderkeeper.NewKeeper(
+    // ...
+    app.DistrKeeper,
+    nil, // the gov keeper, set below once it exists
+    authtypes.NewModuleAddress(govtypes.ModuleName).String(),
+    // ...
+)
+// ... construct app.GovKeeper ...
+app.ProviderKeeper.SetGovKeeper(govadapter.New(app.GovKeeper))
+```
+
+The provider defers a matured punishment behind a live removal vote for its
+consumer ([consumer-refusal.md](consumer-refusal.md) section 2), and finds that
+vote by reading governance's active-proposals queue. The gov keeper is built
+after the provider keeper in the reference app, so the provider keeper takes
+`nil` for it and is completed with `SetGovKeeper` once governance exists. The
+argument is any `vaastypes.GovKeeper`;
+[x/vaas/provider/govadapter](../x/vaas/provider/govadapter/adapter.go) wraps the
+SDK gov keeper and is what the reference app passes.
+
+**Omitting it is loud and immediate.** The module's `BeginBlock` checks for the
+gov keeper before anything else and panics at the first block ("provider
+module: no gov keeper wired; call ProviderKeeper.SetGovKeeper in the app"), so
+an app that skips the call never produces a block. The check is there because
+the deferral is a protocol guarantee, not a mode the chain may silently run
+without.
 
 ---
 
@@ -431,7 +483,8 @@ Two further order traps, both silent:
 |---|---|---|
 | `providertypes.ModuleName` in `maccPerms` | **runtime panic, chain halt** | first consumer deletion, in `BeginBlock` -- unrecoverable without a binary fix |
 | `AppendSendRestriction(FeePoolSendRestriction())` | silent, user-triggerable | unattributable fee-pool balance |
-| `ProviderKeeper.Hooks()` on staking | silent | duplicate consumer consensus addresses; orphaned key assignments and stranded downtime/fee bookkeeping after rotation or removal; no immediate post-rotation snapshot |
+| `ProviderKeeper.Hooks()` on staking | silent | duplicate consumer consensus addresses; orphaned key assignments and stranded downtime/fee bookkeeping after rotation or removal; no immediate post-rotation snapshot; accused stake unbonds unheld while an equivocation punishment waits |
+| `ProviderKeeper.SetGovKeeper(...)` | **panic at the first block** | "provider module: no gov keeper wired" |
 | Governance wired *and* set as IBC client authority | silent until recovery is needed, then terminal | `MsgRecoverClient` unreachable; a dead client is permanent |
 | `x/evidence` on the provider | silent | provider-native double-signs unpunished |
 | `consumerante.NewMsgFilterDecorator` | silent | safe mode and debt gating cease to exist |
@@ -440,6 +493,6 @@ Two further order traps, both silent:
 | Provider module after staking in `SetOrderEndBlockers` | silent | provider valset and every VSC packet lag one block |
 | Provider module after staking/genutil in `SetOrderInitGenesis` | **fatal at genesis** | "validator set is empty after InitGenesis" |
 | `ibcRouterV2` app-id routes | silent at startup, total at packet time | no VSC or evidence packet routes |
-| Consumer two-phase keeper init | **panic at startup** | `ibckeeper.NewKeeper` on a zero keeper |
+| `&app.ConsumerKeeper` (a pointer) into the slashing keeper | **panic** at the first read | `x/slashing` holds the zero keeper the field had at construction |
 | Provider fee denom | **fatal at startup** if malformed; silent if valid-but-wrong | `NewKeeper` panics, or pools use a denom nobody holds |
-| Consumer module built before `SetHooks` | silent | slashing hooks never fire |
+| Consumer module built before `SetHooks` | **halt at block 2** | no signing info for the validators; `x/slashing` fails the second block's `BeginBlock` on their first vote |

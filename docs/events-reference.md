@@ -83,7 +83,9 @@ Several paths log only, so do not build alerting on events that do not exist:
   `vaas_consumer_evidence_rejected`.
 - **Client declaration on the provider.** The binding set through
   `MsgUpdateConsumer`'s `client_id` rides that message's ordinary
-  `vaas_update_consumer` event. The only dedicated client event is the
+  `vaas_update_consumer` event, which carries a `consumer_client_id` attribute
+  only when a client was declared: filter on that attribute to tell a
+  declaration from any other update. The only dedicated client event is the
   consumer-side `vaas_client_established`.
 - **Epoch fee distribution.** `DistributeConsumerFees` emits nothing; only the
   fund, withdraw, and sweep messages do.

@@ -40,7 +40,7 @@ signals. The signal does two things:
   `RefusalPauseThreshold` (default one third, reached at exactly one third)
   the consumer is paused through the standard lifecycle (`PAUSED`, the
   `MaxPauseDuration` auto-stop, governance resume), and a
-  `consumer_refusal_threshold_reached` event names the refused power, the
+  `vaas_consumer_refusal_threshold_reached` event names the refused power, the
   total, and the threshold. One third of the power refusing to sign halts the
   consumer's consensus physically anyway; the threshold turns that implicit
   halt into an explicit, attributable pause.
@@ -231,7 +231,7 @@ wait for). Events: `vaas_consumer_refusal_set`,
 `vaas_equivocation_punishment_queued`, `vaas_equivocation_punishment_executed`,
 `vaas_equivocation_punishment_cancelled` (with the verdict as
 `cancel_reason`), and `vaas_equivocation_punishment_dropped` (with
-`drop_reason`).
+`reason`).
 
 ## 6. Parameters and bounds
 

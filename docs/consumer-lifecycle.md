@@ -13,14 +13,14 @@ REGISTERED -> INITIALIZED -> LAUNCHED -> STOPPED -> DELETED
                               PAUSED
 ```
 
-A consumer always progresses forward through these phases, with three exceptions: a failed
-launch resets the consumer back to REGISTERED so the owner can retry; a successful
-downtime challenge moves a LAUNCHED consumer to PAUSED, from which governance can either
-resume it back to LAUNCHED or remove it (see
-[consumer-downtime.md](consumer-downtime.md)); and a consumer that has not launched can be
-terminated outright with the same `MsgRemoveConsumer`, which for a pre-launch consumer
-skips STOPPED and moves it straight to DELETED (see
-[Removing a consumer before launch](#removing-a-consumer-before-launch)).
+A consumer always progresses forward through these phases, with these exceptions: a failed
+launch resets the consumer back to REGISTERED so the owner can retry; a LAUNCHED consumer
+moves to PAUSED on a successful downtime challenge, on a confirmed light-client attack, or
+when the bonded power refusing it reaches `refusal_pause_threshold` (see
+[Phase 4](#phase-4-paused)), from which governance can either resume it back to LAUNCHED
+or remove it; and a consumer that has not launched can be terminated outright with the same
+`MsgRemoveConsumer`, which for a pre-launch consumer skips STOPPED and moves it straight to
+DELETED (see [Removing a consumer before launch](#removing-a-consumer-before-launch)).
 
 ---
 
@@ -44,7 +44,7 @@ than defaulted field by field:
 
 - `initial_height` — the height at which the consumer chain starts (must be non-zero)
 - `spawn_time` — the provider block time at which the consumer is launched (zero means "not scheduled")
-- `unbonding_period` — unbonding period for the consumer (positive, and not above the provider's own unbonding period)
+- `unbonding_period` — unbonding period for the consumer (positive, not above the provider's own unbonding period, and above the downtime challenge horizon `downtime_evidence_max_age + downtime_challenge_window`)
 - `vaas_timeout_period` — timeout on the evidence packets the consumer sends the provider (positive, at most 24h)
 - `historical_entries` — number of historical entries to keep (positive)
 - `safe_mode_threshold` — how long the consumer tolerates a stale provider validator set before entering safe mode (positive, and strictly below the provider's liveness grace period)
@@ -90,9 +90,10 @@ owner (or governance) submits `MsgRemoveConsumer`: see
 2. For each consumer, `LaunchConsumer` runs in a cached context:
    - The current bonded validator set is snapshotted (all validators, no opt-in/out).
    - A consumer genesis state is built (`MakeConsumerGenesis`), containing:
-     - Provider `ClientState` and `ConsensusState` at the current provider height — so the
-       consumer can create a provider IBC client at genesis time. The client's trusting
-       period is derived from the provider unbonding period and `trusting_period_fraction`.
+     - Provider `ClientState` and `ConsensusState` at the current provider height. The
+       consumer creates no client from them: they seed the provider chain id that the
+       consumer's own pin is validated against. The client state's trusting period is
+       derived from the provider unbonding period and `trusting_period_fraction`.
      - The initial validator set.
      - Consumer parameters seeded from the consumer's `initialization_parameters`:
        `vaas_timeout_period`, `historical_entries`,
@@ -119,10 +120,11 @@ owner (or governance) submits `MsgRemoveConsumer`: see
 
 3. **Start the consumer chain** with that genesis. On the first block, the consumer's
    `InitGenesis` runs:
-   - Creates an IBC client pointing to the provider, using the embedded provider
-     `ClientState` and `ConsensusState`.
+   - Records the provider chain id from the embedded provider `ClientState`. No IBC
+     client is created: the relayer creates one and the owner pins it (below).
    - Installs the initial validator set from the genesis.
-   - The consumer is now live and tracking the provider.
+   - The consumer is now live, and rejects every VSC packet until the provider client is
+     pinned.
 
 **What happens after both chains are running:**
 
@@ -159,15 +161,18 @@ by the provider's BeginBlock (see [equivocation-evidence.md](equivocation-eviden
 **Requirements:** consumer must be in `LAUNCHED` phase.
 
 **What happens on-chain:**
-1. Withheld fee shares from the consumer's accusations are paid back from the consumer's fee
-   pool, whichever way the pause came: the accusations are cancelled with it and could not be
-   challenged any more.
+1. After a downtime challenge or a light-client attack, the consumer's accusations are
+   discarded (`DiscardConsumerAccusations`): the fee shares withheld under them are paid
+   back from the consumer's fee pool first, then every pending downtime slash from this
+   consumer is cancelled and its epoch downtime marks cleared. A refusal pause proves
+   nothing about the accusations and freezes them instead: pending slashes and withheld
+   fee records keep their state with their clocks stopped, and a resume restarts the clocks
+   where the pause stopped them (see [consumer-refusal.md](consumer-refusal.md) section 1).
 2. Phase is set to `PAUSED` and the pause reason recorded; `vaas_consumer_paused` names it.
-3. All pending downtime slashes from this consumer are cancelled and its epoch downtime
-   marks cleared.
-4. An automatic stop is scheduled at `block_time + MaxPauseDuration` (default 45 days).
-5. No further VSC packets are queued or sent; fee distribution and downtime evidence from
-   this consumer stop; the liveness sweep skips it.
+3. An automatic stop is scheduled at `block_time + MaxPauseDuration` (default 45 days).
+4. No further VSC packets are queued or sent; fee distribution and downtime evidence from
+   this consumer stop; the liveness sweep skips it; the consumer's pending equivocation
+   punishments are frozen for the length of the pause.
 
 **Exits:** `MsgResumeConsumer` (gov) returns the consumer to `LAUNCHED` with an immediate
 snapshot resync (the resume pre-flights the IBC client and fails with `MsgRecoverClient`
@@ -213,11 +218,11 @@ auto-stop moves it to `STOPPED`.
    It then:
    - Deletes: IBC client ID mapping, consumer genesis, key assignments, equivocation
      evidence minimum height, init-chain height, pending VSC packets, validator set,
-     previous-valset hash, removal time, the liveness state (last-ack time and the
-     sent/acked VSC-id counters), the in-debt flag, the per-consumer fees-per-block
-     override, the fee-pool-address reverse lookup, and the downtime state (pending
-     downtime slashes, epoch downtime marks, withheld fee records, accepted windows,
-     and window floors).
+     removal time, the liveness state (last-ack time and the sent/acked VSC-id
+     counters), the refusal signals, the pause reason and time, the in-debt flag, the
+     per-consumer fees-per-block override, the fee-pool-address reverse lookup, and the
+     downtime state (pending downtime slashes, epoch downtime marks, withheld fee
+     records, accepted windows, and window floors).
    - **Releases the chain ID**, as the last step before the phase changes, so the chain
      ID becomes registrable again (see below).
    - **Preserves** (for block explorer use): phase, owner address, metadata,
@@ -293,7 +298,7 @@ can be erased and its chain ID re-registered in the next block.
 | `REGISTERED` | `MsgCreateConsumer` | Any account | Consumer created, owner assigned (only `chain_id` and `metadata` are required) |
 | `INITIALIZED` | `spawn_time` set | On-chain (automatic) | Queued for launch at spawn_time |
 | `LAUNCHED` | `spawn_time` elapsed | On-chain (BeginBlock) | Genesis built; operator starts consumer; relayer creates IBC path |
-| `PAUSED` | Successful downtime challenge, confirmed light-client attack, or refusal coalition at `RefusalPauseThreshold` | Any account (with proof) / on-chain (EndBlock) | Withheld fees repaid, pending slashes cancelled, auto-stop scheduled; a light-client attack also freezes the IBC client; a resume is refused while the coalition stands |
+| `PAUSED` | Successful downtime challenge, confirmed light-client attack, or refusal coalition at `RefusalPauseThreshold` | Any account (with proof) / on-chain (EndBlock) | Withheld fees repaid and pending slashes cancelled after a challenge or an attack, frozen for the pause after a refusal; auto-stop scheduled; a light-client attack also freezes the IBC client; a resume is refused while the coalition stands |
 | `STOPPED` | `MsgRemoveConsumer` (gov), liveness sweep, or pause auto-stop | Governance / on-chain | Queued for deletion after unbonding period; the governance removal also cancels the consumer's pending equivocation punishments |
 | `DELETED` | Unbonding period elapsed | On-chain (BeginBlock) | Fee pool auto-swept to depositors, state cleaned up, chain ID released |
 | `DELETED` | `MsgRemoveConsumer` on a consumer that never launched | Owner or governance | Same teardown, with no `STOPPED` stopover and no unbonding delay |

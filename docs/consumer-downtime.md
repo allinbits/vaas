@@ -151,8 +151,9 @@ must disprove and by when.
 
 A rejected packet emits nothing on the provider -- the rejection travels back as an IBC
 error acknowledgement, and the *consumer* surfaces it as
-`vaas_consumer_evidence_rejected` (with the raw ack in the `error` attribute) and drops
-the packet rather than retrying it. See [events-reference.md](events-reference.md).
+`vaas_consumer_evidence_rejected` (naming the validator and the window end; the ack bytes
+are not carried) and drops the packet rather than retrying it. See
+[events-reference.md](events-reference.md).
 
 ## 4. Pricing and execution: P*M/C behind a challenge window
 
@@ -457,8 +458,9 @@ stays challengeable for its whole window, whatever the parameters say.
   windows, and evidence about windows too old to challenge.
 - VSC-shaped packets from a chain that is not the provider: inbound VAAS packets must carry
   the provider application's source port, and the consumer accepts them only over a client
-  whose tracked chain id matches the provider chain id pinned at genesis (or at first
-  contact). See [consumer-liveness.md](consumer-liveness.md) for the delivery model.
+  whose tracked chain id matches the provider chain id pinned at genesis, seeded from the
+  provider-authored client state. See [consumer-liveness.md](consumer-liveness.md) for the
+  delivery model.
 - An attacker chain reusing the provider's exact chain-id string. No forged light-client
   history is needed for this -- IBC attaches no meaning to chain-id uniqueness, so a chain
   that simply reports the provider's chain id passes the chain-id check while carrying a

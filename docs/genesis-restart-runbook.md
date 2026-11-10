@@ -92,7 +92,8 @@ Two things are deliberately **not** exported and are rebuilt at import:
 
 Also re-derived, from the per-consumer fields above rather than carried
 separately: the spawn-time queue, the removal-time queue, the pause-expiration
-queue, and each launched consumer's equivocation-evidence minimum height.
+queue, and the equivocation-evidence minimum height of each launched, paused, or stopped
+consumer.
 
 ## Consumer module
 

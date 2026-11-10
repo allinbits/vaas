@@ -9,8 +9,8 @@ key.
 This is optional. A validator that assigns no key simply uses its provider
 consensus key on the consumer, and the provider treats the consumer consensus
 address as identical to the provider one
-([x/vaas/provider/keeper/key_assignment.go](../x/vaas/provider/keeper/key_assignment.go)
-`GetProviderAddrFromConsumerAddr`, lines 164-178).
+(`GetProviderAddrFromConsumerAddr` in
+[x/vaas/provider/keeper/key_assignment.go](../x/vaas/provider/keeper/key_assignment.go)).
 
 That equivalence is what makes rotating the *provider* consensus key a
 cross-chain event for a validator that assigned nothing:
@@ -42,57 +42,63 @@ providerd tx vaasprovider assign-consensus-key <consumer-id> <consumer-pubkey> \
   This is exactly what `consumerd tendermint show-validator` prints on the
   consumer node. The `@type` and `key` fields are parsed by
   `ParseConsumerKeyFromJson`
-  ([x/vaas/provider/types/msg.go](../x/vaas/provider/types/msg.go) lines
-  335-346).
+  ([x/vaas/provider/types/msg.go](../x/vaas/provider/types/msg.go)).
 
 CLI source: `NewAssignConsumerKeyCmd`
-([x/vaas/provider/client/cli/tx.go](../x/vaas/provider/client/cli/tx.go) lines
-64-105).
+([x/vaas/provider/client/cli/tx.go](../x/vaas/provider/client/cli/tx.go)).
 
 ## Rules
 
 All enforced in `Keeper.AssignConsumerKey`
-([key_assignment.go](../x/vaas/provider/keeper/key_assignment.go) lines 65-162)
-unless noted.
+([key_assignment.go](../x/vaas/provider/keeper/key_assignment.go)) unless
+noted.
 
 1. **ed25519 only.** Any other key type is rejected with
-   `ErrValidatorPubKeyTypeNotSupported` (lines 44-49). This is a deliberate
-   simplification carried over from Interchain Security; the consensus-params
-   check that would otherwise decide supported types is disabled (lines 27-40).
+   `ErrValidatorPubKeyTypeNotSupported` (`ParseConsumerKey`). This is a
+   deliberate simplification carried over from Interchain Security; the
+   consensus-params check that would otherwise decide supported types is
+   disabled (see the note in `ParseConsumerKey`).
 
-2. **The consumer must be active.** Assignment is allowed only while the
-   consumer is `REGISTERED`, `INITIALIZED`, or `LAUNCHED` (`IsConsumerActive`,
-   [permissionless.go](../x/vaas/provider/keeper/permissionless.go) lines
-   189-195); otherwise `ErrInvalidPhase` (lines 74-79). You cannot assign a key
-   on a `PAUSED`, `STOPPED`, or `DELETED` consumer.
+2. **The consumer must not be stopped or deleted.** Assignment is allowed while
+   the consumer is `REGISTERED`, `INITIALIZED`, `LAUNCHED`, or `PAUSED`
+   (`IsConsumerActive`,
+   [permissionless.go](../x/vaas/provider/keeper/permissionless.go)); otherwise
+   `ErrInvalidPhase`. A paused consumer keeps assignment open on purpose: a
+   pause can last up to `MaxPauseDuration` and resolves on a governance
+   decision, and a validator replacing a compromised consumer key must not have
+   to wait for it ([consumer-downtime.md](consumer-downtime.md) section 7).
 
 3. **No reuse across validators.** A consumer key already in use -- as another
-   validator's provider consensus key, or as any validator's assigned consumer
-   key on this consumer (including a key still awaiting pruning) -- is rejected
-   with `ErrConsumerKeyInUse` (lines 93-100 and 112-119). This prevents two
-   validators from colliding on one consumer consensus address, and prevents a
-   validator from re-adopting a key it previously used on that consumer that is
-   still being pruned.
+   validator's provider consensus key, as the target of a consensus-key
+   rotation recorded earlier in the same block (`pendingRotationClaims`), or as
+   any validator's assigned consumer key on this consumer (including a key
+   still awaiting pruning) -- is rejected with `ErrConsumerKeyInUse`. This
+   prevents two validators from colliding on one consumer consensus address,
+   and prevents a validator from re-adopting a key it previously used on that
+   consumer that is still being pruned.
 
 4. **No assigning your default provider key as a consumer key** unless you have
-   already assigned some other consumer key first -- `ErrCannotAssignDefaultKeyAssignment`
-   (lines 101-109). This keeps the "no assignment means default key" invariant
-   unambiguous.
+   already assigned some other consumer key first --
+   `ErrCannotAssignDefaultKeyAssignment`. This keeps the "no assignment means
+   default key" invariant unambiguous.
 
 5. **Reassignment prunes the old key after unbonding.** Assigning a new key when
-   one is already assigned replaces the mapping. If the consumer has launched,
-   the old consumer address is not deleted immediately -- it is queued for
-   pruning at `block_time + unbonding_period` (lines 129-143), so it stays
-   resolvable for any in-flight evidence referencing the old key while the
-   validator is still slashable. If the consumer has not launched yet, the old
-   mapping is removed at once (lines 144-148). Queued addresses are pruned in
-   `PruneKeyAssignments`, which runs each `EndBlock` (lines 180-194).
+   one is already assigned replaces the mapping. If the consumer has launched
+   (a paused consumer counts), the old consumer address is not deleted
+   immediately -- it is queued for pruning at `block_time + unbonding_period`
+   (`AppendConsumerAddrsToPrune`), so it stays resolvable for any in-flight
+   evidence referencing the old key while the validator is still slashable. If
+   the consumer has not launched yet, the old mapping is removed at once.
+   Queued addresses are pruned in `PruneKeyAssignments`, which
+   `EndBlockPruneKeyAssignments` runs each `EndBlock` for every launched
+   consumer.
 
 6. **A new provider validator cannot take a consensus key already assigned as a
    consumer key.** The staking `AfterValidatorCreated` hook calls
-   `ValidatorConsensusKeyInUse` (lines 216-245); if the new validator's
-   consensus address is already some validator's assigned consumer address on an
-   active consumer, validator creation is aborted.
+   `ValidatorConsensusKeyInUse`; if the new validator's consensus address is
+   already some validator's assigned consumer address on any consumer that is
+   not deleted (a paused or stopped one keeps its assignments), validator
+   creation is aborted.
 
 ## The consumer-address mapping
 
@@ -109,7 +115,7 @@ evidence or double-voting evidence to the right validator. When no mapping
 exists, the consumer address *is* the provider address.
 
 On consumer deletion, all key-assignment state for that consumer is cleared by
-`DeleteKeyAssignments` (lines 196-214).
+`DeleteKeyAssignments`.
 
 ## Rotating your provider consensus key
 
