@@ -3,6 +3,7 @@ package keeper
 import (
 	"errors"
 	"fmt"
+	"strconv"
 
 	abci "github.com/cometbft/cometbft/abci/types"
 
@@ -155,6 +156,26 @@ func (k Keeper) SendVSCPackets(ctx sdk.Context) error {
 }
 
 func (k Keeper) SendVSCPacketsToChain(ctx sdk.Context, consumerId uint64, clientId string) error {
+	// A client recovered onto a renamed chain is not served, on any path
+	// that sends from a block (the epoch send and the rotation snapshots):
+	// serving it would run a consumer the provider can no longer judge, as
+	// its double-voting evidence is verified over the stored chain id. The
+	// packets stay queued until governance renames the consumer. The resume
+	// path checks the same before its own send.
+	if clientChainId, mismatch := k.consumerClientChainIdMismatch(ctx, consumerId, clientId); mismatch {
+		chainId, _ := k.GetConsumerChainId(ctx, consumerId)
+		k.Logger(ctx).Error("consumer client tracks another chain id; not served until governance renames the consumer",
+			"consumerId", consumerId, "clientId", clientId, "clientChainId", clientChainId, "consumerChainId", chainId)
+		ctx.EventManager().EmitEvent(sdk.NewEvent(
+			providertypes.EventTypeConsumerClientChainIdMismatch,
+			sdk.NewAttribute(sdk.AttributeKeyModule, providertypes.ModuleName),
+			sdk.NewAttribute(providertypes.AttributeConsumerId, strconv.FormatUint(consumerId, 10)),
+			sdk.NewAttribute(providertypes.AttributeConsumerClientID, clientId),
+			sdk.NewAttribute(providertypes.AttributeClientChainId, clientChainId),
+			sdk.NewAttribute(providertypes.AttributeConsumerChainId, chainId),
+		))
+		return nil
+	}
 	// EndBlock cannot fail the block over a relayer or client hiccup: any
 	// send error is logged (inside sendVSCPacketsToChainStrict) and
 	// swallowed here, leaving the packets queued for a retry next epoch.

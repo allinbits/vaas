@@ -633,6 +633,18 @@ func (k Keeper) ResumeConsumerChain(ctx sdk.Context, consumerId uint64) error {
 			"consumer %d client %s has status %q; if expired or frozen, bundle ibc-go's MsgRecoverClient for this client in the same governance proposal as this resume",
 			consumerId, clientId, status)
 	}
+	// A recovery may have put a client with another chain id or a shorter
+	// trusting period behind the declaration; neither is served.
+	if clientChainId, mismatch := k.consumerClientChainIdMismatch(ctx, consumerId, clientId); mismatch {
+		return errorsmod.Wrapf(types.ErrInvalidConsumerClient,
+			"consumer %d client %s tracks chain id %s; rename the consumer to it (MsgUpdateConsumer by the governance authority) in the same proposal as this resume",
+			consumerId, clientId, clientChainId)
+	}
+	if tmClientState, err := k.consumerClientState(ctx, clientId); err != nil {
+		return err
+	} else if err := k.validateConsumerClientTrustingPeriod(ctx, clientId, tmClientState); err != nil {
+		return err
+	}
 
 	// After a light-client pause the fork's evidence stays verifiable, on
 	// every submission path, until the pre-fork consensus states age out of
@@ -850,6 +862,9 @@ func (k Keeper) DeleteConsumerChain(ctx sdk.Context, consumerId uint64) (err err
 	k.DeleteConsumerHighestAckedVscId(ctx, consumerId)
 	k.DeleteConsumerPauseReason(ctx, consumerId)
 	k.DeleteConsumerPausedAt(ctx, consumerId)
+	if err := k.DeleteConsumerPreviousChainIds(ctx, consumerId); err != nil {
+		return fmt.Errorf("deleting previous chain ids for consumer %d: %w", consumerId, err)
+	}
 	k.DeleteConsumerDebt(ctx, consumerId)
 
 	if err := k.ConsumerFeesPerBlockOverride.Remove(ctx, consumerId); err != nil {
@@ -993,10 +1008,12 @@ func (k Keeper) SetConsumerClient(ctx sdk.Context, consumerId uint64, clientID s
 		return errorsmod.Wrapf(types.ErrInvalidMsgUpdateConsumer,
 			"client %s has no registered IBC v2 counterparty, so no packet can be routed over it", clientID)
 	}
-	if horizon := k.GetInfractionParams(ctx).ChallengeableInterval(); tmClientState.TrustingPeriod <= horizon {
+	if err := k.validateConsumerClientTrustingPeriod(ctx, clientID, tmClientState); err != nil {
+		return err
+	}
+	if holder, taken := k.GetClientIdToConsumerId(ctx, clientID); taken {
 		return errorsmod.Wrapf(types.ErrInvalidMsgUpdateConsumer,
-			"client %s trusting period (%s) must exceed the downtime challenge horizon (%s): every accepted downtime accusation must stay disprovable by a header this client can still verify",
-			clientID, tmClientState.TrustingPeriod, horizon)
+			"client %s is already declared by consumer %d", clientID, holder)
 	}
 
 	k.SetConsumerClientId(ctx, consumerId, clientID)

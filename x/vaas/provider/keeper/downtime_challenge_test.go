@@ -10,6 +10,7 @@ import (
 	tmproto "github.com/cometbft/cometbft/proto/tendermint/types"
 	tmtypes "github.com/cometbft/cometbft/types"
 
+	clienttypes "github.com/cosmos/ibc-go/v10/modules/core/02-client/types"
 	ibcexported "github.com/cosmos/ibc-go/v10/modules/core/exported"
 	ibctmtypes "github.com/cosmos/ibc-go/v10/modules/light-clients/07-tendermint"
 
@@ -659,7 +660,7 @@ func TestHandleChallengeConsumerDowntime_WrongHeaderChainID(t *testing.T) {
 
 	err := f.k.HandleChallengeConsumerDowntime(f.ctx, f.msg)
 	require.ErrorIs(t, err, types.ErrDowntimeChallengeFailed)
-	require.ErrorContains(t, err, "does not match consumer chain id")
+	require.ErrorContains(t, err, "header chain id")
 	f.requireNoStateChange(t)
 }
 
@@ -796,4 +797,32 @@ func TestHandleChallengeConsumerDowntime_RejectsNonActiveClient(t *testing.T) {
 				"the consumer must not be paused by a challenge over a non-active client")
 		})
 	}
+}
+
+// TestHandleChallengeConsumerDowntime_SucceedsOverAPreviousChainId: a window
+// from before a governance rename is disproved with headers signed over the
+// chain id of the time, which the consumer still carries as a previous one.
+func TestHandleChallengeConsumerDowntime_SucceedsOverAPreviousChainId(t *testing.T) {
+	f := newChallengeFixture(t)
+	f.k.SetConsumerChainId(f.ctx, f.cid, "renamed-chain")
+	require.NoError(t, f.k.ConsumerPreviousChainIds.Set(f.ctx, collections.Join(f.cid, challengeTestChainID),
+		clienttypes.NewHeight(clienttypes.ParseChainID(challengeTestChainID), 10_000)))
+
+	valAddrCodec := address.NewBech32Codec("cosmosvaloper")
+	f.mocks.MockStakingKeeper.EXPECT().ValidatorAddressCodec().Return(valAddrCodec).AnyTimes()
+	val, valBytes := newBondedValidator(t, valAddrCodec, 7)
+	f.mocks.MockStakingKeeper.EXPECT().
+		GetValidatorByConsAddr(gomock.Any(), f.providerAddr.ToSdkConsAddr()).
+		Return(val, nil)
+	poolAddr := f.k.GetConsumerFeePoolAddress(f.cid)
+	amount := sdk.NewInt64Coin("uphoton", 500)
+	f.mocks.MockBankKeeper.EXPECT().GetBalance(gomock.Any(), poolAddr, "uphoton").Return(sdk.NewInt64Coin("uphoton", 1000))
+	f.mocks.MockBankKeeper.EXPECT().InputOutputCoins(gomock.Any(),
+		banktypes.Input{Address: poolAddr.String(), Coins: sdk.NewCoins(amount)},
+		[]banktypes.Output{{Address: accAddr(valBytes), Coins: sdk.NewCoins(amount)}},
+	).Return(nil)
+
+	require.NoError(t, f.k.HandleChallengeConsumerDowntime(f.ctx, f.msg))
+	_, err := f.k.PendingDowntimeSlashes.Get(f.ctx, f.pendingSlashKey())
+	require.ErrorIs(t, err, collections.ErrNotFound, "pending slash must be cancelled")
 }

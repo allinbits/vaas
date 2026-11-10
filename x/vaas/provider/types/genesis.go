@@ -82,6 +82,28 @@ func (gs GenesisState) Validate() error {
 	// module-wide fees_per_block floor (the same invariant the msg handler and
 	// UpdateParams reconciliation enforce at runtime).
 	floor := gs.Params.FeesPerBlockAmount
+	// A chain id a consumer carried before a rename stays its evidence
+	// domain until its deletion: no other consumer may hold it, as its
+	// current id or as one of its own previous ids.
+	currentChainIds := map[string]uint64{}
+	for _, cs := range gs.ConsumerStates {
+		if cs.ChainId != "" {
+			currentChainIds[cs.ChainId] = cs.ConsumerId
+		}
+	}
+	previousChainIds := map[string]uint64{}
+	for _, cs := range gs.ConsumerStates {
+		for _, previous := range cs.PreviousChainIds {
+			if holder, ok := currentChainIds[previous.ChainId]; ok {
+				return fmt.Errorf("consumer %d's previous chain id %q is consumer %d's chain id", cs.ConsumerId, previous.ChainId, holder)
+			}
+			if holder, ok := previousChainIds[previous.ChainId]; ok && holder != cs.ConsumerId {
+				return fmt.Errorf("consumer %d's previous chain id %q is also consumer %d's", cs.ConsumerId, previous.ChainId, holder)
+			}
+			previousChainIds[previous.ChainId] = cs.ConsumerId
+		}
+	}
+
 	for _, ov := range gs.ConsumerFeesPerBlockOverrides {
 		amt, ok := math.NewIntFromString(ov.Amount)
 		if !ok {
@@ -520,6 +542,26 @@ func (cs ConsumerState) Validate() error {
 		if pVSC.ValsetUpdateId == 0 {
 			return errors.New("valset update ID cannot be equal to zero")
 		}
+	}
+
+	seenPrevious := map[string]bool{}
+	for i, previous := range cs.PreviousChainIds {
+		if previous.ChainId == "" {
+			return fmt.Errorf("previous chain id %d: chain id cannot be empty", i)
+		}
+		if previous.ChainId == cs.ChainId {
+			return fmt.Errorf("previous chain id %d: %q is the consumer's current chain id", i, previous.ChainId)
+		}
+		if previous.Boundary.IsZero() {
+			return fmt.Errorf("previous chain id %d: boundary cannot be zero", i)
+		}
+		if seenPrevious[previous.ChainId] {
+			return fmt.Errorf("previous chain id %d: duplicate chain id %q", i, previous.ChainId)
+		}
+		seenPrevious[previous.ChainId] = true
+	}
+	if len(cs.PreviousChainIds) > 0 && cs.Phase.Prelaunched() {
+		return fmt.Errorf("previous chain ids are only set after launch, phase is %s", cs.Phase)
 	}
 
 	switch cs.Phase {

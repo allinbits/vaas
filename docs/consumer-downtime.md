@@ -354,6 +354,11 @@ Two governance exits:
   alone already covers. A fork at a later height is new evidence and pauses it again.
 - **`MsgRemoveConsumer`** accepts a paused consumer and routes it into the ordinary
   `STOPPED -> DELETED` teardown.
+  The substitute must track the consumer's chain id, or the proposal also carries the
+  governance rename (`MsgUpdateConsumer` with the client's chain id, see
+  [consumer-lifecycle.md](consumer-lifecycle.md)), and its trusting period must clear the
+  downtime challenge horizon like the declaration's did: the resume checks both and
+  refuses a client that fails either.
 
 Stopping or deleting a consumer cancels its in-flight downtime state (pending slashes and
 epoch marks), as does a pause for a disproven or discredited source: once no epoch or

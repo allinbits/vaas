@@ -196,7 +196,7 @@ and the additional cross-chain bounds enforced in `validateConsumerInitParams`
 | `genesis_hash` | bytes | length `<= MaxHashLength` | empty |
 | `binary_hash` | bytes | length `<= MaxHashLength` | empty |
 | `spawn_time` | timestamp | zero means "not scheduled" | zero |
-| `unbonding_period` | duration | `> 0` and `<= provider unbonding` | provider default minus 1 day |
+| `unbonding_period` | duration | `> 0`, `<= provider unbonding`, and `unbonding_period * trusting_period_fraction > downtime_evidence_max_age + downtime_challenge_window` | provider default minus 1 day |
 | `vaas_timeout_period` | duration | `(0, 24h]` | `1h` |
 | `historical_entries` | int64 | `> 0` | `10000` |
 | `safe_mode_threshold` | duration | `> 0` and `< provider liveness grace` | `3h` |

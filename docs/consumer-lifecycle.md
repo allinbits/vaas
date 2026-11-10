@@ -224,6 +224,21 @@ auto-stop moves it to `STOPPED`.
      initialization parameters.
 3. Phase is set to `DELETED`.
 
+**The chain ID follows the declared client after launch, by governance only.** A
+launched (or paused) consumer cannot be renamed by its owner: the stored chain ID is
+what its double-voting evidence is verified over and what its misbehaviour is accepted
+for. A consumer that bumps its chain ID (an upgrade's revision bump, say) gets its
+declared client recovered onto the new name by governance (`MsgRecoverClient`), and
+the provider's record follows in the same proposal: a `MsgUpdateConsumer` signed by
+the governance authority whose `new_chain_id` is the chain ID the declared client now
+tracks. Until it does, the provider serves no VSC packet to that consumer and refuses
+to resume it (`vaas_consumer_client_chain_id_mismatch`). The old chain ID stays on
+record with the client's height at the rename, so double-voting evidence from a block
+at or below it is still accepted (see
+[equivocation-evidence.md](equivocation-evidence.md)). Before launch, the owner renames
+freely until the client is declared; the client tracks a chain ID, so the rename comes
+first.
+
 **The chain ID is released, not reserved forever.** `MsgCreateConsumer` and
 `MsgUpdateConsumer` reject a chain ID that is already claimed (`ChainIdInUse`), and
 deletion drops this consumer's claim, so the same chain ID can be registered again by a

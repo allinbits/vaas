@@ -62,7 +62,9 @@ func (k Keeper) ChainIdInUse(ctx context.Context, chainId string) (bool, error) 
 			return true, nil
 		}
 	}
-	return false, nil
+	// A chain id a consumer carried before a rename stays its evidence
+	// domain until its deletion (see RenameLaunchedConsumer).
+	return k.chainIdIsAPreviousOne(sdk.UnwrapSDKContext(ctx), chainId)
 }
 
 // SetConsumerChainId sets the chain id associated with this consumer id
@@ -137,12 +139,17 @@ func (k Keeper) GetConsumerInitializationParameters(ctx context.Context, consume
 
 // SetConsumerInitializationParameters sets the initialization parameters associated with this consumer id.
 //
-// The initial height is cross-checked against the chain id's revision, except
-// for a deleted consumer, which no longer has a chain id to check against: its
-// teardown released it (see DeleteConsumerChain). Only genesis import writes
-// parameters for a deleted consumer, since deletion keeps them for explorer UX.
+// The initial height is cross-checked against the chain id's revision while
+// the consumer has not launched: it is what the consumer genesis client is
+// built from. After launch the parameters are history, and the chain id may
+// have followed a governance rename (RenameLaunchedConsumer), so a genesis
+// import of a launched, paused, stopped or deleted consumer (the last of
+// which has no chain id at all, see DeleteConsumerChain) writes them as they
+// are.
 func (k Keeper) SetConsumerInitializationParameters(ctx context.Context, consumerId uint64, parameters types.ConsumerInitializationParameters) error {
-	if k.GetConsumerPhase(ctx, consumerId) != types.CONSUMER_PHASE_DELETED {
+	switch k.GetConsumerPhase(ctx, consumerId) {
+	case types.CONSUMER_PHASE_LAUNCHED, types.CONSUMER_PHASE_PAUSED, types.CONSUMER_PHASE_STOPPED, types.CONSUMER_PHASE_DELETED:
+	default:
 		chainId, err := k.GetConsumerChainId(ctx, consumerId)
 		if err != nil {
 			return fmt.Errorf("failed to get consumer chain ID for consumer id (%d): %w", consumerId, err)
