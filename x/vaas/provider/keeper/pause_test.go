@@ -233,9 +233,11 @@ func TestBeginBlockAutoStopPausedConsumers_SkipsNoLongerPaused(t *testing.T) {
 
 // TestStopAndPrepareForConsumerRemoval_CancelsDowntimeState verifies that
 // stopping a consumer (whether from the liveness sweep or elsewhere) cancels
-// any pending downtime state, while the accepted-window records and the
-// pruned floor deliberately survive: a cancelled window must not become
-// re-submittable, so only DeleteConsumerChain erases them.
+// any pending downtime state and drops its withheld fee records, which a
+// stopped consumer could never pay out and which would otherwise cap
+// depositor withdrawals until they expired, while the accepted-window records
+// and the pruned floor deliberately survive: a cancelled window must not
+// become re-submittable, so only DeleteConsumerChain erases them.
 func TestStopAndPrepareForConsumerRemoval_CancelsDowntimeState(t *testing.T) {
 	k, ctx, ctrl, mocks := testkeeper.GetProviderKeeperAndCtx(t, testkeeper.NewInMemKeeperParams(t))
 	defer ctrl.Finish()
@@ -255,12 +257,31 @@ func TestStopAndPrepareForConsumerRemoval_CancelsDowntimeState(t *testing.T) {
 		AcceptedAt:  ctx.BlockTime(),
 	}))
 	require.NoError(t, k.DowntimeWindowFloors.Set(ctx, pairKey, 50))
+	require.NoError(t, k.WithheldFeeRecords.Set(ctx, pairKey, providertypes.WithheldFeeRecord{
+		ConsumerId:       cid,
+		ProviderConsAddr: providerAddr.ToSdkConsAddr().Bytes(),
+		Amount:           sdk.NewInt64Coin("uphoton", 50),
+		ExpiresAt:        ctx.BlockTime().Add(time.Hour),
+	}))
+	// Another consumer's record is out of the stop's range.
+	otherCid := k.FetchAndIncrementConsumerId(ctx)
+	otherPairKey := collections.Join(otherCid, providerAddr.ToSdkConsAddr().Bytes())
+	require.NoError(t, k.WithheldFeeRecords.Set(ctx, otherPairKey, providertypes.WithheldFeeRecord{
+		ConsumerId:       otherCid,
+		ProviderConsAddr: providerAddr.ToSdkConsAddr().Bytes(),
+		Amount:           sdk.NewInt64Coin("uphoton", 75),
+		ExpiresAt:        ctx.BlockTime().Add(time.Hour),
+	}))
 
 	require.NoError(t, k.StopAndPrepareForConsumerRemoval(ctx, cid))
 
 	_, err := k.PendingDowntimeSlashes.Get(ctx, collections.Join3(cid, providerAddr.ToSdkConsAddr().Bytes(), int64(100)))
 	require.ErrorIs(t, err, collections.ErrNotFound)
 	require.False(t, k.IsEpochDowntime(ctx, cid, providerAddr.ToSdkConsAddr()))
+	_, err = k.WithheldFeeRecords.Get(ctx, pairKey)
+	require.ErrorIs(t, err, collections.ErrNotFound, "withheld fee records must be dropped by the stop")
+	_, err = k.WithheldFeeRecords.Get(ctx, otherPairKey)
+	require.NoError(t, err, "another consumer's withheld fee record must survive")
 
 	accepted, err := k.AcceptedDowntimeWindows.Get(ctx, acceptedKey)
 	require.NoError(t, err, "accepted downtime window must survive the stop")

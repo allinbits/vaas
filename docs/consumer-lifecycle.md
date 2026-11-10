@@ -193,6 +193,9 @@ auto-stop moves it to `STOPPED`.
 2. The consumer is added to a time-indexed removal queue keyed by
    `block_time + provider_unbonding_period`.
 3. No further VSC packets are queued or sent to this consumer.
+4. Its pending downtime slashes are cancelled, and the fee shares withheld from its accused
+   validators are released to the pool's share-holders: a stopped consumer cannot be
+   challenged, so nothing could claim them any more.
 
 A consumer stopped by the liveness sweep or the pause auto-stop can still be
 removed by governance. `MsgRemoveConsumer` then leaves the phase and the
