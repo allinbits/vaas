@@ -305,8 +305,12 @@ proves the chain's consensus is compromised without proving who is at fault, so 
 contains the chain and punishes nobody, and the consumer's IBC client is frozen so that no
 packet proven against the fork lands any more; `MsgSubmitConsumerMisbehaviour` does both in one
 transaction (see `HandleConsumerMisbehaviour`), and a client frozen through ibc-go's
-`MsgUpdateClient` is caught by the provider's BeginBlock, which pauses the consumer. A refusal
-coalition reaching `RefusalPauseThreshold` pauses the consumer the same way (see
+`MsgUpdateClient` is caught by the provider's BeginBlock, which pauses the consumer, or, when
+the consumer is already paused for a challenge or a refusal, moves that pause under the
+light-client reason (discarding the accusations as a light-client pause does, and restarting
+the paused-at clock the resume's wait counts from), so governance does not resume it into
+the fork. A refusal coalition reaching `RefusalPauseThreshold` pauses the consumer the same
+way (see
 [consumer-refusal.md](consumer-refusal.md)). A challenge or light-client pause first repays
 the fees withheld from accused validators: their accusations are cancelled with it and could
 not be challenged any more. A refusal pause proves nothing about the accusations and freezes

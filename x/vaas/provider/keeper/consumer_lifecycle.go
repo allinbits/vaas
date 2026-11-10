@@ -549,18 +549,34 @@ func (k Keeper) forkEvidenceExpired(ctx sdk.Context, consumerId uint64, clientId
 }
 
 // PauseConsumersWithFrozenClients pauses, under the light-client reason,
-// every launched consumer whose IBC client is Frozen. A tendermint client
-// freezes only on verified misbehaviour, and a relayer or watcher reports it
-// through MsgUpdateClient, which the provider never sees, so this BeginBlock
-// mirror is what contains a fork reported the standard way; the VAAS message
+// every launched consumer whose IBC client is Frozen, and moves a consumer
+// already paused for a downtime challenge or a refusal under that reason
+// when its client freezes during the pause. A tendermint client freezes only
+// on verified misbehaviour, and a relayer or watcher reports it through
+// MsgUpdateClient, which the provider never sees, so this BeginBlock mirror
+// is what contains a fork reported the standard way; the VAAS message
 // (HandleConsumerMisbehaviour) freezes and pauses in one transaction and adds
 // the attribution, but nothing requires anyone to use it. Without the mirror
-// a frozen client leaves the consumer launched with every VSC send refused,
-// until the liveness sweep stops it for good instead of pausing it for
-// governance. A pause that fails is logged and retried next block; nothing
-// here may halt the chain.
+// a frozen client leaves a launched consumer launched with every VSC send
+// refused, until the liveness sweep stops it for good instead of pausing it
+// for governance, and a fork reported during another pause goes unseen: a
+// recover-and-resume proposal would then land the consumer back in LAUNCHED
+// only for the same headers to pause it again, now under the light-client
+// reason and its trusting-period wait, one governance round late (see
+// escalatePauseToLightClientAttack). A pause that fails is logged and retried
+// next block; nothing here may halt the chain.
 func (k Keeper) PauseConsumersWithFrozenClients(ctx sdk.Context) {
-	for _, consumerId := range k.GetAllLaunchedConsumerIds(ctx) {
+	for _, consumerId := range k.GetAllConsumerIds(ctx) {
+		phase := k.GetConsumerPhase(ctx, consumerId)
+		switch phase {
+		case types.CONSUMER_PHASE_LAUNCHED:
+		case types.CONSUMER_PHASE_PAUSED:
+			if k.GetConsumerPauseReason(ctx, consumerId) == types.PAUSE_REASON_LIGHT_CLIENT_ATTACK {
+				continue
+			}
+		default:
+			continue
+		}
 		clientId, found := k.GetConsumerClientId(ctx, consumerId)
 		if !found {
 			continue
@@ -568,14 +584,54 @@ func (k Keeper) PauseConsumersWithFrozenClients(ctx sdk.Context) {
 		if k.clientKeeper.GetClientStatus(ctx, clientId) != ibcexported.Frozen {
 			continue
 		}
-		if err := k.PauseConsumerChain(ctx, consumerId, types.PAUSE_REASON_LIGHT_CLIENT_ATTACK); err != nil {
-			k.Logger(ctx).Error("consumer client is frozen but the consumer could not be paused; retrying next block",
+		var err error
+		if phase == types.CONSUMER_PHASE_PAUSED {
+			err = k.escalatePauseToLightClientAttack(ctx, consumerId)
+		} else {
+			err = k.PauseConsumerChain(ctx, consumerId, types.PAUSE_REASON_LIGHT_CLIENT_ATTACK)
+		}
+		if err != nil {
+			k.Logger(ctx).Error("consumer client is frozen but the consumer could not be paused for it; retrying next block",
 				"consumerId", consumerId, "clientId", clientId, "err", err.Error())
 			continue
 		}
 		k.Logger(ctx).Info("consumer client frozen by verified misbehaviour: consumer paused pending a governance decision",
 			"consumerId", consumerId, "clientId", clientId)
 	}
+}
+
+// escalatePauseToLightClientAttack moves a consumer paused for a downtime
+// challenge or a refusal under the light-client reason, once its client has
+// frozen during that pause. The fork is as real as one found on a launched
+// consumer, and recording it is what makes the resume wait out its evidence
+// (see ResumeConsumerChain) instead of landing the consumer back in LAUNCHED
+// for the same headers to pause it again. The accusations the earlier pause
+// left in place are discarded as a light-client pause discards them, a
+// forked chain's accusations being no more trustworthy than its headers (see
+// PauseConsumerChain); the paused-at time moves to now, the block the fork's
+// evidence is known to verify at and what the resume's wait counts from; and
+// the consumer_paused event fires again under the new reason. The auto-stop
+// the earlier pause scheduled stands: the consumer has been paused since
+// then, whatever the reason.
+func (k Keeper) escalatePauseToLightClientAttack(ctx sdk.Context, consumerId uint64) error {
+	if err := k.DiscardConsumerAccusations(ctx, consumerId); err != nil {
+		return err
+	}
+	if err := k.SetConsumerPauseReason(ctx, consumerId, types.PAUSE_REASON_LIGHT_CLIENT_ATTACK); err != nil {
+		return fmt.Errorf("recording pause reason for consumer %d: %w", consumerId, err)
+	}
+	if err := k.SetConsumerPausedAt(ctx, consumerId, ctx.BlockTime()); err != nil {
+		return fmt.Errorf("recording pause time for consumer %d: %w", consumerId, err)
+	}
+
+	ctx.EventManager().EmitEvent(sdk.NewEvent(
+		vaastypes.EventTypeConsumerPaused,
+		sdk.NewAttribute(sdk.AttributeKeyModule, types.ModuleName),
+		sdk.NewAttribute(types.AttributeConsumerId, fmt.Sprintf("%d", consumerId)),
+		sdk.NewAttribute(types.AttributePauseReason, types.PAUSE_REASON_LIGHT_CLIENT_ATTACK.String()),
+	))
+
+	return nil
 }
 
 // ResumeConsumerChain resumes a PAUSED consumer chain via MsgResumeConsumer.
