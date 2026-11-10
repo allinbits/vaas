@@ -126,41 +126,49 @@ func TestIBCModuleOnRecvPacketRejectsWrongSourcePort(t *testing.T) {
 	require.False(t, found, "a rejected packet must not establish the provider client")
 }
 
-// TestIBCModuleOnRecvPacketRejectsBadPubkeyInsteadOfPanicking pins the M4 fix:
-// a VSC packet carrying a validator update whose consensus pubkey cannot be
-// decoded is rejected with an error acknowledgement on receipt, rather than
-// being accepted, staged into pending changes, and then panicking the consumer
-// at EndBlock when ApplyVaasValidatorChanges decodes the pubkey (which would halt
-// block production).
+// TestIBCModuleOnRecvPacketRejectsBadPubkeyInsteadOfPanicking: over the pinned
+// provider client, a VSC packet carrying a validator update whose consensus
+// pubkey does not decode is error-acked on receipt and stages nothing, so the
+// EndBlock flush, which decodes every pending pubkey and panics on one it
+// cannot, never sees it. A well-formed packet over the same pin is accepted,
+// so the rejection is the validation's and not the pin's.
 func TestIBCModuleOnRecvPacketRejectsBadPubkeyInsteadOfPanicking(t *testing.T) {
+	const consumerOwnClientID = "07-tendermint-1"
 	consumerKeeper, ctx, ctrl, mocks := testkeeper.GetConsumerKeeperAndCtx(t, testkeeper.NewInMemKeeperParams(t))
 	defer ctrl.Finish()
 	testkeeper.StubClientState(mocks, "provider-0")
+	consumerKeeper.SetProviderClientID(ctx, consumerOwnClientID)
 
 	module := consumer.NewIBCModule(&consumerKeeper)
+	payloadFor := func(update abci.ValidatorUpdate) channeltypesv2.Payload {
+		vsc := vaastypes.NewValidatorSetChangePacketData([]abci.ValidatorUpdate{update}, 1)
+		return channeltypesv2.Payload{
+			SourcePort:      vaastypes.ProviderAppID,
+			DestinationPort: vaastypes.ConsumerAppID,
+			Value:           vsc.GetBytes(),
+		}
+	}
 
 	// An empty PublicKey oneof does not decode to any supported consensus key.
 	badUpdate := abci.ValidatorUpdate{PubKey: cmtprotocrypto.PublicKey{}, Power: 5}
-	vsc := vaastypes.NewValidatorSetChangePacketData([]abci.ValidatorUpdate{badUpdate}, 1)
-
-	payload := channeltypesv2.Payload{
-		SourcePort:      vaastypes.ProviderAppID,
-		DestinationPort: vaastypes.ConsumerAppID,
-		Value:           vsc.GetBytes(),
-	}
-
-	result := module.OnRecvPacket(ctx, "07-tendermint-0", "07-tendermint-1", 1, payload, sdk.AccAddress{})
+	result := module.OnRecvPacket(ctx, "07-tendermint-0", consumerOwnClientID, 1, payloadFor(badUpdate), sdk.AccAddress{})
 	require.Equal(t, channeltypesv2.PacketStatus_Failure, result.Status,
 		"a VSC packet with an undecodable validator pubkey must be error-acked, not accepted")
 
-	// The bad update never entered pending state, so the deferred EndBlock
-	// apply has nothing to choke on.
 	_, ok := consumerKeeper.GetPendingChanges(ctx)
 	require.False(t, ok, "a rejected packet must not stage any pending validator changes")
+	_, found, err := consumerKeeper.GetHighestValsetUpdateID(ctx)
+	require.NoError(t, err)
+	require.False(t, found, "a rejected packet must not advance the dedup watermark")
 
-	// ApplyVaasValidatorChanges is still the defensive backstop: it would panic
-	// on the bad update, which is exactly the EndBlock halt the recv-path
-	// validation now keeps unreachable.
+	pk, err := cryptocodec.ToCmtProtoPublicKey(ed25519.GenPrivKey().PubKey())
+	require.NoError(t, err)
+	result = module.OnRecvPacket(ctx, "07-tendermint-0", consumerOwnClientID, 2, payloadFor(abci.ValidatorUpdate{PubKey: pk, Power: 5}), sdk.AccAddress{})
+	require.Equal(t, channeltypesv2.PacketStatus_Success, result.Status,
+		"the same pin accepts a well-formed packet, so the rejection above was the validation's")
+
+	// The EndBlock flush would still panic on the bad update; the receive-path
+	// validation is what keeps that unreachable.
 	require.Panics(t, func() {
 		consumerKeeper.ApplyVaasValidatorChanges(ctx, []abci.ValidatorUpdate{badUpdate})
 	})

@@ -9,8 +9,10 @@ import (
 	"github.com/stretchr/testify/require"
 	"go.uber.org/mock/gomock"
 
+	tmproto "github.com/cometbft/cometbft/proto/tendermint/types"
 	tmtypes "github.com/cometbft/cometbft/types"
 
+	ibcclienttypes "github.com/cosmos/ibc-go/v10/modules/core/02-client/types"
 	ibcexported "github.com/cosmos/ibc-go/v10/modules/core/exported"
 	ibctmtypes "github.com/cosmos/ibc-go/v10/modules/light-clients/07-tendermint"
 
@@ -25,6 +27,7 @@ import (
 	cryptotestutil "github.com/allinbits/vaas/testutil/crypto"
 	testkeeper "github.com/allinbits/vaas/testutil/keeper"
 	"github.com/allinbits/vaas/x/vaas/provider/types"
+	vaastypes "github.com/allinbits/vaas/x/vaas/types"
 )
 
 func TestVerifyDoubleVotingEvidence(t *testing.T) {
@@ -1113,4 +1116,71 @@ func TestContainLightClientAttackFailsWhenTheFreezeFails(t *testing.T) {
 	_, err := keeper.ContainLightClientAttackForTest(ctx, consumerID, misbehaviour, nil)
 	require.ErrorContains(t, err, "client refused the update")
 	require.Equal(t, types.CONSUMER_PHASE_LAUNCHED, keeper.GetConsumerPhase(ctx, consumerID))
+}
+
+// TestHandleConsumerMisbehaviourRejectsMisattributedOrStaleHeaders: the
+// checks CheckMisbehaviour makes before consulting the light client. Headers
+// of another chain, a client other than the consumer's declared one, headers
+// at different heights (a time violation, not a fork) and headers below the
+// consumer's evidence minimum height are each refused through the public
+// handler, which leaves the consumer launched. No client-keeper expectation
+// is mocked, so the controller also proves no client was read, frozen or
+// updated for any of them.
+func TestHandleConsumerMisbehaviourRejectsMisattributedOrStaleHeaders(t *testing.T) {
+	const consumerID = uint64(0)
+	const chainID = "consumer-chain"
+	const clientID = "07-tendermint-0"
+	const minHeight = uint64(10)
+
+	header := func(chainID string, height int64) *ibctmtypes.Header {
+		return &ibctmtypes.Header{
+			SignedHeader: &tmproto.SignedHeader{Header: &tmproto.Header{ChainID: chainID, Height: height}},
+		}
+	}
+
+	cases := []struct {
+		name         string
+		misbehaviour ibctmtypes.Misbehaviour
+		wantErr      error
+		wantMessage  string
+	}{
+		{
+			"headers of another chain",
+			ibctmtypes.Misbehaviour{ClientId: clientID, Header1: header("other-chain", 50), Header2: header("other-chain", 50)},
+			nil, "different chain id",
+		},
+		{
+			"a client other than the consumer's",
+			ibctmtypes.Misbehaviour{ClientId: "07-tendermint-9", Header1: header(chainID, 50), Header2: header(chainID, 50)},
+			nil, "expected client ID",
+		},
+		{
+			"headers at different heights",
+			ibctmtypes.Misbehaviour{ClientId: clientID, Header1: header(chainID, 50), Header2: header(chainID, 51)},
+			ibcclienttypes.ErrInvalidMisbehaviour, "not at same height",
+		},
+		{
+			"headers below the evidence minimum height",
+			ibctmtypes.Misbehaviour{ClientId: clientID, Header1: header(chainID, 9), Header2: header(chainID, 9)},
+			vaastypes.ErrInvalidDoubleVotingEvidence, "too old",
+		},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			keeper, ctx, ctrl, _ := testkeeper.GetProviderKeeperAndCtx(t, testkeeper.NewInMemKeeperParams(t))
+			defer ctrl.Finish()
+			keeper.SetConsumerPhase(ctx, consumerID, types.CONSUMER_PHASE_LAUNCHED)
+			keeper.SetConsumerChainId(ctx, consumerID, chainID)
+			keeper.SetConsumerClientId(ctx, consumerID, clientID)
+			keeper.SetEquivocationEvidenceMinHeight(ctx, consumerID, minHeight)
+
+			_, err := keeper.HandleConsumerMisbehaviour(ctx, consumerID, tc.misbehaviour)
+			require.ErrorContains(t, err, tc.wantMessage)
+			if tc.wantErr != nil {
+				require.ErrorIs(t, err, tc.wantErr)
+			}
+			require.Equal(t, types.CONSUMER_PHASE_LAUNCHED, keeper.GetConsumerPhase(ctx, consumerID),
+				"rejected evidence must not contain the consumer")
+		})
+	}
 }
