@@ -343,8 +343,12 @@ func (k Keeper) SweepPendingEquivocationPunishments(ctx sdk.Context) {
 	}
 	for _, it := range toCancel {
 		// The tally is the verdict on the consumer, not only on this entry:
-		// the record keeps later evidence against the same consumer out.
-		k.MarkConsumerRemovedByGovernance(ctx, it.key.K1())
+		// the record keeps later evidence against the same consumer out. A
+		// consumer the vote found stopped carries it until its deletion; one
+		// already deleted has nothing left for evidence to resolve through.
+		if k.GetConsumerPhase(ctx, it.key.K1()) == types.CONSUMER_PHASE_STOPPED {
+			k.MarkConsumerRemovedByGovernance(ctx, it.key.K1())
+		}
 		k.cancelPendingEquivocation(ctx, it.key, it.reason)
 	}
 }

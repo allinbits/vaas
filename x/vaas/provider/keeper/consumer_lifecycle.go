@@ -813,6 +813,9 @@ func (k Keeper) BeginBlockAutoStopPausedConsumers(ctx sdk.Context) error {
 				"consumerId", consumerId, "error", err.Error())
 			continue
 		}
+		// The jails followed the pause's expiration; now they follow the
+		// moved execution times, as after a resume.
+		k.refreshPendingEquivocationJailsForConsumer(cachedCtx, consumerId)
 		writeFn()
 	}
 	return nil

@@ -427,7 +427,9 @@ func TestPassedRemovalVoteCancelsDeferredEquivocation(t *testing.T) {
 	has, err := k.PendingEquivocationPunishments.Has(decided, key)
 	require.NoError(t, err)
 	require.False(t, has, "a passed removal vote must cancel the punishment it deferred")
-	require.True(t, k.IsConsumerRemovedByGovernance(decided, 0), "the tally is the verdict on the consumer")
+	// The handler that executed the passed proposal records the verdict; the
+	// sweep records it only for a consumer it finds stopped (next test).
+	require.False(t, k.IsConsumerRemovedByGovernance(decided, 0))
 	heldStill, err := k.HeldUnbondingOps.Has(decided, collections.Join(consAddr.Bytes(), uint64(23)))
 	require.NoError(t, err)
 	require.False(t, heldStill)
@@ -455,6 +457,7 @@ func TestFailedRemovalOfStoppedConsumerCancelsDeferredEquivocation(t *testing.T)
 	has, err := k.PendingEquivocationPunishments.Has(decided, key)
 	require.NoError(t, err)
 	require.False(t, has, "a passed vote whose removal found the consumer already stopped must cancel the punishment")
+	require.True(t, k.IsConsumerRemovedByGovernance(decided, 0), "the tally is the verdict on the consumer the vote found stopped")
 }
 
 // TestFailedRemovalOfRunningConsumerExecutesDeferredEquivocation: FAILED
@@ -1671,6 +1674,11 @@ func TestALapsedPauseThawsTheFrozenPunishmentsIntoTheStop(t *testing.T) {
 	// stop with the delay the freeze left them.
 	lapsed := ctx.WithBlockTime(pauseExpiration)
 	mocks.MockSlashingKeeper.EXPECT().IsTombstoned(gomock.Any(), consAddr).Return(false).AnyTimes()
+	// The jail follows the moved execution times: the later of the two
+	// entries, one delay after the stop, plus the margin.
+	mocks.MockStakingKeeper.EXPECT().GetValidatorByConsAddr(gomock.Any(), consAddr).Return(validator, nil)
+	expectSigningInfo(mocks, gomock.Any(), consAddr, pauseExpiration.Add(24*time.Hour))
+	mocks.MockSlashingKeeper.EXPECT().JailUntil(gomock.Any(), consAddr, pauseExpiration.Add(delay).Add(24*time.Hour))
 	require.NoError(t, k.BeginBlockAutoStopPausedConsumers(lapsed))
 	require.Equal(t, types.CONSUMER_PHASE_STOPPED, k.GetConsumerPhase(lapsed, consumerID))
 
