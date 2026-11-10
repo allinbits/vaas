@@ -412,31 +412,53 @@ func (s *baseTestSuite) logNodeTails(resources []*dockertest.Resource, lines int
 // downtime window is accused for it. The stop's duration is logged so a node
 // that ignores the signal shows.
 func (s *baseTestSuite) stopConsumerNode(i int) {
+	id := s.consumerValRes[i].Container.ID
 	// What the signal is sent to: the node must be the container's first
-	// process, or it never receives the stop.
-	if top, err := s.dkrPool.Client.TopContainer(s.consumerValRes[i].Container.ID, ""); err == nil {
+	// process, or behind an init that forwards to it, or it never receives
+	// the stop.
+	if top, err := s.dkrPool.Client.TopContainer(id, ""); err == nil {
 		s.T().Logf("consumer val%d processes before the stop: %v", i, top.Processes)
 	}
 	started := time.Now()
-	s.Require().NoErrorf(s.dkrPool.Client.StopContainer(s.consumerValRes[i].Container.ID, nodeStopTimeoutSeconds),
-		"failed to stop consumer val%d", i)
-	took := time.Since(started)
-	s.T().Logf("consumer val%d stopped in %s", i, took.Round(time.Millisecond))
-	if took >= nodeStopTimeoutSeconds*time.Second {
-		// Killed at the deadline: the node's last lines say whether the
-		// signal reached it at all (CometBFT logs its shutdown sequence) or
-		// which step it was stuck in.
-		var tail bytes.Buffer
-		_ = s.dkrPool.Client.Logs(docker.LogsOptions{
-			Container:    s.consumerValRes[i].Container.ID,
-			OutputStream: &tail,
-			ErrorStream:  &tail,
-			Stdout:       true,
-			Stderr:       true,
-			Tail:         "20",
-		})
-		s.T().Logf("consumer val%d ran to the stop deadline; its last lines:\n%s", i, tail.String())
+	s.Require().NoErrorf(s.dkrPool.Client.KillContainer(docker.KillContainerOptions{ID: id, Signal: docker.SIGTERM}),
+		"failed to signal consumer val%d", i)
+	if s.waitContainerExit(id, nodeStopTimeoutSeconds*time.Second) {
+		s.T().Logf("consumer val%d stopped in %s", i, time.Since(started).Round(time.Millisecond))
+		return
 	}
+	// Still running at the deadline. SIGQUIT makes the Go runtime print every
+	// goroutine's stack and exit, which says what the shutdown is stuck on;
+	// the kill is the backstop.
+	s.T().Logf("consumer val%d ran to the %ds stop deadline; dumping its goroutines", i, nodeStopTimeoutSeconds)
+	_ = s.dkrPool.Client.KillContainer(docker.KillContainerOptions{ID: id, Signal: docker.SIGQUIT})
+	if !s.waitContainerExit(id, 15*time.Second) {
+		_ = s.dkrPool.Client.KillContainer(docker.KillContainerOptions{ID: id, Signal: docker.SIGKILL})
+		s.waitContainerExit(id, 15*time.Second)
+	}
+	var tail bytes.Buffer
+	_ = s.dkrPool.Client.Logs(docker.LogsOptions{
+		Container:    id,
+		OutputStream: &tail,
+		ErrorStream:  &tail,
+		Stdout:       true,
+		Stderr:       true,
+		Tail:         "600",
+	})
+	s.T().Logf("consumer val%d last lines and goroutines:\n%s", i, tail.String())
+}
+
+// waitContainerExit polls until the container is no longer running, or the
+// timeout passes, and reports which.
+func (s *baseTestSuite) waitContainerExit(id string, timeout time.Duration) bool {
+	deadline := time.Now().Add(timeout)
+	for time.Now().Before(deadline) {
+		c, err := s.dkrPool.Client.InspectContainerWithOptions(docker.InspectContainerOptions{ID: id})
+		if err != nil || !c.State.Running {
+			return true
+		}
+		time.Sleep(500 * time.Millisecond)
+	}
+	return false
 }
 
 // nodeStopTimeoutSeconds is how long a node gets to exit on SIGTERM before
