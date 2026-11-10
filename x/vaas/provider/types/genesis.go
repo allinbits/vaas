@@ -49,11 +49,19 @@ func (gs GenesisState) Validate() error {
 		return errorsmod.Wrap(vaastypes.ErrInvalidGenesis, "valset update ID cannot be equal to zero")
 	}
 
+	// Consumer ids must be exactly 0..n-1, in any order: the keeper derives
+	// every consumer id from the ConsumerId sequence, which ExportGenesis
+	// enumerates from 0, so a gap would export a phantom consumer with no
+	// phase, chain id, or owner. Distinct ids all below n are that set.
 	seenConsumerIds := map[uint64]bool{}
 	for _, cs := range gs.ConsumerStates {
 		if seenConsumerIds[cs.ConsumerId] {
 			return errorsmod.Wrap(vaastypes.ErrInvalidGenesis,
 				fmt.Sprintf("duplicate consumer id %d in genesis", cs.ConsumerId))
+		}
+		if cs.ConsumerId >= uint64(len(gs.ConsumerStates)) {
+			return errorsmod.Wrap(vaastypes.ErrInvalidGenesis,
+				fmt.Sprintf("consumer ids must be contiguous from 0: got consumer id %d among %d consumer states", cs.ConsumerId, len(gs.ConsumerStates)))
 		}
 		seenConsumerIds[cs.ConsumerId] = true
 		if err := cs.Validate(); err != nil {

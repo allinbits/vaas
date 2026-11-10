@@ -180,6 +180,48 @@ func TestValidateGenesisState(t *testing.T) {
 			true,
 		},
 		{
+			"consumer ids with a gap: the export would enumerate a phantom consumer for it",
+			types.NewGenesisState(
+				types.DefaultValsetUpdateID,
+				[]types.ConsumerState{launchedCS(0, "chain-a", "07-tendermint-0"), launchedCS(2, "chain-b", "07-tendermint-1")},
+				types.DefaultParams(),
+				nil,
+				nil,
+				nil,
+				nil,
+				nil,
+			),
+			false,
+		},
+		{
+			"consumer ids not starting at 0",
+			types.NewGenesisState(
+				types.DefaultValsetUpdateID,
+				[]types.ConsumerState{launchedCS(1, "chain-a", "07-tendermint-0")},
+				types.DefaultParams(),
+				nil,
+				nil,
+				nil,
+				nil,
+				nil,
+			),
+			false,
+		},
+		{
+			"contiguous consumer ids in any order",
+			types.NewGenesisState(
+				types.DefaultValsetUpdateID,
+				[]types.ConsumerState{launchedCS(1, "chain-b", "07-tendermint-1"), launchedCS(0, "chain-a", "07-tendermint-0")},
+				types.DefaultParams(),
+				nil,
+				nil,
+				nil,
+				nil,
+				nil,
+			),
+			true,
+		},
+		{
 			"invalid consumer state pending VSC packets",
 			types.NewGenesisState(
 				types.DefaultValsetUpdateID,
