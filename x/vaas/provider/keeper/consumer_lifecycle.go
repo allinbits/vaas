@@ -338,6 +338,16 @@ func (k Keeper) StopAndPrepareForConsumerRemoval(ctx sdk.Context, consumerId uin
 	if err := k.CancelConsumerDowntimeState(ctx, consumerId); err != nil {
 		return fmt.Errorf("cancelling downtime state for consumer %d: %w", consumerId, err)
 	}
+	// A stopped consumer can no longer be challenged (see
+	// HandleChallengeConsumerDowntime), so the fee shares withheld from its
+	// accused validators can never be claimed: drop the records, which would
+	// otherwise keep reserving, until they expired, an escrow nothing can pay
+	// out against depositor withdrawals while the owner's sweep ignores it
+	// (see WithdrawShares and SweepConsumerFeePoolDenom). The funds never left
+	// the pool and stay with its share-holders.
+	if err := k.WithheldFeeRecords.Clear(ctx, collections.NewPrefixedPairRange[uint64, []byte](consumerId)); err != nil {
+		return fmt.Errorf("clearing withheld fee records for consumer %d: %w", consumerId, err)
+	}
 
 	// Clear any pending pause auto-stop schedule: this chain is stopping now,
 	// via this call, so there is nothing left to auto-stop later. A no-op
@@ -697,11 +707,14 @@ func (k Keeper) ResumeConsumerChain(ctx sdk.Context, consumerId uint64) error {
 // of left to expire on its own. A refusal pause leaves it alone (see
 // PauseConsumerChain).
 //
-// AcceptedDowntimeWindows, DowntimeWindowFloors, and WithheldFeeRecords are
-// deliberately left alone here: a window whose accusation was disproven or
-// pause-cancelled must not become re-submittable, so the acceptance
-// bookkeeping survives cancellation. All three are only erased as part of
-// full consumer removal, in DeleteConsumerChain.
+// AcceptedDowntimeWindows and DowntimeWindowFloors are deliberately left
+// alone here: a window whose accusation was disproven or pause-cancelled must
+// not become re-submittable, so the acceptance bookkeeping survives
+// cancellation, and is only erased as part of full consumer removal, in
+// DeleteConsumerChain. WithheldFeeRecords are left alone as well: a pause
+// that discredits the accusations repays them first (see
+// DiscardConsumerAccusations), and a stop, after which nothing can claim
+// them, drops them (see StopAndPrepareForConsumerRemoval).
 func (k Keeper) CancelConsumerDowntimeState(ctx sdk.Context, consumerId uint64) error {
 	if err := k.PendingDowntimeSlashes.Clear(ctx, collections.NewPrefixedTripleRange[uint64, []byte, int64](consumerId)); err != nil {
 		return fmt.Errorf("clearing pending downtime slashes for consumer %d: %w", consumerId, err)
@@ -873,9 +886,11 @@ func (k Keeper) DeleteConsumerChain(ctx sdk.Context, consumerId uint64) (err err
 		return fmt.Errorf("cancelling downtime state for consumer %d: %w", consumerId, err)
 	}
 
-	// Unlike CancelConsumerDowntimeState's callers, deletion is the consumer's
-	// full erasure: withheld fee escrow and infraction-window bookkeeping are
-	// no longer meaningful once the consumer is gone, so they are wiped too.
+	// Unlike CancelConsumerDowntimeState's other callers, deletion is the
+	// consumer's full erasure: the infraction-window bookkeeping is no longer
+	// meaningful once the consumer is gone, so it is wiped too, along with
+	// any withheld fee record (the stop already dropped them; deletion
+	// leaves nothing to chance).
 	if err := k.WithheldFeeRecords.Clear(ctx, collections.NewPrefixedPairRange[uint64, []byte](consumerId)); err != nil {
 		return fmt.Errorf("clearing withheld fee records for consumer %d: %w", consumerId, err)
 	}

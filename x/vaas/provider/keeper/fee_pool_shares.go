@@ -298,10 +298,10 @@ func (k Keeper) WithdrawShares(
 // outstanding withheld-fee escrow: a sweep runs only once a consumer has left
 // LAUNCHED and PAUSED (the manual sweep is gated to STOPPED and deletion
 // requires STOPPED), by which point no downtime challenge can still resolve
-// -- StopAndPrepareForConsumerRemoval has cancelled every pending slash and a
-// stopped consumer can neither be challenged nor paused. Any withheld-fee
-// record left over is therefore dead escrow the pool no longer owes to a
-// validator, so the full balance is released to share-holders here.
+// -- StopAndPrepareForConsumerRemoval has cancelled every pending slash and
+// dropped every withheld-fee record, and a stopped consumer can neither be
+// challenged nor paused -- so the full balance is released to share-holders
+// here.
 //
 // Distribution to the distribution module account uses FundCommunityPool
 // rather than a raw bank send, so the community pool's FeePool DecCoins are
