@@ -55,7 +55,7 @@ func NewBootstrapExemptTxFeeChecker(k BootstrapKeeper) authante.TxFeeChecker {
 
 		// The floor is local mempool policy, so it only runs on CheckTx; the
 		// bootstrap carve-out applies here and nowhere else. Everything below
-		// matches the SDK's default checker.
+		// matches atomone-sdk's default checker.
 		exempt := !k.HasRoutableProviderClient(ctx) && isBootstrapInfrastructureTx(tx.GetMsgs())
 		if ctx.IsCheckTx() && !exempt {
 			minGasPrices := ctx.MinGasPrices()

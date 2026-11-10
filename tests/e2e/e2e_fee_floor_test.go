@@ -98,6 +98,35 @@ func (s *IntegrationTestSuite) testNodeFeeFloor() {
 		s.requireTxCommittedOn(s.consumerValRes[0].Container.ID, consumerBinary, consumerHomePath, stdout)
 	})
 
+	s.Run("an IBC core message below the floor is rejected at CheckTx once pinned", func() {
+		// The bootstrap exemption ended with the pin: registering a
+		// counterparty is IBC core traffic, free before the pin, and pays the
+		// floor like everything else after it. The registration itself would
+		// be refused at execution (the client already has one); the fee floor
+		// refuses the transaction first.
+		stdout, stderr, err := s.dockerExec(s.consumerValRes[0].Container.ID, []string{
+			consumerBinary, "tx", "ibc", "client", "add-counterparty",
+			s.consumerPinnedProviderClientID(), s.queryConsumerClientID("0"), "ibc",
+			"--from", "user",
+			"--home", consumerHomePath,
+			"--keyring-backend", "test",
+			"--chain-id", s.cfg.consumerChainID,
+			"--gas", "300000",
+			"--fees", "1" + voucherDenom,
+			"--broadcast-mode", "sync",
+			"-y",
+			"-o", "json",
+		})
+		s.Require().NoError(err, "broadcast failed to run: %s", stderr.String())
+		var res struct {
+			Code   uint32 `json:"code"`
+			RawLog string `json:"raw_log"`
+		}
+		s.Require().NoError(json.Unmarshal(stdout.Bytes(), &res), "failed to decode broadcast response: %s", stdout.String())
+		s.Require().NotZero(res.Code, "an IBC core message below the floor must be rejected once the client is pinned: %s", stdout.String())
+		s.Require().Contains(res.RawLog, "insufficient fee", "the rejection must come from the fee floor: %s", res.RawLog)
+	})
+
 	s.Run("relayer traffic pays the floor in vouchers", func() {
 		// VSC packets reach the consumer in relayer transactions paying the
 		// voucher denom at a gas price above the floor: the flow resuming

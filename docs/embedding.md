@@ -298,7 +298,7 @@ is a no-op otherwise, so it is wired unconditionally; it sits immediately
 before fee deduction so the denom it vets is the one deducted
 ([photon_fee_ante.go](../x/vaas/consumer/ante/photon_fee_ante.go)).
 `NewBootstrapExemptTxFeeChecker(consumerKeeper)` builds the `TxFeeChecker`
-handed to `NewDeductFeeDecorator`: the SDK's minimum-gas-prices floor at
+handed to `NewDeductFeeDecorator`: atomone-sdk's minimum-gas-prices floor at
 CheckTx, waived for bootstrap traffic (IBC, governance, the pin) only while no
 provider client is pinned ([fee_checker.go](../x/vaas/consumer/ante/fee_checker.go)),
 the same split the photon policy makes. After the pin everything pays, the
@@ -376,7 +376,7 @@ Three ordering constraints:
   **silent**: the provider consensus set and every VSC packet lag by one block.
   The reference app places the provider module last.
 - **`SetOrderBeginBlockers`:** `evidencetypes.ModuleName` after slashing and
-  distribution, per the SDK's own convention; the provider module last.
+  distribution, per atomone-sdk's own convention; the provider module last.
 
 On the consumer, the VAAS consumer module is last in all three orderings and is
 the sole producer of validator updates. It needs neither `no_valupdates`
