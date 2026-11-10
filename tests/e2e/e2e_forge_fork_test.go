@@ -285,6 +285,13 @@ func (s *ByzantineConsumerIntegrationTestSuite) testForkRecoveryWaitsOutTheTrust
 		s.Require().Eventuallyf(func() bool { return time.Now().After(resumableAt.Add(15 * time.Second)) },
 			20*time.Minute, 5*time.Second, "the trusting period never elapsed")
 
+		// The running relayer serves the paths it started with, so the first
+		// substitute has gone unupdated through the wait and expired with
+		// its own trusting period; the recovery takes a fresh one, created
+		// moments before the proposal, as an operator's would be.
+		substitute = s.newProviderClientOfTheConsumer()
+		s.T().Logf("recovering the frozen client %s onto the fresh substitute %s", subject, substitute)
+		proposal = s.recoverAndResumeProposalJSON(consumerID, subject, substitute)
 		s.submitProposalWithVote(proposal, "yes", "PROPOSAL_STATUS_PASSED")
 		s.Require().Equalf("Active", s.clientStatus(subject), "the recovered client must be active")
 		s.Require().Equalf(phaseLaunched, s.queryProviderConsumerPhase(consumerID), "the consumer must be launched again")
