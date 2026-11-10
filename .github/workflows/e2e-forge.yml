@@ -1,41 +1,48 @@
 name: E2E Forge
 
 # The byzantine-consumer suite: a consumer that lies, and the provider's
-# answer. It runs on demand, and on pull requests that touch the code whose
-# answer it checks or the forge it wraps. Not a required check.
+# answer. A required check that judges only what it covers: the job runs on
+# every push to main and on demand, and on a pull request only when the
+# change touches the protocol, the apps, the harness or the forge; otherwise
+# it is skipped, which the branch protection counts as passed.
 on:
   workflow_dispatch:
+  push:
+    branches: [main]
   pull_request:
-    paths:
-      - x/vaas/consumer/module.go
-      - x/vaas/consumer/keeper/downtime.go
-      - x/vaas/consumer/keeper/evidence_packet.go
-      - x/vaas/provider/module.go
-      - x/vaas/provider/keeper/msg_server.go
-      - x/vaas/provider/keeper/downtime.go
-      - x/vaas/provider/keeper/downtime_challenge.go
-      - x/vaas/provider/keeper/downtime_slash.go
-      - x/vaas/provider/keeper/consumer_equivocation.go
-      - x/vaas/provider/keeper/pending_equivocation.go
-      - x/vaas/provider/keeper/consumer_lifecycle.go
-      - x/vaas/provider/keeper/removal_vote.go
-      - app/consumer/**
-      - app/cmd/consumer/**
-      - tests/e2e/forge/**
-      - tests/e2e/e2e_forge_*
-      - tests/e2e/base_suite_test.go
-      - tests/e2e/four_validator_helpers_test.go
-      - tests/e2e/docker/**
-      - Makefile
-      - .github/workflows/e2e-forge.yml
 
+# A newer push to the same PR supersedes its run; a push to main never does.
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
-  cancel-in-progress: true
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 jobs:
+  changes:
+    name: Forge paths
+    runs-on: ubuntu-latest
+    outputs:
+      forge: ${{ steps.filter.outputs.forge }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: dorny/paths-filter@v3
+        id: filter
+        with:
+          filters: |
+            forge:
+              - 'x/vaas/**'
+              - 'app/**'
+              - 'proto/**'
+              - 'go.mod'
+              - 'go.sum'
+              - 'tests/e2e/**'
+              - 'Makefile'
+              - '.github/workflows/e2e-forge.yml'
+
   test-e2e-forge:
     name: Test E2E Forge
+    needs: changes
+    if: github.event_name != 'pull_request' || needs.changes.outputs.forge == 'true'
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -43,6 +50,9 @@ jobs:
       - uses: actions/setup-go@v5
         with:
           go-version-file: go.mod
+
+      - name: Test the forge
+        run: cd tests/e2e/forge && go test ./...
 
       - name: Run the byzantine-consumer suite
         run: make test-e2e-forge
