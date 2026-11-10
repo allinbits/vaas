@@ -4,7 +4,7 @@ go 1.26.0
 
 replace (
 	github.com/bytedance/sonic => github.com/bytedance/sonic v1.15.0
-	github.com/cosmos/cosmos-sdk => github.com/atomone-hub/cosmos-sdk v0.500.6
+	github.com/cosmos/cosmos-sdk => github.com/atomone-hub/cosmos-sdk v0.500.3-0.20261110100055-7e840818630c
 	github.com/syndtr/goleveldb => github.com/syndtr/goleveldb v1.0.1-0.20210819022825-2ae1ddf74ef7
 )
 
