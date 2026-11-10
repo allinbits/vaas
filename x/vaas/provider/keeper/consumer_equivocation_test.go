@@ -399,8 +399,11 @@ func TestHandleConsumerDoubleVotingSlashesOldButAboveMinHeightEvidence(t *testin
 			return math.NewInt(power), nil
 		}).Times(1)
 
-	mocks.MockStakingKeeper.EXPECT().Jail(gomock.Any(), sdk.ConsAddress(consAddr)).Return(nil).Times(1)
-	mocks.MockSlashingKeeper.EXPECT().JailUntil(gomock.Any(), sdk.ConsAddress(consAddr), gomock.Any()).Return(nil).Times(1)
+	// Jailed at queue time, then again when the punishment executes: the mock
+	// validator never reports itself jailed.
+	mocks.MockStakingKeeper.EXPECT().Jail(gomock.Any(), sdk.ConsAddress(consAddr)).Return(nil).Times(2)
+	mocks.MockSlashingKeeper.EXPECT().GetValidatorSigningInfo(gomock.Any(), sdk.ConsAddress(consAddr)).Return(slashingtypes.ValidatorSigningInfo{}, nil).Times(2)
+	mocks.MockSlashingKeeper.EXPECT().JailUntil(gomock.Any(), sdk.ConsAddress(consAddr), gomock.Any()).Return(nil).Times(2)
 	tombstoneCalled := false
 	mocks.MockSlashingKeeper.EXPECT().Tombstone(gomock.Any(), sdk.ConsAddress(consAddr)).DoAndReturn(func(_ sdk.Context, _ sdk.ConsAddress) error {
 		tombstoneCalled = true
@@ -408,6 +411,11 @@ func TestHandleConsumerDoubleVotingSlashesOldButAboveMinHeightEvidence(t *testin
 	}).Times(1)
 
 	require.NoError(t, providerKeeper.HandleConsumerDoubleVoting(ctx, consumerID, evidence, valPubkey))
+	require.False(t, slashCalled, "the submission queues the punishment; the sweep executes it")
+
+	// Once the execution delay has passed, with no removal vote in the way.
+	matured := ctx.WithBlockTime(ctx.BlockTime().Add(providerKeeper.GetParams(ctx).EquivocationExecutionDelay + time.Hour))
+	providerKeeper.SweepPendingEquivocationPunishments(matured)
 	require.True(t, slashCalled, "an old but above-min-height double-sign must still slash")
 	require.True(t, tombstoneCalled, "an old but above-min-height double-sign must still tombstone")
 }
@@ -502,6 +510,10 @@ func TestJailAndTombstoneValidator(t *testing.T) {
 						ctx, providerConsAddr.ToSdkConsAddr()).Return(
 						false,
 					).Times(1),
+					mocks.MockSlashingKeeper.EXPECT().GetValidatorSigningInfo(
+						ctx, providerConsAddr.ToSdkConsAddr()).Return(
+						slashingtypes.ValidatorSigningInfo{}, nil,
+					).Times(1),
 					mocks.MockSlashingKeeper.EXPECT().JailUntil(
 						ctx, providerConsAddr.ToSdkConsAddr(), jailEndTime).
 						Times(1),
@@ -530,6 +542,10 @@ func TestJailAndTombstoneValidator(t *testing.T) {
 					mocks.MockStakingKeeper.EXPECT().Jail(
 						ctx, providerConsAddr.ToSdkConsAddr()).
 						Times(1),
+					mocks.MockSlashingKeeper.EXPECT().GetValidatorSigningInfo(
+						ctx, providerConsAddr.ToSdkConsAddr()).Return(
+						slashingtypes.ValidatorSigningInfo{}, nil,
+					).Times(1),
 					mocks.MockSlashingKeeper.EXPECT().JailUntil(
 						ctx, providerConsAddr.ToSdkConsAddr(), jailEndTime).
 						Times(1),
@@ -793,10 +809,11 @@ func TestSlashValidator(t *testing.T) {
 		createRedelegation([]int64{500}, []time.Time{nowPlus1Hour}),
 	}
 
-	// validator's current power
+	// validator's current power: its tokens over the power reduction
 	currentPower := int64(3000)
 
 	powerReduction := math.NewInt(2)
+	validator.Tokens = powerReduction.MulRaw(currentPower)
 	slashFraction := getTestInfractionParameters().DoubleSign.SlashFraction
 
 	// the call to `Slash` should provide an `infractionHeight` of 0 and an expected power of
@@ -820,9 +837,6 @@ func TestSlashValidator(t *testing.T) {
 		mocks.MockStakingKeeper.EXPECT().
 			GetRedelegationsFromSrcValidator(ctx, expectedValoperAddr).
 			Return(redelegations, nil),
-		mocks.MockStakingKeeper.EXPECT().
-			GetLastValidatorPower(ctx, expectedValoperAddr).
-			Return(currentPower, nil),
 		mocks.MockStakingKeeper.EXPECT().
 			PowerReduction(ctx).
 			Return(powerReduction),

@@ -2,6 +2,7 @@ package keeper
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"time"
 
@@ -196,12 +197,13 @@ func (k Keeper) outstandingWithheldFees(ctx sdk.Context, consumerId uint64, deno
 		panic(fmt.Errorf("iterating withheld fee records for consumer %d: %w", consumerId, err))
 	}
 	defer iter.Close()
+	now := k.consumerClock(ctx)(consumerId)
 	for ; iter.Valid(); iter.Next() {
 		record, err := iter.Value()
 		if err != nil {
 			panic(fmt.Errorf("reading withheld fee record for consumer %d: %w", consumerId, err))
 		}
-		if record.Amount.Denom != denom || !record.ExpiresAt.After(ctx.BlockTime()) {
+		if record.Amount.Denom != denom || !record.ExpiresAt.After(now) {
 			continue
 		}
 		total = total.Add(record.Amount.Amount)
@@ -384,6 +386,31 @@ func (k Keeper) DistributeConsumerFees(ctx sdk.Context) error {
 	return nil
 }
 
+// consumerClock answers the time a consumer's downtime accusations are
+// measured against, reading each consumer's phase once: the block time, or,
+// while the consumer is paused, the moment its pause began. A refusal pause
+// freezes the maturities of the consumer's pending slashes and the expiries
+// of its withheld fee records where it found them (see PauseConsumerChain),
+// and the resume moves them forward by the length of the pause; until then
+// every comparison against the block time, sweeping, repaying or reserving,
+// must see the clock the pause stopped.
+func (k Keeper) consumerClock(ctx sdk.Context) func(consumerId uint64) time.Time {
+	clocks := map[uint64]time.Time{}
+	return func(consumerId uint64) time.Time {
+		if now, seen := clocks[consumerId]; seen {
+			return now
+		}
+		now := ctx.BlockTime()
+		if k.GetConsumerPhase(ctx, consumerId) == types.CONSUMER_PHASE_PAUSED {
+			if pausedAt, err := k.GetConsumerPausedAt(ctx, consumerId); err == nil && pausedAt.Before(now) {
+				now = pausedAt
+			}
+		}
+		clocks[consumerId] = now
+		return now
+	}
+}
+
 // recordWithheldFee escrows amount as owed to providerConsAddr for consumerId
 // following a downtime-driven fee exclusion, expiring DowntimeChallengeWindow
 // from now. At most one record exists per (consumer, validator): an
@@ -402,7 +429,7 @@ func (k Keeper) recordWithheldFee(ctx sdk.Context, consumerId uint64, providerCo
 	// accusation stood, and the amount stays with the consumer to be released on
 	// the next sweep. Carrying the old amount forward would re-escrow funds the
 	// validator can no longer claim.
-	if existing, err := k.WithheldFeeRecords.Get(ctx, key); err == nil && existing.ExpiresAt.After(ctx.BlockTime()) {
+	if existing, err := k.WithheldFeeRecords.Get(ctx, key); err == nil && existing.ExpiresAt.After(k.consumerClock(ctx)(consumerId)) {
 		amount = amount.Add(existing.Amount)
 	}
 
@@ -465,6 +492,7 @@ func (k Keeper) PayWithheldFees(ctx sdk.Context, consumerId uint64) error {
 	iter.Close()
 
 	poolAddr := k.GetConsumerFeePoolAddress(consumerId)
+	now := k.consumerClock(ctx)(consumerId)
 	for i, record := range records {
 		providerConsAddr := sdk.ConsAddress(record.ProviderConsAddr)
 
@@ -478,7 +506,7 @@ func (k Keeper) PayWithheldFees(ctx sdk.Context, consumerId uint64) error {
 		// A record whose challenge window has already elapsed backs a downtime
 		// slash that has since matured and executed; its withheld share is
 		// forfeit, so the record is cleared above but must never be paid out.
-		if !record.ExpiresAt.After(ctx.BlockTime()) {
+		if !record.ExpiresAt.After(now) {
 			continue
 		}
 
@@ -524,10 +552,34 @@ func (k Keeper) PayWithheldFees(ctx sdk.Context, consumerId uint64) error {
 	return nil
 }
 
+// extendWithheldFeeRecord keeps the (consumer, validator) withheld fee record
+// claimable until at least `until`. A pending downtime slash deferred behind a
+// removal vote stays challengeable past the original challenge window, and a
+// challenge won during that deferral must still find the record to repay.
+func (k Keeper) extendWithheldFeeRecord(ctx sdk.Context, consumerId uint64, providerConsAddr []byte, until time.Time) {
+	key := collections.Join(consumerId, providerConsAddr)
+	record, err := k.WithheldFeeRecords.Get(ctx, key)
+	if err != nil {
+		if !errors.Is(err, collections.ErrNotFound) {
+			k.Logger(ctx).Error("failed to read withheld fee record for extension", "error", err)
+		}
+		return
+	}
+	if !until.After(record.ExpiresAt) {
+		return
+	}
+	record.ExpiresAt = until
+	if err := k.WithheldFeeRecords.Set(ctx, key, record); err != nil {
+		k.Logger(ctx).Error("failed to extend withheld fee record", "error", err)
+	}
+}
+
 // SweepExpiredWithheldFeeRecords deletes withheld fee records whose challenge
 // window has elapsed without a successful challenge. Nothing is transferred:
 // the escrowed funds were never drawn from the consumer's fee pool in the
 // first place, so deleting the record simply lets them stay there for good.
+// A paused consumer's records are frozen with its accusations (see
+// consumerClock): their expiry does not run until the resume moves it.
 func (k Keeper) SweepExpiredWithheldFeeRecords(ctx sdk.Context) {
 	iter, err := k.WithheldFeeRecords.Iterate(ctx, nil)
 	if err != nil {
@@ -535,6 +587,7 @@ func (k Keeper) SweepExpiredWithheldFeeRecords(ctx sdk.Context) {
 		return
 	}
 
+	clock := k.consumerClock(ctx)
 	var expiredKeys []collections.Pair[uint64, []byte]
 	for ; iter.Valid(); iter.Next() {
 		kv, err := iter.KeyValue()
@@ -542,7 +595,7 @@ func (k Keeper) SweepExpiredWithheldFeeRecords(ctx sdk.Context) {
 			k.Logger(ctx).Error("failed to read withheld fee record", "error", err)
 			continue
 		}
-		if kv.Value.ExpiresAt.After(ctx.BlockTime()) {
+		if kv.Value.ExpiresAt.After(clock(kv.Key.K1())) {
 			continue
 		}
 		expiredKeys = append(expiredKeys, kv.Key)

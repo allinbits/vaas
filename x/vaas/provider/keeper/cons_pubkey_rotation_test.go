@@ -213,9 +213,18 @@ func (s *rotationSigningInfo) at(addr sdk.ConsAddress) *slashingtypes.ValidatorS
 }
 
 // wire answers the mocked slashing keeper out of the store the way x/slashing
-// answers out of its own: a missing entry reads as not tombstoned, and makes
-// both JailUntil and Tombstone error.
+// answers out of its own: a missing entry reads as not tombstoned, is not
+// found by GetValidatorSigningInfo, and makes both JailUntil and Tombstone
+// error.
 func (s *rotationSigningInfo) wire(mocks testkeeper.MockedKeepers) {
+	mocks.MockSlashingKeeper.EXPECT().GetValidatorSigningInfo(gomock.Any(), gomock.Any()).
+		DoAndReturn(func(_ context.Context, addr sdk.ConsAddress) (slashingtypes.ValidatorSigningInfo, error) {
+			info, found := s.infos[addr.String()]
+			if !found {
+				return slashingtypes.ValidatorSigningInfo{}, slashingtypes.ErrNoSigningInfoFound
+			}
+			return *info, nil
+		}).AnyTimes()
 	mocks.MockSlashingKeeper.EXPECT().IsTombstoned(gomock.Any(), gomock.Any()).
 		DoAndReturn(func(_ context.Context, addr sdk.ConsAddress) bool {
 			info, found := s.infos[addr.String()]
@@ -882,7 +891,6 @@ func TestPreRotationEquivocationIsPunishedUnderTheLiveAddress(t *testing.T) {
 		}).AnyTimes()
 	mocks.MockStakingKeeper.EXPECT().GetUnbondingDelegationsFromValidator(gomock.Any(), gomock.Any()).Return(nil, nil).AnyTimes()
 	mocks.MockStakingKeeper.EXPECT().GetRedelegationsFromSrcValidator(gomock.Any(), gomock.Any()).Return(nil, nil).AnyTimes()
-	mocks.MockStakingKeeper.EXPECT().GetLastValidatorPower(gomock.Any(), gomock.Any()).Return(int64(1000), nil).AnyTimes()
 	mocks.MockStakingKeeper.EXPECT().PowerReduction(gomock.Any()).Return(math.NewInt(1)).AnyTimes()
 
 	var slashed []sdk.ConsAddress
@@ -905,23 +913,36 @@ func TestPreRotationEquivocationIsPunishedUnderTheLiveAddress(t *testing.T) {
 		}).AnyTimes()
 
 	// The double-sign is committed with the key the consumer validated, which
-	// the validator has since rotated away from.
+	// the validator has since rotated away from. Submission queues the
+	// punishment: the jail lands now, under the live address, while the slash
+	// and tombstone wait out the execution delay.
 	evidence := doubleVoteBy(t, oldSigner, 55, blockTime)
 	require.NoError(t, k.HandleConsumerDoubleVoting(ctx, cid, evidence, oldSDKPubKey),
 		"a rotation must not make an equivocation unpunishable")
 
-	// All of the punishment landed, under the address x/staking and x/slashing
-	// hold the validator under now.
+	require.Empty(t, slashed, "the slash waits out the execution delay")
+	require.Equal(t, []sdk.ConsAddress{newAddr}, jailed,
+		"the queue-time jail must land under the live address")
+	require.False(t, signing.at(newAddr).Tombstoned)
+	jailRecord, err := k.PendingEquivocationJails.Get(ctx, newAddr.Bytes())
+	require.NoError(t, err, "the jail record is keyed by the live address too")
+	require.Equal(t, signing.at(newAddr).JailedUntil, jailRecord.JailedUntil)
+
+	// The sweep executes the punishment at maturity, all of it under the
+	// address x/staking and x/slashing hold the validator under now.
+	sweepTime := blockTime.Add(k.GetParams(ctx).EquivocationExecutionDelay + time.Second)
+	sweepCtx := ctx.WithBlockTime(sweepTime)
+	k.SweepPendingEquivocationPunishments(sweepCtx)
+
 	require.Equal(t, []sdk.ConsAddress{newAddr}, slashed)
-	require.Equal(t, []sdk.ConsAddress{newAddr}, jailed)
-	require.Equal(t, blockTime.Add(30*24*time.Hour), signing.at(newAddr).JailedUntil)
+	require.Equal(t, sweepTime.Add(30*24*time.Hour), signing.at(newAddr).JailedUntil)
 	require.True(t, signing.at(newAddr).Tombstoned)
 
 	// And the tombstone is read back where it was written, so re-submitting the
-	// same evidence is the no-op it has always been rather than a second slash.
-	require.NoError(t, k.HandleConsumerDoubleVoting(ctx, cid, evidence, oldSDKPubKey))
+	// same evidence is the no-op it has always been rather than a second queue
+	// or slash.
+	require.NoError(t, k.HandleConsumerDoubleVoting(sweepCtx, cid, evidence, oldSDKPubKey))
 	require.Equal(t, []sdk.ConsAddress{newAddr}, slashed, "one equivocation, one slash")
-	require.Equal(t, []sdk.ConsAddress{newAddr}, jailed)
 }
 
 // TestEquivocationPunishmentStillRequiresAResolvableValidator is the bound on

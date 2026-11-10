@@ -107,6 +107,7 @@ import (
 	no_valupdates_genutil "github.com/allinbits/vaas/x/vaas/no_valupdates_genutil"
 	no_valupdates_staking "github.com/allinbits/vaas/x/vaas/no_valupdates_staking"
 	ibcprovider "github.com/allinbits/vaas/x/vaas/provider"
+	"github.com/allinbits/vaas/x/vaas/provider/govadapter"
 	ibcproviderkeeper "github.com/allinbits/vaas/x/vaas/provider/keeper"
 	providertypes "github.com/allinbits/vaas/x/vaas/provider/types"
 	vaastypes "github.com/allinbits/vaas/x/vaas/types"
@@ -413,6 +414,7 @@ func New(
 		app.AccountKeeper,
 		app.BankKeeper,
 		app.DistrKeeper,
+		nil, // set below via SetGovKeeper once the GovKeeper exists
 		authtypes.NewModuleAddress(govtypes.ModuleName).String(),
 		authcodec.NewBech32Codec(sdk.GetConfig().GetBech32ValidatorAddrPrefix()),
 		authcodec.NewBech32Codec(sdk.GetConfig().GetBech32ConsensusAddrPrefix()),
@@ -434,6 +436,8 @@ func New(
 		govConfig,
 		authtypes.NewModuleAddress(govtypes.ModuleName).String(),
 	)
+
+	app.ProviderKeeper.SetGovKeeper(govadapter.New(app.GovKeeper))
 
 	app.MintKeeper = mintkeeper.NewKeeper(
 		appCodec,

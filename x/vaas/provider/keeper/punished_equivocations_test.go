@@ -91,6 +91,14 @@ func newDoubleVoteFixture(t *testing.T, tombstone bool) (doubleVoteFixture, *gom
 	return doubleVoteFixture{k: k, ctx: ctx, cid: cid, chainId: chainId, signer: signer, pubKey: sdkPubKey, consAddr: consAddr, counters: counters, signing: signing}, ctrl
 }
 
+// sweep executes whatever the fixture's validator has pending: the execution
+// delay has passed and no removal vote is in the way (gov holds none).
+func (f doubleVoteFixture) sweep(t *testing.T) {
+	t.Helper()
+	matured := f.ctx.WithBlockTime(f.ctx.BlockTime().Add(f.k.GetParams(f.ctx).EquivocationExecutionDelay + time.Hour))
+	f.k.SweepPendingEquivocationPunishments(matured)
+}
+
 func (f doubleVoteFixture) punished(t *testing.T, height int64) bool {
 	t.Helper()
 	has, err := f.k.PunishedEquivocations.Has(f.ctx, collections.Join3(f.chainId, f.consAddr.Bytes(), height))
@@ -100,25 +108,33 @@ func (f doubleVoteFixture) punished(t *testing.T, height int64) bool {
 
 // TestDoubleVoteIsPunishedOncePerInfractionWithoutTombstoning: with
 // tombstoning off nothing but the record identifies an infraction already
-// punished, so the same evidence submitted again is a no-op, while a
-// double-sign at another height is a new infraction and is punished.
+// punished. It is written when the punishment is queued, so the same
+// evidence submitted again is a no-op whether the entry is still pending or
+// has executed, while a double-sign at another height is a new infraction
+// and is punished.
 func TestDoubleVoteIsPunishedOncePerInfractionWithoutTombstoning(t *testing.T) {
 	f, ctrl := newDoubleVoteFixture(t, false)
 	defer ctrl.Finish()
 
 	evidence := doubleVoteBy(t, f.signer, 55, f.ctx.BlockTime())
 	require.NoError(t, f.k.HandleConsumerDoubleVoting(f.ctx, f.cid, evidence, f.pubKey))
-	require.Equal(t, 1, f.counters.slashes)
-	require.True(t, f.punished(t, 55), "the punished infraction must be recorded")
+	require.Equal(t, 0, f.counters.slashes, "the submission queues; the sweep slashes")
+	require.Equal(t, 1, f.counters.jails)
+	require.True(t, f.punished(t, 55), "the infraction is recorded at queue time")
 	require.False(t, f.signing.at(f.consAddr).Tombstoned)
 
+	f.sweep(t)
+	require.Equal(t, 1, f.counters.slashes)
+
+	jails := f.counters.jails
 	require.NoError(t, f.k.HandleConsumerDoubleVoting(f.ctx, f.cid, evidence, f.pubKey))
 	require.Equal(t, 1, f.counters.slashes, "the same infraction must not be slashed twice")
-	require.Equal(t, 1, f.counters.jails)
+	require.Equal(t, jails, f.counters.jails, "nor queued again")
 
 	require.NoError(t, f.k.HandleConsumerDoubleVoting(f.ctx, f.cid, doubleVoteBy(t, f.signer, 56, f.ctx.BlockTime()), f.pubKey))
-	require.Equal(t, 2, f.counters.slashes, "a double-sign at another height is another infraction")
 	require.True(t, f.punished(t, 56))
+	f.sweep(t)
+	require.Equal(t, 2, f.counters.slashes, "a double-sign at another height is another infraction")
 }
 
 // TestDoubleVoteKeepsNoRecordWhenTombstoning: with tombstoning on, the
@@ -130,9 +146,10 @@ func TestDoubleVoteKeepsNoRecordWhenTombstoning(t *testing.T) {
 
 	evidence := doubleVoteBy(t, f.signer, 55, f.ctx.BlockTime())
 	require.NoError(t, f.k.HandleConsumerDoubleVoting(f.ctx, f.cid, evidence, f.pubKey))
+	require.False(t, f.punished(t, 55), "a tombstoning punishment needs no record")
+	f.sweep(t)
 	require.Equal(t, 1, f.counters.slashes)
 	require.True(t, f.signing.at(f.consAddr).Tombstoned)
-	require.False(t, f.punished(t, 55), "a tombstoning punishment needs no record")
 
 	require.NoError(t, f.k.HandleConsumerDoubleVoting(f.ctx, f.cid, evidence, f.pubKey))
 	require.Equal(t, 1, f.counters.slashes)
@@ -150,6 +167,7 @@ func TestTombstoningForgetsThePunishedEquivocations(t *testing.T) {
 	}
 
 	require.NoError(t, f.k.HandleConsumerDoubleVoting(f.ctx, f.cid, doubleVoteBy(t, f.signer, 55, f.ctx.BlockTime()), f.pubKey))
+	f.sweep(t)
 	require.True(t, f.signing.at(f.consAddr).Tombstoned)
 	for _, height := range []int64{10, 20, 55} {
 		require.False(t, f.punished(t, height), "height %d must be forgotten once the validator is tombstoned", height)

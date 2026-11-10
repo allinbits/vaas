@@ -373,19 +373,30 @@ func (k Keeper) StopAndPrepareForConsumerRemoval(ctx sdk.Context, consumerId uin
 // PauseConsumerChain transitions a launched consumer chain into
 // CONSUMER_PHASE_PAUSED when the provider must stop serving it, for the
 // given reason: a successful downtime challenge (see
-// HandleChallengeConsumerDowntime) or a confirmed light-client attack (see
-// containLightClientAttack). Either way the consumer's accusations are no
-// longer trusted: a won challenge proved them wrong, and a forked chain's
-// accusations are no more trustworthy than its headers. So, in order, the
-// fees withheld from the accused validators are repaid (PayWithheldFees,
-// before the phase flips, since the consumer's withdraw lock opens the
-// moment it leaves LAUNCHED and the accused could no longer challenge once
-// their accusations are gone), then every pending downtime slash and this
-// epoch's downtime marks for the consumer are cancelled via
-// CancelConsumerDowntimeState. The reason is kept for the duration of the
-// pause (a resume reads it) and named on the consumer_paused event.
-// A paused consumer is excluded from VSC packet
-// queuing (QueueVSCPackets iterates GetAllLaunchedConsumerIds), fee
+// HandleChallengeConsumerDowntime), a confirmed light-client attack (see
+// containLightClientAttack) or a refusal coalition reaching the
+// RefusalPauseThreshold (see EvaluateConsumerRefusals).
+//
+// A won challenge proved the consumer's accusations wrong, and a forked
+// chain's accusations are no more trustworthy than its headers, so those two
+// pauses discard them (DiscardConsumerAccusations): the fees withheld from
+// the accused validators are repaid first, before the phase flips, since the
+// accused could no longer challenge once their accusations are gone, then
+// every pending downtime slash and this epoch's downtime marks for the
+// consumer are cancelled. The refusal pause proves nothing about the
+// accusations and freezes them instead: they stay as they are, their
+// maturities and expiries are measured against the moment the pause began
+// for as long as it lasts (see consumerClock), and a resume moves them
+// forward by the length of the pause (thawConsumerAccusations). Discarding
+// them here would hand a coalition
+// with pending accusations an exemption: refuse, pause, withdraw, resume. A
+// challenge proven during the pause discards them like one proven before
+// it, and a lapsed pause stops the consumer, which cancels them like every
+// stop.
+//
+// The reason is kept for the duration of the pause (a resume reads it) and
+// named on the consumer_paused event. A paused consumer is excluded from VSC
+// packet queuing (QueueVSCPackets iterates GetAllLaunchedConsumerIds), fee
 // distribution, and evidence handling -- all of which require phase LAUNCHED.
 //
 // The pause is not indefinite: an auto-stop is scheduled at
@@ -405,8 +416,10 @@ func (k Keeper) PauseConsumerChain(ctx sdk.Context, consumerId uint64, reason ty
 			"cannot pause consumer %d: expected phase launched, got %s", consumerId, phase)
 	}
 
-	if err := k.PayWithheldFees(ctx, consumerId); err != nil {
-		return fmt.Errorf("repaying withheld fees for consumer %d: %w", consumerId, err)
+	if reason != types.PAUSE_REASON_REFUSAL_THRESHOLD {
+		if err := k.DiscardConsumerAccusations(ctx, consumerId); err != nil {
+			return err
+		}
 	}
 
 	k.SetConsumerPhase(ctx, consumerId, types.CONSUMER_PHASE_PAUSED)
@@ -415,10 +428,6 @@ func (k Keeper) PauseConsumerChain(ctx sdk.Context, consumerId uint64, reason ty
 	}
 	if err := k.SetConsumerPausedAt(ctx, consumerId, ctx.BlockTime()); err != nil {
 		return fmt.Errorf("recording pause time for consumer %d: %w", consumerId, err)
-	}
-
-	if err := k.CancelConsumerDowntimeState(ctx, consumerId); err != nil {
-		return fmt.Errorf("cancelling downtime state for consumer %d: %w", consumerId, err)
 	}
 
 	autoStopTime := ctx.BlockTime().Add(k.GetMaxPauseDuration(ctx))
@@ -430,6 +439,11 @@ func (k Keeper) PauseConsumerChain(ctx sdk.Context, consumerId uint64, reason ty
 			"cannot schedule auto-stop for consumer %d: %s", consumerId, err.Error())
 	}
 
+	// The pause freezes the consumer's pending equivocation punishments (see
+	// SweepPendingEquivocationPunishments); keep their validators jailed for
+	// as long as the pause can last.
+	k.refreshPendingEquivocationJailsForConsumer(ctx, consumerId)
+
 	ctx.EventManager().EmitEvent(sdk.NewEvent(
 		vaastypes.EventTypeConsumerPaused,
 		sdk.NewAttribute(sdk.AttributeKeyModule, types.ModuleName),
@@ -437,6 +451,63 @@ func (k Keeper) PauseConsumerChain(ctx sdk.Context, consumerId uint64, reason ty
 		sdk.NewAttribute(types.AttributePauseReason, reason.String()),
 	))
 
+	return nil
+}
+
+// DiscardConsumerAccusations voids the consumer's downtime accusations once
+// they can no longer be trusted: the fees withheld from the accused
+// validators are repaid (PayWithheldFees), then every pending downtime slash
+// and this epoch's downtime marks for the consumer are cancelled
+// (CancelConsumerDowntimeState). Called by the pauses that disprove or
+// discredit the accusations, and by a challenge proven while the consumer
+// sits in a refusal pause, which froze them instead.
+func (k Keeper) DiscardConsumerAccusations(ctx sdk.Context, consumerId uint64) error {
+	if err := k.PayWithheldFees(ctx, consumerId); err != nil {
+		return fmt.Errorf("repaying withheld fees for consumer %d: %w", consumerId, err)
+	}
+	if err := k.CancelConsumerDowntimeState(ctx, consumerId); err != nil {
+		return fmt.Errorf("cancelling downtime state for consumer %d: %w", consumerId, err)
+	}
+	return nil
+}
+
+// thawConsumerAccusations moves the consumer's downtime accusations forward
+// by the length of the pause that froze them: every pending slash matures,
+// and every withheld fee record expires, as long after the resume as it would
+// have after the pause. Only a refusal pause freezes them (see
+// PauseConsumerChain); after the other pauses there is nothing left to move.
+func (k Keeper) thawConsumerAccusations(ctx sdk.Context, consumerId uint64, pausedFor time.Duration) error {
+	var slashKeys []collections.Triple[uint64, []byte, int64]
+	var slashes []types.PendingDowntimeSlash
+	if err := k.PendingDowntimeSlashes.Walk(ctx, collections.NewPrefixedTripleRange[uint64, []byte, int64](consumerId), func(key collections.Triple[uint64, []byte, int64], entry types.PendingDowntimeSlash) (bool, error) {
+		slashKeys = append(slashKeys, key)
+		slashes = append(slashes, entry)
+		return false, nil
+	}); err != nil {
+		return fmt.Errorf("reading the pending downtime slashes of consumer %d: %w", consumerId, err)
+	}
+	for i, key := range slashKeys {
+		slashes[i].MaturesAt = slashes[i].MaturesAt.Add(pausedFor)
+		if err := k.PendingDowntimeSlashes.Set(ctx, key, slashes[i]); err != nil {
+			return fmt.Errorf("moving a pending downtime slash of consumer %d past its pause: %w", consumerId, err)
+		}
+	}
+
+	var recordKeys []collections.Pair[uint64, []byte]
+	var records []types.WithheldFeeRecord
+	if err := k.WithheldFeeRecords.Walk(ctx, collections.NewPrefixedPairRange[uint64, []byte](consumerId), func(key collections.Pair[uint64, []byte], record types.WithheldFeeRecord) (bool, error) {
+		recordKeys = append(recordKeys, key)
+		records = append(records, record)
+		return false, nil
+	}); err != nil {
+		return fmt.Errorf("reading the withheld fee records of consumer %d: %w", consumerId, err)
+	}
+	for i, key := range recordKeys {
+		records[i].ExpiresAt = records[i].ExpiresAt.Add(pausedFor)
+		if err := k.WithheldFeeRecords.Set(ctx, key, records[i]); err != nil {
+			return fmt.Errorf("moving a withheld fee record of consumer %d past its pause: %w", consumerId, err)
+		}
+	}
 	return nil
 }
 
@@ -509,6 +580,13 @@ func (k Keeper) PauseConsumersWithFrozenClients(ctx sdk.Context) {
 // MsgRecoverClient (client substitution, already governance-gated) into the
 // same governance proposal as the resume.
 //
+// It also requires the consumer's refusal signals to stand below the
+// RefusalPauseThreshold: a coalition at the threshold would pause the consumer
+// again in the very block it is resumed (the provider's EndBlock runs after
+// gov's), so the resume is refused outright and governance gets a reason
+// instead of a silent no-op that also resets the pause's auto-stop clock. The
+// refusers withdraw first, or governance raises the threshold.
+//
 // On success: cancels the scheduled auto-stop (CancelConsumerPauseExpiration),
 // restores phase LAUNCHED, reseeds the liveness clock (so the liveness sweep
 // does not immediately re-flag the consumer for the pause duration it was
@@ -536,6 +614,16 @@ func (k Keeper) ResumeConsumerChain(ctx sdk.Context, consumerId uint64) error {
 			"cannot resume consumer %d: expected phase paused, got %s", consumerId, phase)
 	}
 
+	standing, err := k.consumerRefusalStanding(ctx, consumerId)
+	if err != nil {
+		return fmt.Errorf("evaluating refusals for consumer %d: %w", consumerId, err)
+	}
+	if standing.atThreshold() {
+		return errorsmod.Wrapf(types.ErrConsumerRefused,
+			"cannot resume consumer %d: %s of bonded power refuses it (pause threshold %s); the refusals must be withdrawn first",
+			consumerId, standing.fraction, standing.threshold)
+	}
+
 	clientId, found := k.GetConsumerClientId(ctx, consumerId)
 	if !found {
 		return errorsmod.Wrapf(types.ErrInvalidConsumerClient, "no client discovered for consumer %d", consumerId)
@@ -558,6 +646,16 @@ func (k Keeper) ResumeConsumerChain(ctx sdk.Context, consumerId uint64) error {
 		if err := k.forkEvidenceExpired(ctx, consumerId, clientId); err != nil {
 			return err
 		}
+	}
+
+	// The accusations a refusal pause froze resume their clocks where the
+	// pause stopped them.
+	pausedAt, err := k.GetConsumerPausedAt(ctx, consumerId)
+	if err != nil {
+		return err
+	}
+	if err := k.thawConsumerAccusations(ctx, consumerId, ctx.BlockTime().Sub(pausedAt)); err != nil {
+		return err
 	}
 	k.DeleteConsumerPauseReason(ctx, consumerId)
 	k.DeleteConsumerPausedAt(ctx, consumerId)
@@ -592,10 +690,12 @@ func (k Keeper) ResumeConsumerChain(ctx sdk.Context, consumerId uint64) error {
 // for a consumer: downtime slashes accepted but not yet executed
 // (PendingDowntimeSlashes), and the current epoch's downtime marks used to
 // exclude validators from fee distribution (EpochDowntime). It is the shared
-// primitive behind PauseConsumerChain, StopAndPrepareForConsumerRemoval, and
-// DeleteConsumerChain: once a consumer pauses, stops, or is deleted, there is
-// no further epoch or challenge window to resolve this state against, so it
-// is cancelled outright instead of left to expire on its own.
+// primitive behind DiscardConsumerAccusations, StopAndPrepareForConsumerRemoval,
+// and DeleteConsumerChain: once a consumer's accusations are disproven, or
+// the consumer stops or is deleted, there is no further epoch or challenge
+// window to resolve this state against, so it is cancelled outright instead
+// of left to expire on its own. A refusal pause leaves it alone (see
+// PauseConsumerChain).
 //
 // AcceptedDowntimeWindows, DowntimeWindowFloors, and WithheldFeeRecords are
 // deliberately left alone here: a window whose accusation was disproven or
@@ -743,6 +843,9 @@ func (k Keeper) DeleteConsumerChain(ctx sdk.Context, consumerId uint64) (err err
 
 	k.DeleteConsumerRemovalTime(ctx, consumerId)
 	k.DeleteConsumerLastAckTime(ctx, consumerId)
+	if err := k.DeleteConsumerRefusals(ctx, consumerId); err != nil {
+		return fmt.Errorf("deleting consumer refusals for consumer %d: %w", consumerId, err)
+	}
 	k.DeleteConsumerHighestSentVscId(ctx, consumerId)
 	k.DeleteConsumerHighestAckedVscId(ctx, consumerId)
 	k.DeleteConsumerPauseReason(ctx, consumerId)

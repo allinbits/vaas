@@ -91,13 +91,26 @@ func (s *IntegrationTestSuite) queryCommunityPoolBalance(denom string) int64 {
 }
 
 // submitAndPassProposal writes proposalJSON to /tmp/proposal.json in the
-// provider container, submits the proposal from "val", votes YES from val,
-// waits for tally to execute (15s voting period + a couple of blocks), and
-// returns the proposal ID. Fails the test on submit/vote/tally errors.
+// provider container, submits the proposal from "val", votes YES from val and
+// waits for the tally to execute. Fails the test on submit/vote/tally errors.
 //
 // proposalJSON must be a valid gov v1 proposal body. The submitter and voting
 // fees are paid in bondDenom by val.
 func (s *baseTestSuite) submitAndPassProposal(proposalJSON string) {
+	s.submitProposalWithVote(proposalJSON, "yes", "PROPOSAL_STATUS_PASSED")
+}
+
+// submitAndRejectProposal submits a proposal, votes no from val, and waits for
+// it to be REJECTED. Used by tests exercising the punishment deferral behind a
+// removal vote that the community then declines.
+func (s *baseTestSuite) submitAndRejectProposal(proposalJSON string) {
+	s.submitProposalWithVote(proposalJSON, "no", "PROPOSAL_STATUS_REJECTED")
+}
+
+// submitProposalWithVote submits a gov v1 proposal, votes the given option
+// from val, and waits until the proposal reaches wantStatus; any other
+// terminal status fails the test. It returns the proposal ID.
+func (s *baseTestSuite) submitProposalWithVote(proposalJSON, voteOption, wantStatus string) uint64 {
 	containerID := s.providerValRes[0].Container.ID
 
 	// 1. Write the proposal body to /tmp/proposal.json via base64 to avoid
@@ -152,9 +165,9 @@ func (s *baseTestSuite) submitAndPassProposal(proposalJSON string) {
 		"could not parse proposal_id from tx events for %s: last stdout=%s",
 		submitRes.TxHash, lastTxOut)
 
-	// 3. Vote yes from val.
+	// 3. Vote from val.
 	voteStdout, voteStderr, err := s.dockerExec(containerID, []string{
-		providerBinary, "tx", "gov", "vote", fmt.Sprintf("%d", proposalID), "yes",
+		providerBinary, "tx", "gov", "vote", fmt.Sprintf("%d", proposalID), voteOption,
 		"--from", "val",
 		"--home", providerHomePath,
 		"--keyring-backend", "test",
@@ -165,23 +178,26 @@ func (s *baseTestSuite) submitAndPassProposal(proposalJSON string) {
 	s.Require().NoErrorf(err, "failed to vote on proposal %d: stdout=%s stderr=%s",
 		proposalID, voteStdout.String(), voteStderr.String())
 
-	// 4. Wait for tally. 30s timeout (15s voting + buffer), 2s tick.
+	// 4. Wait for tally: the voting period plus a buffer for the proposal to
+	//    land and the tally block to commit, 2s tick.
 	s.Require().Eventuallyf(func() bool {
 		status := s.queryProposalStatus(proposalID)
 		switch status {
-		case "PROPOSAL_STATUS_PASSED":
+		case wantStatus:
 			return true
-		case "PROPOSAL_STATUS_REJECTED", "PROPOSAL_STATUS_FAILED":
+		case "PROPOSAL_STATUS_PASSED", "PROPOSAL_STATUS_REJECTED", "PROPOSAL_STATUS_FAILED":
 			body := s.dumpProposal(proposalID)
-			s.Require().Failf("proposal terminated unsuccessfully",
-				"proposal %d ended with status %s; full body: %s",
-				proposalID, status, body)
+			s.Require().Failf("proposal reached the wrong terminal status",
+				"proposal %d ended with status %s, want %s; full body: %s",
+				proposalID, status, wantStatus, body)
 			return true
 		default:
 			return false
 		}
-	}, 30*time.Second, 2*time.Second,
-		"proposal %d did not pass within timeout", proposalID)
+	}, s.cfg.govVotingPeriod+45*time.Second, 2*time.Second,
+		"proposal %d did not reach %s within timeout", proposalID, wantStatus)
+
+	return proposalID
 }
 
 // dumpProposal returns the raw JSON of a gov proposal query, used to surface

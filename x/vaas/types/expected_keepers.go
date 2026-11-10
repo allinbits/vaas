@@ -14,6 +14,8 @@ import (
 
 	sdk "github.com/cosmos/cosmos-sdk/types"
 	banktypes "github.com/cosmos/cosmos-sdk/x/bank/types"
+	govv1 "github.com/cosmos/cosmos-sdk/x/gov/types/v1"
+	slashingtypes "github.com/cosmos/cosmos-sdk/x/slashing/types"
 	stakingtypes "github.com/cosmos/cosmos-sdk/x/staking/types"
 )
 
@@ -30,6 +32,12 @@ type StakingKeeper interface {
 	// already claimed by a rotation yet absent from every validator lookup.
 	GetBlockConsPubKeyRotationHistory(ctx context.Context) ([]stakingtypes.ConsPubKeyRotationHistory, error)
 	GetLastValidatorPower(ctx context.Context, operator sdk.ValAddress) (int64, error)
+	GetLastTotalPower(ctx context.Context) (math.Int, error)
+	PutUnbondingOnHold(ctx context.Context, id uint64) error
+	GetUnbondingType(ctx context.Context, id uint64) (stakingtypes.UnbondingType, error)
+	GetUnbondingDelegationByUnbondingID(ctx context.Context, id uint64) (stakingtypes.UnbondingDelegation, error)
+	GetRedelegationByUnbondingID(ctx context.Context, id uint64) (stakingtypes.Redelegation, error)
+	GetValidatorByUnbondingID(ctx context.Context, id uint64) (stakingtypes.Validator, error)
 	Jail(context.Context, sdk.ConsAddress) error // jail a validator
 	SlashWithInfractionReason(ctx context.Context, consAddr sdk.ConsAddress, infractionHeight, power int64, slashFactor math.LegacyDec, infraction stakingtypes.Infraction) (math.Int, error)
 	SlashUnbondingDelegation(ctx context.Context, unbondingDelegation stakingtypes.UnbondingDelegation, infractionHeight int64, slashFactor math.LegacyDec) (math.Int, error)
@@ -58,6 +66,7 @@ type StakingKeeper interface {
 // SlashingKeeper defines the contract VAAS expects in order to perform slashing
 type SlashingKeeper interface {
 	JailUntil(context.Context, sdk.ConsAddress, time.Time) error // called from provider keeper only
+	GetValidatorSigningInfo(context.Context, sdk.ConsAddress) (slashingtypes.ValidatorSigningInfo, error)
 	Tombstone(context.Context, sdk.ConsAddress) error
 	IsTombstoned(context.Context, sdk.ConsAddress) bool
 }
@@ -122,4 +131,15 @@ type ChannelV2Keeper interface {
 type DistributionKeeper interface {
 	FundCommunityPool(ctx context.Context, amount sdk.Coins, sender sdk.AccAddress) error
 	DistributeFromFeePool(ctx context.Context, amount sdk.Coins, receiveAddr sdk.AccAddress) error
+}
+
+// GovKeeper is what the provider reads from x/gov to find the removal votes a
+// consumer-originated punishment waits out.
+type GovKeeper interface {
+	// IterateActiveProposals walks the proposals in their voting period in
+	// queue order, voting end then id; cb returns true to stop the walk.
+	IterateActiveProposals(ctx context.Context, cb func(proposal govv1.Proposal) (stop bool, err error)) error
+	// Proposal returns the proposal with the given id, or an error when gov
+	// has none.
+	Proposal(ctx context.Context, proposalId uint64) (govv1.Proposal, error)
 }
