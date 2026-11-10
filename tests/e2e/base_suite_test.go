@@ -452,7 +452,7 @@ func (s *baseTestSuite) stopConsumerNode(i int) {
 func (s *baseTestSuite) waitContainerExit(id string, timeout time.Duration) bool {
 	deadline := time.Now().Add(timeout)
 	for time.Now().Before(deadline) {
-		c, err := s.dkrPool.Client.InspectContainerWithOptions(docker.InspectContainerOptions{ID: id})
+		c, err := s.dkrPool.Client.InspectContainer(id)
 		if err != nil || !c.State.Running {
 			return true
 		}
