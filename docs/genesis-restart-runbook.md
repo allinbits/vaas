@@ -164,6 +164,16 @@ start; the consumer safe-mode clock is preserved across the restart, so a long
 gap before VSC traffic resumes is treated exactly as it would have been without
 the restart.
 
+### Stopping a node
+
+Give a node a stop timeout of at least 60 seconds (`docker stop -t 60`, a
+systemd unit's `TimeoutStopSec=60`). The binary exits on `SIGTERM` within a
+second when it can; a kill at the deadline costs nothing but a WAL replay at
+the next start, and the e2e harness logs how long each stop took so a slow
+shutdown is visible rather than silently killed. Keep a validator's restart
+short: a validator away for more than half a downtime window is accused by
+the consumer (see [consumer-downtime.md](consumer-downtime.md)).
+
 ## Notes
 
 - VAAS is pre-release and undeployed: there are no genesis migrations. Export

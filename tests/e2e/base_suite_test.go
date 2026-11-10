@@ -406,10 +406,18 @@ func (s *baseTestSuite) logNodeTails(resources []*dockertest.Resource, lines int
 // that ignores the signal shows.
 func (s *baseTestSuite) stopConsumerNode(i int) {
 	started := time.Now()
-	s.Require().NoErrorf(s.dkrPool.Client.StopContainer(s.consumerValRes[i].Container.ID, 5),
+	s.Require().NoErrorf(s.dkrPool.Client.StopContainer(s.consumerValRes[i].Container.ID, nodeStopTimeoutSeconds),
 		"failed to stop consumer val%d", i)
 	s.T().Logf("consumer val%d stopped in %s", i, time.Since(started).Round(time.Millisecond))
 }
+
+// nodeStopTimeoutSeconds is how long a node gets to exit on SIGTERM before
+// Docker kills it. The binary exits in well under a second on a host and as
+// PID 1 in the e2e image, yet every stop in CI used to run to a 5 s timeout
+// and end in a kill, so the scenarios measured recovery from a killed node
+// (WAL replay) rather than a shutdown; the time each stop took is logged,
+// and the timeout is what an operator's unit should give a node.
+const nodeStopTimeoutSeconds = 60
 
 // recreateConsumerNodes replaces every consumer node's container with one
 // running what plan returns, on the same home, name and ports: every node is
