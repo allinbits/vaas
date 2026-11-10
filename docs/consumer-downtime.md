@@ -106,9 +106,14 @@ acknowledgement at the first failure:
    true window-end time, and the anchor can therefore never place the window end later than
    it really was. Against that anchor: the window must end after the launch grace period
    (`SpawnTime + DowntimeGracePeriod`), must be no older than `DowntimeEvidenceMaxAge`
-   at receipt -- old windows are rejected because their challenge data availability decays --
-   and must leave the whole `DowntimeChallengeWindow` inside the consumer client's trusting
-   period, so the accused can still verify a challenge header at the end of it.
+   at receipt -- old windows are rejected because their challenge data availability decays.
+   The window *start* is anchored the same way, and that anchor must leave the whole
+   `DowntimeChallengeWindow` inside the consumer client's trusting period: a challenge of a
+   claimed height verifies the header at that height plus one against a stored consensus
+   state below it, so the state anchoring the window start, up to a whole window of
+   consumer blocks older than the window-end anchor, is the oldest one any height of the
+   window needs, and the accused can still challenge every height of the window at the end
+   of it.
    Anchoring to the upper state instead would overstate the window-end time by however far
    the client skipped past it, understating the evidence's age by the same amount and
    admitting evidence whose challenge data is already gone; anchoring to the lower state
@@ -407,9 +412,10 @@ That check bounds the interval by the trusting period derived from the *default*
 unbonding period, i.e. it constrains the parameters in the abstract, and deliberately not by
 the clients that exist: a consumer adopted with a shorter trusting period would otherwise veto
 a provider-wide change. The client that actually verifies a challenge bounds evidence at
-acceptance instead: an accusation is rejected when its age plus `DowntimeChallengeWindow`
-reaches that client's trusting period (section 3), so every accusation the provider accepts
-stays challengeable for its whole window, whatever the parameters say.
+acceptance instead: an accusation is rejected when the age of its window-start anchor plus
+`DowntimeChallengeWindow` reaches that client's trusting period (section 3), so every
+accusation the provider accepts stays challengeable, at every height of its window, for its
+whole challenge window, whatever the parameters say.
 
 ## 9. Operator guidance
 
