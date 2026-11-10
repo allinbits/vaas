@@ -9,6 +9,7 @@ import (
 	"go.uber.org/mock/gomock"
 
 	abci "github.com/cometbft/cometbft/abci/types"
+	cmtprotocrypto "github.com/cometbft/cometbft/proto/tendermint/crypto"
 
 	clientv2types "github.com/cosmos/ibc-go/v10/modules/core/02-client/v2/types"
 	ibctmtypes "github.com/cosmos/ibc-go/v10/modules/light-clients/07-tendermint"
@@ -1074,4 +1075,35 @@ func TestOnRecvVSCPacketRejectsWhenNoClientPinned(t *testing.T) {
 
 	_, found = k.GetProviderClientID(ctx)
 	require.False(t, found, "a rejected packet must not establish the pin")
+}
+
+// TestOnRecvVSCPacketV2RejectsAnUndecodablePubkeyBeforeAnyStateChange: over
+// the pinned provider client, a packet whose validator update carries a
+// consensus pubkey that does not decode is refused as invalid packet data
+// before the dedup watermark, the staleness clock or the pending changes are
+// touched; a well-formed packet on the same keeper is then accepted.
+func TestOnRecvVSCPacketV2RejectsAnUndecodablePubkeyBeforeAnyStateChange(t *testing.T) {
+	consumerKeeper, ctx, ctrl, mocks := testkeeper.GetConsumerKeeperAndCtx(t, testkeeper.NewInMemKeeperParams(t))
+	defer ctrl.Finish()
+	testkeeper.StubClientState(mocks, "provider-0")
+	consumerKeeper.SetProviderClientID(ctx, liveProviderClientID)
+
+	badUpdate := abci.ValidatorUpdate{PubKey: cmtprotocrypto.PublicKey{}, Power: 5}
+	err := consumerKeeper.OnRecvVSCPacketV2(ctx, liveProviderClientID, types.NewValidatorSetChangePacketData([]abci.ValidatorUpdate{badUpdate}, 1))
+	require.ErrorIs(t, err, types.ErrInvalidPacketData)
+
+	_, staged := consumerKeeper.GetPendingChanges(ctx)
+	require.False(t, staged, "a rejected packet must not stage any pending validator changes")
+	_, found, err := consumerKeeper.GetHighestValsetUpdateID(ctx)
+	require.NoError(t, err)
+	require.False(t, found, "a rejected packet must not advance the dedup watermark")
+	armed, err := consumerKeeper.LastVSCRecvTime.Has(ctx)
+	require.NoError(t, err)
+	require.False(t, armed, "a rejected packet must not touch the staleness clock")
+
+	pk, err := cryptocodec.ToCmtProtoPublicKey(ed25519.GenPrivKey().PubKey())
+	require.NoError(t, err)
+	require.NoError(t, consumerKeeper.OnRecvVSCPacketV2(ctx, liveProviderClientID,
+		types.NewValidatorSetChangePacketData([]abci.ValidatorUpdate{{PubKey: pk, Power: 5}}, 1)),
+		"the same keeper accepts a well-formed packet, so the rejection above was the validation's")
 }

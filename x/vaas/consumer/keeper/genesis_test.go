@@ -749,3 +749,61 @@ func TestInitGenesisPanicsWhenPinnedClientMissing(t *testing.T) {
 		`init: genesis pins provider client "07-tendermint-9", which does not exist in the IBC client store`,
 		func() { ck.InitGenesis(ctx, genesis) })
 }
+
+// TestGenesisRoundTripHighestValsetUpdateIDRejectsReplayedVSC: the dedup
+// watermark survives an export/import restart, so a VSC packet with an id at
+// or below the last one applied before the restart (one still sitting in IBC
+// state and redelivered afterwards) is skipped instead of being applied over
+// the newer set, while the next higher id is still accepted.
+func TestGenesisRoundTripHighestValsetUpdateIDRejectsReplayedVSC(t *testing.T) {
+	protoPubKey := func() abci.ValidatorUpdate {
+		pk, err := cryptocodec.ToCmtProtoPublicKey(ed25519.GenPrivKey().PubKey())
+		require.NoError(t, err)
+		return abci.ValidatorUpdate{PubKey: pk, Power: 50}
+	}
+	diff := func(id uint64) vaastypes.ValidatorSetChangePacketData {
+		return vaastypes.NewValidatorSetChangePacketData([]abci.ValidatorUpdate{protoPubKey()}, id)
+	}
+
+	pubKey := ed25519.GenPrivKey().PubKey()
+	vaasVal, err := consumertypes.NewVaasValidator(pubKey.Address(), 1, pubKey)
+	require.NoError(t, err)
+
+	ck, ctx, ctrl, mocks := testkeeper.GetConsumerKeeperAndCtx(t, testkeeper.NewInMemKeeperParams(t))
+	defer ctrl.Finish()
+	testkeeper.StubClientState(mocks, "provider-0")
+	ck.SetParams(ctx, vaastypes.DefaultConsumerParams())
+	ck.SetProviderClientID(ctx, liveProviderClientID)
+	ck.SetVaasValidator(ctx, vaasVal)
+	require.NoError(t, ck.OnRecvVSCPacketV2(ctx, liveProviderClientID, diff(7)))
+
+	exported := ck.ExportGenesis(ctx)
+	require.Equal(t, uint64(7), exported.HighestValsetUpdateId, "export must carry the watermark")
+
+	ck2, ctx2, ctrl2, mocks2 := testkeeper.GetConsumerKeeperAndCtx(t, testkeeper.NewInMemKeeperParams(t))
+	defer ctrl2.Finish()
+	testkeeper.StubClientState(mocks2, "provider-0")
+	ck2.InitGenesis(ctx2, exported)
+
+	highest, found, err := ck2.GetHighestValsetUpdateID(ctx2)
+	require.NoError(t, err)
+	require.True(t, found, "watermark lost across the round-trip")
+	require.Equal(t, uint64(7), highest)
+	require.Equal(t, exported, ck2.ExportGenesis(ctx2), "round-trip must be a fixed point")
+
+	require.NoError(t, ck2.OnRecvVSCPacketV2(ctx2, liveProviderClientID, diff(5)),
+		"a replayed id is acknowledged without error")
+	_, staged := ck2.GetPendingChanges(ctx2)
+	require.False(t, staged, "a VSC id at or below the restored watermark must not be applied")
+	highest, _, err = ck2.GetHighestValsetUpdateID(ctx2)
+	require.NoError(t, err)
+	require.Equal(t, uint64(7), highest)
+
+	require.NoError(t, ck2.OnRecvVSCPacketV2(ctx2, liveProviderClientID, diff(8)))
+	pending, staged := ck2.GetPendingChanges(ctx2)
+	require.True(t, staged, "the next id is accepted, so the skip above was the watermark's doing")
+	require.Len(t, pending.ValidatorUpdates, 1)
+	highest, _, err = ck2.GetHighestValsetUpdateID(ctx2)
+	require.NoError(t, err)
+	require.Equal(t, uint64(8), highest)
+}

@@ -1026,3 +1026,173 @@ func TestMsgSetConsumerRefusalValidateBasic(t *testing.T) {
 	require.Error(t, types.NewMsgSetConsumerRefusal(other, 0, valAddr.String(), true).ValidateBasic(),
 		"only the operator account may sign")
 }
+
+func ref[T any](v T) *T {
+	return &v
+}
+
+// clonedParams returns a copy of p that shares no slash policy with it, so a
+// write through either policy pointer shows up as a difference.
+func clonedParams(p types.Params) types.Params {
+	if p.InfractionParameters.DoubleSign != nil {
+		doubleSign := *p.InfractionParameters.DoubleSign
+		p.InfractionParameters.DoubleSign = &doubleSign
+	}
+	if p.InfractionParameters.Downtime != nil {
+		downtime := *p.InfractionParameters.Downtime
+		p.InfractionParameters.Downtime = &downtime
+	}
+	return p
+}
+
+// TestMsgUpdateParamsApplyToReplacesExactlyTheFieldSet: for every field of
+// the diff, a message setting that field alone yields the stored parameters
+// with that one field replaced and nothing else touched, down to one field
+// of one slash policy, and the stored parameters themselves are left as they
+// were.
+func TestMsgUpdateParamsApplyToReplacesExactlyTheFieldSet(t *testing.T) {
+	infraction := func(u types.InfractionParametersUpdate) types.MsgUpdateParams {
+		return types.MsgUpdateParams{InfractionParameters: &u}
+	}
+	doubleSign := func(u types.SlashJailParametersUpdate) types.MsgUpdateParams {
+		return infraction(types.InfractionParametersUpdate{DoubleSign: &u})
+	}
+	downtime := func(u types.SlashJailParametersUpdate) types.MsgUpdateParams {
+		return infraction(types.InfractionParametersUpdate{Downtime: &u})
+	}
+
+	cases := []struct {
+		name string
+		msg  types.MsgUpdateParams
+		want func(p *types.Params)
+	}{
+		{
+			"trusting_period_fraction",
+			types.MsgUpdateParams{TrustingPeriodFraction: ref("0.8")},
+			func(p *types.Params) { p.TrustingPeriodFraction = "0.8" },
+		},
+		{
+			"liveness_grace_fraction",
+			types.MsgUpdateParams{LivenessGraceFraction: ref("0.75")},
+			func(p *types.Params) { p.LivenessGraceFraction = "0.75" },
+		},
+		{
+			"vaas_timeout_period",
+			types.MsgUpdateParams{VaasTimeoutPeriod: ref(2 * time.Hour)},
+			func(p *types.Params) { p.VaasTimeoutPeriod = 2 * time.Hour },
+		},
+		{
+			"blocks_per_epoch",
+			types.MsgUpdateParams{BlocksPerEpoch: ref(int64(300))},
+			func(p *types.Params) { p.BlocksPerEpoch = 300 },
+		},
+		{
+			"fees_per_block_amount",
+			types.MsgUpdateParams{FeesPerBlockAmount: ref(math.NewInt(2500))},
+			func(p *types.Params) { p.FeesPerBlockAmount = math.NewInt(2500) },
+		},
+		{
+			"min_deposit_blocks",
+			types.MsgUpdateParams{MinDepositBlocks: ref(uint64(7))},
+			func(p *types.Params) { p.MinDepositBlocks = 7 },
+		},
+		{
+			"max_pause_duration",
+			types.MsgUpdateParams{MaxPauseDuration: ref(48 * time.Hour)},
+			func(p *types.Params) { p.MaxPauseDuration = 48 * time.Hour },
+		},
+		{
+			"refusal_pause_threshold",
+			types.MsgUpdateParams{RefusalPauseThreshold: ref("0.25")},
+			func(p *types.Params) { p.RefusalPauseThreshold = "0.25" },
+		},
+		{
+			"equivocation_execution_delay",
+			types.MsgUpdateParams{EquivocationExecutionDelay: ref(48 * time.Hour)},
+			func(p *types.Params) { p.EquivocationExecutionDelay = 48 * time.Hour },
+		},
+		{
+			"removal_vote_deferral_margin",
+			types.MsgUpdateParams{RemovalVoteDeferralMargin: ref(2 * time.Hour)},
+			func(p *types.Params) { p.RemovalVoteDeferralMargin = 2 * time.Hour },
+		},
+		{
+			"downtime_grace_period", infraction(types.InfractionParametersUpdate{DowntimeGracePeriod: ref(2 * time.Hour)}),
+			func(p *types.Params) { p.InfractionParameters.DowntimeGracePeriod = 2 * time.Hour },
+		},
+		{
+			"signed_blocks_window", infraction(types.InfractionParametersUpdate{SignedBlocksWindow: ref(int64(100))}),
+			func(p *types.Params) { p.InfractionParameters.SignedBlocksWindow = 100 },
+		},
+		{
+			"min_signed_per_window", infraction(types.InfractionParametersUpdate{MinSignedPerWindow: ref(math.LegacyMustNewDecFromStr("0.75"))}),
+			func(p *types.Params) {
+				p.InfractionParameters.MinSignedPerWindow = math.LegacyMustNewDecFromStr("0.75")
+			},
+		},
+		{
+			"downtime_challenge_window", infraction(types.InfractionParametersUpdate{DowntimeChallengeWindow: ref(96 * time.Hour)}),
+			func(p *types.Params) { p.InfractionParameters.DowntimeChallengeWindow = 96 * time.Hour },
+		},
+		{
+			"downtime_evidence_max_age", infraction(types.InfractionParametersUpdate{DowntimeEvidenceMaxAge: ref(24 * time.Hour)}),
+			func(p *types.Params) { p.InfractionParameters.DowntimeEvidenceMaxAge = 24 * time.Hour },
+		},
+		{
+			"double_sign.slash_fraction", doubleSign(types.SlashJailParametersUpdate{SlashFraction: ref(math.LegacyMustNewDecFromStr("0.1"))}),
+			func(p *types.Params) {
+				p.InfractionParameters.DoubleSign.SlashFraction = math.LegacyMustNewDecFromStr("0.1")
+			},
+		},
+		{
+			"double_sign.jail_duration", doubleSign(types.SlashJailParametersUpdate{JailDuration: ref(time.Hour)}),
+			func(p *types.Params) { p.InfractionParameters.DoubleSign.JailDuration = time.Hour },
+		},
+		{
+			"double_sign.tombstone", doubleSign(types.SlashJailParametersUpdate{Tombstone: ref(false)}),
+			func(p *types.Params) { p.InfractionParameters.DoubleSign.Tombstone = false },
+		},
+		{
+			"downtime.slash_fraction", downtime(types.SlashJailParametersUpdate{SlashFraction: ref(math.LegacyMustNewDecFromStr("0.002"))}),
+			func(p *types.Params) {
+				p.InfractionParameters.Downtime.SlashFraction = math.LegacyMustNewDecFromStr("0.002")
+			},
+		},
+		{
+			"downtime.jail_duration", downtime(types.SlashJailParametersUpdate{JailDuration: ref(10 * time.Minute)}),
+			func(p *types.Params) { p.InfractionParameters.Downtime.JailDuration = 10 * time.Minute },
+		},
+		{
+			"downtime.tombstone", downtime(types.SlashJailParametersUpdate{Tombstone: ref(true)}),
+			func(p *types.Params) { p.InfractionParameters.Downtime.Tombstone = true },
+		},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			stored := types.DefaultParams()
+			untouched := clonedParams(stored)
+			want := clonedParams(stored)
+			tc.want(&want)
+			require.NotEqual(t, untouched, want, "the case must change the field it names")
+
+			require.Equal(t, want, tc.msg.ApplyTo(stored))
+			require.Equal(t, untouched, stored, "the stored parameters are copied, never written through")
+		})
+	}
+}
+
+// TestMsgUpdateParamsApplyToStartsAnAbsentPolicyFromEmpty: a slash policy the
+// stored parameters do not carry is built from the diff alone, and the empty
+// diff changes nothing.
+func TestMsgUpdateParamsApplyToStartsAnAbsentPolicyFromEmpty(t *testing.T) {
+	stored := types.DefaultParams()
+	stored.InfractionParameters.Downtime = nil
+
+	got := types.MsgUpdateParams{InfractionParameters: &types.InfractionParametersUpdate{
+		Downtime: &types.SlashJailParametersUpdate{JailDuration: ref(10 * time.Minute)},
+	}}.ApplyTo(stored)
+	require.Equal(t, &types.SlashJailParameters{JailDuration: 10 * time.Minute}, got.InfractionParameters.Downtime)
+	require.Nil(t, stored.InfractionParameters.Downtime)
+
+	require.Equal(t, stored, types.MsgUpdateParams{}.ApplyTo(stored))
+}
