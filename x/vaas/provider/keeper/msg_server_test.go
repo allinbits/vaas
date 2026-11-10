@@ -710,6 +710,38 @@ func TestUpdateParamsChangesOnlyTheFieldsSet(t *testing.T) {
 	require.Equal(t, before.InfractionParameters.DoubleSign, k.GetParams(ctx).InfractionParameters.DoubleSign, "the other policy is untouched")
 }
 
+// TestUpdateParamsChangesTheRefusalAndPunishmentTimingParameters: the refusal
+// pause threshold, the equivocation execution delay and the removal-vote
+// deferral margin are governed through the same diff as every other parameter,
+// and the merged set is validated as a whole.
+func TestUpdateParamsChangesTheRefusalAndPunishmentTimingParameters(t *testing.T) {
+	k, ctx, ctrl, _ := testkeeper.GetProviderKeeperAndCtx(t, testkeeper.NewInMemKeeperParams(t))
+	defer ctrl.Finish()
+	k.SetParams(ctx, providertypes.DefaultParams())
+	msgSrv := providerkeeper.NewMsgServerImpl(&k)
+
+	_, err := msgSrv.UpdateParams(ctx, &providertypes.MsgUpdateParams{
+		Authority:                  k.GetAuthority(),
+		RefusalPauseThreshold:      ref("0.5"),
+		EquivocationExecutionDelay: ref(48 * time.Hour),
+		RemovalVoteDeferralMargin:  ref(2 * time.Hour),
+	})
+	require.NoError(t, err)
+
+	want := providertypes.DefaultParams()
+	want.RefusalPauseThreshold = "0.5"
+	want.EquivocationExecutionDelay = 48 * time.Hour
+	want.RemovalVoteDeferralMargin = 2 * time.Hour
+	require.Equal(t, want, k.GetParams(ctx))
+
+	_, err = msgSrv.UpdateParams(ctx, &providertypes.MsgUpdateParams{
+		Authority:             k.GetAuthority(),
+		RefusalPauseThreshold: ref("1.00"),
+	})
+	require.ErrorContains(t, err, "refusal pause threshold is invalid")
+	require.Equal(t, want, k.GetParams(ctx), "a rejected update must not have been applied")
+}
+
 // TestUpdateParamsValidatesTheMergedSet: a diff that is fine on its own can
 // leave the merged parameters inconsistent; the handler validates the whole
 // merged set and applies nothing when it fails.

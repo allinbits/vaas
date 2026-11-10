@@ -306,7 +306,8 @@ func (msg MsgUpdateParams) ValidateBasic() error {
 // changesSomething reports whether any field of the diff is set.
 func (msg MsgUpdateParams) changesSomething() bool {
 	if msg.TrustingPeriodFraction != nil || msg.LivenessGraceFraction != nil || msg.VaasTimeoutPeriod != nil ||
-		msg.BlocksPerEpoch != nil || msg.FeesPerBlockAmount != nil || msg.MinDepositBlocks != nil || msg.MaxPauseDuration != nil {
+		msg.BlocksPerEpoch != nil || msg.FeesPerBlockAmount != nil || msg.MinDepositBlocks != nil || msg.MaxPauseDuration != nil ||
+		msg.RefusalPauseThreshold != nil || msg.EquivocationExecutionDelay != nil || msg.RemovalVoteDeferralMargin != nil {
 		return true
 	}
 	return msg.InfractionParameters != nil && msg.InfractionParameters.changesSomething()
@@ -347,6 +348,15 @@ func (msg MsgUpdateParams) ApplyTo(p Params) Params {
 	}
 	if msg.MaxPauseDuration != nil {
 		p.MaxPauseDuration = *msg.MaxPauseDuration
+	}
+	if msg.RefusalPauseThreshold != nil {
+		p.RefusalPauseThreshold = *msg.RefusalPauseThreshold
+	}
+	if msg.EquivocationExecutionDelay != nil {
+		p.EquivocationExecutionDelay = *msg.EquivocationExecutionDelay
+	}
+	if msg.RemovalVoteDeferralMargin != nil {
+		p.RemovalVoteDeferralMargin = *msg.RemovalVoteDeferralMargin
 	}
 	if msg.InfractionParameters != nil {
 		p.InfractionParameters = msg.InfractionParameters.ApplyTo(p.InfractionParameters)

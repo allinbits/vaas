@@ -977,6 +977,8 @@ func TestMsgUpdateParams_ValidateBasic(t *testing.T) {
 	validAuthority := authtypes.NewModuleAddress(govtypes.ModuleName).String()
 	blocks := int64(900)
 	tombstone := false
+	threshold := "0.5"
+	delay := time.Hour
 
 	tests := []struct {
 		name    string
@@ -988,6 +990,9 @@ func TestMsgUpdateParams_ValidateBasic(t *testing.T) {
 			Authority:            validAuthority,
 			InfractionParameters: &types.InfractionParametersUpdate{DoubleSign: &types.SlashJailParametersUpdate{Tombstone: &tombstone}},
 		}, false},
+		{"the refusal pause threshold alone", types.MsgUpdateParams{Authority: validAuthority, RefusalPauseThreshold: &threshold}, false},
+		{"the equivocation execution delay alone", types.MsgUpdateParams{Authority: validAuthority, EquivocationExecutionDelay: &delay}, false},
+		{"the removal vote deferral margin alone", types.MsgUpdateParams{Authority: validAuthority, RemovalVoteDeferralMargin: &delay}, false},
 		{"invalid authority", types.MsgUpdateParams{Authority: "not-bech32", BlocksPerEpoch: &blocks}, true},
 		{"nothing to change", types.MsgUpdateParams{Authority: validAuthority}, true},
 		{"empty infraction diff changes nothing", types.MsgUpdateParams{

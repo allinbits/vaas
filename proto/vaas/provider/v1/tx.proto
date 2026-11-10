@@ -131,7 +131,13 @@ message MsgUpdateParams {
       [ (gogoproto.wktpointer) = true ];
   google.protobuf.Duration max_pause_duration = 8
       [ (gogoproto.stdduration) = true ];
-  InfractionParametersUpdate infraction_parameters = 11;
+  google.protobuf.StringValue refusal_pause_threshold = 9
+      [ (gogoproto.wktpointer) = true ];
+  google.protobuf.Duration equivocation_execution_delay = 10
+      [ (gogoproto.stdduration) = true ];
+  google.protobuf.Duration removal_vote_deferral_margin = 11
+      [ (gogoproto.stdduration) = true ];
+  InfractionParametersUpdate infraction_parameters = 12;
 }
 
 message MsgUpdateParamsResponse {}
