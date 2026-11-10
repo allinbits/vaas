@@ -1205,3 +1205,19 @@ func TestHandleConsumerDoubleVotingRejectsUnlaunchedAndDeletedConsumers(t *testi
 		})
 	}
 }
+
+// TestHandleConsumerDoubleVotingRefusesAGovernanceRemovedConsumer: a
+// governance removal is the verdict on a consumer's evidence, so evidence
+// submitted after it is refused up front (nothing is mocked), while a stop
+// for any other reason leaves the evidence acceptable (the STOPPED case of
+// TestHandleConsumerDoubleVotingAcceptsPausedAndStoppedConsumers).
+func TestHandleConsumerDoubleVotingRefusesAGovernanceRemovedConsumer(t *testing.T) {
+	providerKeeper, ctx, ctrl, _ := testkeeper.GetProviderKeeperAndCtx(t, testkeeper.NewInMemKeeperParams(t))
+	defer ctrl.Finish()
+	const consumerID = uint64(0)
+	providerKeeper.SetConsumerPhase(ctx, consumerID, types.CONSUMER_PHASE_STOPPED)
+	providerKeeper.MarkConsumerRemovedByGovernance(ctx, consumerID)
+	err := providerKeeper.HandleConsumerDoubleVoting(ctx, consumerID, &tmtypes.DuplicateVoteEvidence{}, nil)
+	require.ErrorIs(t, err, vaastypes.ErrInvalidDoubleVotingEvidence)
+	require.ErrorContains(t, err, "removed by governance")
+}

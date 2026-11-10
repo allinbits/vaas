@@ -522,6 +522,10 @@ func (cs ConsumerState) Validate() error {
 		}
 	}
 
+	if cs.RemovedByGovernance && cs.Phase != CONSUMER_PHASE_STOPPED {
+		return fmt.Errorf("removed by governance is only set on a stopped consumer, phase is %s", cs.Phase)
+	}
+
 	switch cs.Phase {
 	case CONSUMER_PHASE_REGISTERED:
 		// Pre-launch: no IBC client, no consumer genesis, no init params, no removal time.

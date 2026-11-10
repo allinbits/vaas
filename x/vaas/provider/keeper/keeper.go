@@ -209,6 +209,11 @@ type Keeper struct {
 	// accused validator while it has pending equivocation punishments, keyed
 	// (provider consensus address, unbonding op id).
 	HeldUnbondingOps collections.KeySet[collections.Pair[[]byte, uint64]]
+	// ConsumersRemovedByGovernance holds the consumers a governance removal
+	// stopped, or whose removal vote passed after they had stopped: the one
+	// verdict that voids their equivocation evidence, past and future (see
+	// HandleConsumerDoubleVoting). Cleared with the consumer's state.
+	ConsumersRemovedByGovernance collections.KeySet[uint64]
 
 	// PendingEquivocationJails records, per accused validator (provider
 	// consensus address), the jail end this module last set on account of
@@ -417,6 +422,12 @@ func NewKeeper(
 		sb, types.HeldUnbondingOpsPrefix,
 		"held_unbonding_ops",
 		collections.PairKeyCodec(collections.BytesKey, collections.Uint64Key),
+	)
+
+	k.ConsumersRemovedByGovernance = collections.NewKeySet(
+		sb, types.ConsumersRemovedByGovernancePrefix,
+		"consumers_removed_by_governance",
+		collections.Uint64Key,
 	)
 
 	k.PendingEquivocationJails = collections.NewMap(

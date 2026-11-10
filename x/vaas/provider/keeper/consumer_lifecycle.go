@@ -523,6 +523,18 @@ func (k Keeper) thawConsumerAccusations(ctx sdk.Context, consumerId uint64, paus
 		}
 	}
 
+	return k.thawPendingEquivocationPunishments(ctx, consumerId, pausedAt)
+}
+
+// thawPendingEquivocationPunishments moves the consumer's frozen pending
+// equivocation punishments forward by the length of the pause that began at
+// pausedAt, with the two exceptions thawConsumerAccusations describes. A
+// resume calls it; so does a pause that lapses into a stop, so an entry runs
+// from the stop with the delay it had left when the pause froze it (one full
+// delay for an entry queued during the pause) instead of being due at once.
+func (k Keeper) thawPendingEquivocationPunishments(ctx sdk.Context, consumerId uint64, pausedAt time.Time) error {
+	pausedFor := ctx.BlockTime().Sub(pausedAt)
+
 	var punishmentKeys []collections.Triple[uint64, []byte, int64]
 	var punishments []types.PendingEquivocationPunishment
 	if err := k.PendingEquivocationPunishments.Walk(ctx, collections.NewPrefixedTripleRange[uint64, []byte, int64](consumerId), func(key collections.Triple[uint64, []byte, int64], entry types.PendingEquivocationPunishment) (bool, error) {
@@ -785,6 +797,17 @@ func (k Keeper) BeginBlockAutoStopPausedConsumers(ctx sdk.Context) error {
 		}
 
 		cachedCtx, writeFn := ctx.CacheContext()
+		// The stop ends the freeze: the pending equivocation punishments run
+		// from here with the delay the pause left them (see
+		// thawPendingEquivocationPunishments), before the stop forgets when
+		// the pause began.
+		if pausedAt, err := k.GetConsumerPausedAt(cachedCtx, consumerId); err == nil {
+			if err := k.thawPendingEquivocationPunishments(cachedCtx, consumerId, pausedAt); err != nil {
+				k.Logger(ctx).Error("failed to thaw the pending equivocation punishments of a paused consumer whose pause expired",
+					"consumerId", consumerId, "error", err.Error())
+				continue
+			}
+		}
 		if err := k.StopAndPrepareForConsumerRemoval(cachedCtx, consumerId); err != nil {
 			k.Logger(ctx).Error("failed to auto-stop paused consumer whose pause expired",
 				"consumerId", consumerId, "error", err.Error())
@@ -896,6 +919,7 @@ func (k Keeper) DeleteConsumerChain(ctx sdk.Context, consumerId uint64) (err err
 	k.DeleteConsumerHighestAckedVscId(ctx, consumerId)
 	k.DeleteConsumerPauseReason(ctx, consumerId)
 	k.DeleteConsumerPausedAt(ctx, consumerId)
+	k.DeleteConsumerRemovedByGovernance(ctx, consumerId)
 	k.DeleteConsumerDebt(ctx, consumerId)
 
 	if err := k.ConsumerFeesPerBlockOverride.Remove(ctx, consumerId); err != nil {

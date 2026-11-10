@@ -342,6 +342,7 @@ func TestRemoveConsumerHandlerCancelsPendingEquivocation(t *testing.T) {
 	has, err := k.PendingEquivocationPunishments.Has(ctx, key)
 	require.NoError(t, err)
 	require.False(t, has, "a governance removal must cancel the pending punishment")
+	require.True(t, k.IsConsumerRemovedByGovernance(ctx, consumerID), "the handler records the verdict")
 }
 
 // TestNonGovernanceStopDoesNotCancelPendingEquivocation proves that a
@@ -426,6 +427,7 @@ func TestPassedRemovalVoteCancelsDeferredEquivocation(t *testing.T) {
 	has, err := k.PendingEquivocationPunishments.Has(decided, key)
 	require.NoError(t, err)
 	require.False(t, has, "a passed removal vote must cancel the punishment it deferred")
+	require.True(t, k.IsConsumerRemovedByGovernance(decided, 0), "the tally is the verdict on the consumer")
 	heldStill, err := k.HeldUnbondingOps.Has(decided, collections.Join(consAddr.Bytes(), uint64(23)))
 	require.NoError(t, err)
 	require.False(t, heldStill)
@@ -1624,4 +1626,61 @@ func TestAnEntryQueuedDuringAPauseThawsToOneDelayAfterTheResume(t *testing.T) {
 	thawed, err := k.PendingEquivocationPunishments.Get(resumed, key)
 	require.NoError(t, err)
 	require.Equal(t, resumed.BlockTime().Add(delay), thawed.ExecutesAt)
+}
+
+// TestALapsedPauseThawsTheFrozenPunishmentsIntoTheStop: a pause that
+// expires into a stop ends the freeze the way a resume does: an entry queued
+// before the pause keeps the delay it had left, and one queued during the
+// pause gets one full delay from the stop, so governance keeps the whole
+// deliberation window either way.
+func TestALapsedPauseThawsTheFrozenPunishmentsIntoTheStop(t *testing.T) {
+	k, ctx, ctrl, mocks, validator, providerAddr := setupEquivocationQueueTest(t)
+	defer ctrl.Finish()
+	consAddr := providerAddr.ToSdkConsAddr()
+	const consumerID = uint64(0)
+	delay := k.GetParams(ctx).EquivocationExecutionDelay
+	mocks.MockStakingKeeper.EXPECT().UnbondingTime(gomock.Any()).Return(21*24*time.Hour, nil).AnyTimes()
+
+	// Queued an hour before the pause: six days and twenty-three hours of
+	// delay left when the pause freezes it.
+	before := queueWithHeldOp(t, k, ctx, mocks, validator, providerAddr, consumerID, 11)
+	queuedBefore, err := k.PendingEquivocationPunishments.Get(ctx, before)
+	require.NoError(t, err)
+
+	pausedAt := ctx.BlockTime().Add(time.Hour)
+	paused := ctx.WithBlockTime(pausedAt)
+	pauseExpiration := pausedAt.Add(k.GetMaxPauseDuration(ctx))
+	mocks.MockStakingKeeper.EXPECT().GetValidatorByConsAddr(paused, consAddr).Return(validator, nil)
+	expectSigningInfo(mocks, paused, consAddr, queuedBefore.ExecutesAt.Add(24*time.Hour))
+	mocks.MockSlashingKeeper.EXPECT().JailUntil(paused, consAddr, pauseExpiration.Add(24*time.Hour))
+	require.NoError(t, k.PauseConsumerChain(paused, consumerID, types.PAUSE_REASON_REFUSAL_THRESHOLD))
+
+	// Queued two hours into the pause: its clock starts at the pause.
+	during := ctx.WithBlockTime(pausedAt.Add(2 * time.Hour))
+	mocks.MockStakingKeeper.EXPECT().GetValidatorByConsAddr(during, consAddr).Return(validator, nil)
+	mocks.MockSlashingKeeper.EXPECT().IsTombstoned(during, consAddr).Return(false)
+	mocks.MockStakingKeeper.EXPECT().Jail(during, consAddr)
+	expectSigningInfo(mocks, during, consAddr, pauseExpiration.Add(24*time.Hour))
+	mocks.MockSlashingKeeper.EXPECT().JailUntil(during, consAddr, pauseExpiration.Add(24*time.Hour))
+	expectNoExistingUnbondings(t, k, mocks, during, validator)
+	_, err = k.QueuePendingEquivocationPunishment(during, consumerID, providerAddr, 43)
+	require.NoError(t, err)
+	after := collections.Join3(consumerID, consAddr.Bytes(), int64(43))
+
+	// The pause lapses: the consumer stops, and both entries run from the
+	// stop with the delay the freeze left them.
+	lapsed := ctx.WithBlockTime(pauseExpiration)
+	mocks.MockSlashingKeeper.EXPECT().IsTombstoned(gomock.Any(), consAddr).Return(false).AnyTimes()
+	require.NoError(t, k.BeginBlockAutoStopPausedConsumers(lapsed))
+	require.Equal(t, types.CONSUMER_PHASE_STOPPED, k.GetConsumerPhase(lapsed, consumerID))
+
+	thawedBefore, err := k.PendingEquivocationPunishments.Get(lapsed, before)
+	require.NoError(t, err)
+	require.Equal(t, queuedBefore.ExecutesAt.Add(pauseExpiration.Sub(pausedAt)), thawedBefore.ExecutesAt,
+		"an entry queued before the pause keeps the delay it had left")
+	require.Equal(t, pauseExpiration.Add(delay-time.Hour), thawedBefore.ExecutesAt)
+	thawedAfter, err := k.PendingEquivocationPunishments.Get(lapsed, after)
+	require.NoError(t, err)
+	require.Equal(t, pauseExpiration.Add(delay), thawedAfter.ExecutesAt,
+		"an entry queued during the pause gets one full delay from the stop")
 }

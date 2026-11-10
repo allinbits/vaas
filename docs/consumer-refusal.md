@@ -60,7 +60,11 @@ downtime slash and withheld fee record stays as it is, its maturity or
 expiry stopped for the length of the pause. Accusations the consumer raises
 during the pause are another matter: the provider rejects them and the
 consumer drops them, so downtime inside a pause goes unpunished, which is
-the point of the pause for a refuser. A resume restarts those clocks
+the point of the pause for a refuser. Double-voting evidence is accepted
+through the pause; the punishment it queues is frozen like the others, with
+its clock started at the pause, so a resume (or a pause that lapses into a
+stop) gives it one full execution delay from then, and governance the whole
+of that delay to remove the consumer. A resume restarts those clocks
 where the pause stopped them; a challenge proven during the pause discards
 the accusations as it would on a launched consumer; a lapsed pause stops the
 consumer, which cancels them like every stop. Discarding them at the pause

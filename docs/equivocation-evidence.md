@@ -56,7 +56,12 @@ Both files are decoded with the proto-JSON codec. CLI source:
    punishment it queues is frozen with a pause and runs on its own clock
    through a stop, and the evidence is self-contained, so refusing it off
    `LAUNCHED` would let a validator whose consumer is paused or stopped
-   before its evidence lands escape.
+   before its evidence lands escape. The one exception is a consumer
+   governance removed (`MsgRemoveConsumer`, or a removal vote that passed
+   after the consumer had stopped for another reason): that verdict cancels
+   its pending punishments and voids any evidence submitted afterwards, since
+   a stopped consumer cannot be put to a second vote. A stop by the liveness
+   sweep or by a lapsed pause is not a verdict.
 2. Rejects evidence older than the consumer's equivocation-evidence minimum
    height. Note the *age* of the vote is not otherwise bounded -- there is no
    max-age on double-vote evidence.

@@ -640,6 +640,7 @@ func (k msgServer) RemoveConsumer(goCtx context.Context, msg *types.MsgRemoveCon
 		// cancels them; a consumer stopped for liveness or a lapsed pause is
 		// not a verdict on its evidence (see SweepPendingEquivocationPunishments).
 		k.CancelPendingEquivocationPunishmentsForConsumer(ctx, consumerId)
+		k.MarkConsumerRemovedByGovernance(ctx, consumerId)
 		k.Logger(ctx).Info("stopped consumer",
 			"consumerId", consumerId,
 			"chainId", chainId,

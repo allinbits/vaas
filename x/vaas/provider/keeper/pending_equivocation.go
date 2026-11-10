@@ -342,6 +342,9 @@ func (k Keeper) SweepPendingEquivocationPunishments(ctx sdk.Context) {
 		k.executePendingEquivocation(ctx, it.key)
 	}
 	for _, it := range toCancel {
+		// The tally is the verdict on the consumer, not only on this entry:
+		// the record keeps later evidence against the same consumer out.
+		k.MarkConsumerRemovedByGovernance(ctx, it.key.K1())
 		k.cancelPendingEquivocation(ctx, it.key, it.reason)
 	}
 }

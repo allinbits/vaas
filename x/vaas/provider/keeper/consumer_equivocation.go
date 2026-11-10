@@ -52,6 +52,18 @@ func (k Keeper) HandleConsumerDoubleVoting(
 			consumerId,
 		)
 	}
+	// A governance removal is the one verdict on a consumer's evidence: it
+	// cancels the pending punishments, and evidence submitted after it would
+	// otherwise queue new ones the verdict can no longer reach (a stopped
+	// consumer cannot be removed again). A stop by the liveness sweep or by a
+	// lapsed pause is not a verdict and leaves the evidence acceptable.
+	if k.IsConsumerRemovedByGovernance(ctx, consumerId) {
+		return errorsmod.Wrapf(
+			vaastypes.ErrInvalidDoubleVotingEvidence,
+			"consumer chain %d was removed by governance, which voids its equivocation evidence",
+			consumerId,
+		)
+	}
 
 	// Reject evidence below the per-consumer minimum height (set at launch and
 	// on each resync), which is the ONLY age bound on equivocation. Unlike

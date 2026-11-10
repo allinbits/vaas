@@ -1109,3 +1109,64 @@ func TestInitGenesisPanicsOnWithheldFeeDenomMismatch(t *testing.T) {
 	require.Panics(t, func() { pk.InitGenesis(ctx, gs) },
 		"a withheld record in a denom the module does not charge must fail InitChain")
 }
+
+// TestGenesisRoundTripKeepsTheGovernanceRemovalRecord: the verdict that
+// voids a consumer's equivocation evidence survives a restart, and a
+// consumer stopped for another reason comes back without it.
+func TestGenesisRoundTripKeepsTheGovernanceRemovalRecord(t *testing.T) {
+	pkA, ctxA, ctrlA, mocksA := testkeeper.GetProviderKeeperAndCtx(t, testkeeper.NewInMemKeeperParams(t))
+	defer ctrlA.Finish()
+	pkA.SetParams(ctxA, providertypes.DefaultParams())
+	pkA.SetValidatorSetUpdateId(ctxA, 1)
+
+	owner := sdk.AccAddress([]byte("vaas-test-owner-1234")).String()
+	md := providertypes.ConsumerMetadata{Name: "n", Description: "d", Metadata: "m"}
+	ip := providertypes.ConsumerInitializationParameters{
+		InitialHeight:     clienttypes.Height{RevisionNumber: 0, RevisionHeight: 42},
+		GenesisHash:       []byte("g"),
+		BinaryHash:        []byte("b"),
+		SpawnTime:         time.Unix(1_700_000_000, 0).UTC(),
+		UnbondingPeriod:   time.Hour,
+		VaasTimeoutPeriod: time.Hour,
+		HistoricalEntries: 10,
+	}
+	cg := launchedConsumerGenesis()
+	removeAt := time.Unix(1_830_000_000, 0).UTC()
+	seedStopped := func(chainId, clientId string) uint64 {
+		id := pkA.FetchAndIncrementConsumerId(ctxA)
+		pkA.SetConsumerChainId(ctxA, id, chainId)
+		pkA.SetConsumerPhase(ctxA, id, providertypes.CONSUMER_PHASE_STOPPED)
+		pkA.SetConsumerOwnerAddress(ctxA, id, owner)
+		require.NoError(t, pkA.SetConsumerMetadata(ctxA, id, md))
+		require.NoError(t, pkA.SetConsumerInitializationParameters(ctxA, id, ip))
+		pkA.SetConsumerClientId(ctxA, id, clientId)
+		require.NoError(t, pkA.SetConsumerGenesis(ctxA, id, cg))
+		pkA.SetEquivocationEvidenceMinHeight(ctxA, id, ip.InitialHeight.RevisionHeight)
+		require.NoError(t, pkA.SetConsumerRemovalTime(ctxA, id, removeAt))
+		require.NoError(t, pkA.AppendConsumerToBeRemoved(ctxA, id, removeAt))
+		return id
+	}
+	removed := seedStopped("consumer-alpha", "07-tendermint-0")
+	pkA.MarkConsumerRemovedByGovernance(ctxA, removed)
+	swept := seedStopped("consumer-beta", "07-tendermint-1")
+
+	expA := pkA.ExportGenesis(ctxA)
+	require.NoError(t, expA.Validate(), "export must validate")
+	require.True(t, expA.ConsumerStates[0].RemovedByGovernance)
+	require.False(t, expA.ConsumerStates[1].RemovedByGovernance)
+
+	pkB, ctxB, ctrlB, mocksB := testkeeper.GetProviderKeeperAndCtx(t, testkeeper.NewInMemKeeperParams(t))
+	defer ctrlB.Finish()
+	mocksA.MockStakingKeeper.EXPECT().GetBondedValidatorsByPower(gomock.Any()).Return(nil, nil).AnyTimes()
+	mocksB.MockStakingKeeper.EXPECT().GetBondedValidatorsByPower(gomock.Any()).Return(nil, nil).AnyTimes()
+	mocksB.MockBankKeeper.EXPECT().GetAllBalances(gomock.Any(), gomock.Any()).Return(sdk.NewCoins()).AnyTimes()
+	_ = pkB.InitGenesis(ctxB, expA)
+
+	require.True(t, pkB.IsConsumerRemovedByGovernance(ctxB, removed))
+	require.False(t, pkB.IsConsumerRemovedByGovernance(ctxB, swept))
+
+	// The record belongs to a stopped consumer only.
+	expA.ConsumerStates[1].Phase = providertypes.CONSUMER_PHASE_LAUNCHED
+	expA.ConsumerStates[1].RemovedByGovernance = true
+	require.ErrorContains(t, expA.Validate(), "only set on a stopped consumer")
+}
