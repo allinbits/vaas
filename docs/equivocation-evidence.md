@@ -157,7 +157,13 @@ A fork reported through ibc-go's `MsgUpdateClient` instead, the path a generic
 relayer or watcher takes, freezes the client without the provider hearing of
 it. The provider's BeginBlock pauses a launched consumer whose client is
 frozen, so the containment is the same, one block later and without the
-attribution.
+attribution. A consumer already paused for a downtime challenge or a refusal
+when its client freezes is moved under the light-client reason the same way:
+its accusations are discarded as a fresh light-client pause discards them, the
+paused-at time moves to that block, and the resume's wait below counts from
+it. Left unseen, the fork would cost a governance round: a recover-and-resume
+proposal would land the consumer back in `LAUNCHED` only for the same headers
+to pause it again.
 
 Nobody is slashed, jailed, or tombstoned, deliberately. A malicious consumer
 binary can orchestrate a fork in which every honest validator signs each
