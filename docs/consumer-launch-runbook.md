@@ -17,6 +17,9 @@ Roles in this flow:
   consumer, holds the chain's authority afterwards (`owner-exec`, see
   [embedding.md](embedding.md)): it is the owner that recovers an expired
   provider client, updates the consumer's parameters or schedules an upgrade.
+  A handover is two transactions: `MsgUpdateConsumer` on the provider, and an
+  `owner-exec` carrying the consumer's `MsgUpdateParams` with the new
+  `owner_address` on the consumer, since the provider seeds the owner once.
 - **Relayer** -- creates the IBC v2 clients; the provider never creates them.
 - **Provider governance** -- only needed for pause/resume/removal, not for a
   normal launch.

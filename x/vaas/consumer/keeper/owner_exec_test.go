@@ -4,10 +4,12 @@ import (
 	"testing"
 
 	"github.com/stretchr/testify/require"
+	"go.uber.org/mock/gomock"
 
 	abci "github.com/cometbft/cometbft/abci/types"
 
 	clienttypes "github.com/cosmos/ibc-go/v10/modules/core/02-client/types"
+	ibctmtypes "github.com/cosmos/ibc-go/v10/modules/light-clients/07-tendermint"
 
 	errorsmod "cosmossdk.io/errors"
 
@@ -61,6 +63,7 @@ type ownerExecFixture struct {
 	ctx    sdk.Context
 	srv    types.MsgServer
 	router *recordingRouter
+	mocks  testkeeper.MockedKeepers
 }
 
 // newOwnerExecFixture seeds the owner into the consumer params and wires a
@@ -68,7 +71,7 @@ type ownerExecFixture struct {
 // the owner is for.
 func newOwnerExecFixture(t *testing.T) *ownerExecFixture {
 	t.Helper()
-	k, ctx, ctrl, _ := testkeeper.GetConsumerKeeperAndCtx(t, testkeeper.NewInMemKeeperParams(t))
+	k, ctx, ctrl, mocks := testkeeper.GetConsumerKeeperAndCtx(t, testkeeper.NewInMemKeeperParams(t))
 	t.Cleanup(ctrl.Finish)
 
 	params := vaastypes.DefaultConsumerParams()
@@ -77,7 +80,7 @@ func newOwnerExecFixture(t *testing.T) *ownerExecFixture {
 
 	router := &recordingRouter{typeURL: sdk.MsgTypeURL(&clienttypes.MsgUpdateParams{})}
 	k.SetMessageRouter(router)
-	return &ownerExecFixture{k: k, ctx: ctx.WithEventManager(sdk.NewEventManager()), srv: consumerkeeper.NewMsgServerImpl(&k), router: router}
+	return &ownerExecFixture{k: k, ctx: ctx.WithEventManager(sdk.NewEventManager()), srv: consumerkeeper.NewMsgServerImpl(&k), router: router, mocks: mocks}
 }
 
 func clientParamsUpdate(signer sdk.AccAddress) sdk.Msg {
@@ -188,6 +191,26 @@ func TestOwnerExecRefusesNestingUnknownRoutesAndFailures(t *testing.T) {
 	_, err = f.srv.OwnerExec(f.ctx, ownerExecOf(t, pinOwner, inner))
 	require.ErrorIs(t, err, sdkerrors.ErrUnauthorized, "a failing message fails the exec")
 	require.Empty(t, f.router.executed)
+}
+
+// The pin's coherence rule holds for its recovery: an exec that leaves the
+// pinned provider client tracking another chain id is refused as a whole.
+func TestOwnerExecRefusesLeavingTheProviderClientOnAnotherChain(t *testing.T) {
+	f := newOwnerExecFixture(t)
+	f.k.SetProviderClientID(f.ctx, pinClientID)
+	f.k.SetProviderChainId(f.ctx, pinProviderCID)
+	inner := clientParamsUpdate(types.OwnerExecAuthority())
+
+	f.mocks.MockClientKeeper.EXPECT().GetClientState(gomock.Any(), pinClientID).
+		Return(&ibctmtypes.ClientState{ChainId: pinProviderCID}, true).Times(1)
+	_, err := f.srv.OwnerExec(f.ctx, ownerExecOf(t, pinOwner, inner))
+	require.NoError(t, err, "a pin still tracking the provider passes")
+
+	f.mocks.MockClientKeeper.EXPECT().GetClientState(gomock.Any(), pinClientID).
+		Return(&ibctmtypes.ClientState{ChainId: "another-chain-1"}, true).Times(1)
+	_, err = f.srv.OwnerExec(f.ctx, ownerExecOf(t, pinOwner, inner))
+	require.ErrorIs(t, err, types.ErrInvalidOwnerExec)
+	require.ErrorContains(t, err, "not the provider chain id")
 }
 
 func TestOwnerExecRefusesWithoutARouter(t *testing.T) {

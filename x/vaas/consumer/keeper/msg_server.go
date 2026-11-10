@@ -222,6 +222,9 @@ func (k msgServer) OwnerExec(goCtx context.Context, msg *types.MsgOwnerExec) (*t
 		}
 		ctx.EventManager().EmitEvents(ownerExecEvents(res.Events, i))
 	}
+	if err := k.providerClientCoherent(ctx); err != nil {
+		return nil, err
+	}
 
 	k.Logger(ctx).Info("owner exec", "signer", msg.Signer, "messages", len(msgs))
 	ctx.EventManager().EmitEvent(sdk.NewEvent(
@@ -231,6 +234,39 @@ func (k msgServer) OwnerExec(goCtx context.Context, msg *types.MsgOwnerExec) (*t
 		sdk.NewAttribute(vaastypes.AttributeNumMessages, fmt.Sprintf("%d", len(msgs))),
 	))
 	return &types.MsgOwnerExecResponse{}, nil
+}
+
+// providerClientCoherent reports, as an error, that the pinned provider
+// client tracks a chain id other than the provider's: the one state an owner
+// exec may not leave behind. A recovery (MsgRecoverClient) substitutes a
+// client of any chain id, and the pin's coherence rule (SetProviderClient)
+// holds for its recovery too; a pin left tracking another chain would accept
+// no packet (relay.go, authenticateProviderChainID) and could never be moved
+// back. Nothing is checked while no client is pinned, or while the pinned
+// client has no state.
+func (k Keeper) providerClientCoherent(ctx sdk.Context) error {
+	clientID, found := k.GetProviderClientID(ctx)
+	if !found || clientID == "" {
+		return nil
+	}
+	providerChainID, found := k.GetProviderChainId(ctx)
+	if !found {
+		return nil
+	}
+	clientState, found := k.clientKeeper.GetClientState(ctx, clientID)
+	if !found {
+		return nil
+	}
+	tmClientState, ok := clientState.(*ibctmtypes.ClientState)
+	if !ok {
+		return errorsmod.Wrapf(types.ErrInvalidOwnerExec, "the pinned provider client %s is no tendermint client any more", clientID)
+	}
+	if tmClientState.ChainId != providerChainID {
+		return errorsmod.Wrapf(types.ErrInvalidOwnerExec,
+			"the pinned provider client %s tracks chain id %s, not the provider chain id %s: a recovery must substitute a client of the provider chain",
+			clientID, tmClientState.ChainId, providerChainID)
+	}
+	return nil
 }
 
 // ownerExecEvents returns the events an executed message produced, each

@@ -210,8 +210,15 @@ account, the gov module's included, is refused, so the owner holds exactly the
 authorities the app grants the consumer module and no more. The admission and
 fee rules judge an owner exec by the messages it carries (a client recovery is
 IBC traffic whoever submits it; a parameter update is not), and the disabled
-modules stay disabled inside it. `query vaasconsumer owner-authority` prints
-the account to sign with and the owner that may submit.
+modules stay disabled inside it. One state no exec may leave behind: the
+pinned provider client tracking a chain id other than the provider's, which a
+recovery could substitute and nothing could move back, so the pin's coherence
+rule holds for its recovery too. `query vaasconsumer owner-authority` prints
+the account to sign with and the owner that may submit. The owner hands the
+consumer over with the same message: the consumer's `owner_address` is a
+consumer param, carried in a `MsgUpdateParams`, and it is seeded once by the
+provider, so a change of owner on the provider (`MsgUpdateConsumer`) does not
+reach the consumer by itself.
 
 **A consumer with a community of its own wires `x/gov` and names the gov module
 account instead.** The owner then holds nothing after the pin, and the
