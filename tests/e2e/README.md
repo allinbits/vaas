@@ -3,13 +3,14 @@
 Docker-based integration tests that spin up a real provider chain, a real
 consumer chain, and the `ibc-v2-ts-relayer`, then exercise the full VAAS
 lifecycle: consumer registration, genesis bootstrapping, IBC v2 client
-discovery, VSC synchronization, downtime slashing and challenges, fee pooling
+declaration, VSC synchronization, downtime slashing and challenges, fee pooling
 and distribution, key assignment, refusal and punishment deferral, liveness, and
 genesis round-trip.
 
-This directory is its own Go module (`tests/e2e/go.mod`) and is excluded from the
-top-level `make test` and from linting. It runs via the `make test-e2e` target
-described below. Docker is required.
+This directory is its own Go module (`tests/e2e/go.mod`), excluded from the
+top-level `make test` and linted by its own target (`make lint-e2e`, which
+`make lint` runs). It runs via the `make test-e2e` target described below.
+Docker is required.
 
 ## Running
 
@@ -18,8 +19,7 @@ make docker-build-all   # build the chain image (cosmos/vaas-e2e); ts-relayer im
 make test-e2e           # docker-build-all, then go test in this directory
 ```
 
-`make test-e2e`
-([Makefile](../../Makefile) lines 305-322) runs:
+`make test-e2e` (the `test-e2e` target in [Makefile](../../Makefile)) runs:
 
 ```
 cd tests/e2e && go test -timeout=60m -v ./... --count=1
@@ -29,7 +29,8 @@ The chain image is built from
 [docker/e2e.Dockerfile](docker/e2e.Dockerfile) and contains both the provider
 and consumer binaries. The relayer image is
 `ghcr.io/allinbits/ibc-v2-ts-relayer:latest`, pulled at runtime
-([e2e_tsrelayer_test.go](e2e_tsrelayer_test.go) lines 17-18).
+(`tsRelayerImage` and `tsRelayerImageTag` in
+[e2e_tsrelayer_test.go](e2e_tsrelayer_test.go)).
 
 To run a single suite:
 
@@ -49,7 +50,7 @@ so the two can run on the same host without colliding.
 ### `IntegrationTestSuite` -- the main suite
 
 Entry point `TestIntegrationTestSuite`
-([e2e_setup_test.go](e2e_setup_test.go) lines 42-44). `SetupSuite` (lines 59+):
+([e2e_setup_test.go](e2e_setup_test.go)). `SetupSuite`, in the same file:
 creates the Docker pool and network, initializes and starts the provider,
 registers a consumer, fetches the consumer genesis from the provider,
 initializes and starts the consumer, then starts the ts-relayer and creates the
@@ -61,8 +62,11 @@ The scenarios run as an **ordered** sequence in `TestVAAS`
 ([e2e_test.go](e2e_test.go)); each scenario's doc comment says what it proves,
 and the call-site comments in that list state the ordering constraints. The
 order matters: later tests depend on consumer `"0"` staying `LAUNCHED` until
-liveness removal, and the genesis round-trip runs last, since it stops the
-provider container and restarts it from exported genesis.
+liveness removal, and the two genesis round-trips run late: the consumer one
+after every scenario that needs consumer-to-provider traffic, the provider one
+once every scenario that needs the consumer is done, since each restarts a
+chain from exported genesis without the history the counterparty's client
+needs to advance.
 
 This suite uses a realistic (~21-day) provider unbonding, so the liveness sweep
 timing is not exercised here -- that is the liveness suite's job.
@@ -70,11 +74,12 @@ timing is not exercised here -- that is the liveness suite's job.
 ### `LivenessIntegrationTestSuite` -- observable liveness timing
 
 Entry point `TestLivenessIntegrationTestSuite`
-([e2e_liveness_suite_test.go](e2e_liveness_suite_test.go) lines 91-93). This
-suite sets `LivenessGraceFraction = 0.75` and a short (200s) unbonding in
-provider genesis so the grace (~150s), safe mode, forced VSC timeout + snapshot
-resync, and auto-sweep removal are all observable within a CI run, while keeping
-the relayer-derived client trusting period viable. It uses fast blocks and a
+([e2e_liveness_suite_test.go](e2e_liveness_suite_test.go)). This suite sets
+`liveness_grace_fraction = 0.375` and a short (600s) unbonding in provider
+genesis so the grace (~225s), safe mode, forced VSC timeout + snapshot resync,
+evidence re-queue after a timeout, and auto-sweep removal are all observable
+within a CI run, while keeping the relayer-derived client trusting period
+(~396s) viable. It uses fast blocks and a
 first-sync gate to keep the timing-sensitive assertions reliable. Its consumer
 is registered via `testdata/create_consumer_short_unbonding.json`. Scenarios run
 in order in `TestLivenessVAAS`, each with its doc comment;
@@ -101,6 +106,8 @@ and the header comment of that file documents the timing rationale in detail.
 | `e2e_consumer_liveness_test.go` | liveness / safe-mode scenarios |
 | `e2e_refusal_and_deferral_test.go` | refusal pause and resume, downtime and equivocation deferral behind removal votes, cancellation on removal; fabricated double-vote evidence helpers |
 | `e2e_genesis_roundtrip_test.go` | provider export/restart round-trip |
+| `e2e_consumer_genesis_roundtrip_test.go` | consumer export/restart round-trip at a continuing height |
+| `e2e_evidence_requeue_test.go` | downtime evidence re-queued and accepted after a genuine packet timeout (liveness suite) |
 | `gov_proposal_helpers_test.go` | submit/vote governance proposals from a test |
 | `validator_identity_helpers_test.go` | one validator's address forms across both chains |
 | `genesis_test.go` | genesis-file patching (consumer genesis merge, generic mutation) |
