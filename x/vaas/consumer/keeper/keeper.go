@@ -266,14 +266,17 @@ func (k Keeper) DeletePendingChanges(ctx context.Context) {
 	}
 }
 
+// GetInitGenesisHeight returns the height of the chain's genesis block, the
+// first block CometBFT produces after InitChain (see InitGenesis).
 func (k Keeper) GetInitGenesisHeight(ctx context.Context) int64 {
 	height, err := k.InitGenesisHeight.Get(ctx)
 	if err != nil {
-		panic("last standalone height not set")
+		panic("init genesis height not set")
 	}
 	return int64(height)
 }
 
+// SetInitGenesisHeight stores the height of the chain's genesis block.
 func (k Keeper) SetInitGenesisHeight(ctx context.Context, height int64) {
 	if err := k.InitGenesisHeight.Set(ctx, uint64(height)); err != nil {
 		panic(fmt.Errorf("failed to set init genesis height: %w", err))
@@ -384,10 +387,10 @@ func (k Keeper) GetLastVSCRecvTime(ctx context.Context) time.Time {
 // threshold instead of running on its genesis validator set unrestricted
 // forever. It runs every BeginBlock and is a no-op once the clock is set
 // (by a restart genesis, a received VSC, or an earlier arming) and at the
-// genesis block itself: under
-// BFT time that block's timestamp is the genesis file's genesis_time, which
-// may predate launch by however long the genesis ceremony took, and arming
-// with it would burn safe-mode budget before the chain produced a block.
+// genesis block itself, whose height InitGenesis stores: under BFT time that
+// block's timestamp is the genesis file's genesis_time, which may predate
+// launch by however long the genesis ceremony took, and arming with it would
+// burn safe-mode budget before the chain produced a block.
 func (k Keeper) ArmVSCStalenessClock(ctx sdk.Context) {
 	if ctx.BlockHeight() <= k.GetInitGenesisHeight(ctx) {
 		return
