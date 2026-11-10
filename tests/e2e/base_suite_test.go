@@ -325,6 +325,13 @@ func (s *baseTestSuite) startChainNodeWith(chainID, homePath, hostHome string, i
 	}
 	resource, err := s.dkrPool.RunWithOptions(opts, func(config *docker.HostConfig) {
 		config.RestartPolicy = docker.RestartPolicy{Name: "no"}
+		// An init process (docker-init) as the container's first process,
+		// forwarding the stop signal to the node: run as the first process
+		// itself, the node shows no reaction to the signal on the CI runner
+		// (it keeps committing blocks until the kill at the deadline) while
+		// it exits within a second on a developer host, so the harness runs
+		// nodes the way a container deployment should.
+		config.Init = true
 	})
 	s.Require().NoErrorf(err, "failed to start %s container", opts.Name)
 	return resource
