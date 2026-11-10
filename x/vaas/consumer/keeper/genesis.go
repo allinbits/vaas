@@ -16,7 +16,12 @@ import (
 )
 
 func (k Keeper) InitGenesis(ctx sdk.Context, state *types.GenesisState) []abci.ValidatorUpdate {
-	k.SetInitGenesisHeight(ctx, ctx.BlockHeight())
+	// The InitChain context carries height 0 on a chain that starts at
+	// height 1, and the initial height otherwise; either way the chain's
+	// genesis block, the one whose timestamp is the genesis file's
+	// genesis_time, is the larger of that height and 1 (see
+	// ArmVSCStalenessClock).
+	k.SetInitGenesisHeight(ctx, max(ctx.BlockHeight(), 1))
 
 	k.SetParams(ctx, state.Params)
 	if state.NewChain {
