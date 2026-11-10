@@ -27,8 +27,10 @@ type (
 	// MsgFilterDecorator is the consumer-side tx admission gate. It runs in
 	// four modes driven by consumer state:
 	//
-	//   bootstrap  : provider IBC client not yet established -> only /ibc.* msgs
-	//               are accepted, so the chain can stand up its IBC stack.
+	//   bootstrap  : no provider client pinned yet -> only /ibc.* messages,
+	//               /cosmos.gov.* and the pin itself (MsgSetProviderClient)
+	//               are accepted, so the chain can stand up its IBC stack
+	//               and declare the client.
 	//   normal     : provider client established, consumer is paying its fees
 	//               and has a fresh validator set -> everything passes.
 	//   in debt    : provider client established, consumer has fallen behind on
