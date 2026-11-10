@@ -231,13 +231,17 @@ for. A consumer that bumps its chain ID (an upgrade's revision bump, say) gets i
 declared client recovered onto the new name by governance (`MsgRecoverClient`), and
 the provider's record follows in the same proposal: a `MsgUpdateConsumer` signed by
 the governance authority whose `new_chain_id` is the chain ID the declared client now
-tracks. Until it does, the provider serves no VSC packet to that consumer and refuses
-to resume it (`vaas_consumer_client_chain_id_mismatch`). The old chain ID stays on
-record with the client's height at the rename, so double-voting evidence from a block
-at or below it is still accepted (see
-[equivocation-evidence.md](equivocation-evidence.md)). Before launch, the owner renames
-freely until the client is declared; the client tracks a chain ID, so the rename comes
-first.
+tracks. Until it does, the provider serves no VSC packet to that consumer, accepts no
+downtime evidence from it, lets none of its pending downtime slashes or withheld fee
+records mature, and refuses to resume it (`vaas_consumer_client_chain_id_mismatch`).
+The old chain ID stays on record with the client's height at the rename, so
+double-voting evidence from a block at or below it is still accepted (see
+[equivocation-evidence.md](equivocation-evidence.md)); the downtime accusations pending
+at the rename are discarded instead, and the fees withheld under them repaid, since the
+recovered client verifies headers over the chain ID it tracks now and none signed over
+the old one could disprove them (see [consumer-downtime.md](consumer-downtime.md)).
+Before launch, the owner renames freely until the client is declared; the client tracks
+a chain ID, so the rename comes first.
 
 **The chain ID is released, not reserved forever.** `MsgCreateConsumer` and
 `MsgUpdateConsumer` reject a chain ID that is already claimed (`ChainIdInUse`), and

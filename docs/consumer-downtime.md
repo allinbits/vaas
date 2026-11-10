@@ -362,7 +362,13 @@ Two governance exits:
 
 Stopping or deleting a consumer cancels its in-flight downtime state (pending slashes and
 epoch marks), as does a pause for a disproven or discredited source: once no epoch or
-challenge window remains to resolve them against, they are cancelled outright. A refusal
+challenge window remains to resolve them against, they are cancelled outright. So does a
+governance rename, which also repays the withheld fees: the recovered client verifies a
+challenge header over the chain id it tracks now, so no header signed over the old one
+could disprove an accusation from before the rename, and an accusation that cannot be
+disproved does not stand. While the declared client tracks a chain id the consumer does
+not yet carry (the recovery landed, the rename has not), no downtime evidence is accepted
+from the consumer and no pending slash or withheld fee record of it matures. A refusal
 pause freezes them instead. The accepted-window records and the pruned floor survive a
 pause or stop -- a disproven or cancelled window must not become re-submittable, while
 later disjoint windows remain submittable after a resume as usual. Full deletion erases
