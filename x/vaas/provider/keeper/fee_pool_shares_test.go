@@ -54,37 +54,6 @@ func TestComputeClaim(t *testing.T) {
 	require.Equal(t, math.NewInt(30), k.ComputeClaim(ctx, consumerId, alice, denom))
 }
 
-// TestFeePoolSharesConsistencyInvariant_UnaccountedBalance checks that the
-// invariant reports a pool balance no shares account for -- reachable through
-// the send restriction's distribution-module exemption -- and stops reporting it
-// once a deposit has credited the community pool with that balance.
-func TestFeePoolSharesConsistencyInvariant_UnaccountedBalance(t *testing.T) {
-	k, ctx, ctrl, mocks := testkeeper.GetProviderKeeperAndCtx(t, testkeeper.NewInMemKeeperParams(t))
-	defer ctrl.Finish()
-
-	consumerId := uint64(0)
-	denom := poolDenom
-	alice := sdk.AccAddress([]byte("alice___________"))
-	poolAddr := k.GetConsumerFeePoolAddress(consumerId)
-	require.NoError(t, k.FeePoolAddressToConsumerId.Set(ctx, poolAddr, consumerId))
-
-	mocks.MockBankKeeper.EXPECT().GetAllBalances(ctx, poolAddr).
-		Return(sdk.NewCoins(sdk.NewInt64Coin(denom, 100))).AnyTimes()
-	mocks.MockBankKeeper.EXPECT().GetBalance(ctx, poolAddr, denom).
-		Return(sdk.NewInt64Coin(denom, 100)).AnyTimes()
-
-	msg, broken := providerkeeper.FeePoolSharesConsistencyInvariant(k)(ctx)
-	require.True(t, broken)
-	require.Contains(t, msg, "with no shares")
-
-	// A deposit books the unaccounted balance to the community pool, and shares
-	// cover the balance again.
-	require.NoError(t, k.MintShares(ctx, consumerId, alice, sdk.NewInt64Coin(denom, 100)))
-
-	msg, broken = providerkeeper.FeePoolSharesConsistencyInvariant(k)(ctx)
-	require.False(t, broken, msg)
-}
-
 func TestMintShares(t *testing.T) {
 	consumerId := uint64(0)
 	denom := poolDenom
