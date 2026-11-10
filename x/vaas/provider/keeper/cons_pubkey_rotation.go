@@ -1,6 +1,7 @@
 package keeper
 
 import (
+	"bytes"
 	"errors"
 	"fmt"
 
@@ -50,6 +51,9 @@ import (
 //     included: the unbonding hook and the release-when-last accounting look
 //     them up under the address the validator runs now (see
 //     migratePendingEquivocations).
+//   - Punished-equivocation records are keyed by the live address under the
+//     chain id the votes were signed over, and move under every chain id,
+//     those of deleted consumers included (see migratePunishedEquivocations).
 //
 // It never returns an error. It is called from
 // Hooks.AfterConsensusPubKeyUpdate, which x/staking invokes in EndBlock, where
@@ -65,56 +69,56 @@ func (k Keeper) MigrateStateOnConsPubKeyRotation(
 			k.migrateDowntimeAcceptance(ctx, consumerId, oldProviderAddr, newProviderAddr)
 		}
 		k.migrateFeeExclusion(ctx, consumerId, oldProviderAddr, newProviderAddr)
-		k.migratePunishedEquivocations(ctx, consumerId, oldProviderAddr, newProviderAddr)
 	}
+	k.migratePunishedEquivocations(ctx, oldProviderAddr, newProviderAddr)
 	k.migratePendingEquivocations(ctx, oldProviderAddr, newProviderAddr)
 }
 
 // migratePunishedEquivocations moves the validator's punished-equivocation
-// records to its new provider consensus address. They are keyed by the live
-// address, the one a re-submission resolves to, and after the rotation that
-// is the new one; left behind, the same infraction would be punishable again.
+// records, under every chain id, to its new provider consensus address. They
+// are keyed by the live address, the one a re-submission resolves to, and
+// after the rotation that is the new one; left behind, the same infraction
+// would be punishable again. The records of a deleted consumer move too: they
+// are kept for exactly the replay a consumer re-registering the chain id
+// could attempt (see PunishedEquivocations), and the chain id in their key
+// outlives the consumer that released it, so the walk covers the whole set
+// rather than the live consumers' chain ids.
 func (k Keeper) migratePunishedEquivocations(
 	ctx sdk.Context,
-	consumerId uint64,
 	oldProviderAddr, newProviderAddr types.ProviderConsAddress,
 ) {
 	oldAddrBz := oldProviderAddr.ToSdkConsAddr().Bytes()
 	newAddrBz := newProviderAddr.ToSdkConsAddr().Bytes()
-	chainId, err := k.GetConsumerChainId(ctx, consumerId)
-	if err != nil {
-		k.Logger(ctx).Error("cannot resolve the chain id of a consumer with a rotating validator",
-			"consumerId", consumerId, "providerConsAddr", oldProviderAddr.String(), "error", err)
-		return
-	}
 
-	iter, err := k.PunishedEquivocations.Iterate(ctx, collections.NewSuperPrefixedTripleRange[string, []byte, int64](chainId, oldAddrBz))
+	iter, err := k.PunishedEquivocations.Iterate(ctx, nil)
 	if err != nil {
 		k.Logger(ctx).Error("cannot read the rotating validator's punished equivocations",
-			"consumerId", consumerId, "providerConsAddr", oldProviderAddr.String(), "error", err)
+			"providerConsAddr", oldProviderAddr.String(), "error", err)
 		return
 	}
-	var heights []int64
+	var keys []collections.Triple[string, []byte, int64]
 	for ; iter.Valid(); iter.Next() {
 		key, err := iter.Key()
 		if err != nil {
 			k.Logger(ctx).Error("cannot read a punished equivocation key",
-				"consumerId", consumerId, "providerConsAddr", oldProviderAddr.String(), "error", err)
+				"providerConsAddr", oldProviderAddr.String(), "error", err)
 			break
 		}
-		heights = append(heights, key.K3())
+		if bytes.Equal(key.K2(), oldAddrBz) {
+			keys = append(keys, key)
+		}
 	}
 	iter.Close()
 
-	for _, height := range heights {
-		if err := k.PunishedEquivocations.Set(ctx, collections.Join3(chainId, newAddrBz, height)); err != nil {
+	for _, key := range keys {
+		if err := k.PunishedEquivocations.Set(ctx, collections.Join3(key.K1(), newAddrBz, key.K3())); err != nil {
 			k.Logger(ctx).Error("cannot move punished equivocation to the rotated provider consensus address",
-				"consumerId", consumerId, "providerConsAddr", newProviderAddr.String(), "error", err)
+				"chainId", key.K1(), "providerConsAddr", newProviderAddr.String(), "error", err)
 			continue
 		}
-		if err := k.PunishedEquivocations.Remove(ctx, collections.Join3(chainId, oldAddrBz, height)); err != nil {
+		if err := k.PunishedEquivocations.Remove(ctx, key); err != nil {
 			k.Logger(ctx).Error("cannot delete punished equivocation left at the old provider consensus address",
-				"consumerId", consumerId, "providerConsAddr", oldProviderAddr.String(), "error", err)
+				"chainId", key.K1(), "providerConsAddr", oldProviderAddr.String(), "error", err)
 		}
 	}
 }
