@@ -200,7 +200,7 @@ way. ibc-go's `RecoverClient` handler compares `msg.Signer` against the keeper's
 authority and rejects anything else with `ErrUnauthorized`; an authority no one
 can act as makes an expired provider client on the consumer side permanent.
 
-**The reference consumer names the consumer module account**, and its owner
+**The reference consumer names the consumer module account**, x/consensus wired so the block parameters are among what it governs, and its owner
 (the account that registered the consumer on the provider, which the provider
 seeds into the consumer params) acts as it through `MsgOwnerExec`: the owner
 submits the messages, each signed by the consumer module account, and the

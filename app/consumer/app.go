@@ -384,6 +384,10 @@ func New(
 		slashing.NewAppModule(appCodec, app.SlashingKeeper, app.AccountKeeper, app.BankKeeper, app.ConsumerKeeper, app.GetSubspace(slashingtypes.ModuleName), app.interfaceRegistry),
 		upgrade.NewAppModule(&app.UpgradeKeeper, app.AccountKeeper.AddressCodec()),
 		params.NewAppModule(app.ParamsKeeper),
+		// the consensus parameters' message and query services, so the
+		// chain's authority (the owner, through MsgOwnerExec) can tune the
+		// block parameters
+		consensus.NewAppModule(appCodec, app.ConsensusParamsKeeper),
 		// ibcshim, not ibc directly: works around ibc-go's clientv2 genesis
 		// Validate rejecting colliding cross-chain client ids, which makes a
 		// restart-from-export panic at InitChain. See app/ibcshim.
@@ -470,6 +474,7 @@ func New(
 		paramstypes.ModuleName,
 		upgradetypes.ModuleName,
 		vestingtypes.ModuleName,
+		consensusparamtypes.ModuleName,
 		ibcconsumertypes.ModuleName,
 	)
 
