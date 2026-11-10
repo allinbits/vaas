@@ -74,45 +74,34 @@ func (s *MultiValidatorIntegrationTestSuite) SetupSuite() {
 		// for why each value is what it is). Photon fees stay off: they are
 		// not what this suite tests.
 		patchProviderGenesis: func(appState map[string]any) {
-			if gov, ok := appState["gov"].(map[string]any); ok {
-				if params, ok := gov["params"].(map[string]any); ok {
-					params["voting_period"] = "30s"
-				}
-			}
+			s.genesisSection(appState, "gov", "params")["voting_period"] = "30s"
 
-			if provider, ok := appState["vaasprovider"].(map[string]any); ok {
-				if params, ok := provider["params"].(map[string]any); ok {
-					params["blocks_per_epoch"] = "5"
-					params["fees_per_block_amount"] = "1000"
-				}
-				provider["infraction_parameters"] = map[string]any{
-					"double_sign": map[string]any{
-						"slash_fraction": "0.050000000000000000",
-						"jail_duration":  "315360000s",
-						"tombstone":      true,
-					},
-					"downtime": map[string]any{
-						"slash_fraction": "0.010000000000000000",
-						"jail_duration":  "0s",
-						"tombstone":      false,
-					},
-					"downtime_grace_period":     "604800s",
-					"signed_blocks_window":      "30",
-					"min_signed_per_window":     "0.500000000000000000",
-					"downtime_challenge_window": "120s",
-					"downtime_evidence_max_age": "120s",
-				}
+			params := s.genesisSection(appState, "vaasprovider", "params")
+			params["blocks_per_epoch"] = "5"
+			params["fees_per_block_amount"] = "1000"
+			params["infraction_parameters"] = map[string]any{
+				"double_sign": map[string]any{
+					"slash_fraction": "0.050000000000000000",
+					"jail_duration":  "315360000s",
+					"tombstone":      true,
+				},
+				"downtime": map[string]any{
+					"slash_fraction": "0.010000000000000000",
+					"jail_duration":  "0s",
+					"tombstone":      false,
+				},
+				"downtime_grace_period":     "604800s",
+				"signed_blocks_window":      "30",
+				"min_signed_per_window":     "0.500000000000000000",
+				"downtime_challenge_window": "120s",
+				"downtime_evidence_max_age": "120s",
 			}
 
 			// A stopped consumer node must not get its validator jailed on
 			// the provider for provider downtime: its provider node keeps
 			// running, and the provider's own window is loosened as in the
 			// other suites.
-			if slashing, ok := appState["slashing"].(map[string]any); ok {
-				if params, ok := slashing["params"].(map[string]any); ok {
-					params["signed_blocks_window"] = "100000"
-				}
-			}
+			s.genesisSection(appState, "slashing", "params")["signed_blocks_window"] = "100000"
 		},
 		govVotingPeriod: 30 * time.Second,
 
