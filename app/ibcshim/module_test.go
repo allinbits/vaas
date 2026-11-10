@@ -45,8 +45,8 @@ func TestInitClientV2GenesisAcceptsCollidingCrossChainIds(t *testing.T) {
 	require.Equal(t, "07-tendermint-0", r.set["07-tendermint-0"].ClientId,
 		"the counterparty must be restored exactly as exported")
 
-	// The guard being skipped is real: upstream still rejects this input.
-	require.Error(t, gs.Validate(), "if upstream stops rejecting this, delete the ibcshim package")
+	// The guard being skipped is real: ibc-go still rejects this input.
+	require.Error(t, gs.Validate(), "if ibc-go stops rejecting this, delete the ibcshim package")
 
 	// The CLI's genesis validate takes the same path, so an export a node can
 	// re-import also validates.
@@ -56,7 +56,7 @@ func TestInitClientV2GenesisAcceptsCollidingCrossChainIds(t *testing.T) {
 	require.NoError(t, validateGenesis(*full))
 }
 
-// Every other upstream check is retained.
+// Every other ibc-go check is retained.
 func TestInitClientV2GenesisKeepsTheOtherChecks(t *testing.T) {
 	cases := []struct {
 		name string

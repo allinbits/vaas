@@ -49,7 +49,7 @@ gate; nodes do not re-run it at boot, so a genesis that skips this step can
 still fail (or panic) at `InitChain`. Both e2e round trips run it on their
 exports, so an export the binaries produce is one they validate; the IBC
 module's step goes through `app/ibcshim` on both reference apps, as `InitChain`
-does, because upstream's check rejects the normal `07-tendermint-0` client
+does, because ibc-go's check rejects the normal `07-tendermint-0` client
 pairing (ibc-go#9063).
 
 ## Provider module

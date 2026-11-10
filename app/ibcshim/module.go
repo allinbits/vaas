@@ -13,7 +13,7 @@
 // The wrapper re-implements clientv2's step of InitGenesis and of
 // ValidateGenesis (the CLI's `genesis validate`), keeping every check except
 // the cross-chain id comparison. Delete this package once the check is
-// removed upstream.
+// removed in ibc-go.
 package ibcshim
 
 import (
@@ -122,7 +122,7 @@ func validateClientV2Genesis(gs clientv2types.GenesisState) error {
 }
 
 // initClientV2Genesis is clientv2.InitGenesis with validateClientV2Genesis in
-// place of the upstream Validate.
+// place of ibc-go's Validate.
 func initClientV2Genesis(ctx sdk.Context, k counterpartySetter, gs clientv2types.GenesisState) {
 	if err := validateClientV2Genesis(gs); err != nil {
 		panic(err)
