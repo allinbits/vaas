@@ -75,6 +75,16 @@ This launches the `vaas-ts-relayer` Docker container, registers test keys on
 both chains, and creates the IBC v2 path. Stop it later with
 `make ts-relayer-stop`.
 
+## Address Prefixes
+
+Both binaries configure the `cosmos` bech32 prefixes by default. A deployment
+that wants its own sets `VAAS_BECH32_PREFIX` in the binary's environment
+(`VAAS_BECH32_PREFIX=shard consumer start ...`); the validator and consensus
+prefixes derive from it. The provider and a consumer normally run under
+different prefixes, and the protocol never relies on them matching: every
+address that crosses the wire does so as raw bytes. The e2e suites run the
+consumer under `shard` for that reason.
+
 ## Network Configuration
 
 | Chain    | RPC             | gRPC            | P2P             |

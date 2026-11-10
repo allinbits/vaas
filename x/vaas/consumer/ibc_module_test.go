@@ -233,7 +233,7 @@ func TestIBCModuleEvidenceAckAndTimeoutHandling(t *testing.T) {
 
 		gotAddr, ok := attrValue(evs[0], vaastypes.AttributeValidatorAddress)
 		require.True(t, ok)
-		require.Equal(t, packet.ValidatorAddr.String(), gotAddr)
+		require.Equal(t, packet.ConsAddress().String(), gotAddr)
 
 		gotWindow, ok := attrValue(evs[0], vaastypes.AttributeWindowEndHeight)
 		require.True(t, ok)

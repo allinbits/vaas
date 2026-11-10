@@ -72,7 +72,12 @@ func (p DowntimeParams) MaxMissed() int64 {
 // to report a validator downtime infraction detected on the consumer,
 // together with the missed-block bitmap over the reporting window.
 type EvidencePacketData struct {
-	ValidatorAddr      sdk.ConsAddress         `json:"validator_addr"`
+	// ValidatorAddr is the accused validator's consumer consensus address as
+	// raw bytes. It crosses the wire as bytes on purpose: a bech32 string
+	// would carry the consumer's address prefix, which the provider decodes
+	// under its own, so any pair of chains with different prefixes would
+	// never agree on a single accusation.
+	ValidatorAddr      []byte                  `json:"validator_addr"`
 	WindowEndHeight    int64                   `json:"window_end_height"` // last height of the window
 	Infraction         stakingtypes.Infraction `json:"infraction"`
 	WindowStartHeight  int64                   `json:"window_start_height"`
@@ -85,7 +90,7 @@ type EvidencePacketData struct {
 // infraction over the window [windowStart, windowStart+span-1].
 func NewEvidencePacketData(validatorAddr sdk.ConsAddress, windowStart int64, bitmap []byte, span int64, window int64, minSigned math.LegacyDec) EvidencePacketData {
 	return EvidencePacketData{
-		ValidatorAddr:      validatorAddr,
+		ValidatorAddr:      validatorAddr.Bytes(),
 		WindowEndHeight:    windowStart + span - 1,
 		Infraction:         stakingtypes.Infraction_INFRACTION_DOWNTIME,
 		WindowStartHeight:  windowStart,
@@ -93,6 +98,11 @@ func NewEvidencePacketData(validatorAddr sdk.ConsAddress, windowStart int64, bit
 		SignedBlocksWindow: window,
 		MinSignedPerWindow: minSigned,
 	}
+}
+
+// ConsAddress returns the accused validator's consumer consensus address.
+func (e EvidencePacketData) ConsAddress() sdk.ConsAddress {
+	return sdk.ConsAddress(e.ValidatorAddr)
 }
 
 // Span returns the number of heights covered by the reporting window.
@@ -128,8 +138,8 @@ func (e EvidencePacketData) MaxMissed() int64 {
 
 // Validate returns an error if the EvidencePacketData is invalid.
 func (e EvidencePacketData) Validate() error {
-	if len(e.ValidatorAddr) == 0 {
-		return errorsmod.Wrap(ErrInvalidPacketData, "validator address cannot be empty")
+	if err := sdk.VerifyAddressFormat(e.ValidatorAddr); err != nil {
+		return errorsmod.Wrapf(ErrInvalidPacketData, "validator address: %s", err)
 	}
 	if e.WindowEndHeight <= 0 {
 		return errorsmod.Wrap(ErrInvalidPacketData, "window end height must be positive")

@@ -22,7 +22,7 @@ import (
 // packet per downtime window, so evidence for a later window is not lost while
 // an earlier window's packet is still waiting to be relayed.
 func pendingEvidenceKey(packet vaastypes.EvidencePacketData) collections.Pair[[]byte, int64] {
-	return collections.Join([]byte(packet.ValidatorAddr), packet.WindowEndHeight)
+	return collections.Join(packet.ValidatorAddr, packet.WindowEndHeight)
 }
 
 // The queue is bounded on two axes. maxPendingEvidencePerValidator caps how
@@ -54,7 +54,7 @@ func (k Keeper) QueueEvidencePacket(ctx sdk.Context, packet vaastypes.EvidencePa
 		return fmt.Errorf("failed to store evidence packet: %w", err)
 	}
 
-	return k.evictOldestPendingEvidence(ctx, []byte(packet.ValidatorAddr))
+	return k.evictOldestPendingEvidence(ctx, packet.ValidatorAddr)
 }
 
 // evictOldestPendingEvidence trims a validator's pending evidence down to
@@ -123,7 +123,7 @@ func (k Keeper) ReportRejectedEvidencePacket(ctx sdk.Context, payload []byte) {
 			"error", err,
 		)
 	} else {
-		validatorAddr = packet.ValidatorAddr.String()
+		validatorAddr = packet.ConsAddress().String()
 		windowEndHeight = packet.WindowEndHeight
 		k.Logger(ctx).Error("evidence packet rejected by provider; not retried",
 			"validator", validatorAddr,
@@ -224,14 +224,14 @@ func (k Keeper) SendEvidencePackets(ctx sdk.Context) error {
 		if err != nil {
 			k.Logger(ctx).Error("failed to send evidence packet",
 				"error", err,
-				"validator", evidencePacket.ValidatorAddr.String(),
+				"validator", evidencePacket.ConsAddress().String(),
 			)
 			continue
 		}
 
 		k.Logger(ctx).Info("evidence packet sent",
 			"sequence", resp.Sequence,
-			"validator", evidencePacket.ValidatorAddr.String(),
+			"validator", evidencePacket.ConsAddress().String(),
 			"infraction", evidencePacket.Infraction.String(),
 			"window_end_height", evidencePacket.WindowEndHeight,
 		)
@@ -243,7 +243,7 @@ func (k Keeper) SendEvidencePackets(ctx sdk.Context) error {
 			sdk.NewEvent(
 				vaastypes.EventTypeConsumerEvidenceRequest,
 				sdk.NewAttribute(sdk.AttributeKeyModule, types.ModuleName),
-				sdk.NewAttribute(vaastypes.AttributeValidatorAddress, evidencePacket.ValidatorAddr.String()),
+				sdk.NewAttribute(vaastypes.AttributeValidatorAddress, evidencePacket.ConsAddress().String()),
 				sdk.NewAttribute(vaastypes.AttributeWindowEndHeight, fmt.Sprintf("%d", evidencePacket.WindowEndHeight)),
 				sdk.NewAttribute(vaastypes.AttributeInfractionType, evidencePacket.Infraction.String()),
 			),
