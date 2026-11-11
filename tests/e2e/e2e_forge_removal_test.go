@@ -35,16 +35,17 @@ func (s *ByzantineConsumerIntegrationTestSuite) unjailFrom(i int, valoper string
 }
 
 // testRemovalCancelsTheFabricatedPunishment: governance removes the lying
-// consumer, the one verdict that voids its evidence. The punishment the
-// fabricated double-sign queued against val2 is cancelled with it: val2 is
-// never slashed nor tombstoned, and its jail opens, so it can unjail.
+// consumer, the one verdict that voids its evidence. The punishments the
+// fabricated double-sign and the double vote over the old chain id queued
+// against val2 are cancelled with it: val2 is never slashed nor tombstoned,
+// and its jail opens, so it can unjail.
 func (s *ByzantineConsumerIntegrationTestSuite) testRemovalCancelsTheFabricatedPunishment() {
 	s.Run("removing the lying consumer cancels its fabricated punishment", func() {
 		const consumerID = "0"
 		val2 := s.validator(2)
 		_, tokensBefore := s.stakingValidatorState(val2.valoper)
-		s.Require().Equalf(1, s.pendingEquivocationsOf(consumerID, val2.consAddr),
-			"val2's fabricated punishment must still be pending before the removal")
+		s.Require().Equalf(2, s.pendingEquivocationsOf(consumerID, val2.consAddr),
+			"val2's two fabricated punishments must still be pending before the removal")
 
 		// The validator the forge accused of downtime must stand unaccused
 		// before the removal, which would cancel any accusation still pending.

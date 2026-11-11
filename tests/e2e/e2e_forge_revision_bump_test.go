@@ -135,21 +135,19 @@ func (s *ByzantineConsumerIntegrationTestSuite) testRevisionBumpIsServedOnlyAfte
 
 		// 5. The old chain id stays an evidence domain of the consumer: a
 		// double vote signed over it at a height of the old chain is still
-		// accepted. val3 signs it, as a malicious binary on its node could
-		// have; the removal that ends the suite cancels the punishment it
-		// queues, like val2's.
-		val3 := s.validator(3)
-		_, tokensBefore := s.stakingValidatorState(val3.valoper)
-		s.Require().Zero(s.pendingEquivocationsOf(consumerID, val3.consAddr), "val3 is already accused of a double-sign")
-		evidencePath, headerPath := s.fabricateDoubleVote(s.consensusPrivKey(3), oldChainID, haltedAt-5, "forge-val3-old-chain-id")
+		// accepted. val2 signs it, jailed since the fabricated double-sign,
+		// so the chains keep three signing validators; the punishment queues
+		// beside its first, and the removal that ends the suite cancels both.
+		val2 := s.validator(2)
+		jailed, tokensBefore := s.stakingValidatorState(val2.valoper)
+		s.Require().True(jailed, "val2 is jailed since the fabricated double-sign")
+		s.Require().Equalf(1, s.pendingEquivocationsOf(consumerID, val2.consAddr), "val2 carries the fabricated double-sign's punishment")
+		evidencePath, headerPath := s.fabricateDoubleVote(s.consensusPrivKey(2), oldChainID, haltedAt-5, "forge-val2-old-chain-id")
 		s.submitDoubleVoteEvidence(consumerID, evidencePath, headerPath)
 		s.Require().Eventuallyf(func() bool {
-			jailed, _ := s.stakingValidatorState(val3.valoper)
-			return jailed
-		}, time.Minute, 2*time.Second, "val3 was not jailed for the double vote signed over the old chain id")
-		s.Require().Equalf(1, s.pendingEquivocationsOf(consumerID, val3.consAddr),
-			"the double vote signed over the old chain id must queue one punishment against val3")
-		_, tokensAfter := s.stakingValidatorState(val3.valoper)
+			return s.pendingEquivocationsOf(consumerID, val2.consAddr) == 2
+		}, time.Minute, 2*time.Second, "the double vote signed over the old chain id must queue a second punishment against val2")
+		_, tokensAfter := s.stakingValidatorState(val2.valoper)
 		s.Require().Equalf(tokensBefore, tokensAfter, "the punishment must be deferred, not executed")
 	})
 }
