@@ -4,8 +4,9 @@ package e2e
 // Docker-based e2e suite that walks one consumer through the back half of its
 // lifecycle on real chains: a refusal pause that freezes a pending
 // equivocation punishment and a resume that moves it past the pause, the
-// withheld-fee record a downtime accusation leaves across an epoch boundary,
-// the MaxPauseDuration auto-stop, the owner's fee-pool sweep once STOPPED, the
+// withheld-fee record a downtime accusation leaves across an epoch boundary
+// and its lapse once the accused leaves the bonded set, the MaxPauseDuration
+// auto-stop, the owner's fee-pool sweep once STOPPED, the
 // unbonding-delayed erasure to DELETED with the chain id released, and the
 // immediate erasure of consumers that never launched. The main suite proves
 // the mechanisms around a consumer that stays LAUNCHED for most of its run
@@ -30,9 +31,11 @@ package e2e
 //   - a 300s provider unbonding: it bounds the STOPPED -> DELETED wait,
 //     keeps the relayer-derived client trusting periods (two thirds of it,
 //     200s) above the challenge horizon (180s) and above the longest pause a
-//     launched consumer sees here, and with a 0.9 grace fraction gives a
-//     270s liveness grace that covers the setup's first VSC sync with an
-//     epoch to spare;
+//     launched consumer sees here, outlasts the lapse scenario's wait for
+//     the departing validator's last accusation (under three minutes from
+//     its undelegation), so its unbonding entry is still there to be read
+//     slashed, and with a 0.9 grace fraction gives a 270s liveness grace
+//     that covers the setup's first VSC sync with an epoch to spare;
 //   - the consumer registered from testdata/create_consumer_lifecycle.json
 //     carries the same 300s unbonding (it may not exceed the provider's and
 //     must exceed the challenge horizon) and a 120s safe-mode threshold,
@@ -47,12 +50,17 @@ package e2e
 //     pause and the punishment executes at the moved time.
 //  3. testWithheldFeeRecordAcrossEpoch - a silent validator's accusation
 //     spans an epoch boundary: its share is escrowed, the slash executes.
-//  4. testMaxPauseAutoStop - pause by refusal, wait out max_pause_duration:
-//     STOPPED on its own, the frozen record lapses unpaid, a resume is refused.
-//  5. testFeePoolSweepWhenStopped - only the owner's sweep returns the pool.
-//  6. testStoppedToDeleted - DELETED once the provider unbonding elapses; the
+//  4. testWithheldFeeRecordLapsesWhileLaunched - the silent validator leaves
+//     the bonded set: its record lapses unpaid one challenge window after the
+//     last boundary that withheld, with accusations pending that execute
+//     later against its unbonding stake.
+//  5. testMaxPauseAutoStop - bond a third silent validator so a record is
+//     live, pause by refusal, wait out max_pause_duration: STOPPED on its
+//     own, the frozen record lapses unpaid, a resume is refused.
+//  6. testFeePoolSweepWhenStopped - only the owner's sweep returns the pool.
+//  7. testStoppedToDeleted - DELETED once the provider unbonding elapses; the
 //     chain id is free again.
-//  7. testPrelaunchRemoval - registered-only consumers are erased at once by
+//  8. testPrelaunchRemoval - registered-only consumers are erased at once by
 //     their owner and by governance, their pools returned.
 
 import (
@@ -125,11 +133,10 @@ type LifecycleIntegrationTestSuite struct {
 	ownerAddr   string
 	feePoolAddr string
 
-	// The permanently silent validator of the downtime scenario, kept by the
-	// auto-stop scenario to watch its withheld record lapse unpaid.
-	val2AccAddr   string
-	val2ConsAddr  string
-	val2FeeBefore int64
+	// The permanently silent validators: val2 is bonded by the withheld-record
+	// scenario and leaves the bonded set in the lapse scenario; val3 is bonded
+	// by the auto-stop scenario, which watches its frozen record lapse unpaid.
+	val2, val3 silentValidator
 
 	// The auto-stop's block, from which the deletion delay runs.
 	stopHeight int64
@@ -276,6 +283,7 @@ func (s *LifecycleIntegrationTestSuite) TestLifecycleVAAS() {
 	s.testFundFeePoolAndSweepLockedWhileLaunched()
 	s.testEquivocationThawAcrossPause()
 	s.testWithheldFeeRecordAcrossEpoch()
+	s.testWithheldFeeRecordLapsesWhileLaunched()
 	s.testMaxPauseAutoStop()
 	s.testFeePoolSweepWhenStopped()
 	s.testStoppedToDeleted()

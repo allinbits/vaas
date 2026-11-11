@@ -361,11 +361,24 @@ func (p pendingDowntimeSlashJSON) coversWindowEnd(windowEnd int64) bool {
 // a consumer, awaiting the challenge window before execution. Returns nil on
 // any query/decode error so callers can poll it directly inside Eventually.
 func (s *baseTestSuite) queryPendingDowntimeSlashes(consumerID string) []pendingDowntimeSlashJSON {
-	stdout, _, err := s.dockerExec(s.providerValRes[0].Container.ID, []string{
+	return s.queryPendingDowntimeSlashesWith(consumerID)
+}
+
+// queryPendingDowntimeSlashesAt is queryPendingDowntimeSlashes as of a past
+// provider height.
+func (s *baseTestSuite) queryPendingDowntimeSlashesAt(consumerID string, height int64) []pendingDowntimeSlashJSON {
+	return s.queryPendingDowntimeSlashesWith(consumerID, "--height", strconv.FormatInt(height, 10))
+}
+
+// queryPendingDowntimeSlashesWith is queryPendingDowntimeSlashes with extra
+// query flags.
+func (s *baseTestSuite) queryPendingDowntimeSlashesWith(consumerID string, flags ...string) []pendingDowntimeSlashJSON {
+	args := append([]string{
 		providerBinary, "query", "vaasprovider", "pending-downtime-slashes", consumerID,
 		"--home", providerHomePath,
 		"--output", "json",
-	})
+	}, flags...)
+	stdout, _, err := s.dockerExec(s.providerValRes[0].Container.ID, args)
 	if err != nil {
 		return nil
 	}

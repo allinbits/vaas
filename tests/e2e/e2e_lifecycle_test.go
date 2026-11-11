@@ -15,6 +15,7 @@ import (
 	"time"
 
 	sdk "github.com/cosmos/cosmos-sdk/types"
+	stakingtypes "github.com/cosmos/cosmos-sdk/x/staking/types"
 )
 
 const (
@@ -33,10 +34,16 @@ const (
 	proposalStatusPassed = "PROPOSAL_STATUS_PASSED"
 	proposalStatusFailed = "PROPOSAL_STATUS_FAILED"
 
-	// Event the provider emits when a pending equivocation punishment is
-	// executed, and the attribute naming the consumer.
+	// Events the provider emits when a pending equivocation punishment is
+	// executed and when a withheld fee record is paid out, and the attribute
+	// naming the consumer.
 	eventEquivocationPunishmentExecuted = "vaas_equivocation_punishment_executed"
+	eventWithheldFeePaid                = "vaas_withheld_fee_paid"
 	attributeConsumerID                 = "consumer_id"
+
+	// lifecycleSilentSelfBond is the self-bond of the silent validators the
+	// suite bonds, five units of power.
+	lifecycleSilentSelfBond = "5000000"
 )
 
 // testFundFeePoolAndSweepLockedWhileLaunched has the owner fund consumer 0's
@@ -207,8 +214,7 @@ func (s *LifecycleIntegrationTestSuite) testEquivocationThawAcrossPause() {
 // consumer) or the record lapses unrefreshed. The slash executes at the
 // accusation's maturity regardless; with windows shorter than the challenge
 // window a later window is always pending by then, so the record outlives
-// the execution, as the keeper defines it. Its lapse is observed by
-// testMaxPauseAutoStop, once the accusations stop.
+// the execution, as the keeper defines it. Its lapse is the next scenario's.
 func (s *LifecycleIntegrationTestSuite) testWithheldFeeRecordAcrossEpoch() {
 	s.Run("withheld fee: a silent validator's share is escrowed at every boundary its accusations span, and its slash executes", func() {
 		const consumerID = lifecycleConsumerID
@@ -216,9 +222,7 @@ func (s *LifecycleIntegrationTestSuite) testWithheldFeeRecordAcrossEpoch() {
 
 		s.T().Log("bonding a second, permanently silent validator on the provider...")
 		heightBeforeVal2, _ := s.providerLatestBlock()
-		val2AccAddr, val2Valoper := s.createSilentValidator("val2", "5000000"+bondDenom)
-		s.val2AccAddr = val2AccAddr
-		s.val2ConsAddr = s.providerValidatorConsAddr(val2Valoper)
+		s.val2 = s.bondSilentValidator("val2")
 
 		// The share as DistributeConsumerFees computes it: val and val2 are
 		// bonded, the equivocator of the previous scenario is unbonding.
@@ -226,64 +230,30 @@ func (s *LifecycleIntegrationTestSuite) testWithheldFeeRecordAcrossEpoch() {
 		share := s.queryConsumerFeesPerBlock(consumerID) * s.queryBlocksPerEpoch() / 2
 		s.Require().Positive(share)
 		s.T().Logf("expecting one withheld share of %d%s per epoch boundary", share, feeDenom)
+		tokensBefore := s.mustValidatorTokens(s.val2.valoper)
 
-		s.T().Log("waiting for the silent validator to sync into the consumer's validator set...")
-		s.Require().Eventuallyf(func() bool {
-			vals, err := s.queryConsumerNetValidators()
-			return err == nil && len(vals) >= 2
-		}, 3*time.Minute, 3*time.Second, "consumer never synced the second validator into its validator set")
-		tokensBefore := s.mustValidatorTokens(val2Valoper)
-
-		s.T().Log("waiting for the provider to accept a downtime accusation against the silent validator...")
-		var first pendingDowntimeSlashJSON
-		s.Require().Eventuallyf(func() bool {
-			entries := s.pendingDowntimeSlashesFor(consumerID, s.val2ConsAddr)
-			if len(entries) == 0 {
-				return false
-			}
-			first = entries[0]
-			return true
-		}, 4*time.Minute, 2*time.Second, "the provider never queued a downtime slash for the silent validator")
+		first := s.waitForFirstAccusation(s.val2)
 		firstMaturity, err := time.Parse(time.RFC3339Nano, first.MaturesAt)
 		s.Require().NoError(err, "unparsable matures_at %q", first.MaturesAt)
 		// An accusation matures one challenge window after its acceptance.
 		firstAcceptedAt := firstMaturity.Add(-lifecycleDowntimeChallengeWindow)
 		s.T().Logf("first accusation: window start %s, accepted at %s, matures at %s", first.WindowStartHeight, firstAcceptedAt, firstMaturity)
-		s.Require().Equal(tokensBefore, s.mustValidatorTokens(val2Valoper), "a pending accusation touches no stake")
+		s.Require().Equal(tokensBefore, s.mustValidatorTokens(s.val2.valoper), "a pending accusation touches no stake")
 
-		s.T().Log("waiting for the epoch boundary to withhold the silent validator's share...")
-		var record withheldFeeRecordJSON
-		s.Require().Eventuallyf(func() bool {
-			r, ok := s.withheldFeeRecordFor(consumerID, s.val2ConsAddr)
-			record = r
-			return ok
-		}, 3*time.Minute, 2*time.Second, "no withheld fee record was written for the silent validator")
-		latest, _ := s.providerLatestBlock()
-		firstWriteHeight := s.firstProviderHeightWhere(heightBeforeVal2, latest, func(height int64) bool {
-			_, ok := s.withheldFeeRecordForAt(consumerID, s.val2ConsAddr, height)
-			return ok
-		})
-		s.Require().Zerof(firstWriteHeight%lifecycleBlocksPerEpoch,
-			"the record must be written at an epoch boundary, got height %d", firstWriteHeight)
+		record, firstWriteHeight := s.waitForFirstWithheldRecord(&s.val2, heightBeforeVal2)
 		s.Require().Truef(s.providerBlockTime(firstWriteHeight).After(firstAcceptedAt),
 			"the record (height %d) must follow the first acceptance (%s)", firstWriteHeight, firstAcceptedAt)
 		s.requireWithheldRecordMatches(record, share, firstWriteHeight)
 		s.Require().GreaterOrEqualf(s.providerQueryBalance(s.feePoolAddr, feeDenom), s.mustAmount(record.Amount),
 			"the escrow must be backed by the pool")
-		// The boundaries before the first accusation marked an epoch paid
-		// the silent validator like any bonded validator; from the first
-		// withholding on it is paid nothing more, and nothing is ever paid
-		// out of the escrow. This is the baseline the auto-stop scenario
-		// checks the lapsed record against too.
-		s.val2FeeBefore = s.providerQueryBalanceAt(val2AccAddr, feeDenom, firstWriteHeight)
 
 		s.T().Log("waiting for the first accusation to mature and its slash to execute...")
 		s.Require().Eventuallyf(func() bool {
-			return s.mustValidatorTokens(val2Valoper) < tokensBefore
+			return s.mustValidatorTokens(s.val2.valoper) < tokensBefore
 		}, time.Until(firstMaturity)+2*time.Minute, 2*time.Second,
 			"the silent validator's stake was never reduced by the matured downtime slash")
 		s.Require().Eventuallyf(func() bool {
-			for _, p := range s.pendingDowntimeSlashesFor(consumerID, s.val2ConsAddr) {
+			for _, p := range s.pendingDowntimeSlashesFor(consumerID, s.val2.consAddr) {
 				if p.WindowStartHeight == first.WindowStartHeight {
 					return false
 				}
@@ -294,12 +264,12 @@ func (s *LifecycleIntegrationTestSuite) testWithheldFeeRecordAcrossEpoch() {
 		// The validator is still silent, so later windows are pending at the
 		// execution and the record outlives it, still growing by one share
 		// per boundary; nothing is ever paid out of it.
-		s.Require().NotEmpty(s.pendingDowntimeSlashesFor(consumerID, s.val2ConsAddr),
+		s.Require().NotEmpty(s.pendingDowntimeSlashesFor(consumerID, s.val2.consAddr),
 			"later windows must be pending for the still-silent validator")
-		record, ok := s.withheldFeeRecordFor(consumerID, s.val2ConsAddr)
+		record, ok := s.withheldFeeRecordFor(consumerID, s.val2.consAddr)
 		s.Require().True(ok, "the record must outlive an execution that leaves accusations pending")
 		s.requireWithheldRecordMatches(record, share, firstWriteHeight)
-		s.Require().Equal(s.val2FeeBefore, s.providerQueryBalance(val2AccAddr, feeDenom),
+		s.Require().Equal(s.val2.feeBaseline, s.providerQueryBalance(s.val2.accAddr, feeDenom),
 			"the silent validator is paid nothing from the first withholding on, and nothing out of the escrow")
 	})
 }
@@ -333,18 +303,144 @@ func (s *LifecycleIntegrationTestSuite) requireWithheldRecordMatches(record with
 		record.Amount.Amount, feeDenom, boundaries, firstWriteHeight, record.ExpiresAt)
 }
 
-// testMaxPauseAutoStop pauses the consumer by refusal once more and waits
-// out max_pause_duration: the consumer must stay paused until then, with its
-// withheld record frozen, and stop on its own in the first block at or past
-// the deadline. The stop cancels the pending downtime slashes, and the
-// record, now measured against the running clock, has lapsed: it is swept
-// with nothing paid and the escrow still in the pool. A resume proposal then
-// passes its vote but its message is refused.
+// testWithheldFeeRecordLapsesWhileLaunched has the silent validator leave the
+// bonded set and proves the other end of its record on a consumer that stays
+// LAUNCHED: once no boundary refreshes it, the record lapses one challenge
+// window after the last boundary that withheld, swept with nothing paid,
+// while accusations accepted after that boundary are still pending; they
+// execute later, against the stake the validator has in flight.
+//
+// The validator undelegates down to a remainder under one unit of power: a
+// validator with no power is not bonded, so it leaves the bonded set at that
+// block's staking EndBlock without being jailed. The boundary that follows
+// sends the consumer a set without it and neither pays nor withholds its
+// share, so the record's expiry stays where the last boundary that withheld
+// left it. The consumer keeps accusing the validator until it applies that
+// set, and the provider accepts those windows until the same boundary
+// rebuilds its copy of the consumer's set, so accusations accepted after the
+// last withholding boundary exist, and, accepted after it, they mature after
+// the record's expiry. The sweep therefore removes the record with them still
+// pending (the execution-time deletion only ever runs for a pair with nothing
+// left pending), and they are executed rather than dropped: the departing
+// stake is slashable, and their execution slashes the unbonding entry.
+func (s *LifecycleIntegrationTestSuite) testWithheldFeeRecordLapsesWhileLaunched() {
+	s.Run("withheld fee: once the silent validator leaves the bonded set, its record lapses unpaid one challenge window after the last boundary that withheld, and its accusations still execute", func() {
+		const consumerID = lifecycleConsumerID
+		s.Require().Equal(phaseLaunched, s.queryProviderConsumerPhase(consumerID))
+		s.Require().NotEmpty(s.val2.consAddr, "the withheld-record scenario must have run first")
+		setBefore := s.mustCountConsumerNetValidators()
+
+		// Leave right after a boundary: the whole epoch that follows is there
+		// for the consumer's accusations to be accepted in.
+		lastBoundary := s.waitForNextEpochBoundary()
+		tokens := s.mustValidatorTokens(s.val2.valoper)
+		remainder := sdk.DefaultPowerReduction.Int64() / 2
+		s.T().Logf("undelegating %d of the silent validator's %d%s, leaving a remainder under one unit of power...",
+			tokens-remainder, tokens, bondDenom)
+		leaveHeight := s.unbondFrom("val2", s.val2.valoper, strconv.FormatInt(tokens-remainder, 10)+bondDenom)
+		s.Require().Truef(lastBoundary < leaveHeight && leaveHeight < lastBoundary+lifecycleBlocksPerEpoch,
+			"the undelegation must land inside the epoch after boundary %d, got height %d", lastBoundary, leaveHeight)
+		s.Require().Eventuallyf(func() bool {
+			return s.providerValidatorStatus(s.val2.valoper) == stakingtypes.Unbonding
+		}, time.Minute, 2*time.Second, "the silent validator did not leave the bonded set")
+		jailed, _ := s.stakingValidatorState(s.val2.valoper)
+		s.Require().False(jailed, "leaving by undelegation jails nothing")
+		s.Require().Equal(1, s.countBondedProviderValidators(), "val must be the bonded set again")
+		s.T().Logf("left the bonded set at height %d", leaveHeight)
+
+		record, ok := s.withheldFeeRecordFor(consumerID, s.val2.consAddr)
+		s.Require().True(ok, "the record must stand when the validator leaves")
+		expiresAt := record.ExpiresAt
+		s.Require().Truef(expiresAt.Add(-lifecycleDowntimeChallengeWindow).Equal(s.providerBlockTime(lastBoundary)),
+			"the record's expiry must trail the last boundary that withheld (height %d, %s) by the challenge window, got %s",
+			lastBoundary, s.providerBlockTime(lastBoundary), expiresAt)
+		s.T().Logf("the record holds %s%s and expires at %s", record.Amount.Amount, feeDenom, expiresAt)
+
+		nextBoundary := lastBoundary + lifecycleBlocksPerEpoch
+		s.T().Logf("waiting for the boundary at height %d: it must neither pay the validator nor refresh the record...", nextBoundary)
+		s.waitForProviderHeight(nextBoundary + 1)
+		at, ok := s.withheldFeeRecordForAt(consumerID, s.val2.consAddr, nextBoundary)
+		s.Require().True(ok, "the record must still stand at the boundary after the validator left")
+		s.Require().Truef(at.ExpiresAt.Equal(expiresAt) && at.Amount == record.Amount,
+			"a boundary after the validator left must leave the record as it was (was %+v, now %+v)", record, at)
+		s.Require().Equal(s.val2.feeBaseline, s.providerQueryBalanceAt(s.val2.accAddr, feeDenom, nextBoundary),
+			"a boundary after the validator left pays it nothing")
+
+		s.T().Log("waiting for the consumer to drop the validator from its set...")
+		s.Require().Eventuallyf(func() bool {
+			vals, err := s.queryConsumerNetValidators()
+			return err == nil && len(vals) == setBefore-1
+		}, 3*time.Minute, 3*time.Second, "the consumer never dropped the validator from its set")
+
+		s.T().Logf("waiting for the record to lapse at %s...", expiresAt)
+		s.Require().Eventuallyf(func() bool {
+			_, ok := s.withheldFeeRecordFor(consumerID, s.val2.consAddr)
+			return !ok
+		}, time.Until(expiresAt)+2*time.Minute, 2*time.Second, "the record never lapsed")
+		latest, _ := s.providerLatestBlock()
+		lapseHeight := s.firstProviderHeightWhere(leaveHeight, latest, func(height int64) bool {
+			_, ok := s.withheldFeeRecordForAt(consumerID, s.val2.consAddr, height)
+			return !ok
+		})
+		lapsedAt := s.providerBlockTime(lapseHeight)
+		s.Require().Falsef(lapsedAt.Before(expiresAt), "the record was removed at %s, before its expiry %s", lapsedAt, expiresAt)
+		s.Require().Truef(s.providerBlockTime(lapseHeight-1).Before(expiresAt),
+			"the record must lapse in the first block at or past its expiry %s, but the block before height %d was already past it",
+			expiresAt, lapseHeight)
+		pendingAtLapse := s.pendingDowntimeSlashesForAt(consumerID, s.val2.consAddr, lapseHeight)
+		s.Require().NotEmpty(pendingAtLapse,
+			"accusations accepted after the last withholding boundary must still be pending at the lapse: the sweep, not an execution, removes the record")
+		for _, p := range pendingAtLapse {
+			maturity, err := time.Parse(time.RFC3339Nano, p.MaturesAt)
+			s.Require().NoError(err, "unparsable matures_at %q", p.MaturesAt)
+			s.Require().Truef(maturity.After(expiresAt),
+				"an accusation pending at the lapse was accepted after the last withholding boundary, so it matures after the expiry %s, got %s",
+				expiresAt, maturity)
+		}
+		s.Require().False(s.providerBlockHasEvent(lapseHeight, eventWithheldFeePaid, attributeConsumerID, consumerID),
+			"a lapsed record pays nothing")
+		s.Require().Equal(s.val2.feeBaseline, s.providerQueryBalanceAt(s.val2.accAddr, feeDenom, lapseHeight),
+			"the validator is paid nothing at the lapse")
+		if lapseHeight%lifecycleBlocksPerEpoch != 0 {
+			s.Require().Equal(s.providerQueryBalanceAt(s.feePoolAddr, feeDenom, lapseHeight-1),
+				s.providerQueryBalanceAt(s.feePoolAddr, feeDenom, lapseHeight), "the escrow stays in the pool")
+		}
+		s.T().Logf("the record lapsed at height %d (%s) with %d accusation(s) still pending", lapseHeight, lapsedAt, len(pendingAtLapse))
+
+		lastMaturity, err := time.Parse(time.RFC3339Nano, pendingAtLapse[len(pendingAtLapse)-1].MaturesAt)
+		s.Require().NoError(err)
+		unbondingAtLapse := s.mustUnbondingBalanceAt(s.val2.accAddr, s.val2.valoper, lapseHeight)
+		s.T().Logf("waiting for the last of them to mature (%s) and execute against the departing stake...", lastMaturity)
+		s.Require().Eventuallyf(func() bool {
+			return len(s.pendingDowntimeSlashesFor(consumerID, s.val2.consAddr)) == 0
+		}, time.Until(lastMaturity)+2*time.Minute, 2*time.Second, "the accusations pending at the lapse never resolved")
+		s.Require().Lessf(s.mustUnbondingBalance(s.val2.accAddr, s.val2.valoper), unbondingAtLapse,
+			"the accusations pending at the lapse must execute against the unbonding entry (%d at the lapse)", unbondingAtLapse)
+		_, ok = s.withheldFeeRecordFor(consumerID, s.val2.consAddr)
+		s.Require().False(ok, "an execution with nothing left pending finds no record to delete, and writes none")
+		s.Require().Equal(s.val2.feeBaseline, s.providerQueryBalance(s.val2.accAddr, feeDenom),
+			"the validator is paid nothing, from the first withholding to the end")
+	})
+}
+
+// testMaxPauseAutoStop bonds a third silent validator, so a withheld record
+// is live when the pause begins (the second validator's lapsed in the previous
+// scenario), pauses the consumer by refusal and waits out max_pause_duration:
+// the consumer must stay paused until then, with the record frozen, and stop
+// on its own in the first block at or past the deadline. The stop cancels the
+// pending downtime slashes, and the record, now measured against the running
+// clock, has lapsed: it is swept with nothing paid and the escrow still in the
+// pool. A resume proposal then passes its vote but its message is refused.
 func (s *LifecycleIntegrationTestSuite) testMaxPauseAutoStop() {
 	s.Run("auto-stop: a pause that outlives max_pause_duration stops the consumer on its own; a resume is then refused", func() {
 		const consumerID = lifecycleConsumerID
 		s.Require().Equal(phaseLaunched, s.queryProviderConsumerPhase(consumerID))
-		s.Require().NotEmpty(s.val2ConsAddr, "the downtime scenario must have run first")
+
+		s.T().Log("bonding a third silent validator, so a withheld record is live when the pause begins...")
+		heightBeforeVal3, _ := s.providerLatestBlock()
+		s.val3 = s.bondSilentValidator("val3")
+		s.waitForFirstAccusation(s.val3)
+		s.waitForFirstWithheldRecord(&s.val3, heightBeforeVal3)
 
 		s.T().Log("refusing the consumer from val to pause it...")
 		heightBeforeRefusal, _ := s.providerLatestBlock()
@@ -358,13 +454,13 @@ func (s *LifecycleIntegrationTestSuite) testMaxPauseAutoStop() {
 		s.T().Logf("paused at height %d (%s); the auto-stop is due at %s", pauseHeight, pausedAt, autoStopAt)
 
 		s.requireSweepRefused(consumerID, s.ownerAddr, "locked while consumer")
-		frozen, ok := s.withheldFeeRecordFor(consumerID, s.val2ConsAddr)
+		frozen, ok := s.withheldFeeRecordFor(consumerID, s.val3.consAddr)
 		s.Require().True(ok, "a refusal pause freezes the withheld record rather than discarding it")
 		// No distribution runs while paused, so these balances are fixed
 		// for the pause and the stop may not move them either.
 		poolPaused := s.providerQueryBalance(s.feePoolAddr, feeDenom)
-		val2FeePaused := s.providerQueryBalance(s.val2AccAddr, feeDenom)
-		s.Require().Equal(s.val2FeeBefore, val2FeePaused,
+		val3FeePaused := s.providerQueryBalance(s.val3.accAddr, feeDenom)
+		s.Require().Equal(s.val3.feeBaseline, val3FeePaused,
 			"the silent validator was paid nothing since its share was first withheld")
 
 		if wait := time.Until(autoStopAt) - 5*time.Second; wait > 0 {
@@ -373,7 +469,7 @@ func (s *LifecycleIntegrationTestSuite) testMaxPauseAutoStop() {
 				return s.queryProviderConsumerPhase(consumerID) != phasePaused
 			}, wait, 3*time.Second, "the consumer left the pause before max_pause_duration elapsed")
 		}
-		still, ok := s.withheldFeeRecordFor(consumerID, s.val2ConsAddr)
+		still, ok := s.withheldFeeRecordFor(consumerID, s.val3.consAddr)
 		s.Require().True(ok, "the frozen record must survive the whole pause")
 		s.Require().Truef(still.ExpiresAt.Equal(frozen.ExpiresAt) && still.Amount == frozen.Amount,
 			"the pause must freeze the record (was %+v, now %+v)", frozen, still)
@@ -398,10 +494,10 @@ func (s *LifecycleIntegrationTestSuite) testMaxPauseAutoStop() {
 			return len(s.queryPendingDowntimeSlashes(consumerID)) == 0
 		}, 30*time.Second, 2*time.Second, "the stop did not cancel the pending downtime slashes")
 		s.Require().Eventuallyf(func() bool {
-			_, ok := s.withheldFeeRecordFor(consumerID, s.val2ConsAddr)
+			_, ok := s.withheldFeeRecordFor(consumerID, s.val3.consAddr)
 			return !ok
 		}, 30*time.Second, 2*time.Second, "the lapsed withheld record was not swept after the stop")
-		s.Require().Equal(val2FeePaused, s.providerQueryBalance(s.val2AccAddr, feeDenom),
+		s.Require().Equal(val3FeePaused, s.providerQueryBalance(s.val3.accAddr, feeDenom),
 			"a lapsed record pays nothing")
 		s.Require().Equal(poolPaused, s.providerQueryBalance(s.feePoolAddr, feeDenom),
 			"the escrow stays in the pool")
@@ -554,17 +650,91 @@ func (s *LifecycleIntegrationTestSuite) fundAndErasePrelaunchConsumer(consumerID
 
 // ---- helpers ---------------------------------------------------------------
 
+// silentValidator is a provider validator bonded without a node (see
+// createSilentValidator): VAAS syncs it into the consumer's validator set,
+// where it misses every block, so the consumer accuses it window after window
+// for as long as it is in the set.
+type silentValidator struct {
+	accAddr  string
+	valoper  string
+	consAddr string
+	// feeBaseline is the validator's fee-denom balance as of the boundary
+	// that first withheld its share. The boundaries before it paid the
+	// validator like any bonded one; from it on the validator is paid
+	// nothing, and nothing is ever paid out of the escrow.
+	feeBaseline int64
+}
+
+// bondSilentValidator bonds a silent validator under key with the suite's
+// self-bond and waits for VAAS to sync it into the consumer's validator set.
+func (s *LifecycleIntegrationTestSuite) bondSilentValidator(key string) silentValidator {
+	setBefore := s.mustCountConsumerNetValidators()
+	accAddr, valoper := s.createSilentValidator(key, lifecycleSilentSelfBond+bondDenom)
+	v := silentValidator{accAddr: accAddr, valoper: valoper, consAddr: s.providerValidatorConsAddr(valoper)}
+
+	s.T().Logf("waiting for the consumer to sync %s into its validator set...", key)
+	s.Require().Eventuallyf(func() bool {
+		vals, err := s.queryConsumerNetValidators()
+		return err == nil && len(vals) == setBefore+1
+	}, 3*time.Minute, 3*time.Second, "the consumer never synced %s into its validator set", key)
+	return v
+}
+
+// waitForFirstAccusation waits for the provider to accept a downtime
+// accusation against the silent validator and returns the earliest pending
+// one.
+func (s *LifecycleIntegrationTestSuite) waitForFirstAccusation(v silentValidator) pendingDowntimeSlashJSON {
+	s.T().Log("waiting for the provider to accept a downtime accusation against the silent validator...")
+	var first pendingDowntimeSlashJSON
+	s.Require().Eventuallyf(func() bool {
+		entries := s.pendingDowntimeSlashesFor(lifecycleConsumerID, v.consAddr)
+		if len(entries) == 0 {
+			return false
+		}
+		first = entries[0]
+		return true
+	}, 4*time.Minute, 2*time.Second, "the provider never queued a downtime slash for the silent validator")
+	return first
+}
+
+// waitForFirstWithheldRecord waits for the epoch boundary that first withholds
+// the silent validator's share, given a height before the validator was
+// bonded, records the validator's fee baseline as of that boundary and returns
+// the record with the boundary's height.
+func (s *LifecycleIntegrationTestSuite) waitForFirstWithheldRecord(v *silentValidator, heightBefore int64) (withheldFeeRecordJSON, int64) {
+	s.T().Log("waiting for the epoch boundary to withhold the silent validator's share...")
+	var record withheldFeeRecordJSON
+	s.Require().Eventuallyf(func() bool {
+		r, ok := s.withheldFeeRecordFor(lifecycleConsumerID, v.consAddr)
+		record = r
+		return ok
+	}, 3*time.Minute, 2*time.Second, "no withheld fee record was written for the silent validator")
+	latest, _ := s.providerLatestBlock()
+	firstWriteHeight := s.firstProviderHeightWhere(heightBefore, latest, func(height int64) bool {
+		_, ok := s.withheldFeeRecordForAt(lifecycleConsumerID, v.consAddr, height)
+		return ok
+	})
+	s.Require().Zerof(firstWriteHeight%lifecycleBlocksPerEpoch,
+		"the record must be written at an epoch boundary, got height %d", firstWriteHeight)
+	v.feeBaseline = s.providerQueryBalanceAt(v.accAddr, feeDenom, firstWriteHeight)
+	return record, firstWriteHeight
+}
+
+// waitForNextEpochBoundary waits for the provider to reach its next epoch
+// boundary and returns the boundary's height.
+func (s *LifecycleIntegrationTestSuite) waitForNextEpochBoundary() int64 {
+	height, _ := s.providerLatestBlock()
+	boundary := (height/lifecycleBlocksPerEpoch + 1) * lifecycleBlocksPerEpoch
+	s.T().Logf("waiting for the epoch boundary at height %d...", boundary)
+	s.waitForProviderHeight(boundary)
+	return boundary
+}
+
 // waitForNextEpochAck waits for the next epoch boundary on the provider and
 // for the consumer's ack of the VSC packet that boundary sent, so the caller
 // starts right after a delivery.
 func (s *LifecycleIntegrationTestSuite) waitForNextEpochAck(consumerID string) {
-	height, _ := s.providerLatestBlock()
-	boundary := (height/lifecycleBlocksPerEpoch + 1) * lifecycleBlocksPerEpoch
-	s.T().Logf("waiting for the epoch boundary at height %d and the ack of its VSC...", boundary)
-	s.Require().Eventuallyf(func() bool {
-		h, _ := s.providerLatestBlock()
-		return h >= boundary
-	}, 3*time.Minute, time.Second, "the provider never reached height %d", boundary)
+	boundary := s.waitForNextEpochBoundary()
 	boundaryTime := s.providerBlockTime(boundary)
 	s.Require().Eventuallyf(func() bool {
 		ack, err := s.queryConsumerLastAck(consumerID)
@@ -640,7 +810,7 @@ func (s *LifecycleIntegrationTestSuite) createRegisteredConsumer(chainID string)
 
 // providerQueryBalanceAt is providerQueryBalance as of a past provider
 // height.
-func (s *baseTestSuite) providerQueryBalanceAt(addr, denom string, height int64) int64 {
+func (s *baseTestSuite) providerQueryBalanceAt(addr, denom string, height int64) int64 { //nolint:unparam // the lifecycle scenarios read fee balances; the helper mirrors providerQueryBalance
 	stdout, stderr, err := s.dockerExec(s.providerValRes[0].Container.ID, []string{
 		providerBinary, "query", "bank", "balances", addr,
 		"--height", strconv.FormatInt(height, 10),
@@ -852,10 +1022,23 @@ func (s *baseTestSuite) queryPendingEquivocationsAt(consumerID string, height in
 // pendingDowntimeSlashesFor returns the consumer's pending downtime slashes
 // naming the validator with the given bech32 consensus address, earliest
 // maturity first; an entry whose maturity does not parse is left out.
-func (s *baseTestSuite) pendingDowntimeSlashesFor(consumerID, consAddr string) []pendingDowntimeSlashJSON {
+func (s *baseTestSuite) pendingDowntimeSlashesFor(consumerID, consAddr string) []pendingDowntimeSlashJSON { //nolint:unparam // the suites drive one consumer; the helper stays generic
+	return pendingDowntimeSlashesOf(s.queryPendingDowntimeSlashes(consumerID), consAddr)
+}
+
+// pendingDowntimeSlashesForAt is pendingDowntimeSlashesFor as of a past
+// provider height.
+func (s *baseTestSuite) pendingDowntimeSlashesForAt(consumerID, consAddr string, height int64) []pendingDowntimeSlashJSON {
+	return pendingDowntimeSlashesOf(s.queryPendingDowntimeSlashesAt(consumerID, height), consAddr)
+}
+
+// pendingDowntimeSlashesOf picks the entries naming the validator with the
+// given bech32 consensus address out of a query's entries, earliest maturity
+// first.
+func pendingDowntimeSlashesOf(all []pendingDowntimeSlashJSON, consAddr string) []pendingDowntimeSlashJSON {
 	var entries []pendingDowntimeSlashJSON
 	var maturities []time.Time
-	for _, p := range s.queryPendingDowntimeSlashes(consumerID) {
+	for _, p := range all {
 		addr, err := consAddrFromBase64(p.ProviderConsAddr)
 		if err != nil || addr != consAddr {
 			continue
@@ -933,4 +1116,70 @@ func (s *baseTestSuite) mustTxEventAttribute(broadcastOut []byte, eventType, key
 	}, 30*time.Second, 2*time.Second,
 		"tx %s carries no %s.%s attribute; last query output: %s", bres.TxHash, eventType, key, lastOut)
 	return value
+}
+
+// mustTxHeight returns the height a committed transaction landed at, given
+// its `-o json` broadcast response.
+func (s *baseTestSuite) mustTxHeight(broadcastOut []byte) int64 {
+	var bres struct {
+		TxHash string `json:"txhash"`
+	}
+	s.Require().NoErrorf(json.Unmarshal(broadcastOut, &bres), "decode broadcast response: %s", string(broadcastOut))
+	s.Require().NotEmpty(bres.TxHash)
+
+	var height int64
+	s.Require().Eventuallyf(func() bool {
+		out, _, err := s.dockerExec(s.providerValRes[0].Container.ID, []string{
+			providerBinary, "query", "tx", bres.TxHash,
+			"--home", providerHomePath,
+			"--output", "json",
+		})
+		if err != nil || out.Len() == 0 {
+			return false
+		}
+		var res struct {
+			Height string `json:"height"`
+		}
+		if json.Unmarshal(out.Bytes(), &res) != nil {
+			return false
+		}
+		h, err := strconv.ParseInt(res.Height, 10, 64)
+		if err != nil || h == 0 {
+			return false
+		}
+		height = h
+		return true
+	}, 30*time.Second, 2*time.Second, "tx %s never reported the height it landed at", bres.TxHash)
+	return height
+}
+
+// providerValidatorStatus returns the bond status x/staking holds the
+// validator in.
+func (s *baseTestSuite) providerValidatorStatus(valoper string) stakingtypes.BondStatus {
+	vals, err := s.queryProviderValidators()
+	s.Require().NoError(err, "failed to query provider validators")
+	for _, v := range vals {
+		if v.OperatorAddress == valoper {
+			return v.Status
+		}
+	}
+	s.Require().Failf("validator not found", "no provider validator with operator address %s", valoper)
+	return stakingtypes.Unspecified
+}
+
+// mustCountConsumerNetValidators returns the size of the consumer's current
+// consensus validator set.
+func (s *baseTestSuite) mustCountConsumerNetValidators() int {
+	vals, err := s.queryConsumerNetValidators()
+	s.Require().NoError(err, "failed to query the consumer's validator set")
+	return len(vals)
+}
+
+// waitForProviderHeight blocks until the provider's latest height is at or
+// past height.
+func (s *baseTestSuite) waitForProviderHeight(height int64) {
+	s.Require().Eventuallyf(func() bool {
+		h, _ := s.providerLatestBlock()
+		return h >= height
+	}, 3*time.Minute, time.Second, "the provider never reached height %d", height)
 }
