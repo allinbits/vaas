@@ -77,14 +77,14 @@ func (s *IntegrationTestSuite) providerKeyAddress(key string) string {
 
 // providerFundConsumerFeePoolFrom is the multi-signer variant of
 // providerFundConsumerFeePool (which is hardcoded to --from val).
-func (s *IntegrationTestSuite) providerFundConsumerFeePoolFrom(consumerID, from, amount string) {
+func (s *baseTestSuite) providerFundConsumerFeePoolFrom(consumerID, from, amount string) {
 	stdout, stderr, err := s.dockerExec(s.providerValRes[0].Container.ID, []string{
 		providerBinary, "tx", "vaasprovider", "fund-consumer-fee-pool",
 		consumerID, amount,
 		"--from", from,
 		"--home", providerHomePath,
 		"--keyring-backend", "test",
-		"--chain-id", providerChainID,
+		"--chain-id", s.cfg.providerChainID,
 		"--fees", "10000" + bondDenom,
 		"-y",
 		"-o", "json",

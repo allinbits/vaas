@@ -235,11 +235,18 @@ type pendingEquivocationJSON struct {
 // punishments; the error lets polling callers retry and asserting callers
 // fail rather than read a broken query as an empty queue.
 func (s *baseTestSuite) queryPendingEquivocations(consumerID string) ([]pendingEquivocationJSON, error) {
-	stdout, stderr, err := s.dockerExec(s.providerValRes[0].Container.ID, []string{
+	return s.queryPendingEquivocationsWith(consumerID)
+}
+
+// queryPendingEquivocationsWith is queryPendingEquivocations with extra query
+// flags, such as a past height.
+func (s *baseTestSuite) queryPendingEquivocationsWith(consumerID string, flags ...string) ([]pendingEquivocationJSON, error) {
+	args := append([]string{
 		providerBinary, "query", "vaasprovider", "pending-equivocation-punishments", consumerID,
 		"--home", providerHomePath,
 		"--output", "json",
-	})
+	}, flags...)
+	stdout, stderr, err := s.dockerExec(s.providerValRes[0].Container.ID, args)
 	if err != nil {
 		return nil, fmt.Errorf("query pending-equivocation-punishments: %w (stderr=%s)", err, stderr.String())
 	}
@@ -423,7 +430,7 @@ func (s *baseTestSuite) removalProposalJSON(consumerID, title string) string {
 
 // setConsumerRefusal records or withdraws val's refusal of the consumer and
 // waits for the tx to commit.
-func (s *IntegrationTestSuite) setConsumerRefusal(consumerID string, refused bool) {
+func (s *baseTestSuite) setConsumerRefusal(consumerID string, refused bool) {
 	stdout, stderr, err := s.dockerExec(s.providerValRes[0].Container.ID, []string{
 		providerBinary, "tx", "vaasprovider", "set-consumer-refusal", consumerID, strconv.FormatBool(refused),
 		"--from", "val",
@@ -438,7 +445,7 @@ func (s *IntegrationTestSuite) setConsumerRefusal(consumerID string, refused boo
 }
 
 // resumeProposalJSON builds a MsgResumeConsumer gov proposal body.
-func (s *IntegrationTestSuite) resumeProposalJSON(consumerID, title string) string {
+func (s *baseTestSuite) resumeProposalJSON(consumerID, title string) string {
 	return fmt.Sprintf(`{
   "messages": [{
     "@type": "/vaas.provider.v1.MsgResumeConsumer",

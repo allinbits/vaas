@@ -111,6 +111,16 @@ func (s *baseTestSuite) submitAndRejectProposal(proposalJSON string) {
 // from val, and waits until the proposal reaches wantStatus; any other
 // terminal status fails the test. It returns the proposal ID.
 func (s *baseTestSuite) submitProposalWithVote(proposalJSON, voteOption, wantStatus string) uint64 {
+	proposalID := s.submitProposalAndVote(proposalJSON, voteOption)
+	s.waitForProposalStatus(proposalID, wantStatus)
+	return proposalID
+}
+
+// submitProposalAndVote submits a gov v1 proposal and votes the given option
+// from val, returning the proposal ID as soon as the vote is broadcast: the
+// caller decides what to observe while the vote is open and waits for the
+// tally with waitForProposalStatus.
+func (s *baseTestSuite) submitProposalAndVote(proposalJSON, voteOption string) uint64 {
 	containerID := s.providerValRes[0].Container.ID
 
 	// 1. Write the proposal body to /tmp/proposal.json via base64 to avoid
@@ -178,8 +188,14 @@ func (s *baseTestSuite) submitProposalWithVote(proposalJSON, voteOption, wantSta
 	s.Require().NoErrorf(err, "failed to vote on proposal %d: stdout=%s stderr=%s",
 		proposalID, voteStdout.String(), voteStderr.String())
 
-	// 4. Wait for tally: the voting period plus a buffer for the proposal to
-	//    land and the tally block to commit, 2s tick.
+	return proposalID
+}
+
+// waitForProposalStatus waits until the proposal reaches wantStatus; any other
+// terminal status fails the test.
+func (s *baseTestSuite) waitForProposalStatus(proposalID uint64, wantStatus string) {
+	// Wait for tally: the voting period plus a buffer for the proposal to
+	// land and the tally block to commit, 2s tick.
 	s.Require().Eventuallyf(func() bool {
 		status := s.queryProposalStatus(proposalID)
 		switch status {
@@ -196,8 +212,6 @@ func (s *baseTestSuite) submitProposalWithVote(proposalJSON, voteOption, wantSta
 		}
 	}, s.cfg.govVotingPeriod+45*time.Second, 2*time.Second,
 		"proposal %d did not reach %s within timeout", proposalID, wantStatus)
-
-	return proposalID
 }
 
 // dumpProposal returns the raw JSON of a gov proposal query, used to surface
@@ -246,6 +260,22 @@ func (s *baseTestSuite) queryProposalStatus(proposalID uint64) string {
 // submit_proposal.proposal_id event attribute as uint64. Returns 0 if not
 // found.
 func extractProposalID(raw []byte) uint64 {
+	v, ok := txEventAttribute(raw, "submit_proposal", "proposal_id")
+	if !ok {
+		return 0
+	}
+	id, err := strconv.ParseUint(v, 10, 64)
+	if err != nil {
+		return 0
+	}
+	return id
+}
+
+// txEventAttribute walks a tx-query JSON response and returns the value of
+// the first attribute named key on an event of type eventType, trimmed of
+// quotes, wherever the response shape carries its events (top-level, under
+// tx_response, or inside the legacy logs).
+func txEventAttribute(raw []byte, eventType, key string) (string, bool) {
 	type event struct {
 		Type       string `json:"type"`
 		Attributes []struct {
@@ -266,43 +296,38 @@ func extractProposalID(raw []byte) uint64 {
 		} `json:"logs"`
 	}
 	if err := json.Unmarshal(raw, &doc); err != nil {
-		return 0
+		return "", false
 	}
 
-	scan := func(events []event) uint64 {
+	scan := func(events []event) (string, bool) {
 		for _, ev := range events {
-			if ev.Type != "submit_proposal" {
+			if ev.Type != eventType {
 				continue
 			}
 			for _, attr := range ev.Attributes {
-				if attr.Key == "proposal_id" {
-					v := strings.Trim(strings.TrimSpace(attr.Value), "\" ")
-					id, err := strconv.ParseUint(v, 10, 64)
-					if err != nil {
-						continue
-					}
-					return id
+				if attr.Key == key {
+					return strings.Trim(strings.TrimSpace(attr.Value), "\" "), true
 				}
 			}
 		}
-		return 0
+		return "", false
 	}
 
-	if id := scan(doc.Events); id != 0 {
-		return id
+	if v, ok := scan(doc.Events); ok {
+		return v, true
 	}
-	if id := scan(doc.TxResponse.Events); id != 0 {
-		return id
+	if v, ok := scan(doc.TxResponse.Events); ok {
+		return v, true
 	}
 	for _, lg := range doc.TxResponse.Logs {
-		if id := scan(lg.Events); id != 0 {
-			return id
+		if v, ok := scan(lg.Events); ok {
+			return v, true
 		}
 	}
 	for _, lg := range doc.Logs {
-		if id := scan(lg.Events); id != 0 {
-			return id
+		if v, ok := scan(lg.Events); ok {
+			return v, true
 		}
 	}
-	return 0
+	return "", false
 }

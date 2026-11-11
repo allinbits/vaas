@@ -67,7 +67,7 @@ func (s *IntegrationTestSuite) testFeeDistributionAccrual() {
 // countBondedProviderValidators returns the number of bonded validators on the
 // provider, i.e. the denominator DistributeConsumerFees splits an epoch fee
 // across.
-func (s *IntegrationTestSuite) countBondedProviderValidators() int {
+func (s *baseTestSuite) countBondedProviderValidators() int {
 	vals, err := s.queryProviderValidators()
 	s.Require().NoError(err, "failed to query provider validators")
 
@@ -83,7 +83,7 @@ func (s *IntegrationTestSuite) countBondedProviderValidators() int {
 // queryConsumerFeesPerBlock returns the effective per-block fee amount charged
 // to a consumer (the per-consumer override if one is set, else the module
 // default).
-func (s *IntegrationTestSuite) queryConsumerFeesPerBlock(consumerID string) int64 {
+func (s *baseTestSuite) queryConsumerFeesPerBlock(consumerID string) int64 {
 	stdout, _, err := s.dockerExec(s.providerValRes[0].Container.ID, []string{
 		providerBinary, "query", "vaasprovider", "consumer-fees-per-block", consumerID,
 		"--home", providerHomePath,
@@ -107,7 +107,7 @@ func (s *IntegrationTestSuite) queryConsumerFeesPerBlock(consumerID string) int6
 // queryBlocksPerEpoch returns the provider's blocks_per_epoch parameter. The
 // params query prints the Params message itself, but a "params"-wrapped
 // envelope is accepted too.
-func (s *IntegrationTestSuite) queryBlocksPerEpoch() int64 {
+func (s *baseTestSuite) queryBlocksPerEpoch() int64 {
 	stdout, _, err := s.dockerExec(s.providerValRes[0].Container.ID, []string{
 		providerBinary, "query", "vaasprovider", "params",
 		"--home", providerHomePath,
