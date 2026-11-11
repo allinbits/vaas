@@ -43,6 +43,16 @@ func (s *baseTestSuite) patchFourValidatorProviderGenesis(appState map[string]an
 	}
 
 	s.genesisSection(appState, "slashing", "params")["signed_blocks_window"] = "100000"
+
+	// A consensus key rotation pays x/staking's key_rotation_fee from the
+	// operator account. The genesis the init container writes prices that
+	// fee in "stake" whatever --default-denom says, since x/staking fixes its
+	// default fee at package init, before the flag renames the bond denom;
+	// the validators hold uatone.
+	s.genesisSection(appState, "staking", "params")["key_rotation_fee"] = map[string]any{
+		"denom":  bondDenom,
+		"amount": "1000000",
+	}
 }
 
 // bringUpSuite starts everything a suite configured in s.cfg runs on: both

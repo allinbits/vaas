@@ -11,9 +11,12 @@ import (
 // node per provider validator, and proves what the single-node suites cannot:
 // the consumer's set mirrors every validator with its power, a delegation
 // reaches it, a validator's node can stop and restart while the other three
-// keep the consumer live, and a key assignment survives the node restarting
-// under the new key. Four is the smallest set where one node can stop and
-// both chains keep producing blocks: three of four hold 75% of the power.
+// keep the consumer live, a key assignment survives the node restarting
+// under the new key, a provider consensus key rotation reaches the consumer
+// (or not, where an assigned key stands in front of it), and a double sign
+// on the provider is punished through x/evidence and carried to both chains'
+// sets. Four is the smallest set where one node can stop and both chains
+// keep producing blocks: three of four hold 75% of the power.
 const (
 	multivalProviderChainID = "provider-multival"
 	multivalConsumerChainID = "consumer-multival"
@@ -87,11 +90,18 @@ func (s *MultiValidatorIntegrationTestSuite) SetupSuite() {
 }
 
 // TestMultiValidatorVAAS sequences the scenarios so each leaves the set whole
-// for the next.
+// for the next, down to the last two: the key rotations are for the rest of
+// the run, and the double sign tombstones val3.
 func (s *MultiValidatorIntegrationTestSuite) TestMultiValidatorVAAS() {
 	s.testValidatorSetMirror()
 	s.testDelegationReachesConsumer()
 	s.testKeyAssignmentWithNodeRestart()
 	s.testOfflineValidatorIsSlashedAndRecovers()
 	s.testRefusalThresholdIsStakeWeighted()
+	// Rotates val3's and val1's provider consensus keys for the rest of the
+	// run: x/staking allows a validator one rotation per unbonding period,
+	// and the scenarios after it read the keys the nodes run now.
+	s.testConsensusKeyRotation()
+	// Tombstones val3 for good, so nothing runs after it.
+	s.testNativeDoubleSignIsPunished()
 }
