@@ -163,7 +163,7 @@ func (s *baseTestSuite) cleanupStaleContainers() {
 	staleNames := []string{
 		s.cfg.providerInitName,
 		s.cfg.consumerInitName,
-		fmt.Sprintf("%s-%s-ts-relayer", s.cfg.providerChainID, s.cfg.consumerChainID),
+		s.tsRelayerContainerName(),
 	}
 	for i := range s.validatorCount() {
 		staleNames = append(staleNames,
@@ -172,19 +172,32 @@ func (s *baseTestSuite) cleanupStaleContainers() {
 		)
 	}
 	for _, name := range staleNames {
-		c, err := s.dkrPool.Client.InspectContainer(name)
-		if err != nil {
-			continue // container doesn't exist
-		}
-		s.T().Logf("removing stale container: %s", name)
-		_ = s.dkrPool.Client.RemoveContainer(docker.RemoveContainerOptions{
-			ID:            c.ID,
-			Force:         true,
-			RemoveVolumes: true,
-		})
+		s.removeContainerByName(name)
 	}
 	// Also remove stale network
 	_ = s.dkrPool.Client.RemoveNetwork(s.cfg.dockerNetwork)
+}
+
+// removeContainerByName force-removes the container of that name, if one
+// exists, so a container about to be created under it does not collide with
+// a leftover of a previous run.
+func (s *baseTestSuite) removeContainerByName(name string) {
+	c, err := s.dkrPool.Client.InspectContainer(name)
+	if err != nil {
+		return // container doesn't exist
+	}
+	s.T().Logf("removing stale container: %s", name)
+	_ = s.dkrPool.Client.RemoveContainer(docker.RemoveContainerOptions{
+		ID:            c.ID,
+		Force:         true,
+		RemoveVolumes: true,
+	})
+}
+
+// tsRelayerContainerName is the name of the relayer container, after the
+// chains it relays between.
+func (s *baseTestSuite) tsRelayerContainerName() string {
+	return fmt.Sprintf("%s-%s-ts-relayer", s.cfg.providerChainID, s.cfg.consumerChainID)
 }
 
 // runInitContainer starts an init container with the given script mounted,

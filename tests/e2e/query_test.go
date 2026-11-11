@@ -3,6 +3,7 @@ package e2e
 import (
 	"encoding/json"
 	"fmt"
+	"strconv"
 
 	rpchttp "github.com/cometbft/cometbft/rpc/client/http"
 
@@ -139,6 +140,119 @@ func (s *baseTestSuite) queryConsumerProviderInfo() (string, error) {
 		return "", err
 	}
 	return stdout.String(), nil
+}
+
+// consumerProviderClientID returns the id of the consumer's pinned IBC client
+// of the provider, the destination of the provider's VSC packets.
+func (s *baseTestSuite) consumerProviderClientID() string {
+	info, err := s.queryConsumerProviderInfo()
+	s.Require().NoError(err, "failed to query the consumer's provider info")
+	var res struct {
+		Consumer struct {
+			ClientID string `json:"clientID"`
+		} `json:"consumer"`
+	}
+	s.Require().NoErrorf(json.Unmarshal([]byte(info), &res), "failed to decode the consumer's provider info: %s", info)
+	s.Require().NotEmpty(res.Consumer.ClientID, "the consumer has no pinned provider client")
+	return res.Consumer.ClientID
+}
+
+// queryConsumerChainID returns the chain id the provider has a consumer
+// registered under.
+func (s *baseTestSuite) queryConsumerChainID(consumerID string) string { //nolint:unparam // the suites drive one consumer; the helper stays generic
+	stdout, _, err := s.dockerExec(s.providerValRes[0].Container.ID, []string{
+		providerBinary, "query", "vaasprovider", "consumer-chain", consumerID,
+		"--home", providerHomePath,
+		"--output", "json",
+	})
+	s.Require().NoErrorf(err, "failed to query consumer-chain %s", consumerID)
+	var res struct {
+		ChainID string `json:"chain_id"`
+	}
+	s.Require().NoErrorf(json.Unmarshal(stdout.Bytes(), &res), "failed to decode the consumer-chain response: %s", stdout.String())
+	return res.ChainID
+}
+
+// nextSequenceSend returns the sequence the provider's next IBC v2 packet over
+// the client takes; it moves exactly when the provider sends a packet over it.
+func (s *baseTestSuite) nextSequenceSend(clientID string) uint64 {
+	stdout, stderr, err := s.dockerExec(s.providerValRes[0].Container.ID, []string{
+		providerBinary, "query", "ibc", "channelv2", "next-sequence-send", clientID,
+		"--prove=false",
+		"--home", providerHomePath,
+		"--output", "json",
+	})
+	s.Require().NoErrorf(err, "failed to query the next send sequence of client %s: %s", clientID, stderr.String())
+	var res struct {
+		NextSequenceSend string `json:"next_sequence_send"`
+	}
+	s.Require().NoErrorf(json.Unmarshal(stdout.Bytes(), &res), "failed to decode the next send sequence of client %s: %s", clientID, stdout.String())
+	sequence, err := strconv.ParseUint(res.NextSequenceSend, 10, 64)
+	s.Require().NoErrorf(err, "next send sequence of client %s: %q", clientID, res.NextSequenceSend)
+	return sequence
+}
+
+// blockEvent is an event a block emitted outside any transaction, as the
+// chain's block results report it: from its EndBlock, where the provider's
+// epoch send runs and a passed proposal executes.
+type blockEvent struct {
+	Type       string
+	Attributes map[string]string
+}
+
+// providerBlockEvents returns the events the provider's block at height
+// emitted outside any transaction.
+func (s *baseTestSuite) providerBlockEvents(height int64) []blockEvent {
+	body, err := httpGet(fmt.Sprintf("%s/block_results?height=%d", s.providerRPCEndpoint(), height))
+	s.Require().NoErrorf(err, "failed to read the provider's block results at height %d", height)
+	var res struct {
+		Result struct {
+			FinalizeBlockEvents []struct {
+				Type       string `json:"type"`
+				Attributes []struct {
+					Key   string `json:"key"`
+					Value string `json:"value"`
+				} `json:"attributes"`
+			} `json:"finalize_block_events"`
+		} `json:"result"`
+	}
+	s.Require().NoErrorf(json.Unmarshal(body, &res), "failed to decode the provider's block results at height %d: %s", height, body)
+	events := make([]blockEvent, 0, len(res.Result.FinalizeBlockEvents))
+	for _, ev := range res.Result.FinalizeBlockEvents {
+		attributes := make(map[string]string, len(ev.Attributes))
+		for _, a := range ev.Attributes {
+			attributes[a.Key] = a.Value
+		}
+		events = append(events, blockEvent{Type: ev.Type, Attributes: attributes})
+	}
+	return events
+}
+
+// providerBlockEventHeights returns, in order, the height of every event of
+// the given type whose attributes match every entry of want that the
+// provider's blocks from height from to height to inclusive emitted outside
+// any transaction; a block emitting several lists once per event.
+func (s *baseTestSuite) providerBlockEventHeights(from, to int64, eventType string, want map[string]string) []int64 {
+	var heights []int64
+	for height := from; height <= to; height++ {
+		for _, ev := range s.providerBlockEvents(height) {
+			if ev.Type == eventType && blockEventMatches(ev, want) {
+				heights = append(heights, height)
+			}
+		}
+	}
+	return heights
+}
+
+// blockEventMatches reports whether every attribute in want is on the event
+// with that value.
+func blockEventMatches(ev blockEvent, want map[string]string) bool {
+	for key, value := range want {
+		if ev.Attributes[key] != value {
+			return false
+		}
+	}
+	return true
 }
 
 // queryProviderConsumerChains queries the provider for registered consumer chains.

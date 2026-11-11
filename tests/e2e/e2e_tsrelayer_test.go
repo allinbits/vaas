@@ -40,7 +40,7 @@ func (s *baseTestSuite) startTSRelayer() {
 
 	resource, err := s.dkrPool.RunWithOptions(
 		&dockertest.RunOptions{
-			Name:       fmt.Sprintf("%s-%s-ts-relayer", s.cfg.providerChainID, s.cfg.consumerChainID),
+			Name:       s.tsRelayerContainerName(),
 			Repository: tsRelayerImage,
 			Tag:        tsRelayerImageTag,
 			NetworkID:  s.dkrNet.Network.ID,
@@ -318,6 +318,31 @@ func (s *baseTestSuite) tsRelayerAddPath(ibcVersion string) {
 		"--st", "cosmos",
 		"--dt", "cosmos",
 		"--ibc-version", ibcVersion,
+	})
+}
+
+// tsRelayerAddExistingPath registers an IBC v2 path on clients the chains
+// already hold: providerClientID on the provider and consumerClientID on the
+// consumer, each the other's registered counterparty. The relay process
+// adopts the path on its next cycle, once the provider-side client tracks
+// the chain id the consumer node reports; it scans the path's packets from
+// genesis, so any in-flight backlog is delivered.
+func (s *baseTestSuite) tsRelayerAddExistingPath(providerClientID, consumerClientID string) {
+	s.T().Logf("ts-relayer: adding IBCv2 path on the existing clients %s (%s) and %s (%s)",
+		providerClientID, s.cfg.providerChainID, consumerClientID, s.cfg.consumerChainID)
+	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Minute)
+	defer cancel()
+	s.executeTSRelayerCommand(ctx, []string{
+		"add-existing-path",
+		"-s", s.cfg.providerChainID,
+		"-d", s.cfg.consumerChainID,
+		"--surl", "http://" + s.providerValRes[0].Container.Name[1:] + ":26657",
+		"--durl", "http://" + s.consumerValRes[0].Container.Name[1:] + ":26657",
+		"--sclient", providerClientID,
+		"--dclient", consumerClientID,
+		"--st", "cosmos",
+		"--dt", "cosmos",
+		"--ibc-version", IBCv2,
 	})
 }
 

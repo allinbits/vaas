@@ -136,7 +136,7 @@ func (s *IntegrationTestSuite) testValidatorSetSync() {
 }
 
 // extractPubKeys extracts the public key values from a validator set query result.
-func (s *IntegrationTestSuite) extractPubKeys(validators []*cmtservice.Validator) ([]string, []uint64) {
+func (s *baseTestSuite) extractPubKeys(validators []*cmtservice.Validator) ([]string, []uint64) {
 	var keys []string
 	var vp []uint64
 	for _, v := range validators {
