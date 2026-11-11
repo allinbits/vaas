@@ -313,7 +313,7 @@ func (s *ByzantineConsumerIntegrationTestSuite) requireConsumerNotServed(subject
 // requireRenameEvent finds, in the provider's blocks from height from on,
 // the update event of the consumer's rename from oldChainID to newChainID,
 // and returns the height of the block that executed it.
-func (s *ByzantineConsumerIntegrationTestSuite) requireRenameEvent(from int64, consumerID, oldChainID, newChainID string) int64 { //nolint:unparam // the suite drives one consumer; the helper stays generic
+func (s *ByzantineConsumerIntegrationTestSuite) requireRenameEvent(from int64, consumerID, oldChainID, newChainID string) int64 {
 	latest, err := s.queryProviderBlockHeight()
 	s.Require().NoError(err, "failed to read the provider height")
 	heights := s.providerBlockEventHeights(from, latest, "vaas_update_consumer", map[string]string{
@@ -330,7 +330,7 @@ func (s *ByzantineConsumerIntegrationTestSuite) requireRenameEvent(from int64, c
 // a delegation to val0 and requires the consumer's consensus validator set to
 // converge on the provider's, matched by consensus address through the
 // provider's key assignments.
-func (s *ByzantineConsumerIntegrationTestSuite) requireConsumerFollowsADelegation(consumerID string) { //nolint:unparam // the suite drives one consumer; the helper stays generic
+func (s *ByzantineConsumerIntegrationTestSuite) requireConsumerFollowsADelegation(consumerID string) {
 	providerValsBefore, err := s.queryProviderNetValidators()
 	s.Require().NoError(err, "failed to query the provider's validators before the delegation")
 	powerBefore := powerSum(s.valPowerMap(providerValsBefore))
@@ -401,7 +401,7 @@ func (s *ByzantineConsumerIntegrationTestSuite) recoverClientProposalJSON(subjec
 // renameConsumerProposalJSON builds the proposal that renames a launched
 // consumer to the chain id its declared client tracks: MsgUpdateConsumer
 // signed by the governance authority, the one signer allowed to.
-func (s *ByzantineConsumerIntegrationTestSuite) renameConsumerProposalJSON(consumerID, chainID string) string { //nolint:unparam // the suite drives one consumer; the helper stays generic
+func (s *ByzantineConsumerIntegrationTestSuite) renameConsumerProposalJSON(consumerID, chainID string) string {
 	return fmt.Sprintf(`{
   "messages": [{
     "@type": "/vaas.provider.v1.MsgUpdateConsumer",

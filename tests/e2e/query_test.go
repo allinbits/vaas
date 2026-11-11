@@ -159,7 +159,7 @@ func (s *baseTestSuite) consumerProviderClientID() string {
 
 // queryConsumerChainID returns the chain id the provider has a consumer
 // registered under.
-func (s *baseTestSuite) queryConsumerChainID(consumerID string) string { //nolint:unparam // the suites drive one consumer; the helper stays generic
+func (s *baseTestSuite) queryConsumerChainID(consumerID string) string {
 	stdout, _, err := s.dockerExec(s.providerValRes[0].Container.ID, []string{
 		providerBinary, "query", "vaasprovider", "consumer-chain", consumerID,
 		"--home", providerHomePath,
