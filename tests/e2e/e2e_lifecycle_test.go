@@ -717,7 +717,7 @@ func (s *baseTestSuite) providerConsumerPhaseAt(consumerID string, height int64)
 // firstProviderHeightInPhase returns the first provider height at which the
 // consumer read back in phase, given it was not at height before (a height
 // read before the transition was triggered) and is at the latest height.
-func (s *baseTestSuite) firstProviderHeightInPhase(consumerID, phase string, before int64) int64 {
+func (s *baseTestSuite) firstProviderHeightInPhase(consumerID, phase string, before int64) int64 { //nolint:unparam // the suites drive one consumer; the helper stays generic
 	latest, _ := s.providerLatestBlock()
 	return s.firstProviderHeightWhere(before, latest, func(height int64) bool {
 		return s.providerConsumerPhaseAt(consumerID, height) == phase
@@ -886,7 +886,7 @@ func (b byMaturity) Swap(i, j int) {
 
 // withheldFeeRecordFor returns the consumer's withheld fee record for the
 // validator with the given bech32 consensus address, if there is one.
-func (s *baseTestSuite) withheldFeeRecordFor(consumerID, consAddr string) (withheldFeeRecordJSON, bool) {
+func (s *baseTestSuite) withheldFeeRecordFor(consumerID, consAddr string) (withheldFeeRecordJSON, bool) { //nolint:unparam // the suites drive one consumer; the helper stays generic
 	return withheldFeeRecordOf(s.queryWithheldFeeRecords(consumerID), consAddr)
 }
 

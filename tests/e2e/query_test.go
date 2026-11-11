@@ -20,7 +20,7 @@ const (
 	phaseDeleted    = "CONSUMER_PHASE_DELETED"
 )
 
-func (s *baseTestSuite) queryProviderConsumerPhase(consumerID string) string { //nolint:unparam // the suite drives one consumer; the helper stays generic
+func (s *baseTestSuite) queryProviderConsumerPhase(consumerID string) string {
 	stdout, _, err := s.dockerExec(s.providerValRes[0].Container.ID, []string{
 		providerBinary, "query", "vaasprovider", "consumer-chain", consumerID,
 		"--home", providerHomePath,

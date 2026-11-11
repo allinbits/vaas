@@ -271,7 +271,7 @@ func (s *baseTestSuite) mustPendingEquivocations(consumerID string) []pendingEqu
 
 // pendingEquivocationsEmpty reports whether the consumer's queue reads back
 // empty; a failing query does not count as empty.
-func (s *baseTestSuite) pendingEquivocationsEmpty(consumerID string) bool {
+func (s *baseTestSuite) pendingEquivocationsEmpty(consumerID string) bool { //nolint:unparam // the suites drive one consumer; the helper stays generic
 	pending, err := s.queryPendingEquivocations(consumerID)
 	return err == nil && len(pending) == 0
 }
@@ -430,7 +430,7 @@ func (s *baseTestSuite) removalProposalJSON(consumerID, title string) string {
 
 // setConsumerRefusal records or withdraws val's refusal of the consumer and
 // waits for the tx to commit.
-func (s *baseTestSuite) setConsumerRefusal(consumerID string, refused bool) {
+func (s *baseTestSuite) setConsumerRefusal(consumerID string, refused bool) { //nolint:unparam // the suites drive one consumer; the helper stays generic
 	stdout, stderr, err := s.dockerExec(s.providerValRes[0].Container.ID, []string{
 		providerBinary, "tx", "vaasprovider", "set-consumer-refusal", consumerID, strconv.FormatBool(refused),
 		"--from", "val",
@@ -445,7 +445,7 @@ func (s *baseTestSuite) setConsumerRefusal(consumerID string, refused bool) {
 }
 
 // resumeProposalJSON builds a MsgResumeConsumer gov proposal body.
-func (s *baseTestSuite) resumeProposalJSON(consumerID, title string) string {
+func (s *baseTestSuite) resumeProposalJSON(consumerID, title string) string { //nolint:unparam // the suites drive one consumer; the helper stays generic
 	return fmt.Sprintf(`{
   "messages": [{
     "@type": "/vaas.provider.v1.MsgResumeConsumer",

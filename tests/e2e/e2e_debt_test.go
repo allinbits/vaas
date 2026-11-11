@@ -10,7 +10,7 @@ import (
 
 // queryConsumerFeePoolAddress returns the provider-side fee pool account for a
 // given consumer id by querying the provider chain.
-func (s *baseTestSuite) queryConsumerFeePoolAddress(consumerID string) string {
+func (s *baseTestSuite) queryConsumerFeePoolAddress(consumerID string) string { //nolint:unparam // the suites drive one consumer; the helper stays generic
 	stdout, _, err := s.dockerExec(s.providerValRes[0].Container.ID, []string{
 		providerBinary, "query", "vaasprovider", "consumer-chain", consumerID,
 		"--home", providerHomePath,
