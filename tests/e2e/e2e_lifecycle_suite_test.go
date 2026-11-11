@@ -1,0 +1,283 @@
+package e2e
+
+// e2e_lifecycle_suite_test.go contains the LifecycleIntegrationTestSuite, a
+// Docker-based e2e suite that walks one consumer through the back half of its
+// lifecycle on real chains: a refusal pause that freezes a pending
+// equivocation punishment and a resume that moves it past the pause, the
+// withheld-fee record a downtime accusation leaves across an epoch boundary,
+// the MaxPauseDuration auto-stop, the owner's fee-pool sweep once STOPPED, the
+// unbonding-delayed erasure to DELETED with the chain id released, and the
+// immediate erasure of consumers that never launched. The main suite proves
+// the mechanisms around a consumer that stays LAUNCHED for most of its run
+// and ends with a governance removal; this suite is built around the clocks
+// those transitions run on, so every one of them is short enough to observe
+// in a CI run, and every deadline is checked against chain data (the block
+// times at the heights where a phase or a queue entry changed), not against
+// the wall clock.
+//
+// Parameters (the constants below and patchProviderGenesis):
+//   - fast blocks on both chains (patchConfigToml, about a second), as in the
+//     liveness suite, so every wait below counts in seconds;
+//   - blocks_per_epoch 60 (about a minute) over a 15-block consumer downtime
+//     window: an epoch holds four windows, which is what makes the
+//     withheld-fee record deterministic (see
+//     testWithheldFeeRecordAcrossEpoch);
+//   - a 90s downtime challenge window and evidence max age, well above the
+//     window-plus-relay lag an accusation's anchored age reaches here;
+//   - a 45s equivocation execution delay and a 150s max pause duration: the
+//     thaw scenario's pause spans the end of the delay, and the auto-stop
+//     scenario waits the whole duration out;
+//   - a 300s provider unbonding: it bounds the STOPPED -> DELETED wait,
+//     keeps the relayer-derived client trusting periods (two thirds of it,
+//     200s) above the challenge horizon (180s) and above the longest pause a
+//     launched consumer sees here, and with a 0.9 grace fraction gives a
+//     270s liveness grace that covers the setup's first VSC sync with an
+//     epoch to spare;
+//   - the consumer registered from testdata/create_consumer_lifecycle.json
+//     carries the same 300s unbonding (it may not exceed the provider's and
+//     must exceed the challenge horizon) and a 120s safe-mode threshold,
+//     above an epoch, so a healthy consumer never sits in safe mode.
+//
+// Test ordering within TestLifecycleVAAS (each scenario leaves the state the
+// next one starts from):
+//  1. testFundFeePoolAndSweepLockedWhileLaunched - the owner funds the pool;
+//     a sweep is locked while LAUNCHED.
+//  2. testEquivocationThawAcrossPause - queue a punishment, pause by refusal
+//     across its maturity, resume by governance: executes_at moves by the
+//     pause and the punishment executes at the moved time.
+//  3. testWithheldFeeRecordAcrossEpoch - a silent validator's accusation
+//     spans an epoch boundary: its share is escrowed, the slash executes.
+//  4. testMaxPauseAutoStop - pause by refusal, wait out max_pause_duration:
+//     STOPPED on its own, the frozen record lapses unpaid, a resume is refused.
+//  5. testFeePoolSweepWhenStopped - only the owner's sweep returns the pool.
+//  6. testStoppedToDeleted - DELETED once the provider unbonding elapses; the
+//     chain id is free again.
+//  7. testPrelaunchRemoval - registered-only consumers are erased at once by
+//     their owner and by governance, their pools returned.
+
+import (
+	"fmt"
+	"strconv"
+	"testing"
+	"time"
+
+	"github.com/ory/dockertest/v3"
+	"github.com/stretchr/testify/suite"
+)
+
+const (
+	lifecycleProviderChainID = "provider-lifecycle"
+	lifecycleConsumerChainID = "consumer-lifecycle"
+	lifecycleDockerNetwork   = "vaas-lifecycle-testnet"
+
+	// Host port block: offset +200 from the main suite (26657/9090/1317/26656)
+	// and +100 from the liveness suite, so all three can run on one host.
+	lifecycleProviderRPCPort  = "26857"
+	lifecycleProviderGRPCPort = "9290"
+	lifecycleProviderRESTPort = "1517"
+	lifecycleProviderP2PPort  = "26856"
+
+	lifecycleConsumerRPCPort  = "26867"
+	lifecycleConsumerGRPCPort = "9292"
+	lifecycleConsumerRESTPort = "1527"
+	lifecycleConsumerP2PPort  = "26866"
+)
+
+// The provider parameters this suite's genesis carries; the scenarios derive
+// their deadlines and expected amounts from these.
+const (
+	// lifecycleBlocksPerEpoch is the VSC and fee-distribution cadence, in
+	// provider blocks: four consumer downtime windows.
+	lifecycleBlocksPerEpoch int64 = 60
+	// lifecycleSignedBlocksWindow is the consumer's tumbling downtime window,
+	// in consumer blocks.
+	lifecycleSignedBlocksWindow int64 = 15
+	// lifecycleFeesPerBlock is the per-block consumer fee amount, in feeDenom.
+	lifecycleFeesPerBlock int64 = 1000
+	// lifecycleDowntimeChallengeWindow is how long an accepted downtime
+	// accusation stays pending, and the escrow behind it claimable; also the
+	// evidence max age.
+	lifecycleDowntimeChallengeWindow = 90 * time.Second
+	// lifecycleEquivocationExecutionDelay is the delay between a verified
+	// equivocation's queue and its execution.
+	lifecycleEquivocationExecutionDelay = 45 * time.Second
+	// lifecycleMaxPauseDuration is how long a consumer may stay PAUSED
+	// before the auto-stop; it exceeds the thaw scenario's pause.
+	lifecycleMaxPauseDuration = 150 * time.Second
+	// lifecycleProviderUnbonding is the provider staking unbonding time,
+	// which is also the STOPPED -> DELETED delay.
+	lifecycleProviderUnbonding = 300 * time.Second
+	// lifecycleGovVotingPeriod is the provider gov voting period.
+	lifecycleGovVotingPeriod = 30 * time.Second
+	// lifecycleBlockTimeTolerance is the slack allowed where a chain time
+	// is compared to one derived from another block: one fast block.
+	lifecycleBlockTimeTolerance = 2 * time.Second
+)
+
+// LifecycleIntegrationTestSuite drives one consumer from LAUNCHED through
+// PAUSED, STOPPED and DELETED, then erases pre-launch consumers registered
+// under the released chain id.
+type LifecycleIntegrationTestSuite struct {
+	baseTestSuite
+
+	// ownerAddr is the consumer owner's provider account; it funds and
+	// sweeps the fee pools. feePoolAddr is consumer 0's fee pool.
+	ownerAddr   string
+	feePoolAddr string
+
+	// The permanently silent validator of the downtime scenario, kept by the
+	// auto-stop scenario to watch its withheld record lapse unpaid.
+	val2AccAddr   string
+	val2ConsAddr  string
+	val2FeeBefore int64
+
+	// The auto-stop's block, from which the deletion delay runs.
+	stopHeight int64
+	stoppedAt  time.Time
+
+	// The consumer registered under the released chain id, erased by the
+	// pre-launch removal scenario.
+	prelaunchConsumerID string
+}
+
+// TestLifecycleIntegrationTestSuite is the entry point for the lifecycle
+// e2e suite.
+func TestLifecycleIntegrationTestSuite(t *testing.T) {
+	suite.Run(t, new(LifecycleIntegrationTestSuite))
+}
+
+// secondsString renders a duration the way the genesis JSON carries one.
+func secondsString(d time.Duration) string {
+	return fmt.Sprintf("%ds", int64(d.Seconds()))
+}
+
+// SetupSuite brings up provider + consumer + ts-relayer with the short clocks
+// described in the file comment.
+func (s *LifecycleIntegrationTestSuite) SetupSuite() {
+	s.T().Log("setting up lifecycle e2e suite...")
+
+	s.cfg = baseSuiteConfig{
+		providerChainID:  lifecycleProviderChainID,
+		consumerChainID:  lifecycleConsumerChainID,
+		dockerNetwork:    lifecycleDockerNetwork,
+		providerInitName: "lifecycle-provider-init",
+		consumerInitName: "lifecycle-consumer-init",
+		tmpDirPrefix:     "vaas-lifecycle-",
+		providerRPCPort:  lifecycleProviderRPCPort,
+		providerGRPCPort: lifecycleProviderGRPCPort,
+		providerRESTPort: lifecycleProviderRESTPort,
+		providerP2PPort:  lifecycleProviderP2PPort,
+		consumerRPCPort:  lifecycleConsumerRPCPort,
+		consumerGRPCPort: lifecycleConsumerGRPCPort,
+		consumerRESTPort: lifecycleConsumerRESTPort,
+		consumerP2PPort:  lifecycleConsumerP2PPort,
+
+		consumerTemplateFile:        "create_consumer_lifecycle.json",
+		consumerTemplatePlaceholder: "CONSUMER_LIFECYCLE_CHAIN_ID",
+		govVotingPeriod:             lifecycleGovVotingPeriod,
+
+		patchProviderGenesis: func(appState map[string]any) {
+			s.genesisSection(appState, "gov", "params")["voting_period"] = secondsString(lifecycleGovVotingPeriod)
+
+			params := s.genesisSection(appState, "vaasprovider", "params")
+			params["blocks_per_epoch"] = strconv.FormatInt(lifecycleBlocksPerEpoch, 10)
+			params["fees_per_block_amount"] = strconv.FormatInt(lifecycleFeesPerBlock, 10)
+			params["equivocation_execution_delay"] = secondsString(lifecycleEquivocationExecutionDelay)
+			params["max_pause_duration"] = secondsString(lifecycleMaxPauseDuration)
+			// The liveness grace is unbonding x fraction; the fraction is
+			// raised so the grace covers the setup's first VSC sync and the
+			// epoch-long gaps between acks with room to spare.
+			params["liveness_grace_fraction"] = "0.9"
+			// downtime.slash_fraction must be set explicitly: the genesis
+			// JSON is unmarshaled straight into InfractionParameters, and
+			// an absent key becomes a zero fraction that caps every downtime
+			// slash at nothing. downtime_grace_period is irrelevant: the
+			// template's 2024 spawn time is years in the past. Evidence age
+			// must not exceed the challenge window (InfractionParameters
+			// .Validate), and their sum, the challenge horizon, must stay
+			// below the trusting period of the consumer client (two thirds
+			// of the consumer's 300s unbonding).
+			params["infraction_parameters"] = map[string]any{
+				"double_sign": map[string]any{
+					"slash_fraction": "0.050000000000000000",
+					"jail_duration":  "315360000s",
+					"tombstone":      true,
+				},
+				"downtime": map[string]any{
+					"slash_fraction": "0.010000000000000000",
+					"jail_duration":  "0s",
+					"tombstone":      false,
+				},
+				"downtime_grace_period":     "604800s",
+				"signed_blocks_window":      strconv.FormatInt(lifecycleSignedBlocksWindow, 10),
+				"min_signed_per_window":     "0.500000000000000000",
+				"downtime_challenge_window": secondsString(lifecycleDowntimeChallengeWindow),
+				"downtime_evidence_max_age": secondsString(lifecycleDowntimeChallengeWindow),
+			}
+
+			// The provider's own x/slashing must never jail the validators
+			// this suite bonds without a node (the equivocator and the
+			// silent validator): at fast blocks the default 100-block window
+			// would do so within minutes and drop them from the bonded set.
+			s.genesisSection(appState, "slashing", "params")["signed_blocks_window"] = "100000"
+
+			s.genesisSection(appState, "staking", "params")["unbonding_time"] = secondsString(lifecycleProviderUnbonding)
+		},
+
+		patchProviderConfigToml: s.patchConfigToml,
+		patchConsumerConfigToml: s.patchConfigToml,
+	}
+
+	s.cdc = makeCodec()
+
+	var err error
+
+	s.dkrPool, err = dockertest.NewPool("")
+	s.Require().NoError(err, "failed to create docker pool")
+	s.dkrPool.MaxWait = 5 * time.Minute
+
+	s.cleanupStaleContainers()
+
+	s.dkrNet, err = s.dkrPool.CreateNetwork(lifecycleDockerNetwork)
+	s.Require().NoError(err, "failed to create lifecycle docker network")
+
+	s.T().Log("step 1: initializing lifecycle provider chain...")
+	s.provider = &chain{id: s.cfg.providerChainID}
+	s.initAndStartProvider()
+
+	s.T().Log("step 2: registering consumer on lifecycle provider...")
+	s.registerConsumerOnProvider()
+
+	s.T().Log("step 3: fetching consumer genesis from lifecycle provider...")
+	consumerGenesisJSON := s.fetchConsumerGenesis()
+
+	s.T().Log("step 4: initializing lifecycle consumer chain...")
+	s.consumer = &chain{id: s.cfg.consumerChainID}
+	s.initAndStartConsumer(consumerGenesisJSON)
+
+	s.T().Log("step 5: starting ts-relayer for lifecycle suite...")
+	s.setupTSRelayer()
+
+	s.T().Log("step 5b: declaring the relayer-created clients (owner, both chains)...")
+	s.declareConsumerClients(lifecycleConsumerID)
+
+	s.T().Log("step 6: waiting for the consumer to sync its first VSC...")
+	s.waitForConsumerSync(lifecycleConsumerID)
+
+	s.ownerAddr = s.mustKeyAddress("owner")
+	s.feePoolAddr = s.queryConsumerFeePoolAddress(lifecycleConsumerID)
+
+	s.T().Log("lifecycle e2e suite setup complete!")
+}
+
+// TestLifecycleVAAS sequences the lifecycle scenarios; see the file comment
+// for what each one needs and leaves behind.
+func (s *LifecycleIntegrationTestSuite) TestLifecycleVAAS() {
+	s.testFundFeePoolAndSweepLockedWhileLaunched()
+	s.testEquivocationThawAcrossPause()
+	s.testWithheldFeeRecordAcrossEpoch()
+	s.testMaxPauseAutoStop()
+	s.testFeePoolSweepWhenStopped()
+	s.testStoppedToDeleted()
+	s.testPrelaunchRemoval()
+}

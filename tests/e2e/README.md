@@ -22,7 +22,7 @@ make test-e2e           # docker-build-all, then go test in this directory
 ([Makefile](../../Makefile) lines 305-322) runs:
 
 ```
-cd tests/e2e && go test -timeout=60m -v ./... --count=1
+cd tests/e2e && go test -timeout=90m -v ./... --count=1
 ```
 
 The chain image is built from
@@ -36,15 +36,16 @@ To run a single suite:
 ```
 cd tests/e2e && go test -run TestIntegrationTestSuite -v --count=1
 cd tests/e2e && go test -run TestLivenessIntegrationTestSuite -v --count=1
+cd tests/e2e && go test -run TestLifecycleIntegrationTestSuite -v --count=1
 ```
 
-## The two suites
+## The three suites
 
-Both are `testify` suites that embed a shared `baseTestSuite`
+All are `testify` suites that embed a shared `baseTestSuite`
 ([base_suite_test.go](base_suite_test.go)) providing container lifecycle, chain
 init, ts-relayer wiring, and exec/query helpers. Each suite launches its own
 isolated set of containers (distinct chain IDs, Docker network, and host ports)
-so the two can run on the same host without colliding.
+so they can run on the same host without colliding.
 
 ### `IntegrationTestSuite` -- the main suite
 
@@ -81,6 +82,27 @@ in order in `TestLivenessVAAS`, each with its doc comment;
 `equivocation_execution_delay` is 420s and the gov voting period 180s here,
 and the header comment of that file documents the timing rationale in detail.
 
+### `LifecycleIntegrationTestSuite` -- the consumer's end of life
+
+Entry point `TestLifecycleIntegrationTestSuite`
+([e2e_lifecycle_suite_test.go](e2e_lifecycle_suite_test.go)). This suite walks
+one consumer through `PAUSED`, `STOPPED` and `DELETED` on clocks short enough to
+observe: a refusal pause that freezes a pending equivocation punishment across
+its maturity and a governance resume that moves it by the pause's length, the
+withheld-fee record a silent validator's downtime accusation leaves at every
+epoch boundary (made deterministic by an epoch at least two downtime windows
+long), the `max_pause_duration` auto-stop with the frozen record lapsing unpaid,
+the owner's fee-pool sweep once `STOPPED`, the erasure to `DELETED` after the
+provider unbonding with the chain id released, and the immediate erasure of
+consumers that never launched. Every deadline is checked against the block
+times at the heights where the phase or the queue entry changed (found by
+bisection over historical queries), not the wall clock. The parameters and
+their rationale are in that file's header comment; the scenarios are in
+[e2e_lifecycle_test.go](e2e_lifecycle_test.go) and run in order in
+`TestLifecycleVAAS`. Its consumer is registered via
+`testdata/create_consumer_lifecycle.json` (300s unbonding, 120s safe-mode
+threshold). It takes about 20 minutes.
+
 ## File layout
 
 | File | Purpose |
@@ -90,6 +112,8 @@ and the header comment of that file documents the timing rationale in detail.
 | `e2e_setup_test.go` | `IntegrationTestSuite` + its `SetupSuite` / config |
 | `e2e_test.go` | `TestVAAS` ordered scenario list |
 | `e2e_liveness_suite_test.go` | `LivenessIntegrationTestSuite` + `TestLivenessVAAS` |
+| `e2e_lifecycle_suite_test.go` | `LifecycleIntegrationTestSuite` + `TestLifecycleVAAS` |
+| `e2e_lifecycle_test.go` | pause thaw, withheld-fee record, auto-stop, stopped sweep, deletion, pre-launch removal; block-time and historical-query helpers |
 | `e2e_tsrelayer_test.go` | ts-relayer container start/stop, `add-path`, relay control |
 | `e2e_vaas_test.go` | core VSC / valset-sync scenarios |
 | `e2e_debt_test.go` | fee-pool debt-gating scenario |
@@ -116,7 +140,8 @@ and the header comment of that file documents the timing rationale in detail.
    a new or existing `e2e_*.go` file. Use the base-suite helpers for container
    exec, chain queries, gov proposals, and ts-relayer control (start, pause,
    resume, `add-path`) rather than driving Docker directly.
-2. Call it from the ordered sequence in `TestVAAS` (or `TestLivenessVAAS`) at
+2. Call it from the ordered sequence in `TestVAAS` (or `TestLivenessVAAS`,
+   `TestLifecycleVAAS`) at
    the right point. Ordering matters: the suite shares one set of containers and
    one consumer across all scenarios, so place your test where the chain is in
    the state it needs, and before anything that tears that state down.
