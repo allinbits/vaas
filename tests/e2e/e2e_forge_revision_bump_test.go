@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"maps"
 	"slices"
+	"strconv"
 	"strings"
 	"time"
 
@@ -107,6 +108,19 @@ func (s *ByzantineConsumerIntegrationTestSuite) testRevisionBumpIsServedOnlyAfte
 		s.Require().Equalf(newChainID, s.queryConsumerChainID(consumerID), "the consumer must be registered under the renamed chain id")
 		renamedAt := s.requireRenameEvent(renameSubmittedAt, consumerID, oldChainID, newChainID)
 		s.T().Logf("the consumer was renamed from %s to %s at provider height %d", oldChainID, newChainID, renamedAt)
+
+		// The retired id is on record with the client's height at the rename,
+		// in the renamed chain's revision: below it, evidence signed over the
+		// old id is still verified (the double vote at the end of the drill).
+		previous := s.queryConsumerPreviousChainIDs(consumerID)
+		s.Require().Lenf(previous, 1, "one rename, one retired chain id: %+v", previous)
+		s.Require().Equal(oldChainID, previous[0].ChainID)
+		s.Require().Equal(strconv.FormatUint(clienttypes.ParseChainID(newChainID), 10), previous[0].Boundary.RevisionNumber,
+			"the boundary is in the renamed chain's revision")
+		boundaryHeight, err := strconv.ParseInt(previous[0].Boundary.RevisionHeight, 10, 64)
+		s.Require().NoError(err)
+		s.Require().Positive(boundaryHeight, "the boundary is the client's height at the rename")
+		s.Require().LessOrEqual(boundaryHeight, s.clientLatestHeight(subject), "the boundary cannot be past the client")
 
 		s.Require().Eventuallyf(func() bool { return s.nextSequenceSend(subject) > sentBefore },
 			2*time.Minute, 3*time.Second, "the provider sent no VSC packet over client %s after the rename", subject)

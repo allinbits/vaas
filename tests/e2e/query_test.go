@@ -173,6 +173,33 @@ func (s *baseTestSuite) queryConsumerChainID(consumerID string) string {
 	return res.ChainID
 }
 
+// previousChainIDJSON is one chain id a governance rename retired, with the
+// declared client's height at the rename, as the consumer-chain query lists
+// them.
+type previousChainIDJSON struct {
+	ChainID  string `json:"chain_id"`
+	Boundary struct {
+		RevisionNumber string `json:"revision_number"`
+		RevisionHeight string `json:"revision_height"`
+	} `json:"boundary"`
+}
+
+// queryConsumerPreviousChainIDs returns the chain ids the consumer carried
+// before its governance renames, with the boundary of each.
+func (s *baseTestSuite) queryConsumerPreviousChainIDs(consumerID string) []previousChainIDJSON {
+	stdout, _, err := s.dockerExec(s.providerValRes[0].Container.ID, []string{
+		providerBinary, "query", "vaasprovider", "consumer-chain", consumerID,
+		"--home", providerHomePath,
+		"--output", "json",
+	})
+	s.Require().NoErrorf(err, "failed to query consumer-chain %s", consumerID)
+	var res struct {
+		PreviousChainIDs []previousChainIDJSON `json:"previous_chain_ids"`
+	}
+	s.Require().NoErrorf(json.Unmarshal(stdout.Bytes(), &res), "failed to decode the consumer-chain response: %s", stdout.String())
+	return res.PreviousChainIDs
+}
+
 // nextSequenceSend returns the sequence the provider's next IBC v2 packet over
 // the client takes; it moves exactly when the provider sends a packet over it.
 func (s *baseTestSuite) nextSequenceSend(clientID string) uint64 {
