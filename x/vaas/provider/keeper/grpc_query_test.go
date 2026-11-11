@@ -9,6 +9,8 @@ import (
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
 
+	clienttypes "github.com/cosmos/ibc-go/v10/modules/core/02-client/types"
+
 	"cosmossdk.io/collections"
 	"cosmossdk.io/math"
 
@@ -42,6 +44,32 @@ func TestQueryConsumerChainIncludesFeePoolAddress(t *testing.T) {
 	chain, err := k.GetConsumerChain(ctx, consumerId)
 	require.NoError(t, err)
 	require.Equal(t, expected, chain.FeePoolAddress)
+}
+
+// TestQueryConsumerChainListsThePreviousChainIds: the chain ids a rename
+// retired come back with the client's height at the rename, none before one.
+func TestQueryConsumerChainListsThePreviousChainIds(t *testing.T) {
+	k, ctx, ctrl, _ := testkeeper.GetProviderKeeperAndCtx(t, testkeeper.NewInMemKeeperParams(t))
+	defer ctrl.Finish()
+
+	consumerId := k.FetchAndIncrementConsumerId(ctx)
+	k.SetConsumerChainId(ctx, consumerId, "consumer-2")
+	k.SetConsumerOwnerAddress(ctx, consumerId, "owner-address")
+	k.SetConsumerPhase(ctx, consumerId, providertypes.CONSUMER_PHASE_LAUNCHED)
+	require.NoError(t, k.SetConsumerMetadata(ctx, consumerId, providertypes.ConsumerMetadata{
+		Name: "name", Description: "description", Metadata: "metadata",
+	}))
+
+	res, err := k.QueryConsumerChain(ctx, &providertypes.QueryConsumerChainRequest{ConsumerId: consumerId})
+	require.NoError(t, err)
+	require.Empty(t, res.PreviousChainIds)
+
+	boundary := clienttypes.NewHeight(2, 500)
+	require.NoError(t, k.ConsumerPreviousChainIds.Set(ctx, collections.Join(consumerId, "consumer-1"), boundary))
+
+	res, err = k.QueryConsumerChain(ctx, &providertypes.QueryConsumerChainRequest{ConsumerId: consumerId})
+	require.NoError(t, err)
+	require.Equal(t, []providertypes.PreviousChainId{{ChainId: "consumer-1", Boundary: boundary}}, res.PreviousChainIds)
 }
 
 func TestQueryConsumerFeesPerBlock(t *testing.T) {

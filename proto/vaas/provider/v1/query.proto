@@ -330,6 +330,11 @@ message QueryConsumerChainResponse {
   // The deterministic provider-side account that must be funded
   // to cover per-block fees for this consumer chain.
   string fee_pool_address = 8;
+  // The chain ids the consumer carried before a governance rename, each with
+  // the declared client's height at that rename: evidence signed over one of
+  // them is still verified at or below its boundary.
+  repeated PreviousChainId previous_chain_ids = 9
+      [ (gogoproto.nullable) = false ];
 }
 
 message QueryConsumerGenesisTimeRequest {
