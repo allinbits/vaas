@@ -38,6 +38,11 @@ func noRestart(config *docker.HostConfig) {
 func (s *baseTestSuite) startTSRelayer() {
 	s.T().Log("starting ts-relayer container")
 
+	// The image's command is a relay process. The harness runs the one relay
+	// process it watches and restarts itself (startTSRelayerRelay), so the
+	// container only idles, under the image's entrypoint: that keeps the
+	// keyring session bus, which every exec'd relayer command joins, alive
+	// for the container's life.
 	resource, err := s.dkrPool.RunWithOptions(
 		&dockertest.RunOptions{
 			Name:       fmt.Sprintf("%s-%s-ts-relayer", s.cfg.providerChainID, s.cfg.consumerChainID),
@@ -46,6 +51,7 @@ func (s *baseTestSuite) startTSRelayer() {
 			NetworkID:  s.dkrNet.Network.ID,
 			User:       "root",
 			CapAdd:     []string{"IPC_LOCK"},
+			Cmd:        []string{"tail", "-f", "/dev/null"},
 		},
 		noRestart,
 	)
@@ -143,7 +149,10 @@ func (s *baseTestSuite) launchTSRelayerRelayProcess() {
 	ctx, cancel := context.WithTimeout(context.Background(), time.Minute)
 	defer cancel()
 
-	cmd := []string{"/bin/with_keyring", "ibc-v2-ts-relayer", "relay"}
+	// The relay process writes to the container's log, where the harness
+	// reads it (tsRelayerLogLines); a detached exec's own output goes
+	// nowhere.
+	cmd := []string{"sh", "-c", "exec /bin/with_keyring ibc-v2-ts-relayer relay >/proc/1/fd/1 2>/proc/1/fd/2"}
 	exec, err := s.dkrPool.Client.CreateExec(docker.CreateExecOptions{
 		Context:      ctx,
 		AttachStdout: true,
@@ -198,8 +207,9 @@ func (s *baseTestSuite) tsRelayerRelayReadsKeyring(logMark int) bool {
 	return false
 }
 
-// killTSRelayerRelayProcess stops a running relay process inside the relayer
-// container so it can be started again on a fresh keyring session.
+// killTSRelayerRelayProcess stops the relay process started by
+// launchTSRelayerRelayProcess so it can be started again on a fresh keyring
+// session; nothing else in the container runs under that command line.
 func (s *baseTestSuite) killTSRelayerRelayProcess() {
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 	defer cancel()
