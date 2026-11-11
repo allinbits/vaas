@@ -103,10 +103,11 @@ func (s *IntegrationTestSuite) testNodeFeeFloor() {
 		// counterparty is IBC core traffic, free before the pin, and pays the
 		// floor like everything else after it. The registration itself would
 		// be refused at execution (the client already has one); the fee floor
-		// refuses the transaction first.
+		// refuses the transaction first. The merkle prefix goes to the CLI
+		// base64-encoded, part by part: "ibc" and an empty second part.
 		stdout, stderr, err := s.dockerExec(s.consumerValRes[0].Container.ID, []string{
 			consumerBinary, "tx", "ibc", "client", "add-counterparty",
-			s.consumerPinnedProviderClientID(), s.queryConsumerClientID("0"), "ibc",
+			s.consumerPinnedProviderClientID(), s.queryConsumerClientID("0"), "aWJj", "",
 			"--from", "user",
 			"--home", consumerHomePath,
 			"--keyring-backend", "test",
