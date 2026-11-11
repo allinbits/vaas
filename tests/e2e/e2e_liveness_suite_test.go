@@ -141,7 +141,7 @@ func (s *LivenessIntegrationTestSuite) SetupSuite() {
 			// Long enough for a removal vote submitted after the liveness stop
 			// to still be open when the mid-outage punishment matures (see
 			// testDeferredEquivocationCancelledByVotePassedAfterStop).
-			s.genesisSection(appState, "gov", "params")["voting_period"] = "180s"
+			s.setGovVotingPeriod(appState)
 
 			params := s.genesisSection(appState, "vaasprovider", "params")
 			// One block per epoch so a VSC packet (and its ack) flows every

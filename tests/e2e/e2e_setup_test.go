@@ -89,7 +89,7 @@ func (s *IntegrationTestSuite) SetupSuite() {
 			// A fast voting period, still wide enough for the deferral tests
 			// to land a removal proposal inside it with room to spare on both
 			// sides of the punishment maturity they time it over.
-			s.genesisSection(appState, "gov", "params")["voting_period"] = "30s"
+			s.setGovVotingPeriod(appState)
 
 			// Set fast epoch for VSC and a small per-block fee amount. The fee
 			// denom is fixed to feeDenom at module wiring, only the amount is
