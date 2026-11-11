@@ -16,10 +16,14 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"fmt"
+	"os"
+	"path/filepath"
 	"strconv"
 	"strings"
 	"testing"
 	"time"
+
+	cmted25519 "github.com/cometbft/cometbft/crypto/ed25519"
 
 	sdk "github.com/cosmos/cosmos-sdk/types"
 )
@@ -45,6 +49,46 @@ func consAddrFromEd25519PubKey(pubKey []byte) string {
 	return sdk.ConsAddress(digest[:20]).String()
 }
 
+// ed25519PubKeyJSON renders a raw ed25519 public key as the inline Cosmos SDK
+// Any-JSON pubkey blob the key-taking commands expect (`tx vaasprovider
+// assign-consensus-key`, `tx staking rotate-cons-pubkey`, a create-validator
+// payload).
+func ed25519PubKeyJSON(pub []byte) string {
+	return fmt.Sprintf(`{"@type":"/cosmos.crypto.ed25519.PubKey","key":%q}`,
+		base64.StdEncoding.EncodeToString(pub))
+}
+
+// nodeConsensusKey reads the ed25519 key pair a node signs with from the
+// priv_validator_key.json in its home: the raw public key, and the private
+// key in the 64-byte form CometBFT's ed25519 type signs with.
+func nodeConsensusKey(t *testing.T, home string) (pub []byte, priv cmted25519.PrivKey) {
+	t.Helper()
+	raw, err := os.ReadFile(filepath.Join(home, "config", "priv_validator_key.json"))
+	if err != nil {
+		t.Fatalf("failed to read the consensus key in %s: %v", home, err)
+	}
+	var keyFile struct {
+		PubKey struct {
+			Value string `json:"value"`
+		} `json:"pub_key"`
+		PrivKey struct {
+			Value string `json:"value"`
+		} `json:"priv_key"`
+	}
+	if err := json.Unmarshal(raw, &keyFile); err != nil {
+		t.Fatalf("failed to decode the consensus key in %s: %v", home, err)
+	}
+	pub, err = base64.StdEncoding.DecodeString(keyFile.PubKey.Value)
+	if err != nil {
+		t.Fatalf("failed to decode the public key in %s: %v", home, err)
+	}
+	privBytes, err := base64.StdEncoding.DecodeString(keyFile.PrivKey.Value)
+	if err != nil {
+		t.Fatalf("failed to decode the private key in %s: %v", home, err)
+	}
+	return pub, cmted25519.PrivKey(privBytes)
+}
+
 // generateConsumerConsensusKey generates a fresh ed25519 keypair and returns
 // the public half as an inline Cosmos SDK Any-JSON pubkey blob (the format
 // `tx provider assign-consensus-key` expects) together with the consensus
@@ -59,16 +103,16 @@ func generateConsumerConsensusKey(t *testing.T) (pubKeyJSON, consAddr string) {
 
 // generateConsumerConsensusKeyPair is generateConsumerConsensusKey keeping
 // the private half: besides the assignable pubkey blob and the consensus
-// address, it returns the priv_validator_key.json document a consumer node
-// runs under to sign with the key (see e2e_multival_key_assignment_test.go).
+// address, it returns the priv_validator_key.json document a node runs under
+// to sign with the key (see e2e_multival_key_assignment_test.go and
+// e2e_multival_cons_key_rotation_test.go).
 func generateConsumerConsensusKeyPair(t *testing.T) (pubKeyJSON, consAddr string, privValidatorKeyJSON []byte) {
 	t.Helper()
 	pub, priv, err := ed25519.GenerateKey(rand.Reader)
 	if err != nil {
 		t.Fatalf("failed to generate ed25519 key: %v", err)
 	}
-	pubKeyJSON = fmt.Sprintf(`{"@type":"/cosmos.crypto.ed25519.PubKey","key":%q}`,
-		base64.StdEncoding.EncodeToString(pub))
+	pubKeyJSON = ed25519PubKeyJSON(pub)
 	digest := sha256.Sum256(pub)
 	privValidatorKeyJSON, err = json.Marshal(map[string]any{
 		"address": strings.ToUpper(hex.EncodeToString(digest[:20])),

@@ -48,8 +48,7 @@ const removalVoteDeferralMargin = 30 * time.Second
 func (s *baseTestSuite) createEquivocatingValidator(key, selfBondAmount string) (valoperAddr string, priv cmted25519.PrivKey) { //nolint:unparam // every scenario bonds its equivocator with the same stake; the helper stays generic
 	containerID := s.providerValRes[0].Container.ID
 	priv = cmted25519.GenPrivKey()
-	pubJSON := fmt.Sprintf(`{"@type":"/cosmos.crypto.ed25519.PubKey","key":%q}`,
-		base64.StdEncoding.EncodeToString(priv.PubKey().Bytes()))
+	pubJSON := ed25519PubKeyJSON(priv.PubKey().Bytes())
 
 	s.dockerExecMust(containerID, []string{
 		providerBinary, "keys", "add", key,
@@ -104,17 +103,12 @@ func (s *baseTestSuite) createEquivocatingValidator(key, selfBondAmount string) 
 	return valoperAddr, priv
 }
 
-// fabricateDoubleVote signs two conflicting precommits at the same height and
-// round with the validator's real consumer key and writes the evidence and a
-// minimal but well-formed infraction header into the provider container,
-// returning the in-container file paths. The header carries a validator set
-// with the signing key and a commit over its own hash so that it passes the
-// message's ValidateBasic; the handler matches its chain id, reads the
-// validator set for the pubkey, and verifies the votes' signatures, not the
-// commit's.
-func (s *baseTestSuite) fabricateDoubleVote(priv cmted25519.PrivKey, chainID string, height int64, tag string) (evidencePath, headerPath string) {
+// signConflictingPrecommits signs two precommits for different blocks at the
+// same height and round of chainID with priv, the pair a double-signing
+// validator holding the key produces. They come back ordered by block id,
+// the order DuplicateVoteEvidence requires.
+func (s *baseTestSuite) signConflictingPrecommits(priv cmted25519.PrivKey, chainID string, height int64, validatorIndex int32, at time.Time) (voteA, voteB *tmproto.Vote) {
 	valAddr := priv.PubKey().Address()
-	now := time.Now().UTC()
 
 	makeVote := func(hashByte byte) *tmproto.Vote {
 		blockHash := make([]byte, 32)
@@ -131,9 +125,9 @@ func (s *baseTestSuite) fabricateDoubleVote(priv cmted25519.PrivKey, chainID str
 				Hash:          blockHash,
 				PartSetHeader: tmproto.PartSetHeader{Total: 1, Hash: partHash},
 			},
-			Timestamp:        now,
+			Timestamp:        at,
 			ValidatorAddress: valAddr,
-			ValidatorIndex:   0,
+			ValidatorIndex:   validatorIndex,
 		}
 		sig, err := priv.Sign(tmtypes.VoteSignBytes(chainID, v))
 		s.Require().NoError(err, "failed to sign fabricated vote")
@@ -141,9 +135,24 @@ func (s *baseTestSuite) fabricateDoubleVote(priv cmted25519.PrivKey, chainID str
 		return v
 	}
 
+	return makeVote(0xAA), makeVote(0xBB)
+}
+
+// fabricateDoubleVote signs two conflicting precommits at the same height and
+// round with the validator's real consumer key and writes the evidence and a
+// minimal but well-formed infraction header into the provider container,
+// returning the in-container file paths. The header carries a validator set
+// with the signing key and a commit over its own hash so that it passes the
+// message's ValidateBasic; the handler matches its chain id, reads the
+// validator set for the pubkey, and verifies the votes' signatures, not the
+// commit's.
+func (s *baseTestSuite) fabricateDoubleVote(priv cmted25519.PrivKey, chainID string, height int64, tag string) (evidencePath, headerPath string) {
+	now := time.Now().UTC()
+
+	voteA, voteB := s.signConflictingPrecommits(priv, chainID, height, 0, now)
 	evidence := &tmproto.DuplicateVoteEvidence{
-		VoteA:            makeVote(0xAA),
-		VoteB:            makeVote(0xBB),
+		VoteA:            voteA,
+		VoteB:            voteB,
 		TotalVotingPower: 5,
 		ValidatorPower:   5,
 		Timestamp:        now,

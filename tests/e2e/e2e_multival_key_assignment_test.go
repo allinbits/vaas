@@ -28,14 +28,27 @@ func (s *MultiValidatorIntegrationTestSuite) assignConsumerKey(i int, pubKeyJSON
 	s.requireTxCommittedOn(container, providerBinary, providerHomePath, stdout.Bytes())
 }
 
+// installConsensusKey writes privValidatorKeyJSON as the priv_validator_key.json
+// of a stopped node's home, for the node to sign under once it starts again.
+func (s *MultiValidatorIntegrationTestSuite) installConsensusKey(home string, privValidatorKeyJSON []byte) {
+	keyPath := filepath.Join(home, "config", "priv_validator_key.json")
+	s.Require().NoErrorf(os.WriteFile(keyPath, privValidatorKeyJSON, 0o644), //nolint:gosec // the node runs as nonroot in its container and must read this bind-mounted file
+		"failed to install a consensus key in %s", home)
+}
+
 // restartConsumerNodeWithKey stops consumer node i, installs the given
 // priv_validator_key.json, and starts the node again under it.
 func (s *MultiValidatorIntegrationTestSuite) restartConsumerNodeWithKey(i int, privValidatorKeyJSON []byte) {
 	s.stopConsumerNode(i)
-	keyPath := filepath.Join(s.consumerHome(i), "config", "priv_validator_key.json")
-	s.Require().NoErrorf(os.WriteFile(keyPath, privValidatorKeyJSON, 0o644), //nolint:gosec // the node runs as nonroot in its container and must read this bind-mounted file
-		"failed to install consumer val%d's new consensus key", i)
+	s.installConsensusKey(s.consumerHome(i), privValidatorKeyJSON)
 	s.startConsumerNode(i)
+}
+
+// restartProviderNodeWithKey is restartConsumerNodeWithKey for provider node i.
+func (s *MultiValidatorIntegrationTestSuite) restartProviderNodeWithKey(i int, privValidatorKeyJSON []byte) {
+	s.stopProviderNode(i)
+	s.installConsensusKey(s.providerHome(i), privValidatorKeyJSON)
+	s.startProviderNode(i)
 }
 
 // testKeyAssignmentWithNodeRestart: val3 assigns a consumer key the test
