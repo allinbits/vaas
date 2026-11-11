@@ -131,7 +131,12 @@ from a launched consumer):
    consumer in one proposal: refused inside the client's trusting period and
    rolled back, passed once it has elapsed; the consumer is served again and
    nobody is punished;
-5. governance removes the consumer, which cancels the fabricated punishment.
+5. the consumer restarts under the next revision of its chain id; the
+   provider's client expires, governance recovers it onto a client of the
+   renamed chain, and the provider serves the consumer again only once
+   governance renames it too, while a double vote signed over the old chain
+   id is still accepted;
+6. governance removes the consumer, which cancels the fabricated punishments.
 
 `consumer-forge` ([forge/](forge/)) is the reference consumer app, unchanged,
 behind one lie: within a height range given by its environment
@@ -167,7 +172,8 @@ and `Test E2E Forge` checks; a skipped suite counts as passed.
 | `e2e_forge_downtime_test.go` | a forged downtime accusation challenged away |
 | `e2e_forge_equivocation_test.go` | a fabricated double-sign: immediate jail, deferred punishment |
 | `e2e_forge_fork_test.go` | a fabricated fork: frozen client, pause, no punishment, refused resume; the recovery and resume, refused inside the trusting period and passed after it |
-| `e2e_forge_removal_test.go` | the removal that cancels the fabricated punishment |
+| `e2e_forge_revision_bump_test.go` | a revision bump: expired client, recovery, served only after the governance rename, old-id evidence |
+| `e2e_forge_removal_test.go` | the removal that cancels the fabricated punishments |
 | `forge/` | `consumer-forge`, its module, its unit tests and its image |
 | `e2e_tsrelayer_test.go` | ts-relayer container start/stop, `add-path`, relay control |
 | `e2e_vaas_test.go` | core VSC / valset-sync scenarios |
