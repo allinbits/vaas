@@ -45,7 +45,7 @@ than defaulted field by field:
 
 - `initial_height` — the height at which the consumer chain starts (must be non-zero)
 - `spawn_time` — the provider block time at which the consumer is launched (zero means "not scheduled")
-- `unbonding_period` — unbonding period for the consumer (positive, and not above the provider's own unbonding period)
+- `unbonding_period` — unbonding period for the consumer (positive, not above the provider's own unbonding period, and with `unbonding_period * trusting_period_fraction` above the downtime challenge horizon, `downtime_evidence_max_age + downtime_challenge_window`)
 - `vaas_timeout_period` — timeout on the evidence packets the consumer sends the provider (positive, at most 24h)
 - `historical_entries` — number of historical entries to keep (positive)
 - `safe_mode_threshold` — how long the consumer tolerates a stale provider validator set before entering safe mode (positive, and strictly below the provider's liveness grace period)

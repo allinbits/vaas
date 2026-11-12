@@ -218,18 +218,19 @@ func (k msgServer) SubmitConsumerDoubleVoting(goCtx context.Context, msg *types.
 	return &types.MsgSubmitConsumerDoubleVotingResponse{}, nil
 }
 
-// validateConsumerInitParams enforces the two bounds on a consumer's
+// validateConsumerInitParams enforces the bounds on a consumer's
 // initialization parameters that can only be checked against provider state
 // (positivity and format are already checked by ValidateInitializationParameters).
-// Both are cross-chain settings the provider holds at create/update time, so it
+// They are cross-chain settings the provider holds at create/update time, so it
 // can validate them here against its own state -- it reads its unbonding once
 // and derives the grace from it:
 //
 //   - UnbondingPeriod must not exceed the provider's unbonding, so the consumer
-//     cannot outlive the provider's slashable window. No lower floor is imposed:
-//     an unbonding short enough to make the relayer-derived trusting period
-//     impractical is an operator concern (and useful for test/dev chains), not
-//     a protocol minimum.
+//     cannot outlive the provider's slashable window.
+//   - UnbondingPeriod * TrustingPeriodFraction must exceed the downtime
+//     challenge horizon (DowntimeEvidenceMaxAge + DowntimeChallengeWindow), or
+//     no client of the consumer could ever be declared (see SetConsumerClient).
+//     With the defaults that is an unbonding period above about 15.2 days.
 //   - SafeModeThreshold must be strictly shorter than the provider's liveness
 //     grace (unbonding * LivenessGraceFraction), so a lagging consumer enters
 //     safe mode -- and stops value-bearing work under a possibly-stale set --

@@ -45,11 +45,13 @@ binds: the client must exist, be an active tendermint client of the consumer's
 registered chain id, hold a registered IBC v2 counterparty (an IBC v2 packet
 can only route over a counterparty-linked client), and its trusting period must
 exceed the downtime challenge horizon, so every accepted downtime accusation
-stays disprovable by a header the client can still verify. Until a valid
-declaration lands the provider sends nothing (fail closed -- the liveness sweep
-owns a consumer that never gets served). Once bound, the client is latched
-permanently: expiry, freezing, or counterparty loss halt traffic rather than
-reopening the binding.
+stays disprovable by a header the client can still verify. Registration
+already refuses an unbonding period whose trusting period at
+`trusting_period_fraction` would not clear that horizon, since no client of
+such a consumer could be declared. Until a valid declaration lands the
+provider sends nothing (fail closed -- the liveness sweep owns a consumer that
+never gets served). Once bound, the client is latched permanently: expiry,
+freezing, or counterparty loss halt traffic rather than reopening the binding.
 
 **Consumer side.** The mirror declaration. The consumer genesis creates no
 client and seeds two facts from the provider: the provider's chain id and the
