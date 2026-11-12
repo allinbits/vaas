@@ -409,8 +409,8 @@ func TestGenesisRoundTripDowntimeState(t *testing.T) {
 	require.NoError(t, err)
 	validator := tmtypes.NewValidator(tmPK, 1)
 
-	addr1 := []byte("validator-addr-downtime-one")
-	addr2 := []byte("validator-addr-downtime-two")
+	addr1 := []byte("validator-downtime-1")
+	addr2 := []byte("validator-downtime-2")
 	bitmap1 := []byte{0xFF, 0x00}
 	bitmap2 := []byte{0x0F, 0xF0}
 	staged := vaastypes.DowntimeParams{
