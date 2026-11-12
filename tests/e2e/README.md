@@ -17,16 +17,20 @@ described below. Docker is required.
 
 ```
 make docker-build-all   # build the chain image (cosmos/vaas-e2e); ts-relayer image is pulled
-make test-e2e           # docker-build-all, then go test in this directory (every suite, in sequence)
+make test-e2e           # every suite, one at a time, each through test-e2e-suite
 make test-e2e-suite SUITE=TestLivenessIntegrationTestSuite   # one suite, as each CI job runs it
 ```
 
-`make test-e2e`
-([Makefile](../../Makefile) lines 305-322) runs:
+`make test-e2e-suite` ([Makefile](../../Makefile)) builds the image and runs:
 
 ```
-cd tests/e2e && go test -timeout=60m -v ./... --count=1
+cd tests/e2e && go test -timeout=60m -v -run '^$(SUITE)$' ./... --count=1
 ```
+
+It first refuses a `SUITE` that names no top-level test in this directory,
+since `go test -run` passes when it matches nothing. `make test-e2e` lists the
+`Test*Suite` functions and runs each through it, so every suite gets its own
+timeout; a failed suite does not stop the others.
 
 The chain image is built from
 [docker/e2e.Dockerfile](docker/e2e.Dockerfile) and contains both the provider
@@ -147,6 +151,11 @@ stop and both chains keep producing blocks. Scenarios run in order in
 3. If the scenario needs specific chain configuration, extend the suite's
    `patchProviderGenesis` (or add a `testdata` payload) rather than mutating
    state mid-run.
+
+A new suite (a top-level `Test*Suite` function) also goes into the e2e matrix
+in [.github/workflows/ci.yml](../../.github/workflows/ci.yml), or CI never runs
+it: `make check-e2e-matrix`, a step of CI's Build job, fails while a suite is
+missing from the matrix.
 
 The relayer is available at
 <https://github.com/allinbits/ibc-v2-ts-relayer>.
