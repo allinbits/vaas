@@ -78,6 +78,13 @@ func (s *IntegrationTestSuite) testGenesisRoundTrip() {
 		s.T().Log("bootstrapping new provider data dir from exported genesis...")
 		newDataDir := s.bootstrapRestartedProviderDir(oldDataDir, exportedJSON)
 
+		// 4b. The runbook's gate: the export must pass `genesis validate`,
+		//     which runs every module's GenesisState.Validate (a node does not).
+		//     The suite's 30 s voting period passes it because the e2e image
+		//     is built with atomone-sdk's MinVotingPeriod override.
+		s.T().Log("validating the exported provider genesis...")
+		s.validateGenesisInContainer(ctx, providerBinary, providerHomePath, newDataDir)
+
 		// 5. Purge the old container so its port bindings are released and
 		//    the teardown step doesn't try to purge a stopped container.
 		s.T().Log("purging old provider container...")
@@ -129,6 +136,55 @@ func (s *IntegrationTestSuite) testGenesisRoundTrip() {
 		}, time.Minute, 2*time.Second,
 			"the restarted provider does not hold eqval2's undelegation behind its pending punishment")
 	})
+}
+
+// validateGenesisInContainer runs `<binary> genesis validate` on the
+// genesis.json of a bootstrapped data dir, in an ephemeral container, and
+// fails the test with the command's output if it does not pass. This is the
+// check docs/genesis-restart-runbook.md tells operators to run before a
+// restart, so an export that a node would import but the CLI rejects (every
+// module's Validate runs here, not at InitChain) is caught in CI.
+func (s *IntegrationTestSuite) validateGenesisInContainer(ctx context.Context, binary, homePath, dataDir string) {
+	res, err := s.dkrPool.RunWithOptions(
+		&dockertest.RunOptions{
+			Name:       fmt.Sprintf("%s-validate-%d", binary, time.Now().UnixNano()),
+			Repository: e2eChainImage,
+			NetworkID:  s.dkrNet.Network.ID,
+			User:       "nonroot",
+			Mounts: []string{
+				fmt.Sprintf("%s:%s", dataDir, homePath),
+			},
+			Cmd: []string{
+				binary, "genesis", "validate", homePath + "/config/genesis.json",
+				"--home", homePath,
+			},
+		},
+		func(config *docker.HostConfig) {
+			config.RestartPolicy = docker.RestartPolicy{Name: "no"}
+		},
+	)
+	s.Require().NoError(err, "failed to start genesis validate container")
+	defer func() {
+		if perr := s.dkrPool.Purge(res); perr != nil {
+			s.T().Logf("failed to purge genesis validate container: %v", perr)
+		}
+	}()
+
+	exitCode, err := s.dkrPool.Client.WaitContainerWithContext(res.Container.ID, ctx)
+	s.Require().NoError(err, "genesis validate container wait failed")
+
+	var stdoutBuf, stderrBuf bytes.Buffer
+	err = s.dkrPool.Client.Logs(docker.LogsOptions{
+		Container:    res.Container.ID,
+		OutputStream: &stdoutBuf,
+		ErrorStream:  &stderrBuf,
+		Stdout:       true,
+		Stderr:       true,
+	})
+	s.Require().NoError(err, "failed to read genesis validate container logs")
+	s.Require().Equalf(0, exitCode,
+		"%s genesis validate failed (exit=%d)\nstdout:\n%s\nstderr:\n%s",
+		binary, exitCode, stdoutBuf.String(), stderrBuf.String())
 }
 
 // exportProviderGenesis launches an ephemeral container that mounts the

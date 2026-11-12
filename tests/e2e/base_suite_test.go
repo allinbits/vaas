@@ -228,6 +228,23 @@ func (s *baseTestSuite) genesisSection(appState map[string]any, path ...string) 
 	return section
 }
 
+// setGovVotingPeriod sets the provider's governance voting period to the
+// suite's and brings the gov periods that atomone-sdk validates against it
+// along: the quorum timeout stays below it, the voting period extension
+// covers the gap, and the two deposit throttlers update no less often than
+// it. Quorum checks are off (the default check count is zero) and the
+// throttlers only decay toward their floors on the clock, so the test
+// proposals see none of this.
+func (s *baseTestSuite) setGovVotingPeriod(appState map[string]any) {
+	period := fmt.Sprintf("%ds", int64(s.cfg.govVotingPeriod.Seconds()))
+	params := s.genesisSection(appState, "gov", "params")
+	params["voting_period"] = period
+	params["quorum_timeout"] = "0s"
+	params["max_voting_period_extension"] = period
+	s.genesisSection(appState, "gov", "params", "min_deposit_throttler")["update_period"] = period
+	s.genesisSection(appState, "gov", "params", "min_initial_deposit_throttler")["update_period"] = period
+}
+
 func (s *baseTestSuite) initAndStartProvider() {
 	// Create host directory for provider data
 	providerDir, err := os.MkdirTemp("", s.cfg.tmpDirPrefix+"provider-")

@@ -81,10 +81,10 @@ a set it cannot be sure the consumer holds. When queueing the epoch's packet it 
   discovered, or a prior send that failed -- leaves pending packets queued and `highestSent`
   unadvanced, so the acked/sent comparison alone would not catch it.
 - **The stored consumer validator set is empty.** There is nothing to diff against: the
-  consumer's first epoch, or the first epoch after a state-export restart, since the provider
-  does not export the per-consumer set. Diffing the live bonded set against an empty stored
-  set would emit only additions, never the power-0 removal for a validator that unbonded in
-  between, leaving it with consensus power on the consumer.
+  consumer's first epoch, or a hand-built genesis that omits the set (an export carries it, so
+  a state-export restart diffs against the set the provider last sent). Diffing the live bonded
+  set against an empty stored set would emit only additions, never the power-0 removal for a
+  validator that unbonded in between, leaving it with consensus power on the consumer.
 
 A snapshot carries the complete current validator set, flagged with `is_snapshot = true` on
 the packet. The consumer, on receiving a snapshot, **replaces** its set with it -- setting each

@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 
 	abci "github.com/cometbft/cometbft/abci/types"
+	"github.com/cometbft/cometbft/crypto/encoding"
 
 	ibctmtypes "github.com/cosmos/ibc-go/v10/modules/light-clients/07-tendermint"
 
@@ -57,6 +58,16 @@ func NewInitialGenesisState(cs *ibctmtypes.ClientState, consState *ibctmtypes.Co
 func (gs GenesisState) Validate() error {
 	if len(gs.Provider.InitialValSet) == 0 {
 		return errorsmod.Wrap(vaastypes.ErrInvalidGenesis, "initial validator set is empty")
+	}
+	// An undecodable pubkey panics ApplyVaasValidatorChanges at InitChain;
+	// catch it here, where a hand-edited genesis is validated.
+	for i, update := range gs.Provider.InitialValSet {
+		if _, err := encoding.PubKeyFromProto(update.PubKey); err != nil {
+			return errorsmod.Wrapf(vaastypes.ErrInvalidGenesis, "initial validator set entry %d has an undecodable consensus pubkey: %s", i, err)
+		}
+		if update.Power < 0 {
+			return errorsmod.Wrapf(vaastypes.ErrInvalidGenesis, "initial validator set entry %d has negative power %d", i, update.Power)
+		}
 	}
 	if err := gs.Params.Validate(); err != nil {
 		return err

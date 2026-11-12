@@ -46,7 +46,11 @@ consumer genesis validate consumer_exported.json
 
 Validation runs the module `GenesisState.Validate` checks. It is a CLI-only
 gate; nodes do not re-run it at boot, so a genesis that skips this step can
-still fail (or panic) at `InitChain`.
+still fail (or panic) at `InitChain`. Both e2e round trips run it on their
+exports, so an export the binaries produce is one they validate; the IBC
+module's step goes through `app/ibcshim` on both reference apps, as `InitChain`
+does, because ibc-go's check rejects the normal `07-tendermint-0` client
+pairing (ibc-go#9063).
 
 ## Provider module
 
@@ -54,15 +58,19 @@ still fail (or panic) at `InitChain`.
 
 - the global valset-update-id counter;
 - every consumer's `ConsumerState`: phase, owner, metadata, init params,
-  client id, consumer genesis, pending VSC packets, removal / pause-expiration
-  times, the liveness clock (`LastAckTime`, `HighestSentVscId`,
+  client id, consumer genesis, pending VSC packets, the validator set as last
+  sent to the consumer, removal / pause-expiration times, the pause reason and
+  time, the liveness clock (`LastAckTime`, `HighestSentVscId`,
   `HighestAckedVscId`), and the in-debt flag;
+- the refusal signals, the pending equivocation punishments with the
+  unbonding operations held and the jails closed behind them, and the record
+  of punished equivocations;
 - key-assignment state (per-consumer consensus keys, the reverse address index,
   and the addresses-to-prune queue);
 - params, per-consumer `fees_per_block` overrides, and fee-pool shares;
 - the downtime pipeline: pending downtime slashes, accepted-window records,
   window floors, epoch-downtime marks, withheld-fee records, epoch-share
-  records, the infraction params, and the previous-downtime-params snapshot.
+  records, and the previous-downtime-params snapshot.
 
 The in-debt flag is exported rather than re-derived because the only thing that
 recomputes it is the per-epoch fee distribution, which runs at epoch boundaries
@@ -71,24 +79,22 @@ current value, and that stamp is what gates transactions on the consumer, so a
 `PAUSED` consumer resumed before its first post-restart distribution would
 otherwise be sent a snapshot clearing a debt it still owes.
 
-Two things are deliberately **not** exported and are rebuilt at import:
+One thing is deliberately **not** exported and is rebuilt at import:
+**`LastProviderConsensusVals`** (the provider's record of the set it last gave
+CometBFT). `InitGenesis` rebuilds it from the staking module's bonded set --
+the same computation, over the same source, that `EndBlock` runs every block.
+The rebuilt record is exactly the set `InitChain` hands CometBFT, so the first
+post-restart `EndBlock` diffs against a matching baseline and emits no spurious
+update.
 
-- **`LastProviderConsensusVals`** (the provider's record of the set it last gave
-  CometBFT) is rebuilt at `InitGenesis` from the staking module's bonded set --
-  the same computation, over the same source, that `EndBlock` runs every block.
-  The rebuilt record is exactly the set `InitChain` hands CometBFT, so the first
-  post-restart `EndBlock` diffs against a matching baseline and emits no
-  spurious update.
-- **The per-consumer `ConsumerValSet`** (the provider's record of the set each
-  consumer last knew). Instead of exporting it, `QueueVSCPackets` treats an
-  empty stored valset for a launched consumer as *must-snapshot*: the first
-  post-restart epoch sends a full snapshot rather than a diff. This matters
-  because a validator can unbond during the outage; diffing the live bonded set
-  against an empty stored set would emit only additions and never the power-0
-  removal for the departed validator, leaving it with consensus power on the
-  consumer indefinitely. The snapshot reconciles the consumer's set regardless
-  of what it held before. (The same path also covers a consumer's very first
-  epoch, where a snapshot equals the all-additions diff it would produce.)
+The per-consumer validator set is restored as exported, so the next VSC packet
+to each consumer is computed against the set the provider last sent it, as it
+would have been without the restart. `QueueVSCPackets` still treats an empty
+stored set for a launched consumer as *must-snapshot*: that covers a
+consumer's very first epoch, where a snapshot equals the all-additions diff,
+and a hand-built genesis that omits the set, where diffing the live bonded set
+against nothing would emit only additions and never the power-0 removal for a
+validator that left the bonded set.
 
 Also re-derived, from the per-consumer fields above rather than carried
 separately: the spawn-time queue, the removal-time queue, the pause-expiration
@@ -140,10 +146,16 @@ For a coordinated stop-and-restart (state-export upgrade):
 4. Distribute the genesis, reset only Tendermint/CometBFT block state
    (`comet unsafe-reset-all` / a fresh data dir), keep validator and node keys,
    and start the new binaries.
-5. Restart the relayer against the same IBC clients. The provider rediscovers
-   each consumer client at the next epoch boundary and, per the must-snapshot
-   rule above, its first post-restart VSC to each launched consumer is a full
-   snapshot.
+5. Restart the relayer against the same IBC clients. The declared client of
+   each consumer is restored with its state and nothing is discovered. The
+   provider's first post-restart VSC to a launched consumer is a full snapshot
+   only if that consumer is behind when it is queued (an earlier packet still
+   unacknowledged or still queued); after a clean stop it is an ordinary diff
+   against the restored set, which still carries the power-0 removal of any
+   validator that left the bonded set since the last epoch. The consumer
+   validator sets are restored too, so accusations that arrive right after the
+   restart are judged against the set the consumer runs, not refused for an
+   empty one.
 
 **The relayer needs the restarted chain's pre-restart history.** Advancing an
 IBC client past the restart requires a client update whose trusted validators

@@ -420,7 +420,10 @@ func (s *baseTestSuite) patchConsumerSlashingParams() {
 		if !ok {
 			params = make(map[string]any)
 		}
-		params["signed_blocks_window"] = "5"
+		// The smallest window the slashing module's genesis validation
+		// accepts, so the consumer's export passes `genesis validate`; the
+		// consumer's own downtime tracking does not read it.
+		params["signed_blocks_window"] = "10"
 		params["min_signed_per_window"] = "0.050000000000000000"
 		params["slash_fraction_downtime"] = "0.000000000000000000"
 		params["downtime_jail_duration"] = "60s"

@@ -9,6 +9,8 @@ import (
 	"github.com/stretchr/testify/require"
 	"go.uber.org/mock/gomock"
 
+	abci "github.com/cometbft/cometbft/abci/types"
+
 	clienttypes "github.com/cosmos/ibc-go/v10/modules/core/02-client/types"
 
 	"cosmossdk.io/collections"
@@ -364,10 +366,10 @@ func TestGenesisRoundTrip(t *testing.T) {
 		pkA.SetConsumerPhase(ctxA, id, s.phase)
 		pkA.SetConsumerOwnerAddress(ctxA, id, owner)
 		require.NoError(t, pkA.SetConsumerMetadata(ctxA, id, md))
-		// init_params present for INITIALIZED..DELETED (every phase except REGISTERED).
-		if s.phase != providertypes.CONSUMER_PHASE_REGISTERED {
-			require.NoError(t, pkA.SetConsumerInitializationParameters(ctxA, id, ip))
-		}
+		// init_params present in every phase: CreateConsumer stores them
+		// (defaulted when the message carries none), so a REGISTERED consumer
+		// has them too.
+		require.NoError(t, pkA.SetConsumerInitializationParameters(ctxA, id, ip))
 		// A deleted consumer holds no chain id: its teardown released it (see
 		// DeleteConsumerChain), so seed the state deletion actually leaves.
 		if s.phase == providertypes.CONSUMER_PHASE_DELETED {
@@ -420,6 +422,24 @@ func TestGenesisRoundTrip(t *testing.T) {
 	require.NoError(t, pkA.SetConsumerLastAckTime(ctxA, keyedConsumerID, time.Unix(1_850_000_000, 0).UTC()))
 	pkA.SetConsumerHighestSentVscId(ctxA, keyedConsumerID, 7)
 	pkA.SetConsumerHighestAckedVscId(ctxA, keyedConsumerID, 5)
+
+	// A packet still in the send queue and the validator set as last sent:
+	// the first is what the next epoch's snapshot decision reads, the second
+	// is what evidence is judged against from the first post-restart block.
+	setValidator := cryptotestutil.NewCryptoIdentityFromIntSeed(77)
+	setKey := setValidator.TMProtoCryptoPublicKey()
+	queuedPacket := vaastypes.ValidatorSetChangePacketData{
+		ValidatorUpdates: []abci.ValidatorUpdate{{PubKey: setKey, Power: 10}},
+		ValsetUpdateId:   7,
+	}
+	pkA.AppendPendingVSCPackets(ctxA, keyedConsumerID, queuedPacket)
+	lastSentSet := []providertypes.ConsensusValidator{{
+		ProviderConsAddr: setValidator.SDKValConsAddress().Bytes(),
+		Power:            10,
+		PublicKey:        &setKey,
+		JoinHeight:       3,
+	}}
+	require.NoError(t, pkA.SetConsumerValSet(ctxA, keyedConsumerID, lastSentSet))
 
 	// Seed the debt flag on the PAUSED consumer: nothing re-derives it for a
 	// consumer outside LAUNCHED, and a resume queues an immediate snapshot VSC
@@ -734,6 +754,11 @@ func TestGenesisRoundTrip(t *testing.T) {
 
 	// The debt flag must reconnect too, and only for the consumer that carried
 	// it -- this is what buildVSCPacket stamps onto the next VSC packet.
+	require.Equal(t, []vaastypes.ValidatorSetChangePacketData{queuedPacket}, pkB.GetPendingVSCPackets(ctxB, keyedConsumerID),
+		"pending VSC packets lost across round-trip")
+	gotSet, err := pkB.GetConsumerValSet(ctxB, keyedConsumerID)
+	require.NoError(t, err)
+	require.Equal(t, lastSentSet, gotSet, "the consumer validator set lost across round-trip")
 	require.True(t, pkB.IsConsumerInDebt(ctxB, pausedConsumerID),
 		"consumer debt flag lost across round-trip")
 	require.False(t, pkB.IsConsumerInDebt(ctxB, keyedConsumerID),
