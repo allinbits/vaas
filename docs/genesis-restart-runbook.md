@@ -149,12 +149,13 @@ For a coordinated stop-and-restart (state-export upgrade):
 5. Restart the relayer against the same IBC clients. The declared client of
    each consumer is restored with its state and nothing is discovered. The
    provider's first post-restart VSC to a launched consumer is a full snapshot
-   only if that consumer was behind at the export (a packet unacknowledged or
-   still queued); after a clean stop it is an ordinary diff against the
-   restored set, which still carries the power-0 removal of any validator that
-   left the bonded set since the last epoch. The consumer validator sets are
-   restored too, so accusations that arrive right after the restart are
-   judged against the set the consumer runs, not refused for an empty one.
+   only if that consumer is behind when it is queued (an earlier packet still
+   unacknowledged or still queued); after a clean stop it is an ordinary diff
+   against the restored set, which still carries the power-0 removal of any
+   validator that left the bonded set since the last epoch. The consumer
+   validator sets are restored too, so accusations that arrive right after the
+   restart are judged against the set the consumer runs, not refused for an
+   empty one.
 
 **The relayer needs the restarted chain's pre-restart history.** Advancing an
 IBC client past the restart requires a client update whose trusted validators
