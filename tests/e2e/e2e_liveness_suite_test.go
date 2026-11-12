@@ -7,7 +7,8 @@ package e2e
 // while keeping a long-enough provider/consumer unbonding (600s) that the
 // relayer-derived IBC client trusting period stays viable: the ts-relayer
 // creates each client with two thirds of the tracked chain's staking
-// unbonding_time (the consumer reports its unbonding_period there), 400s here. Shrinking the grace via a short unbonding instead would collapse the
+// unbonding_time (the consumer reports its unbonding_period there), 400s
+// here. Shrinking the grace via a short unbonding instead would collapse the
 // trusting period and the relayer could never establish the clients.
 //
 // Two infrastructure measures keep the timing-sensitive assertions reliable:

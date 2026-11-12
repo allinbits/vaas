@@ -37,9 +37,10 @@ package e2e
 // (mirroring testForcedTimeoutSnapshotResync). The pause is phase-aligned to
 // the consumer's window boundaries so it spans exactly two window closes plus
 // the packet-timeout margin, keeping the total outage (~70-80s at nominal
-// block times) safely inside both the IBC client trusting period (~132s) and
-// the provider's liveness grace (~150s) -- overshooting either would kill the
-// suite's clients or sweep the consumer mid-test.
+// block times) safely inside both the IBC client trusting period (400s, two
+// thirds of the suite's 600s unbonding) and the provider's liveness grace
+// (~225s) -- overshooting either would kill the suite's clients or sweep the
+// consumer mid-test.
 
 import (
 	"bufio"
@@ -225,8 +226,8 @@ func (s *LivenessIntegrationTestSuite) testEvidenceRequeueOnTimeout() {
 
 		// Both closes must happen while paused. The caps also bound the total
 		// outage: past ~2.5s/block the pause would start flirting with the
-		// ~132s trusting period and ~150s liveness grace, and the suite's
-		// timing assumptions are broken anyway.
+		// ~225s liveness grace (the 400s trusting period is further out), and
+		// the suite's timing assumptions are broken anyway.
 		s.T().Log("waiting for two window closes while the relayer is paused...")
 		s.Require().Eventuallyf(func() bool {
 			h, err := s.queryConsumerBlockHeight()
