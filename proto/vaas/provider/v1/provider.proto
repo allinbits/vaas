@@ -163,9 +163,11 @@ message ConsensusValidator {
   // when a validator joined a given consumer, and it is the durable one: it
   // persists for as long as the validator stays in the set, whereas the
   // consumer's first-seen heights are local to that consumer and cleared
-  // every time a downtime window closes. It is state only, and is not carried
-  // in module genesis, in any query response, or in any packet the provider
-  // sends.
+  // every time a downtime window closes. Module genesis carries it, inside
+  // ConsumerState.validator_set; it appears in no query response and in no
+  // packet the provider sends. After a --for-zero-height restart it holds a
+  // height of the chain that was exported, not of the restarted one, until
+  // the validator leaves the set and rejoins.
   int64 join_height = 4;
 }
 

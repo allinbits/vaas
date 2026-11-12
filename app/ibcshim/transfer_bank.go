@@ -34,7 +34,7 @@ func NewTransferBankKeeper(k transfertypes.BankKeeper) TransferBankKeeper {
 }
 
 // SetDenomMetaData stores metadata the bank module's validation accepts: the
-// base denom is the one unit, and the display denom. ibc-go's description,
+// base denom becomes the one unit and the display denom. ibc-go's description,
 // name and symbol, which carry the trace path and the base denom, are kept.
 // Metadata that already validates is stored as given.
 func (k TransferBankKeeper) SetDenomMetaData(ctx context.Context, metadata banktypes.Metadata) {

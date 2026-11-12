@@ -70,7 +70,7 @@ pairing (ibc-go#9063).
 - params, per-consumer `fees_per_block` overrides, and fee-pool shares;
 - the downtime pipeline: pending downtime slashes, accepted-window records,
   window floors, epoch-downtime marks, withheld-fee records, epoch-share
-  records, the infraction params, and the previous-downtime-params snapshot.
+  records, and the previous-downtime-params snapshot.
 
 The in-debt flag is exported rather than re-derived because the only thing that
 recomputes it is the per-epoch fee distribution, which runs at epoch boundaries
@@ -79,24 +79,22 @@ current value, and that stamp is what gates transactions on the consumer, so a
 `PAUSED` consumer resumed before its first post-restart distribution would
 otherwise be sent a snapshot clearing a debt it still owes.
 
-Two things are deliberately **not** exported and are rebuilt at import:
+One thing is deliberately **not** exported and is rebuilt at import:
+**`LastProviderConsensusVals`** (the provider's record of the set it last gave
+CometBFT). `InitGenesis` rebuilds it from the staking module's bonded set --
+the same computation, over the same source, that `EndBlock` runs every block.
+The rebuilt record is exactly the set `InitChain` hands CometBFT, so the first
+post-restart `EndBlock` diffs against a matching baseline and emits no spurious
+update.
 
-- **`LastProviderConsensusVals`** (the provider's record of the set it last gave
-  CometBFT) is rebuilt at `InitGenesis` from the staking module's bonded set --
-  the same computation, over the same source, that `EndBlock` runs every block.
-  The rebuilt record is exactly the set `InitChain` hands CometBFT, so the first
-  post-restart `EndBlock` diffs against a matching baseline and emits no
-  spurious update.
-- **The per-consumer `ConsumerValSet`** (the provider's record of the set each
-  consumer last knew). Instead of exporting it, `QueueVSCPackets` treats an
-  empty stored valset for a launched consumer as *must-snapshot*: the first
-  post-restart epoch sends a full snapshot rather than a diff. This matters
-  because a validator can unbond during the outage; diffing the live bonded set
-  against an empty stored set would emit only additions and never the power-0
-  removal for the departed validator, leaving it with consensus power on the
-  consumer indefinitely. The snapshot reconciles the consumer's set regardless
-  of what it held before. (The same path also covers a consumer's very first
-  epoch, where a snapshot equals the all-additions diff it would produce.)
+The per-consumer validator set is restored as exported, so the next VSC packet
+to each consumer is computed against the set the provider last sent it, as it
+would have been without the restart. `QueueVSCPackets` still treats an empty
+stored set for a launched consumer as *must-snapshot*: that covers a
+consumer's very first epoch, where a snapshot equals the all-additions diff,
+and a hand-built genesis that omits the set, where diffing the live bonded set
+against nothing would emit only additions and never the power-0 removal for a
+validator that left the bonded set.
 
 Also re-derived, from the per-consumer fields above rather than carried
 separately: the spawn-time queue, the removal-time queue, the pause-expiration
@@ -149,9 +147,12 @@ For a coordinated stop-and-restart (state-export upgrade):
    (`comet unsafe-reset-all` / a fresh data dir), keep validator and node keys,
    and start the new binaries.
 5. Restart the relayer against the same IBC clients. The declared client of
-   each consumer is restored with its state, nothing is discovered, and per
-   the must-snapshot rule above the provider's first post-restart VSC to each
-   launched consumer is a full snapshot. The consumer validator sets are
+   each consumer is restored with its state and nothing is discovered. The
+   provider's first post-restart VSC to a launched consumer is a full snapshot
+   only if that consumer was behind at the export (a packet unacknowledged or
+   still queued); after a clean stop it is an ordinary diff against the
+   restored set, which still carries the power-0 removal of any validator that
+   left the bonded set since the last epoch. The consumer validator sets are
    restored too, so accusations that arrive right after the restart are
    judged against the set the consumer runs, not refused for an empty one.
 

@@ -274,11 +274,10 @@ func (k Keeper) QueueVSCPackets(ctx sdk.Context) error {
 		// hold once packets can be dropped or reordered; a snapshot converges
 		// regardless of arrival order.
 		//
-		// Also force a snapshot when the stored ConsumerValSet is empty: the
-		// provider does not export the per-consumer valset, so the first epoch
-		// after a state-export restart would otherwise diff the live bonded
-		// set against an empty stored set and emit only additions, never the
-		// power-0 removal for a validator that unbonded during the outage --
+		// Also force a snapshot when the stored ConsumerValSet is empty, as on
+		// a consumer's first epoch or after a hand-built genesis that omits
+		// the set: a diff against an empty set would emit only additions,
+		// never the power-0 removal for a validator that left the bonded set,
 		// leaving it with consensus power on the consumer indefinitely. A
 		// snapshot reconciles the consumer's set regardless.
 		isSnapshot := len(currentValSet) == 0 ||
