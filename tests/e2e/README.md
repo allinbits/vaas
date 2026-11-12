@@ -18,11 +18,11 @@ make docker-build-all   # build the chain image (cosmos/vaas-e2e); ts-relayer im
 make test-e2e           # docker-build-all, then go test in this directory
 ```
 
-`make test-e2e`
-([Makefile](../../Makefile) lines 305-322) runs:
+`make test-e2e` (the `test-e2e` target of the [Makefile](../../Makefile))
+runs:
 
 ```
-cd tests/e2e && go test -timeout=90m -v ./... --count=1
+cd tests/e2e && go test -timeout=120m -v ./... --count=1
 ```
 
 The chain image is built from
@@ -90,7 +90,7 @@ one consumer through `PAUSED`, `STOPPED` and `DELETED` on clocks short enough to
 observe: a refusal pause that freezes a pending equivocation punishment across
 its maturity and a governance resume that moves it by the pause's length, the
 withheld-fee record a silent validator's downtime accusation leaves at every
-epoch boundary (made deterministic by an epoch at least two downtime windows
+epoch boundary (made deterministic by an epoch at least four downtime windows
 long) and its lapse once that validator leaves the bonded set (unpaid, one
 challenge window after the last boundary that withheld, with its accusations
 still pending and executing later against its unbonding stake), the
@@ -105,7 +105,7 @@ their rationale are in that file's header comment; the scenarios are in
 [e2e_lifecycle_test.go](e2e_lifecycle_test.go) and run in order in
 `TestLifecycleVAAS`. Its consumer is registered via
 `testdata/create_consumer_lifecycle.json` (300s unbonding, 120s safe-mode
-threshold). It takes about 25 minutes.
+threshold). It takes about 20 minutes.
 
 ## File layout
 

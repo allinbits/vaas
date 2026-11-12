@@ -24,7 +24,10 @@ package e2e
 //     withheld-fee record deterministic (see
 //     testWithheldFeeRecordAcrossEpoch);
 //   - a 90s downtime challenge window and evidence max age, well above the
-//     window-plus-relay lag an accusation's anchored age reaches here;
+//     window-plus-relay lag an accusation's anchored age reaches here. The
+//     lapse scenario also needs the boundary after the departure, 60 blocks
+//     after the last one, to land before the record expires, 90s after that
+//     last boundary: blocks must average under 1.5s;
 //   - a 45s equivocation execution delay and a 150s max pause duration: the
 //     thaw scenario's pause spans the end of the delay, and the auto-stop
 //     scenario waits the whole duration out;
@@ -78,17 +81,18 @@ const (
 	lifecycleConsumerChainID = "consumer-lifecycle"
 	lifecycleDockerNetwork   = "vaas-lifecycle-testnet"
 
-	// Host port block: offset +200 from the main suite (26657/9090/1317/26656)
-	// and +100 from the liveness suite, so all three can run on one host.
-	lifecycleProviderRPCPort  = "26857"
-	lifecycleProviderGRPCPort = "9290"
-	lifecycleProviderRESTPort = "1517"
-	lifecycleProviderP2PPort  = "26856"
+	// Host port block: offset +400 from the main suite (26657/9090/1317/26656),
+	// clear of the blocks the other suites take, so the suites can run on
+	// one host.
+	lifecycleProviderRPCPort  = "27057"
+	lifecycleProviderGRPCPort = "9490"
+	lifecycleProviderRESTPort = "1717"
+	lifecycleProviderP2PPort  = "27056"
 
-	lifecycleConsumerRPCPort  = "26867"
-	lifecycleConsumerGRPCPort = "9292"
-	lifecycleConsumerRESTPort = "1527"
-	lifecycleConsumerP2PPort  = "26866"
+	lifecycleConsumerRPCPort  = "27067"
+	lifecycleConsumerGRPCPort = "9492"
+	lifecycleConsumerRESTPort = "1727"
+	lifecycleConsumerP2PPort  = "27066"
 )
 
 // The provider parameters this suite's genesis carries; the scenarios derive
