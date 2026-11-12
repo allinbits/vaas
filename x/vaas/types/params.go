@@ -96,8 +96,10 @@ func (p ConsumerParams) Validate() error {
 	}
 	// The pin authority the provider seeds arrives rendered under the
 	// provider's bech32 prefix, so only decodability is checked here; the
-	// authorization compares decoded address bytes. Empty is valid and leaves
-	// the pin to governance alone.
+	// authorization compares decoded address bytes. Empty is valid at genesis
+	// and leaves the pin to the chain's authority alone; on the reference
+	// consumer the owner is that authority's only signer, and an owner exec
+	// may not leave the owner empty.
 	if p.OwnerAddress != "" {
 		if _, _, err := bech32.DecodeAndConvert(p.OwnerAddress); err != nil {
 			return fmt.Errorf("owner_address is not a bech32 address: %s", err)

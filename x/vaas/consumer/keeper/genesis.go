@@ -27,7 +27,7 @@ func (k Keeper) InitGenesis(ctx sdk.Context, state *types.GenesisState) []abci.V
 		// movable at bootstrap, and a movable pin is front-runnable by whoever
 		// delivers a packet first. So a new chain starts with no pin, rejects
 		// every VSC packet (see enforcePinnedProviderClient), and waits for the
-		// owner seeded in the consumer params -- or governance -- to pin the
+		// owner seeded in the consumer params -- or the chain's authority -- to pin the
 		// relayer-created client explicitly via MsgSetProviderClient.
 
 		// The provider-authored client state still seeds the provider chain

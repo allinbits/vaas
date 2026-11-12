@@ -24,8 +24,10 @@ import (
 
 // Keeper defines the Cross-Chain Validation Consumer Keeper
 type Keeper struct {
-	// the address capable of executing a MsgUpdateParams message. Typically, this
-	// should be the x/gov module account.
+	// the address capable of executing a MsgUpdateParams message: the chain's
+	// authority, the consumer module account on the reference consumer app
+	// (which the owner acts as through MsgOwnerExec), or the x/gov module
+	// account on a consumer that wires governance.
 	authority string
 
 	storeService     corestoretypes.KVStoreService
@@ -203,7 +205,7 @@ func (k *Keeper) SetHooks(sh vaastypes.ConsumerHooks) *Keeper {
 }
 
 // SetProviderClientID sets the clientID for the client to the provider.
-// Written by MsgSetProviderClient, the owner's (or governance's) one-time
+// Written by MsgSetProviderClient, the owner's (or the chain's authority's) one-time
 // explicit pin of the relayer-created client, and at InitGenesis on a
 // restart, which restores the exported pin. A new chain starts with none;
 // enforcePinnedProviderClient (relay.go) documents why the pin never moves

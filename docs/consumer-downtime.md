@@ -464,8 +464,8 @@ stays challengeable for its whole window, whatever the parameters say.
   that simply reports the provider's chain id passes the chain-id check while carrying a
   different validator set. What stops it is that the provider client is never inferred from
   traffic at all: a new consumer starts with no provider client pinned and rejects every VSC
-  packet until the owner seeded into the consumer params (or governance) pins the
-  relayer-created client explicitly with `MsgSetProviderClient`, exactly once. Were the pin
+  packet until the owner seeded into the consumer params (or the chain's authority) pins
+  the relayer-created client explicitly with `MsgSetProviderClient`, exactly once. Were the pin
   ever movable by an incoming packet, such a packet would redirect every downtime evidence
   packet to a chain that discards them, and a large `valset_update_id` in the same packet
   would strand the real provider below the dedup watermark for good. Recovering an expired

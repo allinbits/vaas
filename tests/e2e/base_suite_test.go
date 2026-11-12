@@ -72,8 +72,8 @@ type baseSuiteConfig struct {
 	patchConsumerConfigToml func(path string)
 
 	// enableConsumerPhotonFees switches the consumer's photon-only fee policy
-	// on in its genesis (the reference consumer app wires no governance, so
-	// the flag cannot be flipped later) and launches the consumer node with
+	// on in its genesis (afterwards only the owner could flip it, through an
+	// owner exec) and launches the consumer node with
 	// zero min-gas-prices, the launch configuration the policy assumes: the
 	// node starts before the clients the voucher denom derives from exist,
 	// and the bootstrap traffic skips the floor anyway. The suite funds the

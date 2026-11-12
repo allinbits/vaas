@@ -14,7 +14,7 @@ import (
 var _ codectypes.UnpackInterfacesMessage = &MsgOwnerExec{}
 
 // ValidateBasic enforces that the signer is a bech32 address and that a client
-// id is present. Whether the signer is the seeded owner or the governance
+// id is present. Whether the signer is the seeded owner or the chain's
 // authority, and everything about the client itself, can only be judged
 // against state, so SetProviderClient decides.
 func (msg MsgSetProviderClient) ValidateBasic() error {

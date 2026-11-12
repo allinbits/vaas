@@ -36,7 +36,9 @@ const _ = proto.GoGoProtoPackageIsVersion3 // please upgrade the proto package
 
 // MsgUpdateParams is the Msg/UpdateParams request type
 type MsgUpdateParams struct {
-	// signer is the address of the governance account.
+	// authority is the address of the chain's authority: the consumer module
+	// account on the reference consumer, the x/gov module account where it is
+	// wired.
 	Authority string `protobuf:"bytes,1,opt,name=authority,proto3" json:"authority,omitempty"`
 	// params defines the x/provider parameters to update.
 	Params types.ConsumerParams `protobuf:"bytes,2,opt,name=params,proto3" json:"params"`
@@ -127,14 +129,14 @@ var xxx_messageInfo_MsgUpdateParamsResponse proto.InternalMessageInfo
 
 // MsgSetProviderClient pins the IBC client the consumer treats as the
 // provider, exactly once, at bootstrap. Only the owner seeded into the
-// consumer params by the provider (or the governance authority) may submit
-// it, and it is accepted only while no provider client is pinned: after the
-// pin is set it never moves, and recovering an expired or frozen pinned
-// client is governance's MsgRecoverClient, which substitutes fresh client
-// state under the same client id.
+// consumer params by the provider (or the chain's authority) may submit it,
+// and it is accepted only while no provider client is pinned: after the pin
+// is set it never moves, and recovering an expired or frozen pinned client
+// is MsgRecoverClient by the chain's authority, which substitutes fresh
+// client state under the same client id.
 type MsgSetProviderClient struct {
 	// the consumer-chain account submitting the pin: the owner seeded in the
-	// consumer params, or the governance authority.
+	// consumer params, or the chain's authority.
 	Signer string `protobuf:"bytes,1,opt,name=signer,proto3" json:"signer,omitempty"`
 	// the IBC client id to pin as the provider client. It must exist, be an
 	// Active tendermint client tracking the provider chain id pinned at

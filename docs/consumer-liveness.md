@@ -127,20 +127,26 @@ the provider's sweep would remove it.
 
 While stale (or while flagged in debt for unpaid fees), the consumer's transaction admission
 gate restricts incoming transactions to `/ibc.core.*` messages other than the raw ICS-20 v2
-send (`/ibc.core.channel.v2.MsgSendPacket`), `/cosmos.gov.*` messages, and bank `MsgSend`s
-made only of the photon voucher, rejecting every other application transaction. This bounds
-the damage of a possibly-stale set: the consumer refuses most value-bearing work under a
-validator set it cannot trust, and no value leaves it, while keeping the recovery path open
--- `/ibc.core.*` still admits the incoming VSC packets that let the consumer resync, and
-`/cosmos.gov.*` keeps governance available. The voucher send is the one value transfer
-admitted: on a consumer with `photon_fees_enabled` the relayer pays its deliveries in the
-voucher, and a relayer that ran out is refilled by any account holding vouchers. The rule
-cannot tell a refill from any other voucher payment between two accounts, so voucher
-payments keep working in safe mode, and the vouchers stay on the chain. The staleness clock
-is armed at genesis on a new chain, so a consumer that never receives a single VSC -- say
-its relayer never materializes -- enters safe mode once the threshold elapses from chain
-start, instead of running on its genesis validator set unrestricted forever; the relayer
-traffic that would deliver the first VSC is `/ibc.core.*` and passes the gate throughout.
+send (`/ibc.core.channel.v2.MsgSendPacket`), `/cosmos.gov.*` messages, and bank `MsgSend`s made
+only of the photon voucher, rejecting every other application transaction. This bounds the
+damage of a possibly-stale set: the consumer refuses most value-bearing work under a validator
+set it cannot trust, and no value leaves it, while keeping the recovery path open --
+`/ibc.core.*` still admits the incoming VSC packets that let the consumer resync and a client
+recovery (`MsgRecoverClient`, an owner exec carrying it included), and `/cosmos.gov.*` keeps a
+wired governance module's votes and deposits available. A governance proposal passes only when
+every message it carries would pass on its own, and a legacy content proposal never does, so
+neither governance nor the owner can upgrade the chain or change its parameters in safe mode: a
+fix that needs new code is an off-chain coordinated halt or hard fork. A proposal submitted
+before safe mode began still executes when its voting period ends, outside the gate. The
+voucher send is the one value transfer admitted: on a consumer with `photon_fees_enabled` the
+relayer pays its deliveries in the voucher, and a relayer that ran out is refilled by any
+account holding vouchers. The rule cannot tell a refill from any other voucher payment between
+two accounts, so voucher payments keep working in safe mode, and the vouchers stay on the
+chain. The staleness clock is armed at genesis on a new chain, so a consumer that never
+receives a single VSC -- say its relayer never materializes -- enters safe mode once the
+threshold elapses from chain start, instead of running on its genesis validator set
+unrestricted forever; the relayer traffic that would deliver the first VSC is `/ibc.core.*` and
+passes the gate throughout.
 
 On a photon-fees consumer, that relayer traffic also pays its fee in the voucher once the
 provider client is pinned, so the relayer's voucher balance is part of the recovery path.

@@ -44,9 +44,9 @@ type PhotonFeeKeeper interface {
 // photon_fees_enabled consumer param: while that param is false -- its default
 // -- the decorator is a full no-op. A chain opts in by setting the param in a
 // hand-authored consumer genesis (the provider-authored consumer genesis
-// always writes it off); after genesis only the params authority can change
-// it, and the reference consumer app wires no module able to sign as that
-// authority, which makes the genesis choice final there.
+// always writes it off); after genesis only the chain's authority can change
+// it, through MsgUpdateParams, which on the reference consumer app is the
+// owner through an owner exec.
 //
 // The switch belongs in the module params, i.e. in consensus state, rather than
 // in node configuration: the decorator has no CheckTx-only carve-out and so
@@ -57,7 +57,7 @@ type PhotonFeeKeeper interface {
 // The expected voucher denom is derived, per transaction, from the pinned
 // provider client id (see ExpectedPhotonDenom). That derivation is
 // deliberate: a new chain starts with no pin and no provider client at all;
-// the owner seeded into the consumer params (or governance) pins the
+// the owner seeded into the consumer params (or the chain's authority) pins the
 // relayer-created client exactly once via MsgSetProviderClient, which only
 // accepts an active client of the provider's chain id with a registered IBC
 // v2 counterparty, and from then on the pin never moves (see

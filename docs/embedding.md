@@ -200,32 +200,58 @@ way. ibc-go's `RecoverClient` handler compares `msg.Signer` against the keeper's
 authority and rejects anything else with `ErrUnauthorized`; an authority no one
 can act as makes an expired provider client on the consumer side permanent.
 
-**The reference consumer names the consumer module account**, x/consensus wired so the block parameters are among what it governs, and its owner
-(the account that registered the consumer on the provider, which the provider
-seeds into the consumer params) acts as it through `MsgOwnerExec`: the owner
-submits the messages, each signed by the consumer module account, and the
-consumer module executes them in order through the app's message router, all
-or nothing. Nothing else is impersonated: a carried message signed by any other
-account, the gov module's included, is refused, so the owner holds exactly the
-authorities the app grants the consumer module and no more. The admission and
-fee rules judge an owner exec by the messages it carries (a client recovery is
-IBC traffic whoever submits it; a parameter update is not), and the disabled
-modules stay disabled inside it. One state no exec may leave behind: the
-pinned provider client tracking a chain id other than the provider's, which a
-recovery could substitute and nothing could move back, so the pin's coherence
-rule holds for its recovery too. `query vaasconsumer owner-authority` prints
-the account to sign with and the owner that may submit. The owner hands the
-consumer over with the same message: the consumer's `owner_address` is a
-consumer param, carried in a `MsgUpdateParams`, and it is seeded once by the
-provider, so a change of owner on the provider (`MsgUpdateConsumer`) does not
-reach the consumer by itself.
+The reference consumer names the consumer module account, and wires
+x/consensus so the block parameters are among what that account governs. Its
+owner (the account that registered the consumer on the provider, which the
+provider seeds into the consumer params) acts as it through `MsgOwnerExec`:
+the owner submits the messages, each signed by the consumer module account,
+and the consumer module executes them in order through the app's message
+router, all or nothing. Nothing else is impersonated: a carried message signed
+by any other account, the gov module's included, is refused, so the owner
+holds exactly the authorities the app grants the consumer module and no more.
+The consumer module account is a blocked address in the bank keeper, so no
+funds can reach it for the owner to move. The admission and fee rules judge an
+owner exec by the messages it carries (a client recovery is IBC traffic
+whoever submits it; a parameter update is not), and the disabled modules stay
+disabled inside it. `query vaasconsumer owner-authority` prints the account to
+sign with and the owner that may submit.
+
+An exec is refused if it leaves either of two states behind: the pinned
+provider client tracking a chain id other than the provider's, which a
+recovery could substitute and nothing could move back (so the pin's coherence
+rule holds for its recovery too); or an `owner_address` nobody can sign as,
+empty, undecodable or the consumer module account itself, which would leave
+the chain with no authority for good.
+
+The owner hands the consumer over with the same message: the consumer's
+`owner_address` is a consumer param, carried in a `MsgUpdateParams`, and it is
+seeded once by the provider, so a change of owner on the provider
+(`MsgUpdateConsumer`) does not reach the consumer by itself. **A
+`MsgUpdateParams` carries the full parameter set**, not a diff: every field it
+leaves out is reset (`photon_fees_enabled` to off, `owner_address` to empty,
+which the exec then refuses), and only the two provider-owned downtime fields
+are kept from the store. Read the current set back first with
+`consumerd query vaasconsumer params -o json` and edit it.
 
 **A consumer with a community of its own wires `x/gov` and names the gov module
-account instead.** The owner then holds nothing after the pin, and the
-consumer's message filter, which allows `/cosmos.gov.*` while the consumer is
-restricted, lets that governance recover the chain. Passing the conventional
-gov address and wiring no gov module is the one combination that looks correct
-and cannot work: it is silent until recovery is needed, and then terminal.
+account instead.** The owner then holds nothing after the pin. Passing the
+conventional gov address and wiring no gov module is the one combination that
+looks correct and cannot work: it is silent until recovery is needed, and then
+terminal.
+
+**What restricted mode leaves the authority.** While a consumer is in debt or
+its validator set is stale (section 6), on-chain recovery needs only relayer
+traffic and, for an expired provider client, a client recovery: both pass,
+an owner exec carrying `MsgRecoverClient` included. A fix that needs new code
+is an off-chain coordinated halt or hard fork, not an on-chain upgrade, so
+restricted mode admits no upgrade and no parameter change, from the owner or
+from governance: a gov v1 proposal passes only when every message it carries
+would pass on its own, and a legacy content proposal (gov v1beta1
+`MsgSubmitProposal`, or `MsgExecLegacyContent`) is refused, since its content
+cannot be judged. Votes and deposits stay admitted. On a gov-wired consumer, a
+proposal submitted before restricted mode began still executes in `EndBlock`
+when its voting period ends, outside the ante, and restricted mode cannot
+bound it.
 
 ## 5. `x/evidence` on the provider
 
@@ -289,14 +315,15 @@ can satisfy it with the consumer keeper or its own adapter. It has three modes
   admitted -- the chain can be wired up and nothing else.
 - **While the consumer is in debt or its validator set is stale**, only
   `/ibc.core.` and `/cosmos.gov.` messages are admitted, rejected otherwise with
-  `ErrConsumerInDebt`. Note the narrower `/ibc.core.` prefix: ICS-20 v1
-  `MsgTransfer` is blocked in this mode, and so is the one `/ibc.core.`
-  message a user originates, an ICS-20 v2 transfer riding
-  `/ibc.core.channel.v2.MsgSendPacket`: restricted mode is for recovery, and
-  value stays in. One bank message passes: a `MsgSend` made only of the photon
-  voucher, the path by which a relayer that ran out of vouchers is refilled
-  by any account holding some. `MsgExec` is not unwrapped, so authz-wrapped
-  IBC messages are rejected too.
+  `ErrConsumerInDebt`; a governance proposal passes only when every message it
+  carries would, and a legacy content proposal never does (section 4). Note the
+  narrower `/ibc.core.` prefix: ICS-20 v1 `MsgTransfer` is blocked in this mode,
+  and so is the one `/ibc.core.` message a user originates, an ICS-20 v2
+  transfer riding `/ibc.core.channel.v2.MsgSendPacket`: restricted mode is for
+  recovery, and value stays in. One bank message passes: a `MsgSend` made only
+  of the photon voucher, the path by which a relayer that ran out of vouchers is
+  refilled by any account holding some. `MsgExec` is not unwrapped, so
+  authz-wrapped IBC messages are rejected too.
 - **Otherwise** the transaction passes through untouched.
 
 **Omitting it is silent, and it deletes two whole mechanisms.** `IsVSCStale` and
@@ -482,7 +509,7 @@ Two further order traps, both silent:
 | `providertypes.ModuleName` in `maccPerms` | **runtime panic, chain halt** | first consumer deletion, in `BeginBlock` -- unrecoverable without a binary fix |
 | `AppendSendRestriction(FeePoolSendRestriction())` | silent, user-triggerable | unattributable fee-pool balance |
 | `ProviderKeeper.Hooks()` on staking | silent | duplicate consumer consensus addresses; orphaned key assignments and stranded downtime/fee bookkeeping after rotation or removal; no immediate post-rotation snapshot |
-| Governance wired *and* set as IBC client authority | silent until recovery is needed, then terminal | `MsgRecoverClient` unreachable; a dead client is permanent |
+| An authority the chain can act as: `x/gov` wired and named, or the consumer module account named with `ConsumerKeeper.SetMessageRouter` | silent until recovery is needed, then terminal | `MsgRecoverClient` unreachable; a dead client is permanent (without the router, every `MsgOwnerExec` fails with "the app wires no message router") |
 | `x/evidence` on the provider | silent | provider-native double-signs unpunished |
 | `consumerante.NewMsgFilterDecorator` | silent | safe mode and debt gating cease to exist |
 | `consumerante.NewPhotonFeeDecorator` | silent | the photon-only fee policy ceases to exist; any denom pays |

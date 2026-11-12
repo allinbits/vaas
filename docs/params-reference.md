@@ -166,6 +166,7 @@ lines 67-75, `ConsumerParams.Validate` lines 77-107).
 | `signed_blocks_window` | int64 | `> 0` | `600` (provider-owned) |
 | `min_signed_per_window` | LegacyDec | `(0, 1)` | `0.5` (provider-owned) |
 | `photon_fees_enabled` | bool | none | `false` |
+| `owner_address` | bech32 address, any prefix | decodable, or empty | the consumer's owner on the provider, seeded at launch |
 
 **Where set:** these values arrive in the consumer genesis that the provider
 builds at launch (`MakeConsumerGenesis`), seeded from the per-consumer
@@ -178,9 +179,23 @@ liveness-facing subset (`vaas_timeout_period`, `unbonding_period`,
 `safe_mode_threshold`) is documented with its cross-chain bounds in
 [consumer-liveness.md](consumer-liveness.md) section 5.
 
+`owner_address` is the account that may pin the provider client
+(`MsgSetProviderClient`) and, on the reference consumer, act as the chain's
+authority through `MsgOwnerExec`. The provider seeds it once, from the
+consumer's registered owner, into the genesis it builds at launch, rendered
+under the provider's bech32 prefix (authorization compares the decoded
+address bytes); a later change of owner on the provider does not reach the
+consumer. On the consumer it changes only through `MsgUpdateParams` signed by
+the chain's authority: on the reference consumer, an owner exec by the
+current owner, which is refused if it would leave the owner empty,
+undecodable or the consumer module account itself. `MsgUpdateParams` carries
+the full set, not a diff, so read the current params back first
+(`consumerd query vaasconsumer params -o json`).
+
 `photon_fees_enabled` is consumer-local: the provider-authored genesis always
-writes it off, and a chain opts in through a hand-authored genesis or, where
-the embedding app wires a params authority, a later `MsgUpdateParams`. On, the
+writes it off, and a chain opts in through a hand-authored genesis or a later
+`MsgUpdateParams` from the chain's authority (on the reference consumer, the
+owner through `MsgOwnerExec`). On, the
 consumer's ante chain accepts user fees only in the one-hop `uphoton` voucher
 received over the pinned provider client
 ([photon_fee_ante.go](../x/vaas/consumer/ante/photon_fee_ante.go)); the node

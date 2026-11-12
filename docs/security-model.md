@@ -53,13 +53,14 @@ reopening the binding.
 
 **Consumer side.** The mirror declaration. The consumer genesis creates no
 client and seeds two facts from the provider: the provider's chain id and the
-owner's address. `MsgSetProviderClient`, signed by that owner (or governance,
-where the embedding app wires it), pins the provider client once, under the
-symmetric validations (existing, tendermint, chain-id match against the seeded
-value, active, counterparty-linked). Every later packet must arrive over the
-pinned client or it is rejected before any state changes. Until the pin lands,
-a message filter keeps the chain in bootstrap: only IBC messages, governance,
-and the pin message itself are accepted.
+owner's address. `MsgSetProviderClient`, signed by that owner (or the chain's
+authority: governance where the embedding app wires it, the consumer module
+account acting for the owner on the reference consumer), pins the provider
+client once, under the symmetric validations (existing, tendermint, chain-id
+match against the seeded value, active, counterparty-linked). Every later
+packet must arrive over the pinned client or it is rejected before any state
+changes. Until the pin lands, a message filter keeps the chain in bootstrap:
+only IBC messages, governance, and the pin message itself are accepted.
 
 Both bindings rest on the owner's signature rather than on anything inferred
 from delivered content, so no relayer, and no chain that merely copies the
