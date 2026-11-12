@@ -9,10 +9,11 @@ replace (
 	github.com/bytedance/sonic => github.com/bytedance/sonic v1.15.0
 	// TEMPORARY: pinned to atomone-hub/atomone-sdk main (7e840818, 2026-11-10).
 	// That head carries everything in v0.500.6 plus the pre-rotation staking
-	// hook (#137), the x/evidence fork that ignores evidence for unknown
-	// validators (#138) and the genesis round-trip of consensus-key rotation
-	// state (#140); the pseudo-version only sorts below the tag by name. Switch
-	// this replace, and the x/evidence one, to the next release tag.
+	// hook (#137), the change in atomone-sdk's x/evidence module that ignores
+	// evidence for unknown validators (#138) and the genesis round-trip of
+	// consensus-key rotation state (#140); the pseudo-version only sorts below
+	// the tag by name. Switch this replace, and the x/evidence one, to the next
+	// release tag.
 	github.com/cosmos/cosmos-sdk => github.com/atomone-hub/cosmos-sdk v0.500.3-0.20261110100055-7e840818630c
 	github.com/syndtr/goleveldb => github.com/syndtr/goleveldb v1.0.1-0.20210819022825-2ae1ddf74ef7
 )

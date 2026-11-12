@@ -35,7 +35,8 @@ import (
 //     relation at InitGenesis from the validators' current keys only, so the
 //     old address has no pubkey after the restart and x/evidence ignores the
 //     evidence ("expected public key for validator not found"). Before the
-//     restart the relation exists and the same evidence is punished.
+//     restart the relation exists and the same evidence is punished, which
+//     the test checks on a cached branch of the pre-export state.
 //
 // The third point is a gap in atomone-sdk, not in VAAS: either x/slashing's
 // InitGenesis also registers the pubkeys in x/staking's rotation history, or
@@ -83,6 +84,35 @@ func TestPreRotationEquivocationAfterRestart(t *testing.T) {
 	require.NoError(t, err, "the pre-rotation address must still resolve before the restart")
 	_, err = providerApp.SlashingKeeper.GetPubkey(ctx, rotating.consAddr.Bytes())
 	require.NoError(t, err, "before the restart slashing still knows the pre-rotation pubkey")
+	liveVal, err := providerApp.StakingKeeper.GetValidatorByConsAddr(ctx, newConsAddr)
+	require.NoError(t, err)
+	require.False(t, liveVal.IsJailed())
+
+	// CometBFT reports the double-sign under the address that signed it: the
+	// pre-rotation one.
+	doubleSign := abci.Misbehavior{
+		Type:             abci.MisbehaviorType_DUPLICATE_VOTE,
+		Validator:        abci.Validator{Address: rotating.consAddr.Bytes(), Power: 10},
+		Height:           infractionHeight,
+		Time:             genesisTime,
+		TotalVotingPower: 10 * numVals,
+	}
+
+	// Control: before the restart, x/evidence punishes that report. It runs on
+	// a cached branch of the committed state that is never written, so the
+	// export below still carries an unpunished validator.
+	controlCtx, _ := providerApp.NewUncachedContext(false, cmtproto.Header{
+		Height:  providerApp.LastBlockHeight() + 1,
+		ChainID: chainID,
+		Time:    rotationTime.Add(time.Second),
+	}).CacheContext()
+	controlCtx = controlCtx.WithCometInfo(baseapp.NewBlockInfo([]abci.Misbehavior{doubleSign}, nil, nil, abci.CommitInfo{}))
+	require.NoError(t, providerApp.EvidenceKeeper.BeginBlocker(controlCtx))
+	controlVal, err := providerApp.StakingKeeper.GetValidatorByConsAddr(controlCtx, newConsAddr)
+	require.NoError(t, err)
+	require.True(t, controlVal.IsJailed(), "before the restart the pre-rotation double-sign jails the validator")
+	require.True(t, providerApp.SlashingKeeper.IsTombstoned(controlCtx, newConsAddr), "before the restart the pre-rotation double-sign tombstones the validator")
+	require.True(t, controlVal.Tokens.LT(liveVal.Tokens), "before the restart the pre-rotation double-sign slashes the validator")
 
 	// Export at height and start a fresh app from the export, as a coordinated
 	// restart does.
@@ -118,19 +148,12 @@ func TestPreRotationEquivocationAfterRestart(t *testing.T) {
 	require.False(t, preVal.IsJailed())
 	preTokens := preVal.Tokens
 
-	// CometBFT reports the double-sign under the address that signed it: the
-	// pre-rotation one. The block must go through whatever the SDK does with
-	// the evidence.
+	// The same report after the restart. The block must go through whatever
+	// atomone-sdk does with the evidence.
 	_, err = restarted.FinalizeBlock(&abci.RequestFinalizeBlock{
-		Height: restarted.LastBlockHeight() + 1,
-		Time:   restartTime.Add(time.Second),
-		Misbehavior: []abci.Misbehavior{{
-			Type:             abci.MisbehaviorType_DUPLICATE_VOTE,
-			Validator:        abci.Validator{Address: rotating.consAddr.Bytes(), Power: 10},
-			Height:           infractionHeight,
-			Time:             genesisTime,
-			TotalVotingPower: 10 * numVals,
-		}},
+		Height:      restarted.LastBlockHeight() + 1,
+		Time:        restartTime.Add(time.Second),
+		Misbehavior: []abci.Misbehavior{doubleSign},
 	})
 	require.NoError(t, err, "evidence under a pre-rotation address must not fail the block")
 	_, err = restarted.Commit()
