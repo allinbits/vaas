@@ -404,6 +404,17 @@ func TestValidateGenesisState_DowntimeLists(t *testing.T) {
 		require.Contains(t, err.Error(), "span must be positive")
 	})
 
+	t.Run("zero matures at", func(t *testing.T) {
+		gs := build()
+		bad := validSlash(addr1)
+		bad.MaturesAt = time.Time{}
+		gs.PendingDowntimeSlashes = []types.PendingDowntimeSlash{bad}
+		gs.AcceptedDowntimeWindows = []types.AcceptedDowntimeWindowRecord{acceptedFor(addr1, 100, 115)}
+		err := gs.Validate()
+		require.Error(t, err)
+		require.Contains(t, err.Error(), "matures at cannot be zero")
+	})
+
 	t.Run("duplicate pending downtime slash", func(t *testing.T) {
 		gs := build()
 		gs.PendingDowntimeSlashes = []types.PendingDowntimeSlash{validSlash(addr1), validSlash(addr1)}

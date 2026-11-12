@@ -192,7 +192,9 @@ func validateConsumerFeePoolShares(
 
 // validatePendingDowntimeSlashes rejects malformed pending downtime slash
 // entries: empty provider cons addr, nil/negative slash tokens, a
-// missed-blocks bitmap whose length does not match ceil(span/8), orphan
+// missed-blocks bitmap whose length does not match ceil(span/8), a zero
+// matures_at (the entry would execute at the first sweep, skipping its
+// challenge window), orphan
 // consumer references, duplicate (consumer_id, provider_cons_addr,
 // window_end_height) entries -- which the keeper's collection key cannot
 // represent (the second entry would silently overwrite the first at
@@ -223,6 +225,9 @@ func validatePendingDowntimeSlashes(slashes []PendingDowntimeSlash, knownConsume
 		}
 		if p.Span <= 0 {
 			return fmt.Errorf("pending downtime slash: span must be positive (consumer=%d)", p.ConsumerId)
+		}
+		if p.MaturesAt.IsZero() {
+			return fmt.Errorf("pending downtime slash: matures at cannot be zero (consumer=%d)", p.ConsumerId)
 		}
 		if wantLen := int((p.Span + 7) / 8); len(p.MissedBlocksBitmap) != wantLen {
 			return fmt.Errorf(
