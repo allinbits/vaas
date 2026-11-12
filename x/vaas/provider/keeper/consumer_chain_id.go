@@ -1,6 +1,7 @@
 package keeper
 
 import (
+	"context"
 	"fmt"
 
 	clienttypes "github.com/cosmos/ibc-go/v10/modules/core/02-client/types"
@@ -179,7 +180,7 @@ func (k Keeper) latestRenameBoundary(ctx sdk.Context, consumerId uint64) (height
 // chainIdIsAPreviousOne reports whether any consumer carried chainId before a
 // rename: it stays an evidence domain of that consumer until its deletion,
 // so no other consumer may register it meanwhile (ChainIdInUse).
-func (k Keeper) chainIdIsAPreviousOne(ctx sdk.Context, chainId string) (bool, error) {
+func (k Keeper) chainIdIsAPreviousOne(ctx context.Context, chainId string) (bool, error) {
 	found := false
 	err := k.ConsumerPreviousChainIds.Walk(ctx, nil, func(key collections.Pair[uint64, string], _ clienttypes.Height) (bool, error) {
 		if key.K2() == chainId {

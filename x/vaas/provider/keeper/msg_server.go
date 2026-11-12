@@ -377,11 +377,11 @@ func (k msgServer) UpdateConsumer(goCtx context.Context, msg *types.MsgUpdateCon
 	consumerId := msg.ConsumerId
 
 	// The updatable phases are named here instead of asking IsConsumerActive,
-	// which counts a paused consumer as active. Paused is deliberately
-	// excluded: an update can rewrite the infraction parameters and
-	// initialization parameters that the challenge which caused the pause was
-	// judged under, and the resume path replays state built from them.
-	// Governance resumes or removes the consumer first, then updates it.
+	// so that stopped and deleted consumers stay out. A paused consumer is
+	// updatable like a launched one: its metadata, its ownership and its
+	// client declaration change, its initialization parameters are frozen
+	// (checked below), and only the governance authority renames it, to the
+	// chain id its declared client tracks (RenameLaunchedConsumer).
 	updatePhase := k.Keeper.GetConsumerPhase(ctx, consumerId)
 	if updatePhase != types.CONSUMER_PHASE_REGISTERED &&
 		updatePhase != types.CONSUMER_PHASE_INITIALIZED &&

@@ -167,9 +167,6 @@ message EpochShareRecord {
   ];
 }
 
-// The provider VAAS module's knowledge of consumer state.
-//
-// Note this type is only used internally to the provider VAAS module.
 // PreviousChainId is a chain id a consumer carried before a governance
 // rename, with the declared client's height at the rename.
 message PreviousChainId {
@@ -180,6 +177,9 @@ message PreviousChainId {
   ibc.core.client.v1.Height boundary = 2 [ (gogoproto.nullable) = false ];
 }
 
+// The provider VAAS module's knowledge of consumer state.
+//
+// Note this type is only used internally to the provider VAAS module.
 message ConsumerState {
   // ConsumerID is the internal numeric consumer id.
   uint64 consumer_id = 1;

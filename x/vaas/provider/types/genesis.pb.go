@@ -590,9 +590,6 @@ func (m *EpochShareRecord) GetDistributedAtUnixNano() int64 {
 	return 0
 }
 
-// The provider VAAS module's knowledge of consumer state.
-//
-// Note this type is only used internally to the provider VAAS module.
 // PreviousChainId is a chain id a consumer carried before a governance
 // rename, with the declared client's height at the rename.
 type PreviousChainId struct {
@@ -650,6 +647,9 @@ func (m *PreviousChainId) GetBoundary() types.Height {
 	return types.Height{}
 }
 
+// The provider VAAS module's knowledge of consumer state.
+//
+// Note this type is only used internally to the provider VAAS module.
 type ConsumerState struct {
 	// ConsumerID is the internal numeric consumer id.
 	ConsumerId uint64 `protobuf:"varint,1,opt,name=consumer_id,json=consumerId,proto3" json:"consumer_id,omitempty"`

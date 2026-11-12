@@ -64,7 +64,7 @@ func (k Keeper) ChainIdInUse(ctx context.Context, chainId string) (bool, error) 
 	}
 	// A chain id a consumer carried before a rename stays its evidence
 	// domain until its deletion (see RenameLaunchedConsumer).
-	return k.chainIdIsAPreviousOne(sdk.UnwrapSDKContext(ctx), chainId)
+	return k.chainIdIsAPreviousOne(ctx, chainId)
 }
 
 // SetConsumerChainId sets the chain id associated with this consumer id
