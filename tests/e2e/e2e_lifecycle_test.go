@@ -1129,7 +1129,7 @@ func (s *baseTestSuite) mustTxEventAttribute(broadcastOut []byte, eventType, key
 	return value
 }
 
- the bond status x/staking holds the
+// providerValidatorStatus returns the bond status x/staking holds the
 // validator in.
 func (s *baseTestSuite) providerValidatorStatus(valoper string) stakingtypes.BondStatus {
 	vals, err := s.queryProviderValidators()
