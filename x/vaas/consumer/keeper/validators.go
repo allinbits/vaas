@@ -3,11 +3,8 @@ package keeper
 import (
 	"context"
 	"errors"
-	"time"
 
 	abci "github.com/cometbft/cometbft/abci/types"
-
-	"cosmossdk.io/math"
 
 	cryptocodec "github.com/cosmos/cosmos-sdk/crypto/codec"
 	sdk "github.com/cosmos/cosmos-sdk/types"
@@ -60,102 +57,6 @@ func (k Keeper) ApplyVaasValidatorChanges(ctx context.Context, changes []abci.Va
 		ret = append(ret, change)
 	}
 	return ret
-}
-
-// IterateValidators - unimplemented on the consumer keeper but performs a no-op in order to pass the slashing module InitGenesis.
-// It is allowed since the condition verifying validator public keys in HandleValidatorSignature (x/slashing/keeper/infractions.go) is removed
-// therefore it isn't required to store any validator public keys to the slashing states during genesis.
-func (k Keeper) IterateValidators(context.Context, func(index int64, validator stakingtypes.ValidatorI) (stop bool)) error {
-	return nil
-}
-
-// Validator - unimplemented on the consumer keeper
-func (k Keeper) Validator(sdkCtx context.Context, addr sdk.ValAddress) (stakingtypes.ValidatorI, error) {
-	return stakingtypes.Validator{}, errors.New("unimplemented on the VAAS consumer keeper")
-}
-
-// IsValidatorJailed reports no validator as jailed: nothing on a consumer
-// jails, its validator set being the provider's over VSC packets.
-func (k Keeper) IsValidatorJailed(goCtx context.Context, addr sdk.ConsAddress) (bool, error) {
-	return false, nil
-}
-
-// stubValidator is the stakingtypes.ValidatorI the consumer keeper hands to
-// the SDK code that looks validators up by consensus address (the staking
-// query service relayers read). It is the zero staking validator except that
-// it answers GetConsAddr with the address it was looked up under, since a
-// consumer runs no consensus-key rotation and an address is therefore always
-// its own current identity (the same invariant ValidatorIdentifier encodes);
-// the zero validator panics there, its consensus pubkey Any being nil.
-type stubValidator struct {
-	stakingtypes.Validator
-	consAddr sdk.ConsAddress
-}
-
-func (v stubValidator) GetConsAddr() ([]byte, error) {
-	return v.consAddr, nil
-}
-
-// ValidatorByConsAddr returns a stub validator echoing the queried address;
-// see stubValidator.
-func (k Keeper) ValidatorByConsAddr(_ context.Context, addr sdk.ConsAddress) (stakingtypes.ValidatorI, error) {
-	return stubValidator{consAddr: addr}, nil
-}
-
-// ValidatorIdentifier maps a consensus address to the identifier the slashing
-// module tracks it under. The consumer runs no real staking and no consensus-key
-// rotation, so the address is its own identifier.
-func (k Keeper) ValidatorIdentifier(_ context.Context, consAddr sdk.ConsAddress) (sdk.ConsAddress, error) {
-	return consAddr, nil
-}
-
-// Calls SlashWithInfractionReason with Infraction_INFRACTION_UNSPECIFIED.
-// ConsumerKeeper must implement StakingKeeper interface.
-// This function should not be called anywhere
-func (k Keeper) Slash(ctx context.Context, addr sdk.ConsAddress, infractionHeight, power int64, slashFactor math.LegacyDec) (math.Int, error) {
-	return k.SlashWithInfractionReason(ctx, addr, infractionHeight, power, slashFactor, stakingtypes.Infraction_INFRACTION_UNSPECIFIED)
-}
-
-// SlashWithInfractionReason satisfies the staking keeper interface the
-// consumer keeper stands in for. Nothing on a consumer calls it (no
-// x/slashing is wired); VAAS-owned tumbling-window tracking (downtime.go) is
-// the sole source of downtime evidence sent to the provider, so this method
-// never queues an evidence packet and only logs a request.
-func (k Keeper) SlashWithInfractionReason(goCtx context.Context, addr sdk.ConsAddress, infractionHeight, power int64, slashFactor math.LegacyDec, infraction stakingtypes.Infraction) (math.Int, error) {
-	ctx := sdk.UnwrapSDKContext(goCtx)
-
-	k.Logger(ctx).Info("slash request received but not forwarded",
-		"validator", addr.String(),
-		"infraction_height", infractionHeight,
-		"infraction", infraction.String(),
-	)
-
-	return math.ZeroInt(), nil
-}
-
-// Jail - unimplemented on the consumer keeper
-//
-// This method should be a no-op for consumer chains.
-func (k Keeper) Jail(context.Context, sdk.ConsAddress) error { return nil }
-
-// Unjail - no-op on the consumer keeper
-func (k Keeper) Unjail(sdkCtx context.Context, addr sdk.ConsAddress) error {
-	return nil
-}
-
-// Delegation - unimplemented on the consumer keeper
-func (k Keeper) Delegation(sdkCtx context.Context, addr sdk.AccAddress, valAddr sdk.ValAddress) (stakingtypes.DelegationI, error) {
-	return stakingtypes.Delegation{}, errors.New("unimplemented on the VAAS consumer keeper")
-}
-
-// MaxValidators - unimplemented on the consumer keeper
-func (k Keeper) MaxValidators(context.Context) (uint32, error) {
-	panic("unimplemented on the VAAS consumer keeper")
-}
-
-// UnbondingTime returns consumer unbonding period, satisfying the staking keeper interface
-func (k Keeper) UnbondingTime(goCtx context.Context) (time.Duration, error) {
-	return k.GetUnbondingPeriod(goCtx), nil
 }
 
 // GetHistoricalInfo gets the historical info at a given height
@@ -265,20 +166,14 @@ func (k Keeper) MustGetCurrentValidatorsAsABCIUpdates(ctx context.Context) []abc
 	return valUpdates
 }
 
-// implement interface method needed for x/genutil in sdk v47
-// returns empty updates and err
+// ApplyAndReturnValidatorSetUpdates satisfies x/genutil's StakingKeeper, the
+// one staking interface the consumer keeper stands in for (the consumer runs
+// no staking module): genutil's InitGenesis calls it after delivering the
+// genesis transactions, when there are any. It returns no updates, since the
+// consumer's validator set comes from the VAAS genesis and the provider's VSC
+// packets.
 func (k Keeper) ApplyAndReturnValidatorSetUpdates(context.Context) (updates []abci.ValidatorUpdate, err error) {
 	return
-}
-
-// GetAllValidators is needed to implement StakingKeeper as expected by the Slashing module since cosmos-sdk/v0.47.x.
-// Use GetAllVaasValidator in places where access to all VAAS validators is needed.
-func (k Keeper) GetAllValidators(ctx context.Context) ([]stakingtypes.Validator, error) {
-	return []stakingtypes.Validator{}, nil
-}
-
-func (k Keeper) GetBondedValidatorsByPower(goCtx context.Context) ([]stakingtypes.Validator, error) {
-	return []stakingtypes.Validator{}, nil
 }
 
 // computeReplaceUpdates turns a complete target set into the updates needed to
