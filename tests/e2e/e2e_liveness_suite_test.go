@@ -5,8 +5,9 @@ package e2e
 // period is unbonding * LivenessGraceFraction; this suite sets the fraction to
 // 0.375 in provider genesis so the grace (~225s) is observable within a CI run,
 // while keeping a long-enough provider/consumer unbonding (600s) that the
-// relayer-derived IBC client trusting period (unbonding * 0.66 = ~396s) stays
-// viable. Shrinking the grace via a short unbonding instead would collapse the
+// relayer-derived IBC client trusting period stays viable: the ts-relayer
+// creates each client with two thirds of the tracked chain's staking
+// unbonding_time (the consumer reports its unbonding_period there), 400s here. Shrinking the grace via a short unbonding instead would collapse the
 // trusting period and the relayer could never establish the clients.
 //
 // Two infrastructure measures keep the timing-sensitive assertions reliable:
@@ -103,7 +104,7 @@ const (
 // LivenessIntegrationTestSuite mirrors IntegrationTestSuite with two key
 // differences:
 //   - provider genesis is patched with unbonding_time "600s" and
-//     liveness_grace_fraction "0.375" (grace ~225s, trusting period ~396s)
+//     liveness_grace_fraction "0.375" (grace ~225s, trusting period 400s)
 //   - consumer is registered via create_consumer_short_unbonding.json
 //     (600s unbonding, 20s vaas_timeout, 5s safe_mode_threshold)
 type LivenessIntegrationTestSuite struct {
@@ -177,8 +178,8 @@ func (s *LivenessIntegrationTestSuite) SetupSuite() {
 			// Shrink the liveness grace fraction so the grace period
 			// (unbonding * fraction = 600s * 0.375 = ~225s) is observable in
 			// a CI run, while keeping the unbonding itself long enough that
-			// the relayer-derived IBC client trusting period (unbonding *
-			// 0.66 = ~396s) clears the declaration check: the declared
+			// the relayer-derived IBC client trusting period (two thirds of
+			// the unbonding, 400s) clears the declaration check: the declared
 			// consumer client's trusting period must exceed the downtime
 			// challenge horizon (180s + 180s below).
 			//

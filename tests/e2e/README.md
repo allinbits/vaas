@@ -79,10 +79,12 @@ Entry point `TestLivenessIntegrationTestSuite`
 genesis so the grace (~225s), safe mode, forced VSC timeout + snapshot resync,
 evidence re-queue after a timeout, and auto-sweep removal are all observable
 within a CI run, while keeping the relayer-derived client trusting period
-(~396s) viable. It uses fast blocks and a
-first-sync gate to keep the timing-sensitive assertions reliable. Its consumer
-is registered via `testdata/create_consumer_short_unbonding.json`. Scenarios run
-in order in `TestLivenessVAAS`, each with its doc comment;
+viable: the ts-relayer creates each client with two thirds of the tracked
+chain's staking `unbonding_time` (the consumer reports its `unbonding_period`
+there), 400s here. It uses fast blocks and a first-sync gate to keep the
+timing-sensitive assertions reliable. Its consumer is registered via
+`testdata/create_consumer_short_unbonding.json`. Scenarios run in order in
+`TestLivenessVAAS`, each with its doc comment;
 `equivocation_execution_delay` is 420s and the gov voting period 180s here,
 and the header comment of that file documents the timing rationale in detail.
 
