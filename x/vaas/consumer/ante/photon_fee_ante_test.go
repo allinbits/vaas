@@ -238,6 +238,8 @@ func TestPhotonFeeDecoratorExemptsBootstrapTrafficWhileNoVoucherExists(t *testin
 		{name: "no vouchers: a relayer packet delivery with an empty fee passes", noVouchers: true, msgs: []sdk.Msg{&channeltypesv2.MsgRecvPacket{}}, fee: sdk.NewCoins()},
 		{name: "no vouchers: a client update with a non-photon fee passes", noVouchers: true, msgs: []sdk.Msg{&clienttypes.MsgUpdateClient{}}, fee: uatone},
 		{name: "no vouchers: governance with an empty fee passes", noVouchers: true, msgs: []sdk.Msg{&govtypes.MsgVote{}}, fee: sdk.NewCoins()},
+		{name: "no vouchers: the owner recovering a client with an empty fee passes", noVouchers: true, msgs: []sdk.Msg{ownerExecCarrying(t, &clienttypes.MsgRecoverClient{})}, fee: sdk.NewCoins()},
+		{name: "no vouchers: the owner updating params with an empty fee is rejected", noVouchers: true, msgs: []sdk.Msg{ownerExecCarrying(t, &consumertypes.MsgUpdateParams{})}, fee: sdk.NewCoins(), expectErr: true},
 		{name: "no vouchers: a user tx with a non-photon fee is rejected", noVouchers: true, msgs: []sdk.Msg{bankSendMsg()}, fee: uatone, expectErr: true},
 		{name: "no vouchers: a raw ICS-20 v2 send with an empty fee is rejected", noVouchers: true, msgs: []sdk.Msg{&channeltypesv2.MsgSendPacket{}}, fee: sdk.NewCoins(), expectErr: true},
 		{name: "no vouchers: a delivery bundled with a user message is rejected", noVouchers: true, msgs: []sdk.Msg{&channeltypesv2.MsgRecvPacket{}, bankSendMsg()}, fee: sdk.NewCoins(), expectErr: true},
