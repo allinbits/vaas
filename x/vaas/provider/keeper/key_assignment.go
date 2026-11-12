@@ -263,9 +263,9 @@ func (k Keeper) ValidatorConsensusKeyInUse(ctx sdk.Context, valAddr sdk.ValAddre
 // assignments. It backs the validator-creation check above, keeping a key
 // already in use as a consumer key from becoming a new validator's provider
 // consensus address -- which would put two validators at the same consensus
-// address on that consumer. The consensus-key-rotation check
-// (Hooks.BeforeConsensusPubKeyRotation) asks IsConsumerConsAddrHeldByAnother
-// instead, since the rotating validator may hold the key itself.
+// address on that consumer. It also backs the consensus-key-rotation check
+// (Hooks.BeforeConsensusPubKeyRotation), which refuses the rotating
+// validator's own assigned keys as well.
 //
 // The scan deliberately spans every consumer that is not deleted rather than
 // only the active ones: a paused consumer keeps all of its key assignments (only
@@ -283,11 +283,10 @@ func (k Keeper) IsConsumerConsAddrInUse(ctx sdk.Context, consAddr sdk.ConsAddres
 // IsConsumerConsAddrHeldByAnother reports whether consAddr is assigned as a
 // consumer consensus key by a validator other than the one at providerAddr, on
 // any consumer that is not deleted (the same scan as IsConsumerConsAddrInUse).
-// It backs the consensus-key-rotation check: only two different validators can
-// collide at one consensus address on a consumer (CreateConsumerValidators),
-// and AssignConsumerKey already lets a validator run matching provider and
-// consumer keys, so a validator rotating its provider key onto a consumer key
-// it holds itself, current or superseded, is not refused.
+// AfterConsensusPubKeyUpdate uses it to log a rotation that landed onto
+// another validator's key, the one case that collides on a consumer
+// (CreateConsumerValidators), under a staking module that does not ask
+// BeforeConsensusPubKeyRotation.
 func (k Keeper) IsConsumerConsAddrHeldByAnother(ctx sdk.Context, consAddr sdk.ConsAddress, providerAddr types.ProviderConsAddress) bool {
 	own := providerAddr.ToSdkConsAddr()
 	for _, consumerId := range k.nonDeletedConsumerIds(ctx) {

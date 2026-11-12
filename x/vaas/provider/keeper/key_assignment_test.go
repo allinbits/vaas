@@ -140,13 +140,12 @@ func TestMigrateStateOnConsPubKeyRotationCoversEveryConsumerAndMapping(t *testin
 
 // TestBeforeConsensusPubKeyRotationRefusesAnAssignedConsumerKey pins the
 // enforcement point: x/staking asks this hook before it records a rotation,
-// and the provider refuses one onto a consensus key another validator holds
-// as an assigned consumer key on any consumer that is not deleted, paused and
-// stopped ones included. A key no consumer holds passes; so does the key of a
-// deleted consumer, whose assignments are gone with it, and so does a key the
-// rotating validator holds itself, since AssignConsumerKey lets one validator
-// run matching keys and only two different validators can collide on a
-// consumer.
+// and the provider refuses one onto a consensus key any validator holds as an
+// assigned consumer key on any consumer that is not deleted, paused and
+// stopped ones included. The rotating validator's own assigned key is refused
+// too, current or awaiting pruning, until the key is pruned. A key no
+// consumer holds passes; so does the key of a deleted consumer, whose
+// assignments are gone with it.
 func TestBeforeConsensusPubKeyRotationRefusesAnAssignedConsumerKey(t *testing.T) {
 	keeper, ctx, ctrl, _ := testkeeper.GetProviderKeeperAndCtx(t, testkeeper.NewInMemKeeperParams(t))
 	defer ctrl.Finish()
@@ -170,8 +169,21 @@ func TestBeforeConsensusPubKeyRotationRefusesAnAssignedConsumerKey(t *testing.T)
 	fresh := cryptotestutil.NewCryptoIdentityFromIntSeed(3)
 	require.NoError(t, rotateOnto(rotating, fresh))
 
-	require.NoError(t, rotateOnto(holder, takenKey),
-		"a validator may rotate its provider key onto a consumer key it holds itself")
+	require.ErrorIs(t, rotateOnto(holder, takenKey), types.ErrConsumerKeyInUse,
+		"a validator may not rotate its provider key onto a consumer key it assigned itself")
+
+	// The holder replaced takenKey with currentKey: takenKey awaits pruning,
+	// still resolving to the holder, and stays refused until it is pruned.
+	currentKey := cryptotestutil.NewCryptoIdentityFromIntSeed(4)
+	keeper.SetValidatorConsumerPubKey(ctx, consumerID, holder.ProviderConsAddress(), currentKey.TMProtoCryptoPublicKey())
+	keeper.SetValidatorByConsumerAddr(ctx, consumerID, currentKey.ConsumerConsAddress(), holder.ProviderConsAddress())
+	require.ErrorIs(t, rotateOnto(holder, currentKey), types.ErrConsumerKeyInUse,
+		"the holder's current assignment is refused")
+	require.ErrorIs(t, rotateOnto(holder, takenKey), types.ErrConsumerKeyInUse,
+		"a key awaiting pruning is refused to its own validator")
+	keeper.DeleteValidatorByConsumerAddr(ctx, consumerID, takenKey.ConsumerConsAddress())
+	require.NoError(t, rotateOnto(holder, takenKey), "a pruned key is free again")
+	keeper.SetValidatorByConsumerAddr(ctx, consumerID, takenKey.ConsumerConsAddress(), holder.ProviderConsAddress())
 
 	keeper.SetConsumerPhase(ctx, consumerID, types.CONSUMER_PHASE_DELETED)
 	require.NoError(t, rotateOnto(rotating, takenKey),

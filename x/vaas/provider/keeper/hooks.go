@@ -121,25 +121,28 @@ func (h Hooks) BeforeTokenizeShareRecordRemoved(_ context.Context, _ uint64) err
 
 // BeforeConsensusPubKeyRotation runs from the MsgRotateConsPubKey handler,
 // before x/staking records the rotation, and refuses one onto a consensus key
-// another validator holds as an assigned consumer key on any consumer that is
-// not deleted (paused and stopped ones keep their assignments). Such a
-// rotation would put two validators at one consensus address on that
-// consumer, and nothing else can refuse it: x/staking's own uniqueness check
-// does not see VAAS key assignments, the message carries no proof of
+// that any validator, the rotating one included, holds as an assigned
+// consumer key on any consumer that is not deleted (paused and stopped ones
+// keep their assignments), current or still awaiting pruning.
+//
+// Onto another validator's key, the rotation would put two validators at one
+// consensus address on that consumer. Onto the rotating validator's own
+// assigned key, it would turn the key that consumer's node holds into the
+// validator's provider key, valid on the provider and on every consumer
+// where the validator assigned nothing, while AssignConsumerKey keeps an
+// assigned key to one consumer. To adopt such a key the validator first
+// reverts that assignment and waits for the key to be pruned. Nothing else can refuse the rotation: x/staking's own uniqueness
+// check does not see VAAS key assignments, the message carries no proof of
 // possession of the new key (consumer keys are public), and once the rotation
 // is recorded it is committed before AfterConsensusPubKeyUpdate observes it.
-// A key the rotating validator holds itself passes: AssignConsumerKey lets a
-// validator run matching provider and consumer keys, and one validator cannot
-// collide with itself. The error fails the rotating transaction and nothing
-// else, however the message reached the handler (through an authz grant
-// included).
-func (h Hooks) BeforeConsensusPubKeyRotation(goCtx context.Context, _ sdk.ValAddress, oldPk, newPk cryptotypes.PubKey) error {
+// The error fails the rotating transaction and nothing else, however the
+// message reached the handler (through an authz grant included).
+func (h Hooks) BeforeConsensusPubKeyRotation(goCtx context.Context, _ sdk.ValAddress, _, newPk cryptotypes.PubKey) error {
 	ctx := sdk.UnwrapSDKContext(goCtx)
 	consAddr := sdk.ConsAddress(newPk.Address())
-	own := providertypes.NewProviderConsAddress(sdk.ConsAddress(oldPk.Address()))
-	if h.k.IsConsumerConsAddrHeldByAnother(ctx, consAddr, own) {
+	if h.k.IsConsumerConsAddrInUse(ctx, consAddr) {
 		return errorsmod.Wrapf(providertypes.ErrConsumerKeyInUse,
-			"cannot rotate to consensus key %s: already assigned as another validator's consumer key", consAddr.String())
+			"cannot rotate to consensus key %s: already assigned as a consumer key", consAddr.String())
 	}
 	return nil
 }
