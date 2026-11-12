@@ -110,14 +110,10 @@ func (s *baseTestSuite) TearDownSuite() {
 	s.T().Log("tearing down e2e suite...")
 
 	// A failed run leaves no other trace of what the chains were doing; keep
-	// the tail of both logs in the test output.
+	// the tail of every node's log in the test output.
 	if s.T().Failed() {
-		if len(s.providerValRes) > 0 {
-			s.T().Logf("provider log tail:\n%s", tailLines(s.providerLogs(), 300))
-		}
-		if len(s.consumerValRes) > 0 {
-			s.T().Logf("consumer log tail:\n%s", tailLines(s.consumerLogs(), 100))
-		}
+		s.logNodeTails(s.providerValRes, 300)
+		s.logNodeTails(s.consumerValRes, 100)
 	}
 
 	if os.Getenv("VAAS_E2E_SKIP_CLEANUP") == "true" {
@@ -368,11 +364,11 @@ func (s *baseTestSuite) waitForNodesCaughtUp(resources []*dockertest.Resource, b
 	s.Require().Failf("nodes not caught up", "not every node caught up with val0 within %s", timeout)
 }
 
-// logNodeTails logs the last lines of every node's container output. A
-// bring-up that fails purges its nodes with the suite, so this is the only
-// record of why they produced no blocks.
+// logNodeTails logs the last lines of every node's container output, under
+// the container's name. A failed bring-up or run purges its nodes with the
+// suite, so this is the only record of what they were doing.
 func (s *baseTestSuite) logNodeTails(resources []*dockertest.Resource, lines int) {
-	for i, r := range resources {
+	for _, r := range resources {
 		var buf bytes.Buffer
 		_ = s.dkrPool.Client.Logs(docker.LogsOptions{
 			Container:    r.Container.ID,
@@ -382,7 +378,7 @@ func (s *baseTestSuite) logNodeTails(resources []*dockertest.Resource, lines int
 			Stderr:       true,
 			Tail:         strconv.Itoa(lines),
 		})
-		s.T().Logf("val%d (%s), last %d log lines:\n%s", i, r.Container.ID[:12], lines, buf.String())
+		s.T().Logf("%s (%s), last %d log lines:\n%s", strings.TrimPrefix(r.Container.Name, "/"), r.Container.ID[:12], lines, buf.String())
 	}
 }
 

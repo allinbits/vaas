@@ -1,6 +1,7 @@
 package e2e
 
 import (
+	"fmt"
 	"testing"
 	"time"
 
@@ -74,7 +75,7 @@ func (s *MultiValidatorIntegrationTestSuite) SetupSuite() {
 		// for why each value is what it is). Photon fees stay off: they are
 		// not what this suite tests.
 		patchProviderGenesis: func(appState map[string]any) {
-			s.genesisSection(appState, "gov", "params")["voting_period"] = "30s"
+			s.genesisSection(appState, "gov", "params")["voting_period"] = fmt.Sprintf("%ds", int64(s.cfg.govVotingPeriod/time.Second))
 
 			params := s.genesisSection(appState, "vaasprovider", "params")
 			params["blocks_per_epoch"] = "5"
