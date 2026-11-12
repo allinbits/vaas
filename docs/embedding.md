@@ -299,14 +299,21 @@ before fee deduction so the denom it vets is the one deducted
 ([photon_fee_ante.go](../x/vaas/consumer/ante/photon_fee_ante.go)).
 `NewBootstrapExemptTxFeeChecker(consumerKeeper)` builds the `TxFeeChecker`
 handed to `NewDeductFeeDecorator`: atomone-sdk's minimum-gas-prices floor at
-CheckTx, waived for bootstrap traffic (IBC, governance, the pin) only while no
-provider client is pinned ([fee_checker.go](../x/vaas/consumer/ante/fee_checker.go)),
-the same split the photon policy makes. After the pin everything pays, the
-relayer included: it is funded with vouchers before the pin and runs with a
-gas price in the voucher denom after it
-([consumer-launch-runbook.md](consumer-launch-runbook.md)). With the SDK default
-checker in its place, a floor set before the pin would turn the bootstrap
-traffic away at that node's mempool.
+CheckTx, waived for bootstrap traffic (IBC core minus the raw ICS-20 v2 send,
+governance, the pin) only while no routable provider client is pinned
+([fee_checker.go](../x/vaas/consumer/ante/fee_checker.go)), the same split the
+photon policy makes. A pin set through `MsgSetProviderClient` is routable
+from the start. After the pin everything pays, the relayer included: it is
+funded with vouchers before the pin and runs with a gas price in the voucher
+denom after it ([consumer-launch-runbook.md](consumer-launch-runbook.md)
+section 4). One state reopens the exemption for both: `photon_fees_enabled` on
+and a bank supply of zero for the voucher denom, where no transaction could
+pay and the relayer delivery that would bring the first voucher would be
+refused too. It closes as soon as one voucher exists; vouchers paid as fees
+stay in the fee collector (the reference consumer wires no `x/distribution`)
+and keep it closed. With atomone-sdk's default checker in its place, a floor
+set before the pin would turn the bootstrap traffic away at that node's
+mempool.
 
 ## 7. The provider's consensus-key rotation refusal
 

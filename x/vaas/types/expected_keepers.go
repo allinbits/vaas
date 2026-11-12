@@ -109,6 +109,7 @@ type ConsumerHooks interface {
 type BankKeeper interface {
 	GetBalance(ctx context.Context, addr sdk.AccAddress, denom string) sdk.Coin
 	GetAllBalances(ctx context.Context, addr sdk.AccAddress) sdk.Coins
+	HasSupply(ctx context.Context, denom string) bool
 	InputOutputCoins(ctx context.Context, input banktypes.Input, outputs []banktypes.Output) error
 	SendCoinsFromAccountToModule(ctx context.Context, senderAddr sdk.AccAddress, recipientModule string, amt sdk.Coins) error
 	SendCoinsFromModuleToModule(ctx context.Context, senderModule, recipientModule string, amt sdk.Coins) error

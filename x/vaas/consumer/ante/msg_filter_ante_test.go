@@ -27,6 +27,9 @@ type mockConsumerKeeper struct {
 	vscStale            bool
 	routableClient      bool
 	photonFees          bool
+	// noVouchers models a chain whose bank supply of the photon voucher
+	// denom is zero.
+	noVouchers bool
 }
 
 func (m mockConsumerKeeper) GetProviderClientID(context.Context) (string, bool) {
@@ -47,6 +50,10 @@ func (m mockConsumerKeeper) IsVSCStale(context.Context) bool {
 
 func (m mockConsumerKeeper) HasRoutableProviderClient(context.Context) bool {
 	return m.providerClientFound && m.routableClient
+}
+
+func (m mockConsumerKeeper) HasSupply(_ context.Context, denom string) bool {
+	return denom == ExpectedPhotonDenom("07-tendermint-0") && !m.noVouchers
 }
 
 type mockTx struct {

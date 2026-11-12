@@ -18,23 +18,53 @@ import (
 )
 
 // BootstrapKeeper is the fee checker's dependency: whether the consumer still
-// bootstraps, i.e. has no routable provider client pinned.
+// bootstraps, i.e. has no routable provider client pinned, or enforces
+// photon-only fees with no voucher on the chain at all (see feeBootstrap).
 type BootstrapKeeper interface {
+	PhotonFeesEnabled(ctx context.Context) bool
+	GetProviderClientID(ctx context.Context) (string, bool)
 	HasRoutableProviderClient(ctx context.Context) bool
+	HasSupply(ctx context.Context, denom string) bool
+}
+
+// feeBootstrap reports whether the fee gates treat the chain as
+// bootstrapping, waiving the photon policy and the node fee floor for
+// bootstrap infrastructure traffic (isBootstrapInfrastructureTx). That is the
+// case while no routable provider client is pinned, and again on a
+// photon-fees chain whose bank supply of the voucher denom is zero: with no
+// voucher anywhere on the chain no transaction could pay a fee, the relayer
+// delivery that would bring the first voucher included, so the bootstrap
+// exemption reopens until one voucher exists. That rescues a chain pinned
+// before its fee payers were funded, or one whose vouchers have all been
+// bridged away. Vouchers paid as fees stay in the fee collector and keep the
+// supply above zero, so the case does not cover a relayer that merely ran
+// out (docs/consumer-launch-runbook.md section 6).
+func feeBootstrap(ctx context.Context, k BootstrapKeeper) bool {
+	if !k.HasRoutableProviderClient(ctx) {
+		return true
+	}
+	if !k.PhotonFeesEnabled(ctx) {
+		return false
+	}
+	clientID, ok := k.GetProviderClientID(ctx)
+	return ok && !k.HasSupply(ctx, ExpectedPhotonDenom(clientID))
 }
 
 // NewBootstrapExemptTxFeeChecker returns the consumer's TxFeeChecker for
 // ante.NewDeductFeeDecorator. It mirrors atomone-sdk's default checker (the
 // node's minimum-gas-prices floor enforced at CheckTx, priority derived from
-// the gas price) with one exception, in time: while the consumer has no routable
-// provider client, a transaction made up exclusively of bootstrap
+// the gas price) with one exception, in time: while the consumer has no
+// routable provider client, a transaction made up exclusively of bootstrap
 // infrastructure messages (isBootstrapInfrastructureTx) skips the floor, so a
 // chain that starts with no token at all can have its clients created, its
 // counterparties registered, its first fee vouchers delivered and its
 // provider client pinned, at mempools that already run a floor.
 //
-// The exemption ends with the pin. From then on every transaction pays the
-// floor like it pays the photon policy, the relayer's deliveries included:
+// The exemption ends with the pin becoming routable, which a pin set through
+// MsgSetProviderClient is from the start, and reopens only while a
+// photon-fees chain holds no voucher at all (feeBootstrap). Otherwise every
+// transaction pays the floor like it pays the photon policy, the relayer's
+// deliveries included:
 // a standing exemption for infrastructure messages let anyone grow the
 // chain's state for free (creating clients, updating clients of their own)
 // at a cost no node setting could put back. The relayer of a photon-fees
@@ -56,8 +86,7 @@ func NewBootstrapExemptTxFeeChecker(k BootstrapKeeper) authante.TxFeeChecker {
 		// The floor is local mempool policy, so it only runs on CheckTx; the
 		// bootstrap carve-out applies here and nowhere else. The floor itself
 		// matches atomone-sdk's default checker.
-		exempt := !k.HasRoutableProviderClient(ctx) && isBootstrapInfrastructureTx(tx.GetMsgs())
-		if ctx.IsCheckTx() && !exempt {
+		if ctx.IsCheckTx() && !(isBootstrapInfrastructureTx(tx.GetMsgs()) && feeBootstrap(ctx, k)) {
 			minGasPrices := ctx.MinGasPrices()
 			if !minGasPrices.IsZero() {
 				requiredFees := make(sdk.Coins, len(minGasPrices))

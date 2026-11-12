@@ -55,8 +55,9 @@ func NewAnteHandler(options HandlerOptions) (sdk.AnteHandler, error) {
 		// that did not opt in.
 		consumerante.NewPhotonFeeDecorator(options.ConsumerKeeper),
 		// The node fee floor follows the photon policy's split: waived for
-		// bootstrap traffic until the provider client is pinned, applied to
-		// everything after. An explicitly configured checker still wins.
+		// bootstrap traffic while no routable provider client is pinned, or
+		// while a photon-fees chain holds no voucher at all, and applied to
+		// everything else. An explicitly configured checker still wins.
 		ante.NewDeductFeeDecorator(options.AccountKeeper, options.BankKeeper, options.FeegrantKeeper, txFeeCheckerOrDefault(options.TxFeeChecker, options.ConsumerKeeper)),
 		// SetPubKeyDecorator must be called before all signature verification decorators
 		ante.NewSetPubKeyDecorator(options.AccountKeeper),

@@ -222,6 +222,42 @@ func TestPhotonFeeDecoratorPricesEveryTransactionOnceEnforcing(t *testing.T) {
 	}
 }
 
+// TestPhotonFeeDecoratorExemptsBootstrapTrafficWhileNoVoucherExists: with a
+// routable pin but no voucher anywhere on the chain, bootstrap infrastructure
+// traffic passes whatever it pays, so the relayer can deliver the first
+// voucher; everything else stays priced. One voucher closes the exemption.
+func TestPhotonFeeDecoratorExemptsBootstrapTrafficWhileNoVoucherExists(t *testing.T) {
+	uatone := sdk.NewCoins(sdk.NewInt64Coin("uatone", 100))
+	testCases := []struct {
+		name       string
+		noVouchers bool
+		msgs       []sdk.Msg
+		fee        sdk.Coins
+		expectErr  bool
+	}{
+		{name: "no vouchers: a relayer packet delivery with an empty fee passes", noVouchers: true, msgs: []sdk.Msg{&channeltypesv2.MsgRecvPacket{}}, fee: sdk.NewCoins()},
+		{name: "no vouchers: a client update with a non-photon fee passes", noVouchers: true, msgs: []sdk.Msg{&clienttypes.MsgUpdateClient{}}, fee: uatone},
+		{name: "no vouchers: governance with an empty fee passes", noVouchers: true, msgs: []sdk.Msg{&govtypes.MsgVote{}}, fee: sdk.NewCoins()},
+		{name: "no vouchers: a user tx with a non-photon fee is rejected", noVouchers: true, msgs: []sdk.Msg{bankSendMsg()}, fee: uatone, expectErr: true},
+		{name: "no vouchers: a raw ICS-20 v2 send with an empty fee is rejected", noVouchers: true, msgs: []sdk.Msg{&channeltypesv2.MsgSendPacket{}}, fee: sdk.NewCoins(), expectErr: true},
+		{name: "no vouchers: a delivery bundled with a user message is rejected", noVouchers: true, msgs: []sdk.Msg{&channeltypesv2.MsgRecvPacket{}, bankSendMsg()}, fee: sdk.NewCoins(), expectErr: true},
+		{name: "vouchers exist: a relayer packet delivery with an empty fee is rejected", msgs: []sdk.Msg{&channeltypesv2.MsgRecvPacket{}}, fee: sdk.NewCoins(), expectErr: true},
+	}
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			keeper := mockConsumerKeeper{providerClientFound: true, routableClient: true, photonFees: true, noVouchers: tc.noVouchers}
+			nextCalled, err := runPhotonDecorator(t, keeper, mockFeeTx{msgs: tc.msgs, fee: tc.fee, gas: 100000}, false)
+			if tc.expectErr {
+				require.ErrorIs(t, err, consumertypes.ErrInvalidFeeDenom)
+				require.False(t, nextCalled)
+				return
+			}
+			require.NoError(t, err)
+			require.True(t, nextCalled)
+		})
+	}
+}
+
 // Wire-format pinning: ExpectedPhotonDenom must equal the ICS-20 denom
 // ibc/UPPERHEX(SHA256("transfer/<clientID>/uphoton")), computed here from a raw
 // literal independent of the transfertypes helper.

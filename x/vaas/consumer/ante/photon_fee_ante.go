@@ -28,12 +28,13 @@ const PhotonBaseDenom = "uphoton"
 
 // PhotonFeeKeeper is the narrow consumer-keeper dependency: it reports whether
 // the chain enforces photon-only fees, resolves the provider (AtomOne) IBC
-// client the photon voucher denom is anchored to, and reports whether that
-// client can actually carry packets yet.
+// client the photon voucher denom is anchored to, reports whether that
+// client can actually carry packets yet, and whether any voucher exists.
 type PhotonFeeKeeper interface {
 	PhotonFeesEnabled(ctx context.Context) bool
 	GetProviderClientID(ctx context.Context) (string, bool)
 	HasRoutableProviderClient(ctx context.Context) bool
+	HasSupply(ctx context.Context, denom string) bool
 }
 
 // PhotonFeeDecorator rejects transactions whose fees are not paid in the
@@ -98,10 +99,20 @@ type PhotonFeeKeeper interface {
 //     when its deliveries are free: the owner bridges photon to the relayer
 //     (and to itself) over the freshly created client before pinning it,
 //     and the relayer then runs with a gas price in the voucher denom (see
-//     docs/consumer-launch-runbook.md, which also covers refilling it). The
-//     node fee floor follows the same split: the reference app's
-//     NewBootstrapExemptTxFeeChecker waives the floor for bootstrap traffic
-//     before the pin and for nothing after it.
+//     docs/consumer-launch-runbook.md, which also covers refilling it).
+//
+//     One state sends the enforcing chain back to bootstrap for bootstrap
+//     infrastructure traffic (isBootstrapInfrastructureTx): the bank supply
+//     of the voucher denom being zero. With no voucher anywhere on the chain
+//     no transaction could pay, the relayer delivery that would bring the
+//     first voucher included, so a chain pinned before its fee payers were
+//     funded, or one whose vouchers have all been bridged away, could never
+//     receive one again. Its infrastructure traffic passes whatever it pays
+//     until one voucher exists; everything else stays priced, and so refused.
+//
+// The node fee floor follows the same split: the reference app's
+// NewBootstrapExemptTxFeeChecker waives the floor for bootstrap traffic in
+// exactly the states this decorator does (feeBootstrap) and for nothing else.
 //
 // Note the decorator constrains the fee denom, not the amount; minimum-fee
 // policy stays with the fee market (validator min-gas-prices and the fee
@@ -141,6 +152,11 @@ func (d PhotonFeeDecorator) AnteHandle(ctx sdk.Context, tx sdk.Tx, simulate bool
 	}
 
 	expected := ExpectedPhotonDenom(providerClientID)
+	if isBootstrapInfrastructureTx(tx.GetMsgs()) && !d.keeper.HasSupply(ctx, expected) {
+		// No voucher exists on the chain: bootstrap again, see the type godoc.
+		return next(ctx, tx, simulate)
+	}
+
 	fee := feeTx.GetFee()
 	if fee.IsZero() && !simulate {
 		return ctx, errorsmod.Wrapf(

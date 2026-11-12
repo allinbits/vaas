@@ -1,7 +1,6 @@
 package ante
 
 import (
-	"context"
 	"math"
 	"testing"
 
@@ -19,13 +18,10 @@ import (
 	consumertypes "github.com/allinbits/vaas/x/vaas/consumer/types"
 )
 
-type bootstrapState bool
-
-func (b bootstrapState) HasRoutableProviderClient(context.Context) bool { return !bool(b) }
-
 // TestBootstrapExemptTxFeeChecker: the node fee floor is waived for bootstrap
-// traffic while no provider client is pinned, and applied to everything,
-// the relayer's deliveries included, once one is.
+// traffic while no routable provider client is pinned, and applied to
+// everything, the relayer's deliveries included, once one is; on a
+// photon-fees chain with no voucher at all, bootstrap traffic is waived again.
 func TestBootstrapExemptTxFeeChecker(t *testing.T) {
 	minPrices := sdk.NewDecCoins(sdk.NewDecCoinFromDec("uatone", sdkmath.LegacyMustNewDecFromStr("0.01")))
 	checkCtx := sdk.Context{}.WithIsCheckTx(true).WithMinGasPrices(minPrices)
@@ -40,9 +36,11 @@ func TestBootstrapExemptTxFeeChecker(t *testing.T) {
 	atFloor := sdk.NewCoins(sdk.NewInt64Coin("uatone", 1000))
 
 	testCases := []struct {
-		name      string
-		bootstrap bool
-		ctx       sdk.Context
+		name       string
+		bootstrap  bool
+		photonFees bool
+		noVouchers bool
+		ctx        sdk.Context
 		tx        mockFeeTx
 		expectErr bool
 		expectFee sdk.Coins
@@ -61,10 +59,20 @@ func TestBootstrapExemptTxFeeChecker(t *testing.T) {
 		{name: "pinned: a user tx meeting the floor passes", bootstrap: false, ctx: checkCtx, tx: mockFeeTx{msgs: user, fee: atFloor, gas: 100000}, expectFee: atFloor},
 		{name: "bootstrap: an attached fee is kept for deduction", bootstrap: true, ctx: checkCtx, tx: mockFeeTx{msgs: delivery, fee: sdk.NewCoins(sdk.NewInt64Coin("uatone", 500)), gas: 100000}, expectFee: sdk.NewCoins(sdk.NewInt64Coin("uatone", 500))},
 		{name: "no floor outside CheckTx, for anyone", bootstrap: false, ctx: deliverCtx, tx: mockFeeTx{msgs: user, fee: noFee, gas: 100000}},
+		{name: "no vouchers on a photon-fees chain: a delivery with no fee passes the floor", photonFees: true, noVouchers: true, ctx: checkCtx, tx: mockFeeTx{msgs: delivery, fee: noFee, gas: 100000}},
+		{name: "no vouchers on a photon-fees chain: creating a client with no fee passes the floor", photonFees: true, noVouchers: true, ctx: checkCtx, tx: mockFeeTx{msgs: createClient, fee: noFee, gas: 100000}},
+		{name: "no vouchers on a photon-fees chain: a user tx below the floor is rejected", photonFees: true, noVouchers: true, ctx: checkCtx, tx: mockFeeTx{msgs: user, fee: noFee, gas: 100000}, expectErr: true},
+		{name: "vouchers on a photon-fees chain: a delivery with no fee is rejected", photonFees: true, ctx: checkCtx, tx: mockFeeTx{msgs: delivery, fee: noFee, gas: 100000}, expectErr: true},
+		{name: "no vouchers with photon fees off: a delivery with no fee is rejected", noVouchers: true, ctx: checkCtx, tx: mockFeeTx{msgs: delivery, fee: noFee, gas: 100000}, expectErr: true},
 	}
 	for _, tc := range testCases {
 		t.Run(tc.name, func(t *testing.T) {
-			checker := NewBootstrapExemptTxFeeChecker(bootstrapState(tc.bootstrap))
+			checker := NewBootstrapExemptTxFeeChecker(mockConsumerKeeper{
+				providerClientFound: !tc.bootstrap,
+				routableClient:      !tc.bootstrap,
+				photonFees:          tc.photonFees,
+				noVouchers:          tc.noVouchers,
+			})
 			fee, _, err := checker(tc.ctx, tc.tx)
 			if tc.expectErr {
 				require.Error(t, err)
@@ -93,7 +101,7 @@ func TestTxPriority(t *testing.T) {
 	require.Equal(t, int64(10), txPriority(sdk.NewCoins(sdk.NewCoin("uatone", huge), sdk.NewInt64Coin("uphoton", 10000)), 1000))
 
 	// The checker hands the capped priority back rather than failing.
-	checker := NewBootstrapExemptTxFeeChecker(bootstrapState(false))
+	checker := NewBootstrapExemptTxFeeChecker(mockConsumerKeeper{providerClientFound: true, routableClient: true})
 	_, priority, err := checker(sdk.Context{}, mockFeeTx{msgs: []sdk.Msg{bankSendMsg()}, fee: sdk.NewCoins(sdk.NewCoin("uatone", huge)), gas: 1000})
 	require.NoError(t, err)
 	require.Equal(t, int64(math.MaxInt64), priority)
