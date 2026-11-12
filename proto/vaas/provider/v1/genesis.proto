@@ -240,8 +240,8 @@ message ConsumerState {
   // other phase.
   PauseReason pause_reason = 18;
   // paused_at is when a PAUSED consumer was paused; absent in every other
-  // phase. A resume after a light-client pause waits one client trusting
-  // period from it, so the fork's evidence can no longer pause the consumer.
+  // phase. It stays the start of the pause when the pause is moved under
+  // another reason.
   google.protobuf.Timestamp paused_at = 19
       [ (gogoproto.stdtime) = true ];
   // removed_by_governance records that governance removed the consumer (a
@@ -249,6 +249,15 @@ message ConsumerState {
   // stopped), the verdict that voids its equivocation evidence. Only a
   // stopped consumer carries it.
   bool removed_by_governance = 20;
+
+  // fork_known_at is when the provider learned that a consumer paused for a
+  // light-client attack forked: its paused_at when it was paused for the
+  // attack, or the block its client was found frozen at when it was paused
+  // for another reason first. Present only while the pause reason is
+  // PAUSE_REASON_LIGHT_CLIENT_ATTACK. A resume waits one client trusting
+  // period from it, so the fork's evidence can no longer pause the consumer.
+  google.protobuf.Timestamp fork_known_at = 23
+      [ (gogoproto.stdtime) = true ];
 }
 
 // ConsumerFeesPerBlockOverride is a single per-consumer override entry for

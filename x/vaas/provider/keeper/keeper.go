@@ -96,10 +96,17 @@ type Keeper struct {
 	// paused for: set by PauseConsumerChain, cleared when the consumer leaves
 	// PAUSED (ResumeConsumerChain, StopAndPrepareForConsumerRemoval).
 	ConsumerPauseReason collections.Map[uint64, int32]
-	// ConsumerPausedAt keeps, per paused consumer, the block time it was paused
-	// at; a resume after a light-client pause waits one client trusting period
-	// from it (see ResumeConsumerChain). Cleared with the pause reason.
+	// ConsumerPausedAt keeps, per paused consumer, the block time its pause
+	// began at, kept when the pause is moved under another reason (see
+	// escalatePauseToLightClientAttack). Cleared with the pause reason.
 	ConsumerPausedAt collections.Map[uint64, []byte]
+	// ConsumerForkKnownAt keeps, per consumer paused for a light-client
+	// attack, the block time the provider learned of the fork: the pause time
+	// of a light-client pause, or the block a pause for another reason was
+	// moved under the light-client reason at. A resume waits one client
+	// trusting period from it (see ResumeConsumerChain). Cleared with the
+	// pause reason.
+	ConsumerForkKnownAt collections.Map[uint64, []byte]
 
 	// Key assignment collections
 	ValidatorConsumerPubKey collections.Map[collections.Pair[uint64, []byte], []byte]
@@ -325,6 +332,7 @@ func NewKeeper(
 		PauseExpirationTimeToConsumerIds: collections.NewMap(sb, types.PauseExpirationTimeToConsumerIdsPrefix, "pause_expiration_time_to_consumer_ids", collections.BytesKey, codec.CollValue[types.ConsumerIds](cdc)),
 		ConsumerPauseReason:              collections.NewMap(sb, types.ConsumerPauseReasonPrefix, "consumer_pause_reason", collections.Uint64Key, collections.Int32Value),
 		ConsumerPausedAt:                 collections.NewMap(sb, types.ConsumerPausedAtPrefix, "consumer_paused_at", collections.Uint64Key, collections.BytesValue),
+		ConsumerForkKnownAt:              collections.NewMap(sb, types.ConsumerForkKnownAtPrefix, "consumer_fork_known_at", collections.Uint64Key, collections.BytesValue),
 
 		// Key assignment collections
 		ValidatorConsumerPubKey: collections.NewMap(sb, types.ConsumerValidatorsPrefix, "validator_consumer_pub_key", collections.PairKeyCodec(collections.Uint64Key, collections.BytesKey), collections.BytesValue),
@@ -1005,6 +1013,42 @@ func (k Keeper) GetConsumerPausedAt(ctx context.Context, consumerId uint64) (tim
 func (k Keeper) DeleteConsumerPausedAt(ctx context.Context, consumerId uint64) {
 	if err := k.ConsumerPausedAt.Remove(ctx, consumerId); err != nil {
 		panic(fmt.Errorf("failed to delete paused-at time for consumer id (%d): %w", consumerId, err))
+	}
+}
+
+// SetConsumerForkKnownAt records when the provider learned that consumerId,
+// paused for a light-client attack, forked.
+func (k Keeper) SetConsumerForkKnownAt(ctx context.Context, consumerId uint64, forkKnownAt time.Time) error {
+	buf, err := forkKnownAt.MarshalBinary()
+	if err != nil {
+		return fmt.Errorf("failed to marshal fork-known-at time (%+v) for consumer id (%d): %w", forkKnownAt, consumerId, err)
+	}
+	if err := k.ConsumerForkKnownAt.Set(ctx, consumerId, buf); err != nil {
+		return fmt.Errorf("failed to set fork-known-at time for consumer id (%d): %w", consumerId, err)
+	}
+	return nil
+}
+
+// GetConsumerForkKnownAt returns when the provider learned that consumerId
+// forked; an error wrapping collections.ErrNotFound when it is not paused for
+// a light-client attack.
+func (k Keeper) GetConsumerForkKnownAt(ctx context.Context, consumerId uint64) (time.Time, error) {
+	buf, err := k.ConsumerForkKnownAt.Get(ctx, consumerId)
+	if err != nil {
+		return time.Time{}, fmt.Errorf("failed to retrieve fork-known-at time for consumer id (%d): %w", consumerId, err)
+	}
+	var t time.Time
+	if err := t.UnmarshalBinary(buf); err != nil {
+		return time.Time{}, fmt.Errorf("failed to unmarshal fork-known-at time for consumer id (%d): %w", consumerId, err)
+	}
+	return t, nil
+}
+
+// DeleteConsumerForkKnownAt forgets when the provider learned that
+// consumerId forked.
+func (k Keeper) DeleteConsumerForkKnownAt(ctx context.Context, consumerId uint64) {
+	if err := k.ConsumerForkKnownAt.Remove(ctx, consumerId); err != nil {
+		panic(fmt.Errorf("failed to delete fork-known-at time for consumer id (%d): %w", consumerId, err))
 	}
 }
 

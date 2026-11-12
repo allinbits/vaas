@@ -105,6 +105,11 @@ func (k Keeper) InitGenesis(ctx sdk.Context, genState *types.GenesisState) []abc
 		if cs.RemovedByGovernance {
 			k.MarkConsumerRemovedByGovernance(ctx, consumerId)
 		}
+		if cs.ForkKnownAt != nil {
+			if err := k.SetConsumerForkKnownAt(ctx, consumerId, *cs.ForkKnownAt); err != nil {
+				panic(fmt.Errorf("init: set fork-known-at time for %d: %w", consumerId, err))
+			}
+		}
 		// Restore the liveness clock (see ExportGenesis): only when present, so
 		// a consumer that never launched keeps the absent-defaults.
 		if cs.LastAckTime != nil {
@@ -517,6 +522,11 @@ func (k Keeper) ExportGenesis(ctx sdk.Context) *types.GenesisState {
 			panic(fmt.Errorf("export: failed to read paused-at time for consumer %d: %w", consumerId, err))
 		}
 		cs.RemovedByGovernance = k.IsConsumerRemovedByGovernance(ctx, consumerId)
+		if forkKnownAt, err := k.GetConsumerForkKnownAt(ctx, consumerId); err == nil {
+			cs.ForkKnownAt = &forkKnownAt
+		} else if !errors.Is(err, collections.ErrNotFound) {
+			panic(fmt.Errorf("export: failed to read fork-known-at time for consumer %d: %w", consumerId, err))
+		}
 
 		// Liveness clock: export the last-ack time only when actually recorded
 		// (GetConsumerLastAckTime falls back to block time when absent, which we

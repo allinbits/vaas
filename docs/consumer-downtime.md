@@ -306,10 +306,10 @@ packet proven against the fork lands any more; `MsgSubmitConsumerMisbehaviour` d
 transaction (see `HandleConsumerMisbehaviour`), and a client frozen through ibc-go's
 `MsgUpdateClient` is caught by the provider's BeginBlock, which pauses the consumer, or, when
 the consumer is already paused for a challenge or a refusal, moves that pause under the
-light-client reason (discarding the accusations as a light-client pause does, and restarting
-the paused-at clock the resume's wait counts from), so governance does not resume it into
-the fork. A refusal coalition reaching `RefusalPauseThreshold` pauses the consumer the same
-way (see
+light-client reason (discarding the accusations as a light-client pause does, and recording
+the fork as known from that block for the resume's wait to count from, while the pause keeps
+the time it began), so governance does not resume it into the fork. A refusal coalition
+reaching `RefusalPauseThreshold` pauses the consumer the same way (see
 [consumer-refusal.md](consumer-refusal.md)). A challenge or light-client pause first repays
 the fees withheld from accused validators: their accusations are cancelled with it and could
 not be challenged any more. A refusal pause proves nothing about the accusations and freezes
@@ -363,9 +363,11 @@ Two governance exits:
   the client's pre-fork consensus states, and the conflicting headers verify against them on
   either submission path until those states age out of the trusting period, so a consumer
   resumed earlier would be paused again by the same headers. The resume is refused until one
-  trusting period (plus the client's clock-drift allowance) has passed since the pause; with
-  a 21-day consumer unbonding period that is about 14 days, which AtomOne's voting period
-  alone already covers. A fork at a later height is new evidence and pauses it again.
+  trusting period (plus the client's clock-drift allowance) has passed since the fork became
+  known: the pause itself, or the block a challenge or refusal pause was moved under the
+  light-client reason at. With a 21-day consumer unbonding period that is about 14 days,
+  which AtomOne's voting period alone already covers. A fork at a later height is new
+  evidence and pauses it again.
 - **`MsgRemoveConsumer`** accepts a paused consumer and routes it into the ordinary
   `STOPPED -> DELETED` teardown.
 

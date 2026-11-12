@@ -647,6 +647,19 @@ func (cs ConsumerState) Validate() error {
 	if cs.Phase != CONSUMER_PHASE_PAUSED && cs.PausedAt != nil {
 		return fmt.Errorf("paused at must be empty for phase %s", cs.Phase)
 	}
+	// The time the fork became known lives exactly as long as a light-client
+	// pause, and a fork found during a pause is found no earlier than it began
+	// (see escalatePauseToLightClientAttack).
+	lightClientPause := cs.Phase == CONSUMER_PHASE_PAUSED && cs.PauseReason == PAUSE_REASON_LIGHT_CLIENT_ATTACK
+	if lightClientPause && cs.ForkKnownAt == nil {
+		return fmt.Errorf("fork known at required for a %s pause", PAUSE_REASON_LIGHT_CLIENT_ATTACK)
+	}
+	if !lightClientPause && cs.ForkKnownAt != nil {
+		return fmt.Errorf("fork known at must be empty unless paused for %s", PAUSE_REASON_LIGHT_CLIENT_ATTACK)
+	}
+	if lightClientPause && cs.ForkKnownAt.Before(*cs.PausedAt) {
+		return fmt.Errorf("fork known at %s precedes paused at %s", cs.ForkKnownAt, cs.PausedAt)
+	}
 
 	return nil
 }

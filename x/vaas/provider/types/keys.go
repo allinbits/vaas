@@ -67,5 +67,6 @@ var (
 	HeldUnbondingOpsPrefix                 = collections.NewPrefix(42)
 	PendingEquivocationJailsPrefix         = collections.NewPrefix(46)
 	ConsumersRemovedByGovernancePrefix     = collections.NewPrefix(47)
+	ConsumerForkKnownAtPrefix              = collections.NewPrefix(49)
 	ParametersPrefix                       = collections.NewPrefix(0xFF)
 )

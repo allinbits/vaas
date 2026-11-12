@@ -740,6 +740,9 @@ func TestResumeAfterALightClientPauseWaitsOutTheTrustingPeriod(t *testing.T) {
 	k.SetConsumerPhase(ctx, cid, providertypes.CONSUMER_PHASE_LAUNCHED)
 	pausedAt := ctx.BlockTime()
 	require.NoError(t, k.PauseConsumerChain(ctx, cid, providertypes.PAUSE_REASON_LIGHT_CLIENT_ATTACK))
+	forkKnownAt, err := k.GetConsumerForkKnownAt(ctx, cid)
+	require.NoError(t, err)
+	require.Equal(t, pausedAt, forkKnownAt, "a light-client pause knows of the fork from the moment it began")
 
 	clientState := &ibctmtypes.ClientState{TrustingPeriod: 14 * 24 * time.Hour, MaxClockDrift: 10 * time.Second}
 	mocks.MockClientKeeper.EXPECT().GetClientStatus(gomock.Any(), "07-tendermint-0").Return(ibcexported.Active).AnyTimes()
@@ -747,7 +750,7 @@ func TestResumeAfterALightClientPauseWaitsOutTheTrustingPeriod(t *testing.T) {
 	wait := clientState.TrustingPeriod + clientState.MaxClockDrift
 
 	early := ctx.WithBlockTime(pausedAt.Add(wait - time.Second))
-	err := k.ResumeConsumerChain(early, cid)
+	err = k.ResumeConsumerChain(early, cid)
 	require.ErrorIs(t, err, providertypes.ErrForkEvidenceStillVerifiable)
 	require.Equal(t, providertypes.CONSUMER_PHASE_PAUSED, k.GetConsumerPhase(ctx, cid))
 	require.Equal(t, providertypes.PAUSE_REASON_LIGHT_CLIENT_ATTACK, k.GetConsumerPauseReason(ctx, cid))
@@ -759,6 +762,8 @@ func TestResumeAfterALightClientPauseWaitsOutTheTrustingPeriod(t *testing.T) {
 	require.Equal(t, providertypes.PAUSE_REASON_UNSPECIFIED, k.GetConsumerPauseReason(ctx, cid))
 	_, err = k.GetConsumerPausedAt(ctx, cid)
 	require.Error(t, err, "paused-at must be cleared by the resume")
+	_, err = k.GetConsumerForkKnownAt(ctx, cid)
+	require.ErrorIs(t, err, collections.ErrNotFound, "the fork time must be cleared by the resume")
 }
 
 // TestResumeAfterADowntimePauseWaitsForNothing: a downtime pause says
@@ -830,14 +835,24 @@ func TestPauseConsumersWithFrozenClients(t *testing.T) {
 // TestPauseConsumersWithFrozenClientsEscalatesAnotherPause: a consumer paused
 // for a refusal (or a challenge) whose client freezes during the pause is
 // moved under the light-client reason, with the frozen accusations discarded
-// as a light-client pause discards them and the paused-at time moved to the
-// block the fork was seen, which the resume's trusting-period wait counts
-// from; the auto-stop the earlier pause scheduled stands, and the
-// consumer_paused event fires again under the new reason. A paused consumer
-// whose client is still active is left as it was.
+// as a light-client pause discards them: the pending slash and the epoch
+// mark are cancelled, and the withheld fee record the refusal pause froze is
+// repaid, its expiry read against the frozen clock although the block time
+// is already past it. The fork is recorded as known from the block it was
+// seen at, which the resume's trusting-period wait counts from, while the
+// paused-at time stays the start of the pause; the auto-stop the earlier
+// pause scheduled stands, and the consumer_paused event fires again under the
+// new reason. A paused consumer whose client is still active is left as it
+// was.
 func TestPauseConsumersWithFrozenClientsEscalatesAnotherPause(t *testing.T) {
 	k, ctx, ctrl, mocks := testkeeper.GetProviderKeeperAndCtx(t, testkeeper.NewInMemKeeperParams(t))
 	defer ctrl.Finish()
+
+	valAddrCodec := address.NewBech32Codec("cosmosvaloper")
+	mocks.MockStakingKeeper.EXPECT().ValidatorAddressCodec().Return(valAddrCodec).AnyTimes()
+	val, valBytes := newBondedValidator(t, valAddrCodec, 1)
+	consAddr, err := val.GetConsAddr()
+	require.NoError(t, err)
 
 	pausedAtFirst := ctx.BlockTime()
 	refused := k.FetchAndIncrementConsumerId(ctx)
@@ -846,11 +861,18 @@ func TestPauseConsumersWithFrozenClientsEscalatesAnotherPause(t *testing.T) {
 	providerAddr := providertypes.NewProviderConsAddress(sdk.ConsAddress([]byte("validator-address-1")))
 	putPendingDowntimeSlash(t, k, ctx, refused, providerAddr, math.NewInt(100), ctx.BlockTime().Add(time.Hour), 100)
 	k.MarkEpochDowntime(ctx, refused, providerAddr.ToSdkConsAddr())
+	withheld := sdk.NewInt64Coin("uphoton", 500)
+	putWithheldFeeRecord(t, k, ctx, refused, consAddr, withheld, ctx.BlockTime().Add(time.Hour))
 	require.NoError(t, k.PauseConsumerChain(ctx, refused, providertypes.PAUSE_REASON_REFUSAL_THRESHOLD))
 	autoStopAt, err := k.GetConsumerPauseExpirationTime(ctx, refused)
 	require.NoError(t, err)
 	_, err = k.PendingDowntimeSlashes.Get(ctx, collections.Join3(refused, providerAddr.ToSdkConsAddr().Bytes(), int64(100)))
 	require.NoError(t, err, "a refusal pause freezes the accusations rather than discarding them")
+	has, err := k.WithheldFeeRecords.Has(ctx, collections.Join(refused, consAddr))
+	require.NoError(t, err)
+	require.True(t, has, "a refusal pause freezes the withheld fee records rather than repaying them")
+	_, err = k.GetConsumerForkKnownAt(ctx, refused)
+	require.ErrorIs(t, err, collections.ErrNotFound, "a refusal pause records no fork")
 
 	challenged := k.FetchAndIncrementConsumerId(ctx)
 	k.SetConsumerPhase(ctx, challenged, providertypes.CONSUMER_PHASE_LAUNCHED)
@@ -860,6 +882,16 @@ func TestPauseConsumersWithFrozenClientsEscalatesAnotherPause(t *testing.T) {
 	mocks.MockClientKeeper.EXPECT().GetClientStatus(gomock.Any(), "07-tendermint-0").Return(ibcexported.Frozen)
 	mocks.MockClientKeeper.EXPECT().GetClientStatus(gomock.Any(), "07-tendermint-1").Return(ibcexported.Active)
 
+	pool := k.GetConsumerFeePoolAddress(refused)
+	mocks.MockBankKeeper.EXPECT().GetBalance(gomock.Any(), pool, "uphoton").Return(sdk.NewInt64Coin("uphoton", 1000))
+	mocks.MockStakingKeeper.EXPECT().GetValidatorByConsAddr(gomock.Any(), sdk.ConsAddress(consAddr)).Return(val, nil)
+	mocks.MockBankKeeper.EXPECT().
+		InputOutputCoins(gomock.Any(),
+			banktypes.Input{Address: pool.String(), Coins: sdk.NewCoins(withheld)},
+			[]banktypes.Output{{Address: accAddr(valBytes), Coins: sdk.NewCoins(withheld)}},
+		).
+		Return(nil).Times(1)
+
 	forkSeenAt := pausedAtFirst.Add(3 * 24 * time.Hour)
 	ctx = ctx.WithBlockTime(forkSeenAt).WithEventManager(sdk.NewEventManager())
 	k.PauseConsumersWithFrozenClients(ctx)
@@ -868,10 +900,16 @@ func TestPauseConsumersWithFrozenClientsEscalatesAnotherPause(t *testing.T) {
 	require.Equal(t, providertypes.PAUSE_REASON_LIGHT_CLIENT_ATTACK, k.GetConsumerPauseReason(ctx, refused))
 	pausedAt, err := k.GetConsumerPausedAt(ctx, refused)
 	require.NoError(t, err)
-	require.Equal(t, forkSeenAt, pausedAt, "the resume's wait counts from the block the fork was seen")
+	require.Equal(t, pausedAtFirst, pausedAt, "the pause still began when the refusal paused the consumer")
+	forkKnownAt, err := k.GetConsumerForkKnownAt(ctx, refused)
+	require.NoError(t, err)
+	require.Equal(t, forkSeenAt, forkKnownAt, "the resume's wait counts from the block the fork was seen")
 	_, err = k.PendingDowntimeSlashes.Get(ctx, collections.Join3(refused, providerAddr.ToSdkConsAddr().Bytes(), int64(100)))
 	require.ErrorIs(t, err, collections.ErrNotFound, "a forked chain's accusations are discarded")
 	require.False(t, k.IsEpochDowntime(ctx, refused, providerAddr.ToSdkConsAddr()))
+	has, err = k.WithheldFeeRecords.Has(ctx, collections.Join(refused, consAddr))
+	require.NoError(t, err)
+	require.False(t, has, "the repaid withheld fee record is deleted")
 	stillAutoStopAt, err := k.GetConsumerPauseExpirationTime(ctx, refused)
 	require.NoError(t, err)
 	require.Equal(t, autoStopAt, stillAutoStopAt, "the auto-stop scheduled by the earlier pause stands")
@@ -889,6 +927,51 @@ func TestPauseConsumersWithFrozenClientsEscalatesAnotherPause(t *testing.T) {
 	pausedAt, err = k.GetConsumerPausedAt(ctx, challenged)
 	require.NoError(t, err)
 	require.Equal(t, pausedAtFirst, pausedAt)
+	_, err = k.GetConsumerForkKnownAt(ctx, challenged)
+	require.ErrorIs(t, err, collections.ErrNotFound)
+}
+
+// TestResumeAfterAnEscalatedPauseWaitsFromTheFreeze: a consumer paused for a
+// refusal and moved under the light-client reason when its client froze days
+// later waits one trusting period (plus the clock-drift allowance) from the
+// freeze, not from the start of the pause: the pre-fork consensus states the
+// conflicting headers verify against stay in the client that long after the
+// fork is known. A resume due by the start of the pause but not by the
+// freeze is refused.
+func TestResumeAfterAnEscalatedPauseWaitsFromTheFreeze(t *testing.T) {
+	k, ctx, ctrl, mocks := testkeeper.GetProviderKeeperAndCtx(t, testkeeper.NewInMemKeeperParams(t))
+	defer ctrl.Finish()
+
+	k.SetInfractionParams(ctx, providertypes.DefaultInfractionParameters())
+
+	cid := k.FetchAndIncrementConsumerId(ctx)
+	k.SetConsumerClientId(ctx, cid, "07-tendermint-0")
+	k.SetConsumerPhase(ctx, cid, providertypes.CONSUMER_PHASE_LAUNCHED)
+	pausedAt := ctx.BlockTime()
+	require.NoError(t, k.PauseConsumerChain(ctx, cid, providertypes.PAUSE_REASON_REFUSAL_THRESHOLD))
+
+	frozenAt := pausedAt.Add(3 * 24 * time.Hour)
+	mocks.MockClientKeeper.EXPECT().GetClientStatus(gomock.Any(), "07-tendermint-0").Return(ibcexported.Frozen).Times(1)
+	k.PauseConsumersWithFrozenClients(ctx.WithBlockTime(frozenAt))
+	require.Equal(t, providertypes.PAUSE_REASON_LIGHT_CLIENT_ATTACK, k.GetConsumerPauseReason(ctx, cid))
+
+	clientState := &ibctmtypes.ClientState{TrustingPeriod: 14 * 24 * time.Hour, MaxClockDrift: 10 * time.Second}
+	mocks.MockClientKeeper.EXPECT().GetClientStatus(gomock.Any(), "07-tendermint-0").Return(ibcexported.Active).AnyTimes()
+	mocks.MockClientKeeper.EXPECT().GetClientState(gomock.Any(), "07-tendermint-0").Return(clientState, true).AnyTimes()
+	wait := clientState.TrustingPeriod + clientState.MaxClockDrift
+
+	early := ctx.WithBlockTime(frozenAt.Add(wait - time.Second))
+	require.True(t, early.BlockTime().After(pausedAt.Add(wait)), "the early resume is past the wait counted from the pause")
+	err := k.ResumeConsumerChain(early, cid)
+	require.ErrorIs(t, err, providertypes.ErrForkEvidenceStillVerifiable)
+	require.Equal(t, providertypes.CONSUMER_PHASE_PAUSED, k.GetConsumerPhase(ctx, cid))
+
+	due := ctx.WithBlockTime(frozenAt.Add(wait))
+	resumeMocks(mocks)
+	require.NoError(t, k.ResumeConsumerChain(due, cid))
+	require.Equal(t, providertypes.CONSUMER_PHASE_LAUNCHED, k.GetConsumerPhase(ctx, cid))
+	_, err = k.GetConsumerForkKnownAt(ctx, cid)
+	require.ErrorIs(t, err, collections.ErrNotFound, "the fork time must be cleared by the resume")
 }
 
 // TestStopClearsThePauseReason: a consumer stopped out of PAUSED (the
@@ -907,10 +990,12 @@ func TestStopClearsThePauseReason(t *testing.T) {
 	require.Equal(t, providertypes.PAUSE_REASON_UNSPECIFIED, k.GetConsumerPauseReason(ctx, cid))
 	_, err := k.GetConsumerPausedAt(ctx, cid)
 	require.Error(t, err, "paused-at must be cleared by the stop")
+	_, err = k.GetConsumerForkKnownAt(ctx, cid)
+	require.ErrorIs(t, err, collections.ErrNotFound, "the fork time must be cleared by the stop")
 }
 
 // TestDeleteConsumerChainClearsPauseReasonAndPausedAt: deletion is the
-// consumer's terminal erasure and leaves neither record behind.
+// consumer's terminal erasure and leaves none of the pause records behind.
 func TestDeleteConsumerChainClearsPauseReasonAndPausedAt(t *testing.T) {
 	k, ctx, ctrl, mocks := testkeeper.GetProviderKeeperAndCtx(t, testkeeper.NewInMemKeeperParams(t))
 	defer ctrl.Finish()
@@ -924,10 +1009,13 @@ func TestDeleteConsumerChainClearsPauseReasonAndPausedAt(t *testing.T) {
 
 	require.NoError(t, k.SetConsumerPauseReason(ctx, cid, providertypes.PAUSE_REASON_LIGHT_CLIENT_ATTACK))
 	require.NoError(t, k.SetConsumerPausedAt(ctx, cid, ctx.BlockTime()))
+	require.NoError(t, k.SetConsumerForkKnownAt(ctx, cid, ctx.BlockTime()))
 
 	require.NoError(t, k.DeleteConsumerChain(ctx, cid))
 
 	require.Equal(t, providertypes.PAUSE_REASON_UNSPECIFIED, k.GetConsumerPauseReason(ctx, cid))
 	_, err := k.GetConsumerPausedAt(ctx, cid)
 	require.Error(t, err)
+	_, err = k.GetConsumerForkKnownAt(ctx, cid)
+	require.ErrorIs(t, err, collections.ErrNotFound)
 }
