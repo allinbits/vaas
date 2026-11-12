@@ -241,8 +241,10 @@ stake, its bond, and its seat. Note the asymmetry -- *forgetting the
 altogether produces no signal at all.
 
 The consumer app wires no `x/evidence`, correctly: a consumer has no stake to
-slash, and its ante chain blocks `/cosmos.evidence` and `/cosmos.slashing`
-messages outright.
+slash. It registers neither the `x/evidence` nor the `x/slashing` message
+types, so a transaction carrying one fails to decode, and its ante chain
+refuses `/cosmos.evidence` and `/cosmos.slashing` messages outright for a host
+that does register them.
 
 ## 6. The consumer's message-filter decorator
 
@@ -402,18 +404,15 @@ pin the rate.
 ## 11. Consumer keeper construction order
 
 The consumer has no staking module: `ConsumerKeeper` stands in as the staking
-keeper for `x/slashing` and `x/genutil`. That creates a genuine circular
-dependency the host must break the same way the reference app does:
+keeper for `x/genutil`, the only module of the reference consumer that asks for
+one. The construction order follows from the arguments: `ibckeeper.NewKeeper`
+first, then `ibcconsumerkeeper.NewKeeper`, which takes the IBC client keepers
+and the IBC v2 channel keeper. ibc-go v10.5's `ibckeeper.NewKeeper` takes
+neither the consumer keeper nor any staking keeper, and panics only on a nil or
+zero upgrade keeper or a blank authority, so the consumer keeper needs no
+placeholder before it.
 
-1. `NewNonZeroKeeper` -- a collections-only consumer keeper, because
-   `ibckeeper.NewKeeper` panics on a zero keeper;
-2. `ibckeeper.NewKeeper`;
-3. the real `ibcconsumerkeeper.NewKeeper`, taking the IBC client and channel
-   keepers and the slashing keeper.
-
-Skip the pre-initialization and the app panics at startup.
-
-One further order trap, silent: `ibcconsumer.NewAppModule` takes the keeper
+One order trap, silent: `ibcconsumer.NewAppModule` takes the keeper
 **by value**, so it must be constructed after the keeper is complete; a module
 built from an earlier copy keeps that copy. The provider's `NewAppModule`
 takes a pointer, so order does not matter there -- the two modules differ,
@@ -436,6 +435,5 @@ and it is easy to get backwards.
 | Provider module after staking in `SetOrderEndBlockers` | silent | provider valset and every VSC packet lag one block |
 | Provider module after staking/genutil in `SetOrderInitGenesis` | **fatal at genesis** | "validator set is empty after InitGenesis" |
 | `ibcRouterV2` app-id routes | silent at startup, total at packet time | no VSC or evidence packet routes |
-| Consumer two-phase keeper init | **panic at startup** | `ibckeeper.NewKeeper` on a zero keeper |
 | Provider fee denom | **fatal at startup** if malformed; silent if valid-but-wrong | `NewKeeper` panics, or pools use a denom nobody holds |
 | Consumer module built from an incomplete keeper | silent | the module keeps the early copy |

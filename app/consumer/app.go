@@ -281,15 +281,6 @@ func New(
 		authtypes.NewModuleAddress(govtypes.ModuleName).String(),
 	)
 
-	// pre-initialize ConsumerKeeper to satsfy ibckeeper.NewKeeper
-	// which would panic on nil or zero keeper
-	// ConsumerKeeper implements StakingKeeper but all function calls result in no-ops so this is safe
-	// communication over IBC is not affected by these changes
-	app.ConsumerKeeper = ibcconsumerkeeper.NewNonZeroKeeper(
-		appCodec,
-		runtime.NewKVStoreService(keys[ibcconsumertypes.StoreKey]),
-	)
-
 	app.IBCKeeper = ibckeeper.NewKeeper(
 		appCodec,
 		runtime.NewKVStoreService(keys[ibchost.StoreKey]),
@@ -298,7 +289,8 @@ func New(
 		authtypes.NewModuleAddress(govtypes.ModuleName).String(),
 	)
 
-	// initialize the actual consumer keeper
+	// The consumer keeper takes the IBC client and channel keepers, so it is
+	// built after the IBC keeper.
 	app.ConsumerKeeper = ibcconsumerkeeper.NewKeeper(
 		appCodec,
 		runtime.NewKVStoreService(keys[ibcconsumertypes.StoreKey]),

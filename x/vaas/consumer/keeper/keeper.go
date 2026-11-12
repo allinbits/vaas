@@ -121,41 +121,6 @@ func (k Keeper) GetAuthority() string {
 	return k.authority
 }
 
-// Returns a keeper with cdc and storeService set it does not raise any panics during registration (eg with IBCKeeper).
-// Used only in testing.
-func NewNonZeroKeeper(cdc codec.BinaryCodec, storeService corestoretypes.KVStoreService) Keeper {
-	sb := collections.NewSchemaBuilder(storeService)
-
-	k := Keeper{
-		storeService: storeService,
-		cdc:          cdc,
-
-		// Initialize collections with minimal setup for testing
-		ProviderClientID:       collections.NewItem(sb, types.ProviderClientIDPrefix, "provider_client_id", collections.StringValue),
-		PendingChanges:         collections.NewItem(sb, types.PendingChangesPrefix, "pending_changes", codec.CollValue[vaastypes.ValidatorSetChangePacketData](cdc)),
-		InitGenesisHeight:      collections.NewItem(sb, types.InitGenesisHeightPrefix, "init_genesis_height", collections.Uint64Value),
-		Params:                 collections.NewItem(sb, types.ParametersPrefix, "params", codec.CollValue[vaastypes.ConsumerParams](cdc)),
-		ConsumerInDebt:         collections.NewItem(sb, types.ConsumerDebtPrefix, "consumer_in_debt", collections.BoolValue),
-		VaasValidators:         collections.NewMap(sb, types.VaasValidatorPrefix, "vaas_validators", collections.BytesKey, codec.CollValue[types.VaasValidator](cdc)),
-		HistoricalInfos:        collections.NewMap(sb, types.HistoricalInfoPrefix, "historical_infos", collections.Int64Key, codec.CollValue[stakingtypes.HistoricalInfo](cdc)),
-		HighestValsetUpdateID:  collections.NewItem(sb, types.HighestValsetUpdateIDPrefix, "highest_valset_update_id", collections.Uint64Value),
-		PendingEvidencePackets: collections.NewMap(sb, types.PendingEvidencePacketsPrefix, "pending_evidence_packets", collections.PairKeyCodec(collections.BytesKey, collections.Int64Key), collections.BytesValue),
-		LastVSCRecvTime:        collections.NewItem(sb, types.LastVSCRecvTimePrefix, "last_vsc_recv_time", collections.BytesValue),
-		MissedBlockBitmaps:     collections.NewMap(sb, types.MissedBlockBitmapsPrefix, "missed_block_bitmaps", collections.BytesKey, collections.BytesValue),
-		FirstTrackedHeights:    collections.NewMap(sb, types.FirstTrackedHeightsPrefix, "first_tracked_heights", collections.BytesKey, collections.Int64Value),
-		StagedDowntimeParams:   collections.NewItem(sb, types.StagedDowntimeParamsPrefix, "staged_downtime_params", codec.CollValue[vaastypes.DowntimeParams](cdc)),
-		ProviderChainId:        collections.NewItem(sb, types.ProviderChainIdPrefix, "provider_chain_id", collections.StringValue),
-	}
-
-	schema, err := sb.Build()
-	if err != nil {
-		panic(err)
-	}
-	k.Schema = schema
-
-	return k
-}
-
 // ValidatorAddressCodec returns the app validator address codec.
 func (k Keeper) ValidatorAddressCodec() addresscodec.Codec {
 	return k.validatorAddressCodec
