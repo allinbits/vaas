@@ -95,13 +95,16 @@ long) and its lapse once that validator leaves the bonded set (unpaid, one
 challenge window after the last boundary that withheld, with its accusations
 still pending and executing later against its unbonding stake), the
 `max_pause_duration` auto-stop with a third silent validator's frozen record
-lapsing unpaid,
-the owner's fee-pool sweep once `STOPPED`, the erasure to `DELETED` after the
-provider unbonding with the chain id released, and the immediate erasure of
-consumers that never launched. Every deadline is checked against the block
-times at the heights where the phase or the queue entry changed (found by
-bisection over historical queries), not the wall clock. The parameters and
-their rationale are in that file's header comment; the scenarios are in
+lapsing unpaid, double-voting evidence accepted during that pause (its
+punishment executing one delay after the stop, since a lapsed pause is not a
+verdict) and after the stop until a governance removal of the stopped consumer
+cancels the pending punishment and voids later evidence, the owner's fee-pool
+sweep once `STOPPED`, the erasure to `DELETED` after the provider unbonding with
+the chain id released, and the immediate erasure of consumers that never
+launched. Every deadline is checked against the block times at the heights where
+the phase or the queue entry changed (found by bisection over historical
+queries), not the wall clock. The parameters and their rationale are in that
+file's header comment; the scenarios are in
 [e2e_lifecycle_test.go](e2e_lifecycle_test.go) and run in order in
 `TestLifecycleVAAS`. Its consumer is registered via
 `testdata/create_consumer_lifecycle.json` (300s unbonding, 120s safe-mode
@@ -117,7 +120,7 @@ threshold). It takes about 20 minutes.
 | `e2e_test.go` | `TestVAAS` ordered scenario list |
 | `e2e_liveness_suite_test.go` | `LivenessIntegrationTestSuite` + `TestLivenessVAAS` |
 | `e2e_lifecycle_suite_test.go` | `LifecycleIntegrationTestSuite` + `TestLifecycleVAAS` |
-| `e2e_lifecycle_test.go` | pause thaw, withheld-fee record and its lapse, auto-stop, stopped sweep, deletion, pre-launch removal; block-time and historical-query helpers |
+| `e2e_lifecycle_test.go` | pause thaw, withheld-fee record and its lapse, auto-stop, double-voting evidence on the paused and stopped consumer, stopped sweep, deletion, pre-launch removal; block-time and historical-query helpers |
 | `e2e_tsrelayer_test.go` | ts-relayer container start/stop, `add-path`, relay control |
 | `e2e_vaas_test.go` | core VSC / valset-sync scenarios |
 | `e2e_debt_test.go` | fee-pool debt-gating scenario |

@@ -14,6 +14,8 @@ import (
 	"strconv"
 	"time"
 
+	cmted25519 "github.com/cometbft/cometbft/crypto/ed25519"
+
 	sdk "github.com/cosmos/cosmos-sdk/types"
 	stakingtypes "github.com/cosmos/cosmos-sdk/x/staking/types"
 )
@@ -35,11 +37,15 @@ const (
 	proposalStatusFailed = "PROPOSAL_STATUS_FAILED"
 
 	// Events the provider emits when a pending equivocation punishment is
-	// executed and when a withheld fee record is paid out, and the attribute
-	// naming the consumer.
-	eventEquivocationPunishmentExecuted = "vaas_equivocation_punishment_executed"
-	eventWithheldFeePaid                = "vaas_withheld_fee_paid"
-	attributeConsumerID                 = "consumer_id"
+	// executed or cancelled, when a withheld fee record is paid out and when
+	// a consumer is removed, and the attributes naming the consumer and its
+	// phase at the removal.
+	eventEquivocationPunishmentExecuted  = "vaas_equivocation_punishment_executed"
+	eventEquivocationPunishmentCancelled = "vaas_equivocation_punishment_cancelled"
+	eventWithheldFeePaid                 = "vaas_withheld_fee_paid"
+	eventRemoveConsumer                  = "vaas_remove_consumer"
+	attributeConsumerID                  = "consumer_id"
+	attributeConsumerPhase               = "consumer_phase"
 
 	// lifecycleSilentSelfBond is the self-bond of the silent validators the
 	// suite bonds, five units of power.
@@ -436,9 +442,12 @@ func (s *LifecycleIntegrationTestSuite) testWithheldFeeRecordLapsesWhileLaunched
 // is live when the pause begins (the second validator's lapsed in the previous
 // scenario), pauses the consumer by refusal and waits out max_pause_duration:
 // the consumer must stay paused until then, with the record frozen, and stop
-// on its own in the first block at or past the deadline. The stop cancels the
-// pending downtime slashes, and the record, now measured against the running
-// clock, has lapsed: it is swept with nothing paid and the escrow still in the
+// on its own in the first block at or past the deadline. Double-voting
+// evidence submitted during the pause is accepted, and queues a punishment
+// whose clock starts at the pause; the stop ends the freeze, so the
+// punishment runs one full delay from the stop. The stop cancels the pending
+// downtime slashes, and the record, now measured against the running clock,
+// has lapsed: it is swept with nothing paid and the escrow still in the
 // pool. A resume proposal then passes its vote but its message is refused.
 func (s *LifecycleIntegrationTestSuite) testMaxPauseAutoStop() {
 	s.Run("auto-stop: a pause that outlives max_pause_duration stops the consumer on its own; a resume is then refused", func() {
@@ -472,6 +481,12 @@ func (s *LifecycleIntegrationTestSuite) testMaxPauseAutoStop() {
 		s.Require().Equal(s.val3.feeBaseline, val3FeePaused,
 			"the silent validator was paid nothing since its share was first withheld")
 
+		s.T().Log("bonding an equivocating validator and submitting its double vote while the consumer is paused...")
+		s.pauseEquivocator = s.bondAndAccuseEquivocator("pauseq", 1_000_001)
+		s.Require().Truef(s.pauseEquivocator.queued.ExecutesAt.Equal(pausedAt.Add(lifecycleEquivocationExecutionDelay)),
+			"evidence accepted during the pause starts its clock at the pause (paused at %s), got executes_at %s",
+			pausedAt, s.pauseEquivocator.queued.ExecutesAt)
+
 		if wait := time.Until(autoStopAt) - 5*time.Second; wait > 0 {
 			s.T().Logf("holding %s: the consumer must stay paused until the deadline...", wait)
 			s.Require().Never(func() bool {
@@ -500,6 +515,17 @@ func (s *LifecycleIntegrationTestSuite) testMaxPauseAutoStop() {
 		s.Require().Truef(still.ExpiresAt.Equal(frozen.ExpiresAt) && still.Amount == frozen.Amount,
 			"the pause must freeze the record (was %+v, at the last paused block %+v)", frozen, still)
 
+		// The stop thaws the punishment queued during the pause: it runs one
+		// full delay from the stop.
+		pendingAtStop, err := s.queryPendingEquivocationsAt(consumerID, stopHeight)
+		s.Require().NoError(err)
+		thawed, found := pendingEquivocationFor(pendingAtStop, s.pauseEquivocator.consAddr)
+		s.Require().True(found, "a stop by a lapsed pause is not a verdict: the punishment stays pending")
+		s.Require().Truef(thawed.ExecutesAt.Equal(stoppedAt.Add(lifecycleEquivocationExecutionDelay)),
+			"the stop must move the punishment queued during the pause to one delay after the stop (%s), got %s",
+			stoppedAt.Add(lifecycleEquivocationExecutionDelay), thawed.ExecutesAt)
+		s.pauseEquivocator.queued = thawed
+
 		s.T().Log("verifying the stop cancelled the accusations and let the frozen record lapse unpaid...")
 		s.Require().Eventuallyf(func() bool {
 			return len(s.queryPendingDowntimeSlashes(consumerID)) == 0
@@ -518,6 +544,89 @@ func (s *LifecycleIntegrationTestSuite) testMaxPauseAutoStop() {
 			"yes", proposalStatusFailed)
 		s.Require().Equal(phaseStopped, s.queryProviderConsumerPhase(consumerID),
 			"a stopped consumer cannot be resumed")
+	})
+}
+
+// testEquivocationEvidenceOnTheStoppedConsumer proves the double-voting
+// evidence rules on a consumer the lapsed pause stopped, which is not a
+// verdict on its evidence. The punishment queued during the pause executes
+// in the first block at or past one delay after the stop. Evidence submitted
+// after the stop is accepted and queues a punishment; a governance removal
+// of the stopped consumer then passes, cancels that punishment in its tally
+// block and records the verdict, after which fresh evidence is refused. The
+// consumer stays STOPPED, its deletion where the stop scheduled it (the
+// deletion scenario checks it against the stop).
+func (s *LifecycleIntegrationTestSuite) testEquivocationEvidenceOnTheStoppedConsumer() {
+	s.Run("evidence: accepted after a lapsed pause stopped the consumer, until a governance removal of the stopped consumer voids it", func() {
+		const consumerID = lifecycleConsumerID
+		s.Require().Equal(phaseStopped, s.queryProviderConsumerPhase(consumerID))
+		s.Require().NotEmpty(s.pauseEquivocator.consAddr, "the auto-stop scenario must have run first")
+
+		paused := s.pauseEquivocator
+		s.T().Logf("waiting for the punishment queued during the pause to execute at %s...", paused.queued.ExecutesAt)
+		s.Require().Eventuallyf(func() bool {
+			_, pending := pendingEquivocationFor(s.mustPendingEquivocations(consumerID), paused.consAddr)
+			return !pending
+		}, time.Until(paused.queued.ExecutesAt)+2*time.Minute, 2*time.Second,
+			"the punishment queued during the pause never executed after the stop")
+		latest, _ := s.providerLatestBlock()
+		executedHeight := s.firstProviderHeightWhere(s.stopHeight, latest, func(height int64) bool {
+			pending, err := s.queryPendingEquivocationsAt(consumerID, height)
+			if err != nil {
+				return false
+			}
+			_, found := pendingEquivocationFor(pending, paused.consAddr)
+			return !found
+		})
+		s.Require().Falsef(s.providerBlockTime(executedHeight).Before(paused.queued.ExecutesAt),
+			"the punishment executed at height %d, before its time %s", executedHeight, paused.queued.ExecutesAt)
+		s.Require().Truef(s.providerBlockTime(executedHeight-1).Before(paused.queued.ExecutesAt),
+			"the punishment must execute in the first block at or past %s, but the block before height %d was already past it",
+			paused.queued.ExecutesAt, executedHeight)
+		s.Require().Truef(s.providerBlockHasEvent(executedHeight, eventEquivocationPunishmentExecuted, attributeConsumerID, consumerID),
+			"block %d resolved the punishment without a %s event", executedHeight, eventEquivocationPunishmentExecuted)
+		s.Require().Eventuallyf(func() bool {
+			return s.signingInfoTombstoned(paused.consAddr)
+		}, time.Minute, 2*time.Second, "the validator accused during the pause was not tombstoned at execution")
+		s.Require().Equalf(paused.tokens-paused.tokens*5/100, s.mustValidatorTokens(paused.valoper),
+			"execution must slash 5%% of the bonded tokens (queued with %d)", paused.tokens)
+
+		s.T().Log("bonding an equivocating validator and submitting its double vote against the stopped consumer...")
+		stopped := s.bondAndAccuseEquivocator("stopeq", 1_000_002)
+
+		s.T().Log("removing the stopped consumer by governance: the vote passes and the removal is the verdict...")
+		heightBeforeRemoval, _ := s.providerLatestBlock()
+		s.submitProposalWithVote(s.removalProposalJSON(consumerID, "Remove the stopped consumer (lifecycle e2e)"),
+			"yes", proposalStatusPassed)
+		latest, _ = s.providerLatestBlock()
+		cancelHeight := s.firstProviderHeightWhere(heightBeforeRemoval, latest, func(height int64) bool {
+			pending, err := s.queryPendingEquivocationsAt(consumerID, height)
+			return err == nil && len(pending) == 0
+		})
+		s.Require().Truef(s.providerBlockHasEvent(cancelHeight, eventRemoveConsumer, attributeConsumerPhase, phaseStopped),
+			"the punishment was resolved at height %d without the removal of the stopped consumer in that block", cancelHeight)
+		s.Require().Truef(s.providerBlockHasEvent(cancelHeight, eventEquivocationPunishmentCancelled, attributeConsumerID, consumerID),
+			"block %d removed the punishment without a %s event", cancelHeight, eventEquivocationPunishmentCancelled)
+		s.Require().False(s.signingInfoTombstoned(stopped.consAddr), "a cancelled punishment tombstones nothing")
+		s.Require().Equal(phaseStopped, s.queryProviderConsumerPhase(consumerID),
+			"the removal of a stopped consumer leaves it stopped")
+
+		s.T().Log("submitting fresh evidence against the removed consumer: it is refused...")
+		evidencePath, headerPath := s.fabricateDoubleVote(stopped.priv, s.cfg.consumerChainID, 1_000_003, "stopeq-after-removal")
+		_, stderr, err := s.dockerExec(s.providerValRes[0].Container.ID, []string{
+			providerBinary, "tx", "vaasprovider", "submit-consumer-double-voting",
+			consumerID, evidencePath, headerPath,
+			"--from", s.mustKeyAddress("val"),
+			"--home", providerHomePath,
+			"--keyring-backend", "test",
+			"--chain-id", s.cfg.providerChainID,
+			"--fees", "10000" + bondDenom,
+			"--dry-run",
+			"-y",
+		})
+		s.Require().Containsf(stderr.String(), "removed by governance",
+			"evidence against a consumer governance removed must be refused: stderr=%q err=%v", stderr.String(), err)
+		s.Require().True(s.pendingEquivocationsEmpty(consumerID), "the refused evidence queues nothing")
 	})
 }
 
@@ -560,7 +669,8 @@ func (s *LifecycleIntegrationTestSuite) testFeePoolSweepWhenStopped() {
 }
 
 // testStoppedToDeleted waits out the provider unbonding from the auto-stop:
-// the consumer must be erased in the first block at or past that time, its
+// the consumer must be erased in the first block at or past that time (the
+// governance removal of the stopped consumer left the schedule alone), its
 // chain id released, so a new consumer registers under it.
 func (s *LifecycleIntegrationTestSuite) testStoppedToDeleted() {
 	s.Run("deletion: the stopped consumer is erased once the provider unbonding elapses, releasing its chain id", func() {
@@ -689,6 +799,42 @@ func (s *LifecycleIntegrationTestSuite) bondSilentValidator(key string) silentVa
 		return err == nil && len(vals) == setBefore+1
 	}, 3*time.Minute, 3*time.Second, "the consumer never synced %s into its validator set", key)
 	return v
+}
+
+// equivocator is a provider validator bonded without a node whose consensus
+// key the test holds, so it can sign fabricated double votes, with the
+// punishment its evidence queued and its bonded tokens at the queue.
+type equivocator struct {
+	valoper  string
+	consAddr string
+	priv     cmted25519.PrivKey
+	queued   pendingEquivocationJSON
+	tokens   int64
+}
+
+// bondAndAccuseEquivocator bonds an equivocating validator under key, submits
+// a double vote signed with its key at the given consumer height, and returns
+// it with the punishment the evidence queued.
+func (s *LifecycleIntegrationTestSuite) bondAndAccuseEquivocator(key string, height int64) equivocator {
+	valoper, priv := s.createEquivocatingValidator(key, lifecycleSilentSelfBond+bondDenom)
+	e := equivocator{valoper: valoper, consAddr: sdk.ConsAddress(priv.PubKey().Address()).String(), priv: priv}
+	evidencePath, headerPath := s.fabricateDoubleVote(priv, s.cfg.consumerChainID, height, key)
+	s.submitDoubleVoteEvidence(lifecycleConsumerID, evidencePath, headerPath)
+	s.Require().Eventuallyf(func() bool {
+		pending, err := s.queryPendingEquivocations(lifecycleConsumerID)
+		if err != nil {
+			return false
+		}
+		queued, found := pendingEquivocationFor(pending, e.consAddr)
+		e.queued = queued
+		return found
+	}, time.Minute, 2*time.Second, "the evidence against %s queued no punishment", key)
+	s.Require().False(e.queued.Extended)
+	jailed, _ := s.stakingValidatorState(valoper)
+	s.Require().True(jailed, "the accused validator is jailed at queue time")
+	e.tokens = s.mustValidatorTokens(valoper)
+	s.T().Logf("%s's punishment queued, executes at %s", key, e.queued.ExecutesAt)
+	return e
 }
 
 // waitForFirstAccusation waits for the provider to accept a downtime

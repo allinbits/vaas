@@ -6,15 +6,16 @@ package e2e
 // equivocation punishment and a resume that moves it past the pause, the
 // withheld-fee record a downtime accusation leaves across an epoch boundary
 // and its lapse once the accused leaves the bonded set, the MaxPauseDuration
-// auto-stop, the owner's fee-pool sweep once STOPPED, the
-// unbonding-delayed erasure to DELETED with the chain id released, and the
-// immediate erasure of consumers that never launched. The main suite proves
-// the mechanisms around a consumer that stays LAUNCHED for most of its run
-// and ends with a governance removal; this suite is built around the clocks
-// those transitions run on, so every one of them is short enough to observe
-// in a CI run, and every deadline is checked against chain data (the block
-// times at the heights where a phase or a queue entry changed), not against
-// the wall clock.
+// auto-stop, double-voting evidence accepted during the pause and after the
+// stop until a governance removal of the stopped consumer voids it, the
+// owner's fee-pool sweep once STOPPED, the unbonding-delayed erasure to
+// DELETED with the chain id released, and the immediate erasure of consumers
+// that never launched. The main suite proves the mechanisms around a consumer
+// that stays LAUNCHED for most of its run and ends with a governance removal;
+// this suite is built around the clocks those transitions run on, so every one
+// of them is short enough to observe in a CI run, and every deadline is
+// checked against chain data (the block times at the heights where a phase or
+// a queue entry changed), not against the wall clock.
 //
 // Parameters (the constants below and patchProviderGenesis):
 //   - fast blocks on both chains (patchConfigToml, about a second), as in the
@@ -29,16 +30,20 @@ package e2e
 //     after the last one, to land before the record expires, 90s after that
 //     last boundary: blocks must average under 1.5s;
 //   - a 45s equivocation execution delay and a 150s max pause duration: the
-//     thaw scenario's pause spans the end of the delay, and the auto-stop
-//     scenario waits the whole duration out;
-//   - a 300s provider unbonding: it bounds the STOPPED -> DELETED wait,
-//     keeps the relayer-derived client trusting periods (two thirds of it,
-//     200s) above the challenge horizon (180s) and above the longest pause a
-//     launched consumer sees here, outlasts the lapse scenario's wait for
-//     the departing validator's last accusation (under three minutes from
-//     its undelegation), so its unbonding entry is still there to be read
-//     slashed, and with a 0.9 grace fraction gives a 270s liveness grace
-//     that covers the setup's first VSC sync with an epoch to spare;
+//     thaw scenario's pause spans the end of the delay, the auto-stop
+//     scenario waits the whole duration out, and the punishment queued
+//     during that pause executes 45s after the stop, before the
+//     stopped-consumer evidence scenario submits its own;
+//   - a 300s provider unbonding: it bounds the STOPPED -> DELETED wait, which
+//     holds the stopped-consumer evidence scenario (about two minutes from
+//     the stop) with room to spare, keeps the relayer-derived client trusting
+//     periods (two thirds of it, 200s) above the challenge horizon (180s) and
+//     above the longest pause a launched consumer sees here, outlasts the
+//     lapse scenario's wait for the departing validator's last accusation
+//     (under three minutes from its undelegation), so its unbonding entry is
+//     still there to be read slashed, and with a 0.9 grace fraction gives a
+//     270s liveness grace that covers the setup's first VSC sync with an
+//     epoch to spare;
 //   - the consumer registered from testdata/create_consumer_lifecycle.json
 //     carries the same 300s unbonding (it may not exceed the provider's and
 //     must exceed the challenge horizon) and a 120s safe-mode threshold,
@@ -58,12 +63,22 @@ package e2e
 //     last boundary that withheld, with accusations pending that execute
 //     later against its unbonding stake.
 //  5. testMaxPauseAutoStop - bond a third silent validator so a record is
-//     live, pause by refusal, wait out max_pause_duration: STOPPED on its
-//     own, the frozen record lapses unpaid, a resume is refused.
-//  6. testFeePoolSweepWhenStopped - only the owner's sweep returns the pool.
-//  7. testStoppedToDeleted - DELETED once the provider unbonding elapses; the
+//     live, pause by refusal, accept double-voting evidence during the pause
+//     (its clock starts at the pause), wait out max_pause_duration: STOPPED
+//     on its own, the punishment moved to one delay after the stop, the
+//     frozen record lapses unpaid, a resume is refused.
+//  6. testEquivocationEvidenceOnTheStoppedConsumer - the punishment queued
+//     during the pause executes after the stop (a lapsed pause is not a
+//     verdict); evidence submitted after the stop is accepted; a governance
+//     removal of the stopped consumer passes, cancels the punishment that
+//     evidence queued and leaves the consumer STOPPED; fresh evidence is
+//     then refused. It runs
+//     inside the wait for the deletion, so it adds no time to the suite.
+//  7. testFeePoolSweepWhenStopped - only the owner's sweep returns the pool.
+//  8. testStoppedToDeleted - DELETED once the provider unbonding elapses,
+//     counted from the auto-stop (the governance removal moved nothing); the
 //     chain id is free again.
-//  8. testPrelaunchRemoval - registered-only consumers are erased at once by
+//  9. testPrelaunchRemoval - registered-only consumers are erased at once by
 //     their owner and by governance, their pools returned.
 
 import (
@@ -138,6 +153,11 @@ type LifecycleIntegrationTestSuite struct {
 	// scenario and leaves the bonded set in the lapse scenario; val3 is bonded
 	// by the auto-stop scenario, which watches its frozen record lapse unpaid.
 	val2, val3 silentValidator
+
+	// The validator the auto-stop scenario accuses of double voting during the
+	// pause, whose punishment the stopped-consumer evidence scenario watches
+	// execute.
+	pauseEquivocator equivocator
 
 	// The auto-stop's block, from which the deletion delay runs.
 	stopHeight int64
@@ -286,6 +306,7 @@ func (s *LifecycleIntegrationTestSuite) TestLifecycleVAAS() {
 	s.testWithheldFeeRecordAcrossEpoch()
 	s.testWithheldFeeRecordLapsesWhileLaunched()
 	s.testMaxPauseAutoStop()
+	s.testEquivocationEvidenceOnTheStoppedConsumer()
 	s.testFeePoolSweepWhenStopped()
 	s.testStoppedToDeleted()
 	s.testPrelaunchRemoval()
