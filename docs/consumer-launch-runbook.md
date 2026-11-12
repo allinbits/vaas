@@ -109,21 +109,65 @@ the owner in the next step.
 A relayer creates an IBC v2 client on each chain pointing at the other and
 registers the counterparties (`add-path`, `--ibc-version 2`). Neither chain
 creates these clients itself, and creation alone grants them no authority: the
-consumer's owner then declares them, one transaction per side.
+consumer's owner then declares them, one transaction per side, funding the
+consumer's fee payers in between when the consumer enforces photon-only fees
+(`photon_fees_enabled`, [params-reference.md](params-reference.md) section 3).
 
-```
-providerd tx vaasprovider update-consumer declare.json --from <owner>
-    # declare.json: {"consumer_id": <consumer-id>, "client_id": "07-tendermint-..."}
+1. Declare the provider side:
 
-consumerd tx vaasconsumer set-provider-client <client-id> --from <owner>
-```
+   ```
+   providerd tx vaasprovider update-consumer declare.json --from <owner>
+       # declare.json: {"consumer_id": <consumer-id>, "client_id": "07-tendermint-..."}
+   ```
+
+2. **On a photon-fees consumer, fund the relayer and the owner with vouchers
+   before the pin.** Bridge `uphoton` from the provider to the relayer's and
+   the owner's consumer accounts over the provider-side client, and wait until
+   both balances show the voucher on the consumer. Before the pin the
+   relayer's deliveries are free, so the transfer arrives at no cost to it:
+
+   ```
+   providerd tx ibc-transfer transfer transfer <provider-side-client-id> \
+       <relayer-consumer-address> <amount>uphoton \
+       --absolute-timeouts --packet-timeout-height 0-0 \
+       --packet-timeout-timestamp <unix-seconds> --from <owner>
+       # repeat for the owner's consumer address
+
+   consumerd query ibc-transfer denom-hash transfer/<consumer-side-client-id>/uphoton
+       # -> <HASH>: the voucher denom is ibc/<HASH>
+   ```
+
+   IBC v2 packets carry only a timestamp timeout, in unix seconds, hence the
+   absolute timeout. The voucher denom is derived from the consumer-side
+   client, the one step 3 pins, so it is known before the pin; `denom-hash`
+   answers once the chain has received the denom.
+
+   > **Warning: do not pin a photon-fees consumer before vouchers are on it.**
+   > From the pin on, every transaction pays its fee in vouchers, the
+   > relayer's deliveries included, and the first voucher can only arrive in
+   > a relayer delivery. The fee gates do treat a chain with no voucher at all
+   > as bootstrapping (section 6), but the way out then takes a relayer
+   > restarted at a zero gas price and a fresh transfer, while VSC delivery
+   > stalls and the consumer heads into safe mode.
+
+3. Pin the consumer side:
+
+   ```
+   consumerd tx vaasconsumer set-provider-client <consumer-side-client-id> --from <owner>
+   ```
+
+4. On a photon-fees consumer, restart the relayer with a gas price in the
+   voucher denom (`add-gas-price` with `0.025ibc/<HASH>`, then `relay` again):
+   its deliveries pay from here on.
 
 Each declaration is validated before it binds (an active tendermint client of
 the right chain id with a registered counterparty; on the provider side also a
 trusting period above the downtime challenge horizon) and is permanent once
 accepted ([security-model.md](security-model.md)). VSC delivery starts at the
 first epoch boundary after the provider-side declaration. In localnet and e2e
-the relayer is the `ts-relayer` and the declarations are scripted; see
+the relayer is the `ts-relayer` and the declarations are scripted (the e2e
+setup of the photon-fees suite funds the relayer and the owner before the pin
+and switches the relayer's gas price after it, as above); see
 [consumer-lifecycle.md](consumer-lifecycle.md) phase 3 and the localnet
 [app/README.md](../app/README.md).
 
@@ -149,8 +193,9 @@ no partial payment. The in-debt flag rides the next VSC packet to the consumer
 as `ValidatorSetChangePacketData.ConsumerInDebt`, whose transaction admission
 gate (`MsgFilterDecorator` in
 [x/vaas/consumer/ante/msg_filter_ante.go](../x/vaas/consumer/ante/msg_filter_ante.go))
-then restricts incoming transactions to `/ibc.core.*` and `/cosmos.gov.*` only,
-rejecting value-bearing application transactions -- the same restriction used
+then restricts incoming transactions to `/ibc.core.*` (minus the raw ICS-20 v2
+send), `/cosmos.gov.*` and bank sends made only of the photon voucher,
+rejecting every other application transaction -- the same restriction used
 for a stale set (see [consumer-liveness.md](consumer-liveness.md) section 4). So
 an unfunded consumer launches and then, at its first epoch fee collection,
 becomes debt-gated until funding is restored.
@@ -196,38 +241,50 @@ Once the clients are declared and the pool is funded:
   bonded validators; a solvent pool clears the in-debt flag.
 
 **Node fee floor on a photon-fees consumer.** A consumer that enforces
-photon-only fees (`photon_fees_enabled`,
-[params-reference.md](params-reference.md) section 3) accepts user fees only in
-the one-hop `uphoton` voucher received over the pinned provider client, so a
-validator's `minimum-gas-prices` must be zero or set in that voucher denom: a
-native-denom floor turns every user transaction away at the node's mempool. The
-voucher denom is not knowable before the pin, so launch the node with a zero
-price (`minimum-gas-prices = "0uatone"`, as the e2e suite does) and, once
-`query vaasconsumer provider-info` reports the pinned client, derive the denom
-and restart with the floor:
+photon-only fees accepts fees only in the one-hop `uphoton` voucher received
+over the pinned provider client, so a validator's `minimum-gas-prices` must be
+zero or set in that voucher denom: a native-denom floor turns every user
+transaction away at the node's mempool. The node starts before the clients
+exist, so launch it with a zero price (`minimum-gas-prices = "0uatone"`, as
+the e2e suite does), and once the voucher denom is known (section 4, step 2)
+restart it with the floor, before or after the pin:
 
 ```
-consumerd query ibc-transfer denom-hash transfer/<pinned-client-id>/uphoton
-    # -> <HASH>; set minimum-gas-prices = "0.01ibc/<HASH>" and restart
+# set minimum-gas-prices = "0.01ibc/<HASH>" in app.toml and restart
 ```
 
-The floor is mempool policy only. The reference app's fee checker
-(`NewBootstrapExemptTxFeeChecker` in
+The floor is mempool policy only, and it never prices bootstrap traffic. The
+reference app's fee checker (`NewBootstrapExemptTxFeeChecker` in
 [x/vaas/consumer/ante/fee_checker.go](../x/vaas/consumer/ante/fee_checker.go))
-waives it for bootstrap traffic (IBC, governance, the pin) only while no
-provider client is pinned, and the photon policy prices nothing until then
-either; after the pin every transaction pays, the relayer's deliveries
-included. So, before pinning: bridge `uphoton` to the relayer's consumer
-account (and to the owner's) over the freshly created client, while the
-deliveries are still free, and once the pin is in, restart the relayer with a
-gas price in the voucher denom (`add-gas-price` with `0.025ibc/<HASH>`, then
-`relay` again). Keep the relayer's voucher balance topped up: a relayer with
-none cannot deliver its own refill, so refill it from any account that holds
-vouchers on the consumer (a plain bank send of vouchers, which the restricted
-mode of a consumer in debt or with a stale validator set lets through for
-this reason), or run a second relayer. `testNodeFeeFloor` in the e2e suite runs this exact sequence, and the
-suite's setup funds the relayer and switches its gas price the way this
-section describes.
+waives it for transactions made only of IBC core messages (minus the raw
+ICS-20 v2 send), governance and the pin while the chain has no routable
+provider client pinned (a pin set through `set-provider-client` is routable
+from the start), and the photon policy prices nothing until then either. From
+the pin on every transaction pays, the relayer's deliveries included, which
+is why section 4 funds the relayer before the pin and switches its gas price
+after it. `testNodeFeeFloor` in the e2e suite runs on a consumer set up this
+way.
+
+**When no voucher exists on the consumer.** While `photon_fees_enabled` is on
+and the consumer's bank supply of the voucher denom is zero (a consumer pinned
+before its fee payers were funded, or one whose vouchers have all been
+bridged back), the photon policy and the fee checker treat that bootstrap
+traffic as they do before the pin: it passes whatever it pays and skips the
+floor. Restart the relayer with a zero gas price, bridge `uphoton` to it as in
+section 4, step 2, and switch it back to the voucher gas price once the
+vouchers land: the exemption closes as soon as one voucher exists.
+
+**Keep the relayer funded.** The reference consumer wires no `x/distribution`,
+so every voucher paid as a fee stays in the fee collector module account for
+good, and the relayer's balance only goes down. Those vouchers still count
+toward the supply, so a relayer that runs out on a consumer whose vouchers sit
+in the fee collector gets no exemption: it cannot deliver its own refill,
+which arrives in a delivery it must pay for. Watch its voucher balance and top
+it up from any account holding vouchers on the consumer, with a plain bank
+send of vouchers (which restricted mode lets through for this reason), or
+keep a second, voucher-funded relayer account to switch to. If no account
+holding spendable vouchers is left, no transaction can pay a fee, and the
+chain has no on-chain way out.
 
 Watch the consumer's liveness (last ack, removal ETA, degraded flag) as
 described in [consumer-liveness.md](consumer-liveness.md) section 6, and keep a

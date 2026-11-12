@@ -88,7 +88,8 @@ func (mfd MsgFilterDecorator) AnteHandle(ctx sdk.Context, tx sdk.Tx, simulate bo
 
 	// Restricted mode: in debt, or no fresh VSC (validator set may be stale).
 	//
-	// Only /ibc.core.* and /cosmos.gov.* messages pass:
+	// Only /ibc.core.* messages (minus the raw MsgSendPacket), /cosmos.gov.*
+	// messages and bank sends made only of the photon voucher pass:
 	//
 	// /ibc.core.* preserves VAAS liveness and keeps all IBC apps working.
 	// The prefix covers both IBC v1 and v2 channel/connection/client
@@ -118,7 +119,7 @@ func (mfd MsgFilterDecorator) AnteHandle(ctx sdk.Context, tx sdk.Tx, simulate bo
 		}
 		return ctx, errorsmod.Wrap(
 			consumertypes.ErrConsumerInDebt,
-			"consumer is in debt or has a stale validator set; only ibc.core and cosmos.gov messages are temporarily allowed",
+			"consumer is in debt or has a stale validator set; only ibc.core messages other than a raw send packet, cosmos.gov messages and bank sends of the photon voucher are temporarily allowed",
 		)
 	}
 	return next(ctx, tx, simulate)
