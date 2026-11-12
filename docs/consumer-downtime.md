@@ -299,13 +299,18 @@ packet proven against the fork lands any more; `MsgSubmitConsumerMisbehaviour` d
 transaction (see `HandleConsumerMisbehaviour`), and a client frozen through ibc-go's
 `MsgUpdateClient` is caught by the provider's BeginBlock, which pauses the consumer. A refusal
 coalition reaching `RefusalPauseThreshold` pauses the consumer the same way (see
-[consumer-refusal.md](consumer-refusal.md)). A challenge or light-client pause first repays
-the fees withheld from accused validators: their accusations are cancelled with it and could
-not be challenged any more. A refusal pause proves nothing about the accusations and freezes
-them instead: pending slashes and withheld records keep their state with their clocks
-stopped, a resume restarts the clocks where the pause stopped them, and a challenge proven
-meanwhile discards them as above. The `vaas_consumer_paused` event names the reason. While
-paused:
+[consumer-refusal.md](consumer-refusal.md)). So does a declared client that tracks a chain id
+other than the consumer's, which an ibc-go client upgrade or recovery can leave behind: the
+provider's BeginBlock pauses the consumer, since a challenge needs a header signed over the
+consumer's chain id that the client verifies, and the client verifies only headers of the
+chain id it tracks (see
+[consumer-lifecycle.md](consumer-lifecycle.md#renaming-a-launched-consumer)). A challenge,
+light-client or mismatch pause first repays the fees withheld from accused validators: their
+accusations are cancelled with it and could not be challenged any more. A refusal pause
+proves nothing about the accusations and freezes them instead: pending slashes and withheld
+records keep their state with their clocks stopped, a resume restarts the clocks where the
+pause stopped them, and a challenge proven meanwhile discards them as above. The
+`vaas_consumer_paused` event names the reason. While paused:
 
 - No VSC packets are queued or sent; no fees are distributed; downtime evidence from the
   consumer is rejected.
@@ -327,9 +332,10 @@ paused:
   address for pruning rather than deleting it, since a paused consumer is exactly the one
   with downtime state in flight and both the challenge lookup and the re-submission defence
   resolve an accused address through that mapping.
-- **`MsgUpdateConsumer` is refused**, unlike key assignment. An update can rewrite the
-  infraction and initialization parameters the challenge was judged under, and the resume
-  path replays state built from them. Resume or remove first, then update.
+- **`MsgUpdateConsumer` stays open** for the metadata, the ownership and the client
+  declaration, as on a launched consumer; the initialization parameters are frozen, and only
+  the governance authority changes the chain id, to the one the declared client tracks (see
+  [consumer-lifecycle.md](consumer-lifecycle.md#renaming-a-launched-consumer)).
 
 Two governance exits:
 
@@ -343,8 +349,15 @@ Two governance exits:
   (45 days) exceeds the client trusting period, so a long pause with idle relayers can
   expire the client. An expired or frozen client fails the resume with instructions to
   bundle ibc-go's `MsgRecoverClient` (client substitution, already governance-gated) in the
-  same proposal. Client expiry during a pause is therefore a recoverable inconvenience, not
-  a death sentence -- which is why `MaxPauseDuration` is not bounded by the trusting period.
+  same proposal. The substitute must track the consumer's chain id, or the proposal also
+  carries the governance rename (`MsgUpdateConsumer` with the client's chain id), and its
+  trusting period must clear the downtime challenge horizon like the declaration's did: the
+  resume checks both and refuses a client that fails either, and the rename checks the
+  trusting period too. After a mismatch pause the
+  same check is the whole exit: the proposal renames the consumer to the client's chain id,
+  or recovers the client onto the consumer's, and resumes it. Client expiry during a pause
+  is therefore a recoverable inconvenience, not a death sentence -- which is why
+  `MaxPauseDuration` is not bounded by the trusting period.
   A resume after a light-client pause also waits out the fork's evidence: a recovery keeps
   the client's pre-fork consensus states, and the conflicting headers verify against them on
   either submission path until those states age out of the trusting period, so a consumer
@@ -356,12 +369,18 @@ Two governance exits:
   `STOPPED -> DELETED` teardown.
 
 Stopping or deleting a consumer cancels its in-flight downtime state (pending slashes and
-epoch marks), as does a pause for a disproven or discredited source: once no epoch or
-challenge window remains to resolve them against, they are cancelled outright. A refusal
-pause freezes them instead. The accepted-window records and the pruned floor survive a
-pause or stop -- a disproven or cancelled window must not become re-submittable, while
-later disjoint windows remain submittable after a resume as usual. Full deletion erases
-them along with the escrow records.
+epoch marks), as does a pause for a disproven, discredited or undisprovable source: once no
+epoch or challenge window remains to resolve them against, they are cancelled outright. A
+refusal pause freezes them instead. A governance rename cancels them too, and repays the
+withheld fees: the client verifies a challenge header over the chain id it tracks after the
+rename, so no header signed over the old one could disprove an accusation from before the
+rename, and an accusation that cannot be disproved does not stand. In the block in which the declared
+client switches to another chain id, before the next BeginBlock pauses the consumer, no
+downtime evidence is accepted from it; after a rename, none is accepted whose window starts
+at or below the client's height at it. The accepted-window records and the pruned floor
+survive a pause or stop -- a disproven or cancelled window must not become re-submittable,
+while later disjoint windows remain submittable after a resume as usual. Full deletion
+erases them along with the escrow records.
 
 ## 8. Parameters and bounds
 

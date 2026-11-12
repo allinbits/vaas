@@ -283,7 +283,7 @@ func TestConsPubKeyRotationKeepsAssignedValidatorDowntimeStateResolvable(t *test
 	infractionParams := downtimeParams(8, "0.5", 0, 7*24*time.Hour, 72*time.Hour)
 	k.SetInfractionParams(ctx, infractionParams)
 	mocks.MockClientKeeper.EXPECT().GetClientState(gomock.Any(), gomock.Any()).
-		Return(&ibctmtypes.ClientState{TrustingPeriod: 365 * 24 * time.Hour}, true).AnyTimes()
+		Return(&ibctmtypes.ClientState{ChainId: rotationTestChainID, TrustingPeriod: 365 * 24 * time.Hour}, true).AnyTimes()
 	k.OverrideWindowEndTimestampForTest(func(sdk.Context, string, int64) (time.Time, error) {
 		return windowEndTime, nil
 	})
@@ -460,7 +460,7 @@ func TestConsPubKeyRotationLeavesDefaultKeyValidatorAcceptanceStatePut(t *testin
 	infractionParams := downtimeParams(8, "0.5", 0, 7*24*time.Hour, 72*time.Hour)
 	k.SetInfractionParams(ctx, infractionParams)
 	mocks.MockClientKeeper.EXPECT().GetClientState(gomock.Any(), gomock.Any()).
-		Return(&ibctmtypes.ClientState{TrustingPeriod: 365 * 24 * time.Hour}, true).AnyTimes()
+		Return(&ibctmtypes.ClientState{ChainId: rotationTestChainID, TrustingPeriod: 365 * 24 * time.Hour}, true).AnyTimes()
 	k.OverrideWindowEndTimestampForTest(func(sdk.Context, string, int64) (time.Time, error) {
 		return windowEndTime, nil
 	})
@@ -593,7 +593,7 @@ func TestConsPubKeyRotationKeepsPreRotationEvidenceAcceptable(t *testing.T) {
 	ctx = ctx.WithBlockTime(windowEndTime)
 	k.SetInfractionParams(ctx, downtimeParams(8, "0.5", 0, 7*24*time.Hour, 72*time.Hour))
 	mocks.MockClientKeeper.EXPECT().GetClientState(gomock.Any(), gomock.Any()).
-		Return(&ibctmtypes.ClientState{TrustingPeriod: 365 * 24 * time.Hour}, true).AnyTimes()
+		Return(&ibctmtypes.ClientState{ChainId: rotationTestChainID, TrustingPeriod: 365 * 24 * time.Hour}, true).AnyTimes()
 	k.OverrideWindowEndTimestampForTest(func(sdk.Context, string, int64) (time.Time, error) {
 		return windowEndTime, nil
 	})
@@ -728,7 +728,7 @@ func TestPreRotationDowntimeMarksEpochExclusionUnderTheLiveAddress(t *testing.T)
 	ctx = ctx.WithBlockTime(windowEndTime)
 	k.SetInfractionParams(ctx, downtimeParams(8, "0.5", 0, 7*24*time.Hour, 72*time.Hour))
 	mocks.MockClientKeeper.EXPECT().GetClientState(gomock.Any(), gomock.Any()).
-		Return(&ibctmtypes.ClientState{TrustingPeriod: 365 * 24 * time.Hour}, true).AnyTimes()
+		Return(&ibctmtypes.ClientState{ChainId: rotationTestChainID, TrustingPeriod: 365 * 24 * time.Hour}, true).AnyTimes()
 	k.OverrideWindowEndTimestampForTest(func(sdk.Context, string, int64) (time.Time, error) {
 		return windowEndTime, nil
 	})
@@ -799,7 +799,7 @@ func TestPreRotationEvidenceStillRequiresConsumerSetMembership(t *testing.T) {
 	ctx = ctx.WithBlockTime(windowEndTime)
 	k.SetInfractionParams(ctx, downtimeParams(8, "0.5", 0, 7*24*time.Hour, 72*time.Hour))
 	mocks.MockClientKeeper.EXPECT().GetClientState(gomock.Any(), gomock.Any()).
-		Return(&ibctmtypes.ClientState{TrustingPeriod: 365 * 24 * time.Hour}, true).AnyTimes()
+		Return(&ibctmtypes.ClientState{ChainId: rotationTestChainID, TrustingPeriod: 365 * 24 * time.Hour}, true).AnyTimes()
 	k.OverrideWindowEndTimestampForTest(func(sdk.Context, string, int64) (time.Time, error) {
 		return windowEndTime, nil
 	})
@@ -985,6 +985,8 @@ func TestEquivocationPunishmentStillRequiresAResolvableValidator(t *testing.T) {
 func TestConsPubKeyRotationSnapshotsOnlyConsumersWhoseViewChanges(t *testing.T) {
 	k, ctx, ctrl, mocks := testkeeper.GetProviderKeeperAndCtx(t, testkeeper.NewInMemKeeperParams(t))
 	defer ctrl.Finish()
+	mocks.MockClientKeeper.EXPECT().GetClientState(gomock.Any(), gomock.Any()).
+		Return(&ibctmtypes.ClientState{ChainId: rotationTestChainID, TrustingPeriod: 365 * 24 * time.Hour}, true).AnyTimes()
 
 	ctx = ctx.WithBlockTime(time.Date(2025, 6, 1, 0, 0, 0, 0, time.UTC))
 	k.SetInfractionParams(ctx, types.DefaultInfractionParameters())
@@ -1092,6 +1094,8 @@ func TestConsPubKeyRotationSnapshotFailuresDoNotHalt(t *testing.T) {
 		t.Run(tc.name, func(t *testing.T) {
 			k, ctx, ctrl, mocks := testkeeper.GetProviderKeeperAndCtx(t, testkeeper.NewInMemKeeperParams(t))
 			defer ctrl.Finish()
+			mocks.MockClientKeeper.EXPECT().GetClientState(gomock.Any(), gomock.Any()).
+				Return(&ibctmtypes.ClientState{ChainId: rotationTestChainID, TrustingPeriod: 365 * 24 * time.Hour}, true).AnyTimes()
 
 			k.SetInfractionParams(ctx, types.DefaultInfractionParameters())
 			cid, _ := setupRotationConsumer(t, k, ctx, ctx.BlockTime())

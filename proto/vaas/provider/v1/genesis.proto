@@ -7,6 +7,7 @@ option go_package = "github.com/allinbits/vaas/x/vaas/provider/types";
 import "cosmos_proto/cosmos.proto";
 import "gogoproto/gogo.proto";
 import "google/protobuf/timestamp.proto";
+import "ibc/core/client/v1/client.proto";
 import "vaas/v1/shared_consumer.proto";
 import "vaas/v1/wire.proto";
 import "vaas/provider/v1/provider.proto";
@@ -166,6 +167,16 @@ message EpochShareRecord {
   ];
 }
 
+// PreviousChainId is a chain id a consumer carried before a governance
+// rename, with the declared client's height at the rename.
+message PreviousChainId {
+  string chain_id = 1;
+  // boundary is the declared client's latest height at the rename, in the
+  // client's (new) revision: evidence signed over chain_id is accepted for
+  // a block of a lower revision, or of this revision at or below this height.
+  ibc.core.client.v1.Height boundary = 2 [ (gogoproto.nullable) = false ];
+}
+
 // The provider VAAS module's knowledge of consumer state.
 //
 // Note this type is only used internally to the provider VAAS module.
@@ -243,6 +254,12 @@ message ConsumerState {
   // period from it, so the fork's evidence can no longer pause the consumer.
   google.protobuf.Timestamp paused_at = 19
       [ (gogoproto.stdtime) = true ];
+  // previous_chain_ids lists the chain ids the consumer carried before
+  // governance renames, each with the declared client's height at the
+  // rename, at or below which (in the client's revision) double-voting
+  // evidence signed over the old id is still accepted. They stay reserved:
+  // no other consumer may register them until this one is deleted.
+  repeated PreviousChainId previous_chain_ids = 21 [ (gogoproto.nullable) = false ];
 }
 
 // ConsumerFeesPerBlockOverride is a single per-consumer override entry for

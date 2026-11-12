@@ -309,15 +309,21 @@ func (k Keeper) QueryConsumerChain(goCtx context.Context, req *types.QueryConsum
 
 	clientId, _ := k.GetConsumerClientId(ctx, consumerId)
 
+	previousChainIds, err := k.GetConsumerPreviousChainIds(ctx, consumerId)
+	if err != nil {
+		return nil, status.Errorf(codes.Internal, "cannot retrieve previous chain ids for consumer id: %d", consumerId)
+	}
+
 	return &types.QueryConsumerChainResponse{
-		ChainId:        chainId,
-		ConsumerId:     consumerId,
-		OwnerAddress:   ownerAddress,
-		Phase:          phase.String(),
-		Metadata:       metadata,
-		InitParams:     &initParams,
-		ClientId:       clientId,
-		FeePoolAddress: k.GetConsumerFeePoolAddress(consumerId).String(),
+		ChainId:          chainId,
+		ConsumerId:       consumerId,
+		OwnerAddress:     ownerAddress,
+		Phase:            phase.String(),
+		Metadata:         metadata,
+		InitParams:       &initParams,
+		ClientId:         clientId,
+		FeePoolAddress:   k.GetConsumerFeePoolAddress(consumerId).String(),
+		PreviousChainIds: previousChainIds,
 	}, nil
 }
 

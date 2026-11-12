@@ -2,6 +2,7 @@ package keeper_test
 
 import (
 	"testing"
+	"time"
 
 	"github.com/stretchr/testify/require"
 	"go.uber.org/mock/gomock"
@@ -9,6 +10,7 @@ import (
 	abci "github.com/cometbft/cometbft/abci/types"
 
 	clienttypes "github.com/cosmos/ibc-go/v10/modules/core/02-client/types"
+	ibctmtypes "github.com/cosmos/ibc-go/v10/modules/light-clients/07-tendermint"
 
 	cryptocodec "github.com/cosmos/cosmos-sdk/crypto/codec"
 	"github.com/cosmos/cosmos-sdk/crypto/keys/ed25519"
@@ -32,6 +34,8 @@ func TestIBCV2PacketQueueing(t *testing.T) {
 	providerKeeper.SetConsumerClientId(ctx, consumerId, clientId)
 	providerKeeper.SetConsumerPhase(ctx, consumerId, providertypes.CONSUMER_PHASE_LAUNCHED)
 	providerKeeper.SetConsumerChainId(ctx, consumerId, "consumer-1")
+	mocks.MockClientKeeper.EXPECT().GetClientState(gomock.Any(), clientId).
+		Return(&ibctmtypes.ClientState{ChainId: "consumer-1", TrustingPeriod: 14 * 24 * time.Hour}, true).AnyTimes()
 
 	pk1, err := cryptocodec.ToCmtProtoPublicKey(ed25519.GenPrivKey().PubKey())
 	require.NoError(t, err)

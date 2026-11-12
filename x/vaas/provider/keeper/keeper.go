@@ -9,6 +9,7 @@ import (
 
 	tmprotocrypto "github.com/cometbft/cometbft/proto/tendermint/crypto"
 
+	clienttypes "github.com/cosmos/ibc-go/v10/modules/core/02-client/types"
 	ibchost "github.com/cosmos/ibc-go/v10/modules/core/exported"
 	ibctmtypes "github.com/cosmos/ibc-go/v10/modules/light-clients/07-tendermint"
 
@@ -209,6 +210,11 @@ type Keeper struct {
 	// accused validator while it has pending equivocation punishments, keyed
 	// (provider consensus address, unbonding op id).
 	HeldUnbondingOps collections.KeySet[collections.Pair[[]byte, uint64]]
+	// ConsumerPreviousChainIds maps (consumer id, a chain id the consumer
+	// carried before a governance rename) to the declared client's height
+	// at the rename: double-voting evidence from a block at or below it may
+	// still be signed over the old id (see SubmitConsumerDoubleVoting).
+	ConsumerPreviousChainIds collections.Map[collections.Pair[uint64, string], clienttypes.Height]
 
 	// PendingEquivocationJails records, per accused validator (provider
 	// consensus address), the jail end this module last set on account of
@@ -417,6 +423,13 @@ func NewKeeper(
 		sb, types.HeldUnbondingOpsPrefix,
 		"held_unbonding_ops",
 		collections.PairKeyCodec(collections.BytesKey, collections.Uint64Key),
+	)
+
+	k.ConsumerPreviousChainIds = collections.NewMap(
+		sb, types.ConsumerPreviousChainIdsPrefix,
+		"consumer_previous_chain_ids",
+		collections.PairKeyCodec(collections.Uint64Key, collections.StringKey),
+		codec.CollValue[clienttypes.Height](cdc),
 	)
 
 	k.PendingEquivocationJails = collections.NewMap(
