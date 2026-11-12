@@ -166,18 +166,14 @@ the restart.
 
 ### Stopping a node
 
-The binary exits on `SIGTERM` within a second: half a second in the e2e
-harness, which stops a node by signalling it directly (`docker kill -s TERM`)
-and waits for the exit. Give a stop a deadline of 60 seconds anyway (a
-systemd unit's `TimeoutStopSec=60`, `docker stop -t 60`): a kill at the
-deadline costs nothing but a WAL replay at the next start. If a stop runs to
-its deadline, suspect the path the signal takes before the node: on the
-GitHub runner `docker stop` never delivered it while `docker kill -s TERM`
-did, and the harness dumps the node's goroutines in that case so a shutdown
-that stalls inside the node is told apart from a signal that never arrived.
-Keep a validator's restart short: a validator away for more than half a
-downtime window is accused by the consumer (see
-[consumer-downtime.md](consumer-downtime.md)).
+Stop a node with `SIGTERM` and give the stop a deadline of about 60 seconds
+before the kill (a systemd unit's `TimeoutStopSec=60`, `docker stop -t 60`). A
+kill at the deadline costs a write-ahead log replay at the next start, from
+which CometBFT recovers. If stops keep running to the deadline, check that the
+supervisor delivers `SIGTERM` to the node process before suspecting the node:
+some container setups do not forward it. Keep a validator's restart short: a
+validator away for more than half a downtime window is accused by the consumer
+(see [consumer-downtime.md](consumer-downtime.md)).
 
 ## Notes
 
