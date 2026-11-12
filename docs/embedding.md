@@ -142,10 +142,11 @@ Five of the provider's hook methods carry real behavior; the rest are no-ops:
   [key-assignment.md](key-assignment.md#rotating-your-provider-consensus-key).
 - `AfterValidatorRemoved` -- deletes the removed validator's key assignments and
   reverse mappings.
-- `AfterUnbondingInitiated` -- holds every unbonding operation (an undelegation,
-  a redelegation, the validator's own unbonding) started by a validator with a
-  pending equivocation punishment, so the deferred slash finds the stake it was
-  queued against ([consumer-refusal.md](consumer-refusal.md) section 3).
+- `AfterUnbondingInitiated` -- holds every unbonding operation of a validator
+  with a pending equivocation punishment (its delegators' undelegations from it
+  and redelegations away from it, and its own unbonding), so the deferred slash
+  finds the stake it was queued against
+  ([consumer-refusal.md](consumer-refusal.md) section 3).
 
 **Omitting the hooks is entirely silent.** `ValidatorConsensusKeyInUse`
 ([key_assignment.go](../x/vaas/provider/keeper/key_assignment.go)),

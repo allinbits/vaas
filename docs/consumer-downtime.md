@@ -457,10 +457,10 @@ stays challengeable for its whole window, whatever the parameters say.
 - Re-submission of an already accepted window (even after its slash executed), overlapping
   windows, and evidence about windows too old to challenge.
 - VSC-shaped packets from a chain that is not the provider: inbound VAAS packets must carry
-  the provider application's source port, and the consumer accepts them only over a client
-  whose tracked chain id matches the provider chain id pinned at genesis, seeded from the
-  provider-authored client state. See [consumer-liveness.md](consumer-liveness.md) for the
-  delivery model.
+  the provider application's source port, and the consumer accepts them only over the
+  pinned provider client, whose tracked chain id `MsgSetProviderClient` checked, when it was
+  pinned, against the provider chain id seeded at genesis from the provider-authored client
+  state. See [consumer-liveness.md](consumer-liveness.md) for the delivery model.
 - An attacker chain reusing the provider's exact chain-id string. No forged light-client
   history is needed for this -- IBC attaches no meaning to chain-id uniqueness, so a chain
   that simply reports the provider's chain id passes the chain-id check while carrying a

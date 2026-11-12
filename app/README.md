@@ -91,9 +91,9 @@ The relayer only creates the IBC v2 clients; neither chain adopts one on its
 own. `localnet-declare-clients` waits for the two clients to appear and then,
 as the consumer's owner, declares the provider-side client through
 `tx vaasprovider update-consumer` (its `client_id` field) and pins the
-consumer-side client through `tx vaasconsumer set-provider-client`. Until both
-declarations land, the provider keeps its VSC packets queued and the consumer
-rejects every packet.
+consumer-side client through `tx vaasconsumer set-provider-client`. Until the
+provider-side declaration lands, the provider keeps its VSC packets queued;
+until the consumer's pin lands, the consumer rejects every packet that arrives.
 
 ## Network Configuration
 
