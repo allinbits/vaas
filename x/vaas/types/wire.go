@@ -5,6 +5,7 @@ import (
 	"fmt"
 
 	abci "github.com/cometbft/cometbft/abci/types"
+	"github.com/cometbft/cometbft/crypto"
 	"github.com/cometbft/cometbft/crypto/encoding"
 
 	errorsmod "cosmossdk.io/errors"
@@ -138,8 +139,8 @@ func (e EvidencePacketData) MaxMissed() int64 {
 
 // Validate returns an error if the EvidencePacketData is invalid.
 func (e EvidencePacketData) Validate() error {
-	if err := sdk.VerifyAddressFormat(e.ValidatorAddr); err != nil {
-		return errorsmod.Wrapf(ErrInvalidPacketData, "validator address: %s", err)
+	if len(e.ValidatorAddr) != crypto.AddressSize {
+		return errorsmod.Wrapf(ErrInvalidPacketData, "validator address must be a %d-byte consensus address, got %d bytes", crypto.AddressSize, len(e.ValidatorAddr))
 	}
 	if e.WindowEndHeight <= 0 {
 		return errorsmod.Wrap(ErrInvalidPacketData, "window end height must be positive")

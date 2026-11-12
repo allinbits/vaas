@@ -129,7 +129,7 @@ func TestEvidencePacketDataMaxMissed(t *testing.T) {
 // than nil-panicking on the nil-backed dec.
 func TestEvidencePacketDataValidateNilMinSignedPerWindow(t *testing.T) {
 	packet := types.NewEvidencePacketData(
-		sdk.ConsAddress([]byte{0x01, 0x02, 0x03, 0x04, 0x05}), 93, []byte{0x3F}, 8, 8, math.LegacyMustNewDecFromStr("0.5"),
+		sdk.ConsAddress([]byte("20-byte-cons-address")), 93, []byte{0x3F}, 8, 8, math.LegacyMustNewDecFromStr("0.5"),
 	)
 
 	var fields map[string]json.RawMessage

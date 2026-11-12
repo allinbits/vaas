@@ -7,6 +7,8 @@ import (
 
 	"github.com/stretchr/testify/require"
 
+	"github.com/cometbft/cometbft/crypto"
+
 	"cosmossdk.io/math"
 
 	sdk "github.com/cosmos/cosmos-sdk/types"
@@ -24,14 +26,16 @@ func TestEvidencePacketDataCrossesBech32Prefixes(t *testing.T) {
 	packet := types.NewEvidencePacketData(addr, 100, []byte{0x3F}, 8, 600, math.LegacyMustNewDecFromStr("0.5"))
 	require.NoError(t, packet.Validate())
 
-	// The SDK caches an address's bech32 string across prefix changes; the
+	// cosmos-sdk caches an address's bech32 string across prefix changes; the
 	// test switches prefixes, so the cache is off for its duration.
 	sdk.SetAddrCacheEnabled(false)
 	t.Cleanup(func() { sdk.SetAddrCacheEnabled(true) })
 
-	// Encode as the consumer, whose prefix is not the provider's.
 	config := sdk.GetConfig()
-	defaultAccPrefix, defaultValPrefix, defaultConsPrefix := config.GetBech32AccountAddrPrefix(), config.GetBech32ValidatorAddrPrefix(), config.GetBech32ConsensusAddrPrefix()
+	providerConsPrefix, providerConsPubPrefix := config.GetBech32ConsensusAddrPrefix(), config.GetBech32ConsensusPubPrefix()
+	t.Cleanup(func() { config.SetBech32PrefixForConsensusNode(providerConsPrefix, providerConsPubPrefix) })
+
+	// Encode as the consumer, whose prefix is not the provider's.
 	config.SetBech32PrefixForConsensusNode("shardvalcons", "shardvalconspub")
 	bz := packet.GetBytes()
 	require.NotContains(t, string(bz), "shardvalcons",
@@ -39,30 +43,27 @@ func TestEvidencePacketDataCrossesBech32Prefixes(t *testing.T) {
 	require.NotContains(t, string(bz), addr.String())
 
 	// Decode as the provider.
-	config.SetBech32PrefixForConsensusNode(defaultConsPrefix, defaultConsPrefix+"pub")
-	t.Cleanup(func() {
-		config.SetBech32PrefixForAccount(defaultAccPrefix, defaultAccPrefix+"pub")
-		config.SetBech32PrefixForValidator(defaultValPrefix, defaultValPrefix+"pub")
-		config.SetBech32PrefixForConsensusNode(defaultConsPrefix, defaultConsPrefix+"pub")
-	})
+	config.SetBech32PrefixForConsensusNode(providerConsPrefix, providerConsPubPrefix)
 	var decoded types.EvidencePacketData
 	require.NoError(t, json.Unmarshal(bz, &decoded))
 	require.NoError(t, decoded.Validate())
 	require.Equal(t, addr, decoded.ConsAddress(), "the provider must resolve the same validator the consumer accused")
-	require.True(t, strings.HasPrefix(decoded.ConsAddress().String(), defaultConsPrefix))
+	require.True(t, strings.HasPrefix(decoded.ConsAddress().String(), providerConsPrefix))
 }
 
-// TestEvidencePacketDataValidateRejectsBadAddresses covers the address check
-// that replaced the empty-only one.
+// TestEvidencePacketDataValidateRejectsBadAddresses pins the address check:
+// the accused address must be exactly a CometBFT consensus address.
 func TestEvidencePacketDataValidateRejectsBadAddresses(t *testing.T) {
 	good := types.NewEvidencePacketData(sdk.ConsAddress([]byte("20-byte-cons-address")), 100, []byte{0x3F}, 8, 600, math.LegacyMustNewDecFromStr("0.5"))
 	require.NoError(t, good.Validate())
 
-	empty := good
-	empty.ValidatorAddr = nil
-	require.ErrorIs(t, empty.Validate(), types.ErrInvalidPacketData)
+	for _, size := range []int{0, 1, crypto.AddressSize - 1, crypto.AddressSize + 1, 32, 256} {
+		bad := good
+		bad.ValidatorAddr = make([]byte, size)
+		require.ErrorIs(t, bad.Validate(), types.ErrInvalidPacketData, "a %d-byte address", size)
+	}
 
-	tooLong := good
-	tooLong.ValidatorAddr = make([]byte, 256)
-	require.ErrorIs(t, tooLong.Validate(), types.ErrInvalidPacketData)
+	missing := good
+	missing.ValidatorAddr = nil
+	require.ErrorIs(t, missing.Validate(), types.ErrInvalidPacketData)
 }
