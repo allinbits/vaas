@@ -5,9 +5,12 @@ import (
 	"fmt"
 	"strings"
 
+	channeltypesv2 "github.com/cosmos/ibc-go/v10/modules/core/04-channel/v2/types"
+
 	errorsmod "cosmossdk.io/errors"
 
 	sdk "github.com/cosmos/cosmos-sdk/types"
+	banktypes "github.com/cosmos/cosmos-sdk/x/bank/types"
 
 	consumertypes "github.com/allinbits/vaas/x/vaas/consumer/types"
 )
@@ -24,8 +27,10 @@ type (
 	// MsgFilterDecorator is the consumer-side tx admission gate. It runs in
 	// four modes driven by consumer state:
 	//
-	//   bootstrap  : provider IBC client not yet established -> only /ibc.* msgs
-	//               are accepted, so the chain can stand up its IBC stack.
+	//   bootstrap  : no provider client pinned yet -> only /ibc.* messages,
+	//               /cosmos.gov.* and the pin itself (MsgSetProviderClient)
+	//               are accepted, so the chain can stand up its IBC stack
+	//               and declare the client.
 	//   normal     : provider client established, consumer is paying its fees
 	//               and has a fresh validator set -> everything passes.
 	//   in debt    : provider client established, consumer has fallen behind on
@@ -33,9 +38,10 @@ type (
 	//   stale VSC  : provider client established, no VSC packet received within
 	//               the safe-mode threshold -> restricted mode (see below).
 	//
-	// Restricted mode: only /ibc.core.* and /cosmos.gov.* messages pass,
-	// keeping VAAS liveness and governance available so the chain can recover
-	// without off-chain coordination.
+	// Restricted mode: only /ibc.core.* (minus the user-originated
+	// MsgSendPacket), /cosmos.gov.* and a bank send of photon vouchers pass,
+	// keeping VAAS liveness, governance and the relayer's refill available so
+	// the chain can recover without off-chain coordination, and value in.
 	MsgFilterDecorator struct {
 		ConsumerKeeper ConsumerKeeper
 	}
@@ -82,16 +88,25 @@ func (mfd MsgFilterDecorator) AnteHandle(ctx sdk.Context, tx sdk.Tx, simulate bo
 
 	// Restricted mode: in debt, or no fresh VSC (validator set may be stale).
 	//
-	// Only /ibc.core.* and /cosmos.gov.* messages pass:
+	// Only /ibc.core.* messages (minus the raw MsgSendPacket), /cosmos.gov.*
+	// messages and bank sends made only of the photon voucher pass:
 	//
 	// /ibc.core.* preserves VAAS liveness and keeps all IBC apps working.
 	// The prefix covers both IBC v1 and v2 channel/connection/client
 	// messages, since the consumer chain may have v1 apps (ICS-20 v1) wired
-	// in addition to VAAS itself (which uses v2). User-initiated ICS-20 v2
-	// transfers go through /ibc.core.channel.v2.MsgSendPacket and are
-	// therefore also allowed. Relayers sign these messages directly with
-	// their own keys; authz wrapping is not part of any realistic relayer
-	// flow and is therefore treated as non-ibc.core and rejected here.
+	// in addition to VAAS itself (which uses v2). The one /ibc.core.*
+	// message a user originates, /ibc.core.channel.v2.MsgSendPacket (a raw
+	// ICS-20 v2 transfer), is carved out like ICS-20 v1's MsgTransfer:
+	// restricted mode is for recovery, and value does not leave a chain
+	// whose validator set may be stale or whose fees are unpaid. Relayers
+	// sign their messages directly with their own keys; authz wrapping is
+	// not part of any realistic relayer flow and is therefore treated as
+	// non-ibc.core and rejected here.
+	//
+	// A bank send made only of the photon voucher passes too: it is how a
+	// relayer that ran out of vouchers (and so cannot deliver its own refill,
+	// see photon_fee_ante.go) is refilled by any account holding some; the
+	// vouchers stay on the chain.
 	//
 	// /cosmos.gov.* keeps governance alive so the community can vote on
 	// recovery (e.g. emergency funding, param changes) without requiring
@@ -99,22 +114,52 @@ func (mfd MsgFilterDecorator) AnteHandle(ctx sdk.Context, tx sdk.Tx, simulate bo
 	// governance module; the reference consumer app wires none, so there
 	// the allowance is inert.
 	if mfd.ConsumerKeeper.IsConsumerInDebt(ctx) || mfd.ConsumerKeeper.IsVSCStale(ctx) {
-		if isAllowedRestrictedTx(tx.GetMsgs()) {
+		if isAllowedRestrictedTx(tx.GetMsgs(), mfd.voucherDenom(ctx)) {
 			return next(ctx, tx, simulate)
 		}
 		return ctx, errorsmod.Wrap(
 			consumertypes.ErrConsumerInDebt,
-			"consumer is in debt or has a stale validator set; only ibc.core and cosmos.gov messages are temporarily allowed",
+			"consumer is in debt or has a stale validator set; only ibc.core messages other than a raw send packet, cosmos.gov messages and bank sends of the photon voucher are temporarily allowed",
 		)
 	}
 	return next(ctx, tx, simulate)
 }
 
-func isAllowedRestrictedTx(msgs []sdk.Msg) bool {
+// voucherDenom is the photon voucher denom of the pinned provider client, or
+// empty before the pin.
+func (mfd MsgFilterDecorator) voucherDenom(ctx sdk.Context) string {
+	clientID, ok := mfd.ConsumerKeeper.GetProviderClientID(ctx)
+	if !ok {
+		return ""
+	}
+	return ExpectedPhotonDenom(clientID)
+}
+
+// isAllowedRestrictedTx reports whether every message in the tx may pass
+// restricted mode: IBC core messages minus the user-originated raw send,
+// governance, and a bank send made only of the photon voucher. The last is
+// the refill path: after bootstrap the relayer pays its deliveries in the
+// voucher, a relayer with none cannot deliver its own refill, and restricted
+// mode is exactly when deliveries matter most, so any account holding
+// vouchers on the chain may hand it some. The vouchers stay on the chain.
+func isAllowedRestrictedTx(msgs []sdk.Msg, voucherDenom string) bool {
+	sendPacketURL := sdk.MsgTypeURL(&channeltypesv2.MsgSendPacket{})
 	for _, msg := range msgs {
 		url := sdk.MsgTypeURL(msg)
-		if !strings.HasPrefix(url, "/ibc.core.") && !strings.HasPrefix(url, "/cosmos.gov.") {
+		switch {
+		case url == sendPacketURL:
 			return false
+		case strings.HasPrefix(url, "/ibc.core."), strings.HasPrefix(url, "/cosmos.gov."):
+		default:
+			send, ok := msg.(*banktypes.MsgSend)
+			if !ok || voucherDenom == "" || len(send.Amount) == 0 {
+				return false
+			}
+			for _, coin := range send.Amount {
+				if coin.Denom != voucherDenom {
+					return false
+				}
+			}
 		}
 	}
 	return true

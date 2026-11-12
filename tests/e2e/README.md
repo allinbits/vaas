@@ -98,7 +98,7 @@ and the header comment of that file documents the timing rationale in detail.
 | `e2e_fee_pool_test.go` | fee-pool send restriction, locks, gov clawback |
 | `e2e_fee_distribution_test.go` | per-epoch validator payout out of a consumer's fee pool |
 | `e2e_photon_fee_test.go` | photon-only fee policy: native fees rejected, vouchers bridged in while enforcing, voucher fees commit |
-| `e2e_fee_floor_test.go` | node fee floor in the voucher denom, set by restarting the consumer validator: below-floor rejection at CheckTx, relayer traffic exempt |
+| `e2e_fee_floor_test.go` | node fee floor in the voucher denom, set by restarting the consumer validator: below-floor rejection at CheckTx, IBC core traffic floored once pinned, relayer paying the floor in vouchers |
 | `e2e_key_assignment_test.go` | consumer key assignment and the consumer switching onto it |
 | `e2e_consumer_liveness_test.go` | liveness / safe-mode scenarios |
 | `e2e_refusal_and_deferral_test.go` | refusal pause and resume, downtime and equivocation deferral behind removal votes, cancellation on removal; fabricated double-vote evidence helpers |

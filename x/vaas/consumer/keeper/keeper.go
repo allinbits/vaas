@@ -226,6 +226,14 @@ func (k Keeper) HasRoutableProviderClient(ctx context.Context) bool {
 	return found
 }
 
+// HasSupply reports whether any amount of denom exists on this chain. The
+// photon fee policy and the fee checker read it for the voucher denom: a
+// photon-fees chain with no voucher at all treats bootstrap traffic as it
+// does before the pin (see PhotonFeeDecorator in x/vaas/consumer/ante).
+func (k Keeper) HasSupply(ctx context.Context, denom string) bool {
+	return k.bankKeeper.HasSupply(ctx, denom)
+}
+
 // SetProviderChainId pins the chain id the consumer treats as belonging to
 // the provider. See authenticateProviderChainID in relay.go.
 func (k Keeper) SetProviderChainId(ctx context.Context, chainID string) {

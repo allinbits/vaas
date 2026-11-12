@@ -64,6 +64,22 @@ func (o testAppOptions) Get(key string) any { return o[key] }
 // photon_fees_enabled consumer param.
 func setupAnteTestApp(t *testing.T, photonFees bool) *consumerapp.App {
 	t.Helper()
+	return setupAnteTestAppPinning(t, photonFees, providerClientID)
+}
+
+// setupUnpinnedAnteTestApp is setupAnteTestApp for a chain still in
+// bootstrap: the relayer-created provider client exists in the IBC store, but
+// the restart genesis pins none, as the export of a chain that had not been
+// pinned yet carries.
+func setupUnpinnedAnteTestApp(t *testing.T, photonFees bool) *consumerapp.App {
+	t.Helper()
+	return setupAnteTestAppPinning(t, photonFees, "")
+}
+
+// setupAnteTestAppPinning builds the app of setupAnteTestApp with pinnedClient
+// as the restart genesis's provider client id, empty for none.
+func setupAnteTestAppPinning(t *testing.T, photonFees bool, pinnedClient string) *consumerapp.App {
+	t.Helper()
 
 	db := dbm.NewMemDB()
 	appOpts := testAppOptions{"home": t.TempDir()}
@@ -77,7 +93,7 @@ func setupAnteTestApp(t *testing.T, photonFees bool) *consumerapp.App {
 	params := vaastypes.DefaultConsumerParams()
 	params.PhotonFeesEnabled = photonFees
 	consumerGenesis := consumertypes.NewRestartGenesisState(
-		providerClientID,
+		pinnedClient,
 		[]abci.ValidatorUpdate{{PubKey: valPubKey, Power: 100}},
 		params,
 	)
@@ -344,10 +360,11 @@ func TestConsumerAnteHandlerPhotonFees(t *testing.T) {
 // TestConsumerAnteHandlerNodeFeeFloor runs signed transactions through the
 // reference consumer app's full ante chain at CheckTx under a node fee floor
 // set in the photon voucher denom, the floor a photon-fees consumer's
-// validators configure once the provider client is pinned. The floor is the
-// node's minimum-gas-prices as InfrastructureExemptTxFeeChecker applies it:
-// user transactions pay it, infrastructure transactions do not, and it is
-// mempool policy only, so it never runs outside CheckTx.
+// validators configure once the voucher denom is known. The floor is the
+// node's minimum-gas-prices as the bootstrap-exempt checker applies it:
+// bootstrap traffic skips it while no routable provider client is pinned and
+// again while no voucher exists on the chain, every transaction pays it
+// otherwise, and it is mempool policy only, so it never runs outside CheckTx.
 func TestConsumerAnteHandlerNodeFeeFloor(t *testing.T) {
 	photonDenom := consumerante.ExpectedPhotonDenom(providerClientID)
 	// 0.01 voucher per gas unit prices a transaction at 3000 vouchers under
@@ -355,19 +372,31 @@ func TestConsumerAnteHandlerNodeFeeFloor(t *testing.T) {
 	floor := sdk.NewDecCoins(sdk.NewDecCoinFromDec(photonDenom, sdkmath.LegacyMustNewDecFromStr("0.01")))
 	const requiredFee = anteTestGasLimit / 100
 
-	capp := setupAnteTestApp(t, true)
+	// The phases of the provider client the transaction meets.
+	const (
+		unpinned   = iota // no pin at all: the chain bootstraps
+		unroutable        // pinned with no registered counterparty, which only a restart genesis produces
+		routable          // pinned and routable: the bootstrap is over
+	)
+	apps := map[bool]*consumerapp.App{
+		false: setupAnteTestApp(t, true),
+		true:  setupUnpinnedAnteTestApp(t, true),
+	}
 
 	testCases := []struct {
 		name      string
 		checkTx   bool
 		infra     bool
+		phase     int
 		fee       sdk.Coins
 		funds     sdk.Coins
 		expectErr bool
+		photonErr bool
 	}{
 		{
 			name:      "user tx below the floor is rejected at CheckTx",
 			checkTx:   true,
+			phase:     routable,
 			fee:       sdk.NewCoins(sdk.NewInt64Coin(photonDenom, requiredFee-1)),
 			funds:     sdk.NewCoins(sdk.NewInt64Coin(photonDenom, requiredFee)),
 			expectErr: true,
@@ -375,17 +404,57 @@ func TestConsumerAnteHandlerNodeFeeFloor(t *testing.T) {
 		{
 			name:    "user tx at the floor is admitted",
 			checkTx: true,
+			phase:   routable,
 			fee:     sdk.NewCoins(sdk.NewInt64Coin(photonDenom, requiredFee)),
 			funds:   sdk.NewCoins(sdk.NewInt64Coin(photonDenom, requiredFee)),
 		},
 		{
-			name:    "fee-less infrastructure tx is admitted under the floor",
+			name:    "fee-less infrastructure tx is admitted under the floor before the pin",
 			checkTx: true,
 			infra:   true,
+			phase:   unpinned,
 			fee:     sdk.NewCoins(),
 		},
 		{
+			name:    "fee-less infrastructure tx is admitted under the floor while the pin is not routable",
+			checkTx: true,
+			infra:   true,
+			phase:   unroutable,
+			fee:     sdk.NewCoins(),
+		},
+		{
+			// The photon policy, which sits before fee deduction, refuses the
+			// empty fee first; the floor would refuse it next. The signer's
+			// vouchers mean the chain holds some.
+			name:      "fee-less infrastructure tx is rejected once the pin is routable",
+			checkTx:   true,
+			infra:     true,
+			phase:     routable,
+			fee:       sdk.NewCoins(),
+			funds:     sdk.NewCoins(sdk.NewInt64Coin(photonDenom, requiredFee)),
+			expectErr: true,
+			photonErr: true,
+		},
+		{
+			// Routable, but no voucher exists anywhere on the chain: the
+			// delivery that would bring the first one must get through.
+			name:    "fee-less infrastructure tx is admitted under the floor while no voucher exists",
+			checkTx: true,
+			infra:   true,
+			phase:   routable,
+			fee:     sdk.NewCoins(),
+		},
+		{
+			name:      "a fee-less user tx is still refused while no voucher exists",
+			checkTx:   true,
+			phase:     routable,
+			fee:       sdk.NewCoins(),
+			expectErr: true,
+			photonErr: true,
+		},
+		{
 			name:  "the floor does not apply outside CheckTx",
+			phase: routable,
 			fee:   sdk.NewCoins(sdk.NewInt64Coin(photonDenom, 1)),
 			funds: sdk.NewCoins(sdk.NewInt64Coin(photonDenom, 1)),
 		},
@@ -393,12 +462,16 @@ func TestConsumerAnteHandlerNodeFeeFloor(t *testing.T) {
 
 	for _, tc := range testCases {
 		t.Run(tc.name, func(t *testing.T) {
+			capp := apps[tc.phase == unpinned]
 			ctx := anteTestContext(capp).WithIsCheckTx(tc.checkTx).WithMinGasPrices(floor)
-			// The pinned provider client is routable, so the photon policy
-			// is enforcing and every user fee below is a voucher fee.
-			capp.IBCKeeper.ClientV2Keeper.SetClientCounterparty(ctx, providerClientID, clientv2types.CounterpartyInfo{
-				ClientId: "07-tendermint-9",
-			})
+			// With a registered counterparty the pinned provider client is
+			// routable, so the bootstrap is over: the photon policy is
+			// enforcing and every user fee below is a voucher fee.
+			if tc.phase == routable {
+				capp.IBCKeeper.ClientV2Keeper.SetClientCounterparty(ctx, providerClientID, clientv2types.CounterpartyInfo{
+					ClientId: "07-tendermint-9",
+				})
+			}
 
 			priv, addr := fundedSigner(t, capp, ctx, tc.funds)
 			msg := bankSendMsg(addr)
@@ -416,6 +489,11 @@ func TestConsumerAnteHandlerNodeFeeFloor(t *testing.T) {
 			_, err := newAppAnteHandler(t, capp)(ctx, tx, false)
 			if tc.expectErr {
 				require.Error(t, err)
+				if tc.photonErr {
+					require.True(t, errorsmod.IsOf(err, consumertypes.ErrInvalidFeeDenom),
+						"rejection must come from the photon policy, got: %v", err)
+					return
+				}
 				require.True(t, errorsmod.IsOf(err, sdkerrors.ErrInsufficientFee),
 					"rejection must come from the fee floor, got: %v", err)
 				return

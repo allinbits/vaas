@@ -256,7 +256,7 @@ anteDecorators := []sdk.AnteDecorator{
     // ...
     consumerante.NewPhotonFeeDecorator(options.ConsumerKeeper),
     ante.NewDeductFeeDecorator(options.AccountKeeper, options.BankKeeper, options.FeegrantKeeper,
-        consumerante.InfrastructureExemptTxFeeChecker),
+        consumerante.NewBootstrapExemptTxFeeChecker(app.ConsumerKeeper)),
     // ...
 }
 ```
@@ -271,9 +271,13 @@ can satisfy it with the consumer keeper or its own adapter. It has three modes
 - **While the consumer is in debt or its validator set is stale**, only
   `/ibc.core.` and `/cosmos.gov.` messages are admitted, rejected otherwise with
   `ErrConsumerInDebt`. Note the narrower `/ibc.core.` prefix: ICS-20 v1
-  `MsgTransfer` is blocked in this mode, while an ICS-20 v2 transfer riding
-  `/ibc.core.channel.v2.MsgSendPacket` is allowed. `MsgExec` is not unwrapped, so
-  authz-wrapped IBC messages are rejected too.
+  `MsgTransfer` is blocked in this mode, and so is the one `/ibc.core.`
+  message a user originates, an ICS-20 v2 transfer riding
+  `/ibc.core.channel.v2.MsgSendPacket`: restricted mode is for recovery, and
+  value stays in. One bank message passes: a `MsgSend` made only of the photon
+  voucher, the path by which a relayer that ran out of vouchers is refilled
+  by any account holding some. `MsgExec` is not unwrapped, so authz-wrapped
+  IBC messages are rejected too.
 - **Otherwise** the transaction passes through untouched.
 
 **Omitting it is silent, and it deletes two whole mechanisms.** `IsVSCStale` and
@@ -293,14 +297,23 @@ photon-only fee policy while the `photon_fees_enabled` consumer param is on and
 is a no-op otherwise, so it is wired unconditionally; it sits immediately
 before fee deduction so the denom it vets is the one deducted
 ([photon_fee_ante.go](../x/vaas/consumer/ante/photon_fee_ante.go)).
-`InfrastructureExemptTxFeeChecker` is the `TxFeeChecker` handed to
-`NewDeductFeeDecorator`: the SDK's minimum-gas-prices floor at CheckTx, except
-that a transaction made up only of `/ibc.core.*` and `/cosmos.gov.*` messages
-skips it ([fee_checker.go](../x/vaas/consumer/ante/fee_checker.go)). The only
-floor a photon-fees chain can run is one in the voucher denom, which the
-relayer never pays; with the SDK default checker in its place, such a floor
-turns the relayer, and with it every VSC packet and every voucher, away at that
-node's mempool.
+`NewBootstrapExemptTxFeeChecker(consumerKeeper)` builds the `TxFeeChecker`
+handed to `NewDeductFeeDecorator`: atomone-sdk's minimum-gas-prices floor at
+CheckTx, waived for bootstrap traffic (IBC core minus the raw ICS-20 v2 send,
+governance, the pin) only while no routable provider client is pinned
+([fee_checker.go](../x/vaas/consumer/ante/fee_checker.go)), the same split the
+photon policy makes. A pin set through `MsgSetProviderClient` is routable
+from the start. After the pin everything pays, the relayer included: it is
+funded with vouchers before the pin and runs with a gas price in the voucher
+denom after it ([consumer-launch-runbook.md](consumer-launch-runbook.md)
+section 4). One state reopens the exemption for both: `photon_fees_enabled` on
+and a bank supply of zero for the voucher denom, where no transaction could
+pay and the relayer delivery that would bring the first voucher would be
+refused too. It closes as soon as one voucher exists; vouchers paid as fees
+stay in the fee collector (the reference consumer wires no `x/distribution`)
+and keep it closed. With atomone-sdk's default checker in its place, a floor
+set before the pin would turn the bootstrap traffic away at that node's
+mempool.
 
 ## 7. The provider's consensus-key rotation refusal
 
@@ -370,7 +383,7 @@ Three ordering constraints:
   **silent**: the provider consensus set and every VSC packet lag by one block.
   The reference app places the provider module last.
 - **`SetOrderBeginBlockers`:** `evidencetypes.ModuleName` after slashing and
-  distribution, per the SDK's own convention; the provider module last.
+  distribution, per atomone-sdk's own convention; the provider module last.
 
 On the consumer, the VAAS consumer module is last in all three orderings and is
 the sole producer of validator updates. It needs neither `no_valupdates`
@@ -454,7 +467,7 @@ Two further order traps, both silent:
 | `x/evidence` on the provider | silent | provider-native double-signs unpunished |
 | `consumerante.NewMsgFilterDecorator` | silent | safe mode and debt gating cease to exist |
 | `consumerante.NewPhotonFeeDecorator` | silent | the photon-only fee policy ceases to exist; any denom pays |
-| `consumerante.InfrastructureExemptTxFeeChecker` in `NewDeductFeeDecorator` | silent, per node | a voucher-denom floor turns the relayer away at that node's mempool |
+| `consumerante.NewBootstrapExemptTxFeeChecker` in `NewDeductFeeDecorator` | silent, per node | a floor set before the pin turns the bootstrap traffic away at that node's mempool |
 | `x/staking` from atomone-sdk, which asks `BeforeConsensusPubKeyRotation` | silent | a colliding rotation succeeds; the validator is dropped from that consumer's set |
 | `no_valupdates_staking` / `no_valupdates_genutil` on the provider | **fatal at genesis** | "validator InitGenesis updates already set by a previous module" |
 | Provider module after staking in `SetOrderEndBlockers` | silent | provider valset and every VSC packet lag one block |

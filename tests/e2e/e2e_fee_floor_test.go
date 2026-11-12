@@ -16,20 +16,22 @@ import (
 
 // testNodeFeeFloor proves the node fee floor end to end on the photon-fees
 // consumer. A validator of such a chain launches with zero minimum-gas-prices
-// (the voucher denom is not knowable before the provider client is pinned)
-// and raises the floor to the voucher denom once it is. This scenario does
-// exactly that, restarting the suite's only consumer validator with a floor
-// of 0.01 voucher per gas unit, and then checks the floor the way
-// InfrastructureExemptTxFeeChecker applies it:
+// (the node starts before the clients the voucher denom derives from exist)
+// and raises the floor to the voucher denom once that is known. This scenario
+// does exactly that, restarting the suite's only consumer validator with a
+// floor of 0.01 voucher per gas unit, and then checks the floor the way
+// NewBootstrapExemptTxFeeChecker applies it once the provider client is
+// pinned:
 //
 //  1. a user transaction paying less than the floor in the voucher denom is
 //     rejected at CheckTx, which also proves the floor is live on the
 //     restarted node;
 //  2. a user transaction paying exactly the floor commits;
-//  3. the relayer, which pays the consumer in the native denom and never in
-//     vouchers, keeps delivering: the VSC flow resumes and a fresh photon
-//     transfer lands, something no relayer transaction could do through a
-//     floor that priced /ibc.core.* traffic.
+//  3. an IBC core message paying less than the floor is rejected at CheckTx:
+//     the bootstrap exemption ended with the pin;
+//  4. the relayer, funded with vouchers before the pin and paying the
+//     consumer in them after it, keeps delivering through the floor: the VSC
+//     flow resumes and a fresh photon transfer lands.
 //
 // The floor stays in place for the rest of the suite, so every later
 // scenario, the consumer genesis round-trip included (it copies app.toml),
@@ -98,10 +100,40 @@ func (s *IntegrationTestSuite) testNodeFeeFloor() {
 		s.requireTxCommittedOn(s.consumerValRes[0].Container.ID, consumerBinary, consumerHomePath, stdout)
 	})
 
-	s.Run("relayer traffic is exempt from the floor", func() {
+	s.Run("an IBC core message below the floor is rejected at CheckTx once pinned", func() {
+		// The bootstrap exemption ended with the pin: registering a
+		// counterparty is IBC core traffic, free before the pin, and pays the
+		// floor like everything else after it. The registration itself would
+		// be refused at execution (the client already has one); the fee floor
+		// refuses the transaction first. The merkle prefix goes to the CLI
+		// base64-encoded, part by part: "ibc" and an empty second part.
+		stdout, stderr, err := s.dockerExec(s.consumerValRes[0].Container.ID, []string{
+			consumerBinary, "tx", "ibc", "client", "add-counterparty",
+			s.consumerPinnedProviderClientID(), s.queryConsumerClientID("0"), "aWJj", "",
+			"--from", "user",
+			"--home", consumerHomePath,
+			"--keyring-backend", "test",
+			"--chain-id", s.cfg.consumerChainID,
+			"--gas", "300000",
+			"--fees", "1" + voucherDenom,
+			"--broadcast-mode", "sync",
+			"-y",
+			"-o", "json",
+		})
+		s.Require().NoError(err, "broadcast failed to run: %s", stderr.String())
+		var res struct {
+			Code   uint32 `json:"code"`
+			RawLog string `json:"raw_log"`
+		}
+		s.Require().NoError(json.Unmarshal(stdout.Bytes(), &res), "failed to decode broadcast response: %s", stdout.String())
+		s.Require().NotZero(res.Code, "an IBC core message below the floor must be rejected once the client is pinned: %s", stdout.String())
+		s.Require().Contains(res.RawLog, "insufficient fee", "the rejection must come from the fee floor: %s", res.RawLog)
+	})
+
+	s.Run("relayer traffic pays the floor in vouchers", func() {
 		// VSC packets reach the consumer in relayer transactions paying the
-		// native denom: the flow resuming past the restart means they are
-		// still admitted.
+		// voucher denom at a gas price above the floor: the flow resuming
+		// past the restart means they are admitted and paid.
 		s.waitForConsumerSync("0")
 
 		// The sharper proof: the packet delivering a fresh transfer must pass

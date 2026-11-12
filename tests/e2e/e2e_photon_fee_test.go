@@ -25,9 +25,8 @@ func photonVoucherDenom(clientID string) string {
 //
 //  1. a user transaction paying the native denom is rejected by the ante;
 //  2. an ICS-20 v2 transfer bridges uphoton from the provider while
-//     enforcement is on, proving the relayer's exempt traffic still delivers
-//     packets (without the infrastructure exemption this transfer could
-//     never arrive and the policy would deadlock the chain);
+//     enforcement is on, proving the relayer, which pays its deliveries in
+//     the vouchers it was funded with before the pin, still delivers packets;
 //  3. a user transaction paying the bridged voucher commits.
 func (s *IntegrationTestSuite) testPhotonFeeEnforcement() {
 	user := s.consumerUserBech32()
@@ -104,6 +103,27 @@ func (s *IntegrationTestSuite) testPhotonFeeEnforcement() {
 		s.Require().NoError(err, "broadcast failed to run: %s", stderr.String())
 		s.requireTxCommittedOn(s.consumerValRes[0].Container.ID, consumerBinary, consumerHomePath, stdout.Bytes())
 	})
+}
+
+// fundPhotonFeePayersBeforePin bridges photon to the relayer's and the
+// owner's consumer accounts over the relayer-created client, before the pin
+// ends the bootstrap exemption, and returns the voucher denom. The relayer's
+// share covers every delivery of the suite at its voucher gas price; the
+// owner's covers its own transactions.
+func (s *IntegrationTestSuite) fundPhotonFeePayersBeforePin() string {
+	consumerClientID := s.tendermintClientTracking(
+		s.consumerValRes[0].Container.ID, consumerBinary, consumerHomePath, s.cfg.providerChainID)
+	voucherDenom := photonVoucherDenom(consumerClientID)
+	for _, payer := range []struct{ key, amount string }{{"relayer", "200000000"}, {"owner", "20000000"}} {
+		addr := s.consumerKeyBech32(payer.key)
+		s.transferPhotonToConsumer(addr, payer.amount)
+		s.Require().Eventuallyf(func() bool {
+			amount, err := s.queryBalance(s.consumerRESTEndpoint(), addr, voucherDenom)
+			return err == nil && amount != "0"
+		}, 5*time.Minute, 5*time.Second,
+			"photon vouchers for the %s never arrived on the consumer before the pin", payer.key)
+	}
+	return voucherDenom
 }
 
 // transferPhotonToConsumer bridges amount uphoton from the provider's val key

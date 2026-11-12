@@ -54,11 +54,11 @@ func NewAnteHandler(options HandlerOptions) (sdk.AnteHandler, error) {
 		// consumer param, so it is wired unconditionally and no-ops on chains
 		// that did not opt in.
 		consumerante.NewPhotonFeeDecorator(options.ConsumerKeeper),
-		// The infrastructure exemption must hold at the node fee floor too:
-		// with the SDK's default checker, a raised minimum-gas-prices would
-		// price the relayer traffic the photon exemption keeps flowing. An
-		// explicitly configured checker still wins.
-		ante.NewDeductFeeDecorator(options.AccountKeeper, options.BankKeeper, options.FeegrantKeeper, txFeeCheckerOrDefault(options.TxFeeChecker)),
+		// The node fee floor follows the photon policy's split: waived for
+		// bootstrap traffic while no routable provider client is pinned, or
+		// while a photon-fees chain holds no voucher at all, and applied to
+		// everything else. An explicitly configured checker still wins.
+		ante.NewDeductFeeDecorator(options.AccountKeeper, options.BankKeeper, options.FeegrantKeeper, txFeeCheckerOrDefault(options.TxFeeChecker, options.ConsumerKeeper)),
 		// SetPubKeyDecorator must be called before all signature verification decorators
 		ante.NewSetPubKeyDecorator(options.AccountKeeper),
 		ante.NewValidateSigCountDecorator(options.AccountKeeper),
@@ -72,10 +72,10 @@ func NewAnteHandler(options HandlerOptions) (sdk.AnteHandler, error) {
 }
 
 // txFeeCheckerOrDefault returns the explicitly configured checker, or the
-// consumer's infrastructure-exempt one when none is set.
-func txFeeCheckerOrDefault(checker ante.TxFeeChecker) ante.TxFeeChecker {
+// consumer's bootstrap-exempt one when none is set.
+func txFeeCheckerOrDefault(checker ante.TxFeeChecker, k consumerante.BootstrapKeeper) ante.TxFeeChecker {
 	if checker != nil {
 		return checker
 	}
-	return consumerante.InfrastructureExemptTxFeeChecker
+	return consumerante.NewBootstrapExemptTxFeeChecker(k)
 }

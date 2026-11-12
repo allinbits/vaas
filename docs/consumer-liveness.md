@@ -126,15 +126,33 @@ be strictly below the provider's liveness grace, enforced at `MsgCreateConsumer`
 the provider's sweep would remove it.
 
 While stale (or while flagged in debt for unpaid fees), the consumer's transaction admission
-gate restricts incoming transactions to `/ibc.core.*` and `/cosmos.gov.*` messages only,
-rejecting value-bearing application transactions. This bounds the damage of a possibly-stale
-set: the consumer refuses to do value-bearing work under a validator set it cannot trust,
-while keeping the recovery path open -- `/ibc.core.*` still admits the incoming VSC packets
-that let the consumer resync, and `/cosmos.gov.*` keeps governance available. The staleness
-clock is armed at genesis on a new chain, so a consumer that never receives a single VSC --
-say its relayer never materializes -- enters safe mode once the threshold elapses from chain
+gate restricts incoming transactions to `/ibc.core.*` messages other than the raw ICS-20 v2
+send (`/ibc.core.channel.v2.MsgSendPacket`), `/cosmos.gov.*` messages, and bank `MsgSend`s
+made only of the photon voucher, rejecting every other application transaction. This bounds
+the damage of a possibly-stale set: the consumer refuses most value-bearing work under a
+validator set it cannot trust, and no value leaves it, while keeping the recovery path open
+-- `/ibc.core.*` still admits the incoming VSC packets that let the consumer resync, and
+`/cosmos.gov.*` keeps governance available. The voucher send is the one value transfer
+admitted: on a consumer with `photon_fees_enabled` the relayer pays its deliveries in the
+voucher, and a relayer that ran out is refilled by any account holding vouchers. The rule
+cannot tell a refill from any other voucher payment between two accounts, so voucher
+payments keep working in safe mode, and the vouchers stay on the chain. The staleness clock
+is armed at genesis on a new chain, so a consumer that never receives a single VSC -- say
+its relayer never materializes -- enters safe mode once the threshold elapses from chain
 start, instead of running on its genesis validator set unrestricted forever; the relayer
 traffic that would deliver the first VSC is `/ibc.core.*` and passes the gate throughout.
+
+On a photon-fees consumer, that relayer traffic also pays its fee in the voucher once the
+provider client is pinned, so the relayer's voucher balance is part of the recovery path.
+The reference consumer wires no `x/distribution`: every voucher paid as a fee stays in the
+fee collector for good, and the relayer's balance only goes down. A relayer that runs out
+cannot deliver its own refill, VSC delivery stops, and the consumer drifts into safe mode
+and towards removal until some account holding vouchers sends it more. If no account holds
+spendable vouchers any more, no transaction can pay a fee and the consumer has no on-chain
+way out. Keep the relayer funded, or keep a second, voucher-funded relayer account; see the
+[launch runbook](consumer-launch-runbook.md) section 6. Only a consumer with no voucher at
+all (bank supply zero) gets bootstrap infrastructure traffic waived from the fee gates again,
+until one voucher arrives.
 
 ## 5. Parameters and bounds
 
@@ -198,8 +216,9 @@ before `removal_eta`, it will be stopped.
   the provider's slashable window -- never on a single transient packet failure.
 - A consumer that recovers within the grace period self-heals to the provider's exact
   validator set via snapshot resync, with no operator or governance action.
-- While a consumer's set may be stale, it refuses value-bearing transactions but keeps the
-  IBC recovery path open.
+- While a consumer's set may be stale, it refuses value-bearing transactions other than
+  photon voucher sends between its own accounts, lets no value leave, and keeps the IBC
+  recovery path open.
 
 **Out of scope (candidates for follow-up work)**
 

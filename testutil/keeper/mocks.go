@@ -864,6 +864,20 @@ func (mr *MockBankKeeperMockRecorder) GetBalance(ctx, addr, denom any) *gomock.C
 	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "GetBalance", reflect.TypeOf((*MockBankKeeper)(nil).GetBalance), ctx, addr, denom)
 }
 
+// HasSupply mocks base method.
+func (m *MockBankKeeper) HasSupply(ctx context.Context, denom string) bool {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "HasSupply", ctx, denom)
+	ret0, _ := ret[0].(bool)
+	return ret0
+}
+
+// HasSupply indicates an expected call of HasSupply.
+func (mr *MockBankKeeperMockRecorder) HasSupply(ctx, denom any) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "HasSupply", reflect.TypeOf((*MockBankKeeper)(nil).HasSupply), ctx, denom)
+}
+
 // InputOutputCoins mocks base method.
 func (m *MockBankKeeper) InputOutputCoins(ctx context.Context, input types0.Input, outputs []types0.Output) error {
 	m.ctrl.T.Helper()

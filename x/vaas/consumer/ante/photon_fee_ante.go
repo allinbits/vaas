@@ -2,10 +2,8 @@ package ante
 
 import (
 	"context"
-	"strings"
 
 	transfertypes "github.com/cosmos/ibc-go/v10/modules/apps/transfer/types"
-	channeltypesv2 "github.com/cosmos/ibc-go/v10/modules/core/04-channel/v2/types"
 
 	errorsmod "cosmossdk.io/errors"
 
@@ -30,12 +28,13 @@ const PhotonBaseDenom = "uphoton"
 
 // PhotonFeeKeeper is the narrow consumer-keeper dependency: it reports whether
 // the chain enforces photon-only fees, resolves the provider (AtomOne) IBC
-// client the photon voucher denom is anchored to, and reports whether that
-// client can actually carry packets yet.
+// client the photon voucher denom is anchored to, reports whether that
+// client can actually carry packets yet, and whether any voucher exists.
 type PhotonFeeKeeper interface {
 	PhotonFeesEnabled(ctx context.Context) bool
 	GetProviderClientID(ctx context.Context) (string, bool)
 	HasRoutableProviderClient(ctx context.Context) bool
+	HasSupply(ctx context.Context, denom string) bool
 }
 
 // PhotonFeeDecorator rejects transactions whose fees are not paid in the
@@ -92,20 +91,28 @@ type PhotonFeeKeeper interface {
 //     simulations are exempt from the non-empty requirement, since fees are
 //     typically computed only after simulating.
 //
-//     One class of transactions stays exempt while enforcing: those made up
-//     exclusively of chain-infrastructure messages (see isInfrastructureTx).
-//     The vouchers the policy demands can only arrive in relayer-submitted
-//     /ibc.core.* packet deliveries; pricing those in photon would deadlock
-//     the chain the moment the policy activates, with the relayer unable to
-//     deliver the very transfers that create the fee denom. Governance stays
-//     exempt for the same reason it passes the restricted msg filter:
-//     recovery must never be priced in a token the chain may not hold. The
-//     exemption holds at the node fee floor too: the reference app wires
-//     InfrastructureExemptTxFeeChecker into fee deduction, so raising
-//     minimum-gas-prices never prices this traffic (see that checker's doc).
-//     A tokenless core shard launches with genesis-declared relayer and owner
-//     accounts, and any floor its validators set belongs in the voucher denom
-//     once the pin is known.
+//     Nothing is exempt while enforcing, the relayer's deliveries and
+//     governance included: a standing exemption for infrastructure messages
+//     let anyone grow the chain's state for free (creating clients, updating
+//     clients of their own), at a cost no node setting could put back. The
+//     vouchers the relayer pays with therefore reach it during bootstrap,
+//     when its deliveries are free: the owner bridges photon to the relayer
+//     (and to itself) over the freshly created client before pinning it,
+//     and the relayer then runs with a gas price in the voucher denom (see
+//     docs/consumer-launch-runbook.md, which also covers refilling it).
+//
+//     One state sends the enforcing chain back to bootstrap for bootstrap
+//     infrastructure traffic (isBootstrapInfrastructureTx): the bank supply
+//     of the voucher denom being zero. With no voucher anywhere on the chain
+//     no transaction could pay, the relayer delivery that would bring the
+//     first voucher included, so a chain pinned before its fee payers were
+//     funded, or one whose vouchers have all been bridged away, could never
+//     receive one again. Its infrastructure traffic passes whatever it pays
+//     until one voucher exists; everything else stays priced, and so refused.
+//
+// The node fee floor follows the same split: the reference app's
+// NewBootstrapExemptTxFeeChecker waives the floor for bootstrap traffic in
+// exactly the states this decorator does (feeBootstrap) and for nothing else.
 //
 // Note the decorator constrains the fee denom, not the amount; minimum-fee
 // policy stays with the fee market (validator min-gas-prices and the fee
@@ -128,33 +135,6 @@ func ExpectedPhotonDenom(providerClientID string) string {
 	return denom.IBCDenom()
 }
 
-// isInfrastructureTx reports whether every message in the tx is chain
-// infrastructure the photon-only policy must not price: /ibc.core.* (relayer
-// plumbing, including the packet deliveries that carry photon vouchers in)
-// and /cosmos.gov.* (recovery governance). MsgSendPacket is carved out of
-// /ibc.core.*: it is the user-originating raw form of an outbound ICS-20 v2
-// transfer, not relayer traffic. MsgSetProviderClient needs no entry: it is
-// only accepted while no pin exists, and the decorator is a no-op until the
-// pin is routable.
-func isInfrastructureTx(msgs []sdk.Msg) bool {
-	if len(msgs) == 0 {
-		return false
-	}
-	sendPacketURL := sdk.MsgTypeURL(&channeltypesv2.MsgSendPacket{})
-	for _, msg := range msgs {
-		url := sdk.MsgTypeURL(msg)
-		switch {
-		case url == sendPacketURL:
-			return false
-		case strings.HasPrefix(url, "/ibc.core."):
-		case strings.HasPrefix(url, "/cosmos.gov."):
-		default:
-			return false
-		}
-	}
-	return true
-}
-
 func (d PhotonFeeDecorator) AnteHandle(ctx sdk.Context, tx sdk.Tx, simulate bool, next sdk.AnteHandler) (sdk.Context, error) {
 	feeTx, ok := tx.(sdk.FeeTx)
 	if !ok {
@@ -165,11 +145,6 @@ func (d PhotonFeeDecorator) AnteHandle(ctx sdk.Context, tx sdk.Tx, simulate bool
 		return next(ctx, tx, simulate)
 	}
 
-	if isInfrastructureTx(tx.GetMsgs()) {
-		// Never priced in photon, whatever the phase: see the type godoc.
-		return next(ctx, tx, simulate)
-	}
-
 	providerClientID, ok := d.keeper.GetProviderClientID(ctx)
 	if !ok || !d.keeper.HasRoutableProviderClient(ctx) {
 		// Bootstrap phase: no photon voucher can exist yet, see the type godoc.
@@ -177,6 +152,11 @@ func (d PhotonFeeDecorator) AnteHandle(ctx sdk.Context, tx sdk.Tx, simulate bool
 	}
 
 	expected := ExpectedPhotonDenom(providerClientID)
+	if isBootstrapInfrastructureTx(tx.GetMsgs()) && !d.keeper.HasSupply(ctx, expected) {
+		// No voucher exists on the chain: bootstrap again, see the type godoc.
+		return next(ctx, tx, simulate)
+	}
+
 	fee := feeTx.GetFee()
 	if fee.IsZero() && !simulate {
 		return ctx, errorsmod.Wrapf(

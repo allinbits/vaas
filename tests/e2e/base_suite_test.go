@@ -75,11 +75,11 @@ type baseSuiteConfig struct {
 	// on in its genesis (the reference consumer app wires no governance, so
 	// the flag cannot be flipped later) and launches the consumer node with
 	// zero min-gas-prices, the launch configuration the policy assumes: the
-	// photon ante polices the fee denom in consensus, while the relayer's
-	// exempt traffic must stay admissible whatever it pays. The voucher denom
-	// a floor could be set in is only knowable once the provider client is
-	// pinned; testNodeFeeFloor raises the floor to it then, by restarting the
-	// node.
+	// node starts before the clients the voucher denom derives from exist,
+	// and the bootstrap traffic skips the floor anyway. The suite funds the
+	// relayer and the owner with vouchers before the pin and switches the
+	// relayer's gas price to the voucher after it; testNodeFeeFloor raises
+	// the floor to the voucher denom by restarting the node.
 	enableConsumerPhotonFees bool
 }
 
@@ -482,6 +482,29 @@ func (s *baseTestSuite) initAndStartConsumer(consumerGenesisJSON []byte) {
 	err = s.waitForChainHeight(waitCtx, "http://localhost:"+s.cfg.consumerRPCPort, 3)
 	s.Require().NoError(err, "consumer failed to produce blocks")
 	s.T().Log("consumer chain is producing blocks")
+}
+
+// consumerKeyBech32 returns the bech32 address of a key in the consumer
+// node's keyring.
+func (s *baseTestSuite) consumerKeyBech32(name string) string {
+	stdout, _, err := s.dockerExec(s.consumerValRes[0].Container.ID, []string{
+		consumerBinary, "keys", "show", name, "-a",
+		"--home", consumerHomePath,
+		"--keyring-backend", "test",
+	})
+	s.Require().NoErrorf(err, "failed to get the consumer %s address", name)
+	return strings.TrimSpace(stdout.String())
+}
+
+// switchTSRelayerToVoucherFees makes the relayer pay the consumer in the
+// photon voucher denom, as every transaction must once the provider client
+// is pinned (the bootstrap exemption ends with the pin). The relay process
+// reads its gas prices at start, so it is restarted.
+func (s *baseTestSuite) switchTSRelayerToVoucherFees(voucherDenom string) {
+	s.T().Logf("ts-relayer: switching the consumer gas price to the voucher denom %s", voucherDenom)
+	s.killTSRelayerRelayProcess()
+	s.tsRelayerAddGasPrice(s.cfg.consumerChainID, "0.025"+voucherDenom)
+	s.startTSRelayerRelay()
 }
 
 // setupTSRelayer starts the ts-relayer container, configures it with

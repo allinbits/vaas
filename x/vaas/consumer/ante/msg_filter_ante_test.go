@@ -9,6 +9,7 @@ import (
 	protov2 "google.golang.org/protobuf/proto"
 
 	channeltypes "github.com/cosmos/ibc-go/v10/modules/core/04-channel/types"
+	channeltypesv2 "github.com/cosmos/ibc-go/v10/modules/core/04-channel/v2/types"
 
 	errorsmod "cosmossdk.io/errors"
 
@@ -26,6 +27,9 @@ type mockConsumerKeeper struct {
 	vscStale            bool
 	routableClient      bool
 	photonFees          bool
+	// noVouchers models a chain whose bank supply of the photon voucher
+	// denom is zero.
+	noVouchers bool
 }
 
 func (m mockConsumerKeeper) GetProviderClientID(context.Context) (string, bool) {
@@ -46,6 +50,10 @@ func (m mockConsumerKeeper) IsVSCStale(context.Context) bool {
 
 func (m mockConsumerKeeper) HasRoutableProviderClient(context.Context) bool {
 	return m.providerClientFound && m.routableClient
+}
+
+func (m mockConsumerKeeper) HasSupply(_ context.Context, denom string) bool {
+	return denom == ExpectedPhotonDenom("07-tendermint-0") && !m.noVouchers
 }
 
 type mockTx struct {
@@ -255,4 +263,40 @@ func TestMsgFilterDecoratorPrePinStillRejectsOtherMsgs(t *testing.T) {
 	nextCalled, err := runDecorator(t, k, []sdk.Msg{bankSendMsg()})
 	require.Error(t, err)
 	require.False(t, nextCalled)
+}
+
+// Provider client established, in debt: a raw ICS-20 v2 send (the one
+// /ibc.core.* message a user originates) is rejected like MsgTransfer is, so
+// value stays in while the chain recovers; a relayer delivery still passes.
+func TestMsgFilterDecoratorBlocksRawSendPacketWhenInDebt(t *testing.T) {
+	_, err := runDecorator(t,
+		mockConsumerKeeper{providerClientFound: true, inDebt: true},
+		[]sdk.Msg{&channeltypesv2.MsgSendPacket{}},
+	)
+	require.ErrorIs(t, err, consumertypes.ErrConsumerInDebt)
+
+	nextCalled, err := runDecorator(t,
+		mockConsumerKeeper{providerClientFound: true, inDebt: true},
+		[]sdk.Msg{&channeltypesv2.MsgRecvPacket{}},
+	)
+	require.NoError(t, err)
+	require.True(t, nextCalled)
+}
+
+// Provider client established, in debt: a bank send made only of the photon
+// voucher passes (the relayer's refill path), one in any other denom or a
+// mixed one does not.
+func TestMsgFilterDecoratorAllowsVoucherSendsWhenInDebt(t *testing.T) {
+	voucher := ExpectedPhotonDenom("07-tendermint-0")
+	keeper := mockConsumerKeeper{providerClientFound: true, inDebt: true}
+
+	nextCalled, err := runDecorator(t, keeper, []sdk.Msg{&banktypes.MsgSend{Amount: sdk.NewCoins(sdk.NewInt64Coin(voucher, 100))}})
+	require.NoError(t, err)
+	require.True(t, nextCalled)
+
+	_, err = runDecorator(t, keeper, []sdk.Msg{&banktypes.MsgSend{Amount: sdk.NewCoins(sdk.NewInt64Coin("uatone", 100))}})
+	require.ErrorIs(t, err, consumertypes.ErrConsumerInDebt)
+
+	_, err = runDecorator(t, keeper, []sdk.Msg{&banktypes.MsgSend{Amount: sdk.NewCoins(sdk.NewInt64Coin(voucher, 100), sdk.NewInt64Coin("uatone", 1))}})
+	require.ErrorIs(t, err, consumertypes.ErrConsumerInDebt)
 }
