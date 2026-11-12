@@ -25,9 +25,8 @@ func photonVoucherDenom(clientID string) string {
 //
 //  1. a user transaction paying the native denom is rejected by the ante;
 //  2. an ICS-20 v2 transfer bridges uphoton from the provider while
-//     enforcement is on, proving the relayer's exempt traffic still delivers
-//     packets (without the infrastructure exemption this transfer could
-//     never arrive and the policy would deadlock the chain);
+//     enforcement is on, proving the relayer, which pays its deliveries in
+//     the vouchers it was funded with before the pin, still delivers packets;
 //  3. a user transaction paying the bridged voucher commits.
 func (s *IntegrationTestSuite) testPhotonFeeEnforcement() {
 	user := s.consumerUserBech32()
