@@ -109,8 +109,8 @@ func (k Keeper) PauseConsumersWithMismatchedClients(ctx sdk.Context) {
 // validateConsumerClientTrustingPeriod refuses a client whose trusting period
 // cannot cover the downtime challenge horizon: every accepted downtime
 // accusation must stay disprovable by a header the client can still verify.
-// Checked at declaration and again at resume, since a client recovery copies
-// the substitute's trusting period.
+// Checked at declaration, at a governance rename and at resume, since a
+// client upgrade or recovery can change the trusting period.
 func (k Keeper) validateConsumerClientTrustingPeriod(ctx sdk.Context, clientId string, tmClientState *ibctmtypes.ClientState) error {
 	if horizon := k.GetInfractionParams(ctx).ChallengeableInterval(); tmClientState.TrustingPeriod <= horizon {
 		return errorsmod.Wrapf(types.ErrInvalidMsgUpdateConsumer,
@@ -149,6 +149,16 @@ func (k Keeper) RenameLaunchedConsumer(ctx sdk.Context, consumerId uint64, newCh
 			"a launched consumer is renamed to the chain id its declared client tracks: client %s tracks %s, got %s",
 			clientId, tmClientState.ChainId, newChainId)
 	}
+	// The client an upgrade or recovery left behind is served from the
+	// rename on, with or without a resume, so it meets the declaration's
+	// floor like any served client.
+	if err := k.validateConsumerClientTrustingPeriod(ctx, clientId, tmClientState); err != nil {
+		return err
+	}
+	// Free of every live chain id and of every previous one, this
+	// consumer's included: a rename back to a chain id the consumer carried
+	// before is refused, as that id stays its evidence domain for the blocks
+	// up to its boundary.
 	if err := k.ValidateConsumerChainIdFree(ctx, newChainId); err != nil {
 		return err
 	}

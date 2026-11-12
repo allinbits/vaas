@@ -438,3 +438,40 @@ func TestGenesisRoundTripKeepsPreviousChainIds(t *testing.T) {
 	expA.ConsumerStates[0].ClientId = ""
 	require.ErrorContains(t, expA.Validate(), "only set after launch")
 }
+
+// TestGovernanceRenameRefusesAClientUnderTheTrustingPeriodFloor: the client
+// a rename follows is served from the rename on, resumed or not, so it meets
+// the declaration's trusting-period floor.
+func TestGovernanceRenameRefusesAClientUnderTheTrustingPeriodFloor(t *testing.T) {
+	k, ctx, ctrl, mocks := testkeeper.GetProviderKeeperAndCtx(t, testkeeper.NewInMemKeeperParams(t))
+	defer ctrl.Finish()
+	msgServer := providerkeeper.NewMsgServerImpl(&k)
+	cid, clientState := pausedForMismatch(t, k, ctx, mocks)
+	clientState.TrustingPeriod = time.Hour
+
+	_, err := msgServer.UpdateConsumer(ctx, &types.MsgUpdateConsumer{Owner: k.GetAuthority(), ConsumerId: cid, NewChainId: chainIDTestNew})
+	require.ErrorIs(t, err, types.ErrInvalidMsgUpdateConsumer)
+	require.ErrorContains(t, err, "trusting period")
+	got, err := k.GetConsumerChainId(ctx, cid)
+	require.NoError(t, err)
+	require.Equal(t, chainIDTestOld, got)
+}
+
+// TestGovernanceRenameBackToAPreviousChainIdIsRefused: a chain id the
+// consumer carried before a rename stays its evidence domain, so renaming
+// back to it (A to B to A) is refused like any taken chain id.
+func TestGovernanceRenameBackToAPreviousChainIdIsRefused(t *testing.T) {
+	k, ctx, ctrl, mocks := testkeeper.GetProviderKeeperAndCtx(t, testkeeper.NewInMemKeeperParams(t))
+	defer ctrl.Finish()
+	msgServer := providerkeeper.NewMsgServerImpl(&k)
+	cid, clientState := pausedForMismatch(t, k, ctx, mocks)
+	_, err := msgServer.UpdateConsumer(ctx, &types.MsgUpdateConsumer{Owner: k.GetAuthority(), ConsumerId: cid, NewChainId: chainIDTestNew})
+	require.NoError(t, err)
+
+	clientState.ChainId = chainIDTestOld
+	_, err = msgServer.UpdateConsumer(ctx, &types.MsgUpdateConsumer{Owner: k.GetAuthority(), ConsumerId: cid, NewChainId: chainIDTestOld})
+	require.ErrorIs(t, err, types.ErrDuplicateChainId)
+	got, err := k.GetConsumerChainId(ctx, cid)
+	require.NoError(t, err)
+	require.Equal(t, chainIDTestNew, got)
+}

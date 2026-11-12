@@ -273,14 +273,18 @@ the client's chain ID, with a `MsgUpdateConsumer` signed by the governance autho
 `new_chain_id` is the chain ID the declared client tracks (nothing else is accepted), or
 recovers the client back onto the consumer's chain ID with `MsgRecoverClient`; in the same
 proposal it resumes the consumer with `MsgResumeConsumer`. The resume returns an error,
-and the proposal fails, while the client still tracks another chain ID, and it also
-refuses a client whose trusting period does not clear the downtime challenge horizon. A
-rename alone does not resume a paused consumer. Governance can also recover and rename a
+and the proposal fails, while the client still tracks another chain ID. The rename and the
+resume both refuse a client whose trusting period does not clear the downtime challenge
+horizon, as the declaration does. A rename alone does not resume a paused consumer. Governance can also recover and rename a
 launched consumer in one proposal, before any BeginBlock sees the mismatch.
 
 **What a rename keeps.** The old chain ID stays on record with the client's height at the
 rename, so double-voting evidence from a block at or below it is still accepted (see
-[equivocation-evidence.md](equivocation-evidence.md)). Downtime accusations pending at
+[equivocation-evidence.md](equivocation-evidence.md)). It stays reserved until the consumer
+is deleted, against this consumer too: a rename back to a chain ID the consumer carried
+before (A to B to A) is refused, so a consumer whose client returns to an earlier chain ID
+stays paused until governance recovers the client onto its current one, or the pause
+expires. Downtime accusations pending at
 the rename are discarded, and the fees withheld under them repaid, and no window starting
 at or below that height is accepted afterwards, since the client verifies headers over the
 chain ID it tracks after the rename and none signed over the old one could disprove them (see

@@ -352,7 +352,8 @@ Two governance exits:
   same proposal. The substitute must track the consumer's chain id, or the proposal also
   carries the governance rename (`MsgUpdateConsumer` with the client's chain id), and its
   trusting period must clear the downtime challenge horizon like the declaration's did: the
-  resume checks both and refuses a client that fails either. After a mismatch pause the
+  resume checks both and refuses a client that fails either, and the rename checks the
+  trusting period too. After a mismatch pause the
   same check is the whole exit: the proposal renames the consumer to the client's chain id,
   or recovers the client onto the consumer's, and resumes it. Client expiry during a pause
   is therefore a recoverable inconvenience, not a death sentence -- which is why
