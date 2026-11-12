@@ -3,12 +3,20 @@ name: CI
 on:
   push:
     branches: [main]
+  # Every pull request, whatever it targets: a PR stacked on another PR's
+  # branch is reviewed and merged on its own checks too.
   pull_request:
-    branches: [main]
 
+# Pull request runs share one group per PR, so a newer push to the PR cancels
+# the run it supersedes. Push runs get a group per commit: a push to main never
+# waits behind, cancels or is cancelled by another, so every commit on main
+# gets its own verdict.
 concurrency:
-  group: ${{ github.workflow }}-${{ github.ref }}
-  cancel-in-progress: true
+  group: ${{ github.workflow }}-${{ github.event_name == 'pull_request' && github.ref || github.sha }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+permissions:
+  contents: read
 
 jobs:
   build:
