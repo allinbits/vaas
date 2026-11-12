@@ -124,19 +124,18 @@ func (mfd MsgFilterDecorator) AnteHandle(ctx sdk.Context, tx sdk.Tx, simulate bo
 	// Only the IBC core messages of restrictedIBCMsgs, /cosmos.gov.*
 	// messages and bank sends made only of the photon voucher pass:
 	//
-	// restrictedIBCMsgs is what relayers send and what recovers a client:
-	// client creation, updates, upgrades, misbehaviour and recovery, the IBC
-	// v1 connection and channel handshakes and packet messages, and the IBC
-	// v2 counterparty registration and packet messages. It preserves VAAS
-	// liveness, which runs over IBC v2, and keeps IBC v1 apps (ICS-20 v1)
-	// relaying. It leaves out what a user or an authority originates: the
-	// raw ICS-20 v2 send (/ibc.core.channel.v2.MsgSendPacket), carved out
-	// like ICS-20 v1's MsgTransfer, since value does not leave a chain whose
-	// validator set may be stale or whose fees are unpaid; a v1 channel
-	// close initiated on this chain; and ibc-go's software upgrade and
-	// parameter updates. Relayers sign their messages directly with their
-	// own keys; authz wrapping is not part of any realistic relayer flow and
-	// is therefore rejected here.
+	// restrictedIBCMsgs is what relayers send and what recovers a client: client
+	// creation, updates (misbehaviour included), upgrades and recovery, the IBC
+	// v1 connection and channel handshakes and packet messages, and the IBC v2
+	// counterparty registration and packet messages. It preserves VAAS liveness,
+	// which runs over IBC v2, and keeps IBC v1 apps (ICS-20 v1) relaying. It
+	// leaves out what a user or an authority originates: the raw ICS-20 v2 send
+	// (/ibc.core.channel.v2.MsgSendPacket), carved out like ICS-20 v1's
+	// MsgTransfer, since value does not leave a chain whose validator set may be
+	// stale or whose fees are unpaid; a v1 channel close initiated on this
+	// chain; and ibc-go's software upgrade and parameter updates. Relayers sign
+	// their messages directly with their own keys; authz wrapping is not part of
+	// any realistic relayer flow and is therefore rejected here.
 	//
 	// A bank send made only of the photon voucher passes too: it is how a
 	// relayer that ran out of vouchers (and so cannot deliver its own refill,
@@ -185,14 +184,14 @@ func (mfd MsgFilterDecorator) voucherDenom(ctx sdk.Context) string {
 
 // restrictedIBCMsgs are the IBC core messages restricted mode admits, by
 // type URL: what ibc-go v10 registers for relayers to send and for a client
-// to be recovered. Everything else under /ibc.core. is refused there: the raw
-// ICS-20 v2 send, a v1 channel close initiated here, MsgIBCSoftwareUpgrade
-// and every MsgUpdateParams.
+// to be recovered. Misbehaviour reaches a client through MsgUpdateClient, so
+// the deprecated MsgSubmitMisbehaviour is not listed. Everything else under
+// /ibc.core. is refused there: the raw ICS-20 v2 send, a v1 channel close
+// initiated here, MsgIBCSoftwareUpgrade and every MsgUpdateParams.
 var restrictedIBCMsgs = msgTypeURLs(
 	&clienttypes.MsgCreateClient{},
 	&clienttypes.MsgUpdateClient{},
 	&clienttypes.MsgUpgradeClient{},
-	&clienttypes.MsgSubmitMisbehaviour{},
 	&clienttypes.MsgRecoverClient{},
 	&connectiontypes.MsgConnectionOpenInit{},
 	&connectiontypes.MsgConnectionOpenTry{},

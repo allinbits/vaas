@@ -232,7 +232,6 @@ func TestMsgFilterDecoratorAdmitsOnlyIBCRelayerAndRecoveryTrafficWhenInDebt(t *t
 		&clienttypes.MsgCreateClient{},
 		&clienttypes.MsgUpdateClient{},
 		&clienttypes.MsgUpgradeClient{},
-		&clienttypes.MsgSubmitMisbehaviour{},
 		&clienttypes.MsgRecoverClient{Signer: authority},
 		&connectiontypes.MsgConnectionOpenInit{},
 		&connectiontypes.MsgConnectionOpenTry{},

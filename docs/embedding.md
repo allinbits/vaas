@@ -319,16 +319,17 @@ can satisfy it with the consumer keeper or its own adapter. It has three modes
   rejected otherwise with `ErrConsumerInDebt`; a governance proposal passes only
   when every message it carries would, and a legacy content proposal never does
   (section 4). The IBC messages are an explicit list of ibc-go v10 core
-  messages, not a prefix: client creation, update, upgrade, misbehaviour and
-  recovery, the IBC v1 connection and channel handshakes (minus a channel close
-  initiated here) and packet messages, and the IBC v2 counterparty registration
-  and packet messages. ICS-20 v1 `MsgTransfer` is blocked in this mode, and so
-  is the raw ICS-20 v2 transfer riding `/ibc.core.channel.v2.MsgSendPacket`:
-  restricted mode is for recovery, and value stays in. ibc-go's
-  `MsgIBCSoftwareUpgrade` and every `MsgUpdateParams` are refused too. One bank
-  message passes: a `MsgSend` made only of the photon voucher, the path by which
-  a relayer that ran out of vouchers is refilled by any account holding some.
-  `MsgExec` is not unwrapped, so authz-wrapped IBC messages are rejected too.
+  messages, not a prefix: client creation, update (misbehaviour included),
+  upgrade and recovery, the IBC v1 connection and channel handshakes (minus a
+  channel close initiated here) and packet messages, and the IBC v2 counterparty
+  registration and packet messages. ICS-20 v1 `MsgTransfer` is blocked in this
+  mode, and so is the raw ICS-20 v2 transfer riding
+  `/ibc.core.channel.v2.MsgSendPacket`: restricted mode is for recovery, and
+  value stays in. ibc-go's `MsgIBCSoftwareUpgrade` and every `MsgUpdateParams`
+  are refused too. One bank message passes: a `MsgSend` made only of the photon
+  voucher, the path by which a relayer that ran out of vouchers is refilled by
+  any account holding some. `MsgExec` is not unwrapped, so authz-wrapped IBC
+  messages are rejected too.
 - **Otherwise** the transaction passes through untouched.
 
 **Omitting it is silent, and it deletes two whole mechanisms.** `IsVSCStale` and

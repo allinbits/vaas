@@ -127,9 +127,9 @@ the provider's sweep would remove it.
 
 While stale (or while flagged in debt for unpaid fees), the consumer's transaction admission
 gate restricts incoming transactions to IBC relayer and client-recovery messages (an explicit
-list of ibc-go core messages: client creation, update, upgrade, misbehaviour and recovery,
-connection and channel handshakes, packet delivery, acknowledgement and timeout, IBC v2
-counterparty registration), `/cosmos.gov.*` messages, and bank `MsgSend`s made only of the
+list of ibc-go core messages: client creation, update (misbehaviour included), upgrade and
+recovery, connection and channel handshakes, packet delivery, acknowledgement and timeout, IBC
+v2 counterparty registration), `/cosmos.gov.*` messages, and bank `MsgSend`s made only of the
 photon voucher, rejecting every other transaction: the raw ICS-20 v2 send
 (`/ibc.core.channel.v2.MsgSendPacket`) and ibc-go's software upgrade and parameter updates
 included. This bounds the damage of a possibly-stale set: the consumer refuses most
