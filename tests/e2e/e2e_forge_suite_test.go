@@ -69,7 +69,10 @@ func (s *ByzantineConsumerIntegrationTestSuite) SetupSuite() {
 		consumerP2PPort:  forgeConsumerP2PPort,
 
 		// A short consumer unbonding period (10 minutes, so a client trusting
-		// period of about 6.6), for the fork drill to wait out.
+		// period of about 6.6), for the fork drill to wait out and the
+		// revision bump's declared client to expire in. max_pause_duration
+		// stays at its default of 45 days, so no pause in the suite reaches
+		// its auto-stop.
 		consumerTemplateFile:        "create_consumer_forge.json",
 		consumerTemplatePlaceholder: "CONSUMER_CHAIN_ID",
 
