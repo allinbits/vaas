@@ -19,25 +19,30 @@ const (
 	clientExpired = "Expired"
 )
 
-// mismatchEventType is the event the provider emits, once per epoch, for a
-// launched consumer whose declared client tracks another chain id.
-const mismatchEventType = "vaas_consumer_client_chain_id_mismatch"
+// Provider events the revision bump drill reads, with the reason the pause
+// event names for a declared client tracking another chain id.
+const (
+	mismatchEventType   = "vaas_consumer_client_chain_id_mismatch"
+	pausedEventType     = "vaas_consumer_paused"
+	resumedEventType    = "vaas_consumer_resumed"
+	pauseReasonMismatch = "PAUSE_REASON_CLIENT_CHAIN_ID_MISMATCH"
+)
 
 // testRevisionBumpIsServedOnlyAfterTheRename: the consumer restarts from an
 // export under the next revision of its chain id, the upgrade pattern of a
 // Cosmos chain. The provider's declared client cannot verify the renamed
 // chain's headers and expires; governance recovers it onto a client of the
 // renamed chain, which leaves it tracking a chain id the consumer is not
-// registered under, and the provider refuses to serve the consumer until
-// governance renames it too: no VSC packet leaves the provider over the
-// client meanwhile, and every epoch says why. The rename, a MsgUpdateConsumer
-// signed by the governance authority, puts the record back in lockstep with
-// the client: the consumer stays launched, the packets flow and the renamed
-// chain follows the provider's validator set; and a double vote signed over
-// the old chain id is still accepted, since the old id stays an evidence
-// domain of the consumer.
+// registered under. The next provider block pauses the consumer for the
+// mismatch, says so once, and serves it nothing while it stays paused. One
+// governance proposal renames the consumer to the client's chain id (a
+// MsgUpdateConsumer signed by the governance authority) and resumes it: the
+// consumer is launched again, the packets flow and the renamed chain follows
+// the provider's validator set; and a double vote signed over the old chain
+// id is still accepted, since the old id stays an evidence domain of the
+// consumer.
 func (s *ByzantineConsumerIntegrationTestSuite) testRevisionBumpIsServedOnlyAfterTheRename() {
-	s.Run("a consumer that bumped its chain id is served again only once governance renames it", func() {
+	s.Run("a consumer that bumped its chain id is paused until governance renames and resumes it", func() {
 		const consumerID = "0"
 		subject := s.queryConsumerClientID(consumerID)
 		s.Require().Equalf(phaseLaunched, s.queryProviderConsumerPhase(consumerID), "the bump starts from a launched consumer")
@@ -77,31 +82,44 @@ func (s *ByzantineConsumerIntegrationTestSuite) testRevisionBumpIsServedOnlyAfte
 
 		// 3. Governance recovers the declared client onto the substitute.
 		// ibc-go copies the substitute's chain id into it, so the declared
-		// client now tracks a chain id the consumer is not registered under:
-		// the provider serves no VSC packet over it, and says so every epoch.
+		// client now tracks a chain id the consumer is not registered under,
+		// and the next provider BeginBlock pauses the consumer for it.
+		recoverySubmittedAt, err := s.queryProviderBlockHeight()
+		s.Require().NoError(err, "failed to read the provider height")
 		s.T().Logf("recovering the expired client %s onto the substitute %s", subject, substitute)
 		s.submitAndPassProposal(s.recoverClientProposalJSON(subject, substitute))
 		s.Require().Equalf(clientActive, s.clientStatus(subject), "the recovered client must be active")
 		s.Require().Equalf(newChainID, s.clientChainID(subject), "the recovered client must track the renamed chain")
-		s.Require().Equalf(phaseLaunched, s.queryProviderConsumerPhase(consumerID), "a recovery changes no phase")
 		s.Require().Equalf(oldChainID, s.queryConsumerChainID(consumerID), "a recovery renames no consumer")
-		sentBefore, appliedBefore := s.requireConsumerNotServed(subject, map[string]string{
+		s.Require().Eventuallyf(func() bool { return s.queryProviderConsumerPhase(consumerID) == phasePaused },
+			time.Minute, 2*time.Second, "the provider never paused the consumer whose client tracks another chain id")
+		pausedAt := s.requireMismatchPause(recoverySubmittedAt, consumerID, map[string]string{
 			"consumer_id":        consumerID,
 			"consumer_client_id": subject,
 			"client_chain_id":    newChainID,
 			"consumer_chain_id":  oldChainID,
 		})
+		s.T().Logf("the consumer was paused for the chain id mismatch at provider height %d", pausedAt)
+		s.Require().Emptyf(s.queryPendingDowntimeSlashes(consumerID), "the mismatch pause discards the consumer's downtime accusations")
 
-		// 4. Governance renames the consumer to the chain id its declared
-		// client tracks, which the owner cannot do; the provider serves it
-		// again from the next epoch.
+		// The paused consumer is served nothing, and neither the liveness
+		// sweep nor the mismatch check acts on it again meanwhile. The pause
+		// also schedules the consumer's auto-stop max_pause_duration out,
+		// which this suite leaves at its default of 45 days.
+		sentBefore, appliedBefore := s.requireConsumerNotServed(subject, consumerID, pausedAt)
+
+		// 4. One governance proposal renames the consumer to the chain id its
+		// declared client tracks, which the owner cannot do, and resumes it:
+		// the resume sends the consumer a snapshot of the provider's set.
 		renameSubmittedAt, err := s.queryProviderBlockHeight()
 		s.Require().NoError(err, "failed to read the provider height")
-		s.submitAndPassProposal(s.renameConsumerProposalJSON(consumerID, newChainID))
-		s.Require().Equalf(phaseLaunched, s.queryProviderConsumerPhase(consumerID), "a rename changes no phase")
+		s.submitAndPassProposal(s.renameAndResumeProposalJSON(consumerID, newChainID))
+		s.Require().Equalf(phaseLaunched, s.queryProviderConsumerPhase(consumerID), "the proposal must resume the consumer")
 		s.Require().Equalf(newChainID, s.queryConsumerChainID(consumerID), "the consumer must be registered under the renamed chain id")
 		renamedAt := s.requireRenameEvent(renameSubmittedAt, consumerID, oldChainID, newChainID)
-		s.T().Logf("the consumer was renamed from %s to %s at provider height %d", oldChainID, newChainID, renamedAt)
+		s.Require().Equalf([]int64{renamedAt}, s.providerBlockEventHeights(renameSubmittedAt, renamedAt, resumedEventType, map[string]string{"consumer_id": consumerID}),
+			"the consumer must be resumed in the block that renames it")
+		s.T().Logf("the consumer was renamed from %s to %s and resumed at provider height %d", oldChainID, newChainID, renamedAt)
 
 		// The retired id is on record with the client's height at the rename,
 		// in the renamed chain's revision: below it, evidence signed over the
@@ -124,8 +142,10 @@ func (s *ByzantineConsumerIntegrationTestSuite) testRevisionBumpIsServedOnlyAfte
 		s.requireConsumerFollowsADelegation(consumerID)
 		latest, err := s.queryProviderBlockHeight()
 		s.Require().NoError(err, "failed to read the provider height")
-		s.Require().Emptyf(s.providerBlockEventHeights(renamedAt+1, latest, mismatchEventType, map[string]string{"consumer_id": consumerID}),
-			"the provider still reports a chain id mismatch after the rename")
+		s.Require().Emptyf(s.providerBlockEventHeights(pausedAt+1, latest, mismatchEventType, map[string]string{"consumer_id": consumerID}),
+			"the provider reported the chain id mismatch again after the pause")
+		s.Require().Emptyf(s.providerBlockEventHeights(pausedAt+1, latest, pausedEventType, map[string]string{"consumer_id": consumerID}),
+			"the provider paused the renamed consumer again")
 
 		// 5. The old chain id stays an evidence domain of the consumer: a
 		// double vote signed over it at a height of the old chain is still
@@ -273,15 +293,48 @@ func (s *ByzantineConsumerIntegrationTestSuite) highestAppliedVscID() uint64 {
 	return highest
 }
 
-// requireConsumerNotServed watches the provider over a window of epochs and
-// requires that it serves the consumer nothing: the declared client's send
-// sequence stays put, every epoch boundary in the window emits the chain id
-// mismatch event with the given attributes, and the consumer's applied valset
-// update id stops advancing. The relayer may still be delivering the packets
-// the provider sent before the client expired, which the consumer applies
-// late; the watch starts over while that backlog lands. Returns the send
-// sequence and the applied valset update id the window settled at.
-func (s *ByzantineConsumerIntegrationTestSuite) requireConsumerNotServed(subject string, mismatch map[string]string) (sent, applied uint64) {
+// requireMismatchPause finds, in the provider's blocks from height from on,
+// the pause of the consumer for the chain id mismatch, and returns the height
+// of the block that paused it. The pause is reported once: one
+// vaas_consumer_paused event naming the mismatch reason, followed in the same
+// block by one vaas_consumer_client_chain_id_mismatch event carrying the
+// mismatch attributes.
+func (s *ByzantineConsumerIntegrationTestSuite) requireMismatchPause(from int64, consumerID string, mismatch map[string]string) int64 {
+	latest, err := s.queryProviderBlockHeight()
+	s.Require().NoError(err, "failed to read the provider height")
+	paused := s.providerBlockEventHeights(from, latest, pausedEventType, map[string]string{"consumer_id": consumerID})
+	s.Require().Lenf(paused, 1, "one pause of consumer %s expected in provider blocks %d..%d, got %v", consumerID, from, latest, paused)
+	pausedAt := paused[0]
+	s.Require().Equalf([]int64{pausedAt},
+		s.providerBlockEventHeights(from, latest, pausedEventType, map[string]string{"consumer_id": consumerID, "reason": pauseReasonMismatch}),
+		"the pause of consumer %s must name the chain id mismatch", consumerID)
+	s.Require().Equalf([]int64{pausedAt}, s.providerBlockEventHeights(from, latest, mismatchEventType, mismatch),
+		"one chain id mismatch event with %v expected, in the block that paused the consumer", mismatch)
+
+	pauseIndex, mismatchIndex := -1, -1
+	for i, ev := range s.providerBlockEvents(pausedAt) {
+		switch {
+		case ev.Type == pausedEventType && ev.Attributes["consumer_id"] == consumerID:
+			pauseIndex = i
+		case ev.Type == mismatchEventType && blockEventMatches(ev, mismatch):
+			mismatchIndex = i
+		}
+	}
+	s.Require().Lessf(pauseIndex, mismatchIndex, "the mismatch event must follow the pause event in block %d", pausedAt)
+	return pausedAt
+}
+
+// requireConsumerNotServed watches the provider over a window of epochs after
+// the consumer was paused at height pausedAt and requires that it serves the
+// consumer nothing: the declared client's send sequence stays put, the
+// consumer's applied valset update id stops advancing, the consumer stays
+// paused (the liveness sweep does not stop it), and the provider neither
+// pauses it again nor repeats the mismatch event. The relayer may still be
+// delivering the packets the provider sent before the client expired, which
+// the consumer applies late; the watch starts over while that backlog lands.
+// Returns the send sequence and the applied valset update id the window
+// settled at.
+func (s *ByzantineConsumerIntegrationTestSuite) requireConsumerNotServed(subject, consumerID string, pausedAt int64) (sent, applied uint64) {
 	const epochs = 6
 	const window = epochs * fourValidatorBlocksPerEpoch
 	deadline := time.Now().Add(5 * time.Minute)
@@ -300,15 +353,15 @@ func (s *ByzantineConsumerIntegrationTestSuite) requireConsumerNotServed(subject
 		s.Require().NoError(err, "the provider stopped producing blocks")
 
 		s.Require().Equalf(sent, s.nextSequenceSend(subject),
-			"the provider sent a VSC packet over client %s while it tracks another chain id", subject)
-		// A boundary falls on every multiple of the epoch length; the window
-		// holds epochs of them, less one at the edges.
-		mismatches := len(s.providerBlockEventHeights(from+1, to, mismatchEventType, mismatch))
-		s.Require().GreaterOrEqualf(mismatches, epochs-1,
-			"the provider reported the chain id mismatch %d times over %d epochs, expected one per epoch", mismatches, epochs)
+			"the provider sent a VSC packet over client %s to the paused consumer", subject)
+		s.Require().Equalf(phasePaused, s.queryProviderConsumerPhase(consumerID), "the consumer must stay paused")
+		for _, eventType := range []string{mismatchEventType, pausedEventType} {
+			s.Require().Emptyf(s.providerBlockEventHeights(pausedAt+1, to, eventType, map[string]string{"consumer_id": consumerID}),
+				"the provider emitted %s again for the paused consumer", eventType)
+		}
 
 		if now := s.highestAppliedVscID(); now != applied {
-			s.T().Logf("the consumer applied VSC packets sent before its client expired (valset update id %d -> %d); watching again", applied, now)
+			s.T().Logf("the consumer applied VSC packets sent before its client expired (valset update id %d to %d); watching again", applied, now)
 			s.Require().Truef(time.Now().Before(deadline), "the consumer's valset update id never settled")
 			continue
 		}
@@ -404,20 +457,28 @@ func (s *ByzantineConsumerIntegrationTestSuite) recoverClientProposalJSON(subjec
 }`, subject, substitute, s.queryGovAuthority(), bondDenom)
 }
 
-// renameConsumerProposalJSON builds the proposal that renames a launched
-// consumer to the chain id its declared client tracks: MsgUpdateConsumer
-// signed by the governance authority, the one signer allowed to.
-func (s *ByzantineConsumerIntegrationTestSuite) renameConsumerProposalJSON(consumerID, chainID string) string {
+// renameAndResumeProposalJSON builds the proposal that brings back a
+// consumer paused because its declared client tracks another chain id:
+// MsgUpdateConsumer signed by the governance authority, the one signer
+// allowed to rename a launched or paused consumer, renames it to the chain id
+// the client tracks, then MsgResumeConsumer resumes it, in one proposal so
+// neither lands without the other.
+func (s *ByzantineConsumerIntegrationTestSuite) renameAndResumeProposalJSON(consumerID, chainID string) string {
+	authority := s.queryGovAuthority()
 	return fmt.Sprintf(`{
   "messages": [{
     "@type": "/vaas.provider.v1.MsgUpdateConsumer",
     "owner": %q,
     "consumer_id": %q,
     "new_chain_id": %q
+  }, {
+    "@type": "/vaas.provider.v1.MsgResumeConsumer",
+    "authority": %q,
+    "consumer_id": %q
   }],
   "metadata": "ipfs://test",
   "deposit": "10000000%s",
-  "title": "Rename the consumer to the chain id its client tracks",
+  "title": "Rename the consumer to the chain id its client tracks and resume it",
   "summary": "revision bump"
-}`, s.queryGovAuthority(), consumerID, chainID, bondDenom)
+}`, authority, consumerID, chainID, authority, consumerID, bondDenom)
 }

@@ -220,8 +220,9 @@ func (s *baseTestSuite) nextSequenceSend(clientID string) uint64 {
 }
 
 // blockEvent is an event a block emitted outside any transaction, as the
-// chain's block results report it: from its EndBlock, where the provider's
-// epoch send runs and a passed proposal executes.
+// chain's block results report it: from its BeginBlock, where the provider
+// pauses a consumer whose client tracks another chain id, or its EndBlock,
+// where the provider's epoch send runs and a passed proposal executes.
 type blockEvent struct {
 	Type       string
 	Attributes map[string]string
