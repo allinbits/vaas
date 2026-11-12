@@ -222,7 +222,9 @@ message ConsumerInitializationParameters {
   // a VAAS enabled consumer chain, the VAAS module acts as the staking module.
   int64 historical_entries = 7;
   // How long the consumer may go without receiving a VSC packet before its
-  // tx admission gate enters safe mode (only ibc.core and gov messages pass).
+  // tx admission gate enters restricted mode, which admits IBC relayer and
+  // client-recovery traffic, governance (a new proposal only when every
+  // message it carries is such traffic), and photon voucher refills.
   google.protobuf.Duration safe_mode_threshold = 8
       [ (gogoproto.nullable) = false, (gogoproto.stdduration) = true ];
 }

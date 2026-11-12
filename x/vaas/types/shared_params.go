@@ -10,9 +10,11 @@ import (
 
 const (
 	// DefaultSafeModeThreshold is how long the consumer may go without
-	// receiving a VSC packet before its tx admission gate enters safe mode
-	// (only ibc.core and gov messages pass). Set well below the provider
-	// liveness grace period.
+	// receiving a VSC packet before its tx admission gate enters restricted
+	// mode (IBC relayer and client-recovery traffic, governance with a new
+	// proposal admitted only when every message it carries is such traffic,
+	// and photon voucher refills). Set
+	// well below the provider liveness grace period.
 	DefaultSafeModeThreshold = 3 * time.Hour
 
 	// DefaultVAASTimeoutPeriod is the IBC packet timeout for VAAS packets.

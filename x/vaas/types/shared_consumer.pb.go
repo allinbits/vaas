@@ -47,7 +47,9 @@ type ConsumerParams struct {
 	// which should be smaller than that of the provider in general.
 	UnbondingPeriod time.Duration `protobuf:"bytes,3,opt,name=unbonding_period,json=unbondingPeriod,proto3,stdduration" json:"unbonding_period"`
 	// How long the consumer may go without receiving a VSC packet before its
-	// tx admission gate enters safe mode (only ibc.core and gov messages pass).
+	// tx admission gate enters restricted mode, which admits IBC relayer and
+	// client-recovery traffic, governance (a new proposal only when every
+	// message it carries is such traffic), and photon voucher refills.
 	SafeModeThreshold time.Duration `protobuf:"bytes,4,opt,name=safe_mode_threshold,json=safeModeThreshold,proto3,stdduration" json:"safe_mode_threshold"`
 	// Provider-owned downtime detection window size, in consumer blocks.
 	// Written by the provider into the consumer genesis and updated via

@@ -759,7 +759,9 @@ type ConsumerInitializationParameters struct {
 	// a VAAS enabled consumer chain, the VAAS module acts as the staking module.
 	HistoricalEntries int64 `protobuf:"varint,7,opt,name=historical_entries,json=historicalEntries,proto3" json:"historical_entries,omitempty"`
 	// How long the consumer may go without receiving a VSC packet before its
-	// tx admission gate enters safe mode (only ibc.core and gov messages pass).
+	// tx admission gate enters restricted mode, which admits IBC relayer and
+	// client-recovery traffic, governance (a new proposal only when every
+	// message it carries is such traffic), and photon voucher refills.
 	SafeModeThreshold time.Duration `protobuf:"bytes,8,opt,name=safe_mode_threshold,json=safeModeThreshold,proto3,stdduration" json:"safe_mode_threshold"`
 }
 
