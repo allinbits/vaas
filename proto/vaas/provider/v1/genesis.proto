@@ -46,9 +46,9 @@ message GenesisState {
   repeated PendingDowntimeSlash pending_downtime_slashes = 9
       [ (gogoproto.nullable) = false ];
 
-  // The downtime params in effect immediately before the last change to
-  // InfractionParams, if any. Absent means the downtime params have never
-  // changed.
+  // The downtime params (the signed blocks window and the minimum signed per
+  // window of Params.infraction_parameters) in effect immediately before they
+  // last changed, if any. Absent means they have never changed.
   PreviousDowntimeParams previous_downtime_params = 10;
 
   // Per-validator fee-share records from each consumer's fee distribution

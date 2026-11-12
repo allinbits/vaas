@@ -51,9 +51,9 @@ type GenesisState struct {
 	// Downtime slashes accepted from consumers but not yet executed. Empty for
 	// a new chain.
 	PendingDowntimeSlashes []PendingDowntimeSlash `protobuf:"bytes,9,rep,name=pending_downtime_slashes,json=pendingDowntimeSlashes,proto3" json:"pending_downtime_slashes"`
-	// The downtime params in effect immediately before the last change to
-	// InfractionParams, if any. Absent means the downtime params have never
-	// changed.
+	// The downtime params (the signed blocks window and the minimum signed per
+	// window of Params.infraction_parameters) in effect immediately before they
+	// last changed, if any. Absent means they have never changed.
 	PreviousDowntimeParams *PreviousDowntimeParams `protobuf:"bytes,10,opt,name=previous_downtime_params,json=previousDowntimeParams,proto3" json:"previous_downtime_params,omitempty"`
 	// Per-validator fee-share records from each consumer's fee distribution
 	// runs. Empty for a new chain.
