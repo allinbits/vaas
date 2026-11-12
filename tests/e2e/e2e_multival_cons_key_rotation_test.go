@@ -229,6 +229,9 @@ func (s *MultiValidatorIntegrationTestSuite) testConsensusKeyRotation() {
 		s.restartConsumerNodeWithKey(1, keyDoc)
 		s.restartProviderNodeWithKey(1, keyDoc)
 
+		// The provider queues the key change at the next epoch boundary and
+		// the relayer delivers it; the bound checked is three minutes from
+		// both nodes being back, which leaves room for a slow relayer.
 		s.Require().Eventuallyf(func() bool {
 			power, ok := s.consumerPowerOf(rotated)
 			_, old := s.consumerPowerOf(val1.consAddr)
