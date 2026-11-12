@@ -163,15 +163,22 @@ func newEvidenceFixture(t *testing.T) (evidenceFixture, *gomock.Controller) {
 	}))
 
 	// The client store holds a consensus state at exactly the window end, so
-	// the real anchor resolution lands the window at windowEndTime.
+	// the real anchor resolution lands the window at windowEndTime, and one
+	// below the window start (93), so the window's whole span lies inside the
+	// states the client retains. The client state tracks the consumer's chain.
 	storeProvider := ibcclienttypes.NewStoreProvider(runtime.NewKVStoreService(keeperParams.StoreKey))
+	clientStore := storeProvider.ClientStore(ctx, declaredClientID)
+	belowWindowStartHeight := ibcclienttypes.NewHeight(0, 90)
 	windowEndHeight := ibcclienttypes.NewHeight(0, 100)
-	ibctmtypes.SetIterationKey(storeProvider.ClientStore(ctx, declaredClientID), windowEndHeight)
+	ibctmtypes.SetIterationKey(clientStore, belowWindowStartHeight)
+	ibctmtypes.SetIterationKey(clientStore, windowEndHeight)
 	mocks.MockClientKeeper.EXPECT().GetStoreProvider().Return(storeProvider).AnyTimes()
+	mocks.MockClientKeeper.EXPECT().GetClientConsensusState(gomock.Any(), declaredClientID, belowWindowStartHeight).
+		Return(&ibctmtypes.ConsensusState{Timestamp: windowEndTime.Add(-time.Minute)}, true).AnyTimes()
 	mocks.MockClientKeeper.EXPECT().GetClientConsensusState(gomock.Any(), declaredClientID, windowEndHeight).
 		Return(&ibctmtypes.ConsensusState{Timestamp: windowEndTime}, true).AnyTimes()
 	mocks.MockClientKeeper.EXPECT().GetClientState(gomock.Any(), declaredClientID).
-		Return(&ibctmtypes.ClientState{TrustingPeriod: 365 * 24 * time.Hour}, true).AnyTimes()
+		Return(&ibctmtypes.ClientState{ChainId: "consumer-chain", TrustingPeriod: 365 * 24 * time.Hour}, true).AnyTimes()
 	providerKeeper.SetEpochShareRecord(ctx, consumerID, windowEndTime, math.NewInt(1000))
 
 	return evidenceFixture{

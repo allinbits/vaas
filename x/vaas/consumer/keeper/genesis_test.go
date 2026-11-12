@@ -791,13 +791,16 @@ func TestGenesisRoundTripHighestValsetUpdateIDRejectsReplayedVSC(t *testing.T) {
 	require.Equal(t, uint64(7), highest)
 	require.Equal(t, exported, ck2.ExportGenesis(ctx2), "round-trip must be a fixed point")
 
-	require.NoError(t, ck2.OnRecvVSCPacketV2(ctx2, liveProviderClientID, diff(5)),
-		"a replayed id is acknowledged without error")
-	_, staged := ck2.GetPendingChanges(ctx2)
-	require.False(t, staged, "a VSC id at or below the restored watermark must not be applied")
-	highest, _, err = ck2.GetHighestValsetUpdateID(ctx2)
-	require.NoError(t, err)
-	require.Equal(t, uint64(7), highest)
+	// A lower id and the watermark's own id are both replays.
+	for _, replayed := range []uint64{5, 7} {
+		require.NoError(t, ck2.OnRecvVSCPacketV2(ctx2, liveProviderClientID, diff(replayed)),
+			"replayed id %d is acknowledged without error", replayed)
+		_, staged := ck2.GetPendingChanges(ctx2)
+		require.False(t, staged, "VSC id %d is at or below the restored watermark and must not be applied", replayed)
+		highest, _, err = ck2.GetHighestValsetUpdateID(ctx2)
+		require.NoError(t, err)
+		require.Equal(t, uint64(7), highest)
+	}
 
 	require.NoError(t, ck2.OnRecvVSCPacketV2(ctx2, liveProviderClientID, diff(8)))
 	pending, staged := ck2.GetPendingChanges(ctx2)
