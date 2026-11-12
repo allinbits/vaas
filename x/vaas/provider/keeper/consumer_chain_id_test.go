@@ -54,9 +54,11 @@ func launchedWithRecoveredClient(t *testing.T, k providerkeeper.Keeper, ctx sdk.
 	return cid
 }
 
-// TestSendVSCPacketsSkipsAConsumerWhoseClientTracksAnotherChainId: a client
-// recovered onto a renamed chain is not served. The packet stays queued, no
-// send is attempted (gomock would fail on one) and the mismatch is an event.
+// TestSendVSCPacketsSkipsAConsumerWhoseClientTracksAnotherChainId: in the
+// block in which the client switches, before the next BeginBlock pauses the
+// consumer, nothing is sent over it. The packet stays queued, no send is
+// attempted (gomock would fail on one), and the gate emits nothing: the
+// mismatch event belongs to the pause.
 func TestSendVSCPacketsSkipsAConsumerWhoseClientTracksAnotherChainId(t *testing.T) {
 	k, ctx, ctrl, mocks := testkeeper.GetProviderKeeperAndCtx(t, testkeeper.NewInMemKeeperParams(t))
 	defer ctrl.Finish()
@@ -66,9 +68,10 @@ func TestSendVSCPacketsSkipsAConsumerWhoseClientTracksAnotherChainId(t *testing.
 	})
 
 	require.NoError(t, k.SendVSCPackets(ctx))
+	require.NoError(t, k.SendVSCPackets(ctx))
 
 	require.Len(t, k.GetPendingVSCPackets(ctx, cid), 1, "the packet stays queued")
-	require.Equal(t, 1, countEvents(ctx, types.EventTypeConsumerClientChainIdMismatch))
+	require.Equal(t, 0, countEvents(ctx, types.EventTypeConsumerClientChainIdMismatch))
 }
 
 // TestHandleConsumerDowntimeRefusesAConsumerWhoseClientTracksAnotherChainId:
@@ -118,33 +121,148 @@ func TestHandleConsumerDowntimeRefusesAWindowFromBeforeARename(t *testing.T) {
 	require.NoError(t, err, "a window starting above the boundary is accepted")
 }
 
-// TestSweepsWaitOnAConsumerWhoseClientTracksAnotherChainId: a pending slash
-// and a withheld fee record that mature during the mismatch (the recovery
-// landed, the rename has not) wait for the rename, which discards and repays
-// them; neither executes nor expires meanwhile.
-func TestSweepsWaitOnAConsumerWhoseClientTracksAnotherChainId(t *testing.T) {
+// TestPauseConsumersWithMismatchedClients: the BeginBlock mirror pauses a
+// launched consumer whose declared client tracks another chain id, under the
+// mismatch reason, and discards what nobody could disprove any more: the
+// matured pending slash, the epoch mark and the withheld fee record are gone
+// before the sweeps that follow it in BeginBlock run (no staking
+// expectation is set, so an execution would fail on the mock). The mismatch
+// event fires once, with the pause; consumers whose client agrees, or that
+// have none, are left alone.
+func TestPauseConsumersWithMismatchedClients(t *testing.T) {
 	k, ctx, ctrl, mocks := testkeeper.GetProviderKeeperAndCtx(t, testkeeper.NewInMemKeeperParams(t))
 	defer ctrl.Finish()
 	ctx = ctx.WithBlockTime(time.Date(2025, 6, 1, 0, 0, 0, 0, time.UTC))
 	cid := launchedWithRecoveredClient(t, k, ctx, mocks)
-	_, accused := newSweepValidator(t)
-	matured := ctx.BlockTime().Add(-time.Minute)
-	putPendingDowntimeSlash(t, k, ctx, cid, accused, math.NewInt(100), matured, 100)
-	recordKey := collections.Join(cid, accused.ToSdkConsAddr().Bytes())
-	require.NoError(t, k.WithheldFeeRecords.Set(ctx, recordKey, types.WithheldFeeRecord{
-		ConsumerId: cid, ProviderConsAddr: accused.ToSdkConsAddr().Bytes(), Amount: sdk.NewInt64Coin("uphoton", 5), ExpiresAt: matured,
-	}))
 
-	// No staking expectations: an execution would fail on the mock.
+	agreeing := k.FetchAndIncrementConsumerId(ctx)
+	k.SetConsumerPhase(ctx, agreeing, types.CONSUMER_PHASE_LAUNCHED)
+	k.SetConsumerChainId(ctx, agreeing, "agreeing-1")
+	k.SetConsumerClientId(ctx, agreeing, "07-tendermint-1")
+	mocks.MockClientKeeper.EXPECT().GetClientState(gomock.Any(), "07-tendermint-1").Return(&ibctmtypes.ClientState{ChainId: "agreeing-1"}, true).AnyTimes()
+	clientless := k.FetchAndIncrementConsumerId(ctx)
+	k.SetConsumerPhase(ctx, clientless, types.CONSUMER_PHASE_LAUNCHED)
+	k.SetConsumerChainId(ctx, clientless, "clientless-1")
+
+	_, accused := newSweepValidator(t)
+	consAddr := accused.ToSdkConsAddr()
+	putPendingDowntimeSlash(t, k, ctx, cid, accused, math.NewInt(100), ctx.BlockTime().Add(-time.Minute), 100)
+	k.MarkEpochDowntime(ctx, cid, consAddr)
+	recordKey := collections.Join(cid, consAddr.Bytes())
+	require.NoError(t, k.WithheldFeeRecords.Set(ctx, recordKey, types.WithheldFeeRecord{
+		ConsumerId: cid, ProviderConsAddr: consAddr.Bytes(), Amount: sdk.NewInt64Coin("uphoton", 5), ExpiresAt: ctx.BlockTime().Add(time.Hour),
+	}))
+	// An empty pool: the record is repaid as far as the pool goes, which is nothing.
+	mocks.MockBankKeeper.EXPECT().GetBalance(gomock.Any(), k.GetConsumerFeePoolAddress(cid), "uphoton").Return(sdk.NewInt64Coin("uphoton", 0))
+
+	k.PauseConsumersWithMismatchedClients(ctx)
+
+	require.Equal(t, types.CONSUMER_PHASE_PAUSED, k.GetConsumerPhase(ctx, cid))
+	require.Equal(t, types.PAUSE_REASON_CLIENT_CHAIN_ID_MISMATCH, k.GetConsumerPauseReason(ctx, cid))
+	autoStop, err := k.GetConsumerPauseExpirationTime(ctx, cid)
+	require.NoError(t, err)
+	require.Equal(t, ctx.BlockTime().Add(k.GetMaxPauseDuration(ctx)), autoStop)
+	has, err := k.PendingDowntimeSlashes.Has(ctx, collections.Join3(cid, consAddr.Bytes(), int64(100)))
+	require.NoError(t, err)
+	require.False(t, has, "the pending downtime slash is discarded")
+	require.False(t, k.IsEpochDowntime(ctx, cid, consAddr), "the epoch downtime mark is discarded")
+	has, err = k.WithheldFeeRecords.Has(ctx, recordKey)
+	require.NoError(t, err)
+	require.False(t, has, "the withheld fee record is repaid")
+	require.Equal(t, types.CONSUMER_PHASE_LAUNCHED, k.GetConsumerPhase(ctx, agreeing))
+	require.Equal(t, types.CONSUMER_PHASE_LAUNCHED, k.GetConsumerPhase(ctx, clientless))
+
+	var mismatch []sdk.Event
+	for _, ev := range ctx.EventManager().Events() {
+		if ev.Type == types.EventTypeConsumerClientChainIdMismatch {
+			mismatch = append(mismatch, ev)
+		}
+	}
+	require.Len(t, mismatch, 1)
+	attrs := map[string]string{}
+	for _, a := range mismatch[0].Attributes {
+		attrs[a.Key] = a.Value
+	}
+	require.Equal(t, chainIDTestClient, attrs[types.AttributeConsumerClientID])
+	require.Equal(t, chainIDTestNew, attrs[types.AttributeClientChainId])
+	require.Equal(t, chainIDTestOld, attrs[types.AttributeConsumerChainId])
+	require.Equal(t, 1, countEvents(ctx, vaastypes.EventTypeConsumerPaused))
+
+	// Once per detection: the paused consumer is not looked at again.
+	k.PauseConsumersWithMismatchedClients(ctx)
+	require.Equal(t, 1, countEvents(ctx, types.EventTypeConsumerClientChainIdMismatch))
+
 	k.SweepPendingDowntimeSlashes(ctx)
 	k.SweepExpiredWithheldFeeRecords(ctx)
+}
 
-	pending, err := k.PendingDowntimeSlashes.Get(ctx, collections.Join3(cid, accused.ToSdkConsAddr().Bytes(), int64(100)))
-	require.NoError(t, err, "the matured slash waits")
-	require.Equal(t, matured, pending.MaturesAt)
-	has, err := k.WithheldFeeRecords.Has(ctx, recordKey)
+// pausedForMismatch seeds a launched consumer whose declared client the test
+// can switch between chain ids, pauses it through the BeginBlock mirror and
+// returns it with a pointer to the client state the client keeper serves.
+func pausedForMismatch(t *testing.T, k providerkeeper.Keeper, ctx sdk.Context, mocks testkeeper.MockedKeepers) (uint64, *ibctmtypes.ClientState) {
+	t.Helper()
+	cid := k.FetchAndIncrementConsumerId(ctx)
+	k.SetConsumerPhase(ctx, cid, types.CONSUMER_PHASE_LAUNCHED)
+	k.SetConsumerChainId(ctx, cid, chainIDTestOld)
+	k.SetConsumerOwnerAddress(ctx, cid, declOwner)
+	k.SetConsumerClientId(ctx, cid, chainIDTestClient)
+	k.SetInfractionParams(ctx, types.DefaultInfractionParameters())
+	require.NoError(t, k.SetConsumerInitializationParameters(ctx, cid, types.ConsumerInitializationParameters{
+		InitialHeight: clienttypes.NewHeight(1, 1), SpawnTime: time.Unix(1_700_000_000, 0).UTC(),
+	}))
+	clientState := &ibctmtypes.ClientState{
+		ChainId:        chainIDTestNew,
+		TrustingPeriod: 14 * 24 * time.Hour,
+		LatestHeight:   clienttypes.NewHeight(2, 500),
+	}
+	mocks.MockClientKeeper.EXPECT().GetClientState(gomock.Any(), chainIDTestClient).
+		DoAndReturn(func(sdk.Context, string) (ibcexported.ClientState, bool) { return clientState, true }).AnyTimes()
+	mocks.MockClientKeeper.EXPECT().GetClientStatus(gomock.Any(), chainIDTestClient).Return(ibcexported.Active).AnyTimes()
+	k.PauseConsumersWithMismatchedClients(ctx)
+	require.Equal(t, types.PAUSE_REASON_CLIENT_CHAIN_ID_MISMATCH, k.GetConsumerPauseReason(ctx, cid))
+	return cid, clientState
+}
+
+// TestAMismatchPauseEndsWithARenameAndAResume: the first exit. The resume
+// is refused while the mismatch holds; governance renames the paused
+// consumer to its client's chain id and resumes it.
+func TestAMismatchPauseEndsWithARenameAndAResume(t *testing.T) {
+	k, ctx, ctrl, mocks := testkeeper.GetProviderKeeperAndCtx(t, testkeeper.NewInMemKeeperParams(t))
+	defer ctrl.Finish()
+	msgServer := providerkeeper.NewMsgServerImpl(&k)
+	cid, _ := pausedForMismatch(t, k, ctx, mocks)
+
+	require.ErrorIs(t, k.ResumeConsumerChain(ctx, cid), types.ErrInvalidConsumerClient)
+
+	_, err := msgServer.UpdateConsumer(ctx, &types.MsgUpdateConsumer{Owner: k.GetAuthority(), ConsumerId: cid, NewChainId: chainIDTestNew})
 	require.NoError(t, err)
-	require.True(t, has, "the expired withheld fee record waits")
+	require.Equal(t, types.CONSUMER_PHASE_PAUSED, k.GetConsumerPhase(ctx, cid), "a rename does not resume")
+	resumeMocks(mocks)
+	require.NoError(t, k.ResumeConsumerChain(ctx, cid))
+	require.Equal(t, types.CONSUMER_PHASE_LAUNCHED, k.GetConsumerPhase(ctx, cid))
+
+	k.PauseConsumersWithMismatchedClients(ctx)
+	require.Equal(t, types.CONSUMER_PHASE_LAUNCHED, k.GetConsumerPhase(ctx, cid), "client and consumer agree again")
+}
+
+// TestAMismatchPauseEndsWithARecoveryAndAResume: the second exit. Governance
+// recovers the client back onto the consumer's chain id and resumes it; the
+// consumer keeps its chain id and records no rename.
+func TestAMismatchPauseEndsWithARecoveryAndAResume(t *testing.T) {
+	k, ctx, ctrl, mocks := testkeeper.GetProviderKeeperAndCtx(t, testkeeper.NewInMemKeeperParams(t))
+	defer ctrl.Finish()
+	cid, clientState := pausedForMismatch(t, k, ctx, mocks)
+
+	clientState.ChainId = chainIDTestOld
+	resumeMocks(mocks)
+	require.NoError(t, k.ResumeConsumerChain(ctx, cid))
+	require.Equal(t, types.CONSUMER_PHASE_LAUNCHED, k.GetConsumerPhase(ctx, cid))
+	got, err := k.GetConsumerChainId(ctx, cid)
+	require.NoError(t, err)
+	require.Equal(t, chainIDTestOld, got)
+	previous, err := k.GetConsumerPreviousChainIds(ctx, cid)
+	require.NoError(t, err)
+	require.Empty(t, previous)
 }
 
 // TestResumeRefusesAConsumerWhoseClientTracksAnotherChainId: the resume of a

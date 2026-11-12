@@ -3,6 +3,7 @@ package keeper
 import (
 	"context"
 	"fmt"
+	"strconv"
 
 	clienttypes "github.com/cosmos/ibc-go/v10/modules/core/02-client/types"
 	ibctmtypes "github.com/cosmos/ibc-go/v10/modules/light-clients/07-tendermint"
@@ -33,11 +34,13 @@ func (k Keeper) consumerClientState(ctx sdk.Context, clientId string) (*ibctmtyp
 // consumerClientChainIdMismatch reports the chain id the consumer's declared
 // client tracks when it is not the consumer's own. The consumer's chain id
 // is what its double-voting evidence is verified over and what its
-// misbehaviour is accepted for, and it is locked at launch; the client's
-// follows a client recovery (ibc-go copies the substitute's). A consumer that
-// renamed itself, with the client then recovered onto the new name, is
-// therefore one the provider can no longer judge: it is not served, and not
-// resumed, until governance renames it too (UpdateConsumer by the authority).
+// misbehaviour is accepted for, and only governance changes it after launch;
+// the client's follows an ibc-go client upgrade (MsgUpgradeClient, which
+// takes the chain id from the upgraded client state the consumer committed)
+// or a client recovery (MsgRecoverClient, which copies the substitute's). A
+// consumer whose client tracks another chain id is one the provider can no
+// longer judge: PauseConsumersWithMismatchedClients pauses it, and it is not
+// resumed until the two agree again.
 func (k Keeper) consumerClientChainIdMismatch(ctx sdk.Context, consumerId uint64, clientId string) (clientChainId string, mismatch bool) {
 	chainId, err := k.GetConsumerChainId(ctx, consumerId)
 	if err != nil {
@@ -53,23 +56,53 @@ func (k Keeper) consumerClientChainIdMismatch(ctx sdk.Context, consumerId uint64
 	return tmClientState.ChainId, true
 }
 
-// consumerAccusationsUndisprovable returns a per-sweep memo of whether a
-// consumer's declared client tracks another chain id. The block sweeps leave
-// such a consumer's pending downtime slashes and withheld fee records alone:
-// no challenge header can disprove them until governance renames the
-// consumer, and the rename discards them (RenameLaunchedConsumer).
-func (k Keeper) consumerAccusationsUndisprovable(ctx sdk.Context) func(consumerId uint64) bool {
-	memo := map[uint64]bool{}
-	return func(consumerId uint64) bool {
-		if undisprovable, seen := memo[consumerId]; seen {
-			return undisprovable
+// PauseConsumersWithMismatchedClients pauses, under the client chain id
+// mismatch reason, every launched consumer whose declared client tracks a
+// chain id other than the consumer's (consumerClientChainIdMismatch). Such a
+// consumer cannot be judged: its double-voting evidence is verified over the
+// consumer's chain id, and a downtime challenge needs a header signed over
+// the consumer's chain id that the client verifies, while the client only
+// verifies headers of the chain id it tracks, so none of its pending
+// downtime accusations can be disproved. The pause
+// discards them and repays the fees withheld under them, as a challenge or
+// light-client pause does (an accusation that cannot be disproved does not
+// stand), keeps the liveness sweep away from a consumer that is silent only
+// because it is not served, and gives governance MaxPauseDuration to rename
+// the consumer to the client's chain id (MsgUpdateConsumer by the authority)
+// or recover the client onto the consumer's, then resume it.
+//
+// It runs in BeginBlock before the downtime slash and withheld fee sweeps,
+// so nothing of the consumer matures between the client switch and the
+// pause. vaas_consumer_client_chain_id_mismatch is emitted once, with the
+// pause; a consumer already paused for another reason keeps it, and its
+// resume is refused while the mismatch holds. A pause that fails is logged
+// and retried next block; nothing here may halt the chain.
+func (k Keeper) PauseConsumersWithMismatchedClients(ctx sdk.Context) {
+	for _, consumerId := range k.GetAllLaunchedConsumerIds(ctx) {
+		clientId, found := k.GetConsumerClientId(ctx, consumerId)
+		if !found || clientId == "" {
+			continue
 		}
-		undisprovable := false
-		if clientId, found := k.GetConsumerClientId(ctx, consumerId); found {
-			_, undisprovable = k.consumerClientChainIdMismatch(ctx, consumerId, clientId)
+		clientChainId, mismatch := k.consumerClientChainIdMismatch(ctx, consumerId, clientId)
+		if !mismatch {
+			continue
 		}
-		memo[consumerId] = undisprovable
-		return undisprovable
+		chainId, _ := k.GetConsumerChainId(ctx, consumerId)
+		if err := k.PauseConsumerChain(ctx, consumerId, types.PAUSE_REASON_CLIENT_CHAIN_ID_MISMATCH); err != nil {
+			k.Logger(ctx).Error("consumer client tracks another chain id but the consumer could not be paused; retrying next block",
+				"consumerId", consumerId, "clientId", clientId, "clientChainId", clientChainId, "consumerChainId", chainId, "err", err.Error())
+			continue
+		}
+		ctx.EventManager().EmitEvent(sdk.NewEvent(
+			types.EventTypeConsumerClientChainIdMismatch,
+			sdk.NewAttribute(sdk.AttributeKeyModule, types.ModuleName),
+			sdk.NewAttribute(types.AttributeConsumerId, strconv.FormatUint(consumerId, 10)),
+			sdk.NewAttribute(types.AttributeConsumerClientID, clientId),
+			sdk.NewAttribute(types.AttributeClientChainId, clientChainId),
+			sdk.NewAttribute(types.AttributeConsumerChainId, chainId),
+		))
+		k.Logger(ctx).Info("consumer client tracks another chain id: consumer paused pending a governance rename or client recovery",
+			"consumerId", consumerId, "clientId", clientId, "clientChainId", clientChainId, "consumerChainId", chainId)
 	}
 }
 
@@ -89,8 +122,10 @@ func (k Keeper) validateConsumerClientTrustingPeriod(ctx sdk.Context, clientId s
 
 // RenameLaunchedConsumer is the governance half of a consumer rename after
 // launch: the consumer bumped its chain id (an upgrade's revision bump, say),
-// governance recovered the declared client onto a substitute that tracks the
-// new id, and the provider's own record follows it here, in lockstep. The new
+// the declared client follows it through an ibc-go client upgrade or a
+// governance recovery, and the provider's own record follows the client
+// here, on a launched consumer or on one paused for the mismatch
+// (PauseConsumersWithMismatchedClients). The new
 // id must be the one the declared client tracks, and free. The old id is kept
 // with the client's height at the rename, so double-voting evidence from a
 // block at or below that height, signed over the old id, is still accepted

@@ -29,9 +29,11 @@ work-in-progress.
    each chain.
 4. **Almost-forward-only consumer lifecycle.** `REGISTERED -> INITIALIZED ->
    LAUNCHED -> STOPPED -> DELETED`, with three exceptions: a failed launch rolls
-   back to `REGISTERED`; a successful downtime challenge moves a `LAUNCHED`
-   consumer to `PAUSED`, from which governance either resumes it to `LAUNCHED`
-   or removes it to `STOPPED`; and `MsgRetireConsumer` takes a consumer that
+   back to `REGISTERED`; a `LAUNCHED` consumer moves to `PAUSED` on a
+   successful downtime challenge, on a confirmed light-client attack, when the
+   bonded power refusing it reaches `refusal_pause_threshold`, or when its
+   declared client tracks another chain id, from which governance either
+   resumes it to `LAUNCHED` or removes it to `STOPPED`; and `MsgRetireConsumer` takes a consumer that
    never launched straight to `DELETED`, since a chain no validator ever
    validated needs no unbonding delay before its state can be erased. Deletion
    releases the consumer's chain id, so a registration does not tie up a chain

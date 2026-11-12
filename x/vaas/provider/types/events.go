@@ -16,12 +16,14 @@ const (
 	EventTypeEquivocationPunishmentExecuted  = "vaas_equivocation_punishment_executed"
 	EventTypeEquivocationPunishmentCancelled = "vaas_equivocation_punishment_cancelled"
 	EventTypeEquivocationPunishmentDropped   = "vaas_equivocation_punishment_dropped"
-	// EventTypeConsumerClientChainIdMismatch is emitted, once per epoch, for
-	// a launched consumer whose declared client tracks a chain id other than
-	// the consumer's: the consumer renamed itself and governance recovered the
-	// client onto the new name without renaming the consumer. No VSC packet is
-	// sent to it until MsgUpdateConsumer, signed by the governance authority,
-	// renames it to the client's chain id.
+	// EventTypeConsumerClientChainIdMismatch is emitted once, alongside
+	// vaas_consumer_paused, when the provider BeginBlock pauses a launched
+	// consumer whose declared client tracks a chain id other than the
+	// consumer's (PauseConsumersWithMismatchedClients): an ibc-go client
+	// upgrade or recovery switched the client's chain id. Governance resumes
+	// the consumer after renaming it to the client's chain id
+	// (MsgUpdateConsumer by the authority) or recovering the client onto the
+	// consumer's.
 	EventTypeConsumerClientChainIdMismatch = "vaas_consumer_client_chain_id_mismatch"
 
 	AttributeProviderValidatorAddress = "provider_validator_address"

@@ -146,12 +146,14 @@ func (k Keeper) HandleConsumerDowntime(ctx sdk.Context, consumerId uint64, evide
 	// An accusation must stay disprovable, and a challenge header is
 	// verified by the declared client over the chain id it tracks: while
 	// that is not the consumer's, no header the accused could submit would
-	// pass (see consumerClientChainIdMismatch), so the accusation is refused
-	// rather than accepted undisprovable.
+	// pass, so the accusation is refused rather than accepted undisprovable.
+	// The next BeginBlock pauses the consumer
+	// (PauseConsumersWithMismatchedClients); this covers the rest of the
+	// block in which a client upgrade or recovery lands.
 	if clientChainId, mismatch := k.consumerClientChainIdMismatch(ctx, consumerId, clientId); mismatch {
 		return errorsmod.Wrapf(
 			vaastypes.ErrInvalidConsumerState,
-			"downtime evidence for consumer chain %d cannot be disproved while its client %s tracks chain id %s: rename the consumer (UpdateConsumer by governance)",
+			"downtime evidence for consumer chain %d cannot be disproved while its client %s tracks chain id %s",
 			consumerId, clientId, clientChainId,
 		)
 	}

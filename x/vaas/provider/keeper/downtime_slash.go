@@ -50,14 +50,10 @@ import (
 // A paused consumer's entries are frozen: a refusal pause keeps them (the
 // other pauses cancel them) and the resume moves their maturities past the
 // pause, so until then they are measured against the moment the pause began
-// (see consumerClock). So are the entries of a consumer whose declared client
-// tracks another chain id, which no challenge header can disprove until
-// governance renames the consumer and discards them
-// (consumerAccusationsUndisprovable).
+// (see consumerClock).
 func (k Keeper) SweepPendingDowntimeSlashes(ctx sdk.Context) {
 	ip := k.GetInfractionParams(ctx)
 	clock := k.consumerClock(ctx)
-	undisprovable := k.consumerAccusationsUndisprovable(ctx)
 
 	iter, err := k.PendingDowntimeSlashes.Iterate(ctx, nil)
 	if err != nil {
@@ -88,9 +84,6 @@ func (k Keeper) SweepPendingDowntimeSlashes(ctx sdk.Context) {
 		}
 		consumerId := kv.Key.K1()
 		if kv.Value.MaturesAt.After(clock(consumerId)) {
-			continue
-		}
-		if undisprovable(consumerId) {
 			continue
 		}
 		if kv.Value.MaturesAtExtended {

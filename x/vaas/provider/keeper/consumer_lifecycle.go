@@ -374,12 +374,14 @@ func (k Keeper) StopAndPrepareForConsumerRemoval(ctx sdk.Context, consumerId uin
 // CONSUMER_PHASE_PAUSED when the provider must stop serving it, for the
 // given reason: a successful downtime challenge (see
 // HandleChallengeConsumerDowntime), a confirmed light-client attack (see
-// containLightClientAttack) or a refusal coalition reaching the
-// RefusalPauseThreshold (see EvaluateConsumerRefusals).
+// containLightClientAttack), a refusal coalition reaching the
+// RefusalPauseThreshold (see EvaluateConsumerRefusals) or a declared client
+// tracking another chain id (see PauseConsumersWithMismatchedClients).
 //
-// A won challenge proved the consumer's accusations wrong, and a forked
-// chain's accusations are no more trustworthy than its headers, so those two
-// pauses discard them (DiscardConsumerAccusations): the fees withheld from
+// A won challenge proved the consumer's accusations wrong, a forked chain's
+// accusations are no more trustworthy than its headers, and a consumer whose
+// client tracks another chain id has accusations nobody can disprove, so
+// those three pauses discard them (DiscardConsumerAccusations): the fees withheld from
 // the accused validators are repaid first, before the phase flips, since the
 // accused could no longer challenge once their accusations are gone, then
 // every pending downtime slash and this epoch's downtime marks for the
@@ -637,7 +639,7 @@ func (k Keeper) ResumeConsumerChain(ctx sdk.Context, consumerId uint64) error {
 	// trusting period behind the declaration; neither is served.
 	if clientChainId, mismatch := k.consumerClientChainIdMismatch(ctx, consumerId, clientId); mismatch {
 		return errorsmod.Wrapf(types.ErrInvalidConsumerClient,
-			"consumer %d client %s tracks chain id %s; rename the consumer to it (MsgUpdateConsumer by the governance authority) in the same proposal as this resume",
+			"consumer %d client %s tracks chain id %s; rename the consumer to it (MsgUpdateConsumer by the governance authority), or recover the client onto the consumer's chain id, in the same proposal as this resume",
 			consumerId, clientId, clientChainId)
 	}
 	if tmClientState, err := k.consumerClientState(ctx, clientId); err != nil {

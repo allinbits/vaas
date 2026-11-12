@@ -3,7 +3,6 @@ package keeper
 import (
 	"errors"
 	"fmt"
-	"strconv"
 
 	abci "github.com/cometbft/cometbft/abci/types"
 
@@ -156,24 +155,17 @@ func (k Keeper) SendVSCPackets(ctx sdk.Context) error {
 }
 
 func (k Keeper) SendVSCPacketsToChain(ctx sdk.Context, consumerId uint64, clientId string) error {
-	// A client recovered onto a renamed chain is not served, on any path
-	// that sends from a block (the epoch send and the rotation snapshots):
-	// serving it would run a consumer the provider can no longer judge, as
-	// its double-voting evidence is verified over the stored chain id. The
-	// packets stay queued until governance renames the consumer. The resume
-	// path checks the same before its own send.
+	// A client whose chain id is not the consumer's is not served, on any
+	// path that sends from a block (the epoch send and the rotation
+	// snapshots): serving it would run a consumer the provider cannot
+	// judge, as its double-voting evidence is verified over the consumer's
+	// chain id. The next BeginBlock pauses such a consumer
+	// (PauseConsumersWithMismatchedClients); this covers the rest of the
+	// block in which a client upgrade or recovery lands. The packets stay
+	// queued. The resume path refuses the mismatch before its own send.
 	if clientChainId, mismatch := k.consumerClientChainIdMismatch(ctx, consumerId, clientId); mismatch {
-		chainId, _ := k.GetConsumerChainId(ctx, consumerId)
-		k.Logger(ctx).Error("consumer client tracks another chain id; not served until governance renames the consumer",
-			"consumerId", consumerId, "clientId", clientId, "clientChainId", clientChainId, "consumerChainId", chainId)
-		ctx.EventManager().EmitEvent(sdk.NewEvent(
-			providertypes.EventTypeConsumerClientChainIdMismatch,
-			sdk.NewAttribute(sdk.AttributeKeyModule, providertypes.ModuleName),
-			sdk.NewAttribute(providertypes.AttributeConsumerId, strconv.FormatUint(consumerId, 10)),
-			sdk.NewAttribute(providertypes.AttributeConsumerClientID, clientId),
-			sdk.NewAttribute(providertypes.AttributeClientChainId, clientChainId),
-			sdk.NewAttribute(providertypes.AttributeConsumerChainId, chainId),
-		))
+		k.Logger(ctx).Info("consumer client tracks another chain id; packets stay queued",
+			"consumerId", consumerId, "clientId", clientId, "clientChainId", clientChainId)
 		return nil
 	}
 	// EndBlock cannot fail the block over a relayer or client hiccup: any

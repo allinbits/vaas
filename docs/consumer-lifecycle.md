@@ -13,13 +13,14 @@ REGISTERED -> INITIALIZED -> LAUNCHED -> STOPPED -> DELETED
                               PAUSED
 ```
 
-A consumer always progresses forward through these phases, with three exceptions: a failed
-launch resets the consumer back to REGISTERED so the owner can retry; a successful
-downtime challenge moves a LAUNCHED consumer to PAUSED, from which governance can either
-resume it back to LAUNCHED or remove it (see
-[consumer-downtime.md](consumer-downtime.md)); and a consumer that has not launched can be
-terminated outright with the same `MsgRemoveConsumer`, which for a pre-launch consumer
-skips STOPPED and moves it straight to DELETED (see
+A consumer always progresses forward through these phases, with these exceptions: a failed
+launch resets the consumer back to REGISTERED so the owner can retry; a LAUNCHED consumer
+moves to PAUSED on a successful downtime challenge, on a confirmed light-client attack, when
+the bonded power refusing it reaches `refusal_pause_threshold`, or when its declared client
+tracks another chain ID (see [Phase 4](#phase-4-paused)), from which governance can either
+resume it back to LAUNCHED or remove it; and a consumer that has not launched can be
+terminated outright with the same `MsgRemoveConsumer`, which for a pre-launch consumer skips
+STOPPED and moves it straight to DELETED (see
 [Removing a consumer before launch](#removing-a-consumer-before-launch)).
 
 ---
@@ -154,7 +155,9 @@ consumer reported false downtime evidence (see [consumer-downtime.md](consumer-d
 every EndBlock (see [consumer-refusal.md](consumer-refusal.md)) -- or a confirmed
 light-client attack: `MsgSubmitConsumerMisbehaviour` freezes the consumer's IBC client and
 pauses in one transaction, and a client frozen through ibc-go's `MsgUpdateClient` is caught
-by the provider's BeginBlock (see [equivocation-evidence.md](equivocation-evidence.md)).
+by the provider's BeginBlock (see [equivocation-evidence.md](equivocation-evidence.md)) --
+or a declared client that tracks a chain ID other than the consumer's, caught by the same
+BeginBlock (see [Renaming a launched consumer](#renaming-a-launched-consumer)).
 
 **Requirements:** consumer must be in `LAUNCHED` phase.
 
@@ -171,10 +174,11 @@ by the provider's BeginBlock (see [equivocation-evidence.md](equivocation-eviden
 
 **Exits:** `MsgResumeConsumer` (gov) returns the consumer to `LAUNCHED` with an immediate
 snapshot resync (the resume pre-flights the IBC client and fails with `MsgRecoverClient`
-guidance if the client expired or was frozen during the pause; after a light-client pause it
-is accepted only once one client trusting period has passed since the pause, when the fork's
-evidence can no longer pause the consumer); `MsgRemoveConsumer` (gov) or the scheduled
-auto-stop moves it to `STOPPED`.
+guidance if the client expired or was frozen during the pause, and fails while the client
+tracks a chain ID other than the consumer's or its trusting period does not clear the
+downtime challenge horizon; after a light-client pause it is accepted only once one client
+trusting period has passed since the pause, when the fork's evidence can no longer pause the
+consumer); `MsgRemoveConsumer` (gov) or the scheduled auto-stop moves it to `STOPPED`.
 
 ---
 
@@ -224,30 +228,10 @@ auto-stop moves it to `STOPPED`.
      initialization parameters.
 3. Phase is set to `DELETED`.
 
-**The chain ID follows the declared client after launch, by governance only.** A
-launched (or paused) consumer cannot be renamed by its owner: the stored chain ID is
-what its double-voting evidence is verified over and what its misbehaviour is accepted
-for. A consumer that bumps its chain ID (an upgrade's revision bump, say) gets its
-declared client recovered onto the new name by governance (`MsgRecoverClient`), and
-the provider's record follows in the same proposal: a `MsgUpdateConsumer` signed by
-the governance authority whose `new_chain_id` is the chain ID the declared client now
-tracks. Until it does, the provider serves no VSC packet to that consumer, accepts no
-downtime evidence from it, lets none of its pending downtime slashes or withheld fee
-records mature, and refuses to resume it (`vaas_consumer_client_chain_id_mismatch`).
-The old chain ID stays on record with the client's height at the rename, so
-double-voting evidence from a block at or below it is still accepted (see
-[equivocation-evidence.md](equivocation-evidence.md)); the downtime accusations pending
-at the rename are discarded instead, and the fees withheld under them repaid, and no
-window starting at or below that height is accepted afterwards, since the recovered
-client verifies headers over the chain ID it tracks now and none signed over the old one
-could disprove them (see [consumer-downtime.md](consumer-downtime.md)).
-Before launch, the owner renames freely until the client is declared; the client tracks
-a chain ID, so the rename comes first.
-
 **The chain ID is released, not reserved forever.** `MsgCreateConsumer` and
 `MsgUpdateConsumer` reject a chain ID that is already claimed (`ChainIdInUse`), and
-deletion drops this consumer's claim, so the same chain ID can be registered again by a
-new consumer. By that point nothing can name the deleted consumer's chain any more: its
+deletion drops this consumer's claim (its chain ID and any it carried before a rename),
+so the same chain ID can be registered again by a new consumer. By that point nothing can name the deleted consumer's chain any more: its
 client mapping has just been removed, so an inbound packet can no longer be attributed
 to it, and evidence, downtime accusations, and fee distribution all require phase
 `LAUNCHED`. On the stop-then-remove path a full unbonding period has additionally
@@ -259,6 +243,62 @@ A deleted consumer therefore reports an **empty `chain_id`** from `consumer-chai
 `list-consumer-chains`, and exports an empty chain ID in genesis. Its record is still
 listed so the deletion stays visible without an archive node; identify it by
 `consumer_id`, which is never reused.
+
+---
+
+## Renaming a launched consumer
+
+**The chain ID follows the declared client after launch, by governance only.** A
+launched (or paused) consumer cannot be renamed by its owner: the stored chain ID is
+what its double-voting evidence is verified over and what its misbehaviour is accepted
+for. The declared client's chain ID, on the other hand, follows ibc-go: a client upgrade
+(`MsgUpgradeClient`) takes it from the upgraded client state the consumer committed, and
+a client recovery (`MsgRecoverClient`) copies the substitute's.
+
+**A mismatch pauses the consumer.** At every BeginBlock the provider compares each
+launched consumer's chain ID with the one its declared client tracks. On a mismatch it
+pauses the consumer with `PAUSE_REASON_CLIENT_CHAIN_ID_MISMATCH`, once, emitting
+`vaas_consumer_paused` and `vaas_consumer_client_chain_id_mismatch` (which names both
+chain IDs). The pause works like a challenge or light-client pause: the consumer's pending
+downtime slashes and epoch marks are discarded and the fees withheld under them repaid,
+since no challenge header can disprove them while the client verifies headers of another
+chain ID, and an accusation that cannot be disproved does not stand; the liveness sweep
+skips the consumer; pending equivocation punishments are frozen; an auto-stop is scheduled
+at `MaxPauseDuration`. In the block in which the client switches, before that BeginBlock,
+the provider sends the consumer no VSC packet and accepts no downtime evidence from it, and
+nothing of it matures, since the downtime sweeps run after the pause.
+
+**Two exits, each one governance proposal.** Governance either renames the consumer to
+the client's chain ID, with a `MsgUpdateConsumer` signed by the governance authority whose
+`new_chain_id` is the chain ID the declared client tracks (nothing else is accepted), or
+recovers the client back onto the consumer's chain ID with `MsgRecoverClient`; in the same
+proposal it resumes the consumer with `MsgResumeConsumer`. The resume returns an error,
+and the proposal fails, while the client still tracks another chain ID, and it also
+refuses a client whose trusting period does not clear the downtime challenge horizon. A
+rename alone does not resume a paused consumer. Governance can also recover and rename a
+launched consumer in one proposal, before any BeginBlock sees the mismatch.
+
+**What a rename keeps.** The old chain ID stays on record with the client's height at the
+rename, so double-voting evidence from a block at or below it is still accepted (see
+[equivocation-evidence.md](equivocation-evidence.md)). Downtime accusations pending at
+the rename are discarded, and the fees withheld under them repaid, and no window starting
+at or below that height is accepted afterwards, since the client verifies headers over the
+chain ID it tracks after the rename and none signed over the old one could disprove them (see
+[consumer-downtime.md](consumer-downtime.md)). Before launch, the owner renames freely
+until the client is declared; the client tracks a chain ID, so the rename comes first.
+
+**Planning a chain ID change.** A planned revision bump goes through ibc-go's client
+upgrade: the consumer's authority schedules `MsgIBCSoftwareUpgrade` with the upgraded
+client state carrying the new chain ID, and after the upgrade height anyone submits
+`MsgUpgradeClient` on the provider. The mismatch is then visible at once, and the pause
+gives governance `MaxPauseDuration` (45 days by default) to rename and resume. A hard fork
+that keeps its chain ID needs none of this: it follows the
+[genesis restart runbook](genesis-restart-runbook.md), and the client follows it. A chain
+ID changed without a client upgrade leaves the declared client unable to follow: it
+verifies no header of the new chain ID, the provider receives no acknowledgement, and
+ibc-go recovers a client only once it has expired, about one trusting period after its
+last update. With default parameters the liveness sweep stops the consumer before a
+recovery vote can pass, and such a consumer registers again.
 
 ---
 
@@ -313,7 +353,7 @@ can be erased and its chain ID re-registered in the next block.
 | `REGISTERED` | `MsgCreateConsumer` | Any account | Consumer created, owner assigned (only `chain_id` and `metadata` are required) |
 | `INITIALIZED` | `spawn_time` set | On-chain (automatic) | Queued for launch at spawn_time |
 | `LAUNCHED` | `spawn_time` elapsed | On-chain (BeginBlock) | Genesis built; operator starts consumer; relayer creates IBC path |
-| `PAUSED` | Successful downtime challenge, confirmed light-client attack, or refusal coalition at `RefusalPauseThreshold` | Any account (with proof) / on-chain (EndBlock) | Withheld fees repaid, pending slashes cancelled, auto-stop scheduled; a light-client attack also freezes the IBC client; a resume is refused while the coalition stands |
+| `PAUSED` | Successful downtime challenge, confirmed light-client attack, refusal coalition at `RefusalPauseThreshold`, or a declared client tracking another chain ID | Any account (with proof) / on-chain (BeginBlock, EndBlock) | Withheld fees repaid, pending slashes cancelled, auto-stop scheduled; a light-client attack also freezes the IBC client; a resume is refused while the coalition stands or the client tracks another chain ID |
 | `STOPPED` | `MsgRemoveConsumer` (gov), liveness sweep, or pause auto-stop | Governance / on-chain | Queued for deletion after unbonding period; the governance removal also cancels the consumer's pending equivocation punishments |
 | `DELETED` | Unbonding period elapsed | On-chain (BeginBlock) | Fee pool auto-swept to depositors, state cleaned up, chain ID released |
 | `DELETED` | `MsgRemoveConsumer` on a consumer that never launched | Owner or governance | Same teardown, with no `STOPPED` stopover and no unbonding delay |

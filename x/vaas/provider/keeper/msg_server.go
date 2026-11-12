@@ -398,7 +398,7 @@ func (k msgServer) UpdateConsumer(goCtx context.Context, msg *types.MsgUpdateCon
 
 	// The governance authority may update a consumer too: it is the one
 	// signer that may rename a launched or paused consumer, to the chain id
-	// its declared client tracks after a recovery (RenameLaunchedConsumer).
+	// its declared client tracks (RenameLaunchedConsumer).
 	isGov := msg.Owner == k.GetAuthority()
 	if msg.Owner != ownerAddress && !isGov {
 		return &resp, errorsmod.Wrapf(types.ErrUnauthorized, "expected owner address %s or the governance authority, got %s", ownerAddress, msg.Owner)
