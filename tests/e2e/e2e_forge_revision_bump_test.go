@@ -19,11 +19,6 @@ const (
 	clientExpired = "Expired"
 )
 
-// forgeBlocksPerEpoch is the provider's blocks_per_epoch in the suites
-// running several validators (patchFourValidatorProviderGenesis): the
-// provider queues and sends VSC packets at every multiple of it.
-const forgeBlocksPerEpoch = 5
-
 // mismatchEventType is the event the provider emits, once per epoch, for a
 // launched consumer whose declared client tracks another chain id.
 const mismatchEventType = "vaas_consumer_client_chain_id_mismatch"
@@ -289,7 +284,7 @@ func (s *ByzantineConsumerIntegrationTestSuite) highestAppliedVscID() uint64 {
 // sequence and the applied valset update id the window settled at.
 func (s *ByzantineConsumerIntegrationTestSuite) requireConsumerNotServed(subject string, mismatch map[string]string) (sent, applied uint64) {
 	const epochs = 6
-	const window = epochs * forgeBlocksPerEpoch
+	const window = epochs * fourValidatorBlocksPerEpoch
 	deadline := time.Now().Add(5 * time.Minute)
 	for {
 		from, err := s.queryProviderBlockHeight()

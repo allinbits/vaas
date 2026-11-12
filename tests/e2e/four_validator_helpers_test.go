@@ -2,6 +2,7 @@ package e2e
 
 import (
 	"fmt"
+	"strconv"
 	"time"
 
 	"github.com/ory/dockertest/v3"
@@ -10,6 +11,11 @@ import (
 // four_validator_helpers_test.go holds what the suites running several
 // validator nodes per chain share: the provider genesis they run on, their
 // bring-up, and the identity of each validator.
+
+// fourValidatorBlocksPerEpoch is the provider's blocks_per_epoch in the
+// suites running several validators (patchFourValidatorProviderGenesis): the
+// provider queues and sends VSC packets at every multiple of it.
+const fourValidatorBlocksPerEpoch = 5
 
 // patchFourValidatorProviderGenesis applies the main suite's provider
 // parameters to a multi-validator suite: fast epochs, a per-block fee, and
@@ -22,7 +28,7 @@ func (s *baseTestSuite) patchFourValidatorProviderGenesis(appState map[string]an
 	s.genesisSection(appState, "gov", "params")["voting_period"] = fmt.Sprintf("%ds", int64(s.cfg.govVotingPeriod/time.Second))
 
 	params := s.genesisSection(appState, "vaasprovider", "params")
-	params["blocks_per_epoch"] = "5"
+	params["blocks_per_epoch"] = strconv.Itoa(fourValidatorBlocksPerEpoch)
 	params["fees_per_block_amount"] = "1000"
 	params["infraction_parameters"] = map[string]any{
 		"double_sign": map[string]any{
