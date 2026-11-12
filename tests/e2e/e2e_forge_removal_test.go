@@ -46,6 +46,11 @@ func (s *ByzantineConsumerIntegrationTestSuite) testRemovalCancelsTheFabricatedP
 		s.Require().Equalf(1, s.pendingEquivocationsOf(consumerID, val2.consAddr),
 			"val2's fabricated punishment must still be pending before the removal")
 
+		// The validator the forge accused of downtime must stand unaccused
+		// before the removal, which would cancel any accusation still pending.
+		val1 := s.validator(1)
+		s.Require().Zerof(s.pendingSlashesOf(consumerID, val1.consAddr), "val1 is still accused of downtime")
+
 		s.submitAndPassProposal(s.removalProposalJSON(consumerID, "Remove the lying consumer"))
 		s.Require().Eventuallyf(func() bool {
 			phase := s.queryProviderConsumerPhase(consumerID)
@@ -60,9 +65,7 @@ func (s *ByzantineConsumerIntegrationTestSuite) testRemovalCancelsTheFabricatedP
 		s.unjailFrom(2, val2.valoper)
 
 		// The suite's thesis, end to end: the validator the forge accused of
-		// downtime was never accused for good, and lost nothing.
-		val1 := s.validator(1)
-		s.Require().Zerof(s.pendingSlashesOf(consumerID, val1.consAddr), "val1 is still accused of downtime")
+		// downtime lost nothing.
 		_, val1Stake := s.stakingValidatorState(val1.valoper)
 		s.Require().Equalf(s.val1StakeBeforeLie, val1Stake, "val1 lost stake to the lying consumer")
 	})

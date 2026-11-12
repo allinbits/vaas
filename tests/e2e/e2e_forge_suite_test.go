@@ -85,10 +85,10 @@ func (s *ByzantineConsumerIntegrationTestSuite) SetupSuite() {
 }
 
 // TestByzantineConsumerVAAS runs the lies in the one order the protocol
-// allows: evidence and misbehaviour are accepted only from a launched
-// consumer, so the forged downtime (which ends in a pause and a resume)
-// comes first, the fork (which ends in a pause nothing resumes) last but
-// one, and the removal last.
+// allows: downtime evidence and misbehaviour are accepted only from a
+// launched consumer, so the forged downtime (which ends in a pause and a
+// resume) comes first, the fork (which ends in a pause nothing resumes) last
+// but one, and the removal last.
 func (s *ByzantineConsumerIntegrationTestSuite) TestByzantineConsumerVAAS() {
 	s.testForgedDowntimeIsChallenged()
 	s.testFabricatedDoubleSignJailsAndDefers()

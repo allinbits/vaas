@@ -111,8 +111,8 @@ stop and both chains keep producing blocks. Scenarios run in order in
 Entry point `TestByzantineConsumerIntegrationTestSuite`
 ([e2e_forge_suite_test.go](e2e_forge_suite_test.go)), on four validators like
 the suite above. It runs a consumer that lies three ways and observes the
-provider's answer to each, in the one order the protocol allows (evidence and
-misbehaviour are accepted only from a launched consumer):
+provider's answer to each, in the one order the protocol allows (downtime
+evidence and misbehaviour are accepted only from a launched consumer):
 
 1. every consumer node runs `consumer-forge` and reports a live validator
    absent; the provider queues the accusation, a challenge built from the real
@@ -130,9 +130,11 @@ behind one lie: within a height range given by its environment
 the app a validator as absent from blocks it signed. It is its own Go module,
 built only into the `cosmos/vaas-e2e-forge` image (`make docker-build-forge`),
 and only this suite runs it; nothing outside `tests/e2e` knows it exists. The
-suite runs in the `E2E Forge` workflow, on demand and on pull requests that
-touch the code whose answer it checks (`make test-e2e-forge` locally); the
-other e2e jobs never build the forge.
+suite runs in the `E2E Forge` workflow on every push to main, on demand, and on
+pull requests, where a path filter skips it unless the change touches the code
+whose answer it checks (`make test-e2e-forge` locally); the other e2e jobs
+never build the forge. Branch protection requires the workflow's `Forge paths`
+and `Test E2E Forge` checks; a skipped suite counts as passed.
 
 ## File layout
 
@@ -144,7 +146,7 @@ other e2e jobs never build the forge.
 | `e2e_test.go` | `TestVAAS` ordered scenario list |
 | `e2e_liveness_suite_test.go` | `LivenessIntegrationTestSuite` + `TestLivenessVAAS` |
 | `e2e_multival_suite_test.go` | `MultiValidatorIntegrationTestSuite` + `TestMultiValidatorVAAS` |
-| `e2e_multival_valset_test.go` | validator identities and the set mirror |
+| `e2e_multival_valset_test.go` | the set mirror |
 | `e2e_multival_delegation_test.go` | consumer powers and a delegation reaching the consumer's set |
 | `e2e_multival_key_assignment_test.go` | a key assignment with the node restarted under the new key |
 | `e2e_multival_offline_test.go` | an offline validator's downtime slash and recovery; pending-slash filters |
@@ -194,7 +196,8 @@ other e2e jobs never build the forge.
 A new suite (a top-level `Test*Suite` function) also goes into the e2e matrix
 in [.github/workflows/ci.yml](../../.github/workflows/ci.yml), or CI never runs
 it: `make check-e2e-matrix`, a step of CI's Build job, fails while a suite is
-missing from the matrix.
+missing from the matrix. The byzantine-consumer suite is the one exception: it
+runs in its own workflow.
 
 The relayer is available at
 <https://github.com/allinbits/ibc-v2-ts-relayer>.

@@ -6,7 +6,8 @@ import (
 )
 
 // testForgedDowntimeIsChallenged: every consumer node runs the forge, which
-// reports val1 absent from two full downtime windows of blocks it signed.
+// reports val1 absent from sixty consecutive blocks it signed, a range that
+// spans at least one full downtime window wherever it starts.
 // The consumer accuses val1 and the provider queues the slash; a challenge
 // built from the real chain, whose commits carry val1's signatures, cancels
 // it, leaves val1's stake untouched, and pauses the consumer; governance
