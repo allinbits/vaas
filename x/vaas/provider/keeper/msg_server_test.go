@@ -299,6 +299,9 @@ func TestUpdateConsumerDuplicateChainId(t *testing.T) {
 	require.Equal(t, chainId2, actualChainId)
 }
 
+// doubleVotingChainID is the consumer chain id of the double-voting tests.
+const doubleVotingChainID = "consumer-chain-id"
+
 func TestSubmitConsumerDoubleVotingRejectsMismatchedChainID(t *testing.T) {
 	providerKeeper, ctx, ctrl, _ := testkeeper.GetProviderKeeperAndCtx(t, testkeeper.NewInMemKeeperParams(t))
 	defer ctrl.Finish()
@@ -306,7 +309,7 @@ func TestSubmitConsumerDoubleVotingRejectsMismatchedChainID(t *testing.T) {
 	msgServer := providerkeeper.NewMsgServerImpl(&providerKeeper)
 
 	consumerID := uint64(0)
-	storedChainID := "consumer-chain-id"
+	storedChainID := doubleVotingChainID
 	differentChainID := "different-chain-id"
 	providerKeeper.SetConsumerChainId(ctx, consumerID, storedChainID)
 	providerKeeper.SetConsumerPhase(ctx, consumerID, providertypes.CONSUMER_PHASE_LAUNCHED)
@@ -339,7 +342,7 @@ func TestSubmitConsumerDoubleVotingRefusesAConsumerThatIsNotLaunched(t *testing.
 	defer ctrl.Finish()
 	msgServer := providerkeeper.NewMsgServerImpl(&providerKeeper)
 
-	chainID := "consumer-chain-id"
+	chainID := doubleVotingChainID
 	height := int64(12)
 	evidence, valSet := makeDuplicateVoteEvidenceProtoWithValSet(t, chainID, height)
 	header := makeHeader(t, chainID, height, valSet)
@@ -370,7 +373,7 @@ func TestSubmitConsumerDoubleVotingHappyPath(t *testing.T) {
 	msgServer := providerkeeper.NewMsgServerImpl(&providerKeeper)
 
 	consumerID := uint64(0)
-	chainID := "consumer-chain-id"
+	chainID := doubleVotingChainID
 	providerKeeper.SetConsumerChainId(ctx, consumerID, chainID)
 	providerKeeper.SetConsumerPhase(ctx, consumerID, providertypes.CONSUMER_PHASE_LAUNCHED)
 	providerKeeper.SetInfractionParams(ctx, providertypes.DefaultInfractionParameters())
