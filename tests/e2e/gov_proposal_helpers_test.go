@@ -256,26 +256,34 @@ func (s *baseTestSuite) queryProposalStatus(proposalID uint64) string {
 	return res.Proposal.Status
 }
 
-// extractProposalID walks a tx-query JSON response and returns the
-// submit_proposal.proposal_id event attribute as uint64. Returns 0 if not
-// found.
+// extractProposalID walks a tx-query JSON response and returns the first
+// submit_proposal.proposal_id event attribute that parses as a uint64.
+// Returns 0 if there is none.
 func extractProposalID(raw []byte) uint64 {
-	v, ok := txEventAttribute(raw, "submit_proposal", "proposal_id")
-	if !ok {
-		return 0
+	for _, v := range txEventAttributes(raw, "submit_proposal", "proposal_id") {
+		if id, err := strconv.ParseUint(v, 10, 64); err == nil {
+			return id
+		}
 	}
-	id, err := strconv.ParseUint(v, 10, 64)
-	if err != nil {
-		return 0
-	}
-	return id
+	return 0
 }
 
 // txEventAttribute walks a tx-query JSON response and returns the value of
-// the first attribute named key on an event of type eventType, trimmed of
-// quotes, wherever the response shape carries its events (top-level, under
-// tx_response, or inside the legacy logs).
+// the first attribute named key on an event of type eventType (see
+// txEventAttributes).
 func txEventAttribute(raw []byte, eventType, key string) (string, bool) {
+	values := txEventAttributes(raw, eventType, key)
+	if len(values) == 0 {
+		return "", false
+	}
+	return values[0], true
+}
+
+// txEventAttributes walks a tx-query JSON response and returns the values of
+// every attribute named key on an event of type eventType, trimmed of quotes,
+// in order, wherever the response shape carries its events (top-level, under
+// tx_response, or inside the legacy logs).
+func txEventAttributes(raw []byte, eventType, key string) []string {
 	type event struct {
 		Type       string `json:"type"`
 		Attributes []struct {
@@ -296,38 +304,30 @@ func txEventAttribute(raw []byte, eventType, key string) (string, bool) {
 		} `json:"logs"`
 	}
 	if err := json.Unmarshal(raw, &doc); err != nil {
-		return "", false
+		return nil
 	}
 
-	scan := func(events []event) (string, bool) {
+	var values []string
+	scan := func(events []event) {
 		for _, ev := range events {
 			if ev.Type != eventType {
 				continue
 			}
 			for _, attr := range ev.Attributes {
 				if attr.Key == key {
-					return strings.Trim(strings.TrimSpace(attr.Value), "\" "), true
+					values = append(values, strings.Trim(strings.TrimSpace(attr.Value), "\" "))
 				}
 			}
 		}
-		return "", false
 	}
 
-	if v, ok := scan(doc.Events); ok {
-		return v, true
-	}
-	if v, ok := scan(doc.TxResponse.Events); ok {
-		return v, true
-	}
+	scan(doc.Events)
+	scan(doc.TxResponse.Events)
 	for _, lg := range doc.TxResponse.Logs {
-		if v, ok := scan(lg.Events); ok {
-			return v, true
-		}
+		scan(lg.Events)
 	}
 	for _, lg := range doc.Logs {
-		if v, ok := scan(lg.Events); ok {
-			return v, true
-		}
+		scan(lg.Events)
 	}
-	return "", false
+	return values
 }

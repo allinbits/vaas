@@ -402,8 +402,7 @@ func (s *baseTestSuite) unbondFrom(key, valoper, amount string) int64 {
 		"-y", "-o", "json",
 	})
 	s.Require().NoErrorf(err, "failed to unbond from %s: stderr=%s", key, stderr.String())
-	s.requireTxCommitted(stdout.Bytes())
-	return s.mustTxHeight(stdout.Bytes())
+	return s.requireTxCommitted(stdout.Bytes())
 }
 
 // mustUnjail broadcasts MsgUnjail from the keyring key until it is accepted,

@@ -1129,42 +1129,7 @@ func (s *baseTestSuite) mustTxEventAttribute(broadcastOut []byte, eventType, key
 	return value
 }
 
-// mustTxHeight returns the height a committed transaction landed at, given
-// its `-o json` broadcast response.
-func (s *baseTestSuite) mustTxHeight(broadcastOut []byte) int64 {
-	var bres struct {
-		TxHash string `json:"txhash"`
-	}
-	s.Require().NoErrorf(json.Unmarshal(broadcastOut, &bres), "decode broadcast response: %s", string(broadcastOut))
-	s.Require().NotEmpty(bres.TxHash)
-
-	var height int64
-	s.Require().Eventuallyf(func() bool {
-		out, _, err := s.dockerExec(s.providerValRes[0].Container.ID, []string{
-			providerBinary, "query", "tx", bres.TxHash,
-			"--home", providerHomePath,
-			"--output", "json",
-		})
-		if err != nil || out.Len() == 0 {
-			return false
-		}
-		var res struct {
-			Height string `json:"height"`
-		}
-		if json.Unmarshal(out.Bytes(), &res) != nil {
-			return false
-		}
-		h, err := strconv.ParseInt(res.Height, 10, 64)
-		if err != nil || h == 0 {
-			return false
-		}
-		height = h
-		return true
-	}, 30*time.Second, 2*time.Second, "tx %s never reported the height it landed at", bres.TxHash)
-	return height
-}
-
-// providerValidatorStatus returns the bond status x/staking holds the
+ the bond status x/staking holds the
 // validator in.
 func (s *baseTestSuite) providerValidatorStatus(valoper string) stakingtypes.BondStatus {
 	vals, err := s.queryProviderValidators()

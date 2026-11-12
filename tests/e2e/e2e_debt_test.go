@@ -2,6 +2,7 @@ package e2e
 
 import (
 	"encoding/json"
+	"strconv"
 	"strings"
 	"time"
 
@@ -109,15 +110,15 @@ func (s *baseTestSuite) providerFundConsumerFeePool(consumerID, amount string) {
 // until the tx is committed and asserts the committed (DeliverTx) code is 0.
 // This surfaces handler-level rejections (e.g. the min-deposit floor) right at
 // the call site with the on-chain raw_log, instead of as a distant downstream
-// timeout.
-func (s *baseTestSuite) requireTxCommitted(broadcastOut []byte) {
-	s.requireTxCommittedOn(s.providerValRes[0].Container.ID, providerBinary, providerHomePath, broadcastOut)
+// timeout. It returns the height the tx landed at.
+func (s *baseTestSuite) requireTxCommitted(broadcastOut []byte) int64 {
+	return s.requireTxCommittedOn(s.providerValRes[0].Container.ID, providerBinary, providerHomePath, broadcastOut)
 }
 
 // requireTxCommittedOn is requireTxCommitted against an explicit chain: the
 // consumer-side transactions of the client-declaration flow commit on the
 // consumer, and polling the provider for their hashes waits forever.
-func (s *baseTestSuite) requireTxCommittedOn(containerID, binary, homePath string, broadcastOut []byte) {
+func (s *baseTestSuite) requireTxCommittedOn(containerID, binary, homePath string, broadcastOut []byte) int64 {
 	var bres struct {
 		TxHash string `json:"txhash"`
 		Code   int    `json:"code"`
@@ -129,6 +130,7 @@ func (s *baseTestSuite) requireTxCommittedOn(containerID, binary, homePath strin
 	s.Require().NotEmptyf(bres.TxHash, "broadcast returned empty txhash: %s", string(broadcastOut))
 
 	var code int
+	var height int64
 	var rawLog, lastOut string
 	s.Require().Eventuallyf(func() bool {
 		out, _, qerr := s.dockerExec(containerID, []string{
@@ -143,15 +145,21 @@ func (s *baseTestSuite) requireTxCommittedOn(containerID, binary, homePath strin
 		var qres struct {
 			Code   int    `json:"code"`
 			RawLog string `json:"raw_log"`
+			Height string `json:"height"`
 		}
 		if json.Unmarshal(out.Bytes(), &qres) != nil {
 			return false
 		}
-		code, rawLog = qres.Code, qres.RawLog
+		h, err := strconv.ParseInt(qres.Height, 10, 64)
+		if err != nil || h == 0 {
+			return false
+		}
+		code, rawLog, height = qres.Code, qres.RawLog, h
 		return true
 	}, 30*time.Second, 2*time.Second,
 		"tx %s was not committed in time; last query output: %s", bres.TxHash, lastOut)
 	s.Require().Equalf(0, code, "tx %s failed on-chain: %s", bres.TxHash, rawLog)
+	return height
 }
 
 // testConsumerDebtFlow exercises the end-to-end fee-debt lifecycle:
