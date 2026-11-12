@@ -71,7 +71,12 @@ dishonest owner can only mis-declare the consumer that owner registered.
 **Re-keying.** The only path to replace a dead client, on either side, is
 IBC's governance client recovery (`MsgRecoverClient`), which substitutes the
 client state under the same client id -- so the pin and the latch survive it.
-No automatic re-binding exists.
+No automatic re-binding exists. A recovery, and ibc-go's permissionless client
+upgrade (`MsgUpgradeClient`, which takes the upgraded client state the
+consumer committed), can change the chain id the provider's client tracks; the
+provider then pauses the consumer until governance renames it to that chain id
+or recovers the client onto the consumer's (see
+[consumer-lifecycle.md](consumer-lifecycle.md#renaming-a-launched-consumer)).
 
 ## Infractions and punishment
 
