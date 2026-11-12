@@ -206,7 +206,7 @@ func (k Keeper) authenticateProviderChainID(ctx sdk.Context, consumerClientID st
 //
 // The pin is never established here. A new chain starts with no pin at all --
 // no client is created at genesis -- and rejects every VSC packet until the
-// owner seeded into the consumer params (or governance) pins the
+// owner seeded into the consumer params (or the chain's authority) pins the
 // relayer-created client explicitly via MsgSetProviderClient; a restart
 // restores the exported pin. Letting the first delivered packet establish or
 // move the pin is exactly the front-runnable bootstrap this replaced: anyone
@@ -214,7 +214,7 @@ func (k Keeper) authenticateProviderChainID(ctx sdk.Context, consumerClientID st
 // provider's chain id and race the relayer's first delivery.
 //
 // From the moment it is set the pin is permanent. If the pinned client dies
-// (expires, is frozen), packet flow halts until governance revives it in
+// (expires, is frozen), packet flow halts until the chain's authority revives it in
 // place via ibc-go's MsgRecoverClient, which substitutes fresh client state
 // under the SAME client id -- the pin survives recovery unchanged.
 func (k Keeper) enforcePinnedProviderClient(ctx sdk.Context, consumerClientID string) error {

@@ -27,6 +27,22 @@ func (k Keeper) QueryParams(c context.Context, //nolint:golint
 	return &types.QueryParamsResponse{Params: p}, nil
 }
 
+// QueryOwnerAuthority returns the account the owner's MsgOwnerExec messages
+// are signed by, under the chain's bech32 prefix, and the owner that may
+// submit them.
+func (k Keeper) QueryOwnerAuthority(c context.Context, //nolint:golint
+	req *types.QueryOwnerAuthorityRequest,
+) (*types.QueryOwnerAuthorityResponse, error) {
+	ctx := sdk.UnwrapSDKContext(c)
+	if req == nil {
+		return nil, status.Errorf(codes.InvalidArgument, "empty request")
+	}
+	return &types.QueryOwnerAuthorityResponse{
+		Authority: types.OwnerExecAuthority().String(),
+		Owner:     k.GetConsumerParams(ctx).OwnerAddress,
+	}, nil
+}
+
 // QueryProviderInfo returns provider information.
 func (k Keeper) QueryProviderInfo(c context.Context, //nolint:golint
 	req *types.QueryProviderInfoRequest,

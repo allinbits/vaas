@@ -78,11 +78,7 @@ import (
 	consensusparamtypes "github.com/cosmos/cosmos-sdk/x/consensus/types"
 	"github.com/cosmos/cosmos-sdk/x/genutil"
 	genutiltypes "github.com/cosmos/cosmos-sdk/x/genutil/types"
-	"github.com/cosmos/cosmos-sdk/x/gov"
-	govclient "github.com/cosmos/cosmos-sdk/x/gov/client"
-	govtypes "github.com/cosmos/cosmos-sdk/x/gov/types"
 	"github.com/cosmos/cosmos-sdk/x/params"
-	paramsclient "github.com/cosmos/cosmos-sdk/x/params/client"
 	paramskeeper "github.com/cosmos/cosmos-sdk/x/params/keeper"
 	paramstypes "github.com/cosmos/cosmos-sdk/x/params/types"
 	"github.com/cosmos/cosmos-sdk/x/slashing"
@@ -245,6 +241,12 @@ func New(
 		txConfig:          txConfig,
 	}
 
+	// The reference consumer wires no governance: the consumer module account
+	// is the authority of every keeper below, and the consumer's owner (the
+	// account that registered it on the provider, seeded into the consumer
+	// params) exercises it through MsgOwnerExec. See docs/embedding.md.
+	consumerAuthority := ibcconsumertypes.OwnerExecAuthority().String()
+
 	app.ParamsKeeper = initParamsKeeper(
 		appCodec,
 		legacyAmino,
@@ -255,7 +257,7 @@ func New(
 	app.ConsensusParamsKeeper = consensusparamkeeper.NewKeeper(
 		appCodec,
 		runtime.NewKVStoreService(keys[consensusparamtypes.StoreKey]),
-		authtypes.NewModuleAddress(govtypes.ModuleName).String(),
+		consumerAuthority,
 		runtime.EventService{},
 	)
 
@@ -270,7 +272,7 @@ func New(
 		maccPerms,
 		authcodec.NewBech32Codec(sdk.GetConfig().GetBech32AccountAddrPrefix()),
 		sdk.GetConfig().GetBech32AccountAddrPrefix(),
-		authtypes.NewModuleAddress(govtypes.ModuleName).String(),
+		consumerAuthority,
 	)
 
 	moduleAccountAddresses := app.ModuleAccountAddrs()
@@ -279,7 +281,7 @@ func New(
 		runtime.NewKVStoreService(keys[banktypes.StoreKey]),
 		app.AccountKeeper,
 		app.BlockedModuleAccountAddrs(moduleAccountAddresses),
-		authtypes.NewModuleAddress(govtypes.ModuleName).String(),
+		consumerAuthority,
 		logger,
 	)
 
@@ -288,7 +290,7 @@ func New(
 		legacyAmino,
 		runtime.NewKVStoreService(keys[slashingtypes.StoreKey]),
 		&app.ConsumerKeeper,
-		authtypes.NewModuleAddress(govtypes.ModuleName).String(),
+		consumerAuthority,
 	)
 
 	// get skipUpgradeHeights from the app options
@@ -297,14 +299,13 @@ func New(
 		skipUpgradeHeights[int64(h)] = true
 	}
 	homePath := cast.ToString(appOpts.Get(flags.FlagHome))
-	// set the governance module account as the authority for conducting upgrades
 	app.UpgradeKeeper = *upgradekeeper.NewKeeper(
 		skipUpgradeHeights,
 		runtime.NewKVStoreService(keys[upgradetypes.StoreKey]),
 		appCodec,
 		homePath,
 		app.BaseApp,
-		authtypes.NewModuleAddress(govtypes.ModuleName).String(),
+		consumerAuthority,
 	)
 
 	// pre-initialize ConsumerKeeper to satsfy ibckeeper.NewKeeper
@@ -321,7 +322,7 @@ func New(
 		runtime.NewKVStoreService(keys[ibchost.StoreKey]),
 		app.GetSubspace(ibchost.ModuleName),
 		app.UpgradeKeeper,
-		authtypes.NewModuleAddress(govtypes.ModuleName).String(),
+		consumerAuthority,
 	)
 
 	// initialize the actual consumer keeper
@@ -335,13 +336,15 @@ func New(
 		app.BankKeeper,
 		app.AccountKeeper,
 		authtypes.FeeCollectorName,
-		authtypes.NewModuleAddress(govtypes.ModuleName).String(),
+		consumerAuthority,
 		authcodec.NewBech32Codec(sdk.GetConfig().GetBech32ValidatorAddrPrefix()),
 		authcodec.NewBech32Codec(sdk.GetConfig().GetBech32ConsensusAddrPrefix()),
 	)
 
 	// register slashing module Slashing hooks to the consumer keeper
 	app.ConsumerKeeper = *app.ConsumerKeeper.SetHooks(app.SlashingKeeper.Hooks())
+	// the owner's messages execute through the app's own router
+	app.ConsumerKeeper.SetMessageRouter(app.MsgServiceRouter())
 	consumerModule := ibcconsumer.NewAppModule(app.ConsumerKeeper)
 
 	app.TransferKeeper = ibctransferkeeper.NewKeeper(
@@ -353,7 +356,7 @@ func New(
 		app.MsgServiceRouter(),
 		app.AccountKeeper,
 		app.BankKeeper,
-		authtypes.NewModuleAddress(govtypes.ModuleName).String(),
+		consumerAuthority,
 	)
 	transferModule := transfer.NewAppModule(app.TransferKeeper)
 	ibcmodule := transfer.NewIBCModule(app.TransferKeeper)
@@ -381,6 +384,10 @@ func New(
 		slashing.NewAppModule(appCodec, app.SlashingKeeper, app.AccountKeeper, app.BankKeeper, app.ConsumerKeeper, app.GetSubspace(slashingtypes.ModuleName), app.interfaceRegistry),
 		upgrade.NewAppModule(&app.UpgradeKeeper, app.AccountKeeper.AddressCodec()),
 		params.NewAppModule(app.ParamsKeeper),
+		// the consensus parameters' message and query services, so the
+		// chain's authority (the owner, through MsgOwnerExec) can tune the
+		// block parameters
+		consensus.NewAppModule(appCodec, app.ConsensusParamsKeeper),
 		// ibcshim, not ibc directly: works around ibc-go's clientv2 genesis
 		// Validate rejecting colliding cross-chain client ids, which makes a
 		// restart-from-export panic at InitChain. See app/ibcshim.
@@ -395,11 +402,6 @@ func New(
 		app.MM,
 		map[string]module.AppModuleBasic{
 			genutiltypes.ModuleName: genutil.NewAppModuleBasic(genutiltypes.DefaultMessageValidator),
-			govtypes.ModuleName: gov.NewAppModuleBasic(
-				[]govclient.ProposalHandler{
-					paramsclient.ProposalHandler,
-				},
-			),
 		})
 	ModuleBasics.RegisterLegacyAminoCodec(app.legacyAmino)
 	ModuleBasics.RegisterInterfaces(app.interfaceRegistry)
@@ -472,6 +474,7 @@ func New(
 		paramstypes.ModuleName,
 		upgradetypes.ModuleName,
 		vestingtypes.ModuleName,
+		consensusparamtypes.ModuleName,
 		ibcconsumertypes.ModuleName,
 	)
 
@@ -549,12 +552,17 @@ func New(
 }
 
 // BlockedModuleAccountAddrs returns all the app's blocked module account
-// addresses.
+// addresses: every module account, since none is meant to receive funds
+// from users, and the consumer module account, the chain's authority, which
+// holds no permissions and so is not in maccPerms: whatever reached it would
+// be the owner's to move through an owner exec.
 func (app *App) BlockedModuleAccountAddrs(modAccAddrs map[string]bool) map[string]bool {
-	// remove module accounts that are ALLOWED to received funds
-	delete(modAccAddrs, authtypes.NewModuleAddress(govtypes.ModuleName).String())
-
-	return modAccAddrs
+	blocked := make(map[string]bool, len(modAccAddrs)+1)
+	for addr, isBlocked := range modAccAddrs {
+		blocked[addr] = isBlocked
+	}
+	blocked[ibcconsumertypes.OwnerExecAuthority().String()] = true
+	return blocked
 }
 
 // Name returns the name of the App

@@ -13,6 +13,7 @@ import (
 	corestoretypes "cosmossdk.io/core/store"
 	"cosmossdk.io/log"
 
+	"github.com/cosmos/cosmos-sdk/baseapp"
 	"github.com/cosmos/cosmos-sdk/codec"
 	sdk "github.com/cosmos/cosmos-sdk/types"
 	stakingtypes "github.com/cosmos/cosmos-sdk/x/staking/types"
@@ -23,12 +24,14 @@ import (
 
 // Keeper defines the Cross-Chain Validation Consumer Keeper
 type Keeper struct {
-	// the address capable of executing a MsgUpdateParams message. Typically, this
-	// should be the x/gov module account.
+	// the address capable of executing a MsgUpdateParams message: the chain's
+	// authority, the consumer module account on the reference consumer app
+	// (which the owner acts as through MsgOwnerExec), or the x/gov module
+	// account on a consumer that wires governance.
 	authority string
 
 	storeService     corestoretypes.KVStoreService
-	cdc              codec.BinaryCodec
+	cdc              codec.Codec
 	clientKeeper     vaastypes.ClientKeeper
 	clientV2Keeper   vaastypes.ClientV2Keeper
 	channelKeeperV2  vaastypes.ChannelV2Keeper
@@ -40,6 +43,10 @@ type Keeper struct {
 
 	validatorAddressCodec addresscodec.Codec
 	consensusAddressCodec addresscodec.Codec
+
+	// router executes the messages the consumer's owner submits through
+	// MsgOwnerExec (SetMessageRouter); without one the message is refused.
+	router baseapp.MessageRouter
 
 	// Collections schema
 	Schema collections.Schema
@@ -69,7 +76,7 @@ type Keeper struct {
 // NOTE: the feeCollectorName is in reference to the consumer-chain fee
 // collector (and not the provider chain)
 func NewKeeper(
-	cdc codec.BinaryCodec, storeService corestoretypes.KVStoreService,
+	cdc codec.Codec, storeService corestoretypes.KVStoreService,
 	clientKeeper vaastypes.ClientKeeper,
 	clientV2Keeper vaastypes.ClientV2Keeper,
 	channelKeeperV2 vaastypes.ChannelV2Keeper,
@@ -124,9 +131,20 @@ func (k Keeper) GetAuthority() string {
 	return k.authority
 }
 
+// SetMessageRouter wires the app's message router, through which OwnerExec
+// executes the owner's messages as the consumer module account. Set once at
+// app construction; the router is the app's own, so there is nothing to
+// return.
+func (k *Keeper) SetMessageRouter(router baseapp.MessageRouter) {
+	if k.router != nil {
+		panic("cannot set message router twice")
+	}
+	k.router = router
+}
+
 // Returns a keeper with cdc and storeService set it does not raise any panics during registration (eg with IBCKeeper).
 // Used only in testing.
-func NewNonZeroKeeper(cdc codec.BinaryCodec, storeService corestoretypes.KVStoreService) Keeper {
+func NewNonZeroKeeper(cdc codec.Codec, storeService corestoretypes.KVStoreService) Keeper {
 	sb := collections.NewSchemaBuilder(storeService)
 
 	k := Keeper{
@@ -187,7 +205,7 @@ func (k *Keeper) SetHooks(sh vaastypes.ConsumerHooks) *Keeper {
 }
 
 // SetProviderClientID sets the clientID for the client to the provider.
-// Written by MsgSetProviderClient, the owner's (or governance's) one-time
+// Written by MsgSetProviderClient, the owner's (or the chain's authority's) one-time
 // explicit pin of the relayer-created client, and at InitGenesis on a
 // restart, which restores the exported pin. A new chain starts with none;
 // enforcePinnedProviderClient (relay.go) documents why the pin never moves

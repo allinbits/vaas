@@ -12,6 +12,7 @@ import (
 	tmproto "github.com/cometbft/cometbft/proto/tendermint/types"
 
 	dbm "github.com/cosmos/cosmos-db"
+	"github.com/cosmos/gogoproto/proto"
 	clientv2types "github.com/cosmos/ibc-go/v10/modules/core/02-client/v2/types"
 	ibctmtypes "github.com/cosmos/ibc-go/v10/modules/light-clients/07-tendermint"
 
@@ -19,6 +20,7 @@ import (
 	"cosmossdk.io/store"
 	"cosmossdk.io/store/metrics"
 	storetypes "cosmossdk.io/store/types"
+	"cosmossdk.io/x/tx/signing"
 
 	"github.com/cosmos/cosmos-sdk/codec"
 	"github.com/cosmos/cosmos-sdk/codec/address"
@@ -65,7 +67,16 @@ func NewInMemKeeperParams(tb testing.TB) InMemKeeperParams {
 	stateStore.MountStoreWithDB(memStoreKey, storetypes.StoreTypeMemory, nil)
 	require.NoError(tb, stateStore.LoadLatestVersion())
 
-	registry := codectypes.NewInterfaceRegistry()
+	// The registry carries address codecs like the apps' do, so a keeper
+	// that reads a message's signers (the consumer's OwnerExec) can.
+	registry, err := codectypes.NewInterfaceRegistryWithOptions(codectypes.InterfaceRegistryOptions{
+		ProtoFiles: proto.HybridResolver,
+		SigningOptions: signing.Options{
+			AddressCodec:          address.NewBech32Codec("cosmos"),
+			ValidatorAddressCodec: address.NewBech32Codec("cosmosvaloper"),
+		},
+	})
+	require.NoError(tb, err)
 	cryptocodec.RegisterInterfaces(registry)
 	// Gov proposals carry their messages as Any; unpacking a stored
 	// MsgRemoveConsumer needs the provider's msg types on the registry.

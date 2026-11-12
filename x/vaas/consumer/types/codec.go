@@ -13,6 +13,8 @@ import (
 // clients).
 func RegisterLegacyAminoCodec(cdc *codec.LegacyAmino) {
 	legacy.RegisterAminoMsg(cdc, &MsgUpdateParams{}, "vaas/MsgUpdateConsumerParams")
+	legacy.RegisterAminoMsg(cdc, &MsgSetProviderClient{}, "vaas/MsgSetProviderClient")
+	legacy.RegisterAminoMsg(cdc, &MsgOwnerExec{}, "vaas/MsgOwnerExec")
 }
 
 // RegisterInterfaces registers the consumer Tx message types to the interface registry
@@ -21,6 +23,7 @@ func RegisterInterfaces(registry codectypes.InterfaceRegistry) {
 		(*sdk.Msg)(nil),
 		&MsgUpdateParams{},
 		&MsgSetProviderClient{},
+		&MsgOwnerExec{},
 	)
 	msgservice.RegisterMsgServiceDesc(registry, &_Msg_serviceDesc)
 }

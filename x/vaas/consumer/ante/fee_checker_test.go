@@ -32,6 +32,8 @@ func TestBootstrapExemptTxFeeChecker(t *testing.T) {
 	pin := []sdk.Msg{&consumertypes.MsgSetProviderClient{}}
 	gov := []sdk.Msg{&govtypes.MsgVote{}}
 	user := []sdk.Msg{bankSendMsg()}
+	ownerRecovery := []sdk.Msg{ownerExecCarrying(t, &clienttypes.MsgRecoverClient{})}
+	ownerParams := []sdk.Msg{ownerExecCarrying(t, &consumertypes.MsgUpdateParams{})}
 	noFee := sdk.NewCoins()
 	atFloor := sdk.NewCoins(sdk.NewInt64Coin("uatone", 1000))
 
@@ -52,6 +54,9 @@ func TestBootstrapExemptTxFeeChecker(t *testing.T) {
 		{name: "bootstrap: a user tx below the floor is rejected", bootstrap: true, ctx: checkCtx, tx: mockFeeTx{msgs: user, fee: noFee, gas: 100000}, expectErr: true},
 		{name: "bootstrap: a raw ICS-20 v2 send below the floor is rejected", bootstrap: true, ctx: checkCtx, tx: mockFeeTx{msgs: []sdk.Msg{&channeltypesv2.MsgSendPacket{}}, fee: noFee, gas: 100000}, expectErr: true},
 		{name: "bootstrap: a transfer application message below the floor is rejected", bootstrap: true, ctx: checkCtx, tx: mockFeeTx{msgs: []sdk.Msg{&transfertypes.MsgTransfer{}}, fee: noFee, gas: 100000}, expectErr: true},
+		{name: "bootstrap: the owner recovering a client with no fee passes the floor", bootstrap: true, ctx: checkCtx, tx: mockFeeTx{msgs: ownerRecovery, fee: noFee, gas: 100000}},
+		{name: "bootstrap: the owner updating params below the floor is rejected", bootstrap: true, ctx: checkCtx, tx: mockFeeTx{msgs: ownerParams, fee: noFee, gas: 100000}, expectErr: true},
+		{name: "pinned: the owner recovering a client with no fee is rejected at CheckTx", bootstrap: false, ctx: checkCtx, tx: mockFeeTx{msgs: ownerRecovery, fee: noFee, gas: 100000}, expectErr: true},
 		{name: "pinned: a delivery with no fee is rejected at CheckTx", bootstrap: false, ctx: checkCtx, tx: mockFeeTx{msgs: delivery, fee: noFee, gas: 100000}, expectErr: true},
 		{name: "pinned: creating a client with no fee is rejected at CheckTx", bootstrap: false, ctx: checkCtx, tx: mockFeeTx{msgs: createClient, fee: noFee, gas: 100000}, expectErr: true},
 		{name: "pinned: governance with no fee is rejected at CheckTx", bootstrap: false, ctx: checkCtx, tx: mockFeeTx{msgs: gov, fee: noFee, gas: 100000}, expectErr: true},
@@ -105,4 +110,13 @@ func TestTxPriority(t *testing.T) {
 	_, priority, err := checker(sdk.Context{}, mockFeeTx{msgs: []sdk.Msg{bankSendMsg()}, fee: sdk.NewCoins(sdk.NewCoin("uatone", huge)), gas: 1000})
 	require.NoError(t, err)
 	require.Equal(t, int64(math.MaxInt64), priority)
+}
+
+// ownerExecCarrying packs msgs into an owner exec, as the owner's
+// transactions carry them.
+func ownerExecCarrying(t *testing.T, msgs ...sdk.Msg) *consumertypes.MsgOwnerExec {
+	t.Helper()
+	exec, err := consumertypes.NewMsgOwnerExec(testAccAddress(9).String(), msgs)
+	require.NoError(t, err)
+	return exec
 }

@@ -17,6 +17,13 @@ service Query {
   rpc QueryProviderInfo(QueryProviderInfoRequest) returns (QueryProviderInfoResponse) {
     option (google.api.http).get = "/vaas/consumer/provider-info";
   }
+
+  // QueryOwnerAuthority returns the account the owner's MsgOwnerExec messages
+  // are signed by (the consumer module account) and the owner that may
+  // submit them.
+  rpc QueryOwnerAuthority(QueryOwnerAuthorityRequest) returns (QueryOwnerAuthorityResponse) {
+    option (google.api.http).get = "/vaas/consumer/owner-authority";
+  }
 }
 
 message QueryParamsRequest {}
@@ -39,4 +46,15 @@ message ChainInfo {
   string chainID = 1;
   // clientID is the IBC client identifier.
   string clientID = 2;
+}
+
+message QueryOwnerAuthorityRequest {}
+
+message QueryOwnerAuthorityResponse {
+  // authority is the consumer module account, under the chain's bech32
+  // prefix: the signer of every message a MsgOwnerExec carries.
+  string authority = 1;
+  // owner is the account that may submit MsgOwnerExec, as seeded in the
+  // consumer params by the provider (empty when none is).
+  string owner = 2;
 }

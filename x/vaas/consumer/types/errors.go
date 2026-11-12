@@ -10,4 +10,5 @@ var (
 	ErrConsumerInDebt        = errorsmod.Register(ModuleName, 3, "consumer chain is in debt")
 	ErrInvalidFeeDenom       = errorsmod.Register(ModuleName, 4, "invalid fee denom: consumer requires photon")
 	ErrEmptyValidatorSet     = errorsmod.Register(ModuleName, 5, "validator set would be empty")
+	ErrInvalidOwnerExec      = errorsmod.Register(ModuleName, 6, "invalid owner exec")
 )

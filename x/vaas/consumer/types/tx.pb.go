@@ -8,6 +8,7 @@ import (
 	fmt "fmt"
 	types "github.com/allinbits/vaas/x/vaas/types"
 	_ "github.com/cosmos/cosmos-proto"
+	types1 "github.com/cosmos/cosmos-sdk/codec/types"
 	_ "github.com/cosmos/cosmos-sdk/types/msgservice"
 	_ "github.com/cosmos/cosmos-sdk/types/tx/amino"
 	_ "github.com/cosmos/gogoproto/gogoproto"
@@ -35,7 +36,9 @@ const _ = proto.GoGoProtoPackageIsVersion3 // please upgrade the proto package
 
 // MsgUpdateParams is the Msg/UpdateParams request type
 type MsgUpdateParams struct {
-	// signer is the address of the governance account.
+	// authority is the address of the chain's authority: the consumer module
+	// account on the reference consumer, the x/gov module account where it is
+	// wired.
 	Authority string `protobuf:"bytes,1,opt,name=authority,proto3" json:"authority,omitempty"`
 	// params defines the x/provider parameters to update.
 	Params types.ConsumerParams `protobuf:"bytes,2,opt,name=params,proto3" json:"params"`
@@ -126,14 +129,14 @@ var xxx_messageInfo_MsgUpdateParamsResponse proto.InternalMessageInfo
 
 // MsgSetProviderClient pins the IBC client the consumer treats as the
 // provider, exactly once, at bootstrap. Only the owner seeded into the
-// consumer params by the provider (or the governance authority) may submit
-// it, and it is accepted only while no provider client is pinned: after the
-// pin is set it never moves, and recovering an expired or frozen pinned
-// client is governance's MsgRecoverClient, which substitutes fresh client
-// state under the same client id.
+// consumer params by the provider (or the chain's authority) may submit it,
+// and it is accepted only while no provider client is pinned: after the pin
+// is set it never moves, and recovering an expired or frozen pinned client
+// is MsgRecoverClient by the chain's authority, which substitutes fresh
+// client state under the same client id.
 type MsgSetProviderClient struct {
 	// the consumer-chain account submitting the pin: the owner seeded in the
-	// consumer params, or the governance authority.
+	// consumer params, or the chain's authority.
 	Signer string `protobuf:"bytes,1,opt,name=signer,proto3" json:"signer,omitempty"`
 	// the IBC client id to pin as the provider client. It must exist, be an
 	// Active tendermint client tracking the provider chain id pinned at
@@ -224,46 +227,155 @@ func (m *MsgSetProviderClientResponse) XXX_DiscardUnknown() {
 
 var xxx_messageInfo_MsgSetProviderClientResponse proto.InternalMessageInfo
 
+// MsgOwnerExec lets the consumer's owner exercise the authority the
+// embedding app grants the VAAS consumer module account. Every message it
+// carries must be signed by that account and is executed, in order, as if
+// the account had signed it: this is how a consumer with no governance of
+// its own recovers its provider client (MsgRecoverClient), schedules an
+// upgrade or updates its parameters, when the app names the consumer module
+// as those keepers' authority. Only the owner the provider seeded into the
+// consumer params may submit it, and the message cannot nest.
+type MsgOwnerExec struct {
+	// the consumer-chain account submitting the messages: the owner seeded
+	// in the consumer params.
+	Signer string `protobuf:"bytes,1,opt,name=signer,proto3" json:"signer,omitempty"`
+	// the messages to execute, each signed by the consumer module account
+	// (OwnerExecAuthority).
+	Messages []*types1.Any `protobuf:"bytes,2,rep,name=messages,proto3" json:"messages,omitempty"`
+}
+
+func (m *MsgOwnerExec) Reset()         { *m = MsgOwnerExec{} }
+func (m *MsgOwnerExec) String() string { return proto.CompactTextString(m) }
+func (*MsgOwnerExec) ProtoMessage()    {}
+func (*MsgOwnerExec) Descriptor() ([]byte, []int) {
+	return fileDescriptor_24d208168dc80dce, []int{4}
+}
+func (m *MsgOwnerExec) XXX_Unmarshal(b []byte) error {
+	return m.Unmarshal(b)
+}
+func (m *MsgOwnerExec) XXX_Marshal(b []byte, deterministic bool) ([]byte, error) {
+	if deterministic {
+		return xxx_messageInfo_MsgOwnerExec.Marshal(b, m, deterministic)
+	} else {
+		b = b[:cap(b)]
+		n, err := m.MarshalToSizedBuffer(b)
+		if err != nil {
+			return nil, err
+		}
+		return b[:n], nil
+	}
+}
+func (m *MsgOwnerExec) XXX_Merge(src proto.Message) {
+	xxx_messageInfo_MsgOwnerExec.Merge(m, src)
+}
+func (m *MsgOwnerExec) XXX_Size() int {
+	return m.Size()
+}
+func (m *MsgOwnerExec) XXX_DiscardUnknown() {
+	xxx_messageInfo_MsgOwnerExec.DiscardUnknown(m)
+}
+
+var xxx_messageInfo_MsgOwnerExec proto.InternalMessageInfo
+
+func (m *MsgOwnerExec) GetSigner() string {
+	if m != nil {
+		return m.Signer
+	}
+	return ""
+}
+
+func (m *MsgOwnerExec) GetMessages() []*types1.Any {
+	if m != nil {
+		return m.Messages
+	}
+	return nil
+}
+
+type MsgOwnerExecResponse struct {
+}
+
+func (m *MsgOwnerExecResponse) Reset()         { *m = MsgOwnerExecResponse{} }
+func (m *MsgOwnerExecResponse) String() string { return proto.CompactTextString(m) }
+func (*MsgOwnerExecResponse) ProtoMessage()    {}
+func (*MsgOwnerExecResponse) Descriptor() ([]byte, []int) {
+	return fileDescriptor_24d208168dc80dce, []int{5}
+}
+func (m *MsgOwnerExecResponse) XXX_Unmarshal(b []byte) error {
+	return m.Unmarshal(b)
+}
+func (m *MsgOwnerExecResponse) XXX_Marshal(b []byte, deterministic bool) ([]byte, error) {
+	if deterministic {
+		return xxx_messageInfo_MsgOwnerExecResponse.Marshal(b, m, deterministic)
+	} else {
+		b = b[:cap(b)]
+		n, err := m.MarshalToSizedBuffer(b)
+		if err != nil {
+			return nil, err
+		}
+		return b[:n], nil
+	}
+}
+func (m *MsgOwnerExecResponse) XXX_Merge(src proto.Message) {
+	xxx_messageInfo_MsgOwnerExecResponse.Merge(m, src)
+}
+func (m *MsgOwnerExecResponse) XXX_Size() int {
+	return m.Size()
+}
+func (m *MsgOwnerExecResponse) XXX_DiscardUnknown() {
+	xxx_messageInfo_MsgOwnerExecResponse.DiscardUnknown(m)
+}
+
+var xxx_messageInfo_MsgOwnerExecResponse proto.InternalMessageInfo
+
 func init() {
 	proto.RegisterType((*MsgUpdateParams)(nil), "vaas.consumer.v1.MsgUpdateParams")
 	proto.RegisterType((*MsgUpdateParamsResponse)(nil), "vaas.consumer.v1.MsgUpdateParamsResponse")
 	proto.RegisterType((*MsgSetProviderClient)(nil), "vaas.consumer.v1.MsgSetProviderClient")
 	proto.RegisterType((*MsgSetProviderClientResponse)(nil), "vaas.consumer.v1.MsgSetProviderClientResponse")
+	proto.RegisterType((*MsgOwnerExec)(nil), "vaas.consumer.v1.MsgOwnerExec")
+	proto.RegisterType((*MsgOwnerExecResponse)(nil), "vaas.consumer.v1.MsgOwnerExecResponse")
 }
 
 func init() { proto.RegisterFile("vaas/consumer/v1/tx.proto", fileDescriptor_24d208168dc80dce) }
 
 var fileDescriptor_24d208168dc80dce = []byte{
-	// 458 bytes of a gzipped FileDescriptorProto
-	0x1f, 0x8b, 0x08, 0x00, 0x00, 0x00, 0x00, 0x00, 0x02, 0xff, 0x8c, 0x93, 0xcf, 0x6e, 0x13, 0x31,
-	0x10, 0xc6, 0x63, 0xfe, 0x44, 0xc4, 0x45, 0x40, 0x57, 0x91, 0x92, 0x2c, 0x65, 0x29, 0x39, 0xa0,
-	0x52, 0x09, 0x9b, 0x14, 0xc1, 0xa1, 0x37, 0xd2, 0x53, 0x0f, 0x91, 0xaa, 0x54, 0x5c, 0x10, 0x52,
-	0xe4, 0x64, 0x2d, 0xc7, 0x22, 0xeb, 0x59, 0x79, 0x9c, 0x55, 0x7b, 0x43, 0x3c, 0x41, 0x1f, 0xa5,
-	0x07, 0x1e, 0xa2, 0xc7, 0x8a, 0x0b, 0x9c, 0x10, 0x4a, 0x0e, 0x7d, 0x0d, 0x14, 0xaf, 0x43, 0xd5,
-	0xb4, 0x52, 0xb9, 0xac, 0x6c, 0x7f, 0x9f, 0xfd, 0xfd, 0x66, 0x34, 0x4b, 0x5b, 0x85, 0x10, 0xc8,
-	0x47, 0x60, 0x70, 0x9a, 0x49, 0xcb, 0x8b, 0x0e, 0x77, 0x47, 0x2c, 0xb7, 0xe0, 0x20, 0x7a, 0xb2,
-	0x90, 0xd8, 0x52, 0x62, 0x45, 0x27, 0x5e, 0x17, 0x99, 0x36, 0xc0, 0xfd, 0xb7, 0x34, 0xc5, 0x1b,
-	0x0a, 0x40, 0x4d, 0x24, 0x17, 0xb9, 0xe6, 0xc2, 0x18, 0x70, 0xc2, 0x69, 0x30, 0x18, 0xd4, 0xba,
-	0x02, 0x05, 0x7e, 0xc9, 0x17, 0xab, 0x70, 0xda, 0x1a, 0x01, 0x66, 0x80, 0x83, 0x52, 0x28, 0x37,
-	0x41, 0x6a, 0x94, 0x3b, 0x9e, 0xa1, 0x5a, 0xb0, 0x64, 0xa8, 0x82, 0xf0, 0xcc, 0x73, 0x16, 0x1d,
-	0x8e, 0x63, 0x61, 0x65, 0x3a, 0xf8, 0x87, 0xe5, 0xe5, 0xf6, 0x09, 0xa1, 0x8f, 0x7b, 0xa8, 0x3e,
-	0xe6, 0xa9, 0x70, 0xf2, 0x40, 0x58, 0x91, 0x61, 0xf4, 0x9e, 0xd6, 0xc4, 0xd4, 0x8d, 0xc1, 0x6a,
-	0x77, 0xdc, 0x24, 0x9b, 0x64, 0xab, 0xd6, 0x6d, 0xfe, 0xf8, 0xfe, 0xba, 0x1e, 0x02, 0x3f, 0xa4,
-	0xa9, 0x95, 0x88, 0x87, 0xce, 0x6a, 0xa3, 0xfa, 0x97, 0xd6, 0xe8, 0x1d, 0xad, 0xe6, 0xfe, 0x85,
-	0xe6, 0x9d, 0x4d, 0xb2, 0xb5, 0xb6, 0xd3, 0x60, 0xbe, 0x11, 0x45, 0x87, 0xed, 0x85, 0xd0, 0x32,
-	0xa0, 0x7b, 0xef, 0xec, 0xf7, 0xf3, 0x4a, 0x3f, 0x98, 0x77, 0x1f, 0x7d, 0xbb, 0x38, 0xdd, 0xbe,
-	0x7c, 0xa6, 0xdd, 0xa2, 0x8d, 0x15, 0xa2, 0xbe, 0xc4, 0x1c, 0x0c, 0xca, 0xb6, 0xa5, 0xf5, 0x1e,
-	0xaa, 0x43, 0xe9, 0x0e, 0x2c, 0x14, 0x3a, 0x95, 0x76, 0x6f, 0xa2, 0xa5, 0x71, 0xd1, 0x1b, 0x5a,
-	0x45, 0xad, 0x8c, 0xb4, 0xb7, 0xe2, 0x06, 0x5f, 0xf4, 0x94, 0xd6, 0x46, 0xfe, 0xee, 0x40, 0xa7,
-	0x1e, 0xb7, 0xd6, 0x7f, 0x50, 0x1e, 0xec, 0xa7, 0xbb, 0x6b, 0x0b, 0xa2, 0xe0, 0x6c, 0x27, 0x74,
-	0xe3, 0xa6, 0xcc, 0x25, 0xd3, 0xce, 0x4f, 0x42, 0xef, 0xf6, 0x50, 0x45, 0x9f, 0xe9, 0xc3, 0x2b,
-	0x5d, 0x7c, 0xc1, 0x56, 0xc7, 0x80, 0xad, 0x94, 0x15, 0xbf, 0xba, 0xd5, 0xb2, 0x4c, 0x89, 0xbe,
-	0xd0, 0xf5, 0xeb, 0x65, 0xbf, 0xbc, 0xf1, 0xfe, 0x35, 0x5f, 0xcc, 0xfe, 0xcf, 0xb7, 0x0c, 0x8b,
-	0xef, 0x7f, 0xbd, 0x38, 0xdd, 0x26, 0xdd, 0xfd, 0xb3, 0x59, 0x42, 0xce, 0x67, 0x09, 0xf9, 0x33,
-	0x4b, 0xc8, 0xc9, 0x3c, 0xa9, 0x9c, 0xcf, 0x93, 0xca, 0xaf, 0x79, 0x52, 0xf9, 0xc4, 0x95, 0x76,
-	0xe3, 0xe9, 0x90, 0x8d, 0x20, 0xe3, 0x62, 0x32, 0xd1, 0x66, 0xa8, 0x1d, 0x72, 0x3f, 0x69, 0x47,
-	0xfc, 0xea, 0x8f, 0xe1, 0x8e, 0x73, 0x89, 0xc3, 0xaa, 0x9f, 0xb6, 0xb7, 0x7f, 0x03, 0x00, 0x00,
-	0xff, 0xff, 0x39, 0xc8, 0xde, 0x42, 0x36, 0x03, 0x00, 0x00,
+	// 561 bytes of a gzipped FileDescriptorProto
+	0x1f, 0x8b, 0x08, 0x00, 0x00, 0x00, 0x00, 0x00, 0x02, 0xff, 0x9c, 0x54, 0xcd, 0x4e, 0x14, 0x4d,
+	0x14, 0x9d, 0x86, 0xef, 0x23, 0x4c, 0x41, 0x54, 0x3a, 0x13, 0x81, 0x06, 0x5b, 0x9c, 0x05, 0x41,
+	0x12, 0xaa, 0x6c, 0x8c, 0x2e, 0xd8, 0x31, 0xc4, 0x05, 0x8b, 0x8e, 0x64, 0x88, 0x1b, 0x63, 0x42,
+	0xaa, 0xa7, 0xcb, 0xa2, 0xe2, 0x74, 0x55, 0xa7, 0x6e, 0x4d, 0xcb, 0xec, 0x8c, 0x4f, 0xc0, 0x03,
+	0xf8, 0x08, 0x2e, 0x58, 0xf0, 0x10, 0xc4, 0x15, 0x71, 0xe5, 0xca, 0x18, 0x58, 0xf0, 0x1a, 0x66,
+	0xaa, 0x7f, 0x26, 0x33, 0x4c, 0xc4, 0xb8, 0xe9, 0x54, 0xd5, 0x39, 0xf7, 0x9e, 0xd3, 0xf7, 0x54,
+	0x37, 0x5a, 0xce, 0x28, 0x05, 0xd2, 0x51, 0x12, 0x7a, 0x09, 0xd3, 0x24, 0x0b, 0x88, 0x39, 0xc1,
+	0xa9, 0x56, 0x46, 0xb9, 0x0f, 0x06, 0x10, 0x2e, 0x21, 0x9c, 0x05, 0xde, 0x02, 0x4d, 0x84, 0x54,
+	0xc4, 0x3e, 0x73, 0x92, 0xb7, 0xca, 0x95, 0xe2, 0x5d, 0x46, 0x68, 0x2a, 0x08, 0x95, 0x52, 0x19,
+	0x6a, 0x84, 0x92, 0x50, 0xa0, 0x0d, 0xae, 0xb8, 0xb2, 0x4b, 0x32, 0x58, 0x15, 0xa7, 0xcb, 0x1d,
+	0x05, 0x89, 0x82, 0xa3, 0x1c, 0xc8, 0x37, 0x05, 0xb4, 0x98, 0xef, 0x48, 0x02, 0x7c, 0xe0, 0x25,
+	0x01, 0x5e, 0xd6, 0x14, 0x3a, 0x76, 0x17, 0xf5, 0xde, 0x13, 0x2a, 0xfb, 0x05, 0xf4, 0xc8, 0xbe,
+	0x42, 0x16, 0x10, 0x38, 0xa6, 0x9a, 0xc5, 0x47, 0x95, 0x63, 0x0b, 0x37, 0x4f, 0x1d, 0x74, 0x3f,
+	0x04, 0xfe, 0x26, 0x8d, 0xa9, 0x61, 0x07, 0x54, 0xd3, 0x04, 0xdc, 0x97, 0xa8, 0x4e, 0x7b, 0xe6,
+	0x58, 0x69, 0x61, 0xfa, 0x4b, 0xce, 0x9a, 0xb3, 0x51, 0x6f, 0x2d, 0x7d, 0x3f, 0xdf, 0x6a, 0x14,
+	0x5e, 0x76, 0xe3, 0x58, 0x33, 0x80, 0x43, 0xa3, 0x85, 0xe4, 0xed, 0x21, 0xd5, 0x7d, 0x81, 0x66,
+	0x52, 0xdb, 0x61, 0x69, 0x6a, 0xcd, 0xd9, 0x98, 0xdb, 0x5e, 0xc4, 0x76, 0x46, 0x59, 0x80, 0xf7,
+	0x0a, 0xd1, 0x5c, 0xa0, 0xf5, 0xdf, 0xc5, 0xcf, 0xc7, 0xb5, 0x76, 0x41, 0xde, 0xb9, 0xf7, 0xf9,
+	0xe6, 0x6c, 0x73, 0xd8, 0xa6, 0xb9, 0x8c, 0x16, 0xc7, 0x1c, 0xb5, 0x19, 0xa4, 0x4a, 0x02, 0x6b,
+	0x6a, 0xd4, 0x08, 0x81, 0x1f, 0x32, 0x73, 0xa0, 0x55, 0x26, 0x62, 0xa6, 0xf7, 0xba, 0x82, 0x49,
+	0xe3, 0x3e, 0x43, 0x33, 0x20, 0xb8, 0x64, 0xfa, 0x4e, 0xbb, 0x05, 0xcf, 0x5d, 0x41, 0xf5, 0x8e,
+	0xad, 0x3d, 0x12, 0xb1, 0xb5, 0x5b, 0x6f, 0xcf, 0xe6, 0x07, 0xfb, 0xf1, 0xce, 0xdc, 0xc0, 0x51,
+	0xc1, 0x6c, 0xfa, 0x68, 0x75, 0x92, 0x66, 0xe5, 0xe9, 0x8b, 0x83, 0xe6, 0x43, 0xe0, 0xaf, 0x3f,
+	0x4a, 0xa6, 0x5f, 0x9d, 0xb0, 0xce, 0x3f, 0x98, 0x09, 0xd1, 0x6c, 0xc2, 0x00, 0x28, 0x67, 0x83,
+	0xd1, 0x4d, 0x6f, 0xcc, 0x6d, 0x37, 0x70, 0x9e, 0x28, 0x2e, 0x13, 0xc5, 0xbb, 0xb2, 0xdf, 0x5a,
+	0xf9, 0x76, 0xbe, 0x55, 0xdc, 0x01, 0x1c, 0x51, 0x60, 0x38, 0x0b, 0x22, 0x66, 0x68, 0x80, 0x43,
+	0xe0, 0xed, 0xaa, 0xc5, 0xa8, 0xfd, 0x87, 0x76, 0x64, 0x95, 0xbb, 0xd2, 0xf6, 0xf6, 0xd7, 0x29,
+	0x34, 0x1d, 0x02, 0x77, 0xdf, 0xa1, 0xf9, 0x91, 0xf0, 0x9f, 0xe0, 0xf1, 0x8b, 0x8d, 0xc7, 0xd2,
+	0xf0, 0x9e, 0xde, 0x49, 0x29, 0x55, 0xdc, 0x0f, 0x68, 0xe1, 0x76, 0x5a, 0xeb, 0x13, 0xeb, 0x6f,
+	0xf1, 0x3c, 0xfc, 0x77, 0xbc, 0x4a, 0xec, 0x10, 0xd5, 0x87, 0x29, 0xf8, 0x13, 0x8b, 0x2b, 0xdc,
+	0x5b, 0xff, 0x33, 0x5e, 0x36, 0xf5, 0xfe, 0xff, 0x74, 0x73, 0xb6, 0xe9, 0xb4, 0xf6, 0x2f, 0xae,
+	0x7c, 0xe7, 0xf2, 0xca, 0x77, 0x7e, 0x5d, 0xf9, 0xce, 0xe9, 0xb5, 0x5f, 0xbb, 0xbc, 0xf6, 0x6b,
+	0x3f, 0xae, 0xfd, 0xda, 0x5b, 0xc2, 0x85, 0x39, 0xee, 0x45, 0xb8, 0xa3, 0x12, 0x42, 0xbb, 0x5d,
+	0x21, 0x23, 0x61, 0x80, 0xd8, 0xaf, 0xee, 0x84, 0x8c, 0xfe, 0x3f, 0x4c, 0x3f, 0x65, 0x10, 0xcd,
+	0xd8, 0x4c, 0x9f, 0xff, 0x0e, 0x00, 0x00, 0xff, 0xff, 0x64, 0x04, 0x48, 0xaf, 0x5d, 0x04, 0x00,
+	0x00,
 }
 
 // Reference imports to suppress errors if they are not otherwise used.
@@ -280,6 +392,7 @@ const _ = grpc.SupportPackageIsVersion4
 type MsgClient interface {
 	UpdateParams(ctx context.Context, in *MsgUpdateParams, opts ...grpc.CallOption) (*MsgUpdateParamsResponse, error)
 	SetProviderClient(ctx context.Context, in *MsgSetProviderClient, opts ...grpc.CallOption) (*MsgSetProviderClientResponse, error)
+	OwnerExec(ctx context.Context, in *MsgOwnerExec, opts ...grpc.CallOption) (*MsgOwnerExecResponse, error)
 }
 
 type msgClient struct {
@@ -308,10 +421,20 @@ func (c *msgClient) SetProviderClient(ctx context.Context, in *MsgSetProviderCli
 	return out, nil
 }
 
+func (c *msgClient) OwnerExec(ctx context.Context, in *MsgOwnerExec, opts ...grpc.CallOption) (*MsgOwnerExecResponse, error) {
+	out := new(MsgOwnerExecResponse)
+	err := c.cc.Invoke(ctx, "/vaas.consumer.v1.Msg/OwnerExec", in, out, opts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
 // MsgServer is the server API for Msg service.
 type MsgServer interface {
 	UpdateParams(context.Context, *MsgUpdateParams) (*MsgUpdateParamsResponse, error)
 	SetProviderClient(context.Context, *MsgSetProviderClient) (*MsgSetProviderClientResponse, error)
+	OwnerExec(context.Context, *MsgOwnerExec) (*MsgOwnerExecResponse, error)
 }
 
 // UnimplementedMsgServer can be embedded to have forward compatible implementations.
@@ -323,6 +446,9 @@ func (*UnimplementedMsgServer) UpdateParams(ctx context.Context, req *MsgUpdateP
 }
 func (*UnimplementedMsgServer) SetProviderClient(ctx context.Context, req *MsgSetProviderClient) (*MsgSetProviderClientResponse, error) {
 	return nil, status.Errorf(codes.Unimplemented, "method SetProviderClient not implemented")
+}
+func (*UnimplementedMsgServer) OwnerExec(ctx context.Context, req *MsgOwnerExec) (*MsgOwnerExecResponse, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method OwnerExec not implemented")
 }
 
 func RegisterMsgServer(s grpc1.Server, srv MsgServer) {
@@ -365,6 +491,24 @@ func _Msg_SetProviderClient_Handler(srv interface{}, ctx context.Context, dec fu
 	return interceptor(ctx, in, info, handler)
 }
 
+func _Msg_OwnerExec_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(MsgOwnerExec)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(MsgServer).OwnerExec(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: "/vaas.consumer.v1.Msg/OwnerExec",
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(MsgServer).OwnerExec(ctx, req.(*MsgOwnerExec))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
 var _Msg_serviceDesc = grpc.ServiceDesc{
 	ServiceName: "vaas.consumer.v1.Msg",
 	HandlerType: (*MsgServer)(nil),
@@ -376,6 +520,10 @@ var _Msg_serviceDesc = grpc.ServiceDesc{
 		{
 			MethodName: "SetProviderClient",
 			Handler:    _Msg_SetProviderClient_Handler,
+		},
+		{
+			MethodName: "OwnerExec",
+			Handler:    _Msg_OwnerExec_Handler,
 		},
 	},
 	Streams:  []grpc.StreamDesc{},
@@ -505,6 +653,73 @@ func (m *MsgSetProviderClientResponse) MarshalToSizedBuffer(dAtA []byte) (int, e
 	return len(dAtA) - i, nil
 }
 
+func (m *MsgOwnerExec) Marshal() (dAtA []byte, err error) {
+	size := m.Size()
+	dAtA = make([]byte, size)
+	n, err := m.MarshalToSizedBuffer(dAtA[:size])
+	if err != nil {
+		return nil, err
+	}
+	return dAtA[:n], nil
+}
+
+func (m *MsgOwnerExec) MarshalTo(dAtA []byte) (int, error) {
+	size := m.Size()
+	return m.MarshalToSizedBuffer(dAtA[:size])
+}
+
+func (m *MsgOwnerExec) MarshalToSizedBuffer(dAtA []byte) (int, error) {
+	i := len(dAtA)
+	_ = i
+	var l int
+	_ = l
+	if len(m.Messages) > 0 {
+		for iNdEx := len(m.Messages) - 1; iNdEx >= 0; iNdEx-- {
+			{
+				size, err := m.Messages[iNdEx].MarshalToSizedBuffer(dAtA[:i])
+				if err != nil {
+					return 0, err
+				}
+				i -= size
+				i = encodeVarintTx(dAtA, i, uint64(size))
+			}
+			i--
+			dAtA[i] = 0x12
+		}
+	}
+	if len(m.Signer) > 0 {
+		i -= len(m.Signer)
+		copy(dAtA[i:], m.Signer)
+		i = encodeVarintTx(dAtA, i, uint64(len(m.Signer)))
+		i--
+		dAtA[i] = 0xa
+	}
+	return len(dAtA) - i, nil
+}
+
+func (m *MsgOwnerExecResponse) Marshal() (dAtA []byte, err error) {
+	size := m.Size()
+	dAtA = make([]byte, size)
+	n, err := m.MarshalToSizedBuffer(dAtA[:size])
+	if err != nil {
+		return nil, err
+	}
+	return dAtA[:n], nil
+}
+
+func (m *MsgOwnerExecResponse) MarshalTo(dAtA []byte) (int, error) {
+	size := m.Size()
+	return m.MarshalToSizedBuffer(dAtA[:size])
+}
+
+func (m *MsgOwnerExecResponse) MarshalToSizedBuffer(dAtA []byte) (int, error) {
+	i := len(dAtA)
+	_ = i
+	var l int
+	_ = l
+	return len(dAtA) - i, nil
+}
+
 func encodeVarintTx(dAtA []byte, offset int, v uint64) int {
 	offset -= sovTx(v)
 	base := offset
@@ -558,6 +773,34 @@ func (m *MsgSetProviderClient) Size() (n int) {
 }
 
 func (m *MsgSetProviderClientResponse) Size() (n int) {
+	if m == nil {
+		return 0
+	}
+	var l int
+	_ = l
+	return n
+}
+
+func (m *MsgOwnerExec) Size() (n int) {
+	if m == nil {
+		return 0
+	}
+	var l int
+	_ = l
+	l = len(m.Signer)
+	if l > 0 {
+		n += 1 + l + sovTx(uint64(l))
+	}
+	if len(m.Messages) > 0 {
+		for _, e := range m.Messages {
+			l = e.Size()
+			n += 1 + l + sovTx(uint64(l))
+		}
+	}
+	return n
+}
+
+func (m *MsgOwnerExecResponse) Size() (n int) {
 	if m == nil {
 		return 0
 	}
@@ -878,6 +1121,172 @@ func (m *MsgSetProviderClientResponse) Unmarshal(dAtA []byte) error {
 		}
 		if fieldNum <= 0 {
 			return fmt.Errorf("proto: MsgSetProviderClientResponse: illegal tag %d (wire type %d)", fieldNum, wire)
+		}
+		switch fieldNum {
+		default:
+			iNdEx = preIndex
+			skippy, err := skipTx(dAtA[iNdEx:])
+			if err != nil {
+				return err
+			}
+			if (skippy < 0) || (iNdEx+skippy) < 0 {
+				return ErrInvalidLengthTx
+			}
+			if (iNdEx + skippy) > l {
+				return io.ErrUnexpectedEOF
+			}
+			iNdEx += skippy
+		}
+	}
+
+	if iNdEx > l {
+		return io.ErrUnexpectedEOF
+	}
+	return nil
+}
+func (m *MsgOwnerExec) Unmarshal(dAtA []byte) error {
+	l := len(dAtA)
+	iNdEx := 0
+	for iNdEx < l {
+		preIndex := iNdEx
+		var wire uint64
+		for shift := uint(0); ; shift += 7 {
+			if shift >= 64 {
+				return ErrIntOverflowTx
+			}
+			if iNdEx >= l {
+				return io.ErrUnexpectedEOF
+			}
+			b := dAtA[iNdEx]
+			iNdEx++
+			wire |= uint64(b&0x7F) << shift
+			if b < 0x80 {
+				break
+			}
+		}
+		fieldNum := int32(wire >> 3)
+		wireType := int(wire & 0x7)
+		if wireType == 4 {
+			return fmt.Errorf("proto: MsgOwnerExec: wiretype end group for non-group")
+		}
+		if fieldNum <= 0 {
+			return fmt.Errorf("proto: MsgOwnerExec: illegal tag %d (wire type %d)", fieldNum, wire)
+		}
+		switch fieldNum {
+		case 1:
+			if wireType != 2 {
+				return fmt.Errorf("proto: wrong wireType = %d for field Signer", wireType)
+			}
+			var stringLen uint64
+			for shift := uint(0); ; shift += 7 {
+				if shift >= 64 {
+					return ErrIntOverflowTx
+				}
+				if iNdEx >= l {
+					return io.ErrUnexpectedEOF
+				}
+				b := dAtA[iNdEx]
+				iNdEx++
+				stringLen |= uint64(b&0x7F) << shift
+				if b < 0x80 {
+					break
+				}
+			}
+			intStringLen := int(stringLen)
+			if intStringLen < 0 {
+				return ErrInvalidLengthTx
+			}
+			postIndex := iNdEx + intStringLen
+			if postIndex < 0 {
+				return ErrInvalidLengthTx
+			}
+			if postIndex > l {
+				return io.ErrUnexpectedEOF
+			}
+			m.Signer = string(dAtA[iNdEx:postIndex])
+			iNdEx = postIndex
+		case 2:
+			if wireType != 2 {
+				return fmt.Errorf("proto: wrong wireType = %d for field Messages", wireType)
+			}
+			var msglen int
+			for shift := uint(0); ; shift += 7 {
+				if shift >= 64 {
+					return ErrIntOverflowTx
+				}
+				if iNdEx >= l {
+					return io.ErrUnexpectedEOF
+				}
+				b := dAtA[iNdEx]
+				iNdEx++
+				msglen |= int(b&0x7F) << shift
+				if b < 0x80 {
+					break
+				}
+			}
+			if msglen < 0 {
+				return ErrInvalidLengthTx
+			}
+			postIndex := iNdEx + msglen
+			if postIndex < 0 {
+				return ErrInvalidLengthTx
+			}
+			if postIndex > l {
+				return io.ErrUnexpectedEOF
+			}
+			m.Messages = append(m.Messages, &types1.Any{})
+			if err := m.Messages[len(m.Messages)-1].Unmarshal(dAtA[iNdEx:postIndex]); err != nil {
+				return err
+			}
+			iNdEx = postIndex
+		default:
+			iNdEx = preIndex
+			skippy, err := skipTx(dAtA[iNdEx:])
+			if err != nil {
+				return err
+			}
+			if (skippy < 0) || (iNdEx+skippy) < 0 {
+				return ErrInvalidLengthTx
+			}
+			if (iNdEx + skippy) > l {
+				return io.ErrUnexpectedEOF
+			}
+			iNdEx += skippy
+		}
+	}
+
+	if iNdEx > l {
+		return io.ErrUnexpectedEOF
+	}
+	return nil
+}
+func (m *MsgOwnerExecResponse) Unmarshal(dAtA []byte) error {
+	l := len(dAtA)
+	iNdEx := 0
+	for iNdEx < l {
+		preIndex := iNdEx
+		var wire uint64
+		for shift := uint(0); ; shift += 7 {
+			if shift >= 64 {
+				return ErrIntOverflowTx
+			}
+			if iNdEx >= l {
+				return io.ErrUnexpectedEOF
+			}
+			b := dAtA[iNdEx]
+			iNdEx++
+			wire |= uint64(b&0x7F) << shift
+			if b < 0x80 {
+				break
+			}
+		}
+		fieldNum := int32(wire >> 3)
+		wireType := int(wire & 0x7)
+		if wireType == 4 {
+			return fmt.Errorf("proto: MsgOwnerExecResponse: wiretype end group for non-group")
+		}
+		if fieldNum <= 0 {
+			return fmt.Errorf("proto: MsgOwnerExecResponse: illegal tag %d (wire type %d)", fieldNum, wire)
 		}
 		switch fieldNum {
 		default:

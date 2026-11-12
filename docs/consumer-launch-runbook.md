@@ -13,7 +13,18 @@ transactions.** Do not skip it.
 Roles in this flow:
 
 - **Consumer owner** -- the account that submits `MsgCreateConsumer`; drives
-  registration and funds the fee pool.
+  registration, funds the fee pool, declares the clients and, on the reference
+  consumer, holds the chain's authority afterwards (`owner-exec`, see
+  [embedding.md](embedding.md)): it is the owner that recovers an expired
+  provider client, updates the consumer's parameters or schedules an upgrade.
+  A handover is two transactions: `MsgUpdateConsumer` on the provider, and an
+  `owner-exec` carrying the consumer's `MsgUpdateParams` with the new
+  `owner_address` on the consumer, since the provider seeds the owner once.
+  That `MsgUpdateParams` carries the full parameter set, not a diff (a field
+  left out is reset, `photon_fees_enabled` to off), so read the current set
+  back with `consumerd query vaasconsumer params -o json` and change only the
+  owner. An exec that leaves the consumer with no usable owner (empty, or the
+  consumer module account itself) is refused.
 - **Relayer** -- creates the IBC v2 clients; the provider never creates them.
 - **Provider governance** -- only needed for pause/resume/removal, not for a
   normal launch.
@@ -163,8 +174,15 @@ consumer's fee payers in between when the consumer enforces photon-only fees
 Each declaration is validated before it binds (an active tendermint client of
 the right chain id with a registered counterparty; on the provider side also a
 trusting period above the downtime challenge horizon) and is permanent once
-accepted ([security-model.md](security-model.md)). VSC delivery starts at the
-first epoch boundary after the provider-side declaration. In localnet and e2e
+accepted ([security-model.md](security-model.md)). A pinned client that later
+expires is recovered in place, under the same id, by the chain's authority:
+on the reference consumer the owner wraps ibc-go's `MsgRecoverClient`, signed
+by the consumer module account that `query vaasconsumer owner-authority`
+prints, in `consumerd tx vaasconsumer owner-exec recover.json --from <owner>`.
+Restricted mode admits that recovery, and no upgrade or parameter change: a
+fix that needs new code is an off-chain coordinated halt or hard fork. VSC
+delivery starts at the first epoch boundary after the provider-side
+declaration. In localnet and e2e
 the relayer is the `ts-relayer` and the declarations are scripted (the e2e
 setup of the photon-fees suite funds the relayer and the owner before the pin
 and switches the relayer's gas price after it, as above); see
@@ -193,8 +211,10 @@ no partial payment. The in-debt flag rides the next VSC packet to the consumer
 as `ValidatorSetChangePacketData.ConsumerInDebt`, whose transaction admission
 gate (`MsgFilterDecorator` in
 [x/vaas/consumer/ante/msg_filter_ante.go](../x/vaas/consumer/ante/msg_filter_ante.go))
-then restricts incoming transactions to `/ibc.core.*` (minus the raw ICS-20 v2
-send), `/cosmos.gov.*` and bank sends made only of the photon voucher,
+then restricts incoming transactions to IBC relayer and client-recovery
+messages (not the raw ICS-20 v2 send, not ibc-go's software upgrade or
+parameter updates), `/cosmos.gov.*` (a proposal only when every message it
+carries would pass on its own) and bank sends made only of the photon voucher,
 rejecting every other application transaction -- the same restriction used
 for a stale set (see [consumer-liveness.md](consumer-liveness.md) section 4). So
 an unfunded consumer launches and then, at its first epoch fee collection,
