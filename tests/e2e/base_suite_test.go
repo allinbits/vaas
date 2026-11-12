@@ -195,9 +195,11 @@ func (s *baseTestSuite) removeContainerByName(name string) {
 }
 
 // tsRelayerContainerName is the name of the relayer container, after the
-// chains it relays between.
+// suite's provider chain, whose chain id no scenario changes: a consumer
+// renamed mid-run keeps the name, so the stale-container cleanup of a later
+// run finds a relayer left behind under it.
 func (s *baseTestSuite) tsRelayerContainerName() string {
-	return fmt.Sprintf("%s-%s-ts-relayer", s.cfg.providerChainID, s.cfg.consumerChainID)
+	return fmt.Sprintf("%s-ts-relayer", s.cfg.providerChainID)
 }
 
 // runInitContainer starts an init container with the given script mounted,

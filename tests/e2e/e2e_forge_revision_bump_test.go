@@ -69,7 +69,6 @@ func (s *ByzantineConsumerIntegrationTestSuite) testRevisionBumpIsServedOnlyAfte
 		s.stopTSRelayer()
 		s.cfg.consumerChainID = newChainID
 		s.consumer.id = newChainID
-		s.removeContainerByName(s.tsRelayerContainerName())
 		s.setupTSRelayer()
 		substitute := s.providerClientOfTheRelayerPath()
 		s.Require().Equalf(newChainID, s.clientChainID(substitute), "the substitute must track the renamed chain")
