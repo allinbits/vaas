@@ -27,8 +27,8 @@ import (
 // restarts from an export, and CometBFT then reports a double-sign committed
 // under the old key, which it names by the old address:
 //
-//   - the block goes through: x/evidence no longer fails FinalizeBlock on
-//     evidence it cannot attribute (atomone-sdk#138);
+//   - the block goes through: x/evidence ignores evidence it cannot
+//     attribute instead of failing FinalizeBlock (atomone-sdk#138);
 //   - the old address still resolves to the validator: x/staking exports and
 //     re-imports the rotation state (atomone-sdk#140);
 //   - the validator is NOT punished. x/slashing rebuilds its address-to-pubkey
