@@ -1172,7 +1172,7 @@ func (s *baseTestSuite) queryConsumerLastAck(consumerID string) (time.Time, erro
 
 // queryPendingEquivocationsAt is queryPendingEquivocations as of a past
 // provider height.
-func (s *baseTestSuite) queryPendingEquivocationsAt(consumerID string, height int64) ([]pendingEquivocationJSON, error) {
+func (s *baseTestSuite) queryPendingEquivocationsAt(consumerID string, height int64) ([]pendingEquivocationJSON, error) { //nolint:unparam // the suites drive one consumer; the helper stays generic
 	return s.queryPendingEquivocationsWith(consumerID, "--height", strconv.FormatInt(height, 10))
 }
 
@@ -1232,7 +1232,7 @@ func (s *baseTestSuite) withheldFeeRecordFor(consumerID, consAddr string) (withh
 
 // withheldFeeRecordForAt is withheldFeeRecordFor as of a past provider
 // height.
-func (s *baseTestSuite) withheldFeeRecordForAt(consumerID, consAddr string, height int64) (withheldFeeRecordJSON, bool) {
+func (s *baseTestSuite) withheldFeeRecordForAt(consumerID, consAddr string, height int64) (withheldFeeRecordJSON, bool) { //nolint:unparam // the suites drive one consumer; the helper stays generic
 	return withheldFeeRecordOf(s.queryWithheldFeeRecordsAt(consumerID, height), consAddr)
 }
 
