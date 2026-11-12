@@ -86,8 +86,10 @@ If you vet a consumer binary and will not run it, say so on-chain:
 (see [consumer-refusal.md](consumer-refusal.md)). Downtime accusations keep
 coming while you are offline for that chain, but a refusal is a public,
 stake-weighted signal: at one third of the bonded power the consumer is paused
-and its pending accusations cancelled, and any accusation that matures while a
-removal vote for the consumer is open waits for that vote. Pair the signal with
+and its pending accusations frozen for the pause (their clocks restart on a
+governance resume; only a proven challenge, a removal, or a lapsed pause
+decides them), and any accusation that matures while a removal vote for the
+consumer is open waits for that vote. Pair the signal with
 the removal proposal, timed so it is in its voting period before the first
 accusation matures (grace plus challenge window after spawn, 14 days at
 defaults). Withdraw the signal with `false`; a governance resume is refused
@@ -98,7 +100,7 @@ while the coalition still stands.
 VSC packets and evidence flow over IBC v2 clients maintained by relayers. Under
 normal traffic the clients stay updated as a side effect of relaying. During a
 `PAUSED` consumer there is no packet traffic, so nothing refreshes the clients;
-with the default `MaxPauseDuration` (30 days) exceeding the client trusting
+with the default `MaxPauseDuration` (45 days) exceeding the client trusting
 period, a long pause with idle relayers can expire the provider's client to that
 consumer. Keep relayers updating the clients through a pause so a governance
 resume does not have to bundle `MsgRecoverClient`

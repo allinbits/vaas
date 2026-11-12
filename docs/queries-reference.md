@@ -114,5 +114,7 @@ no CLI command.
 | `MsgSetConsumerFeesPerBlock` | gov authority | none -- governance proposal |
 | `MsgUpdateParams` | gov authority | none -- governance proposal; a diff, every field optional |
 
-The consumer module exposes `MsgUpdateParams` only, governance-signed, with no
-CLI command.
+The consumer module exposes two messages: `MsgSetProviderClient`, signed by the
+owner the provider seeded into the consumer params or by the governance
+authority, with the CLI command `consumerd tx vaasconsumer set-provider-client
+<client-id>`; and `MsgUpdateParams`, governance-signed, with no CLI command.

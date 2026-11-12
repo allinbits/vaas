@@ -62,7 +62,10 @@ see [params-reference.md](params-reference.md) section 4 for the full bounds):
 - `safe_mode_threshold` (nanoseconds) is required to be positive and strictly
   below the provider's liveness grace. `10800000000000` = 3h.
 - `unbonding_period` (nanoseconds) must not exceed the provider's unbonding
-  period.
+  period, and must exceed the downtime challenge horizon
+  (`downtime_evidence_max_age + downtime_challenge_window`, 10 days at the
+  defaults), or no client of the consumer could keep challenge headers
+  verifiable.
 
 On success the provider assigns a `consumer_id` (an auto-incremented integer,
 `"0"` for the first) and records the owner. If `spawn_time` is set, the consumer
@@ -113,7 +116,9 @@ consumer's owner then declares them, one transaction per side.
 
 ```
 providerd tx vaasprovider update-consumer declare.json --from <owner>
-    # declare.json: {"consumer_id": <consumer-id>, "client_id": "07-tendermint-..."}
+    # declare.json: {"consumer_id": 0, "client_id": "07-tendermint-..."}
+    # consumer_id is a JSON number: the command parses the file with
+    # encoding/json into MsgUpdateConsumer, which rejects "0"
 
 consumerd tx vaasconsumer set-provider-client <client-id> --from <owner>
 ```

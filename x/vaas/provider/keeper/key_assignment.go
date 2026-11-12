@@ -55,7 +55,7 @@ func (k Keeper) ParseConsumerKey(consumerKey string) (tmprotocrypto.PublicKey, e
 
 // AssignConsumerKey assigns the consumerKey to the validator with providerAddr on the
 // consumer chain with the given `consumerId`, provided that consumer is registered,
-// initialized, or launched.
+// initialized, launched, or paused.
 func (k Keeper) AssignConsumerKey(
 	ctx sdk.Context,
 	consumerId uint64,
@@ -63,10 +63,10 @@ func (k Keeper) AssignConsumerKey(
 	consumerKey tmprotocrypto.PublicKey,
 ) error {
 	if !k.IsConsumerActive(ctx, consumerId) {
-		// check that the consumer chain is either registered, initialized, or launched
+		// a stopped or deleted consumer takes no assignment; a paused one does
 		return errorsmod.Wrapf(
 			types.ErrInvalidPhase,
-			"cannot assign a key to a consumer chain that is not in the registered, initialized, or launched phase: %d", consumerId)
+			"cannot assign a key to a consumer chain that is not in the registered, initialized, launched, or paused phase: %d", consumerId)
 	}
 
 	consAddrTmp, err := vaastypes.TMCryptoPublicKeyToConsAddr(consumerKey)

@@ -307,10 +307,11 @@ func New(
 		authtypes.NewModuleAddress(govtypes.ModuleName).String(),
 	)
 
-	// pre-initialize ConsumerKeeper to satsfy ibckeeper.NewKeeper
-	// which would panic on nil or zero keeper
-	// ConsumerKeeper implements StakingKeeper but all function calls result in no-ops so this is safe
-	// communication over IBC is not affected by these changes
+	// Placeholder for app.ConsumerKeeper until the real keeper below is
+	// assigned over it. ibckeeper.NewKeeper does not read the consumer
+	// keeper: ibc-go's constructor panics only on an empty upgrade keeper or
+	// an empty authority. The slashing keeper above holds &app.ConsumerKeeper,
+	// so it sees the real keeper once that assignment is made.
 	app.ConsumerKeeper = ibcconsumerkeeper.NewNonZeroKeeper(
 		appCodec,
 		runtime.NewKVStoreService(keys[ibcconsumertypes.StoreKey]),

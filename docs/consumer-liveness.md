@@ -77,9 +77,9 @@ a set it cannot be sure the consumer holds. When queueing the epoch's packet it 
 - **An earlier packet is unacknowledged.** The provider tracks two per-consumer counters: the
   highest VSC id it has **sent** and the highest the consumer has **acked**. The consumer is
   **behind** when `highestAcked < highestSent`.
-- **A packet is still queued locally.** A send that never went out -- a client not yet
-  discovered, or a prior send that failed -- leaves pending packets queued and `highestSent`
-  unadvanced, so the acked/sent comparison alone would not catch it.
+- **A packet is still queued locally.** A send that never went out -- a client the owner
+  has not declared yet, or a prior send that failed -- leaves pending packets queued and
+  `highestSent` unadvanced, so the acked/sent comparison alone would not catch it.
 - **The stored consumer validator set is empty.** There is nothing to diff against: the
   consumer's first epoch, or the first epoch after a state-export restart, since the provider
   does not export the per-consumer set. Diffing the live bonded set against an empty stored
@@ -141,7 +141,7 @@ traffic that would deliver the first VSC is `/ibc.core.*` and passes the gate th
 | Parameter | Where | Bound | Default |
 |---|---|---|---|
 | `VaasTimeoutPeriod` | provider module param (VSC packet timeout) and per-consumer init param (consumer evidence packet timeout) | `(0, MaxTimeoutDelta (24h)]` | 1h |
-| consumer `UnbondingPeriod` | per-consumer init param | `(0, providerUnbondingPeriod]` | provider default minus 1 day |
+| consumer `UnbondingPeriod` | per-consumer init param | `(downtime challenge horizon, providerUnbondingPeriod]` | provider default minus 1 day |
 | `LivenessGraceFraction` | provider module param | `(0, 1)` | `0.66` |
 | consumer `SafeModeThreshold` | per-consumer init param | `(0, provider liveness grace)` | 3h |
 
@@ -154,9 +154,13 @@ consumer is handled by the liveness sweep, so a short timeout is not dangerous.
 
 The consumer `UnbondingPeriod` is bounded against the provider's at `MsgCreateConsumer` /
 `MsgUpdateConsumer` time (it must not exceed the provider's), so a consumer cannot be
-configured to outlive the provider's slashable window. No lower floor is enforced: an
-unbonding short enough to make the relayer-derived trusting period impractical is an
-operator concern (and is useful for short-lived test or dev chains), not a protocol minimum.
+configured to outlive the provider's slashable window. It has a floor at the same boundary
+(`validateConsumerInitParams`): it must exceed the downtime challenge horizon,
+`DowntimeEvidenceMaxAge + DowntimeChallengeWindow` (10 days at the defaults), because the
+client the owner later declares must keep challenge headers verifiable through that horizon
+and a light client's trusting period sits below its chain's unbonding period, so a shorter
+unbonding admits no declarable client at all. A test or dev chain that wants a short
+consumer unbonding lowers the two downtime windows first, as the liveness e2e suite does.
 
 The consumer `SafeModeThreshold` is bounded at the same `MsgCreateConsumer` /
 `MsgUpdateConsumer` boundary: it must be strictly less than the provider's liveness grace

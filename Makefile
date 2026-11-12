@@ -346,8 +346,9 @@ localnet-start: build-apps
 
 # Declare the relayer-created IBC clients on both chains (owner-signed, once).
 # The provider learns its consumer client via update-consumer, the consumer
-# pins its provider client via set-provider-client; until both land, VSC
-# packets stay queued on the provider and rejected by the consumer.
+# pins its provider client via set-provider-client. Until the provider-side
+# declaration lands, VSC packets stay queued on the provider; until the
+# consumer's pin lands, the consumer rejects every packet that arrives.
 localnet-declare-clients:
 	@echo "  Waiting for the relayer-created clients..."
 	@for i in $$(seq 1 60); do \

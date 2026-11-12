@@ -31,7 +31,12 @@ This will:
 4. Start the `ts-relayer` Docker container, fund relayer keys on both chains
    (test mnemonic), and create an **IBC v2 path** between the two chains
    (`add-path ... --ibc-version 2`).
-5. Trigger a delegation on the provider so the first VSC packet is queued and
+5. Declare the relayer-created clients as the consumer's owner
+   (`localnet-declare-clients`): the provider-side client through
+   `update-consumer` (`client_id`), the consumer-side one through
+   `set-provider-client`. The provider serves VSC packets over the declared
+   client from the next epoch boundary and sends nothing before.
+6. Trigger a delegation on the provider so the first VSC packet is queued and
    relayed to the consumer.
 
 Log files:
@@ -74,6 +79,21 @@ make ts-relayer-start
 This launches the `vaas-ts-relayer` Docker container, registers test keys on
 both chains, and creates the IBC v2 path. Stop it later with
 `make ts-relayer-stop`.
+
+### Declare the clients
+
+```bash
+# After the relayer has created its clients (a few seconds after add-path)
+make localnet-declare-clients
+```
+
+The relayer only creates the IBC v2 clients; neither chain adopts one on its
+own. `localnet-declare-clients` waits for the two clients to appear and then,
+as the consumer's owner, declares the provider-side client through
+`tx vaasprovider update-consumer` (its `client_id` field) and pins the
+consumer-side client through `tx vaasconsumer set-provider-client`. Until the
+provider-side declaration lands, the provider keeps its VSC packets queued;
+until the consumer's pin lands, the consumer rejects every packet that arrives.
 
 ## Network Configuration
 
@@ -144,8 +164,10 @@ make consumer-run
 
 ### Relayer can't find a path / no VSC packets arriving
 
-The provider does not create the IBC v2 client to the consumer itself — the
-relayer does, and the provider then discovers it at the next epoch boundary
+The provider does not create the IBC v2 client to the consumer itself: the
+relayer does, and the provider sends nothing until the consumer's owner has
+declared that client (`make localnet-declare-clients`, which `localnet-start`
+runs as step 3b). Once declared, VSC packets go out at the next epoch boundary
 (`blocks_per_epoch=10` in localnet). If you started the relayer but no VSC
 packet arrives within ~30s after a delegation:
 
@@ -159,6 +181,11 @@ docker exec vaas-ts-relayer /bin/with_keyring ibc-v2-ts-relayer list-paths
 # Confirm IBC v2 clients exist on both ends
 ./build/provider --home ~/.provider-localnet query ibc client states
 ./build/consumer --home ~/.consumer-localnet query ibc client states
+
+# Confirm the declarations landed: client_id on the provider's record,
+# provider-info on the consumer
+./build/provider --home ~/.provider-localnet query vaasprovider consumer-chain 0
+./build/consumer --home ~/.consumer-localnet query vaasconsumer provider-info
 ```
 
 ### Port conflicts
@@ -187,8 +214,9 @@ lsof -i :9092   # Consumer gRPC
 
 VAAS is IBC v2 only. There is no channel handshake. Instead, the relayer
 creates an IBC v2 client on each side pointing at the counterparty chain and
-registers the counterparty (`add-path`). The provider scans its clients once
-per epoch and adopts the one targeting the consumer (see
-`discoverActiveConsumerClient`). All VSC packets after that point are sent
-over that client; packets are out-of-order and deduplicated on the consumer
-via `HighestValsetUpdateID`.
+registers the counterparty (`add-path`). The consumer's owner then declares
+the clients, once each: the provider-side one through `MsgUpdateConsumer`'s
+`client_id` (`SetConsumerClient`), the consumer-side one through
+`MsgSetProviderClient`. The provider sends VSC packets over the declared
+client from the next epoch boundary (`SendVSCPackets`); packets are
+out-of-order and deduplicated on the consumer via `HighestValsetUpdateID`.

@@ -194,7 +194,7 @@ func (k Keeper) ConsumeIdsFromTimeQueue(
 }
 
 // LaunchConsumer launches the chain with the provided consumer id by creating the consumer genesis file.
-// The IBC client is not created here; it is discovered later when the relayer creates one.
+// No IBC client is created here: a relayer creates one and the owner declares it (SetConsumerClient).
 func (k Keeper) LaunchConsumer(
 	ctx sdk.Context,
 	bondedValidators []stakingtypes.Validator,
@@ -571,7 +571,7 @@ func (k Keeper) PauseConsumersWithFrozenClients(ctx sdk.Context) {
 // ResumeConsumerChain resumes a PAUSED consumer chain via MsgResumeConsumer.
 //
 // It requires the provider's IBC client of the consumer to have status
-// Active: with defaults, MaxPauseDuration (30 days) exceeds the
+// Active: with defaults, MaxPauseDuration (45 days) exceeds the
 // consumer-client trusting period, so a long pause with idle relayers can
 // expire the client before a resume is proposed (see docs/consumer-downtime.md,
 // "The PAUSED phase"). Resuming onto an expired or frozen client

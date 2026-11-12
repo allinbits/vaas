@@ -628,7 +628,7 @@ func (k Keeper) GetAllConsumerIds(ctx context.Context) []uint64 {
 	return consumerIds
 }
 
-// GetAllActiveConsumerIds returns all the consumer ids of chains that are registered, initialized, or launched
+// GetAllActiveConsumerIds returns all the consumer ids of chains that are registered, initialized, launched, or paused
 func (k Keeper) GetAllActiveConsumerIds(ctx context.Context) []uint64 {
 	consumerIds := []uint64{}
 	for _, consumerId := range k.GetAllConsumerIds(ctx) {

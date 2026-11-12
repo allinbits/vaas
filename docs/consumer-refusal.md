@@ -40,7 +40,7 @@ signals. The signal does two things:
   `RefusalPauseThreshold` (default one third, reached at exactly one third)
   the consumer is paused through the standard lifecycle (`PAUSED`, the
   `MaxPauseDuration` auto-stop, governance resume), and a
-  `consumer_refusal_threshold_reached` event names the refused power, the
+  `vaas_consumer_refusal_threshold_reached` event names the refused power, the
   total, and the threshold. One third of the power refusing to sign halts the
   consumer's consensus physically anyway; the threshold turns that implicit
   halt into an explicit, attributable pause.
@@ -107,6 +107,9 @@ for (with several removal votes live at once, the latest-ending one).
   period of grace per accusation is the ceiling.
 - Only the voting period shields. A proposal in its deposit period, or one
   that reaches its voting period after the entry matured, defers nothing.
+- Only a `MsgRemoveConsumer` carried directly among the proposal's messages
+  counts (`removalVote` matches on the message type URL); one wrapped in
+  another message, an `authz.MsgExec` say, defers nothing.
 - The pair's withheld fee record stays claimable for as long as the entry is
   pending, so a challenge won during the deferral still repays it.
 
@@ -231,7 +234,7 @@ wait for). Events: `vaas_consumer_refusal_set`,
 `vaas_equivocation_punishment_queued`, `vaas_equivocation_punishment_executed`,
 `vaas_equivocation_punishment_cancelled` (with the verdict as
 `cancel_reason`), and `vaas_equivocation_punishment_dropped` (with
-`drop_reason`).
+`reason`).
 
 ## 6. Parameters and bounds
 

@@ -142,9 +142,11 @@ by a removal vote takes its evidence down with it
   downtime path will accuse it. The model gives the refuser two things. A
   public, stake-weighted signal (`MsgSetConsumerRefusal`): at
   `refusal_pause_threshold` (default one third, the share that halts the
-  chain physically anyway) the consumer is paused, which cancels its pending
-  accusations for everyone, and it stays paused until the coalition withdraws
-  or governance removes it. And deferral: downtime accusations start only
+  chain physically anyway) the consumer is paused, which freezes its pending
+  accusations for everyone (their clocks stop for the pause and restart on a
+  resume; only a proven challenge, a removal, or a lapsed pause decides them),
+  and it stays paused until the coalition withdraws or governance removes it.
+  And deferral: downtime accusations start only
   after the launch grace (`DowntimeGracePeriod`, default 7 days), every
   accepted accusation waits out the challenge window
   (`DowntimeChallengeWindow`, default 7 days), and one that matures while a
@@ -182,8 +184,12 @@ it. See [consumer-fee-pool.md](consumer-fee-pool.md).
   launched consumer that stops receiving VSC packets eventually enters safe mode,
   and one that goes silent is eventually stopped for liveness (see
   [consumer-liveness.md](consumer-liveness.md)).
-- **Consumer bootstrap window.** Client trust roots in the content commitment
-  (see the client-authentication model above); the chain-id gate is
-  defense-in-depth, not the trust root. The remaining assumption is the
-  consumer's trust-on-first-use window between chain start and the first
-  delivered VSC, after which the provider client is pinned for good.
+- **Consumer bootstrap.** There is no trust-on-first-use window: a new
+  consumer starts with no provider client pinned and rejects every VSC packet
+  until its owner (or governance) pins the relayer-created client with
+  `MsgSetProviderClient`, exactly once (see the client-authentication model
+  above); the chain-id gate seeded at genesis is defense-in-depth, not the
+  trust root. What remains is that the pin rests on the owner's signature, so
+  a dishonest owner can mis-declare the consumer it registered, and that
+  until the pin lands the consumer runs on its genesis validator set with its
+  message filter admitting bootstrap traffic only.

@@ -5,8 +5,10 @@ package e2e
 // period is unbonding * LivenessGraceFraction; this suite sets the fraction to
 // 0.375 in provider genesis so the grace (~225s) is observable within a CI run,
 // while keeping a long-enough provider/consumer unbonding (600s) that the
-// relayer-derived IBC client trusting period (unbonding * 0.66 = ~396s) stays
-// viable. Shrinking the grace via a short unbonding instead would collapse the
+// relayer-derived IBC client trusting period stays viable: the ts-relayer
+// creates each client with two thirds of the tracked chain's staking
+// unbonding_time (the consumer reports its unbonding_period there), 400s
+// here. Shrinking the grace via a short unbonding instead would collapse the
 // trusting period and the relayer could never establish the clients.
 //
 // Two infrastructure measures keep the timing-sensitive assertions reliable:
@@ -51,7 +53,18 @@ package e2e
 //                                and the consumer re-queues the evidence (per
 //                                window) instead of losing it, and the provider
 //                                eventually accepts both windows.
-//   6. testAutoSweepRemoval    - relayer stopped indefinitely; poll until STOPPED.
+//   6. testQueueEquivocationBeforeLivenessStop - bonds an equivocating validator
+//                                and queues a fabricated punishment against it
+//                                right before the sweep stops the consumer.
+//   7. testAutoSweepRemoval    - relayer stopped indefinitely; poll until STOPPED.
+//   8. testEquivocationSurvivesLivenessStop - the stop was no verdict: the
+//                                punishment is still pending and executes at
+//                                maturity (tombstone, slash).
+//   9. testDeferredEquivocationCancelledByVotePassedAfterStop - a punishment
+//                                maturing during a removal vote submitted after
+//                                the stop defers behind it; the vote passes (gov
+//                                records the proposal FAILED, the consumer being
+//                                STOPPED already) and cancels it.
 //
 // The STOPPED -> DELETED edge (deletion at stop-time + unbonding) is unit-tested
 // (TestSweepRemovesStaleConsumer), not exercised here -- see the note above
@@ -92,7 +105,7 @@ const (
 // LivenessIntegrationTestSuite mirrors IntegrationTestSuite with two key
 // differences:
 //   - provider genesis is patched with unbonding_time "600s" and
-//     liveness_grace_fraction "0.375" (grace ~225s, trusting period ~396s)
+//     liveness_grace_fraction "0.375" (grace ~225s, trusting period 400s)
 //   - consumer is registered via create_consumer_short_unbonding.json
 //     (600s unbonding, 20s vaas_timeout, 5s safe_mode_threshold)
 type LivenessIntegrationTestSuite struct {
@@ -166,8 +179,8 @@ func (s *LivenessIntegrationTestSuite) SetupSuite() {
 			// Shrink the liveness grace fraction so the grace period
 			// (unbonding * fraction = 600s * 0.375 = ~225s) is observable in
 			// a CI run, while keeping the unbonding itself long enough that
-			// the relayer-derived IBC client trusting period (unbonding *
-			// 0.66 = ~396s) clears the declaration check: the declared
+			// the relayer-derived IBC client trusting period (two thirds of
+			// the unbonding, 400s) clears the declaration check: the declared
 			// consumer client's trusting period must exceed the downtime
 			// challenge horizon (180s + 180s below).
 			//
@@ -361,11 +374,10 @@ func (s *LivenessIntegrationTestSuite) testRecoverBeforeGrace() {
 //
 // Delivery is frozen by *pausing the relayer container* (docker pause), not by
 // purging and rebuilding it. The distinction is essential: a rebuild runs
-// add-path, which creates brand-new IBC clients. The provider, however, keeps
-// using its already-discovered client as long as that client stays Active and
-// has a counterparty (see discoverActiveConsumerClient) -- which it does for
-// the ~132s trusting period. So a rebuild would leave the provider sending VSCs
-// to the original, now-unrelayed client and the consumer would never recover
+// add-path, which creates brand-new IBC clients that nobody declares. The
+// provider sends only over the client the owner declared, permanently (see
+// SetConsumerClient), so a rebuild would leave the provider sending VSCs to
+// the original, now-unrelayed client and the consumer would never recover
 // within grace. Pausing the relayer leaves the original client untouched, so on
 // unpause the relay loop resumes on the same client and delivery continues. It
 // also keeps the outage short, decoupling this consumer-side test from the

@@ -73,9 +73,10 @@ Built with `make build-apps` into `build/`.
 ### Consumer Lifecycle
 
 `REGISTERED -> INITIALIZED -> LAUNCHED -> STOPPED -> DELETED`, plus a `PAUSED`
-branch off `LAUNCHED` (entered by a successful downtime challenge or by the
-bonded power refusing the consumer reaching `refusal_pause_threshold`;
-governance resumes it to `LAUNCHED` or removes it to `STOPPED`).
+branch off `LAUNCHED` (entered by a successful downtime challenge, by a
+confirmed light-client attack, or by the bonded power refusing the consumer
+reaching `refusal_pause_threshold`; governance resumes it to `LAUNCHED` or
+removes it to `STOPPED`).
 
 Managed on the provider via `MsgCreateConsumer`, `MsgUpdateConsumer`,
 `MsgRemoveConsumer`, `MsgChallengeConsumerDowntime`, `MsgSetConsumerRefusal`,

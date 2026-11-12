@@ -40,7 +40,9 @@ const (
 	// consumer and pausing it.
 	EventTypeDowntimeChallengeSucceeded = "vaas_downtime_challenge_succeeded"
 	// EventTypeConsumerPaused is emitted when a consumer chain transitions
-	// into CONSUMER_PHASE_PAUSED following a successful downtime challenge.
+	// into CONSUMER_PHASE_PAUSED (see PauseConsumerChain); its reason
+	// attribute names the trigger: a successful downtime challenge, a
+	// confirmed light-client attack, or the refusal threshold.
 	EventTypeConsumerPaused = "vaas_consumer_paused"
 	// EventTypeConsumerResumed is emitted when a paused consumer chain is
 	// resumed via MsgResumeConsumer.

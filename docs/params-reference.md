@@ -37,8 +37,7 @@ and changed only by governance through the provider `MsgUpdateParams`
 (authority-gated: the signer must be the governance authority). Source:
 [x/vaas/provider/types/params.go](../x/vaas/provider/types/params.go) (the
 defaults and `Params.Validate`) and the `UpdateParams` handler in
-[x/vaas/provider/keeper/msg_server.go](../x/vaas/provider/keeper/msg_server.go)
-(lines 40-77).
+[x/vaas/provider/keeper/msg_server.go](../x/vaas/provider/keeper/msg_server.go).
 
 | Parameter | Type | Bound | Default | Notes |
 |---|---|---|---|---|
@@ -56,7 +55,7 @@ defaults and `Params.Validate`) and the `UpdateParams` handler in
 The bounds come from `Params.Validate`: `trusting_period_fraction` and
 `liveness_grace_fraction` go through `ValidateStringFractionNonZero`, which
 rejects `0`, negatives, and any value `>= 1`
-([x/vaas/types/shared_params.go](../x/vaas/types/shared_params.go) lines 64-79);
+([x/vaas/types/shared_params.go](../x/vaas/types/shared_params.go));
 `vaas_timeout_period` through `ValidateVAASTimeoutPeriod` against
 `channeltypesv2.MaxTimeoutDelta` (24h); `blocks_per_epoch` must be a positive
 int64; `fees_per_block_amount` must be set and positive;
@@ -70,10 +69,11 @@ floor multiplier, where `0` is a valid "disable the floor" value.
 **The fee denom is not a parameter.** It is wired into the keeper at application
 construction (`Keeper.feeDenom`) and cannot change without a binary upgrade; the
 standalone provider app in this repository wires `uphoton`. Only the amount
-(`fees_per_block_amount`) is governable. Source: params.go lines 37-44 and
+(`fees_per_block_amount`) is governable. Source: `DefaultFeesPerBlockDenom` in
+[x/vaas/provider/types/params.go](../x/vaas/provider/types/params.go) and
 `GetFeesPerBlock` in
-[x/vaas/provider/keeper/params.go](../x/vaas/provider/keeper/params.go) lines
-64-69. A per-consumer raise-only override to this amount can be set with
+[x/vaas/provider/keeper/params.go](../x/vaas/provider/keeper/params.go). A
+per-consumer raise-only override to this amount can be set with
 `MsgSetConsumerFeesPerBlock`; see [consumer-fee-pool.md](consumer-fee-pool.md).
 
 ---
@@ -91,7 +91,7 @@ Source of defaults and validation:
 
 | Parameter | Type | Bound | Default |
 |---|---|---|---|
-| `double_sign.slash_fraction` | LegacyDec | `[0, 1]` | `0.05` |
+| `double_sign.slash_fraction` | LegacyDec | `(0, 1]` | `0.05` |
 | `double_sign.jail_duration` | duration | `>= 0` | max int64 ns (effectively permanent; moot -- see below) |
 | `double_sign.tombstone` | bool | -- | `true` |
 | `downtime.slash_fraction` | LegacyDec | `[0, 1]` | `0.0001` (a per-window cap, not the slash itself) |
@@ -108,12 +108,18 @@ per-window slash pricing, and the challenge window are documented in full in
 [consumer-downtime.md](consumer-downtime.md) section 8. `signed_blocks_window`
 and `min_signed_per_window` are provider-owned: the provider mirrors them into
 each consumer's genesis and every VSC packet (`CurrentDowntimeParams`,
-[params.go](../x/vaas/provider/keeper/params.go) lines 189-198).
+[params.go](../x/vaas/provider/keeper/params.go)).
 
 `double_sign.jail_duration` defaulting to the maximum int64 is moot: `tombstone`
 is `true`, so a double-signer is permanently removed regardless of the jail
 timer. A downtime slash uses `jail_duration = 0` and `tombstone = false`
 because it never jails.
+
+`double_sign.slash_fraction` must be positive: zero would remove the economic
+deterrent while the parameters still read as configured, so
+`InfractionParameters.Validate` rejects it and a governance diff setting it to
+`0` fails. `downtime.slash_fraction` may be zero, which caps every downtime
+slash at nothing.
 
 Two cross-parameter constraints are enforced whenever `Params` is validated,
 at genesis and on every governance update of the merged set:
@@ -154,8 +160,8 @@ are in the provider `params` query, inside `Params`.
 ## 3. Consumer module `ConsumerParams`
 
 The per-consumer-chain settings, held on the consumer. Source:
-[x/vaas/types/params.go](../x/vaas/types/params.go) (`DefaultConsumerParams`
-lines 67-75, `ConsumerParams.Validate` lines 77-107).
+[x/vaas/types/params.go](../x/vaas/types/params.go) (`DefaultConsumerParams`,
+`ConsumerParams.Validate`).
 
 | Parameter | Type | Bound | Default |
 |---|---|---|---|
@@ -163,6 +169,7 @@ lines 67-75, `ConsumerParams.Validate` lines 77-107).
 | `historical_entries` | int64 | `> 0` | `10000` (staking default) |
 | `unbonding_period` | duration | `> 0` | provider default unbonding minus 1 day (about 20 days) |
 | `safe_mode_threshold` | duration | `> 0` | `3h` |
+| `owner_address` | string | empty, or a bech32 address under any prefix | empty; the provider seeds the consumer's registered owner, rendered under the provider's prefix. It is the account that may pin the provider client with `MsgSetProviderClient` (the governance authority always may; see [security-model.md](security-model.md)) |
 | `signed_blocks_window` | int64 | `> 0` | `600` (provider-owned) |
 | `min_signed_per_window` | LegacyDec | `(0, 1)` | `0.5` (provider-owned) |
 
@@ -171,8 +178,9 @@ builds at launch (`MakeConsumerGenesis`), seeded from the per-consumer
 `ConsumerInitializationParameters` in section 4. `signed_blocks_window` and
 `min_signed_per_window` are provider-owned and kept in sync by every VSC packet;
 the consumer's own `MsgUpdateParams` preserves the stored values and cannot
-change them locally ([x/vaas/types/params.go](../x/vaas/types/params.go) lines
-35-38; [consumer-downtime.md](consumer-downtime.md) section 2). The
+change them locally (`UpdateParams` in
+[x/vaas/consumer/keeper/msg_server.go](../x/vaas/consumer/keeper/msg_server.go);
+[consumer-downtime.md](consumer-downtime.md) section 2). The
 liveness-facing subset (`vaas_timeout_period`, `unbonding_period`,
 `safe_mode_threshold`) is documented with its cross-chain bounds in
 [consumer-liveness.md](consumer-liveness.md) section 5.
@@ -184,11 +192,11 @@ liveness-facing subset (`vaas_timeout_period`, `unbonding_period`,
 Held per consumer on the provider and supplied through `MsgCreateConsumer` /
 `MsgUpdateConsumer`. They seed the consumer genesis (and therefore section 3's
 consumer params). Source: `DefaultConsumerInitializationParameters`
-([x/vaas/provider/types/params.go](../x/vaas/provider/types/params.go) lines
-147-161), `ValidateInitializationParameters`
-([x/vaas/provider/types/msg.go](../x/vaas/provider/types/msg.go) lines 419-450),
-and the additional cross-chain bounds enforced in `validateConsumerInitParams`
-([msg_server.go](../x/vaas/provider/keeper/msg_server.go) lines 233-255).
+([x/vaas/provider/types/params.go](../x/vaas/provider/types/params.go)),
+`ValidateInitializationParameters`
+([x/vaas/provider/types/msg.go](../x/vaas/provider/types/msg.go)), and the
+additional cross-chain bounds enforced in `validateConsumerInitParams`
+([msg_server.go](../x/vaas/provider/keeper/msg_server.go)).
 
 | Parameter | Type | Bound | Default |
 |---|---|---|---|
@@ -201,12 +209,17 @@ and the additional cross-chain bounds enforced in `validateConsumerInitParams`
 | `historical_entries` | int64 | `> 0` | `10000` |
 | `safe_mode_threshold` | duration | `> 0` and `< provider liveness grace` | `3h` |
 
-The two cross-chain bounds are provider-enforced at create/update time so the
+The cross-chain bounds are provider-enforced at create/update time so the
 relationships hold without operator discipline: a consumer cannot be configured
 to outlive the provider's slashable window (`unbonding_period <= provider
-unbonding`), and its own safe mode always engages before the provider's liveness
-sweep would remove it (`safe_mode_threshold < provider liveness grace`). See
-[consumer-liveness.md](consumer-liveness.md) section 5.
+unbonding`); its unbonding period must exceed the downtime challenge horizon
+(`downtime_evidence_max_age + downtime_challenge_window`, 10 days at the
+defaults), since the client the owner later declares must keep challenge
+headers verifiable through that horizon and a light client's trusting period
+sits below its chain's unbonding period; and its own safe mode always engages
+before the provider's liveness sweep would remove it (`safe_mode_threshold <
+provider liveness grace`). See [consumer-liveness.md](consumer-liveness.md)
+section 5.
 
 `vaas_timeout_period` here is the timeout the consumer applies to the evidence
 packets it sends the provider; the provider's own `Params.vaas_timeout_period`
