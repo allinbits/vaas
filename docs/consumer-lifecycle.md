@@ -194,6 +194,13 @@ auto-stop moves it to `STOPPED`.
    `block_time + provider_unbonding_period`.
 3. No further VSC packets are queued or sent to this consumer.
 
+A consumer stopped by the liveness sweep or the pause auto-stop can still be
+removed by governance. `MsgRemoveConsumer` then leaves the phase and the
+scheduled deletion as they are, cancels the consumer's pending equivocation
+punishments and records the verdict that refuses later double-voting evidence
+(see [equivocation-evidence.md](equivocation-evidence.md)). A consumer that
+already carries the verdict cannot be removed again.
+
 ---
 
 ## Phase 6: DELETED
@@ -252,7 +259,10 @@ it immediately: the message's effect depends on the consumer's phase.
 **Requirements:** the immediate arm applies in `REGISTERED` or `INITIALIZED`
 (`IsConsumerPrelaunched`). For a `LAUNCHED` or `PAUSED` consumer the same message is
 governance-only and stops the chain first, deferring the erasure by a full unbonding
-period. A `STOPPED` or `DELETED` consumer is rejected.
+period. For a `STOPPED` consumer it is governance-only and records the verdict on the
+consumer's evidence without touching its scheduled deletion (see
+[Phase 5](#phase-5-stopped)); a `DELETED` consumer, or a stopped one that already
+carries the verdict, is rejected.
 
 **Who can submit:** pre-launch, the consumer's **owner** or the **governance
 authority**. The owner arm lets whoever registered a chain abandon one it no longer
@@ -295,6 +305,6 @@ can be erased and its chain ID re-registered in the next block.
 | `INITIALIZED` | `spawn_time` set | On-chain (automatic) | Queued for launch at spawn_time |
 | `LAUNCHED` | `spawn_time` elapsed | On-chain (BeginBlock) | Genesis built; operator starts consumer; relayer creates IBC path |
 | `PAUSED` | Successful downtime challenge, confirmed light-client attack, or refusal coalition at `RefusalPauseThreshold` | Any account (with proof) / on-chain (EndBlock) | Withheld fees repaid, pending slashes cancelled, auto-stop scheduled; a light-client attack also freezes the IBC client; a resume is refused while the coalition stands |
-| `STOPPED` | `MsgRemoveConsumer` (gov), liveness sweep, or pause auto-stop | Governance / on-chain | Queued for deletion after unbonding period; the governance removal also cancels the consumer's pending equivocation punishments |
+| `STOPPED` | `MsgRemoveConsumer` (gov), liveness sweep, or pause auto-stop | Governance / on-chain | Queued for deletion after unbonding period; the governance removal also cancels the consumer's pending equivocation punishments, and can be applied to a consumer already stopped |
 | `DELETED` | Unbonding period elapsed | On-chain (BeginBlock) | Fee pool auto-swept to depositors, state cleaned up, chain ID released |
 | `DELETED` | `MsgRemoveConsumer` on a consumer that never launched | Owner or governance | Same teardown, with no `STOPPED` stopover and no unbonding delay |

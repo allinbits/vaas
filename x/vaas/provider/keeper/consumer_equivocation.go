@@ -54,9 +54,10 @@ func (k Keeper) HandleConsumerDoubleVoting(
 	}
 	// A governance removal is the one verdict on a consumer's evidence: it
 	// cancels the pending punishments, and evidence submitted after it would
-	// otherwise queue new ones the verdict can no longer reach (a stopped
-	// consumer cannot be removed again). A stop by the liveness sweep or by a
-	// lapsed pause is not a verdict and leaves the evidence acceptable.
+	// otherwise queue new ones the verdict can no longer reach (a consumer
+	// that carries the verdict cannot be removed again). A stop by the
+	// liveness sweep or by a lapsed pause is not a verdict and leaves the
+	// evidence acceptable until governance removes the stopped consumer.
 	if k.IsConsumerRemovedByGovernance(ctx, consumerId) {
 		return errorsmod.Wrapf(
 			vaastypes.ErrInvalidDoubleVotingEvidence,

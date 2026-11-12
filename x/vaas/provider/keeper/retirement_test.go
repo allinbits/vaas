@@ -284,8 +284,9 @@ func TestRemoveConsumerRejectsUnknownConsumer(t *testing.T) {
 // launched-and-later arms of MsgRemoveConsumer: a launched or paused consumer
 // is removable only by the governance authority, and is stopped with erasure
 // deferred by the unbonding period rather than erased immediately (its chain
-// id stays reserved). A stopped or deleted consumer is rejected for any
-// signer.
+// id stays reserved). A deleted consumer is rejected for any signer. The
+// governance removal of an already stopped consumer is covered by
+// TestRemoveConsumerOnAStoppedConsumerRecordsTheVerdict.
 func TestRemoveConsumerPastLaunchIsGovOnlyAndDeferred(t *testing.T) {
 	owner := sdk.AccAddress([]byte("consumer-owner-addr1")).String()
 
@@ -328,51 +329,27 @@ func TestRemoveConsumerPastLaunchIsGovOnlyAndDeferred(t *testing.T) {
 		})
 	}
 
-	terminalCases := []struct {
-		phase providertypes.ConsumerPhase
-		// A consumer past launch that has not been erased yet still holds its
-		// chain id. The deleted case below is set up by phase alone, so its
-		// chain id proves nothing here; the real release is covered by
-		// TestDeleteConsumerChainReleasesChainIdOnStoppedPath.
-		stillHoldsChainId bool
-	}{
-		{providertypes.CONSUMER_PHASE_STOPPED, true},
-		{providertypes.CONSUMER_PHASE_DELETED, false},
-	}
-	for _, tc := range terminalCases {
-		phase := tc.phase
-		t.Run(phase.String(), func(t *testing.T) {
-			k, ctx, ctrl, mocks := testkeeper.GetProviderKeeperAndCtx(t, testkeeper.NewInMemKeeperParams(t))
-			defer ctrl.Finish()
+	t.Run(providertypes.CONSUMER_PHASE_DELETED.String(), func(t *testing.T) {
+		k, ctx, ctrl, mocks := testkeeper.GetProviderKeeperAndCtx(t, testkeeper.NewInMemKeeperParams(t))
+		defer ctrl.Finish()
 
-			mocks.MockStakingKeeper.EXPECT().UnbondingTime(gomock.Any()).
-				Return(21*24*time.Hour, nil).AnyTimes()
+		mocks.MockStakingKeeper.EXPECT().UnbondingTime(gomock.Any()).
+			Return(21*24*time.Hour, nil).AnyTimes()
 
-			const chainId = "live-1"
-			consumerId := createRetirableConsumer(t, k, ctx, owner, chainId, time.Time{})
-			k.SetConsumerPhase(ctx, consumerId, phase)
+		consumerId := createRetirableConsumer(t, k, ctx, owner, "live-1", time.Time{})
+		k.SetConsumerPhase(ctx, consumerId, providertypes.CONSUMER_PHASE_DELETED)
 
-			ms := providerkeeper.NewMsgServerImpl(&k)
+		ms := providerkeeper.NewMsgServerImpl(&k)
 
-			// Both arms are rejected on the phase, not on the signer.
-			for _, signer := range []string{owner, k.GetAuthority()} {
-				_, err := ms.RemoveConsumer(ctx, &providertypes.MsgRemoveConsumer{
-					Signer: signer, ConsumerId: consumerId,
-				})
-				require.ErrorIs(t, err, providertypes.ErrInvalidPhase)
-			}
-
-			require.Equal(t, phase, k.GetConsumerPhase(ctx, consumerId))
-
-			if tc.stillHoldsChainId {
-				// The chain id is not released while the consumer still exists
-				// in a non-terminal phase.
-				inUse, err := k.ChainIdInUse(ctx, chainId)
-				require.NoError(t, err)
-				require.True(t, inUse)
-			}
-		})
-	}
+		// Both signers are rejected on the phase, not on the signer.
+		for _, signer := range []string{owner, k.GetAuthority()} {
+			_, err := ms.RemoveConsumer(ctx, &providertypes.MsgRemoveConsumer{
+				Signer: signer, ConsumerId: consumerId,
+			})
+			require.ErrorIs(t, err, providertypes.ErrInvalidPhase)
+		}
+		require.Equal(t, providertypes.CONSUMER_PHASE_DELETED, k.GetConsumerPhase(ctx, consumerId))
+	})
 }
 
 // TestRemoveConsumerReturnsFundedFeePool verifies that removing a pre-launch consumer

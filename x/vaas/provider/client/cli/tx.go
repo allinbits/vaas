@@ -424,7 +424,10 @@ away, its fee-pool balance returns to its depositors, and its chain id frees
 for reuse; the consumer owner may sign, or the governance authority when the
 owner key is lost. A launched or paused consumer is stopped and erased after
 the unbonding period, and only the governance authority may sign, so from the
-CLI that path is a governance proposal rather than a direct transaction.
+CLI that path is a governance proposal rather than a direct transaction. The
+governance authority may also remove a consumer that already stopped for
+another reason: its deletion stays scheduled as it was, and the removal
+cancels its pending equivocation punishments and refuses later evidence.
 
 Example:
 %s tx vaasprovider remove-consumer 0 --from mykey

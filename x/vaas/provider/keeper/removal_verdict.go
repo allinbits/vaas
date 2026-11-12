@@ -7,8 +7,9 @@ import (
 )
 
 // MarkConsumerRemovedByGovernance records that governance removed the
-// consumer: either MsgRemoveConsumer stopped it, or its removal vote passed
-// after it had stopped for another reason. The record is the verdict that
+// consumer: MsgRemoveConsumer stopped it, or found it already stopped for
+// another reason, or its removal vote passed and the sweep found it stopped
+// (SweepPendingEquivocationPunishments). The record is the verdict that
 // voids the consumer's equivocation evidence, the pending punishments the
 // removal cancels and any evidence submitted afterwards alike, so that a
 // consumer governance judged untrustworthy cannot keep earning punishments

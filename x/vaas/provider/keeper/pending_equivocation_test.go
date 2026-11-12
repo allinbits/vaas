@@ -15,6 +15,7 @@ import (
 	"cosmossdk.io/math"
 
 	sdk "github.com/cosmos/cosmos-sdk/types"
+	govtypes "github.com/cosmos/cosmos-sdk/x/gov/types"
 	govv1 "github.com/cosmos/cosmos-sdk/x/gov/types/v1"
 	slashingtypes "github.com/cosmos/cosmos-sdk/x/slashing/types"
 	stakingtypes "github.com/cosmos/cosmos-sdk/x/staking/types"
@@ -345,6 +346,74 @@ func TestRemoveConsumerHandlerCancelsPendingEquivocation(t *testing.T) {
 	require.True(t, k.IsConsumerRemovedByGovernance(ctx, consumerID), "the handler records the verdict")
 }
 
+// TestRemoveConsumerOnAStoppedConsumerRecordsTheVerdict covers the
+// governance removal of a consumer already stopped for another reason: the
+// owner is refused, governance's removal cancels the pending punishment and
+// records the verdict, the consumer stays STOPPED with its deletion where the
+// stop scheduled it, the event reports the STOPPED phase, and a second
+// removal is refused.
+func TestRemoveConsumerOnAStoppedConsumerRecordsTheVerdict(t *testing.T) {
+	k, ctx, ctrl, mocks, validator, providerAddr := setupEquivocationQueueTest(t)
+	defer ctrl.Finish()
+	consAddr := providerAddr.ToSdkConsAddr()
+
+	const consumerID = uint64(0)
+	const chainID = "consumer-chain"
+	k.SetConsumerChainId(ctx, consumerID, chainID)
+	owner := sdk.AccAddress([]byte("consumer-owner-addr1")).String()
+	k.SetConsumerOwnerAddress(ctx, consumerID, owner)
+	key := queueWithHeldOp(t, k, ctx, mocks, validator, providerAddr, consumerID, 29)
+
+	// Stopped by the liveness sweep or a lapsed pause: no verdict yet.
+	mocks.MockStakingKeeper.EXPECT().UnbondingTime(gomock.Any()).Return(21*24*time.Hour, nil).AnyTimes()
+	require.NoError(t, k.StopAndPrepareForConsumerRemoval(ctx, consumerID))
+	removalTime, err := k.GetConsumerRemovalTime(ctx, consumerID)
+	require.NoError(t, err)
+
+	msgServer := providerkeeper.NewMsgServerImpl(&k)
+	later := ctx.WithBlockTime(ctx.BlockTime().Add(time.Hour)).WithEventManager(sdk.NewEventManager())
+
+	_, err = msgServer.RemoveConsumer(later, &types.MsgRemoveConsumer{Signer: owner, ConsumerId: consumerID})
+	require.ErrorIs(t, err, govtypes.ErrInvalidSigner, "only governance removes a stopped consumer")
+	require.False(t, k.IsConsumerRemovedByGovernance(later, consumerID))
+	has, err := k.PendingEquivocationPunishments.Has(later, key)
+	require.NoError(t, err)
+	require.True(t, has, "a refused removal cancels nothing")
+
+	expectCancellation(mocks, later, validator, consAddr, 29)
+	_, err = msgServer.RemoveConsumer(later, &types.MsgRemoveConsumer{Signer: k.GetAuthority(), ConsumerId: consumerID})
+	require.NoError(t, err)
+
+	require.True(t, k.IsConsumerRemovedByGovernance(later, consumerID), "the removal records the verdict")
+	has, err = k.PendingEquivocationPunishments.Has(later, key)
+	require.NoError(t, err)
+	require.False(t, has, "the removal cancels the pending punishment")
+	require.Equal(t, types.CONSUMER_PHASE_STOPPED, k.GetConsumerPhase(later, consumerID))
+	gotRemovalTime, err := k.GetConsumerRemovalTime(later, consumerID)
+	require.NoError(t, err)
+	require.Equal(t, removalTime, gotRemovalTime, "the deletion stays where the stop scheduled it")
+	toRemove, err := k.GetConsumersToBeRemoved(later, removalTime)
+	require.NoError(t, err)
+	require.Equal(t, []uint64{consumerID}, toRemove.Ids)
+
+	var removeEvents []sdk.Event
+	for _, e := range later.EventManager().Events() {
+		if e.Type == types.EventTypeRemoveConsumer {
+			removeEvents = append(removeEvents, e)
+		}
+	}
+	require.Len(t, removeEvents, 1)
+	phaseAttr, found := removeEvents[0].GetAttribute(types.AttributeConsumerPhase)
+	require.True(t, found)
+	require.Equal(t, types.CONSUMER_PHASE_STOPPED.String(), phaseAttr.Value)
+	chainAttr, found := removeEvents[0].GetAttribute(types.AttributeConsumerChainId)
+	require.True(t, found)
+	require.Equal(t, chainID, chainAttr.Value)
+
+	_, err = msgServer.RemoveConsumer(later, &types.MsgRemoveConsumer{Signer: k.GetAuthority(), ConsumerId: consumerID})
+	require.ErrorIs(t, err, types.ErrInvalidPhase, "a consumer that carries the verdict is not removed twice")
+}
+
 // TestNonGovernanceStopDoesNotCancelPendingEquivocation proves that a
 // consumer stopped without a governance verdict (liveness sweep, lapsed
 // pause) keeps its pending punishments running: at maturity the sweep
@@ -437,9 +506,9 @@ func TestPassedRemovalVoteCancelsDeferredEquivocation(t *testing.T) {
 
 // TestFailedRemovalOfStoppedConsumerCancelsDeferredEquivocation is the
 // scenario the recorded proposal id exists for: the chain dies of liveness
-// during the vote, the vote passes, and gov marks the proposal FAILED because
-// its MsgRemoveConsumer cannot run against a stopped consumer. The tally is
-// the verdict, so the punishment is cancelled.
+// during the vote, the vote passes, and the proposal still fails in
+// execution (another of its messages fails, or the consumer is deleted
+// first). The tally is the verdict, so the punishment is cancelled.
 func TestFailedRemovalOfStoppedConsumerCancelsDeferredEquivocation(t *testing.T) {
 	k, ctx, ctrl, mocks, validator, providerAddr := setupEquivocationQueueTest(t)
 	defer ctrl.Finish()

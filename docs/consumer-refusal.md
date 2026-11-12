@@ -161,12 +161,13 @@ or tombstone in the submission transaction. Instead:
    validator after the queue is slashed at execution with the rest: the jail
    is public, and delegating into it is delegating into the slash.
 4. **Resolution.** Only a governance removal cancels the punishment: either
-   the removal executing against a launched or paused consumer, or the vote
-   the entry deferred behind passing. The deferral records the proposal it
-   waits for, so the verdict counts even when the consumer had already stopped
-   for another reason by the time the vote ended: gov then records the
-   proposal as `FAILED`, its `MsgRemoveConsumer` having found nothing left to
-   remove, and that is read as the passed vote it is. A `FAILED` proposal
+   the removal executing, or the vote the entry deferred behind passing. The
+   removal executes against a launched or paused consumer, and also against
+   one that already stopped for another reason, which stays stopped with its
+   deletion where that stop scheduled it. The deferral records the proposal it
+   waits for, so the verdict counts even when the proposal fails in execution
+   after its vote passed against a consumer that stopped or was deleted
+   meanwhile: that is read as the passed vote it is. A `FAILED` proposal
    whose consumer is still running is a removal that did not happen (another
    message in it failed), and the punishment executes. Cancelling the
    validator's last pending entry releases its holds and opens the jail (the
