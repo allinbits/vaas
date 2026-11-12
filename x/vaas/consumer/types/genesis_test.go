@@ -379,7 +379,7 @@ func TestValidatePendingEvidencePackets(t *testing.T) {
 
 	params := vaastypes.DefaultConsumerParams()
 
-	addr := sdk.ConsAddress("validator-addr-evidence-one")
+	addr := sdk.ConsAddress("validator-evidence-1")
 	packet := vaastypes.NewEvidencePacketData(addr, 1, []byte{0xFF, 0x03}, 10, 100, math.LegacyNewDecWithPrec(5, 1))
 
 	base := func() *types.GenesisState {
@@ -429,7 +429,7 @@ func TestValidatePendingEvidencePackets(t *testing.T) {
 	t.Run("addr mismatching the packet's validator addr is rejected", func(t *testing.T) {
 		gs := base()
 		gs.PendingEvidencePackets = []types.PendingEvidencePacketEntry{
-			{Addr: sdk.ConsAddress("validator-addr-evidence-two"), Packet: packet.GetBytes()},
+			{Addr: sdk.ConsAddress("validator-evidence-2"), Packet: packet.GetBytes()},
 		}
 		err := gs.Validate()
 		require.Error(t, err)

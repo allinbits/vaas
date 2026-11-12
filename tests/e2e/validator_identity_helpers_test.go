@@ -22,6 +22,7 @@ import (
 	"time"
 
 	sdk "github.com/cosmos/cosmos-sdk/types"
+	"github.com/cosmos/cosmos-sdk/types/bech32"
 )
 
 // parseInt64 parses a decimal string field from a JSON query response.
@@ -36,10 +37,10 @@ func parseInt64(t *testing.T, s string) int64 {
 
 // consAddrFromEd25519PubKey derives a validator's consensus address from its
 // ed25519 public key, exactly as CometBFT does (first 20 bytes of the SHA256
-// digest), and returns it bech32-encoded. Both apps configure the default
-// "cosmos" bech32 prefixes (see app/cmd/{provider,consumer}/main.go), which
-// this test binary also uses, so the encoding matches what the chains accept
-// and print.
+// digest), and returns it bech32-encoded under this test binary's "cosmos"
+// prefix, which is the provider's (see app/cmd/provider/main.go). The
+// consumer runs under consumerBech32Prefix; what is read from it is
+// re-encoded before it is compared with these.
 func consAddrFromEd25519PubKey(pubKey []byte) string {
 	digest := sha256.Sum256(pubKey)
 	return sdk.ConsAddress(digest[:20]).String()
@@ -63,9 +64,11 @@ func generateConsumerConsensusKey(t *testing.T) (pubKeyJSON, consAddr string) {
 }
 
 // consAddrToCometHex converts a bech32 consensus address to the uppercase hex
-// form CometBFT's /validators RPC reports.
+// form CometBFT's /validators RPC reports. It accepts any prefix: the provider
+// and the consumer run under different ones, and this test binary's own
+// configuration matches only the provider's.
 func consAddrToCometHex(bech32ConsAddr string) (string, error) {
-	addr, err := sdk.ConsAddressFromBech32(bech32ConsAddr)
+	_, addr, err := bech32.DecodeAndConvert(bech32ConsAddr)
 	if err != nil {
 		return "", fmt.Errorf("decoding consensus address %q: %w", bech32ConsAddr, err)
 	}

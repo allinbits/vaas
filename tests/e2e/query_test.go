@@ -5,6 +5,8 @@ import (
 	"fmt"
 
 	cmtservice "github.com/cosmos/cosmos-sdk/client/grpc/cmtservice"
+	sdk "github.com/cosmos/cosmos-sdk/types"
+	"github.com/cosmos/cosmos-sdk/types/bech32"
 	banktypes "github.com/cosmos/cosmos-sdk/x/bank/types"
 	stakingtypes "github.com/cosmos/cosmos-sdk/x/staking/types"
 )
@@ -89,7 +91,21 @@ func (s *baseTestSuite) queryProviderNetValidators() ([]*cmtservice.Validator, e
 
 // queryConsumerNetValidators queries the consumer chain for the latest consensus validator set.
 func (s *baseTestSuite) queryConsumerNetValidators() ([]*cmtservice.Validator, error) {
-	return s.queryNetValidators(s.consumerRESTEndpoint())
+	vals, err := s.queryNetValidators(s.consumerRESTEndpoint())
+	if err != nil {
+		return nil, err
+	}
+	// The consumer node encodes addresses under consumerBech32Prefix; the
+	// callers compare them with provider-side addresses, so re-encode them
+	// under this test binary's (the provider's) prefix here, once.
+	for _, v := range vals {
+		_, raw, err := bech32.DecodeAndConvert(v.Address)
+		if err != nil {
+			return nil, fmt.Errorf("decoding consumer validator address %q: %w", v.Address, err)
+		}
+		v.Address = sdk.ConsAddress(raw).String()
+	}
+	return vals, nil
 }
 
 // queryValidators queries the staking validator set via the REST API.

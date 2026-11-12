@@ -338,6 +338,10 @@ func (s *IntegrationTestSuite) exportConsumerGenesis(ctx context.Context, dataDi
 			Repository: e2eChainImage,
 			NetworkID:  s.dkrNet.Network.ID,
 			User:       "nonroot",
+			// The export renders addresses under the running prefix, and the
+			// restarted node reads them back under its own: both must be the
+			// consumer's (see consumerBech32Prefix).
+			Env: []string{"VAAS_BECH32_PREFIX=" + consumerBech32Prefix},
 			Mounts: []string{
 				fmt.Sprintf("%s:%s", dataDir, consumerHomePath),
 			},
@@ -514,6 +518,7 @@ func (s *IntegrationTestSuite) startRestartedConsumer(dataDir string) *dockertes
 			Name:       fmt.Sprintf("%s-val0", consumerChainID),
 			Repository: e2eChainImage,
 			NetworkID:  s.dkrNet.Network.ID,
+			Env:        []string{"VAAS_BECH32_PREFIX=" + consumerBech32Prefix},
 			Mounts: []string{
 				fmt.Sprintf("%s:%s", dataDir, consumerHomePath),
 			},

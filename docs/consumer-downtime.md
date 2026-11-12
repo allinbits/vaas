@@ -57,7 +57,10 @@ threshold more lenient for partial windows.
 The evidence packet carries the bitmap itself (`bit i` = height `window_start + i`), the
 window's last height as `window_end_height`, and echoes the `SignedBlocksWindow` /
 `MinSignedPerWindow` values the bitmap was computed under. The bitmap is what makes the
-evidence challengeable: each set bit is an individually falsifiable claim.
+evidence challengeable: each set bit is an individually falsifiable claim. The accused
+validator's consumer consensus address travels as raw bytes, not as a bech32 string: the
+two chains normally run under different address prefixes, and a string would carry the
+consumer's prefix into a provider that decodes under its own.
 
 ## 2. Downtime parameters are provider-owned
 

@@ -125,7 +125,7 @@ func (im IBCModule) OnRecvPacket(
 	logger.Info("successfully handled evidence packet",
 		"consumerId", consumerId,
 		"sequence", sequence,
-		"validator", evidencePacket.ValidatorAddr.String(),
+		"validator", evidencePacket.ConsAddress().String(),
 		"infraction", evidencePacket.Infraction.String(),
 	)
 

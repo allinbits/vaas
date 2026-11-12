@@ -293,7 +293,7 @@ func TestHandleConsumerEvidencePacketRejectsSpanExceedingWindow(t *testing.T) {
 	// Span (8) exceeds the echoed window (4); rejected by
 	// EvidencePacketData.Validate() before HandleConsumerDowntime ever runs.
 	evidencePacket := vaastypes.EvidencePacketData{
-		ValidatorAddr:      sdk.ConsAddress([]byte{0x01, 0x02, 0x03}),
+		ValidatorAddr:      sdk.ConsAddress([]byte("downtime-cons-addr-1")),
 		WindowEndHeight:    107,
 		Infraction:         stakingtypes.Infraction_INFRACTION_DOWNTIME,
 		WindowStartHeight:  100,
@@ -635,7 +635,7 @@ func TestHandleConsumerDowntimeRejectsTooOldEvidence(t *testing.T) {
 	providerKeeper.SetInfractionParams(ctx, downtimeParams(8, "0.5", 0, 7*24*time.Hour, 72*time.Hour))
 
 	evidencePacket := vaastypes.NewEvidencePacketData(
-		sdk.ConsAddress([]byte{0x01, 0x02, 0x03}),
+		sdk.ConsAddress([]byte("downtime-cons-addr-1")),
 		93, // window end height 100, below min height of 200
 		[]byte{0x3F},
 		8,
@@ -699,7 +699,7 @@ func TestHandleConsumerDowntimeRejectsValidatorNotInSet(t *testing.T) {
 
 	// The reporting validator is never registered in the consumer's
 	// validator set.
-	evidencePacket := vaastypes.NewEvidencePacketData(sdk.ConsAddress([]byte{0x01, 0x02, 0x03}), 93, []byte{0x3F}, 8, 8, math.LegacyMustNewDecFromStr("0.5"))
+	evidencePacket := vaastypes.NewEvidencePacketData(sdk.ConsAddress([]byte("downtime-cons-addr-1")), 93, []byte{0x3F}, 8, 8, math.LegacyMustNewDecFromStr("0.5"))
 
 	err := providerKeeper.HandleConsumerEvidencePacket(ctx, consumerId, evidencePacket)
 	require.Error(t, err)
@@ -715,7 +715,7 @@ func TestHandleConsumerEvidencePacketRejectsDoubleSign(t *testing.T) {
 	providerKeeper.SetConsumerPhase(ctx, consumerId, types.CONSUMER_PHASE_LAUNCHED)
 
 	evidencePacket := vaastypes.EvidencePacketData{
-		ValidatorAddr:      sdk.ConsAddress([]byte{0x01, 0x02, 0x03}),
+		ValidatorAddr:      sdk.ConsAddress([]byte("downtime-cons-addr-1")),
 		WindowEndHeight:    100,
 		Infraction:         stakingtypes.Infraction_INFRACTION_DOUBLE_SIGN,
 		WindowStartHeight:  100,
@@ -737,7 +737,7 @@ func TestHandleConsumerEvidencePacketRejectsNonLaunchedConsumer(t *testing.T) {
 	providerKeeper.SetConsumerPhase(ctx, consumerId, types.CONSUMER_PHASE_REGISTERED)
 
 	evidencePacket := vaastypes.NewEvidencePacketData(
-		sdk.ConsAddress([]byte{0x01, 0x02, 0x03}),
+		sdk.ConsAddress([]byte("downtime-cons-addr-1")),
 		100,
 		[]byte{0x01},
 		1,
@@ -762,7 +762,7 @@ func TestHandleConsumerEvidencePacketRejectsPausedConsumer(t *testing.T) {
 	providerKeeper.SetConsumerPhase(ctx, consumerId, types.CONSUMER_PHASE_PAUSED)
 
 	evidencePacket := vaastypes.NewEvidencePacketData(
-		sdk.ConsAddress([]byte{0x01, 0x02, 0x03}),
+		sdk.ConsAddress([]byte("downtime-cons-addr-1")),
 		100,
 		[]byte{0x01},
 		1,

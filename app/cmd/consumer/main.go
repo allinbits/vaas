@@ -6,13 +6,19 @@ import (
 
 	svrcmd "github.com/cosmos/cosmos-sdk/server/cmd"
 
+	"github.com/allinbits/vaas/app/bech32prefix"
 	"github.com/allinbits/vaas/app/cmd/consumer/cmd"
 	app "github.com/allinbits/vaas/app/consumer"
 	appparams "github.com/allinbits/vaas/app/consumer/params"
 )
 
 func main() {
-	appparams.SetAddressPrefixes("cosmos")
+	prefix, err := bech32prefix.FromEnv()
+	if err != nil {
+		fmt.Fprintln(os.Stderr, err)
+		os.Exit(1)
+	}
+	appparams.SetAddressPrefixes(prefix)
 	rootCmd := cmd.NewRootCmd()
 	if err := svrcmd.Execute(rootCmd, "", app.DefaultNodeHome); err != nil {
 		fmt.Fprintln(rootCmd.OutOrStderr(), err)

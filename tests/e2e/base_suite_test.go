@@ -394,6 +394,7 @@ func (s *baseTestSuite) initAndStartConsumer(consumerGenesisJSON []byte) {
 		"CHAIN_ID=" + s.cfg.consumerChainID,
 		"DENOM=" + bondDenom,
 		"MNEMONIC=" + relayerMnemonic,
+		"VAAS_BECH32_PREFIX=" + consumerBech32Prefix,
 	}
 	if s.cfg.enableConsumerPhotonFees {
 		initEnv = append(initEnv, "MIN_GAS_PRICE=0"+bondDenom)
@@ -459,6 +460,7 @@ func (s *baseTestSuite) initAndStartConsumer(consumerGenesisJSON []byte) {
 				"1317/tcp":  {{HostIP: "", HostPort: s.cfg.consumerRESTPort}},
 				"26656/tcp": {{HostIP: "", HostPort: s.cfg.consumerP2PPort}},
 			},
+			Env: []string{"VAAS_BECH32_PREFIX=" + consumerBech32Prefix},
 			Cmd: []string{
 				consumerBinary, "start",
 				"--home", consumerHomePath,
