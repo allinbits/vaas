@@ -66,14 +66,14 @@ func (k msgServer) UpdateParams(goCtx context.Context, msg *types.MsgUpdateParam
 // counterparty could never be registered and no packet could ever reach it),
 // the chain starts with no pin, every VSC packet is rejected, and the pin is
 // an explicit statement by the owner the provider seeded into the consumer
-// params -- or by governance. What is validated is coherence, not provenance:
+// params -- or by the chain's authority. What is validated is coherence, not provenance:
 // the client must exist, be a tendermint client tracking the provider chain
 // id pinned at genesis, be Active, and have a registered IBC v2 counterparty.
 //
 // The pin is permanent. Client ids are identity here -- the photon fee denom
 // derives from the pinned client, and the provider keys downtime state by its
-// own client ids -- so a pin that died is recovered in place by governance via
-// ibc-go's MsgRecoverClient, which substitutes fresh client state under the
+// own client ids -- so a pin that died is recovered in place by the chain's
+// authority via ibc-go's MsgRecoverClient, which substitutes fresh client state under the
 // same client id. Authorization compares decoded address bytes rather than
 // bech32 strings: the provider seeds the owner rendered under its own prefix,
 // while the signer arrives rendered under the consumer's.
@@ -82,7 +82,7 @@ func (k msgServer) SetProviderClient(goCtx context.Context, msg *types.MsgSetPro
 
 	if !k.isProviderClientAuthority(ctx, msg.Signer) {
 		return nil, errorsmod.Wrapf(types.ErrInvalidProviderClient,
-			"signer %s is neither the consumer owner nor the governance authority", msg.Signer)
+			"signer %s is neither the consumer owner nor the chain's authority", msg.Signer)
 	}
 
 	if pinned, found := k.GetProviderClientID(ctx); found && pinned != "" {
@@ -132,7 +132,7 @@ func (k msgServer) SetProviderClient(goCtx context.Context, msg *types.MsgSetPro
 }
 
 // isProviderClientAuthority reports whether signer may pin the provider
-// client: the governance authority, or the owner the provider seeded into the
+// client: the chain's authority, or the owner the provider seeded into the
 // consumer params. Owner comparison decodes both sides to raw address bytes,
 // since the provider renders the owner under its own bech32 prefix while the
 // signer is rendered under the consumer's; the same key must match under
@@ -225,6 +225,9 @@ func (k msgServer) OwnerExec(goCtx context.Context, msg *types.MsgOwnerExec) (*t
 	if err := k.providerClientCoherent(ctx); err != nil {
 		return nil, err
 	}
+	if err := k.ownerUsable(ctx); err != nil {
+		return nil, err
+	}
 
 	k.Logger(ctx).Info("owner exec", "signer", msg.Signer, "messages", len(msgs))
 	ctx.EventManager().EmitEvent(sdk.NewEvent(
@@ -265,6 +268,31 @@ func (k Keeper) providerClientCoherent(ctx sdk.Context) error {
 		return errorsmod.Wrapf(types.ErrInvalidOwnerExec,
 			"the pinned provider client %s tracks chain id %s, not the provider chain id %s: a recovery must substitute a client of the provider chain",
 			clientID, tmClientState.ChainId, providerChainID)
+	}
+	return nil
+}
+
+// ownerUsable reports, as an error, an owner_address an owner exec may not
+// leave behind: empty, not a bech32 address, or the consumer module account
+// itself. MsgUpdateParams replaces every consumer param but the two
+// provider-owned ones, so an exec carrying it hands the chain to whatever
+// owner_address it names; on a consumer whose authority is the consumer
+// module account, an owner that is no account anyone holds would leave the
+// chain with no authority for good, and nothing on the chain could restore
+// one.
+func (k Keeper) ownerUsable(ctx sdk.Context) error {
+	owner := k.GetConsumerParams(ctx).OwnerAddress
+	if owner == "" {
+		return errorsmod.Wrap(types.ErrInvalidOwnerExec,
+			"the exec leaves the consumer with no owner: a MsgUpdateParams carries the full params, owner_address included")
+	}
+	_, ownerBytes, err := bech32.DecodeAndConvert(owner)
+	if err != nil {
+		return errorsmod.Wrapf(types.ErrInvalidOwnerExec, "the exec leaves an owner_address that is not a bech32 address: %s", err)
+	}
+	if bytes.Equal(ownerBytes, types.OwnerExecAuthority()) {
+		return errorsmod.Wrap(types.ErrInvalidOwnerExec,
+			"the exec makes the consumer module account its own owner, which no one can sign for")
 	}
 	return nil
 }

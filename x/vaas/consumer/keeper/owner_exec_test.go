@@ -1,6 +1,7 @@
 package keeper_test
 
 import (
+	"bytes"
 	"testing"
 
 	"github.com/stretchr/testify/require"
@@ -17,6 +18,7 @@ import (
 	sdk "github.com/cosmos/cosmos-sdk/types"
 	sdkerrors "github.com/cosmos/cosmos-sdk/types/errors"
 	authtypes "github.com/cosmos/cosmos-sdk/x/auth/types"
+	banktypes "github.com/cosmos/cosmos-sdk/x/bank/types"
 	govtypes "github.com/cosmos/cosmos-sdk/x/gov/types"
 
 	testkeeper "github.com/allinbits/vaas/testutil/keeper"
@@ -211,6 +213,79 @@ func TestOwnerExecRefusesLeavingTheProviderClientOnAnotherChain(t *testing.T) {
 	_, err = f.srv.OwnerExec(f.ctx, ownerExecOf(t, pinOwner, inner))
 	require.ErrorIs(t, err, types.ErrInvalidOwnerExec)
 	require.ErrorContains(t, err, "not the provider chain id")
+}
+
+// paramsRouter stands in for the app's router with the consumer's own
+// parameter update, storing the params the message carries as the handler
+// does (the in-memory keeper's authority is not the consumer module account,
+// so the real handler would refuse it).
+type paramsRouter struct{ k consumerkeeper.Keeper }
+
+func (r paramsRouter) Handler(msg sdk.Msg) baseapp.MsgServiceHandler {
+	return r.HandlerByTypeURL(sdk.MsgTypeURL(msg))
+}
+
+func (r paramsRouter) HandlerByTypeURL(typeURL string) baseapp.MsgServiceHandler {
+	if typeURL != sdk.MsgTypeURL(&types.MsgUpdateParams{}) {
+		return nil
+	}
+	return func(ctx sdk.Context, msg sdk.Msg) (*sdk.Result, error) {
+		r.k.SetParams(ctx, msg.(*types.MsgUpdateParams).Params)
+		return &sdk.Result{}, nil
+	}
+}
+
+// An exec may hand the consumer to another owner, but not leave it with an
+// owner nobody can sign as: none at all (a MsgUpdateParams that omits
+// owner_address clears it), an undecodable one, or the consumer module
+// account itself.
+func TestOwnerExecRefusesLeavingNoUsableOwner(t *testing.T) {
+	k, ctx, ctrl, _ := testkeeper.GetConsumerKeeperAndCtx(t, testkeeper.NewInMemKeeperParams(t))
+	t.Cleanup(ctrl.Finish)
+	params := vaastypes.DefaultConsumerParams()
+	params.OwnerAddress = pinOwner
+	k.SetParams(ctx, params)
+	k.SetMessageRouter(paramsRouter{k: k})
+	srv := consumerkeeper.NewMsgServerImpl(&k)
+	authority := types.OwnerExecAuthority()
+
+	withOwner := func(owner string) sdk.Msg {
+		p := params
+		p.OwnerAddress = owner
+		return &types.MsgUpdateParams{Authority: authority.String(), Params: p}
+	}
+	for name, owner := range map[string]string{
+		"no owner":                  "",
+		"an undecodable owner":      "not-an-address",
+		"the module account itself": authority.String(),
+	} {
+		cacheCtx, _ := ctx.CacheContext()
+		_, err := srv.OwnerExec(cacheCtx, ownerExecOf(t, pinOwner, withOwner(owner)))
+		require.ErrorIs(t, err, types.ErrInvalidOwnerExec, name)
+	}
+
+	successor := sdk.AccAddress(bytes.Repeat([]byte{5}, 20)).String()
+	_, err := srv.OwnerExec(ctx, ownerExecOf(t, pinOwner, withOwner(successor)))
+	require.NoError(t, err, "a handover to another account passes")
+	require.Equal(t, successor, k.GetConsumerParams(ctx).OwnerAddress)
+}
+
+// A carried message must have exactly one signer: two, even with the consumer
+// module account first, are refused. A bank multi-send names one signer per
+// input.
+func TestOwnerExecRefusesAMessageWithTwoSigners(t *testing.T) {
+	f := newOwnerExecFixture(t)
+	ownerBytes, err := sdk.GetFromBech32(pinOwner, "cosmos")
+	require.NoError(t, err)
+	multiSend := &banktypes.MsgMultiSend{
+		Inputs: []banktypes.Input{
+			{Address: types.OwnerExecAuthority().String(), Coins: sdk.NewCoins(sdk.NewInt64Coin("stake", 1))},
+			{Address: sdk.AccAddress(ownerBytes).String(), Coins: sdk.NewCoins(sdk.NewInt64Coin("stake", 1))},
+		},
+	}
+	_, err = f.srv.OwnerExec(f.ctx, ownerExecOf(t, pinOwner, multiSend))
+	require.ErrorIs(t, err, types.ErrInvalidOwnerExec)
+	require.ErrorContains(t, err, "must be signed by the consumer module account")
 }
 
 func TestOwnerExecRefusesWithoutARouter(t *testing.T) {

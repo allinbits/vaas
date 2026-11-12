@@ -553,9 +553,16 @@ func New(
 
 // BlockedModuleAccountAddrs returns all the app's blocked module account
 // addresses: every module account, since none is meant to receive funds
-// from users.
+// from users, and the consumer module account, the chain's authority, which
+// holds no permissions and so is not in maccPerms: whatever reached it would
+// be the owner's to move through an owner exec.
 func (app *App) BlockedModuleAccountAddrs(modAccAddrs map[string]bool) map[string]bool {
-	return modAccAddrs
+	blocked := make(map[string]bool, len(modAccAddrs)+1)
+	for addr, isBlocked := range modAccAddrs {
+		blocked[addr] = isBlocked
+	}
+	blocked[ibcconsumertypes.OwnerExecAuthority().String()] = true
+	return blocked
 }
 
 // Name returns the name of the App
