@@ -12,6 +12,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -397,32 +398,26 @@ func (s *baseTestSuite) logNodeTails(resources []*dockertest.Resource, lines int
 	}
 }
 
-// stopConsumerNode stops consumer node i, the way a validator's node goes
-// offline; its container and data stay, so startConsumerNode brings the same
-// node back. The node gets five seconds to exit on its own before the kill:
-// CometBFT recovers from its write-ahead log, and the scenarios that restart
-// a node need the gap short, since a validator away for more than half a
-// downtime window is accused for it. The stop's duration is logged so a node
-// that ignores the signal shows.
-func (s *baseTestSuite) stopConsumerNode(i int) {
-	id := s.consumerValRes[i].Container.ID
-	// What the signal is sent to: the node must be the container's first
-	// process, or behind an init that forwards to it, or it never receives
-	// the stop.
-	if top, err := s.dkrPool.Client.TopContainer(id, ""); err == nil {
-		s.T().Logf("consumer val%d processes before the stop: %v", i, top.Processes)
-	}
+// stopNode stops node i of a chain, the way a validator's node goes offline;
+// its container and data stay, so the same node can be started again. The
+// node gets nodeStopTimeoutSeconds to exit on the stop signal before its
+// goroutines are dumped and it is killed: CometBFT recovers from its
+// write-ahead log, and the scenarios that restart a node need the gap short,
+// since a validator away for more than half a downtime window is accused for
+// it. The stop's duration is logged so a node that ignores the signal shows.
+func (s *baseTestSuite) stopNode(chainName string, resources []*dockertest.Resource, i int) {
+	id := resources[i].Container.ID
 	started := time.Now()
 	s.Require().NoErrorf(s.dkrPool.Client.KillContainer(docker.KillContainerOptions{ID: id, Signal: docker.SIGTERM}),
-		"failed to signal consumer val%d", i)
+		"failed to signal %s val%d", chainName, i)
 	if s.waitContainerExit(id, nodeStopTimeoutSeconds*time.Second) {
-		s.T().Logf("consumer val%d stopped in %s", i, time.Since(started).Round(time.Millisecond))
+		s.T().Logf("%s val%d stopped in %s", chainName, i, time.Since(started).Round(time.Millisecond))
 		return
 	}
 	// Still running at the deadline. SIGQUIT makes the Go runtime print every
 	// goroutine's stack and exit, which says what the shutdown is stuck on;
 	// the kill is the backstop.
-	s.T().Logf("consumer val%d ran to the %ds stop deadline; dumping its goroutines", i, nodeStopTimeoutSeconds)
+	s.T().Logf("%s val%d ran to the %ds stop deadline; dumping its goroutines", chainName, i, nodeStopTimeoutSeconds)
 	_ = s.dkrPool.Client.KillContainer(docker.KillContainerOptions{ID: id, Signal: docker.SIGQUIT})
 	if !s.waitContainerExit(id, 15*time.Second) {
 		_ = s.dkrPool.Client.KillContainer(docker.KillContainerOptions{ID: id, Signal: docker.SIGKILL})
@@ -437,16 +432,27 @@ func (s *baseTestSuite) stopConsumerNode(i int) {
 		Stderr:       true,
 		Tail:         "600",
 	})
-	s.T().Logf("consumer val%d last lines and goroutines:\n%s", i, tail.String())
+	s.T().Logf("%s val%d last lines and goroutines:\n%s", chainName, i, tail.String())
+}
+
+// stopConsumerNode stops consumer node i; startConsumerNode brings it back.
+func (s *baseTestSuite) stopConsumerNode(i int) {
+	s.stopNode("consumer", s.consumerValRes, i)
 }
 
 // waitContainerExit polls until the container is no longer running, or the
-// timeout passes, and reports which.
+// timeout passes, and reports which. A container that no longer exists has
+// exited; any other inspection error fails the test.
 func (s *baseTestSuite) waitContainerExit(id string, timeout time.Duration) bool {
 	deadline := time.Now().Add(timeout)
 	for time.Now().Before(deadline) {
 		c, err := s.dkrPool.Client.InspectContainer(id)
-		if err != nil || !c.State.Running {
+		var notFound *docker.NoSuchContainer
+		if errors.As(err, &notFound) {
+			return true
+		}
+		s.Require().NoErrorf(err, "failed to inspect container %s", id[:12])
+		if !c.State.Running {
 			return true
 		}
 		time.Sleep(500 * time.Millisecond)
@@ -456,11 +462,12 @@ func (s *baseTestSuite) waitContainerExit(id string, timeout time.Duration) bool
 
 // nodeStopTimeoutSeconds is how long a node gets to exit on SIGTERM before
 // its goroutines are dumped and it is killed. The signal is sent with the
-// kill endpoint (docker kill -s TERM) rather than the stop one: on the CI
-// runner the stop endpoint never delivered it, whatever the timeout, and the
-// node kept committing blocks until the kill at the deadline, while the same
-// node exits in half a second on the signal the kill endpoint sends. The
-// time each stop took is logged, so a shutdown that stalls is visible.
+// kill endpoint (docker kill -s TERM) rather than the stop one: on the
+// GitHub-hosted runner the stop endpoint (docker stop) never delivered it,
+// whatever the timeout, and the node kept committing blocks until the kill
+// at the deadline, while the same node exits in half a second on the signal
+// the kill endpoint sends. The time each stop took is logged, so a shutdown
+// that stalls is visible.
 const nodeStopTimeoutSeconds = 60
 
 // recreateConsumerNodes replaces every consumer node's container with one

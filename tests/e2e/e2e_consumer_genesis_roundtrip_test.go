@@ -75,10 +75,10 @@ func (s *IntegrationTestSuite) testConsumerGenesisRoundTrip() {
 			s.waitForChainHeight(quiesceCtx, "http://localhost:"+s.cfg.consumerRPCPort, preHeight+3),
 			"consumer did not commit blocks after the relayer pause")
 
-		// 2. Stop the consumer container gracefully so the data dir is in a
+		// 2. Stop the consumer node gracefully so the data dir is in a
 		//    consistent state for export.
 		s.T().Log("stopping consumer container for export...")
-		s.Require().NoError(s.dkrPool.Client.StopContainer(oldRes.Container.ID, 30))
+		s.stopConsumerNode(0)
 
 		// 3. With the container stopped and its recv traffic drained, the log
 		//    is final: the highest vscID the consumer ever applied is the
