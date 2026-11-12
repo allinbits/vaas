@@ -11,9 +11,16 @@ on:
     branches: [main]
   pull_request:
 
-# A newer push to the same PR supersedes its run; a push to main never does.
+# Read the repository; read the pull request's changed files for the path
+# filter.
+permissions:
+  contents: read
+  pull-requests: read
+
+# A newer push to the same PR supersedes its run. Every push to main has a
+# group of its own, so none is cancelled or held back by another.
 concurrency:
-  group: ${{ github.workflow }}-${{ github.ref }}
+  group: ${{ github.workflow }}-${{ github.event_name == 'pull_request' && github.ref || github.sha }}
   cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 jobs:
@@ -25,7 +32,7 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - uses: dorny/paths-filter@v3
+      - uses: dorny/paths-filter@0e4a8c6effa4802afeda77dc8d303f8176d7dfad # v3 (v3.0.4)
         id: filter
         with:
           filters: |
