@@ -22,6 +22,7 @@ import (
 
 	errorsmod "cosmossdk.io/errors"
 	"cosmossdk.io/log"
+	sdkmath "cosmossdk.io/math"
 
 	"github.com/cosmos/cosmos-sdk/baseapp"
 	clienttx "github.com/cosmos/cosmos-sdk/client/tx"
@@ -32,6 +33,7 @@ import (
 	cryptotypes "github.com/cosmos/cosmos-sdk/crypto/types"
 	simtestutil "github.com/cosmos/cosmos-sdk/testutil/sims"
 	sdk "github.com/cosmos/cosmos-sdk/types"
+	sdkerrors "github.com/cosmos/cosmos-sdk/types/errors"
 	signingtypes "github.com/cosmos/cosmos-sdk/types/tx/signing"
 	"github.com/cosmos/cosmos-sdk/x/auth/ante"
 	authsigning "github.com/cosmos/cosmos-sdk/x/auth/signing"
@@ -166,17 +168,34 @@ func fundedSigner(t *testing.T, capp *consumerapp.App, ctx sdk.Context, funds sd
 // given fee, exercising the full ante chain including signature verification.
 func signedBankSendTx(t *testing.T, capp *consumerapp.App, ctx sdk.Context, priv cryptotypes.PrivKey, addr sdk.AccAddress, fee sdk.Coins) sdk.Tx {
 	t.Helper()
+	return signedTx(t, capp, ctx, priv, addr, fee, bankSendMsg(addr))
+}
 
-	txConfig := capp.TxConfig()
-	txBuilder := txConfig.NewTxBuilder()
-	msg := &banktypes.MsgSend{
+// bankSendMsg is the user message the ante tests carry: a self-send of one
+// unit, enough to reach the fee decorators as ordinary user traffic.
+func bankSendMsg(addr sdk.AccAddress) sdk.Msg {
+	return &banktypes.MsgSend{
 		FromAddress: addr.String(),
 		ToAddress:   addr.String(),
 		Amount:      sdk.NewCoins(sdk.NewInt64Coin("stake", 1)),
 	}
-	require.NoError(t, txBuilder.SetMsgs(msg))
+}
+
+// anteTestGasLimit is the gas limit every signed test transaction declares; a
+// fee floor expressed per gas unit prices a transaction against it.
+const anteTestGasLimit = 300000
+
+// signedTx builds a properly signed transaction carrying the given messages
+// and fee under anteTestGasLimit, exercising the full ante chain including
+// signature verification.
+func signedTx(t *testing.T, capp *consumerapp.App, ctx sdk.Context, priv cryptotypes.PrivKey, addr sdk.AccAddress, fee sdk.Coins, msgs ...sdk.Msg) sdk.Tx {
+	t.Helper()
+
+	txConfig := capp.TxConfig()
+	txBuilder := txConfig.NewTxBuilder()
+	require.NoError(t, txBuilder.SetMsgs(msgs...))
 	txBuilder.SetFeeAmount(fee)
-	txBuilder.SetGasLimit(300000)
+	txBuilder.SetGasLimit(anteTestGasLimit)
 
 	acc := capp.AccountKeeper.GetAccount(ctx, addr)
 	require.NotNil(t, acc)
@@ -315,6 +334,90 @@ func TestConsumerAnteHandlerPhotonFees(t *testing.T) {
 				require.Error(t, err)
 				require.True(t, errorsmod.IsOf(err, consumertypes.ErrInvalidFeeDenom),
 					"rejection must come from the photon fee policy, got: %v", err)
+				return
+			}
+			require.NoError(t, err)
+		})
+	}
+}
+
+// TestConsumerAnteHandlerNodeFeeFloor runs signed transactions through the
+// reference consumer app's full ante chain at CheckTx under a node fee floor
+// set in the photon voucher denom, the floor a photon-fees consumer's
+// validators configure once the provider client is pinned. The floor is the
+// node's minimum-gas-prices as InfrastructureExemptTxFeeChecker applies it:
+// user transactions pay it, infrastructure transactions do not, and it is
+// mempool policy only, so it never runs outside CheckTx.
+func TestConsumerAnteHandlerNodeFeeFloor(t *testing.T) {
+	photonDenom := consumerante.ExpectedPhotonDenom(providerClientID)
+	// 0.01 voucher per gas unit prices a transaction at 3000 vouchers under
+	// the test gas limit.
+	floor := sdk.NewDecCoins(sdk.NewDecCoinFromDec(photonDenom, sdkmath.LegacyMustNewDecFromStr("0.01")))
+	const requiredFee = anteTestGasLimit / 100
+
+	capp := setupAnteTestApp(t, true)
+
+	testCases := []struct {
+		name      string
+		checkTx   bool
+		infra     bool
+		fee       sdk.Coins
+		funds     sdk.Coins
+		expectErr bool
+	}{
+		{
+			name:      "user tx below the floor is rejected at CheckTx",
+			checkTx:   true,
+			fee:       sdk.NewCoins(sdk.NewInt64Coin(photonDenom, requiredFee-1)),
+			funds:     sdk.NewCoins(sdk.NewInt64Coin(photonDenom, requiredFee)),
+			expectErr: true,
+		},
+		{
+			name:    "user tx at the floor is admitted",
+			checkTx: true,
+			fee:     sdk.NewCoins(sdk.NewInt64Coin(photonDenom, requiredFee)),
+			funds:   sdk.NewCoins(sdk.NewInt64Coin(photonDenom, requiredFee)),
+		},
+		{
+			name:    "fee-less infrastructure tx is admitted under the floor",
+			checkTx: true,
+			infra:   true,
+			fee:     sdk.NewCoins(),
+		},
+		{
+			name:  "the floor does not apply outside CheckTx",
+			fee:   sdk.NewCoins(sdk.NewInt64Coin(photonDenom, 1)),
+			funds: sdk.NewCoins(sdk.NewInt64Coin(photonDenom, 1)),
+		},
+	}
+
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			ctx := anteTestContext(capp).WithIsCheckTx(tc.checkTx).WithMinGasPrices(floor)
+			// The pinned provider client is routable, so the photon policy
+			// is enforcing and every user fee below is a voucher fee.
+			capp.IBCKeeper.ClientV2Keeper.SetClientCounterparty(ctx, providerClientID, clientv2types.CounterpartyInfo{
+				ClientId: "07-tendermint-9",
+			})
+
+			priv, addr := fundedSigner(t, capp, ctx, tc.funds)
+			msg := bankSendMsg(addr)
+			if tc.infra {
+				// A relayer's counterparty registration: /ibc.core.* plumbing
+				// the ante chain admits without executing.
+				msg = &clientv2types.MsgRegisterCounterparty{
+					ClientId:             providerClientID,
+					CounterpartyClientId: "07-tendermint-9",
+					Signer:               addr.String(),
+				}
+			}
+			tx := signedTx(t, capp, ctx, priv, addr, tc.fee, msg)
+
+			_, err := newAppAnteHandler(t, capp)(ctx, tx, false)
+			if tc.expectErr {
+				require.Error(t, err)
+				require.True(t, errorsmod.IsOf(err, sdkerrors.ErrInsufficientFee),
+					"rejection must come from the fee floor, got: %v", err)
 				return
 			}
 			require.NoError(t, err)

@@ -195,6 +195,30 @@ Once the clients are declared and the pool is funded:
 - Every epoch the provider collects the consumer's fee and distributes it to
   bonded validators; a solvent pool clears the in-debt flag.
 
+**Node fee floor on a photon-fees consumer.** A consumer that enforces
+photon-only fees (`photon_fees_enabled`,
+[params-reference.md](params-reference.md) section 3) accepts user fees only in
+the one-hop `uphoton` voucher received over the pinned provider client, so a
+validator's `minimum-gas-prices` must be zero or set in that voucher denom: a
+native-denom floor turns every user transaction away at the node's mempool. The
+voucher denom is not knowable before the pin, so launch the node with a zero
+price (`minimum-gas-prices = "0uatone"`, as the e2e suite does) and, once
+`query vaasconsumer provider-info` reports the pinned client, derive the denom
+and restart with the floor:
+
+```
+consumerd query ibc-transfer denom-hash transfer/<pinned-client-id>/uphoton
+    # -> <HASH>; set minimum-gas-prices = "0.01ibc/<HASH>" and restart
+```
+
+The floor is mempool policy only, and the reference app's fee checker
+(`InfrastructureExemptTxFeeChecker` in
+[x/vaas/consumer/ante/fee_checker.go](../x/vaas/consumer/ante/fee_checker.go))
+exempts transactions made up of `/ibc.core.*` and `/cosmos.gov.*` messages from
+it, so a raised floor never prices the relayer traffic that carries VSC packets
+and the vouchers themselves in. `testNodeFeeFloor` in the e2e suite runs this
+exact sequence.
+
 Watch the consumer's liveness (last ack, removal ETA, degraded flag) as
 described in [consumer-liveness.md](consumer-liveness.md) section 6, and keep a
 relayer updating the IBC clients so they never expire.
