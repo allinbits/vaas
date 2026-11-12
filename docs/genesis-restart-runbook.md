@@ -32,11 +32,11 @@ consumer export > consumer_exported.json
 ```
 
 `--height <h>` exports at a specific height. `--for-zero-height` additionally
-scrubs height-relative state (it resets signing-info start heights and, on the
-consumer, drops the downtime window in progress, whose bitmaps and first-tracked
-heights are keyed on the old chain's heights) for a chain that will restart at
-height 0; use it only for a genuine height-zero relaunch, not for a normal
-halt-and-continue.
+scrubs height-relative state for a chain that will restart at height 0: on the
+provider it resets signing-info start heights; on the consumer, which keeps no
+signing infos, it drops the downtime window in progress, whose bitmaps and
+first-tracked heights are keyed on the old chain's heights. Use it only for a
+genuine height-zero relaunch, not for a normal halt-and-continue.
 
 Always validate an exported (or hand-edited) genesis before starting a node
 from it:

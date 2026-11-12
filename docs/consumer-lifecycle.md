@@ -223,12 +223,12 @@ already carries the verdict cannot be removed again.
    chance any depositor gets — withdrawals are rejected once the phase is `DELETED`.
    It then:
    - Deletes: IBC client ID mapping, consumer genesis, key assignments, equivocation
-     evidence minimum height, init-chain height, pending VSC packets, validator set,
-     previous-valset hash, removal time, the liveness state (last-ack time and the
-     sent/acked VSC-id counters), the in-debt flag, the per-consumer fees-per-block
-     override, the fee-pool-address reverse lookup, and the downtime state (pending
-     downtime slashes, epoch downtime marks, withheld fee records, accepted windows,
-     and window floors).
+     evidence minimum height, pending VSC packets, validator set, removal time, the
+     liveness state (last-ack time and the sent/acked VSC-id counters), the refusals,
+     the pause reason, paused-at and fork-known-at times, the in-debt flag, the
+     per-consumer fees-per-block override, the fee-pool-address reverse lookup, and the
+     downtime state (pending downtime slashes, epoch downtime marks, withheld fee
+     records, accepted windows, and window floors).
    - **Releases the chain ID**, as the last step before the phase changes, so the chain
      ID becomes registrable again (see below).
    - **Preserves** (for block explorer use): phase, owner address, metadata,
