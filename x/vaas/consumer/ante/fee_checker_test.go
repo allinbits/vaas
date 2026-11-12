@@ -2,6 +2,7 @@ package ante
 
 import (
 	"context"
+	"math"
 	"testing"
 
 	"github.com/stretchr/testify/require"
@@ -75,4 +76,25 @@ func TestBootstrapExemptTxFeeChecker(t *testing.T) {
 			}
 		})
 	}
+}
+
+// TestTxPriority: the priority is the smallest per-denom gas price, capped at
+// math.MaxInt64 for a price beyond int64 instead of panicking, and zero for
+// a zero-gas transaction.
+func TestTxPriority(t *testing.T) {
+	huge, ok := sdkmath.NewIntFromString("100000000000000000000000")
+	require.True(t, ok)
+
+	require.Equal(t, int64(0), txPriority(sdk.NewCoins(sdk.NewInt64Coin("uatone", 1000)), 0))
+	require.Equal(t, int64(0), txPriority(sdk.NewCoins(), 1000))
+	require.Equal(t, int64(10), txPriority(sdk.NewCoins(sdk.NewInt64Coin("uatone", 10000)), 1000))
+	require.Equal(t, int64(2), txPriority(sdk.NewCoins(sdk.NewInt64Coin("uatone", 10000), sdk.NewInt64Coin("uphoton", 2000)), 1000))
+	require.Equal(t, int64(math.MaxInt64), txPriority(sdk.NewCoins(sdk.NewCoin("uatone", huge)), 1000))
+	require.Equal(t, int64(10), txPriority(sdk.NewCoins(sdk.NewCoin("uatone", huge), sdk.NewInt64Coin("uphoton", 10000)), 1000))
+
+	// The checker hands the capped priority back rather than failing.
+	checker := NewBootstrapExemptTxFeeChecker(bootstrapState(false))
+	_, priority, err := checker(sdk.Context{}, mockFeeTx{msgs: []sdk.Msg{bankSendMsg()}, fee: sdk.NewCoins(sdk.NewCoin("uatone", huge)), gas: 1000})
+	require.NoError(t, err)
+	require.Equal(t, int64(math.MaxInt64), priority)
 }

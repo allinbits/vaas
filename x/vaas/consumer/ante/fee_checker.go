@@ -24,9 +24,9 @@ type BootstrapKeeper interface {
 }
 
 // NewBootstrapExemptTxFeeChecker returns the consumer's TxFeeChecker for
-// ante.NewDeductFeeDecorator. It mirrors the SDK default (the node's
-// minimum-gas-prices floor enforced at CheckTx, priority derived from the gas
-// price) with one exception, in time: while the consumer has no routable
+// ante.NewDeductFeeDecorator. It mirrors atomone-sdk's default checker (the
+// node's minimum-gas-prices floor enforced at CheckTx, priority derived from
+// the gas price) with one exception, in time: while the consumer has no routable
 // provider client, a transaction made up exclusively of bootstrap
 // infrastructure messages (isBootstrapInfrastructureTx) skips the floor, so a
 // chain that starts with no token at all can have its clients created, its
@@ -54,7 +54,7 @@ func NewBootstrapExemptTxFeeChecker(k BootstrapKeeper) authante.TxFeeChecker {
 		gas := feeTx.GetGas()
 
 		// The floor is local mempool policy, so it only runs on CheckTx; the
-		// bootstrap carve-out applies here and nowhere else. Everything below
+		// bootstrap carve-out applies here and nowhere else. The floor itself
 		// matches atomone-sdk's default checker.
 		exempt := !k.HasRoutableProviderClient(ctx) && isBootstrapInfrastructureTx(tx.GetMsgs())
 		if ctx.IsCheckTx() && !exempt {
@@ -106,22 +106,24 @@ func isBootstrapInfrastructureTx(msgs []sdk.Msg) bool {
 	return true
 }
 
-// txPriority mirrors the SDK default's naive priority: the smallest
-// per-denom gas price across the fee coins. A zero-gas transaction gets
-// priority zero rather than dividing by zero.
+// txPriority is atomone-sdk's default naive priority (getTxPriority): the
+// smallest per-denom gas price across the fee coins, capped at math.MaxInt64
+// for a price beyond int64. The one difference is a zero-gas transaction,
+// which gets priority zero here rather than dividing by zero.
 func txPriority(fee sdk.Coins, gas int64) int64 {
 	if gas == 0 {
 		return 0
 	}
-	priority := int64(math.MaxInt64)
+	var priority int64
 	for _, c := range fee {
-		p := c.Amount.QuoRaw(gas).Int64()
-		if p < priority {
+		p := int64(math.MaxInt64)
+		gasPrice := c.Amount.QuoRaw(gas)
+		if gasPrice.IsInt64() {
+			p = gasPrice.Int64()
+		}
+		if priority == 0 || p < priority {
 			priority = p
 		}
-	}
-	if priority == math.MaxInt64 {
-		return 0
 	}
 	return priority
 }
