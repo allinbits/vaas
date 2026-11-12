@@ -41,9 +41,9 @@ func TestBootstrapExemptTxFeeChecker(t *testing.T) {
 		photonFees bool
 		noVouchers bool
 		ctx        sdk.Context
-		tx        mockFeeTx
-		expectErr bool
-		expectFee sdk.Coins
+		tx         mockFeeTx
+		expectErr  bool
+		expectFee  sdk.Coins
 	}{
 		{name: "bootstrap: a delivery with no fee passes the floor", bootstrap: true, ctx: checkCtx, tx: mockFeeTx{msgs: delivery, fee: noFee, gas: 100000}},
 		{name: "bootstrap: creating a client with no fee passes the floor", bootstrap: true, ctx: checkCtx, tx: mockFeeTx{msgs: createClient, fee: noFee, gas: 100000}},
