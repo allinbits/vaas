@@ -5,6 +5,10 @@ import (
 	"fmt"
 	"strings"
 
+	clienttypes "github.com/cosmos/ibc-go/v10/modules/core/02-client/types"
+	clienttypesv2 "github.com/cosmos/ibc-go/v10/modules/core/02-client/v2/types"
+	connectiontypes "github.com/cosmos/ibc-go/v10/modules/core/03-connection/types"
+	channeltypes "github.com/cosmos/ibc-go/v10/modules/core/04-channel/types"
 	channeltypesv2 "github.com/cosmos/ibc-go/v10/modules/core/04-channel/v2/types"
 
 	errorsmod "cosmossdk.io/errors"
@@ -40,9 +44,9 @@ type (
 	//   stale VSC  : provider client established, no VSC packet received within
 	//               the safe-mode threshold -> restricted mode (see below).
 	//
-	// Restricted mode: only /ibc.core.* (minus the user-originated
-	// MsgSendPacket), /cosmos.gov.* (a proposal only when every message it
-	// carries would pass on its own) and a bank send of photon vouchers
+	// Restricted mode: only relayer and client-recovery messages of IBC core
+	// (restrictedIBCMsgs), /cosmos.gov.* (a proposal only when every message
+	// it carries would pass on its own) and a bank send of photon vouchers
 	// pass, keeping VAAS liveness, the client recovery and the relayer's
 	// refill available, and value in.
 	MsgFilterDecorator struct {
@@ -117,20 +121,22 @@ func (mfd MsgFilterDecorator) AnteHandle(ctx sdk.Context, tx sdk.Tx, simulate bo
 
 	// Restricted mode: in debt, or no fresh VSC (validator set may be stale).
 	//
-	// Only /ibc.core.* messages (minus the raw MsgSendPacket), /cosmos.gov.*
+	// Only the IBC core messages of restrictedIBCMsgs, /cosmos.gov.*
 	// messages and bank sends made only of the photon voucher pass:
 	//
-	// /ibc.core.* preserves VAAS liveness and keeps all IBC apps working.
-	// The prefix covers both IBC v1 and v2 channel/connection/client
-	// messages, since the consumer chain may have v1 apps (ICS-20 v1) wired
-	// in addition to VAAS itself (which uses v2). The one /ibc.core.*
-	// message a user originates, /ibc.core.channel.v2.MsgSendPacket (a raw
-	// ICS-20 v2 transfer), is carved out like ICS-20 v1's MsgTransfer:
-	// restricted mode is for recovery, and value does not leave a chain
-	// whose validator set may be stale or whose fees are unpaid. Relayers
-	// sign their messages directly with their own keys; authz wrapping is
-	// not part of any realistic relayer flow and is therefore treated as
-	// non-ibc.core and rejected here.
+	// restrictedIBCMsgs is what relayers send and what recovers a client:
+	// client creation, updates, upgrades, misbehaviour and recovery, the IBC
+	// v1 connection and channel handshakes and packet messages, and the IBC
+	// v2 counterparty registration and packet messages. It preserves VAAS
+	// liveness, which runs over IBC v2, and keeps IBC v1 apps (ICS-20 v1)
+	// relaying. It leaves out what a user or an authority originates: the
+	// raw ICS-20 v2 send (/ibc.core.channel.v2.MsgSendPacket), carved out
+	// like ICS-20 v1's MsgTransfer, since value does not leave a chain whose
+	// validator set may be stale or whose fees are unpaid; a v1 channel
+	// close initiated on this chain; and ibc-go's software upgrade and
+	// parameter updates. Relayers sign their messages directly with their
+	// own keys; authz wrapping is not part of any realistic relayer flow and
+	// is therefore rejected here.
 	//
 	// A bank send made only of the photon voucher passes too: it is how a
 	// relayer that ran out of vouchers (and so cannot deliver its own refill,
@@ -138,18 +144,19 @@ func (mfd MsgFilterDecorator) AnteHandle(ctx sdk.Context, tx sdk.Tx, simulate bo
 	// vouchers stay on the chain.
 	//
 	// On-chain recovery needs nothing else: relayer traffic, and for an
-	// expired provider client a client recovery (MsgRecoverClient), both
-	// IBC core, an owner exec carrying the recovery included (it is judged
-	// by what it carries). A fix that needs new code is an off-chain
-	// coordinated halt or hard fork, not an on-chain upgrade, so no upgrade
-	// or parameter change is admitted, by the owner or anyone else.
+	// expired provider client a client recovery (MsgRecoverClient), an
+	// owner exec carrying the recovery included (it is judged by what it
+	// carries). A fix that needs new code is an off-chain coordinated halt
+	// or hard fork, not an on-chain upgrade, so no upgrade or parameter
+	// change is admitted, by the owner, by governance or anyone else.
 	//
 	// /cosmos.gov.* keeps a wired governance module's own traffic (votes,
 	// deposits) alive. A proposal is admitted only when every message it
 	// carries passes these same rules, so governance cannot do in restricted
 	// mode what a direct transaction may not; a legacy content proposal
 	// (gov v1beta1 MsgSubmitProposal, or MsgExecLegacyContent anywhere) is
-	// refused, since its content cannot be judged. A proposal submitted
+	// refused, since its content cannot be judged, and so is governance's
+	// own MsgUpdateParams. A proposal submitted
 	// before restricted mode began still executes in EndBlock when its
 	// voting period ends, outside the ante, which restricted mode cannot
 	// bound. The reference consumer app wires no governance, so there the
@@ -160,7 +167,7 @@ func (mfd MsgFilterDecorator) AnteHandle(ctx sdk.Context, tx sdk.Tx, simulate bo
 		}
 		return ctx, errorsmod.Wrap(
 			consumertypes.ErrConsumerInDebt,
-			"consumer is in debt or has a stale validator set; only ibc.core messages other than a raw send packet, cosmos.gov messages (a proposal only when what it carries is allowed too) and bank sends of the photon voucher are temporarily allowed",
+			"consumer is in debt or has a stale validator set; only IBC relayer and client recovery messages, cosmos.gov messages (a proposal only when what it carries is allowed too) and bank sends of the photon voucher are temporarily allowed",
 		)
 	}
 	return next(ctx, tx, simulate)
@@ -176,9 +183,48 @@ func (mfd MsgFilterDecorator) voucherDenom(ctx sdk.Context) string {
 	return ExpectedPhotonDenom(clientID)
 }
 
+// restrictedIBCMsgs are the IBC core messages restricted mode admits, by
+// type URL: what ibc-go v10 registers for relayers to send and for a client
+// to be recovered. Everything else under /ibc.core. is refused there: the raw
+// ICS-20 v2 send, a v1 channel close initiated here, MsgIBCSoftwareUpgrade
+// and every MsgUpdateParams.
+var restrictedIBCMsgs = msgTypeURLs(
+	&clienttypes.MsgCreateClient{},
+	&clienttypes.MsgUpdateClient{},
+	&clienttypes.MsgUpgradeClient{},
+	&clienttypes.MsgSubmitMisbehaviour{},
+	&clienttypes.MsgRecoverClient{},
+	&connectiontypes.MsgConnectionOpenInit{},
+	&connectiontypes.MsgConnectionOpenTry{},
+	&connectiontypes.MsgConnectionOpenAck{},
+	&connectiontypes.MsgConnectionOpenConfirm{},
+	&channeltypes.MsgChannelOpenInit{},
+	&channeltypes.MsgChannelOpenTry{},
+	&channeltypes.MsgChannelOpenAck{},
+	&channeltypes.MsgChannelOpenConfirm{},
+	&channeltypes.MsgChannelCloseConfirm{},
+	&channeltypes.MsgRecvPacket{},
+	&channeltypes.MsgAcknowledgement{},
+	&channeltypes.MsgTimeout{},
+	&channeltypes.MsgTimeoutOnClose{},
+	&clienttypesv2.MsgRegisterCounterparty{},
+	&channeltypesv2.MsgRecvPacket{},
+	&channeltypesv2.MsgAcknowledgement{},
+	&channeltypesv2.MsgTimeout{},
+)
+
+func msgTypeURLs(msgs ...sdk.Msg) map[string]bool {
+	urls := make(map[string]bool, len(msgs))
+	for _, msg := range msgs {
+		urls[sdk.MsgTypeURL(msg)] = true
+	}
+	return urls
+}
+
 // isAllowedRestrictedTx reports whether every message in the tx may pass
-// restricted mode: IBC core messages minus the user-originated raw send,
-// governance, and a bank send made only of the photon voucher. The last is
+// restricted mode: the IBC relayer and client-recovery messages of
+// restrictedIBCMsgs, governance, and a bank send made only of the photon
+// voucher. The last is
 // the refill path: after bootstrap the relayer pays its deliveries in the
 // voucher, a relayer with none cannot deliver its own refill, and restricted
 // mode is exactly when deliveries matter most, so any account holding
@@ -188,15 +234,15 @@ func (mfd MsgFilterDecorator) voucherDenom(ctx sdk.Context) string {
 // rules; a legacy content proposal, whose content cannot be judged, never
 // does.
 func isAllowedRestrictedTx(msgs []sdk.Msg, voucherDenom string) bool {
-	sendPacketURL := sdk.MsgTypeURL(&channeltypesv2.MsgSendPacket{})
 	legacyProposalURL := sdk.MsgTypeURL(&govv1beta1.MsgSubmitProposal{})
 	legacyContentURL := sdk.MsgTypeURL(&govv1.MsgExecLegacyContent{})
+	govParamsURL := sdk.MsgTypeURL(&govv1.MsgUpdateParams{})
 	for _, msg := range ownerExecFlattened(msgs) {
 		url := sdk.MsgTypeURL(msg)
 		switch {
-		case url == sendPacketURL, url == legacyProposalURL, url == legacyContentURL:
+		case restrictedIBCMsgs[url]:
+		case url == legacyProposalURL, url == legacyContentURL, url == govParamsURL:
 			return false
-		case strings.HasPrefix(url, "/ibc.core."):
 		case strings.HasPrefix(url, "/cosmos.gov."):
 			proposal, ok := msg.(*govv1.MsgSubmitProposal)
 			if !ok {

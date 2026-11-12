@@ -211,9 +211,10 @@ no partial payment. The in-debt flag rides the next VSC packet to the consumer
 as `ValidatorSetChangePacketData.ConsumerInDebt`, whose transaction admission
 gate (`MsgFilterDecorator` in
 [x/vaas/consumer/ante/msg_filter_ante.go](../x/vaas/consumer/ante/msg_filter_ante.go))
-then restricts incoming transactions to `/ibc.core.*` (minus the raw ICS-20 v2
-send), `/cosmos.gov.*` (a proposal only when every message it carries
-would pass on its own) and bank sends made only of the photon voucher,
+then restricts incoming transactions to IBC relayer and client-recovery
+messages (not the raw ICS-20 v2 send, not ibc-go's software upgrade or
+parameter updates), `/cosmos.gov.*` (a proposal only when every message it
+carries would pass on its own) and bank sends made only of the photon voucher,
 rejecting every other application transaction -- the same restriction used
 for a stale set (see [consumer-liveness.md](consumer-liveness.md) section 4). So
 an unfunded consumer launches and then, at its first epoch fee collection,

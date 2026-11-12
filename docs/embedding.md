@@ -241,17 +241,18 @@ terminal.
 
 **What restricted mode leaves the authority.** While a consumer is in debt or
 its validator set is stale (section 6), on-chain recovery needs only relayer
-traffic and, for an expired provider client, a client recovery: both pass,
-an owner exec carrying `MsgRecoverClient` included. A fix that needs new code
-is an off-chain coordinated halt or hard fork, not an on-chain upgrade, so
-restricted mode admits no upgrade and no parameter change, from the owner or
-from governance: a gov v1 proposal passes only when every message it carries
-would pass on its own, and a legacy content proposal (gov v1beta1
+traffic and, for an expired provider client, a client recovery: both pass, an
+owner exec carrying `MsgRecoverClient` included. A fix that needs new code is
+an off-chain coordinated halt or hard fork, not an on-chain upgrade, so
+restricted mode admits no upgrade and no parameter change (ibc-go's
+`MsgIBCSoftwareUpgrade` and `MsgUpdateParams` included), from the owner or from
+governance: a gov v1 proposal passes only when every message it carries would
+pass on its own, and a legacy content proposal (gov v1beta1
 `MsgSubmitProposal`, or `MsgExecLegacyContent`) is refused, since its content
 cannot be judged. Votes and deposits stay admitted. On a gov-wired consumer, a
 proposal submitted before restricted mode began still executes in `EndBlock`
-when its voting period ends, outside the ante, and restricted mode cannot
-bound it.
+when its voting period ends, outside the ante, and restricted mode cannot bound
+it.
 
 ## 5. `x/evidence` on the provider
 
@@ -313,17 +314,21 @@ can satisfy it with the consumer keeper or its own adapter. It has three modes
 
 - **Before the provider client exists**, only `/ibc.`-prefixed messages are
   admitted -- the chain can be wired up and nothing else.
-- **While the consumer is in debt or its validator set is stale**, only
-  `/ibc.core.` and `/cosmos.gov.` messages are admitted, rejected otherwise with
-  `ErrConsumerInDebt`; a governance proposal passes only when every message it
-  carries would, and a legacy content proposal never does (section 4). Note the
-  narrower `/ibc.core.` prefix: ICS-20 v1 `MsgTransfer` is blocked in this mode,
-  and so is the one `/ibc.core.` message a user originates, an ICS-20 v2
-  transfer riding `/ibc.core.channel.v2.MsgSendPacket`: restricted mode is for
-  recovery, and value stays in. One bank message passes: a `MsgSend` made only
-  of the photon voucher, the path by which a relayer that ran out of vouchers is
-  refilled by any account holding some. `MsgExec` is not unwrapped, so
-  authz-wrapped IBC messages are rejected too.
+- **While the consumer is in debt or its validator set is stale**, only IBC
+  relayer and client-recovery messages and `/cosmos.gov.` messages are admitted,
+  rejected otherwise with `ErrConsumerInDebt`; a governance proposal passes only
+  when every message it carries would, and a legacy content proposal never does
+  (section 4). The IBC messages are an explicit list of ibc-go v10 core
+  messages, not a prefix: client creation, update, upgrade, misbehaviour and
+  recovery, the IBC v1 connection and channel handshakes (minus a channel close
+  initiated here) and packet messages, and the IBC v2 counterparty registration
+  and packet messages. ICS-20 v1 `MsgTransfer` is blocked in this mode, and so
+  is the raw ICS-20 v2 transfer riding `/ibc.core.channel.v2.MsgSendPacket`:
+  restricted mode is for recovery, and value stays in. ibc-go's
+  `MsgIBCSoftwareUpgrade` and every `MsgUpdateParams` are refused too. One bank
+  message passes: a `MsgSend` made only of the photon voucher, the path by which
+  a relayer that ran out of vouchers is refilled by any account holding some.
+  `MsgExec` is not unwrapped, so authz-wrapped IBC messages are rejected too.
 - **Otherwise** the transaction passes through untouched.
 
 **Omitting it is silent, and it deletes two whole mechanisms.** `IsVSCStale` and

@@ -9,6 +9,8 @@ import (
 	protov2 "google.golang.org/protobuf/proto"
 
 	clienttypes "github.com/cosmos/ibc-go/v10/modules/core/02-client/types"
+	clientv2types "github.com/cosmos/ibc-go/v10/modules/core/02-client/v2/types"
+	connectiontypes "github.com/cosmos/ibc-go/v10/modules/core/03-connection/types"
 	channeltypes "github.com/cosmos/ibc-go/v10/modules/core/04-channel/types"
 	channeltypesv2 "github.com/cosmos/ibc-go/v10/modules/core/04-channel/v2/types"
 
@@ -210,6 +212,71 @@ func TestMsgFilterDecoratorJudgesProposalsByTheirMessagesWhenInDebt(t *testing.T
 			require.True(t, errorsmod.IsOf(err, consumertypes.ErrConsumerInDebt))
 			require.False(t, nextCalled)
 		})
+	}
+}
+
+// Restricted mode admits IBC core relayer and client-recovery traffic by an
+// explicit list, not by the /ibc.core. prefix: ibc-go's software upgrade and
+// parameter updates, a v1 channel close initiated here and the raw v2 send
+// are refused, bare, inside an owner exec and inside a gov proposal.
+func TestMsgFilterDecoratorAdmitsOnlyIBCRelayerAndRecoveryTrafficWhenInDebt(t *testing.T) {
+	authority := consumertypes.OwnerExecAuthority().String()
+	proposal := func(msgs ...sdk.Msg) sdk.Msg {
+		t.Helper()
+		p, err := govtypes.NewMsgSubmitProposal(msgs, sdk.NewCoins(), testAccAddress(1).String(), "", "title", "summary")
+		require.NoError(t, err)
+		return p
+	}
+
+	admitted := []sdk.Msg{
+		&clienttypes.MsgCreateClient{},
+		&clienttypes.MsgUpdateClient{},
+		&clienttypes.MsgUpgradeClient{},
+		&clienttypes.MsgSubmitMisbehaviour{},
+		&clienttypes.MsgRecoverClient{Signer: authority},
+		&connectiontypes.MsgConnectionOpenInit{},
+		&connectiontypes.MsgConnectionOpenTry{},
+		&connectiontypes.MsgConnectionOpenAck{},
+		&connectiontypes.MsgConnectionOpenConfirm{},
+		&channeltypes.MsgChannelOpenInit{},
+		&channeltypes.MsgChannelOpenTry{},
+		&channeltypes.MsgChannelOpenAck{},
+		&channeltypes.MsgChannelOpenConfirm{},
+		&channeltypes.MsgChannelCloseConfirm{},
+		&channeltypes.MsgRecvPacket{},
+		&channeltypes.MsgAcknowledgement{},
+		&channeltypes.MsgTimeout{},
+		&channeltypes.MsgTimeoutOnClose{},
+		&clientv2types.MsgRegisterCounterparty{},
+		&channeltypesv2.MsgRecvPacket{},
+		&channeltypesv2.MsgAcknowledgement{},
+		&channeltypesv2.MsgTimeout{},
+	}
+	inDebt := mockConsumerKeeper{providerClientFound: true, inDebt: true}
+	for _, msg := range admitted {
+		nextCalled, err := runDecorator(t, inDebt, []sdk.Msg{msg})
+		require.NoError(t, err, sdk.MsgTypeURL(msg))
+		require.True(t, nextCalled)
+	}
+
+	refused := []sdk.Msg{
+		&clienttypes.MsgIBCSoftwareUpgrade{Signer: authority},
+		&clienttypes.MsgUpdateParams{Signer: authority},
+		&connectiontypes.MsgUpdateParams{Signer: authority},
+		&channeltypes.MsgChannelCloseInit{},
+		&channeltypesv2.MsgSendPacket{},
+		&govtypes.MsgUpdateParams{Authority: authority},
+	}
+	for _, msg := range refused {
+		for name, wrapped := range map[string]sdk.Msg{
+			"bare":                 msg,
+			"inside an owner exec": ownerExecCarrying(t, msg),
+			"inside a proposal":    proposal(msg),
+		} {
+			nextCalled, err := runDecorator(t, inDebt, []sdk.Msg{wrapped})
+			require.True(t, errorsmod.IsOf(err, consumertypes.ErrConsumerInDebt), "%s %s", sdk.MsgTypeURL(msg), name)
+			require.False(t, nextCalled)
+		}
 	}
 }
 
