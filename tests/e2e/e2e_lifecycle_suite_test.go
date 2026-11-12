@@ -121,9 +121,6 @@ const (
 	lifecycleProviderUnbonding = 300 * time.Second
 	// lifecycleGovVotingPeriod is the provider gov voting period.
 	lifecycleGovVotingPeriod = 30 * time.Second
-	// lifecycleBlockTimeTolerance is the slack allowed where a chain time
-	// is compared to one derived from another block: one fast block.
-	lifecycleBlockTimeTolerance = 2 * time.Second
 )
 
 // LifecycleIntegrationTestSuite drives one consumer from LAUNCHED through

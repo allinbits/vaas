@@ -130,10 +130,19 @@ func (s *LifecycleIntegrationTestSuite) testEquivocationThawAcrossPause() {
 			s.resumeProposalJSON(consumerID, "Resume consumer (lifecycle e2e, thaw)"), "yes")
 
 		s.T().Log("letting the original maturity pass while the consumer is paused...")
-		s.waitForProviderBlockTime(originalExecutesAt.Add(lifecycleBlockTimeTolerance))
-		s.Require().Equal(phasePaused, s.queryProviderConsumerPhase(consumerID),
-			"the consumer must still be paused when the original maturity passes")
-		pending := s.mustPendingEquivocations(consumerID)
+		s.waitForProviderBlockTime(originalExecutesAt)
+		// Read the state of the first block at or past the original maturity,
+		// the one whose sweep would have executed the punishment: the resume
+		// tallies later, so that block is still paused whatever the queries'
+		// own latency.
+		latest, _ := s.providerLatestBlock()
+		maturityHeight := s.firstProviderHeightWhere(pauseHeight, latest, func(height int64) bool {
+			return !s.providerBlockTime(height).Before(originalExecutesAt)
+		})
+		s.Require().Equal(phasePaused, s.providerConsumerPhaseAt(consumerID, maturityHeight),
+			"the consumer must still be paused in the block of the original maturity")
+		pending, err := s.queryPendingEquivocationsAt(consumerID, maturityHeight)
+		s.Require().NoError(err)
 		s.Require().Len(pending, 1, "the frozen punishment must still be pending at its original maturity")
 		s.Require().Truef(pending[0].ExecutesAt.Equal(originalExecutesAt),
 			"the pause must leave executes_at where it was (want %s, got %s)", originalExecutesAt, pending[0].ExecutesAt)
@@ -153,8 +162,8 @@ func (s *LifecycleIntegrationTestSuite) testEquivocationThawAcrossPause() {
 		s.Require().Len(pending, 1, "the thaw must keep the punishment pending")
 		s.Require().False(pending[0].Extended, "the thaw is not a deferral")
 		movedExecutesAt := pending[0].ExecutesAt
-		s.Require().WithinDurationf(originalExecutesAt.Add(pausedFor), movedExecutesAt, lifecycleBlockTimeTolerance,
-			"the resume must move executes_at by the pause's length %s (paused at %s, resumed at %s): %s -> %s",
+		s.Require().Truef(originalExecutesAt.Add(pausedFor).Equal(movedExecutesAt),
+			"the resume must move executes_at by exactly the pause's length %s (paused at %s, resumed at %s): %s -> %s",
 			pausedFor, pausedAt, resumedAt, originalExecutesAt, movedExecutesAt)
 		s.T().Logf("thaw: paused for %s (%s to %s); executes_at moved %s -> %s, by %s",
 			pausedFor, pausedAt, resumedAt, originalExecutesAt, movedExecutesAt, movedExecutesAt.Sub(originalExecutesAt))
@@ -167,7 +176,7 @@ func (s *LifecycleIntegrationTestSuite) testEquivocationThawAcrossPause() {
 			return s.pendingEquivocationsEmpty(consumerID)
 		}, time.Until(movedExecutesAt)+2*time.Minute, 2*time.Second,
 			"the punishment never executed after its moved maturity")
-		latest, _ := s.providerLatestBlock()
+		latest, _ = s.providerLatestBlock()
 		executedHeight := s.firstProviderHeightWhere(resumeHeight, latest, func(height int64) bool {
 			pending, err := s.queryPendingEquivocationsAt(consumerID, height)
 			return err == nil && len(pending) == 0
@@ -469,10 +478,6 @@ func (s *LifecycleIntegrationTestSuite) testMaxPauseAutoStop() {
 				return s.queryProviderConsumerPhase(consumerID) != phasePaused
 			}, wait, 3*time.Second, "the consumer left the pause before max_pause_duration elapsed")
 		}
-		still, ok := s.withheldFeeRecordFor(consumerID, s.val3.consAddr)
-		s.Require().True(ok, "the frozen record must survive the whole pause")
-		s.Require().Truef(still.ExpiresAt.Equal(frozen.ExpiresAt) && still.Amount == frozen.Amount,
-			"the pause must freeze the record (was %+v, now %+v)", frozen, still)
 
 		s.T().Log("waiting for the auto-stop...")
 		s.Require().Eventuallyf(func() bool {
@@ -488,6 +493,12 @@ func (s *LifecycleIntegrationTestSuite) testMaxPauseAutoStop() {
 		s.stopHeight = stopHeight
 		s.stoppedAt = stoppedAt
 		s.T().Logf("auto-stopped at height %d (%s)", stopHeight, stoppedAt)
+
+		// The last paused block holds the record exactly as the pause froze it.
+		still, ok := s.withheldFeeRecordForAt(consumerID, s.val3.consAddr, stopHeight-1)
+		s.Require().True(ok, "the frozen record must survive the whole pause")
+		s.Require().Truef(still.ExpiresAt.Equal(frozen.ExpiresAt) && still.Amount == frozen.Amount,
+			"the pause must freeze the record (was %+v, at the last paused block %+v)", frozen, still)
 
 		s.T().Log("verifying the stop cancelled the accusations and let the frozen record lapse unpaid...")
 		s.Require().Eventuallyf(func() bool {
