@@ -27,7 +27,7 @@ lint_app_cmd=cd app && $(lint_cmd) run --config $(CURDIR)/.golangci.yml --tests=
 lint_forge_cmd=cd tests/e2e/forge && $(lint_cmd) run --config $(CURDIR)/.golangci.yml --tests=true
 lint_fix_flags=--fix --out-format=tab --issues-exit-code=0
 
-lint: lint-e2e lint-app lint-forge
+lint: lint-e2e lint-app lint-forge check-forge-replaces
 	$(lint_cmd) run ./...
 
 lint-e2e:
@@ -39,6 +39,22 @@ lint-app:
 # The e2e forge (tests/e2e/forge) is a module of its own, nested in tests/e2e.
 lint-forge:
 	$(lint_forge_cmd) ./...
+
+# The forge builds the reference consumer app under its own go.mod, so its
+# replace directives decide which atomone-sdk, cometbft and the rest the
+# forged node runs. They must be app/go.mod's, apart from the local paths to
+# this repository's modules.
+go_mod_replaces=awk '!/^[[:space:]]*\/\// && /=>/ { sub(/[[:space:]]*\/\/.*/, ""); sub(/^[[:space:]]*replace[[:space:]]+/, ""); $$1 = $$1; if ($$1 !~ /^github\.com\/allinbits\/vaas/) print }'
+
+check-forge-replaces:
+	@app=$$($(go_mod_replaces) app/go.mod | sort); \
+	forge=$$($(go_mod_replaces) tests/e2e/forge/go.mod | sort); \
+	if [ "$$app" != "$$forge" ]; then \
+		echo "tests/e2e/forge/go.mod's replace directives differ from app/go.mod's."; \
+		echo "app/go.mod:"; echo "$$app"; \
+		echo "tests/e2e/forge/go.mod:"; echo "$$forge"; \
+		exit 1; \
+	fi
 
 lint-fix:
 	$(lint_cmd) run $(lint_fix_flags) ./...
@@ -392,7 +408,7 @@ docker-build-all: docker-build-debug
 # fails if any did. The byzantine-consumer suite needs the forge image, which
 # this target does not build: it runs only through test-e2e-forge.
 test-e2e:
-	@suites=$$(cd tests/e2e && go test -list '^Test.*Suite$$' ./... | grep '^Test' | grep -vx 'TestByzantineConsumerIntegrationTestSuite') || \
+	@suites=$$(cd tests/e2e && go test -list '^Test.*Suite$$' ./... | grep '^Test' | grep -vx '$(forge_suite)') || \
 		{ echo "no e2e suite found in tests/e2e"; exit 1; }; \
 	failed=""; \
 	for suite in $$suites; do \
@@ -415,9 +431,9 @@ require-suite:
 		{ echo "no e2e suite named $(SUITE) in tests/e2e"; exit 1; }
 
 # Every e2e suite needs a job in the CI workflow's e2e matrix, or CI never
-# runs it.
+# runs it; the byzantine-consumer suite runs in the forge workflow instead.
 check-e2e-matrix:
-	@suites=$$(sed -n 's/^func \(Test[A-Za-z0-9_]*Suite\)(t \*testing\.T).*/\1/p' tests/e2e/*_test.go); \
+	@suites=$$(sed -n 's/^func \(Test[A-Za-z0-9_]*Suite\)(t \*testing\.T).*/\1/p' tests/e2e/*_test.go | grep -vx '$(forge_suite)'); \
 	if [ -z "$$suites" ]; then echo "no e2e suite found in tests/e2e"; exit 1; fi; \
 	missing=""; \
 	for suite in $$suites; do \
@@ -427,12 +443,14 @@ check-e2e-matrix:
 
 # The byzantine-consumer suite runs a deliberately lying consumer node built
 # only into its own image (see tests/e2e/forge); only its workflow builds it.
+forge_suite=TestByzantineConsumerIntegrationTestSuite
+
 docker-build-forge: docker-build-all
 	@echo "Building VAAS e2e forge image..."
 	docker build -t cosmos/vaas-e2e-forge -f tests/e2e/forge/Dockerfile .
 
 test-e2e-forge: docker-build-forge
 	@echo "Running the byzantine-consumer e2e suite..."
-	cd tests/e2e && go test -timeout=60m -v -run '^TestByzantineConsumerIntegrationTestSuite$$' ./... --count=1
+	cd tests/e2e && go test -timeout=60m -v -run '^$(forge_suite)$$' ./... --count=1
 
-.PHONY: docker-build-debug docker-build-all test-e2e test-e2e-suite require-suite check-e2e-matrix docker-build-forge test-e2e-forge
+.PHONY: docker-build-debug docker-build-all test-e2e test-e2e-suite require-suite check-e2e-matrix docker-build-forge test-e2e-forge check-forge-replaces

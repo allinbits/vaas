@@ -3,7 +3,8 @@ module github.com/allinbits/vaas/tests/e2e/forge
 go 1.26.0
 
 // The forge wraps the reference consumer app, so it builds against the app
-// module and the same replaced dependencies (kept in step with app/go.mod).
+// module and the same replaced dependencies: `make check-forge-replaces`, run
+// by `make lint`, fails when these replaces differ from app/go.mod's.
 replace (
 	cosmossdk.io/store => github.com/atomone-hub/cosmos-sdk/store v1.1.2-0.20260107105933-680c2b513b67
 	cosmossdk.io/x/evidence => github.com/atomone-hub/cosmos-sdk/x/evidence v0.1.1

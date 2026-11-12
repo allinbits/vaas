@@ -37,8 +37,19 @@ func (a forgedApp) FinalizeBlock(req *abci.RequestFinalizeBlock) (*abci.Response
 	return a.App.FinalizeBlock(a.lie.apply(req))
 }
 
+// bech32Prefix is the account address prefix the node configures, read as
+// the consumer binary reads it: VAAS_BECH32_PREFIX from the environment, or
+// "cosmos" when it is unset. The validator and consensus prefixes derive
+// from it with the cosmos-sdk suffixes.
+func bech32Prefix() string {
+	if prefix := os.Getenv("VAAS_BECH32_PREFIX"); prefix != "" {
+		return prefix
+	}
+	return "cosmos"
+}
+
 func main() {
-	appparams.SetAddressPrefixes("cosmos")
+	appparams.SetAddressPrefixes(bech32Prefix())
 
 	l, err := lieFromEnv()
 	if err != nil {
