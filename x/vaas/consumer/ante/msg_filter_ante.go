@@ -11,6 +11,8 @@ import (
 
 	sdk "github.com/cosmos/cosmos-sdk/types"
 	banktypes "github.com/cosmos/cosmos-sdk/x/bank/types"
+	govv1 "github.com/cosmos/cosmos-sdk/x/gov/types/v1"
+	govv1beta1 "github.com/cosmos/cosmos-sdk/x/gov/types/v1beta1"
 
 	consumertypes "github.com/allinbits/vaas/x/vaas/consumer/types"
 )
@@ -39,9 +41,10 @@ type (
 	//               the safe-mode threshold -> restricted mode (see below).
 	//
 	// Restricted mode: only /ibc.core.* (minus the user-originated
-	// MsgSendPacket), /cosmos.gov.* and a bank send of photon vouchers pass,
-	// keeping VAAS liveness, governance and the relayer's refill available so
-	// the chain can recover without off-chain coordination, and value in.
+	// MsgSendPacket), /cosmos.gov.* (a proposal only when every message it
+	// carries would pass on its own) and a bank send of photon vouchers
+	// pass, keeping VAAS liveness, the client recovery and the relayer's
+	// refill available, and value in.
 	MsgFilterDecorator struct {
 		ConsumerKeeper ConsumerKeeper
 	}
@@ -134,18 +137,30 @@ func (mfd MsgFilterDecorator) AnteHandle(ctx sdk.Context, tx sdk.Tx, simulate bo
 	// see photon_fee_ante.go) is refilled by any account holding some; the
 	// vouchers stay on the chain.
 	//
-	// /cosmos.gov.* keeps governance alive so the community can vote on
-	// recovery (e.g. emergency funding, param changes) without requiring
-	// off-chain coordination. That presumes the embedding app wires a
-	// governance module; the reference consumer app wires none, so there
-	// the allowance is inert.
+	// On-chain recovery needs nothing else: relayer traffic, and for an
+	// expired provider client a client recovery (MsgRecoverClient), both
+	// IBC core, an owner exec carrying the recovery included (it is judged
+	// by what it carries). A fix that needs new code is an off-chain
+	// coordinated halt or hard fork, not an on-chain upgrade, so no upgrade
+	// or parameter change is admitted, by the owner or anyone else.
+	//
+	// /cosmos.gov.* keeps a wired governance module's own traffic (votes,
+	// deposits) alive. A proposal is admitted only when every message it
+	// carries passes these same rules, so governance cannot do in restricted
+	// mode what a direct transaction may not; a legacy content proposal
+	// (gov v1beta1 MsgSubmitProposal, or MsgExecLegacyContent anywhere) is
+	// refused, since its content cannot be judged. A proposal submitted
+	// before restricted mode began still executes in EndBlock when its
+	// voting period ends, outside the ante, which restricted mode cannot
+	// bound. The reference consumer app wires no governance, so there the
+	// allowance is inert.
 	if mfd.ConsumerKeeper.IsConsumerInDebt(ctx) || mfd.ConsumerKeeper.IsVSCStale(ctx) {
 		if isAllowedRestrictedTx(tx.GetMsgs(), mfd.voucherDenom(ctx)) {
 			return next(ctx, tx, simulate)
 		}
 		return ctx, errorsmod.Wrap(
 			consumertypes.ErrConsumerInDebt,
-			"consumer is in debt or has a stale validator set; only ibc.core messages other than a raw send packet, cosmos.gov messages and bank sends of the photon voucher are temporarily allowed",
+			"consumer is in debt or has a stale validator set; only ibc.core messages other than a raw send packet, cosmos.gov messages (a proposal only when what it carries is allowed too) and bank sends of the photon voucher are temporarily allowed",
 		)
 	}
 	return next(ctx, tx, simulate)
@@ -168,15 +183,29 @@ func (mfd MsgFilterDecorator) voucherDenom(ctx sdk.Context) string {
 // voucher, a relayer with none cannot deliver its own refill, and restricted
 // mode is exactly when deliveries matter most, so any account holding
 // vouchers on the chain may hand it some. The vouchers stay on the chain.
-// An owner exec counts as the messages it carries (ownerExecFlattened).
+// An owner exec counts as the messages it carries (ownerExecFlattened). A
+// gov v1 proposal passes only when the messages it carries pass these same
+// rules; a legacy content proposal, whose content cannot be judged, never
+// does.
 func isAllowedRestrictedTx(msgs []sdk.Msg, voucherDenom string) bool {
 	sendPacketURL := sdk.MsgTypeURL(&channeltypesv2.MsgSendPacket{})
+	legacyProposalURL := sdk.MsgTypeURL(&govv1beta1.MsgSubmitProposal{})
+	legacyContentURL := sdk.MsgTypeURL(&govv1.MsgExecLegacyContent{})
 	for _, msg := range ownerExecFlattened(msgs) {
 		url := sdk.MsgTypeURL(msg)
 		switch {
-		case url == sendPacketURL:
+		case url == sendPacketURL, url == legacyProposalURL, url == legacyContentURL:
 			return false
-		case strings.HasPrefix(url, "/ibc.core."), strings.HasPrefix(url, "/cosmos.gov."):
+		case strings.HasPrefix(url, "/ibc.core."):
+		case strings.HasPrefix(url, "/cosmos.gov."):
+			proposal, ok := msg.(*govv1.MsgSubmitProposal)
+			if !ok {
+				continue
+			}
+			carried, err := proposal.GetMsgs()
+			if err != nil || !isAllowedRestrictedTx(carried, voucherDenom) {
+				return false
+			}
 		default:
 			send, ok := msg.(*banktypes.MsgSend)
 			if !ok || voucherDenom == "" || len(send.Amount) == 0 {

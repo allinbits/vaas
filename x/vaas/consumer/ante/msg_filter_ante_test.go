@@ -18,6 +18,7 @@ import (
 	"github.com/cosmos/cosmos-sdk/x/authz"
 	banktypes "github.com/cosmos/cosmos-sdk/x/bank/types"
 	govtypes "github.com/cosmos/cosmos-sdk/x/gov/types/v1"
+	govv1beta1 "github.com/cosmos/cosmos-sdk/x/gov/types/v1beta1"
 	slashingtypes "github.com/cosmos/cosmos-sdk/x/slashing/types"
 
 	consumertypes "github.com/allinbits/vaas/x/vaas/consumer/types"
@@ -151,8 +152,7 @@ func TestMsgFilterDecoratorBlocksMixedIBCCoreAndNonIBCMessagesWhenInDebt(t *test
 	require.False(t, nextCalled)
 }
 
-// Governance messages are allowed during debt so the community can vote on
-// recovery (emergency funding, param changes) without off-chain coordination.
+// A wired governance module's own traffic, a vote here, passes during debt.
 func TestMsgFilterDecoratorAllowsGovTxWhenInDebt(t *testing.T) {
 	msg := &govtypes.MsgVote{
 		ProposalId: 1,
@@ -165,6 +165,52 @@ func TestMsgFilterDecoratorAllowsGovTxWhenInDebt(t *testing.T) {
 	)
 	require.NoError(t, err)
 	require.True(t, nextCalled)
+}
+
+// In restricted mode a gov v1 proposal is judged by the messages it carries,
+// with the same rules and the same owner-exec flattening as a direct
+// transaction; a legacy content proposal is refused outright, since its
+// content cannot be judged. Votes and deposits stay admitted.
+func TestMsgFilterDecoratorJudgesProposalsByTheirMessagesWhenInDebt(t *testing.T) {
+	gov := testAccAddress(7).String()
+	proposal := func(msgs ...sdk.Msg) sdk.Msg {
+		t.Helper()
+		p, err := govtypes.NewMsgSubmitProposal(msgs, sdk.NewCoins(), testAccAddress(1).String(), "", "title", "summary")
+		require.NoError(t, err)
+		return p
+	}
+	legacyContent, err := govv1beta1.NewMsgSubmitProposal(govv1beta1.NewTextProposal("title", "description"), sdk.NewCoins(), testAccAddress(1))
+	require.NoError(t, err)
+
+	testCases := []struct {
+		name  string
+		msg   sdk.Msg
+		admit bool
+	}{
+		{name: "a proposal recovering a client", msg: proposal(&clienttypes.MsgRecoverClient{Signer: gov}), admit: true},
+		{name: "a proposal carrying an owner exec that recovers a client", msg: proposal(ownerExecCarrying(t, &clienttypes.MsgRecoverClient{})), admit: true},
+		{name: "a proposal with no messages", msg: proposal(), admit: true},
+		{name: "a proposal updating the consumer params", msg: proposal(&consumertypes.MsgUpdateParams{Authority: gov})},
+		{name: "a proposal carrying an owner exec that updates params", msg: proposal(ownerExecCarrying(t, &consumertypes.MsgUpdateParams{}))},
+		{name: "a proposal carrying a raw send packet", msg: proposal(&channeltypesv2.MsgSendPacket{})},
+		{name: "a proposal carrying a recovery and a bank send", msg: proposal(&clienttypes.MsgRecoverClient{Signer: gov}, bankSendMsg())},
+		{name: "a proposal carrying a proposal that updates params", msg: proposal(proposal(&consumertypes.MsgUpdateParams{Authority: gov}))},
+		{name: "a proposal executing legacy content", msg: proposal(govtypes.NewMsgExecLegacyContent(nil, gov))},
+		{name: "a legacy content proposal", msg: legacyContent},
+		{name: "a deposit", msg: &govtypes.MsgDeposit{ProposalId: 1, Depositor: testAccAddress(1).String()}, admit: true},
+	}
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			nextCalled, err := runDecorator(t, mockConsumerKeeper{providerClientFound: true, inDebt: true}, []sdk.Msg{tc.msg})
+			if tc.admit {
+				require.NoError(t, err)
+				require.True(t, nextCalled)
+				return
+			}
+			require.True(t, errorsmod.IsOf(err, consumertypes.ErrConsumerInDebt))
+			require.False(t, nextCalled)
+		})
+	}
 }
 
 // Authz-wrapped IBC core txs are treated as non-IBC and rejected while the
