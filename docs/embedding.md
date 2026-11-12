@@ -465,8 +465,8 @@ vote by reading governance's active-proposals queue. The gov keeper is built
 after the provider keeper in the reference app, so the provider keeper takes
 `nil` for it and is completed with `SetGovKeeper` once governance exists. The
 argument is any `vaastypes.GovKeeper`;
-[x/vaas/provider/govadapter](../x/vaas/provider/govadapter/adapter.go) wraps the
-SDK gov keeper and is what the reference app passes.
+[x/vaas/provider/govadapter](../x/vaas/provider/govadapter/adapter.go) wraps
+atomone-sdk's gov keeper and is what the reference app passes.
 
 **Omitting it is loud and immediate.** The module's `BeginBlock` checks for the
 gov keeper before anything else and panics at the first block ("provider

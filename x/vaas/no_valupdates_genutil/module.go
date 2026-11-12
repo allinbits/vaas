@@ -1,4 +1,4 @@
-// Package genutil wraps the Cosmos SDK x/genutil module for use on a VAAS
+// Package genutil wraps atomone-sdk's x/genutil module for use on a VAAS
 // provider chain. It is identical to x/genutil except that its InitGenesis
 // returns no validator updates: the gentxs still create the validators in
 // x/staking, but the genesis validator set handed to CometBFT comes from the
