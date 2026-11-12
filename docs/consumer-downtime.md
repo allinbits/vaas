@@ -372,9 +372,9 @@ Stopping or deleting a consumer cancels its in-flight downtime state (pending sl
 epoch marks), as does a pause for a disproven, discredited or undisprovable source: once no
 epoch or challenge window remains to resolve them against, they are cancelled outright. A
 refusal pause freezes them instead. A governance rename cancels them too, and repays the
-withheld fees: the client verifies a challenge header over the chain id it tracks after the rename, so
-no header signed over the old one could disprove an accusation from before the rename, and
-an accusation that cannot be disproved does not stand. In the block in which the declared
+withheld fees: the client verifies a challenge header over the chain id it tracks after the
+rename, so no header signed over the old one could disprove an accusation from before the
+rename, and an accusation that cannot be disproved does not stand. In the block in which the declared
 client switches to another chain id, before the next BeginBlock pauses the consumer, no
 downtime evidence is accepted from it; after a rename, none is accepted whose window starts
 at or below the client's height at it. The accepted-window records and the pruned floor

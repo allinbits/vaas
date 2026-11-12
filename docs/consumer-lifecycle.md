@@ -231,8 +231,9 @@ consumer); `MsgRemoveConsumer` (gov) or the scheduled auto-stop moves it to `STO
 **The chain ID is released, not reserved forever.** `MsgCreateConsumer` and
 `MsgUpdateConsumer` reject a chain ID that is already claimed (`ChainIdInUse`), and
 deletion drops this consumer's claim (its chain ID and any it carried before a rename),
-so the same chain ID can be registered again by a new consumer. By that point nothing can name the deleted consumer's chain any more: its
-client mapping has just been removed, so an inbound packet can no longer be attributed
+so the same chain ID can be registered again by a new consumer. By that point nothing can
+name the deleted consumer's chain any more: its client mapping has just been removed, so
+an inbound packet can no longer be attributed
 to it, and evidence, downtime accusations, and fee distribution all require phase
 `LAUNCHED`. On the stop-then-remove path a full unbonding period has additionally
 elapsed, so any infraction the chain could still be punished for is already outside the
@@ -275,8 +276,9 @@ recovers the client back onto the consumer's chain ID with `MsgRecoverClient`; i
 proposal it resumes the consumer with `MsgResumeConsumer`. The resume returns an error,
 and the proposal fails, while the client still tracks another chain ID. The rename and the
 resume both refuse a client whose trusting period does not clear the downtime challenge
-horizon, as the declaration does. A rename alone does not resume a paused consumer. Governance can also recover and rename a
-launched consumer in one proposal, before any BeginBlock sees the mismatch.
+horizon, as the declaration does. A rename alone does not resume a paused consumer.
+Governance can also recover and rename a launched consumer in one proposal, before any
+BeginBlock sees the mismatch.
 
 **What a rename keeps.** The old chain ID stays on record with the client's height at the
 rename, so double-voting evidence from a block at or below it is still accepted (see
@@ -284,10 +286,10 @@ rename, so double-voting evidence from a block at or below it is still accepted 
 is deleted, against this consumer too: a rename back to a chain ID the consumer carried
 before (A to B to A) is refused, so a consumer whose client returns to an earlier chain ID
 stays paused until governance recovers the client onto its current one, or the pause
-expires. Downtime accusations pending at
-the rename are discarded, and the fees withheld under them repaid, and no window starting
-at or below that height is accepted afterwards, since the client verifies headers over the
-chain ID it tracks after the rename and none signed over the old one could disprove them (see
+expires. Downtime accusations pending at the rename are discarded, and the fees withheld
+under them repaid, and no window starting at or below that height is accepted afterwards,
+since the client verifies headers over the chain ID it tracks after the rename and none
+signed over the old one could disprove them (see
 [consumer-downtime.md](consumer-downtime.md)). Before launch, the owner renames freely
 until the client is declared; the client tracks a chain ID, so the rename comes first.
 

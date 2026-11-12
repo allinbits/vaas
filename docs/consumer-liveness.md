@@ -58,9 +58,9 @@ the unbonding period) exactly as a governance removal would do. See
 
 The sweep only considers `LAUNCHED` consumers. A paused consumer (a successful downtime
 challenge, a confirmed light-client attack, a refusal coalition at the pause threshold, or a
-declared client tracking another chain id) is deliberately silent, so the sweep skips it; its pause has its own deadline
-(`MaxPauseDuration`), and a governance resume reseeds `lastAck` so the grace budget restarts
-fresh. See [consumer-downtime.md](consumer-downtime.md).
+declared client tracking another chain id) is deliberately silent, so the sweep skips it;
+its pause has its own deadline (`MaxPauseDuration`), and a governance resume reseeds
+`lastAck` so the grace budget restarts fresh. See [consumer-downtime.md](consumer-downtime.md).
 
 **Guarantee:** a launched-but-unresponsive consumer is removed within the grace period,
 which is strictly less than the provider's unbonding period. So every validator that was in

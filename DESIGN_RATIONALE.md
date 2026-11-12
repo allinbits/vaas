@@ -33,8 +33,9 @@ work-in-progress.
    successful downtime challenge, on a confirmed light-client attack, when the
    bonded power refusing it reaches `refusal_pause_threshold`, or when its
    declared client tracks another chain id, from which governance either
-   resumes it to `LAUNCHED` or removes it to `STOPPED`; and `MsgRetireConsumer` takes a consumer that
-   never launched straight to `DELETED`, since a chain no validator ever
+   resumes it to `LAUNCHED` or removes it to `STOPPED`; and
+   `MsgRetireConsumer` takes a consumer that never launched straight to
+   `DELETED`, since a chain no validator ever
    validated needs no unbonding delay before its state can be erased. Deletion
    releases the consumer's chain id, so a registration does not tie up a chain
    id permanently. Standalone-to-consumer changeover is not
