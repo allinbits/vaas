@@ -36,11 +36,29 @@ func (k Keeper) HandleConsumerDoubleVoting(
 	evidence *tmtypes.DuplicateVoteEvidence,
 	pubkey cryptotypes.PubKey,
 ) error {
+	if err := k.checkDoubleVotingConsumerPhase(ctx, consumerId); err != nil {
+		return err
+	}
 	chainId, err := k.GetConsumerChainId(ctx, consumerId)
 	if err != nil {
 		return err
 	}
 	return k.HandleConsumerDoubleVotingOver(ctx, consumerId, chainId, evidence, pubkey)
+}
+
+// checkDoubleVotingConsumerPhase refuses double-voting evidence for a
+// consumer that is not launched. Callers run it before reading the
+// consumer's chain id, which deletion releases, so the refusal is the
+// evidence error rather than a missing-state one.
+func (k Keeper) checkDoubleVotingConsumerPhase(ctx sdk.Context, consumerId uint64) error {
+	if k.GetConsumerPhase(ctx, consumerId) != types.CONSUMER_PHASE_LAUNCHED {
+		return errorsmod.Wrapf(
+			vaastypes.ErrInvalidDoubleVotingEvidence,
+			"consumer chain %d is not launched",
+			consumerId,
+		)
+	}
+	return nil
 }
 
 // HandleConsumerDoubleVotingOver is HandleConsumerDoubleVoting with the chain
@@ -54,13 +72,8 @@ func (k Keeper) HandleConsumerDoubleVotingOver(
 	evidence *tmtypes.DuplicateVoteEvidence,
 	pubkey cryptotypes.PubKey,
 ) error {
-	// check that the evidence is for an ICS consumer chain
-	if k.GetConsumerPhase(ctx, consumerId) != types.CONSUMER_PHASE_LAUNCHED {
-		return errorsmod.Wrapf(
-			vaastypes.ErrInvalidDoubleVotingEvidence,
-			"consumer chain %d is not launched",
-			consumerId,
-		)
+	if err := k.checkDoubleVotingConsumerPhase(ctx, consumerId); err != nil {
+		return err
 	}
 
 	// Reject evidence below the per-consumer minimum height (set at launch and

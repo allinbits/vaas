@@ -158,6 +158,9 @@ func (k msgServer) SubmitConsumerMisbehaviour(goCtx context.Context, msg *types.
 func (k msgServer) SubmitConsumerDoubleVoting(goCtx context.Context, msg *types.MsgSubmitConsumerDoubleVoting) (*types.MsgSubmitConsumerDoubleVotingResponse, error) {
 	ctx := sdk.UnwrapSDKContext(goCtx)
 
+	if err := k.checkDoubleVotingConsumerPhase(ctx, msg.ConsumerId); err != nil {
+		return nil, err
+	}
 	// The consumer's chain id, or one it carried before a governance rename
 	// for a block at or below the rename (EvidenceChainIdFor): the votes are
 	// verified over it.

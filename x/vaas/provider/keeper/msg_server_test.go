@@ -309,6 +309,7 @@ func TestSubmitConsumerDoubleVotingRejectsMismatchedChainID(t *testing.T) {
 	storedChainID := "consumer-chain-id"
 	differentChainID := "different-chain-id"
 	providerKeeper.SetConsumerChainId(ctx, consumerID, storedChainID)
+	providerKeeper.SetConsumerPhase(ctx, consumerID, providertypes.CONSUMER_PHASE_LAUNCHED)
 
 	height := int64(12)
 	evidence, valSet := makeDuplicateVoteEvidenceProtoWithValSet(t, differentChainID, height)
@@ -327,6 +328,39 @@ func TestSubmitConsumerDoubleVotingRejectsMismatchedChainID(t *testing.T) {
 		require.Contains(t, err.Error(), "infraction block header chain id")
 		require.Contains(t, err.Error(), "is not consumer 0's chain id")
 	})
+}
+
+// TestSubmitConsumerDoubleVotingRefusesAConsumerThatIsNotLaunched: the phase
+// gate runs before the chain id is read, so a deleted consumer, whose chain
+// id deletion released, is refused with the double-voting evidence error
+// like a registered one, not with a missing-state error.
+func TestSubmitConsumerDoubleVotingRefusesAConsumerThatIsNotLaunched(t *testing.T) {
+	providerKeeper, ctx, ctrl, _ := testkeeper.GetProviderKeeperAndCtx(t, testkeeper.NewInMemKeeperParams(t))
+	defer ctrl.Finish()
+	msgServer := providerkeeper.NewMsgServerImpl(&providerKeeper)
+
+	chainID := "consumer-chain-id"
+	height := int64(12)
+	evidence, valSet := makeDuplicateVoteEvidenceProtoWithValSet(t, chainID, height)
+	header := makeHeader(t, chainID, height, valSet)
+
+	registered := providerKeeper.FetchAndIncrementConsumerId(ctx)
+	providerKeeper.SetConsumerPhase(ctx, registered, providertypes.CONSUMER_PHASE_REGISTERED)
+	providerKeeper.SetConsumerChainId(ctx, registered, chainID)
+	deleted := providerKeeper.FetchAndIncrementConsumerId(ctx)
+	providerKeeper.SetConsumerPhase(ctx, deleted, providertypes.CONSUMER_PHASE_DELETED)
+
+	for _, consumerID := range []uint64{registered, deleted} {
+		_, err := msgServer.SubmitConsumerDoubleVoting(ctx, &providertypes.MsgSubmitConsumerDoubleVoting{
+			ConsumerId:            consumerID,
+			Submitter:             validSubmitter(),
+			DuplicateVoteEvidence: evidence,
+			InfractionBlockHeader: header,
+		})
+		require.ErrorIs(t, err, vaastypes.ErrInvalidDoubleVotingEvidence, "consumer %d", consumerID)
+		require.ErrorContains(t, err, "is not launched")
+	}
+	require.ErrorIs(t, providerKeeper.HandleConsumerDoubleVoting(ctx, deleted, nil, nil), vaastypes.ErrInvalidDoubleVotingEvidence)
 }
 
 func TestSubmitConsumerDoubleVotingHappyPath(t *testing.T) {
