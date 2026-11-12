@@ -770,9 +770,10 @@ func (s *LivenessIntegrationTestSuite) testDeferredEquivocationCancelledByVotePa
 			"lqval2's maturity (%s) must fall inside the vote about to be submitted", entry.ExecutesAt)
 
 		s.T().Log("submitting a removal proposal against the stopped consumer: the vote passes and the removal records the verdict...")
-		s.submitProposalWithVote(
+		proposalID := s.submitProposalWithVote(
 			s.removalProposalJSON(consumerID, "Remove consumer (liveness e2e, passes after the stop)"),
 			"yes", "PROPOSAL_STATUS_PASSED")
+		s.T().Logf("removal proposal %d passed against the stopped consumer", proposalID)
 		s.Require().Truef(time.Now().After(entry.ExecutesAt),
 			"lqval2's maturity (%s) must have passed during the vote, so only the deferral kept it from executing", entry.ExecutesAt)
 
