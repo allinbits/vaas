@@ -7,11 +7,16 @@ on:
   # branch is reviewed and merged on its own checks too.
   pull_request:
 
-# A newer push to the same PR supersedes its run; a push to main never does,
-# so every merge gets its own verdict.
+# Pull request runs share one group per PR, so a newer push to the PR cancels
+# the run it supersedes. Push runs get a group per commit: a push to main never
+# waits behind, cancels or is cancelled by another, so every commit on main
+# gets its own verdict.
 concurrency:
-  group: ${{ github.workflow }}-${{ github.ref }}
+  group: ${{ github.workflow }}-${{ github.event_name == 'pull_request' && github.ref || github.sha }}
   cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+permissions:
+  contents: read
 
 jobs:
   build:
