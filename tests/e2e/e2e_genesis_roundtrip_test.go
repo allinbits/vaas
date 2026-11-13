@@ -54,10 +54,10 @@ func (s *IntegrationTestSuite) testGenesisRoundTrip() {
 		// can carry the keyring into the new data dir.
 		s.dockerExecMust(oldRes.Container.ID, []string{"chmod", "-R", "777", providerHomePath + "/keyring-test"})
 
-		// 1. Stop the provider container gracefully so the data dir is in a
+		// 1. Stop the provider node gracefully so the data dir is in a
 		//    consistent state for export.
 		s.T().Log("stopping provider container for export...")
-		s.Require().NoError(s.dkrPool.Client.StopContainer(oldRes.Container.ID, 30))
+		s.stopNode("provider", s.providerValRes, 0)
 
 		// 2. Run an ephemeral container that exports the genesis to stdout
 		//    with --for-zero-height so the resulting JSON is suitable for

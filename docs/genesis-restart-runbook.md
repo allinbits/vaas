@@ -164,6 +164,17 @@ start; the consumer safe-mode clock is preserved across the restart, so a long
 gap before VSC traffic resumes is treated exactly as it would have been without
 the restart.
 
+### Stopping a node
+
+Stop a node with `SIGTERM` and give the stop a deadline of about 60 seconds
+before the kill (a systemd unit's `TimeoutStopSec=60`, `docker stop -t 60`). A
+kill at the deadline costs a write-ahead log replay at the next start, from
+which CometBFT recovers. If stops keep running to the deadline, check that the
+supervisor delivers `SIGTERM` to the node process before suspecting the node:
+some container setups do not forward it. Keep a validator's restart short: a
+validator away for more than half a downtime window is accused by the consumer
+(see [consumer-downtime.md](consumer-downtime.md)).
+
 ## Notes
 
 - VAAS is pre-release and undeployed: there are no genesis migrations. Export

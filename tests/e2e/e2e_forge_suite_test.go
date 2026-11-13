@@ -68,7 +68,9 @@ func (s *ByzantineConsumerIntegrationTestSuite) SetupSuite() {
 		consumerRESTPort: forgeConsumerRESTPort,
 		consumerP2PPort:  forgeConsumerP2PPort,
 
-		consumerTemplateFile:        "create_consumer.json",
+		// A short consumer unbonding period (10 minutes, so a client trusting
+		// period of about 6.6), for the fork drill to wait out.
+		consumerTemplateFile:        "create_consumer_forge.json",
 		consumerTemplatePlaceholder: "CONSUMER_CHAIN_ID",
 
 		validators: 4,
@@ -87,12 +89,14 @@ func (s *ByzantineConsumerIntegrationTestSuite) SetupSuite() {
 // TestByzantineConsumerVAAS runs the lies in the one order the protocol
 // allows: downtime evidence and misbehaviour are accepted only from a
 // launched consumer, so the forged downtime (which ends in a pause and a
-// resume) comes first, the fork (which ends in a pause nothing resumes) last
-// but one, and the removal last.
+// resume) comes first, the fork (which ends in a pause only the drill's
+// recovery resumes, once the trusting period has elapsed) next, and the
+// removal last.
 func (s *ByzantineConsumerIntegrationTestSuite) TestByzantineConsumerVAAS() {
 	s.testForgedDowntimeIsChallenged()
 	s.testFabricatedDoubleSignJailsAndDefers()
 	s.testForkFreezesAndPausesWithoutPunishing()
+	s.testForkRecoveryWaitsOutTheTrustingPeriod()
 	s.testRemovalCancelsTheFabricatedPunishment()
 }
 

@@ -287,7 +287,7 @@ func (s *baseTestSuite) queryClientConsensusStateHeights(clientID string) []int6
 
 // queryConsumerClientID returns the id of the provider's IBC client tracking a
 // consumer chain.
-func (s *baseTestSuite) queryConsumerClientID(consumerID string) string {
+func (s *baseTestSuite) queryConsumerClientID(consumerID string) string { //nolint:unparam // the suites drive one consumer; the helper stays generic
 	stdout, _, err := s.dockerExec(s.providerValRes[0].Container.ID, []string{
 		providerBinary, "query", "vaasprovider", "consumer-chain", consumerID,
 		"--home", providerHomePath,

@@ -6,6 +6,7 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"fmt"
+	"regexp"
 	"strconv"
 	"strings"
 	"time"
@@ -231,4 +232,166 @@ func (s *ByzantineConsumerIntegrationTestSuite) testForkFreezesAndPausesWithoutP
 			"the resume must fail because the client is frozen: %s", failure)
 		s.Require().Equalf(phasePaused, s.queryProviderConsumerPhase(consumerID), "a refused resume must leave the consumer paused")
 	})
+}
+
+// testForkRecoveryWaitsOutTheTrustingPeriod is the fork drill: the way back
+// from the pause the fork caused, in the one order the protocol allows.
+// Governance recovers the frozen client onto a substitute the relayer
+// created and resumes the consumer in the same proposal; inside the client's
+// trusting period the resume is refused (the fork's headers could still be
+// verified against the recovered client and would pause the consumer
+// again), the proposal fails, and the recovery is rolled back with it, so
+// the client stays frozen. Once the trusting period has elapsed since the
+// pause the same proposal passes: the client is active and the relayer
+// keeps updating it with the consumer's real headers, the consumer is
+// launched and its acks flow again, and nobody was punished. The forge
+// suite's consumer carries a short unbonding period so this wait fits the
+// job (create_consumer_forge.json).
+func (s *ByzantineConsumerIntegrationTestSuite) testForkRecoveryWaitsOutTheTrustingPeriod() {
+	s.Run("a recovery and resume is refused inside the trusting period, and passes once it has elapsed", func() {
+		const consumerID = "0"
+		subject := s.queryConsumerClientID(consumerID)
+		s.Require().Equalf("Frozen", s.clientStatus(subject), "the drill starts from the fork's freeze")
+		s.Require().Equalf(phasePaused, s.queryProviderConsumerPhase(consumerID), "the drill starts from the fork's pause")
+
+		type state struct {
+			jailed     bool
+			tokens     string
+			tombstoned bool
+		}
+		before := map[int]state{}
+		for i := range s.validatorCount() {
+			v := s.validator(i)
+			jailed, tokens := s.stakingValidatorState(v.valoper)
+			before[i] = state{jailed, tokens, s.signingInfoTombstoned(v.consAddr)}
+		}
+
+		substitute := s.newProviderClientOfTheConsumer()
+		s.T().Logf("recovering the frozen client %s onto the substitute %s", subject, substitute)
+		proposal := s.recoverAndResumeProposalJSON(consumerID, subject, substitute)
+
+		proposalID := s.submitProposalWithVote(proposal, "yes", "PROPOSAL_STATUS_FAILED")
+		failure := s.dumpProposal(proposalID)
+		s.Require().Containsf(failure, "trusting period", "the resume must be refused inside the trusting period: %s", failure)
+		s.Require().Equalf("Frozen", s.clientStatus(subject), "a failed proposal rolls the recovery back with it")
+		s.Require().Equalf(phasePaused, s.queryProviderConsumerPhase(consumerID), "a refused resume leaves the consumer paused")
+
+		resumableAt := resumableAtFromFailure(failure)
+		s.Require().Falsef(resumableAt.IsZero(), "the refusal must say when the resume is allowed: %s", failure)
+		s.T().Logf("waiting until the fork's headers can no longer be verified, at %s (%s from now)...",
+			resumableAt.Format(time.RFC3339), time.Until(resumableAt).Round(time.Second))
+		// The chains run on the host's clock; a margin covers the block the
+		// proposal executes in.
+		s.Require().Eventuallyf(func() bool { return time.Now().After(resumableAt.Add(15 * time.Second)) },
+			20*time.Minute, 5*time.Second, "the trusting period never elapsed")
+
+		// The running relayer serves the paths it started with, so the first
+		// substitute has gone unupdated through the wait and expired with
+		// its own trusting period; the recovery takes a fresh one, created
+		// moments before the proposal, as an operator's would be.
+		substitute = s.newProviderClientOfTheConsumer()
+		s.T().Logf("recovering the frozen client %s onto the fresh substitute %s", subject, substitute)
+		proposal = s.recoverAndResumeProposalJSON(consumerID, subject, substitute)
+		s.submitProposalWithVote(proposal, "yes", "PROPOSAL_STATUS_PASSED")
+		s.Require().Equalf("Active", s.clientStatus(subject), "the recovered client must be active")
+		s.Require().Equalf(phaseLaunched, s.queryProviderConsumerPhase(consumerID), "the consumer must be launched again")
+
+		// The recovered client verifies the consumer's real headers: the
+		// relayer keeps moving it.
+		recoveredAt := s.clientLatestHeight(subject)
+		s.Require().Eventuallyf(func() bool { return s.clientLatestHeight(subject) > recoveredAt },
+			3*time.Minute, 3*time.Second, "the recovered client %s was never updated past height %d", subject, recoveredAt)
+		// And the consumer is served again: its acks flow.
+		s.waitForConsumerSync(consumerID)
+
+		for i, was := range before {
+			v := s.validator(i)
+			jailed, tokens := s.stakingValidatorState(v.valoper)
+			s.Require().Equalf(was.jailed, jailed, "the drill changed val%d's jail", i)
+			s.Require().Equalf(was.tokens, tokens, "the drill changed val%d's stake", i)
+			s.Require().Equalf(was.tombstoned, s.signingInfoTombstoned(v.consAddr), "the drill changed val%d's tombstone", i)
+		}
+	})
+}
+
+// newProviderClientOfTheConsumer has the relayer create a fresh client pair
+// between the chains and returns the provider-side one: a substitute for a
+// client recovery, tracking the consumer from now.
+func (s *ByzantineConsumerIntegrationTestSuite) newProviderClientOfTheConsumer() string {
+	known := map[int]bool{}
+	for _, p := range s.tsRelayerDumpPaths() {
+		known[p.ID] = true
+	}
+	s.tsRelayerAddPath(IBCv2)
+	for _, p := range s.tsRelayerDumpPaths() {
+		if known[p.ID] {
+			continue
+		}
+		switch s.cfg.providerChainID {
+		case p.ChainIdA:
+			return p.ClientA
+		case p.ChainIdB:
+			return p.ClientB
+		}
+	}
+	s.Require().Fail("the relayer created no new path between the chains")
+	return ""
+}
+
+// recoverAndResumeProposalJSON builds the proposal an operator submits to
+// bring a consumer back from a fork: ibc-go's MsgRecoverClient onto the
+// substitute, then MsgResumeConsumer, in one proposal so neither lands
+// without the other.
+func (s *ByzantineConsumerIntegrationTestSuite) recoverAndResumeProposalJSON(consumerID, subject, substitute string) string {
+	authority := s.queryGovAuthority()
+	return fmt.Sprintf(`{
+  "messages": [{
+    "@type": "/ibc.core.client.v1.MsgRecoverClient",
+    "subject_client_id": %q,
+    "substitute_client_id": %q,
+    "signer": %q
+  }, {
+    "@type": "/vaas.provider.v1.MsgResumeConsumer",
+    "authority": %q,
+    "consumer_id": %q
+  }],
+  "metadata": "ipfs://test",
+  "deposit": "10000000%s",
+  "title": "Recover the forked consumer's client and resume it",
+  "summary": "fork drill"
+}`, subject, substitute, authority, authority, consumerID, bondDenom)
+}
+
+// resumableAtFromFailure reads, from a failed resume's reason, the time the
+// provider said the resume is allowed at ("resume at or after <RFC3339>").
+func resumableAtFromFailure(failure string) time.Time {
+	m := regexp.MustCompile(`resume at or after (\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}Z)`).FindStringSubmatch(failure)
+	if len(m) != 2 {
+		return time.Time{}
+	}
+	t, err := time.Parse(time.RFC3339, m[1])
+	if err != nil {
+		return time.Time{}
+	}
+	return t
+}
+
+// clientLatestHeight returns the latest height of a provider-side IBC
+// client's state.
+func (s *ByzantineConsumerIntegrationTestSuite) clientLatestHeight(clientID string) int64 {
+	stdout, stderr, err := s.dockerExec(s.providerValRes[0].Container.ID, []string{
+		providerBinary, "query", "ibc", "client", "state", clientID, "--home", providerHomePath, "-o", "json",
+	})
+	s.Require().NoErrorf(err, "failed to query client %s: %s", clientID, stderr.String())
+	var res struct {
+		ClientState struct {
+			LatestHeight struct {
+				RevisionHeight string `json:"revision_height"`
+			} `json:"latest_height"`
+		} `json:"client_state"`
+	}
+	s.Require().NoErrorf(json.Unmarshal(stdout.Bytes(), &res), "failed to decode client %s: %s", clientID, stdout.String())
+	height, err := strconv.ParseInt(res.ClientState.LatestHeight.RevisionHeight, 10, 64)
+	s.Require().NoErrorf(err, "client %s latest height: %q", clientID, res.ClientState.LatestHeight.RevisionHeight)
+	return height
 }
