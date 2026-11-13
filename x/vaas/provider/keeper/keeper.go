@@ -62,18 +62,25 @@ type Keeper struct {
 	Schema collections.Schema
 
 	// State collections
-	Params                        collections.Item[types.Params]
-	ValidatorSetUpdateId          collections.Sequence
-	ConsumerId                    collections.Sequence
-	ConsumerClients               *collections.IndexedMap[uint64, string, ConsumerClientIndexes]
-	ConsumerGenesis               collections.Map[uint64, vaastypes.ConsumerGenesisState]
-	InitChainHeight               collections.Map[uint64, uint64]
-	PendingVSCPackets             collections.Map[uint64, types.ValidatorSetChangePackets]
-	ConsumerChainId               collections.Map[uint64, string]
-	ConsumerOwnerAddress          collections.Map[uint64, string]
-	ConsumerMetadata              collections.Map[uint64, types.ConsumerMetadata]
-	ConsumerInitParams            collections.Map[uint64, types.ConsumerInitializationParameters]
-	ConsumerPhase                 collections.Map[uint64, uint32]
+	Params               collections.Item[types.Params]
+	ValidatorSetUpdateId collections.Sequence
+	ConsumerId           collections.Sequence
+	ConsumerClients      *collections.IndexedMap[uint64, string, ConsumerClientIndexes]
+	ConsumerGenesis      collections.Map[uint64, vaastypes.ConsumerGenesisState]
+	InitChainHeight      collections.Map[uint64, uint64]
+	PendingVSCPackets    collections.Map[uint64, types.ValidatorSetChangePackets]
+	ConsumerChainId      collections.Map[uint64, string]
+	ConsumerOwnerAddress collections.Map[uint64, string]
+	ConsumerMetadata     collections.Map[uint64, types.ConsumerMetadata]
+	ConsumerInitParams   collections.Map[uint64, types.ConsumerInitializationParameters]
+	ConsumerPhase        collections.Map[uint64, uint32]
+	// LiveConsumerIds is the set of consumer ids whose phase is not DELETED:
+	// the ids the per-block sweeps, the epoch paths and the key-assignment
+	// collision checks walk, so a deleted consumer costs them nothing.
+	// SetConsumerPhase maintains it, which covers creation, deletion and the
+	// genesis import alike; it is derived from ConsumerPhase and not exported
+	// (ExportGenesis walks every id ever created, deleted ones included).
+	LiveConsumerIds               collections.KeySet[uint64]
 	ConsumerDebt                  collections.Map[uint64, bool]
 	ConsumerFeesPerBlockOverride  collections.Map[uint64, math.Int]
 	EquivocationEvidenceMinHeight collections.Map[uint64, uint64]
@@ -309,6 +316,7 @@ func NewKeeper(
 		ConsumerMetadata:                 collections.NewMap(sb, types.ConsumerIdToMetadataPrefix, "consumer_metadata", collections.Uint64Key, codec.CollValue[types.ConsumerMetadata](cdc)),
 		ConsumerInitParams:               collections.NewMap(sb, types.ConsumerIdToInitializationParamsPrefix, "consumer_init_params", collections.Uint64Key, codec.CollValue[types.ConsumerInitializationParameters](cdc)),
 		ConsumerPhase:                    collections.NewMap(sb, types.ConsumerIdToPhasePrefix, "consumer_phase", collections.Uint64Key, collections.Uint32Value),
+		LiveConsumerIds:                  collections.NewKeySet(sb, types.LiveConsumerIdsPrefix, "live_consumer_ids", collections.Uint64Key),
 		ConsumerDebt:                     collections.NewMap(sb, types.ConsumerIdToDebtPrefix, "consumer_debt", collections.Uint64Key, collections.BoolValue),
 		ConsumerFeesPerBlockOverride:     collections.NewMap(sb, types.ConsumerIdToFeesPerBlockOverridePrefix, "consumer_fees_per_block_override", collections.Uint64Key, sdk.IntValue),
 		EquivocationEvidenceMinHeight:    collections.NewMap(sb, types.EquivocationEvidenceMinHeightPrefix, "equivocation_evidence_min_height", collections.Uint64Key, collections.Uint64Value),
@@ -613,7 +621,9 @@ func (k Keeper) BondDenom(ctx sdk.Context) (string, error) {
 	return k.stakingKeeper.BondDenom(ctx)
 }
 
-// GetAllConsumerIds returns all the existing consumer ids
+// GetAllConsumerIds returns every consumer id ever created, deleted ones
+// included, in increasing order. Only ExportGenesis walks it, so deleted
+// consumers round-trip; every other walk uses GetLiveConsumerIds.
 func (k Keeper) GetAllConsumerIds(ctx context.Context) []uint64 {
 	latestConsumerId, found := k.GetConsumerId(ctx)
 	if !found {
@@ -628,10 +638,29 @@ func (k Keeper) GetAllConsumerIds(ctx context.Context) []uint64 {
 	return consumerIds
 }
 
+// GetLiveConsumerIds returns the ids of every consumer that is not deleted,
+// in increasing order. That is every consumer whose per-validator state may
+// still be live: key assignments, the stored validator set, and the downtime
+// and fee bookkeeping all survive a pause (which can be resumed) and a stop
+// (until removal completes), and only DeleteConsumerChain clears them.
+func (k Keeper) GetLiveConsumerIds(ctx context.Context) []uint64 {
+	iter, err := k.LiveConsumerIds.Iterate(ctx, nil)
+	if err != nil {
+		panic(fmt.Errorf("failed to iterate live consumer ids: %w", err))
+	}
+	defer iter.Close()
+
+	consumerIds, err := iter.Keys()
+	if err != nil {
+		panic(fmt.Errorf("failed to read live consumer ids: %w", err))
+	}
+	return consumerIds
+}
+
 // GetAllActiveConsumerIds returns all the consumer ids of chains that are registered, initialized, or launched
 func (k Keeper) GetAllActiveConsumerIds(ctx context.Context) []uint64 {
 	consumerIds := []uint64{}
-	for _, consumerId := range k.GetAllConsumerIds(ctx) {
+	for _, consumerId := range k.GetLiveConsumerIds(ctx) {
 		if !k.IsConsumerActive(ctx, consumerId) {
 			continue
 		}
@@ -643,7 +672,7 @@ func (k Keeper) GetAllActiveConsumerIds(ctx context.Context) []uint64 {
 // GetAllLaunchedConsumerIds returns all consumer ids in the launched phase.
 func (k Keeper) GetAllLaunchedConsumerIds(ctx context.Context) []uint64 {
 	consumerIds := []uint64{}
-	for _, consumerId := range k.GetAllConsumerIds(ctx) {
+	for _, consumerId := range k.GetLiveConsumerIds(ctx) {
 		if k.GetConsumerPhase(ctx, consumerId) != types.CONSUMER_PHASE_LAUNCHED {
 			continue
 		}
@@ -1340,8 +1369,10 @@ func (k Keeper) ConsumeConsumerAddrsToPrune(
 			k.Logger(ctx).Error("bytesToTime failed", "error", err.Error())
 			continue
 		}
+		// The key orders the consumer's entries by prune time (see
+		// timeToBytes), so the first entry past ts ends the due ones.
 		if pruneTs.After(ts) {
-			continue
+			break
 		}
 
 		keysToDel = append(keysToDel, kv.Key)

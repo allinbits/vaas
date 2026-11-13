@@ -259,7 +259,7 @@ func (k Keeper) ValidatorConsensusKeyInUse(ctx sdk.Context, valAddr sdk.ValAddre
 // DeleteConsumerChain clears them) and can be resumed to LAUNCHED, so a
 // collision created while it is paused would surface the moment it resumes.
 func (k Keeper) IsConsumerConsAddrInUse(ctx sdk.Context, consAddr sdk.ConsAddress) bool {
-	for _, consumerId := range k.nonDeletedConsumerIds(ctx) {
+	for _, consumerId := range k.GetLiveConsumerIds(ctx) {
 		if _, exist := k.GetValidatorByConsumerAddr(ctx, consumerId, types.NewConsumerConsAddress(consAddr)); exist {
 			return true
 		}
@@ -277,30 +277,11 @@ func (k Keeper) IsConsumerConsAddrInUse(ctx sdk.Context, consAddr sdk.ConsAddres
 // it holds itself, current or superseded, is not refused.
 func (k Keeper) IsConsumerConsAddrHeldByAnother(ctx sdk.Context, consAddr sdk.ConsAddress, providerAddr types.ProviderConsAddress) bool {
 	own := providerAddr.ToSdkConsAddr()
-	for _, consumerId := range k.nonDeletedConsumerIds(ctx) {
+	for _, consumerId := range k.GetLiveConsumerIds(ctx) {
 		holder, exist := k.GetValidatorByConsumerAddr(ctx, consumerId, types.NewConsumerConsAddress(consAddr))
 		if exist && !holder.ToSdkConsAddr().Equals(own) {
 			return true
 		}
 	}
 	return false
-}
-
-// nonDeletedConsumerIds returns every consumer whose per-validator state may
-// still be live, i.e. every consumer that has not been deleted. That state
-// outlives the launched phase: key assignments, the stored validator set, and
-// the downtime and fee bookkeeping all survive a pause (which can be resumed)
-// and a stop (until removal completes), and only DeleteConsumerChain clears
-// them. Used by the collision guard above and by
-// MigrateStateOnConsPubKeyRotation.
-func (k Keeper) nonDeletedConsumerIds(ctx sdk.Context) []uint64 {
-	consumerIds := []uint64{}
-	for _, consumerId := range k.GetAllConsumerIds(ctx) {
-		switch k.GetConsumerPhase(ctx, consumerId) {
-		case types.CONSUMER_PHASE_UNSPECIFIED, types.CONSUMER_PHASE_DELETED:
-			continue
-		}
-		consumerIds = append(consumerIds, consumerId)
-	}
-	return consumerIds
 }

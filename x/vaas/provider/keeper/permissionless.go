@@ -176,10 +176,22 @@ func (k Keeper) GetConsumerPhase(ctx context.Context, consumerId uint64) types.C
 	return types.ConsumerPhase(phase)
 }
 
-// SetConsumerPhase sets the phase associated with this consumer id
+// SetConsumerPhase sets the phase associated with this consumer id and keeps
+// LiveConsumerIds in step: the consumer is in the set while its phase is a
+// live one and leaves it when the phase becomes DELETED.
 func (k Keeper) SetConsumerPhase(ctx context.Context, consumerId uint64, phase types.ConsumerPhase) {
 	if err := k.ConsumerPhase.Set(ctx, consumerId, uint32(phase)); err != nil {
 		panic(fmt.Errorf("failed to set consumer phase for consumer id (%d): %w", consumerId, err))
+	}
+	var err error
+	switch phase {
+	case types.CONSUMER_PHASE_UNSPECIFIED, types.CONSUMER_PHASE_DELETED:
+		err = k.LiveConsumerIds.Remove(ctx, consumerId)
+	default:
+		err = k.LiveConsumerIds.Set(ctx, consumerId)
+	}
+	if err != nil {
+		panic(fmt.Errorf("failed to update the live consumer ids for consumer id (%d): %w", consumerId, err))
 	}
 }
 
