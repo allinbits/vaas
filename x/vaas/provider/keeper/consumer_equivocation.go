@@ -271,9 +271,11 @@ func (k Keeper) VerifyDoubleVotingEvidence(
 // forked and no validator's stake: the consumer's IBC client is frozen and
 // the consumer is paused (see containLightClientAttack). A frozen client
 // accepts no packet proven against either branch of the fork, ICS-20 escrow
-// and vouchers included; a paused consumer gets no VSC, both evidence paths
-// close, its pending downtime accusations are cancelled and the fees
-// withheld on their account repaid, and an auto-stop at MaxPauseDuration
+// and vouchers included; a paused consumer gets no VSC, its downtime and
+// misbehaviour paths close (double-voting evidence stays acceptable, see
+// HandleConsumerDoubleVoting), its pending downtime accusations are cancelled
+// and the fees withheld on their account repaid, and an auto-stop at
+// MaxPauseDuration
 // guarantees governance silence converges to STOPPED. This message does both
 // in one transaction, through the client keeper's UpdateClient, and adds the
 // attribution. It is not the only way in: a relayer or watcher reports the
@@ -343,9 +345,10 @@ func (k Keeper) HandleConsumerMisbehaviour(ctx sdk.Context, consumerId uint64, m
 // reported the fork to 02-client first) or expired cannot be updated and
 // needs nothing from here; the resume path insists on an active client
 // either way. Then the pause does the rest. A paused consumer receives no
-// further VSC packets (QueueVSCPackets serves only launched consumers), both
-// evidence paths reject it (HandleConsumerDoubleVoting and this handler gate
-// on launched, closing the pipeline a malicious binary would keep feeding),
+// further VSC packets (QueueVSCPackets serves only launched consumers), its
+// downtime packets and this handler reject it (both gate on launched, closing
+// the pipeline a malicious binary would keep feeding; double-voting evidence
+// is self-contained and stays acceptable, see HandleConsumerDoubleVoting),
 // its pending downtime accusations are cancelled and the fees withheld on
 // their account repaid (a forked chain's accusations are no more trustworthy
 // than its headers; see PauseConsumerChain), and an auto-stop at
