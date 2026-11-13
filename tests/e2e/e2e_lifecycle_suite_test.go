@@ -24,30 +24,37 @@ package e2e
 //     window: an epoch holds four windows, which is what makes the
 //     withheld-fee record deterministic (see
 //     testWithheldFeeRecordAcrossEpoch);
-//   - a 90s downtime challenge window and evidence max age, well above the
+//   - a 120s downtime challenge window and evidence max age, well above the
 //     window-plus-relay lag an accusation's anchored age reaches here. The
 //     lapse scenario also needs the boundary after the departure, 60 blocks
-//     after the last one, to land before the record expires, 90s after that
-//     last boundary: blocks must average under 1.5s;
+//     after the last one, to land before the record expires, 120s after that
+//     last boundary: blocks must average under 2s over that epoch, which
+//     leaves a loaded runner's 1.5s a 30s margin;
 //   - a 45s equivocation execution delay and a 150s max pause duration: the
 //     thaw scenario's pause spans the end of the delay, the auto-stop
 //     scenario waits the whole duration out, and the punishment queued
 //     during that pause executes 45s after the stop, before the
-//     stopped-consumer evidence scenario submits its own;
-//   - a 300s provider unbonding: it bounds the STOPPED -> DELETED wait, which
-//     holds the stopped-consumer evidence scenario (about two minutes from
-//     the stop) with room to spare, keeps the relayer-derived client trusting
-//     periods (two thirds of it, 200s) above the challenge horizon (180s) and
-//     above the longest pause a launched consumer sees here, outlasts the
-//     lapse scenario's wait for the departing validator's last accusation
-//     (under three minutes from its undelegation), so its unbonding entry is
-//     still there to be read slashed, and with a 0.9 grace fraction gives a
-//     270s liveness grace that covers the setup's first VSC sync with an
-//     epoch to spare;
+//     stopped-consumer evidence scenario submits its own. The duration also
+//     exceeds the challenge window, so the record the auto-stop's pause
+//     froze, due one window after a boundary the pause followed, has lapsed
+//     when the stop measures it again;
+//   - a 400s provider unbonding, matched by the consumer's: the relayer
+//     gives each client two thirds of the tracked chain's unbonding as its
+//     trusting period (about 265s), which the declaration requires above
+//     the challenge horizon (evidence max age plus challenge window, 240s)
+//     and which also stays above the longest pause a launched consumer sees
+//     here. The provider's bounds the STOPPED -> DELETED wait, which holds
+//     the stopped-consumer evidence scenario (about two minutes from the
+//     stop) with room to spare, outlasts the lapse scenario's wait for the
+//     departing validator's last accusation (under four minutes from its
+//     undelegation), so its unbonding entry is still there to be read
+//     slashed, and with a 0.9 grace fraction gives a 360s liveness grace
+//     that covers the setup's first VSC sync with epochs to spare;
 //   - the consumer registered from testdata/create_consumer_lifecycle.json
-//     carries the same 300s unbonding (it may not exceed the provider's and
+//     carries the same 400s unbonding (it may not exceed the provider's and
 //     must exceed the challenge horizon) and a 120s safe-mode threshold,
-//     above an epoch, so a healthy consumer never sits in safe mode.
+//     above an epoch and below the liveness grace, so a healthy consumer
+//     never sits in safe mode.
 //
 // Test ordering within TestLifecycleVAAS (each scenario leaves the state the
 // next one starts from):
@@ -124,16 +131,20 @@ const (
 	// lifecycleDowntimeChallengeWindow is how long an accepted downtime
 	// accusation stays pending, and the escrow behind it claimable; also the
 	// evidence max age.
-	lifecycleDowntimeChallengeWindow = 90 * time.Second
+	lifecycleDowntimeChallengeWindow = 120 * time.Second
 	// lifecycleEquivocationExecutionDelay is the delay between a verified
 	// equivocation's queue and its execution.
 	lifecycleEquivocationExecutionDelay = 45 * time.Second
 	// lifecycleMaxPauseDuration is how long a consumer may stay PAUSED
-	// before the auto-stop; it exceeds the thaw scenario's pause.
+	// before the auto-stop; it exceeds the thaw scenario's pause and the
+	// challenge window.
 	lifecycleMaxPauseDuration = 150 * time.Second
 	// lifecycleProviderUnbonding is the provider staking unbonding time,
-	// which is also the STOPPED -> DELETED delay.
-	lifecycleProviderUnbonding = 300 * time.Second
+	// which is also the STOPPED -> DELETED delay; the consumers registered
+	// here carry the same unbonding, and the trusting periods the relayer
+	// derives from it must exceed the challenge horizon (see the file
+	// comment).
+	lifecycleProviderUnbonding = 400 * time.Second
 	// lifecycleGovVotingPeriod is the provider gov voting period.
 	lifecycleGovVotingPeriod = 30 * time.Second
 )
@@ -224,7 +235,7 @@ func (s *LifecycleIntegrationTestSuite) SetupSuite() {
 			// must not exceed the challenge window (InfractionParameters
 			// .Validate), and their sum, the challenge horizon, must stay
 			// below the trusting period of the consumer client (two thirds
-			// of the consumer's 300s unbonding).
+			// of the consumer's 400s unbonding).
 			params["infraction_parameters"] = map[string]any{
 				"double_sign": map[string]any{
 					"slash_fraction": "0.050000000000000000",

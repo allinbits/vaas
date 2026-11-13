@@ -107,8 +107,8 @@ queries), not the wall clock. The parameters and their rationale are in that
 file's header comment; the scenarios are in
 [e2e_lifecycle_test.go](e2e_lifecycle_test.go) and run in order in
 `TestLifecycleVAAS`. Its consumer is registered via
-`testdata/create_consumer_lifecycle.json` (300s unbonding, 120s safe-mode
-threshold). It takes about 20 minutes.
+`testdata/create_consumer_lifecycle.json` (400s unbonding, 120s safe-mode
+threshold). It takes about 30 minutes.
 
 ## File layout
 

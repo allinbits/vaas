@@ -264,7 +264,8 @@ func (s *LifecycleIntegrationTestSuite) testWithheldFeeRecordAcrossEpoch() {
 
 		s.T().Log("waiting for the first accusation to mature and its slash to execute...")
 		s.Require().Eventuallyf(func() bool {
-			return s.mustValidatorTokens(s.val2.valoper) < tokensBefore
+			tokens, err := s.tryValidatorTokens(s.val2.valoper)
+			return err == nil && tokens < tokensBefore
 		}, time.Until(firstMaturity)+2*time.Minute, 2*time.Second,
 			"the silent validator's stake was never reduced by the matured downtime slash")
 		s.Require().Eventuallyf(func() bool {
@@ -356,7 +357,8 @@ func (s *LifecycleIntegrationTestSuite) testWithheldFeeRecordLapsesWhileLaunched
 		s.Require().Truef(lastBoundary < leaveHeight && leaveHeight < lastBoundary+lifecycleBlocksPerEpoch,
 			"the undelegation must land inside the epoch after boundary %d, got height %d", lastBoundary, leaveHeight)
 		s.Require().Eventuallyf(func() bool {
-			return s.providerValidatorStatus(s.val2.valoper) == stakingtypes.Unbonding
+			v, err := s.tryProviderValidator(s.val2.valoper)
+			return err == nil && v.Status == stakingtypes.Unbonding
 		}, time.Minute, 2*time.Second, "the silent validator did not leave the bonded set")
 		jailed, _ := s.stakingValidatorState(s.val2.valoper)
 		s.Require().False(jailed, "leaving by undelegation jails nothing")
@@ -489,8 +491,10 @@ func (s *LifecycleIntegrationTestSuite) testMaxPauseAutoStop() {
 
 		if wait := time.Until(autoStopAt) - 5*time.Second; wait > 0 {
 			s.T().Logf("holding %s: the consumer must stay paused until the deadline...", wait)
+			// A failed query reads back "", which is no phase change.
 			s.Require().Never(func() bool {
-				return s.queryProviderConsumerPhase(consumerID) != phasePaused
+				phase := s.queryProviderConsumerPhase(consumerID)
+				return phase != "" && phase != phasePaused
 			}, wait, 3*time.Second, "the consumer left the pause before max_pause_duration elapsed")
 		}
 
@@ -565,8 +569,12 @@ func (s *LifecycleIntegrationTestSuite) testEquivocationEvidenceOnTheStoppedCons
 		paused := s.pauseEquivocator
 		s.T().Logf("waiting for the punishment queued during the pause to execute at %s...", paused.queued.ExecutesAt)
 		s.Require().Eventuallyf(func() bool {
-			_, pending := pendingEquivocationFor(s.mustPendingEquivocations(consumerID), paused.consAddr)
-			return !pending
+			pending, err := s.queryPendingEquivocations(consumerID)
+			if err != nil {
+				return false
+			}
+			_, found := pendingEquivocationFor(pending, paused.consAddr)
+			return !found
 		}, time.Until(paused.queued.ExecutesAt)+2*time.Minute, 2*time.Second,
 			"the punishment queued during the pause never executed after the stop")
 		latest, _ := s.providerLatestBlock()
@@ -1275,18 +1283,33 @@ func (s *baseTestSuite) mustTxEventAttribute(broadcastOut []byte, eventType, key
 	return value
 }
 
-// providerValidatorStatus returns the bond status x/staking holds the
-// validator in.
-func (s *baseTestSuite) providerValidatorStatus(valoper string) stakingtypes.BondStatus {
+// tryProviderValidator returns the validator's x/staking record on the
+// provider, whatever its bond status. It returns an error instead of failing
+// the test so it can be called from inside an Eventually condition.
+func (s *baseTestSuite) tryProviderValidator(valoper string) (stakingtypes.Validator, error) {
 	vals, err := s.queryProviderValidators()
-	s.Require().NoError(err, "failed to query provider validators")
+	if err != nil {
+		return stakingtypes.Validator{}, fmt.Errorf("querying provider validators: %w", err)
+	}
 	for _, v := range vals {
 		if v.OperatorAddress == valoper {
-			return v.Status
+			return v, nil
 		}
 	}
-	s.Require().Failf("validator not found", "no provider validator with operator address %s", valoper)
-	return stakingtypes.Unspecified
+	return stakingtypes.Validator{}, fmt.Errorf("no provider validator with operator address %s", valoper)
+}
+
+// tryValidatorTokens is mustValidatorTokens for Eventually conditions: it
+// returns an error instead of failing the test.
+func (s *baseTestSuite) tryValidatorTokens(valoper string) (int64, error) {
+	v, err := s.tryProviderValidator(valoper)
+	if err != nil {
+		return 0, err
+	}
+	if !v.Tokens.IsInt64() {
+		return 0, fmt.Errorf("validator %s holds %s tokens, more than an int64", valoper, v.Tokens)
+	}
+	return v.Tokens.Int64(), nil
 }
 
 // mustCountConsumerNetValidators returns the size of the consumer's current
