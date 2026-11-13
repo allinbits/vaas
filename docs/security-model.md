@@ -59,7 +59,16 @@ account acting for the owner on the reference consumer), pins the provider
 client once, under the symmetric validations (existing, tendermint, chain-id
 match against the seeded value, active, counterparty-linked). Every later
 packet must arrive over the pinned client or it is rejected before any state
-changes. Until the pin lands, a message filter keeps the chain in bootstrap:
+changes. The seeded chain id follows the pinned client: when that client,
+still active, tracks another chain id, the next packet (or owner exec) re-pins
+the stored id to it and emits `vaas_provider_chain_id_followed`, while a
+packet over any other client tracking another chain id stays refused. A
+tendermint client's chain id changes only through ibc-go's verified client
+upgrade (`MsgUpgradeClient`, which adopts the chain id the provider committed
+under its upgrade path) or a recovery by the chain's authority, and an owner
+exec may not leave the pinned client on another chain id, so a provider
+chain-id change needs nothing from the owner and the owner cannot bring one
+about. Until the pin lands, a message filter keeps the chain in bootstrap:
 only IBC messages, governance, and the pin message itself are accepted.
 
 Both bindings rest on the owner's signature rather than on anything inferred

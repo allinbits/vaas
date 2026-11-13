@@ -11,6 +11,7 @@ import (
 	abci "github.com/cometbft/cometbft/abci/types"
 
 	clientv2types "github.com/cosmos/ibc-go/v10/modules/core/02-client/v2/types"
+	ibcexported "github.com/cosmos/ibc-go/v10/modules/core/exported"
 	ibctmtypes "github.com/cosmos/ibc-go/v10/modules/light-clients/07-tendermint"
 
 	errorsmod "cosmossdk.io/errors"
@@ -18,6 +19,7 @@ import (
 
 	cryptocodec "github.com/cosmos/cosmos-sdk/crypto/codec"
 	"github.com/cosmos/cosmos-sdk/crypto/keys/ed25519"
+	sdk "github.com/cosmos/cosmos-sdk/types"
 
 	testcrypto "github.com/allinbits/vaas/testutil/crypto"
 	testkeeper "github.com/allinbits/vaas/testutil/keeper"
@@ -826,12 +828,16 @@ func TestOnRecvVSCPacketV2PinsProviderChainIdOnFirstPacket(t *testing.T) {
 	require.Equal(t, "provider-chain", pinned)
 }
 
-// TestOnRecvVSCPacketV2RejectsDifferentChainId verifies that once a provider
-// chain id is pinned, a VSC packet delivered over a client tracking a
-// different chain id is rejected wholesale: the valset, ProviderClientID and
-// LastVSCRecvTime are all left exactly as they were, and nothing is staged.
-// Without this check, anyone able to stand up their own IBC v2 client and
-// get it routed to the consumer could impersonate the provider.
+// TestOnRecvVSCPacketV2RejectsDifferentChainId verifies that a VSC packet
+// delivered over a client other than the pinned provider client, tracking a
+// chain id other than the stored one, is rejected wholesale: the stored chain
+// id is not followed (only the pinned client's is, see
+// TestOnRecvVSCPacketV2FollowsPinnedClientChainId), and the valset,
+// ProviderClientID and LastVSCRecvTime are all left exactly as they were,
+// with nothing staged. Without this check, anyone able to stand up their own
+// IBC v2 client and get it routed to the consumer could impersonate the
+// provider. The rogue client's status is never consulted: the mock fails the
+// test on an unexpected GetClientStatus call.
 func TestOnRecvVSCPacketV2RejectsDifferentChainId(t *testing.T) {
 	k, ctx, ctrl, mocks := testkeeper.GetConsumerKeeperAndCtx(t, testkeeper.NewInMemKeeperParams(t))
 	defer ctrl.Finish()
@@ -873,7 +879,13 @@ func TestOnRecvVSCPacketV2RejectsDifferentChainId(t *testing.T) {
 	pd2.ConsumerInDebt = true
 
 	err = k.OnRecvVSCPacketV2(laterCtx, rogueClientID, pd2)
-	require.Error(t, err, "a packet delivered over a client tracking a different chain id must be rejected")
+	require.Error(t, err, "a packet delivered over another client tracking a different chain id must be rejected")
+	require.ErrorIs(t, err, consumertypes.ErrInvalidProviderClient)
+
+	storedChainID, found := k.GetProviderChainId(ctx)
+	require.True(t, found)
+	require.Equal(t, "provider-chain", storedChainID, "the stored chain id must not follow a client other than the pinned one")
+	require.Empty(t, providerChainIdFollowedEvents(laterCtx), "a rejected packet must not emit a follow event")
 
 	pending, ok := k.GetPendingChanges(ctx)
 	require.True(t, ok)
@@ -897,6 +909,92 @@ func TestOnRecvVSCPacketV2RejectsDifferentChainId(t *testing.T) {
 	pinned, found := k.GetProviderChainId(ctx)
 	require.True(t, found)
 	require.Equal(t, "provider-chain", pinned, "the pin itself must not change")
+}
+
+// providerChainIdFollowedEvents returns the EventTypeProviderChainIdFollowed
+// events emitted on ctx so far.
+func providerChainIdFollowedEvents(ctx sdk.Context) []sdk.Event {
+	var out []sdk.Event
+	for _, ev := range ctx.EventManager().Events() {
+		if ev.Type == types.EventTypeProviderChainIdFollowed {
+			out = append(out, ev)
+		}
+	}
+	return out
+}
+
+// TestOnRecvVSCPacketV2FollowsPinnedClientChainId verifies the stored provider
+// chain id follows the pinned provider client: once that client, held Active
+// by ibc-go, tracks another chain id (ibc-go's verified client upgrade adopts
+// the chain id the provider committed), the next VSC packet over it is
+// accepted, the stored id is re-pinned, and exactly one event carries the
+// client id and both chain ids; a later packet over the followed chain id
+// emits nothing more. A pinned client that is frozen or expired moves nothing
+// and its packet is refused.
+func TestOnRecvVSCPacketV2FollowsPinnedClientChainId(t *testing.T) {
+	for name, tc := range map[string]struct {
+		status   ibcexported.Status
+		followed bool
+	}{
+		"an active pinned client is followed": {status: ibcexported.Active, followed: true},
+		"a frozen pinned client is refused":   {status: ibcexported.Frozen},
+		"an expired pinned client is refused": {status: ibcexported.Expired},
+	} {
+		t.Run(name, func(t *testing.T) {
+			k, ctx, ctrl, mocks := testkeeper.GetConsumerKeeperAndCtx(t, testkeeper.NewInMemKeeperParams(t))
+			defer ctrl.Finish()
+
+			clientID := liveProviderClientID
+			chainID := "provider-1"
+			mocks.MockClientKeeper.EXPECT().GetClientState(gomock.Any(), clientID).
+				DoAndReturn(func(sdk.Context, string) (ibcexported.ClientState, bool) {
+					return &ibctmtypes.ClientState{ChainId: chainID}, true
+				}).AnyTimes()
+			mocks.MockClientKeeper.EXPECT().GetClientStatus(gomock.Any(), clientID).Return(tc.status).AnyTimes()
+			k.SetProviderClientID(ctx, clientID)
+			k.SetProviderChainId(ctx, chainID)
+
+			pk, err := cryptocodec.ToCmtProtoPublicKey(ed25519.GenPrivKey().PubKey())
+			require.NoError(t, err)
+			packet := func(id uint64, power int64) types.ValidatorSetChangePacketData {
+				return types.NewValidatorSetChangePacketData([]abci.ValidatorUpdate{{PubKey: pk, Power: power}}, id)
+			}
+
+			require.NoError(t, k.OnRecvVSCPacketV2(ctx, clientID, packet(1, 10)))
+			require.Empty(t, providerChainIdFollowedEvents(ctx), "a pinned client tracking the stored chain id emits nothing")
+
+			chainID = "provider-2"
+			err = k.OnRecvVSCPacketV2(ctx, clientID, packet(2, 20))
+			stored, found := k.GetProviderChainId(ctx)
+			require.True(t, found)
+			highest, _, herr := k.GetHighestValsetUpdateID(ctx)
+			require.NoError(t, herr)
+			if !tc.followed {
+				require.ErrorIs(t, err, consumertypes.ErrInvalidProviderClient)
+				require.Equal(t, "provider-1", stored, "a pinned client that is not active must not move the stored chain id")
+				require.Equal(t, uint64(1), highest, "the refused packet must not be applied")
+				require.Empty(t, providerChainIdFollowedEvents(ctx))
+				return
+			}
+			require.NoError(t, err, "a packet over the upgraded pinned client must be accepted")
+			require.Equal(t, "provider-2", stored, "the stored chain id must follow the pinned client")
+			require.Equal(t, uint64(2), highest, "the packet must be applied")
+
+			events := providerChainIdFollowedEvents(ctx)
+			require.Len(t, events, 1)
+			attrs := map[string]string{}
+			for _, attr := range events[0].Attributes {
+				attrs[attr.Key] = attr.Value
+			}
+			require.Equal(t, consumertypes.ModuleName, attrs[sdk.AttributeKeyModule])
+			require.Equal(t, clientID, attrs[types.AttributeClientId])
+			require.Equal(t, "provider-1", attrs[types.AttributePreviousProviderChainId])
+			require.Equal(t, "provider-2", attrs[types.AttributeProviderChainId])
+
+			require.NoError(t, k.OnRecvVSCPacketV2(ctx, clientID, packet(3, 30)))
+			require.Len(t, providerChainIdFollowedEvents(ctx), 1, "a packet over the followed chain id emits nothing more")
+		})
+	}
 }
 
 // TestOnRecvVSCPacketV2MissingPinRejects verifies a VSC packet is rejected

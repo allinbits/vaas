@@ -65,10 +65,12 @@ type Keeper struct {
 	MissedBlockBitmaps     collections.Map[[]byte, []byte]
 	FirstTrackedHeights    collections.Map[[]byte, int64]
 	StagedDowntimeParams   collections.Item[vaastypes.DowntimeParams]
-	// ProviderChainId is the chain id the consumer has pinned as belonging to
-	// the provider. Set from the destination client's tendermint chain id the
-	// first time a VSC packet is accepted; see authenticateProviderChainID in
-	// relay.go for how it is used and its residual trust boundary.
+	// ProviderChainId is the chain id the consumer holds as the provider's:
+	// seeded at genesis from the provider-authored client state (or from the
+	// destination client of the first accepted VSC packet when absent), and
+	// following the pinned provider client's chain id across ibc-go's
+	// verified client upgrades; see authenticateProviderChainID in relay.go
+	// for how it is used and its residual trust boundary.
 	ProviderChainId collections.Item[string]
 }
 

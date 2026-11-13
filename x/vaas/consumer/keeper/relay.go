@@ -5,6 +5,7 @@ import (
 
 	abci "github.com/cometbft/cometbft/abci/types"
 
+	ibcexported "github.com/cosmos/ibc-go/v10/modules/core/exported"
 	ibctmtypes "github.com/cosmos/ibc-go/v10/modules/light-clients/07-tendermint"
 
 	errorsmod "cosmossdk.io/errors"
@@ -26,13 +27,14 @@ func (k Keeper) OnRecvVSCPacketV2(ctx sdk.Context, consumerClientID string, newC
 	}
 
 	// Authenticate the packet's source before touching any state: a client
-	// tracking an unexpected chain id, or a client other than the pinned
-	// provider client, is rejected outright -- before the dedup check below
-	// and every state mutation that follows it (SetLastVSCRecvTime, param
-	// staging, valset apply). Anyone can permissionlessly create an IBC v2
-	// client, so DestinationClient alone does not prove the packet came from
-	// the provider; the chain-id gate and the client pin close that gap in
-	// layers.
+	// tracking an unexpected chain id (the pinned provider client excepted,
+	// whose chain id the stored one follows), or a client other than the
+	// pinned provider client, is rejected outright -- before the dedup check
+	// below and every state mutation that follows it (SetLastVSCRecvTime,
+	// param staging, valset apply). Anyone can permissionlessly create an IBC
+	// v2 client, so DestinationClient alone does not prove the packet came
+	// from the provider; the chain-id gate and the client pin close that gap
+	// in layers.
 	if err := k.authenticateProviderChainID(ctx, consumerClientID); err != nil {
 		return err
 	}
@@ -157,7 +159,7 @@ func hasPositivePower(updates []abci.ValidatorUpdate) bool {
 	return false
 }
 
-// authenticateProviderChainID pins the consumer's inbound VSC traffic to a
+// authenticateProviderChainID holds the consumer's inbound VSC traffic to a
 // single provider chain id. Anyone can permissionlessly create an IBC v2
 // client and get a relayer to route packets through it, so the fact that
 // consumerClientID is a registered, counterparty-linked client is not by
@@ -168,6 +170,18 @@ func hasPositivePower(updates []abci.ValidatorUpdate) bool {
 // id, or it is rejected before any state changes (see the call site in
 // OnRecvVSCPacketV2); the first-packet fallback below only matters for state
 // predating the genesis seed.
+//
+// The pinned provider client is the one client whose chain id the stored id
+// follows instead of refusing. A tendermint client's chain id changes only
+// through ibc-go's verified client upgrade (MsgUpgradeClient adopts the chain
+// id of the upgraded client state the old chain committed under its upgrade
+// path, which proves the provider itself committed the new id) or through a
+// recovery by the chain's authority, and the owner's own recovery through an
+// exec is held to the stored id (providerClientCoherent). So a packet over
+// the pinned client, held Active by ibc-go, that tracks another chain id
+// re-pins the stored id to it and proceeds (followProviderChainID); a
+// provider chain-id change needs nothing from the consumer's owner. A packet
+// over any other client tracking another chain id is refused.
 //
 // Residual trust boundary: this only pins the chain-id *string*, so on its
 // own it does not distinguish the real provider from a chain that reuses the
@@ -191,14 +205,81 @@ func (k Keeper) authenticateProviderChainID(ctx sdk.Context, consumerClientID st
 		k.SetProviderChainId(ctx, tmClientState.ChainId)
 		return nil
 	}
-
-	if pinned != tmClientState.ChainId {
+	if pinned == tmClientState.ChainId {
+		return nil
+	}
+	if !k.isActivePinnedProviderClient(ctx, consumerClientID) {
 		return errorsmod.Wrapf(types.ErrInvalidProviderClient,
 			"client %s tracks chain id %s, expected pinned provider chain id %s",
 			consumerClientID, tmClientState.ChainId, pinned)
 	}
-
+	k.followProviderChainID(ctx, consumerClientID, pinned, tmClientState.ChainId)
 	return nil
+}
+
+// isActivePinnedProviderClient reports whether clientID is the pinned
+// provider client and ibc-go holds it Active: the one client whose chain id
+// the stored provider chain id follows. ibc-go verifies a packet's proof only
+// against an Active client and upgrades only an Active client, so a frozen or
+// expired pin never moves the stored id.
+func (k Keeper) isActivePinnedProviderClient(ctx sdk.Context, clientID string) bool {
+	pinned, found := k.GetProviderClientID(ctx)
+	if !found || pinned == "" || pinned != clientID {
+		return false
+	}
+	return k.clientKeeper.GetClientStatus(ctx, clientID) == ibcexported.Active
+}
+
+// followPinnedProviderChainID re-pins the stored provider chain id to the
+// chain id the pinned provider client tracks, under the rule
+// authenticateProviderChainID applies to a packet: the two differ and ibc-go
+// holds the pinned client Active. An owner exec runs it before its messages,
+// so that its closing coherence check (providerClientCoherent) compares the
+// pinned client against a stored id that has followed a verified client
+// upgrade. Nothing happens while no client is pinned, no chain id is stored,
+// or the pinned client has no tendermint client state.
+func (k Keeper) followPinnedProviderChainID(ctx sdk.Context) {
+	clientID, found := k.GetProviderClientID(ctx)
+	if !found || clientID == "" {
+		return
+	}
+	pinned, found := k.GetProviderChainId(ctx)
+	if !found {
+		return
+	}
+	clientState, found := k.clientKeeper.GetClientState(ctx, clientID)
+	if !found {
+		return
+	}
+	tmClientState, ok := clientState.(*ibctmtypes.ClientState)
+	if !ok || tmClientState.ChainId == pinned {
+		return
+	}
+	if !k.isActivePinnedProviderClient(ctx, clientID) {
+		return
+	}
+	k.followProviderChainID(ctx, clientID, pinned, tmClientState.ChainId)
+}
+
+// followProviderChainID re-pins the stored provider chain id from previous to
+// chainID, the chain id the pinned provider client clientID tracks, and emits
+// EventTypeProviderChainIdFollowed with the client id and both chain ids.
+func (k Keeper) followProviderChainID(ctx sdk.Context, clientID, previous, chainID string) {
+	k.SetProviderChainId(ctx, chainID)
+	k.Logger(ctx).Info("provider chain id followed the pinned provider client",
+		"clientID", clientID,
+		"previousChainID", previous,
+		"chainID", chainID,
+	)
+	ctx.EventManager().EmitEvent(
+		sdk.NewEvent(
+			vaastypes.EventTypeProviderChainIdFollowed,
+			sdk.NewAttribute(sdk.AttributeKeyModule, types.ModuleName),
+			sdk.NewAttribute(vaastypes.AttributeClientId, clientID),
+			sdk.NewAttribute(vaastypes.AttributePreviousProviderChainId, previous),
+			sdk.NewAttribute(vaastypes.AttributeProviderChainId, chainID),
+		),
+	)
 }
 
 // enforcePinnedProviderClient rejects a VSC packet unless it arrived over the
