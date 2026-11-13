@@ -215,10 +215,11 @@ func TestMsgFilterDecoratorJudgesProposalsByTheirMessagesWhenInDebt(t *testing.T
 	}
 }
 
-// Restricted mode admits IBC core relayer and client-recovery traffic by an
-// explicit list, not by the /ibc.core. prefix: ibc-go's software upgrade and
-// parameter updates, a v1 channel close initiated here and the raw v2 send
-// are refused, bare, inside an owner exec and inside a gov proposal.
+// Restricted mode admits IBC core relayer and client-recovery traffic, the
+// reset of a client's allowed-relayers list included, by an explicit list,
+// not by the /ibc.core. prefix: ibc-go's software upgrade and parameter
+// updates, a v1 channel close initiated here and the raw v2 send are refused,
+// bare, inside an owner exec and inside a gov proposal.
 func TestMsgFilterDecoratorAdmitsOnlyIBCRelayerAndRecoveryTrafficWhenInDebt(t *testing.T) {
 	authority := consumertypes.OwnerExecAuthority().String()
 	proposal := func(msgs ...sdk.Msg) sdk.Msg {
@@ -247,6 +248,7 @@ func TestMsgFilterDecoratorAdmitsOnlyIBCRelayerAndRecoveryTrafficWhenInDebt(t *t
 		&channeltypes.MsgTimeout{},
 		&channeltypes.MsgTimeoutOnClose{},
 		&clientv2types.MsgRegisterCounterparty{},
+		&clientv2types.MsgUpdateClientConfig{Signer: authority},
 		&channeltypesv2.MsgRecvPacket{},
 		&channeltypesv2.MsgAcknowledgement{},
 		&channeltypesv2.MsgTimeout{},

@@ -5,6 +5,9 @@ import (
 
 	"github.com/stretchr/testify/require"
 
+	cmtproto "github.com/cometbft/cometbft/proto/tendermint/types"
+	cmttypes "github.com/cometbft/cometbft/types"
+
 	clienttypes "github.com/cosmos/ibc-go/v10/modules/core/02-client/types"
 
 	upgradetypes "cosmossdk.io/x/upgrade/types"
@@ -13,6 +16,7 @@ import (
 	sdkerrors "github.com/cosmos/cosmos-sdk/types/errors"
 	authtypes "github.com/cosmos/cosmos-sdk/x/auth/types"
 	banktypes "github.com/cosmos/cosmos-sdk/x/bank/types"
+	consensustypes "github.com/cosmos/cosmos-sdk/x/consensus/types"
 	govtypes "github.com/cosmos/cosmos-sdk/x/gov/types"
 
 	consumertypes "github.com/allinbits/vaas/x/vaas/consumer/types"
@@ -20,8 +24,8 @@ import (
 
 // TestOwnerExecHoldsTheReferenceConsumersAuthorities proves the wiring the
 // message exists for: on the reference consumer the consumer module account
-// is the authority of the IBC, upgrade and consumer keepers (among others),
-// and the owner reaches them through MsgOwnerExec, signed and admitted like
+// is the authority of the IBC, upgrade, consensus and consumer keepers (among
+// others), and the owner reaches them through MsgOwnerExec, signed and admitted like
 // any transaction, with the inner messages executed by the app's own router.
 // The governance module account, which no module here can act as, is not an
 // accepted signer of the carried messages.
@@ -37,10 +41,20 @@ func TestOwnerExecHoldsTheReferenceConsumersAuthorities(t *testing.T) {
 
 	updatedParams := params
 	updatedParams.HistoricalEntries = params.HistoricalEntries + 1
+	consensusBefore, err := capp.ConsensusParamsKeeper.Params(ctx, &consensustypes.QueryParamsRequest{})
+	require.NoError(t, err)
+	block := &cmtproto.BlockParams{MaxBytes: consensusBefore.Params.Block.MaxBytes, MaxGas: consensusBefore.Params.Block.MaxGas / 2}
+	evidence := &cmtproto.EvidenceParams{
+		MaxAgeNumBlocks: consensusBefore.Params.Evidence.MaxAgeNumBlocks + 1,
+		MaxAgeDuration:  consensusBefore.Params.Evidence.MaxAgeDuration,
+		MaxBytes:        consensusBefore.Params.Evidence.MaxBytes,
+	}
+	validator := &cmtproto.ValidatorParams{PubKeyTypes: append(consensusBefore.Params.Validator.PubKeyTypes, cmttypes.ABCIPubKeyTypeSecp256k1)}
 	inner := []sdk.Msg{
 		&consumertypes.MsgUpdateParams{Authority: authority, Params: updatedParams},
 		&clienttypes.MsgUpdateParams{Signer: authority, Params: clienttypes.NewParams("07-tendermint")},
 		&upgradetypes.MsgCancelUpgrade{Authority: authority},
+		&consensustypes.MsgUpdateParams{Authority: authority, Block: block, Evidence: evidence, Validator: validator},
 	}
 	msg, err := consumertypes.NewMsgOwnerExec(owner.String(), inner)
 	require.NoError(t, err)
@@ -59,6 +73,11 @@ func TestOwnerExecHoldsTheReferenceConsumersAuthorities(t *testing.T) {
 	require.NoError(t, err)
 	require.Equal(t, updatedParams.HistoricalEntries, capp.ConsumerKeeper.GetConsumerParams(ctx).HistoricalEntries)
 	require.Equal(t, []string{"07-tendermint"}, capp.IBCKeeper.ClientKeeper.GetParams(ctx).AllowedClients)
+	consensusAfter, err := capp.ConsensusParamsKeeper.Params(ctx, &consensustypes.QueryParamsRequest{})
+	require.NoError(t, err)
+	require.Equal(t, block, consensusAfter.Params.Block)
+	require.Equal(t, evidence, consensusAfter.Params.Evidence)
+	require.Equal(t, validator, consensusAfter.Params.Validator)
 
 	// The governance module account is not an authority anyone here can act
 	// as, and the owner cannot act as it.

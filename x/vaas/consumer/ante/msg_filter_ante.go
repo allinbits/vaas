@@ -183,8 +183,11 @@ func (mfd MsgFilterDecorator) voucherDenom(ctx sdk.Context) string {
 }
 
 // restrictedIBCMsgs are the IBC core messages restricted mode admits, by
-// type URL: what ibc-go v10 registers for relayers to send and for a client
-// to be recovered. Misbehaviour reaches a client through MsgUpdateClient, so
+// type URL: what ibc-go v10 registers for relayers to send, for a client to
+// be recovered, and for a client's allowed-relayers list to be set or cleared
+// (MsgUpdateClientConfig, signed by the client's creator or the chain's
+// authority: a relayer that locked the pinned client to itself is undone by
+// the owner through it). Misbehaviour reaches a client through MsgUpdateClient, so
 // the deprecated MsgSubmitMisbehaviour is not listed. Everything else under
 // /ibc.core. is refused there: the raw ICS-20 v2 send, a v1 channel close
 // initiated here, MsgIBCSoftwareUpgrade and every MsgUpdateParams.
@@ -207,6 +210,7 @@ var restrictedIBCMsgs = msgTypeURLs(
 	&channeltypes.MsgTimeout{},
 	&channeltypes.MsgTimeoutOnClose{},
 	&clienttypesv2.MsgRegisterCounterparty{},
+	&clienttypesv2.MsgUpdateClientConfig{},
 	&channeltypesv2.MsgRecvPacket{},
 	&channeltypesv2.MsgAcknowledgement{},
 	&channeltypesv2.MsgTimeout{},

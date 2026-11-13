@@ -58,6 +58,15 @@ func (gs GenesisState) Validate() error {
 	if len(gs.Provider.InitialValSet) == 0 {
 		return errorsmod.Wrap(vaastypes.ErrInvalidGenesis, "initial validator set is empty")
 	}
+	// InitGenesis hands the set to CometBFT as the chain's first validator
+	// set, and CometBFT refuses a validator without voting power there,
+	// halting the node at start.
+	for i, val := range gs.Provider.InitialValSet {
+		if val.Power <= 0 {
+			return errorsmod.Wrapf(vaastypes.ErrInvalidGenesis,
+				"initial validator set: entry %d has power %d, want positive", i, val.Power)
+		}
+	}
 	if err := gs.Params.Validate(); err != nil {
 		return err
 	}
@@ -81,6 +90,10 @@ func (gs GenesisState) Validate() error {
 		}
 		if gs.ConsumerInDebt {
 			return errorsmod.Wrap(vaastypes.ErrInvalidGenesis, "a new chain cannot start in debt: the flag is provider-relayed state")
+		}
+		if field := gs.restartOnlyField(); field != "" {
+			return errorsmod.Wrapf(vaastypes.ErrInvalidGenesis,
+				"%s cannot be set for a new chain: it is state only a restart export carries", field)
 		}
 	} else if gs.Provider.ClientState != nil || gs.Provider.ConsensusState != nil {
 		// Note that an empty provider client id is valid on restart: it is the
@@ -156,4 +169,29 @@ func (gs GenesisState) Validate() error {
 	}
 
 	return nil
+}
+
+// restartOnlyField names the first field set among those only a restart
+// export carries (keeper.ExportGenesis writes them; a provider-authored
+// new-chain genesis never does), or "" when none is: the VSC dedup watermark,
+// which would drop the first VSC ids; the staleness clock, which would start
+// the chain already stale; and the downtime window in progress, the evidence
+// queued for the provider and the downtime params staged for the next window
+// close, which belong to a chain that has run.
+func (gs GenesisState) restartOnlyField() string {
+	switch {
+	case gs.HighestValsetUpdateId != 0:
+		return "highest_valset_update_id"
+	case gs.LastVscRecvTime != nil:
+		return "last_vsc_recv_time"
+	case len(gs.MissedBlockBitmaps) != 0:
+		return "missed_block_bitmaps"
+	case len(gs.FirstTrackedHeights) != 0:
+		return "first_tracked_heights"
+	case len(gs.PendingEvidencePackets) != 0:
+		return "pending_evidence_packets"
+	case gs.StagedDowntimeParams != nil:
+		return "staged_downtime_params"
+	}
+	return ""
 }
