@@ -2,7 +2,7 @@
 # (consumer-forge), for the byzantine-consumer suite only. Built with the
 # repository root as context by `make docker-build-forge`; the other e2e
 # suites never build it.
-ARG GO_VERSION=1.26.0
+ARG GO_VERSION=1.26.11
 
 FROM golang:${GO_VERSION}-alpine AS forge-builder
 
