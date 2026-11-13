@@ -278,7 +278,11 @@ and the proposal fails, while the client still tracks another chain ID. The rena
 resume both refuse a client whose trusting period does not clear the downtime challenge
 horizon, as the declaration does. A rename alone does not resume a paused consumer.
 Governance can also recover and rename a launched consumer in one proposal, before any
-BeginBlock sees the mismatch.
+BeginBlock sees the mismatch. A mismatch pause that outlives `MaxPauseDuration` stops the
+consumer, and the rename is still accepted on a `STOPPED` consumer, by the governance
+authority alone and under the same checks: its chain ID serves only the verification of
+its double-voting evidence until it is deleted, and without the rename the votes signed
+over the client's chain ID during the pause could not be verified.
 
 **What a rename keeps.** The old chain ID stays on record with the client's height at the
 rename, so double-voting evidence from a block at or below it is still accepted (see
@@ -305,6 +309,19 @@ verifies no header of the new chain ID, the provider receives no acknowledgement
 ibc-go recovers a client only once it has expired, about one trusting period after its
 last update. With default parameters the liveness sweep stops the consumer before a
 recovery vote can pass, and such a consumer registers again.
+
+**The consumer side can trigger the pause.** The consumer's authority schedules the client
+upgrade, ibc-go's `MsgUpgradeClient` on the provider is permissionless, and a recovery
+(`MsgRecoverClient`) substitutes only a client that is not Active, so the consumer can
+commit an upgraded client state carrying a new chain ID at any time, and the provider
+answers with the mismatch pause: the consumer's pending downtime accusations are discarded
+and the fees withheld under them repaid to the accused, and governance cannot recover the
+upgraded client until it expires, one trusting period after its last update, so the rename
+is the only prompt exit. This is a property of the design rather than a flaw to close: what
+bounds it is the consumer's own safe mode, which restricts the chain for as long as the
+pause lasts (see [consumer-liveness.md](consumer-liveness.md), section 4), and that the
+accusations voided are ones the consumer's own binary produced, which the same authority
+could have withheld at the source.
 
 ---
 

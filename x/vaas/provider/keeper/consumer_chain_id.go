@@ -124,16 +124,19 @@ func (k Keeper) validateConsumerClientTrustingPeriod(ctx sdk.Context, clientId s
 // launch: the consumer bumped its chain id (an upgrade's revision bump, say),
 // the declared client follows it through an ibc-go client upgrade or a
 // governance recovery, and the provider's own record follows the client
-// here, on a launched consumer or on one paused for the mismatch
-// (PauseConsumersWithMismatchedClients). The new
-// id must be the one the declared client tracks, and free. The old id is kept
-// with the client's height at the rename, so double-voting evidence from a
-// block at or below that height, signed over the old id, is still accepted
-// (SubmitConsumerDoubleVoting). The consumer's pending downtime accusations
-// are discarded instead: a challenge header is verified by the client over
-// the chain id it now tracks, so none signed over the old id can disprove
-// them any more, and an accusation that cannot be disproved does not stand
-// (DiscardConsumerAccusations, as after a pause that discredits the source).
+// here, on a consumer that has launched: one still launched, one paused for
+// the mismatch (PauseConsumersWithMismatchedClients), or one stopped, as a
+// mismatch pause that outlived MaxPauseDuration leaves it, whose chain id
+// serves the verification of its evidence and nothing else until its
+// deletion. The new id must be the one the declared client tracks, and free.
+// The old id is kept with the client's height at the rename, so
+// double-voting evidence from a block at or below that height, signed over
+// the old id, is still accepted (SubmitConsumerDoubleVoting). The consumer's
+// pending downtime accusations are discarded instead: a challenge header is
+// verified by the client over the chain id it now tracks, so none signed
+// over the old id can disprove them any more, and an accusation that cannot
+// be disproved does not stand (DiscardConsumerAccusations, as after a pause
+// that discredits the source).
 func (k Keeper) RenameLaunchedConsumer(ctx sdk.Context, consumerId uint64, newChainId string) error {
 	clientId, found := k.GetConsumerClientId(ctx, consumerId)
 	if !found {
@@ -151,7 +154,8 @@ func (k Keeper) RenameLaunchedConsumer(ctx sdk.Context, consumerId uint64, newCh
 	}
 	// The client an upgrade or recovery left behind is served from the
 	// rename on, with or without a resume, so it meets the declaration's
-	// floor like any served client.
+	// floor like any served client; one rule for every rename, a stopped
+	// consumer's included.
 	if err := k.validateConsumerClientTrustingPeriod(ctx, clientId, tmClientState); err != nil {
 		return err
 	}
