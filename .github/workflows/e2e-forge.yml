@@ -51,6 +51,9 @@ jobs:
     needs: changes
     if: github.event_name != 'pull_request' || needs.changes.outputs.forge == 'true'
     runs-on: ubuntu-latest
+    # go test bounds the suite at 60 minutes once the two images are built and
+    # the relayer image pulled; this bounds the whole job.
+    timeout-minutes: 90
     steps:
       - uses: actions/checkout@v4
 

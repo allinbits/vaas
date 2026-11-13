@@ -13,10 +13,13 @@ rundep=go run -modfile $(CURDIR)/devdeps/go.mod
 build:
 	go build ./...
 
-# app/ is a separate Go module, so ./... in the root module does not reach it
+# app/ and tests/e2e/forge are Go modules of their own, so ./... in the root
+# module reaches neither. The e2e suites in tests/e2e need Docker and run
+# through test-e2e and test-e2e-forge.
 test:
 	go test -timeout=25m -v $(shell go list ./... | grep -v 'github.com/allinbits/vaas/tests/e2e')
 	cd app && go test -timeout=25m -v ./...
+	cd tests/e2e/forge && go test -timeout=25m -v ./...
 
 # The e2e suite and the apps are their own Go modules, so a run from the root
 # never sees them: each is linted from its own directory against the root
@@ -69,11 +72,22 @@ vulncheck:
 mocks-gen:
 	$(rundep) go.uber.org/mock/mockgen -package=keeper -destination=testutil/keeper/mocks.go -source=x/vaas/types/expected_keepers.go
 
-# Run `go mod tidy` across every module in the workspace (root, app, devdeps, tests/e2e, tests/e2e/forge).
-tidy:
-	@bash ./scripts/go-mod-tidy-all.sh
+# Every Go module in the repository.
+go_modules=. app tests/e2e tests/e2e/forge devdeps
 
-.PHONY: build test lint lint-fix vulncheck mocks-gen tidy
+tidy:
+	@for m in $(go_modules); do echo "go mod tidy in $$m"; (cd $$m && go mod tidy) || exit 1; done
+
+# Fail, printing go mod tidy's diff, when a module's go.mod or go.sum is not
+# what make tidy would write.
+check-tidy:
+	@untidy=""; \
+	for m in $(go_modules); do \
+		(cd $$m && go mod tidy -diff) || untidy="$$untidy $$m"; \
+	done; \
+	if [ -n "$$untidy" ]; then echo "modules not tidy (run make tidy):$$untidy"; exit 1; fi
+
+.PHONY: build test lint lint-fix vulncheck mocks-gen tidy check-tidy
 
 ###############################################################################
 ###                                Protobuf                                 ###
