@@ -1109,3 +1109,22 @@ func TestInitGenesisPanicsOnWithheldFeeDenomMismatch(t *testing.T) {
 	require.Panics(t, func() { pk.InitGenesis(ctx, gs) },
 		"a withheld record in a denom the module does not charge must fail InitChain")
 }
+
+// TestInitGenesisPanicsOnRegistrationFeeOutsideTheFeeDenom: the genesis
+// parameters go through the keeper's check, so a positive consumer
+// registration fee in a denom other than the fee denom halts InitChain.
+func TestInitGenesisPanicsOnRegistrationFeeOutsideTheFeeDenom(t *testing.T) {
+	k, ctx, ctrl, _ := testkeeper.GetProviderKeeperAndCtx(t, testkeeper.NewInMemKeeperParams(t))
+	defer ctrl.Finish()
+
+	gs := providertypes.DefaultGenesisState()
+	gs.Params.ConsumerRegistrationFee = sdk.NewInt64Coin("uatone", 1)
+
+	var recovered any
+	func() {
+		defer func() { recovered = recover() }()
+		k.InitGenesis(ctx, gs)
+	}()
+	require.NotNil(t, recovered)
+	require.Contains(t, fmt.Sprint(recovered), "is not the fee denom")
+}

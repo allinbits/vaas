@@ -25,6 +25,7 @@ import (
 	"github.com/cosmos/cosmos-sdk/codec/address"
 	cryptocodec "github.com/cosmos/cosmos-sdk/crypto/codec"
 	sdk "github.com/cosmos/cosmos-sdk/types"
+	sdkerrors "github.com/cosmos/cosmos-sdk/types/errors"
 	authtypes "github.com/cosmos/cosmos-sdk/x/auth/types"
 	disttypes "github.com/cosmos/cosmos-sdk/x/distribution/types"
 	slashingtypes "github.com/cosmos/cosmos-sdk/x/slashing/types"
@@ -2111,4 +2112,127 @@ func TestUpdateConsumerRejectsPausedConsumer(t *testing.T) {
 	})
 	require.ErrorIs(t, err, providertypes.ErrInvalidPhase,
 		"a paused consumer must not be updatable")
+}
+
+// registrationFeeMsg is a valid MsgCreateConsumer from submitter, for the
+// registration fee tests.
+func registrationFeeMsg(submitter string) *providertypes.MsgCreateConsumer {
+	return &providertypes.MsgCreateConsumer{
+		Submitter: submitter,
+		ChainId:   "chainId",
+		Metadata:  providertypes.ConsumerMetadata{Name: "chain name"},
+		InitializationParameters: &providertypes.ConsumerInitializationParameters{
+			UnbondingPeriod: 21 * 24 * time.Hour,
+		},
+	}
+}
+
+// TestCreateConsumerChargesAndBurnsTheRegistrationFee: with a positive
+// consumer registration fee, creating a consumer moves the fee from the
+// submitter to the module account and burns it there, in that order.
+func TestCreateConsumerChargesAndBurnsTheRegistrationFee(t *testing.T) {
+	k, ctx, ctrl, mocks := testkeeper.GetProviderKeeperAndCtx(t, testkeeper.NewInMemKeeperParams(t))
+	defer ctrl.Finish()
+	mocks.MockStakingKeeper.EXPECT().UnbondingTime(gomock.Any()).Return(21*24*time.Hour, nil).AnyTimes()
+
+	fee := sdk.NewInt64Coin(providertypes.DefaultFeesPerBlockDenom, 5_000_000)
+	params := providertypes.DefaultParams()
+	params.ConsumerRegistrationFee = fee
+	k.SetParams(ctx, params)
+
+	submitter := validSubmitter()
+	submitterAddr := sdk.MustAccAddressFromBech32(submitter)
+	gomock.InOrder(
+		mocks.MockBankKeeper.EXPECT().
+			SendCoinsFromAccountToModule(ctx, submitterAddr, providertypes.ModuleName, sdk.NewCoins(fee)).Return(nil),
+		mocks.MockBankKeeper.EXPECT().
+			BurnCoins(ctx, providertypes.ModuleName, sdk.NewCoins(fee)).Return(nil),
+	)
+
+	msgSrv := providerkeeper.NewMsgServerImpl(&k)
+	resp, err := msgSrv.CreateConsumer(ctx, registrationFeeMsg(submitter))
+	require.NoError(t, err)
+	require.Equal(t, providertypes.CONSUMER_PHASE_REGISTERED, k.GetConsumerPhase(ctx, resp.ConsumerId))
+}
+
+// TestCreateConsumerRefusesASubmitterWhoCannotPayTheRegistrationFee: the fee
+// is collected before anything is written, so a failed collection leaves no
+// consumer behind, not even a taken id, and nothing is burned.
+func TestCreateConsumerRefusesASubmitterWhoCannotPayTheRegistrationFee(t *testing.T) {
+	k, ctx, ctrl, mocks := testkeeper.GetProviderKeeperAndCtx(t, testkeeper.NewInMemKeeperParams(t))
+	defer ctrl.Finish()
+
+	fee := sdk.NewInt64Coin(providertypes.DefaultFeesPerBlockDenom, 5_000_000)
+	params := providertypes.DefaultParams()
+	params.ConsumerRegistrationFee = fee
+	k.SetParams(ctx, params)
+
+	submitter := validSubmitter()
+	mocks.MockBankKeeper.EXPECT().
+		SendCoinsFromAccountToModule(ctx, sdk.MustAccAddressFromBech32(submitter), providertypes.ModuleName, sdk.NewCoins(fee)).
+		Return(sdkerrors.ErrInsufficientFunds)
+
+	msgSrv := providerkeeper.NewMsgServerImpl(&k)
+	_, err := msgSrv.CreateConsumer(ctx, registrationFeeMsg(submitter))
+	require.ErrorIs(t, err, sdkerrors.ErrInsufficientFunds)
+
+	_, taken := k.GetConsumerId(ctx)
+	require.False(t, taken, "no consumer id may be taken")
+	require.Empty(t, k.GetLiveConsumerIds(ctx))
+}
+
+// TestCreateConsumerChargesNothingWhenTheRegistrationFeeIsZero: the default
+// fee is zero, which disables it: no bank call is made at all (the mock would
+// fail on one), and the consumer is created.
+func TestCreateConsumerChargesNothingWhenTheRegistrationFeeIsZero(t *testing.T) {
+	k, ctx, ctrl, mocks := testkeeper.GetProviderKeeperAndCtx(t, testkeeper.NewInMemKeeperParams(t))
+	defer ctrl.Finish()
+	mocks.MockStakingKeeper.EXPECT().UnbondingTime(gomock.Any()).Return(21*24*time.Hour, nil).AnyTimes()
+	require.True(t, k.GetParams(ctx).ConsumerRegistrationFee.IsZero())
+
+	msgSrv := providerkeeper.NewMsgServerImpl(&k)
+	resp, err := msgSrv.CreateConsumer(ctx, registrationFeeMsg(validSubmitter()))
+	require.NoError(t, err)
+	require.Equal(t, providertypes.CONSUMER_PHASE_REGISTERED, k.GetConsumerPhase(ctx, resp.ConsumerId))
+}
+
+// TestUpdateParamsChangesTheConsumerRegistrationFee: the registration fee is
+// governed through the same diff as every other parameter. Set alone it
+// changes alone; a positive fee in a denom other than the fee denom is
+// rejected with nothing applied; a zero fee is accepted in any valid denom,
+// since it charges nothing.
+func TestUpdateParamsChangesTheConsumerRegistrationFee(t *testing.T) {
+	k, ctx, ctrl, _ := testkeeper.GetProviderKeeperAndCtx(t, testkeeper.NewInMemKeeperParams(t))
+	defer ctrl.Finish()
+	before := providertypes.DefaultParams()
+	before.BlocksPerEpoch = 300
+	k.SetParams(ctx, before)
+	msgSrv := providerkeeper.NewMsgServerImpl(&k)
+
+	fee := sdk.NewInt64Coin(providertypes.DefaultFeesPerBlockDenom, 1_000_000)
+	_, err := msgSrv.UpdateParams(ctx, &providertypes.MsgUpdateParams{
+		Authority:               k.GetAuthority(),
+		ConsumerRegistrationFee: &fee,
+	})
+	require.NoError(t, err)
+	want := before
+	want.ConsumerRegistrationFee = fee
+	require.Equal(t, want, k.GetParams(ctx))
+
+	other := sdk.NewInt64Coin("uatone", 1)
+	_, err = msgSrv.UpdateParams(ctx, &providertypes.MsgUpdateParams{
+		Authority:               k.GetAuthority(),
+		ConsumerRegistrationFee: &other,
+	})
+	require.ErrorContains(t, err, "is not the fee denom")
+	require.Equal(t, want, k.GetParams(ctx), "a rejected update must not have been applied")
+
+	zero := sdk.NewInt64Coin("uatone", 0)
+	_, err = msgSrv.UpdateParams(ctx, &providertypes.MsgUpdateParams{
+		Authority:               k.GetAuthority(),
+		ConsumerRegistrationFee: &zero,
+	})
+	require.NoError(t, err)
+	want.ConsumerRegistrationFee = zero
+	require.Equal(t, want, k.GetParams(ctx))
 }

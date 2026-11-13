@@ -154,8 +154,9 @@ var (
 		stakingtypes.BondedPoolName:    {authtypes.Burner, authtypes.Staking},
 		stakingtypes.NotBondedPoolName: {authtypes.Burner, authtypes.Staking},
 		govtypes.ModuleName:            {authtypes.Burner},
-		providertypes.ModuleName:       nil,
-		ibctransfertypes.ModuleName:    {authtypes.Minter, authtypes.Burner},
+		// The provider burns the consumer registration fee it collects.
+		providertypes.ModuleName:    {authtypes.Burner},
+		ibctransfertypes.ModuleName: {authtypes.Minter, authtypes.Burner},
 	}
 )
 

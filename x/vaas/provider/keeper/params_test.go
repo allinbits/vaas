@@ -39,6 +39,7 @@ func TestParams(t *testing.T) {
 		providertypes.DefaultEquivocationExecutionDelay,
 		providertypes.DefaultRemovalVoteDeferralMargin,
 		providertypes.DefaultInfractionParameters(),
+		providertypes.DefaultConsumerRegistrationFee(),
 	)
 	providerKeeper.SetParams(ctx, newParams)
 	params = providerKeeper.GetParams(ctx)

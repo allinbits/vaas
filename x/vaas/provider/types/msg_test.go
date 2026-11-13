@@ -979,6 +979,7 @@ func TestMsgUpdateParams_ValidateBasic(t *testing.T) {
 	tombstone := false
 	threshold := "0.5"
 	delay := time.Hour
+	fee := sdk.NewInt64Coin(types.DefaultFeesPerBlockDenom, 1)
 
 	tests := []struct {
 		name    string
@@ -993,6 +994,7 @@ func TestMsgUpdateParams_ValidateBasic(t *testing.T) {
 		{"the refusal pause threshold alone", types.MsgUpdateParams{Authority: validAuthority, RefusalPauseThreshold: &threshold}, false},
 		{"the equivocation execution delay alone", types.MsgUpdateParams{Authority: validAuthority, EquivocationExecutionDelay: &delay}, false},
 		{"the removal vote deferral margin alone", types.MsgUpdateParams{Authority: validAuthority, RemovalVoteDeferralMargin: &delay}, false},
+		{"the consumer registration fee alone", types.MsgUpdateParams{Authority: validAuthority, ConsumerRegistrationFee: &fee}, false},
 		{"invalid authority", types.MsgUpdateParams{Authority: "not-bech32", BlocksPerEpoch: &blocks}, true},
 		{"nothing to change", types.MsgUpdateParams{Authority: validAuthority}, true},
 		{"empty infraction diff changes nothing", types.MsgUpdateParams{

@@ -135,6 +135,22 @@ func (k Keeper) reconcileFeesPerBlockOverrides(ctx context.Context, floor math.I
 	return nil
 }
 
+// ValidateParams validates params as Params.Validate does and adds the check
+// that needs the keeper's wiring: a consumer registration fee with a positive
+// amount must be in the per-block fee denom (see Keeper.feeDenom), the denom
+// consumers are charged in. A zero fee charges nothing, so its denom does not
+// matter. Applied to the genesis parameters and to every merged
+// MsgUpdateParams.
+func (k Keeper) ValidateParams(params types.Params) error {
+	if err := params.Validate(); err != nil {
+		return err
+	}
+	if fee := params.ConsumerRegistrationFee; fee.IsPositive() && fee.Denom != k.feeDenom {
+		return fmt.Errorf("consumer registration fee denom %q is not the fee denom %q", fee.Denom, k.feeDenom)
+	}
+	return nil
+}
+
 // GetParams returns the paramset for the provider module
 func (k Keeper) GetParams(ctx context.Context) types.Params {
 	params, err := k.Params.Get(ctx)
