@@ -14,7 +14,8 @@ service Query {
   }
 
   // QueryProviderInfo returns information about the provider chain connection.
-  rpc QueryProviderInfo(QueryProviderInfoRequest) returns (QueryProviderInfoResponse) {
+  rpc QueryProviderInfo(QueryProviderInfoRequest)
+      returns (QueryProviderInfoResponse) {
     option (google.api.http).get = "/vaas/consumer/provider-info";
   }
 }

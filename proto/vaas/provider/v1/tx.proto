@@ -23,20 +23,29 @@ option go_package = "github.com/allinbits/vaas/x/vaas/provider/types";
 service Msg {
   option (cosmos.msg.v1.service) = true;
 
-  rpc AssignConsumerKey(MsgAssignConsumerKey) returns (MsgAssignConsumerKeyResponse);
-  rpc SubmitConsumerMisbehaviour(MsgSubmitConsumerMisbehaviour) returns (MsgSubmitConsumerMisbehaviourResponse);
-  rpc SubmitConsumerDoubleVoting(MsgSubmitConsumerDoubleVoting) returns (MsgSubmitConsumerDoubleVotingResponse);
+  rpc AssignConsumerKey(MsgAssignConsumerKey)
+      returns (MsgAssignConsumerKeyResponse);
+  rpc SubmitConsumerMisbehaviour(MsgSubmitConsumerMisbehaviour)
+      returns (MsgSubmitConsumerMisbehaviourResponse);
+  rpc SubmitConsumerDoubleVoting(MsgSubmitConsumerDoubleVoting)
+      returns (MsgSubmitConsumerDoubleVotingResponse);
   rpc CreateConsumer(MsgCreateConsumer) returns (MsgCreateConsumerResponse);
   rpc UpdateConsumer(MsgUpdateConsumer) returns (MsgUpdateConsumerResponse);
   rpc RemoveConsumer(MsgRemoveConsumer) returns (MsgRemoveConsumerResponse);
   rpc UpdateParams(MsgUpdateParams) returns (MsgUpdateParamsResponse);
-  rpc SetConsumerFeesPerBlock(MsgSetConsumerFeesPerBlock) returns (MsgSetConsumerFeesPerBlockResponse);
-  rpc FundConsumerFeePool(MsgFundConsumerFeePool) returns (MsgFundConsumerFeePoolResponse);
-  rpc WithdrawConsumerFeePool(MsgWithdrawConsumerFeePool) returns (MsgWithdrawConsumerFeePoolResponse);
-  rpc SweepConsumerFeePool(MsgSweepConsumerFeePool) returns (MsgSweepConsumerFeePoolResponse);
-  rpc ChallengeConsumerDowntime(MsgChallengeConsumerDowntime) returns (MsgChallengeConsumerDowntimeResponse);
+  rpc SetConsumerFeesPerBlock(MsgSetConsumerFeesPerBlock)
+      returns (MsgSetConsumerFeesPerBlockResponse);
+  rpc FundConsumerFeePool(MsgFundConsumerFeePool)
+      returns (MsgFundConsumerFeePoolResponse);
+  rpc WithdrawConsumerFeePool(MsgWithdrawConsumerFeePool)
+      returns (MsgWithdrawConsumerFeePoolResponse);
+  rpc SweepConsumerFeePool(MsgSweepConsumerFeePool)
+      returns (MsgSweepConsumerFeePoolResponse);
+  rpc ChallengeConsumerDowntime(MsgChallengeConsumerDowntime)
+      returns (MsgChallengeConsumerDowntimeResponse);
   rpc ResumeConsumer(MsgResumeConsumer) returns (MsgResumeConsumerResponse);
-  rpc SetConsumerRefusal(MsgSetConsumerRefusal) returns (MsgSetConsumerRefusalResponse);
+  rpc SetConsumerRefusal(MsgSetConsumerRefusal)
+      returns (MsgSetConsumerRefusalResponse);
 }
 
 message MsgAssignConsumerKey {
@@ -47,25 +56,25 @@ message MsgAssignConsumerKey {
   // the consumer id of the consumer chain to assign a consensus public key to
   uint64 consumer_id = 1;
   // The validator address on the provider
-  string provider_addr = 2 [(gogoproto.moretags) = "yaml:\"address\""];
+  string provider_addr = 2 [ (gogoproto.moretags) = "yaml:\"address\"" ];
   // The consensus public key to use on the consumer.
   // in json string format corresponding to proto-any, ex:
   // `{"@type":"/cosmos.crypto.ed25519.PubKey","key":"Ui5Gf1+mtWUdH8u3xlmzdKID+F3PK0sfXZ73GZ6q6is="}`
   string consumer_key = 3;
 
-  string signer = 4 [(cosmos_proto.scalar) = "cosmos.AddressString"];
+  string signer = 4 [ (cosmos_proto.scalar) = "cosmos.AddressString" ];
 }
 
 message MsgAssignConsumerKeyResponse {}
 
-// MsgSubmitConsumerMisbehaviour defines a message that reports a light client attack,
-// also known as a misbehaviour, observed on a consumer chain
+// MsgSubmitConsumerMisbehaviour defines a message that reports a light client
+// attack, also known as a misbehaviour, observed on a consumer chain
 message MsgSubmitConsumerMisbehaviour {
   option (cosmos.msg.v1.signer) = "submitter";
   option (gogoproto.equal) = false;
   option (gogoproto.goproto_getters) = false;
 
-  string submitter = 1 [(cosmos_proto.scalar) = "cosmos.AddressString"];
+  string submitter = 1 [ (cosmos_proto.scalar) = "cosmos.AddressString" ];
   // The Misbehaviour of the consumer chain wrapping
   // two conflicting IBC headers
   ibc.lightclients.tendermint.v1.Misbehaviour misbehaviour = 2;
@@ -82,7 +91,7 @@ message MsgSubmitConsumerDoubleVoting {
   option (gogoproto.equal) = false;
   option (gogoproto.goproto_getters) = false;
 
-  string submitter = 1 [(cosmos_proto.scalar) = "cosmos.AddressString"];
+  string submitter = 1 [ (cosmos_proto.scalar) = "cosmos.AddressString" ];
   // The equivocation of the consumer chain wrapping
   // an evidence of a validator that signed two conflicting votes
   tendermint.types.DuplicateVoteEvidence duplicate_vote_evidence = 2;
@@ -113,7 +122,7 @@ message MsgUpdateParams {
   option (cosmos.msg.v1.signer) = "authority";
 
   // authority is the address of the governance account.
-  string authority = 1 [(cosmos_proto.scalar) = "cosmos.AddressString"];
+  string authority = 1 [ (cosmos_proto.scalar) = "cosmos.AddressString" ];
 
   google.protobuf.StringValue trusting_period_fraction = 2
       [ (gogoproto.wktpointer) = true ];
@@ -168,8 +177,7 @@ message SlashJailParametersUpdate {
     (cosmos_proto.scalar) = "cosmos.Dec",
     (gogoproto.customtype) = "cosmossdk.io/math.LegacyDec"
   ];
-  google.protobuf.Duration jail_duration = 2
-      [ (gogoproto.stdduration) = true ];
+  google.protobuf.Duration jail_duration = 2 [ (gogoproto.stdduration) = true ];
   google.protobuf.BoolValue tombstone = 3 [ (gogoproto.wktpointer) = true ];
 }
 
@@ -192,10 +200,11 @@ message MsgRemoveConsumer {
   // the consumer id of the consumer chain to be removed
   uint64 consumer_id = 1;
   // signer is the consumer owner (pre-launch only) or the governance authority
-  string signer = 2 [(cosmos_proto.scalar) = "cosmos.AddressString"];
+  string signer = 2 [ (cosmos_proto.scalar) = "cosmos.AddressString" ];
 }
 
-// MsgRemoveConsumerResponse defines response type for MsgRemoveConsumer messages
+// MsgRemoveConsumerResponse defines response type for MsgRemoveConsumer
+// messages
 message MsgRemoveConsumerResponse {}
 
 // MsgCreateConsumer defines the message that creates a consumer chain.
@@ -204,33 +213,32 @@ message MsgCreateConsumer {
 
   // Submitter address. If the message is successfully handled, the ownership of
   // the consumer chain will given to this address.
-  string submitter = 1 [(cosmos_proto.scalar) = "cosmos.AddressString"];
+  string submitter = 1 [ (cosmos_proto.scalar) = "cosmos.AddressString" ];
 
   // the chain id of the new consumer chain
   string chain_id = 2;
 
-  ConsumerMetadata metadata = 3 [(gogoproto.nullable) = false];
+  ConsumerMetadata metadata = 3 [ (gogoproto.nullable) = false ];
 
   ConsumerInitializationParameters initialization_parameters = 4;
 }
 
 // MsgCreateConsumerResponse defines response type for MsgCreateConsumer
-message MsgCreateConsumerResponse {
-  uint64 consumer_id = 1;
-}
+message MsgCreateConsumerResponse { uint64 consumer_id = 1; }
 
 // MsgUpdateConsumer defines the message used to modify a consumer chain.
 message MsgUpdateConsumer {
   option (cosmos.msg.v1.signer) = "owner";
 
   // the address of the owner of the consumer chain to be updated
-  string owner = 1 [(cosmos_proto.scalar) = "cosmos.AddressString"];
+  string owner = 1 [ (cosmos_proto.scalar) = "cosmos.AddressString" ];
 
   // the consumer id of the consumer chain to be updated
   uint64 consumer_id = 2;
 
   // the new owner of the consumer when updated
-  string new_owner_address = 3 [(cosmos_proto.scalar) = "cosmos.AddressString"];
+  string new_owner_address = 3
+      [ (cosmos_proto.scalar) = "cosmos.AddressString" ];
 
   // the metadata of the consumer when updated
   ConsumerMetadata metadata = 4;
@@ -238,9 +246,10 @@ message MsgUpdateConsumer {
   // initialization parameters can only be updated before a chain has launched
   ConsumerInitializationParameters initialization_parameters = 5;
 
-  // (optional) If the consumer chain has NOT yet launched, the chain id can be updated. After a chain has launched
-  // the chain id CANNOT be updated.
-  // This field is optional and can remain empty (i.e., `new_chain_id = ""`) or correspond to the chain id the chain already has.
+  // (optional) If the consumer chain has NOT yet launched, the chain id can be
+  // updated. After a chain has launched the chain id CANNOT be updated. This
+  // field is optional and can remain empty (i.e., `new_chain_id = ""`) or
+  // correspond to the chain id the chain already has.
   string new_chain_id = 6;
 
   // (optional) The IBC client the provider uses to reach the consumer,
@@ -254,7 +263,8 @@ message MsgUpdateConsumer {
   string client_id = 7;
 }
 
-// MsgUpdateConsumerResponse defines response type for MsgUpdateConsumer messages
+// MsgUpdateConsumerResponse defines response type for MsgUpdateConsumer
+// messages
 message MsgUpdateConsumerResponse {}
 
 // MsgSetConsumerFeesPerBlock sets or clears a per-consumer override for the
@@ -262,7 +272,7 @@ message MsgUpdateConsumerResponse {}
 message MsgSetConsumerFeesPerBlock {
   option (cosmos.msg.v1.signer) = "authority";
   // authority is the module's gov authority address (e.g. the gov module).
-  string authority = 1 [(cosmos_proto.scalar) = "cosmos.AddressString"];
+  string authority = 1 [ (cosmos_proto.scalar) = "cosmos.AddressString" ];
   // consumer_id is the internal numeric id of the target consumer.
   uint64 consumer_id = 2;
   // amount is the per-block fee charged to the consumer, expressed in the
@@ -273,7 +283,7 @@ message MsgSetConsumerFeesPerBlock {
   // cosmossdk.io/math.Int and must be strictly greater than the module-wide
   // Params.FeesPerBlockAmount, which acts as a floor: an override may only
   // raise a consumer's per-block fee above the global default, never lower it.
-  string amount = 3 [(cosmos_proto.scalar) = "cosmos.Int"];
+  string amount = 3 [ (cosmos_proto.scalar) = "cosmos.Int" ];
 }
 
 message MsgSetConsumerFeesPerBlockResponse {}
@@ -287,12 +297,10 @@ message MsgFundConsumerFeePool {
   option (gogoproto.equal) = false;
   option (gogoproto.goproto_getters) = false;
 
-  string signer = 1 [(cosmos_proto.scalar) = "cosmos.AddressString"];
+  string signer = 1 [ (cosmos_proto.scalar) = "cosmos.AddressString" ];
   uint64 consumer_id = 2;
-  cosmos.base.v1beta1.Coin amount = 3 [
-    (gogoproto.nullable) = false,
-    (amino.dont_omitempty) = true
-  ];
+  cosmos.base.v1beta1.Coin amount = 3
+      [ (gogoproto.nullable) = false, (amino.dont_omitempty) = true ];
 }
 
 message MsgFundConsumerFeePoolResponse {}
@@ -312,7 +320,7 @@ message MsgWithdrawConsumerFeePool {
   option (gogoproto.equal) = false;
   option (gogoproto.goproto_getters) = false;
 
-  string signer = 1 [(cosmos_proto.scalar) = "cosmos.AddressString"];
+  string signer = 1 [ (cosmos_proto.scalar) = "cosmos.AddressString" ];
   uint64 consumer_id = 2;
   repeated cosmos.base.v1beta1.Coin amount = 3 [
     (gogoproto.nullable) = false,
@@ -339,7 +347,7 @@ message MsgSweepConsumerFeePool {
   option (gogoproto.equal) = false;
   option (gogoproto.goproto_getters) = false;
 
-  string signer = 1 [(cosmos_proto.scalar) = "cosmos.AddressString"];
+  string signer = 1 [ (cosmos_proto.scalar) = "cosmos.AddressString" ];
   uint64 consumer_id = 2;
   // empty = all denoms with shares or balance for this consumer
   repeated string denoms = 3;
@@ -357,8 +365,9 @@ message MsgChallengeConsumerDowntime {
   option (gogoproto.equal) = false;
   option (gogoproto.goproto_getters) = false;
 
-  string signer = 1 [(cosmos_proto.scalar) = "cosmos.AddressString"];
-  // the consumer id of the consumer chain the pending downtime slash was raised on
+  string signer = 1 [ (cosmos_proto.scalar) = "cosmos.AddressString" ];
+  // the consumer id of the consumer chain the pending downtime slash was raised
+  // on
   uint64 consumer_id = 2;
   // the consumer consensus address from the evidence
   bytes validator_addr = 3;
@@ -381,7 +390,7 @@ message MsgResumeConsumer {
   option (cosmos.msg.v1.signer) = "authority";
 
   // authority is the address of the governance account.
-  string authority = 1 [(cosmos_proto.scalar) = "cosmos.AddressString"];
+  string authority = 1 [ (cosmos_proto.scalar) = "cosmos.AddressString" ];
   // the consumer id of the consumer chain to resume
   uint64 consumer_id = 2;
 }
@@ -402,10 +411,11 @@ message MsgSetConsumerRefusal {
   // the consumer id of the consumer chain being refused
   uint64 consumer_id = 1;
   // the validator operator address whose refusal is being set
-  string validator_address = 2 [(cosmos_proto.scalar) = "cosmos.ValidatorAddressString"];
+  string validator_address = 2
+      [ (cosmos_proto.scalar) = "cosmos.ValidatorAddressString" ];
   // true to record the refusal, false to withdraw it
   bool refused = 3;
 
-  string signer = 4 [(cosmos_proto.scalar) = "cosmos.AddressString"];
+  string signer = 4 [ (cosmos_proto.scalar) = "cosmos.AddressString" ];
 }
 message MsgSetConsumerRefusalResponse {}

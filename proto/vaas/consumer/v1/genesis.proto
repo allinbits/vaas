@@ -23,20 +23,21 @@ message GenesisState {
   string provider_client_id = 2;
   // true for new chain, false for chain restart.
   bool new_chain = 3;
-  // preVAAS is currently unused and reserved for a future standalone-to-consumer
-  // changeover. When implemented it would signal that the chain is mid-transition,
-  // so the consumer module defers applying the provider validator set; the
-  // consumer keeper does not act on this field today. Field number 4 is kept
-  // (deliberately not removed and not marked `reserved`) so a future
-  // implementation can reuse it without a wire-format clash. See
-  // docs/consumer-transition.md.
+  // preVAAS is currently unused and reserved for a future
+  // standalone-to-consumer changeover. When implemented it would signal that
+  // the chain is mid-transition, so the consumer module defers applying the
+  // provider validator set; the consumer keeper does not act on this field
+  // today. Field number 4 is kept (deliberately not removed and not marked
+  // `reserved`) so a future implementation can reuse it without a wire-format
+  // clash. See docs/consumer-transition.md.
   bool preVAAS = 4;
   vaas.v1.ProviderInfo provider = 5 [ (gogoproto.nullable) = false ];
   // LastVSCRecvTime is the block time of the last VSC packet the consumer
   // received; it drives IsVSCStale (safe mode). Round-tripped on restart so a
   // state-export upgrade preserves the staleness clock. Absent for a new chain
   // that has not received a VSC yet.
-  google.protobuf.Timestamp last_vsc_recv_time = 6 [ (gogoproto.stdtime) = true ];
+  google.protobuf.Timestamp last_vsc_recv_time = 6
+      [ (gogoproto.stdtime) = true ];
 
   // Missed-block bitmaps for validators currently tracked within the open
   // downtime window. Empty for a new chain or right after a window closes.

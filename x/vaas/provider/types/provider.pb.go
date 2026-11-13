@@ -112,7 +112,8 @@ const (
 	// consumer forked (MsgSubmitConsumerMisbehaviour).
 	PAUSE_REASON_LIGHT_CLIENT_ATTACK PauseReason = 2
 	// REFUSAL_THRESHOLD: the bonded power refusing the consumer reached
-	// RefusalPauseThreshold (MsgSetConsumerRefusal, see EvaluateConsumerRefusals).
+	// RefusalPauseThreshold (MsgSetConsumerRefusal, see
+	// EvaluateConsumerRefusals).
 	PAUSE_REASON_REFUSAL_THRESHOLD PauseReason = 3
 )
 
@@ -145,7 +146,8 @@ type Params struct {
 	TrustingPeriodFraction string `protobuf:"bytes,1,opt,name=trusting_period_fraction,json=trustingPeriodFraction,proto3" json:"trusting_period_fraction,omitempty"`
 	// LivenessGraceFraction sets the consumer liveness grace period as a fraction
 	// of the provider unbonding period (grace = unbonding * fraction). A consumer
-	// with no successful VSC acknowledgement for longer than the grace is removed.
+	// with no successful VSC acknowledgement for longer than the grace is
+	// removed.
 	LivenessGraceFraction string `protobuf:"bytes,2,opt,name=liveness_grace_fraction,json=livenessGraceFraction,proto3" json:"liveness_grace_fraction,omitempty"`
 	// Sent IBC packets will timeout after this duration
 	VaasTimeoutPeriod time.Duration `protobuf:"bytes,3,opt,name=vaas_timeout_period,json=vaasTimeoutPeriod,proto3,stdduration" json:"vaas_timeout_period"`

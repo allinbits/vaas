@@ -788,7 +788,8 @@ type QueryConsumerValidatorsValidator struct {
 	Description types1.Description `protobuf:"bytes,4,opt,name=description,proto3" json:"description"`
 	// provider_operator_address defines the address of the validator's operator
 	ProviderOperatorAddress string `protobuf:"bytes,5,opt,name=provider_operator_address,json=providerOperatorAddress,proto3" json:"provider_operator_address,omitempty"`
-	// jailed defined whether the validator has been jailed from bonded status or not.
+	// jailed defined whether the validator has been jailed from bonded status or
+	// not.
 	Jailed bool `protobuf:"varint,6,opt,name=jailed,proto3" json:"jailed,omitempty"`
 	// status is the validator status (bonded/unbonding/unbonded).
 	Status types1.BondStatus `protobuf:"varint,7,opt,name=status,proto3,enum=cosmos.staking.v1beta1.BondStatus" json:"status,omitempty"`
@@ -796,7 +797,8 @@ type QueryConsumerValidatorsValidator struct {
 	ProviderTokens cosmossdk_io_math.Int `protobuf:"bytes,8,opt,name=provider_tokens,json=providerTokens,proto3,customtype=cosmossdk.io/math.Int" json:"provider_tokens"`
 	// The power of the validator used on the provider chain
 	ProviderPower int64 `protobuf:"varint,9,opt,name=provider_power,json=providerPower,proto3" json:"provider_power,omitempty"`
-	// validates_current_epoch defines whether the validator has to validate for the current epoch or not
+	// validates_current_epoch defines whether the validator has to validate for
+	// the current epoch or not
 	ValidatesCurrentEpoch bool `protobuf:"varint,10,opt,name=validates_current_epoch,json=validatesCurrentEpoch,proto3" json:"validates_current_epoch,omitempty"`
 }
 
@@ -1023,7 +1025,8 @@ func (m *QueryBlocksUntilNextEpochResponse) GetBlocksUntilNextEpoch() uint64 {
 
 type QueryConsumerIdFromClientIdRequest struct {
 	// the client id (on the provider) that is tracking the consumer chain
-	// the client id can be found from the consumer chain by querying (i.e., `query vaasconsumer provider-info`)
+	// the client id can be found from the consumer chain by querying (i.e.,
+	// `query vaasconsumer provider-info`)
 	ClientId string `protobuf:"bytes,1,opt,name=client_id,json=clientId,proto3" json:"client_id,omitempty"`
 }
 
@@ -2561,14 +2564,15 @@ type QueryClient interface {
 	// QueryProviderAddr returns the provider chain validator
 	// given a consumer chain validator address
 	QueryValidatorProviderAddr(ctx context.Context, in *QueryValidatorProviderAddrRequest, opts ...grpc.CallOption) (*QueryValidatorProviderAddrResponse, error)
-	// QueryAllPairsValConsAddrByConsumer returns a list of pair valconsensus address
-	// between provider and consumer chain
+	// QueryAllPairsValConsAddrByConsumer returns a list of pair valconsensus
+	// address between provider and consumer chain
 	QueryAllPairsValConsAddrByConsumer(ctx context.Context, in *QueryAllPairsValConsAddrByConsumerRequest, opts ...grpc.CallOption) (*QueryAllPairsValConsAddrByConsumerResponse, error)
 	// QueryParams returns all current values of provider parameters
 	QueryParams(ctx context.Context, in *QueryParamsRequest, opts ...grpc.CallOption) (*QueryParamsResponse, error)
-	// QueryConsumerValidators returns the latest set consumer-validator set for a given consumer ID
-	// Note that this does not necessarily mean that the consumer chain is using this validator set at this exact moment
-	// because a VSCPacket could be delayed to be delivered on the consumer chain.
+	// QueryConsumerValidators returns the latest set consumer-validator set for a
+	// given consumer ID Note that this does not necessarily mean that the consumer
+	// chain is using this validator set at this exact moment because a VSCPacket
+	// could be delayed to be delivered on the consumer chain.
 	QueryConsumerValidators(ctx context.Context, in *QueryConsumerValidatorsRequest, opts ...grpc.CallOption) (*QueryConsumerValidatorsResponse, error)
 	// QueryBlocksUntilNextEpoch returns the number of blocks until the next epoch
 	// starts and validator updates are sent to the consumer chains
@@ -2809,14 +2813,15 @@ type QueryServer interface {
 	// QueryProviderAddr returns the provider chain validator
 	// given a consumer chain validator address
 	QueryValidatorProviderAddr(context.Context, *QueryValidatorProviderAddrRequest) (*QueryValidatorProviderAddrResponse, error)
-	// QueryAllPairsValConsAddrByConsumer returns a list of pair valconsensus address
-	// between provider and consumer chain
+	// QueryAllPairsValConsAddrByConsumer returns a list of pair valconsensus
+	// address between provider and consumer chain
 	QueryAllPairsValConsAddrByConsumer(context.Context, *QueryAllPairsValConsAddrByConsumerRequest) (*QueryAllPairsValConsAddrByConsumerResponse, error)
 	// QueryParams returns all current values of provider parameters
 	QueryParams(context.Context, *QueryParamsRequest) (*QueryParamsResponse, error)
-	// QueryConsumerValidators returns the latest set consumer-validator set for a given consumer ID
-	// Note that this does not necessarily mean that the consumer chain is using this validator set at this exact moment
-	// because a VSCPacket could be delayed to be delivered on the consumer chain.
+	// QueryConsumerValidators returns the latest set consumer-validator set for a
+	// given consumer ID Note that this does not necessarily mean that the consumer
+	// chain is using this validator set at this exact moment because a VSCPacket
+	// could be delayed to be delivered on the consumer chain.
 	QueryConsumerValidators(context.Context, *QueryConsumerValidatorsRequest) (*QueryConsumerValidatorsResponse, error)
 	// QueryBlocksUntilNextEpoch returns the number of blocks until the next epoch
 	// starts and validator updates are sent to the consumer chains

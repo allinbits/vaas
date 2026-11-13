@@ -126,8 +126,8 @@ func (m *MsgAssignConsumerKeyResponse) XXX_DiscardUnknown() {
 
 var xxx_messageInfo_MsgAssignConsumerKeyResponse proto.InternalMessageInfo
 
-// MsgSubmitConsumerMisbehaviour defines a message that reports a light client attack,
-// also known as a misbehaviour, observed on a consumer chain
+// MsgSubmitConsumerMisbehaviour defines a message that reports a light client
+// attack, also known as a misbehaviour, observed on a consumer chain
 type MsgSubmitConsumerMisbehaviour struct {
 	Submitter string `protobuf:"bytes,1,opt,name=submitter,proto3" json:"submitter,omitempty"`
 	// The Misbehaviour of the consumer chain wrapping
@@ -674,7 +674,8 @@ func (m *MsgRemoveConsumer) GetSigner() string {
 	return ""
 }
 
-// MsgRemoveConsumerResponse defines response type for MsgRemoveConsumer messages
+// MsgRemoveConsumerResponse defines response type for MsgRemoveConsumer
+// messages
 type MsgRemoveConsumerResponse struct {
 }
 
@@ -840,9 +841,10 @@ type MsgUpdateConsumer struct {
 	Metadata *ConsumerMetadata `protobuf:"bytes,4,opt,name=metadata,proto3" json:"metadata,omitempty"`
 	// initialization parameters can only be updated before a chain has launched
 	InitializationParameters *ConsumerInitializationParameters `protobuf:"bytes,5,opt,name=initialization_parameters,json=initializationParameters,proto3" json:"initialization_parameters,omitempty"`
-	// (optional) If the consumer chain has NOT yet launched, the chain id can be updated. After a chain has launched
-	// the chain id CANNOT be updated.
-	// This field is optional and can remain empty (i.e., `new_chain_id = ""`) or correspond to the chain id the chain already has.
+	// (optional) If the consumer chain has NOT yet launched, the chain id can be
+	// updated. After a chain has launched the chain id CANNOT be updated. This
+	// field is optional and can remain empty (i.e., `new_chain_id = ""`) or
+	// correspond to the chain id the chain already has.
 	NewChainId string `protobuf:"bytes,6,opt,name=new_chain_id,json=newChainId,proto3" json:"new_chain_id,omitempty"`
 	// (optional) The IBC client the provider uses to reach the consumer,
 	// declared by the owner once the consumer is LAUNCHED and a relayer has
@@ -937,7 +939,8 @@ func (m *MsgUpdateConsumer) GetClientId() string {
 	return ""
 }
 
-// MsgUpdateConsumerResponse defines response type for MsgUpdateConsumer messages
+// MsgUpdateConsumerResponse defines response type for MsgUpdateConsumer
+// messages
 type MsgUpdateConsumerResponse struct {
 }
 
@@ -1343,7 +1346,8 @@ var xxx_messageInfo_MsgSweepConsumerFeePoolResponse proto.InternalMessageInfo
 // consumer consensus pubkey supplied in the message.
 type MsgChallengeConsumerDowntime struct {
 	Signer string `protobuf:"bytes,1,opt,name=signer,proto3" json:"signer,omitempty"`
-	// the consumer id of the consumer chain the pending downtime slash was raised on
+	// the consumer id of the consumer chain the pending downtime slash was raised
+	// on
 	ConsumerId uint64 `protobuf:"varint,2,opt,name=consumer_id,json=consumerId,proto3" json:"consumer_id,omitempty"`
 	// the consumer consensus address from the evidence
 	ValidatorAddr []byte `protobuf:"bytes,3,opt,name=validator_addr,json=validatorAddr,proto3" json:"validator_addr,omitempty"`

@@ -231,9 +231,11 @@ func (m *ConsumerGenesisState) GetPreVAAS() bool {
 // ProviderInfo defines all information a consumer needs from a provider
 // Shared data type between provider and consumer
 type ProviderInfo struct {
-	// The client state for the provider client filled in on new chain, nil on restart.
+	// The client state for the provider client filled in on new chain, nil on
+	// restart.
 	ClientState *_07_tendermint.ClientState `protobuf:"bytes,1,opt,name=client_state,json=clientState,proto3" json:"client_state,omitempty"`
-	// The consensus state for the provider client filled in on new chain, nil on restart.
+	// The consensus state for the provider client filled in on new chain, nil on
+	// restart.
 	ConsensusState *_07_tendermint.ConsensusState `protobuf:"bytes,2,opt,name=consensus_state,json=consensusState,proto3" json:"consensus_state,omitempty"`
 	// InitialValset filled in on new chain and on restart.
 	InitialValSet []types.ValidatorUpdate `protobuf:"bytes,3,rep,name=initial_val_set,json=initialValSet,proto3" json:"initial_val_set"`

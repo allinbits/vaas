@@ -30,7 +30,8 @@ message Params {
 
   // LivenessGraceFraction sets the consumer liveness grace period as a fraction
   // of the provider unbonding period (grace = unbonding * fraction). A consumer
-  // with no successful VSC acknowledgement for longer than the grace is removed.
+  // with no successful VSC acknowledgement for longer than the grace is
+  // removed.
   string liveness_grace_fraction = 2;
 
   // Sent IBC packets will timeout after this duration
@@ -277,7 +278,8 @@ enum PauseReason {
   // consumer forked (MsgSubmitConsumerMisbehaviour).
   PAUSE_REASON_LIGHT_CLIENT_ATTACK = 2;
   // REFUSAL_THRESHOLD: the bonded power refusing the consumer reached
-  // RefusalPauseThreshold (MsgSetConsumerRefusal, see EvaluateConsumerRefusals).
+  // RefusalPauseThreshold (MsgSetConsumerRefusal, see
+  // EvaluateConsumerRefusals).
   PAUSE_REASON_REFUSAL_THRESHOLD = 3;
 }
 
