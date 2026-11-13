@@ -11,6 +11,7 @@ import (
 
 	clienttypes "github.com/cosmos/ibc-go/v10/modules/core/02-client/types"
 	channeltypesv2 "github.com/cosmos/ibc-go/v10/modules/core/04-channel/v2/types"
+	ibcexported "github.com/cosmos/ibc-go/v10/modules/core/exported"
 	ibctmtypes "github.com/cosmos/ibc-go/v10/modules/light-clients/07-tendermint"
 
 	errorsmod "cosmossdk.io/errors"
@@ -232,6 +233,9 @@ func TestOwnerExecRefusesSendingOnTheConsumerPort(t *testing.T) {
 
 // The pin's coherence rule holds for its recovery: an exec that leaves the
 // pinned provider client tracking another chain id is refused as a whole.
+// The pinned client is read once before the messages run (where the stored
+// chain id follows it) and once after them; a recovery carried by the exec
+// moves it between the two reads.
 func TestOwnerExecRefusesLeavingTheProviderClientOnAnotherChain(t *testing.T) {
 	f := newOwnerExecFixture(t)
 	f.k.SetProviderClientID(f.ctx, pinClientID)
@@ -239,15 +243,66 @@ func TestOwnerExecRefusesLeavingTheProviderClientOnAnotherChain(t *testing.T) {
 	inner := clientParamsUpdate(types.OwnerExecAuthority())
 
 	f.mocks.MockClientKeeper.EXPECT().GetClientState(gomock.Any(), pinClientID).
-		Return(&ibctmtypes.ClientState{ChainId: pinProviderCID}, true).Times(1)
+		Return(&ibctmtypes.ClientState{ChainId: pinProviderCID}, true).Times(2)
 	_, err := f.srv.OwnerExec(f.ctx, ownerExecOf(t, pinOwner, inner))
 	require.NoError(t, err, "a pin still tracking the provider passes")
 
-	f.mocks.MockClientKeeper.EXPECT().GetClientState(gomock.Any(), pinClientID).
-		Return(&ibctmtypes.ClientState{ChainId: "another-chain-1"}, true).Times(1)
+	gomock.InOrder(
+		f.mocks.MockClientKeeper.EXPECT().GetClientState(gomock.Any(), pinClientID).
+			Return(&ibctmtypes.ClientState{ChainId: pinProviderCID}, true).Times(1),
+		f.mocks.MockClientKeeper.EXPECT().GetClientState(gomock.Any(), pinClientID).
+			Return(&ibctmtypes.ClientState{ChainId: "another-chain-1"}, true).Times(1),
+	)
 	_, err = f.srv.OwnerExec(f.ctx, ownerExecOf(t, pinOwner, inner))
 	require.ErrorIs(t, err, types.ErrInvalidOwnerExec)
 	require.ErrorContains(t, err, "not the provider chain id")
+	stored, found := f.k.GetProviderChainId(f.ctx)
+	require.True(t, found)
+	require.Equal(t, pinProviderCID, stored, "a pin the exec itself moved is not followed")
+}
+
+// The stored provider chain id follows the pinned client before an exec's
+// messages run: a pin that ibc-go's verified client upgrade moved to the
+// provider's new chain id, still active, is followed with its event, and the
+// exec passes its closing coherence check; a pin that is not active is not
+// followed, so the exec is refused as leaving the pin on another chain.
+func TestOwnerExecFollowsTheUpgradedPinnedClient(t *testing.T) {
+	for name, tc := range map[string]struct {
+		status   ibcexported.Status
+		followed bool
+	}{
+		"active":  {status: ibcexported.Active, followed: true},
+		"expired": {status: ibcexported.Expired},
+	} {
+		t.Run(name, func(t *testing.T) {
+			f := newOwnerExecFixture(t)
+			f.k.SetProviderClientID(f.ctx, pinClientID)
+			f.k.SetProviderChainId(f.ctx, pinProviderCID)
+			f.mocks.MockClientKeeper.EXPECT().GetClientState(gomock.Any(), pinClientID).
+				Return(&ibctmtypes.ClientState{ChainId: "provider-2"}, true).AnyTimes()
+			f.mocks.MockClientKeeper.EXPECT().GetClientStatus(gomock.Any(), pinClientID).Return(tc.status).Times(1)
+
+			_, err := f.srv.OwnerExec(f.ctx, ownerExecOf(t, pinOwner, clientParamsUpdate(types.OwnerExecAuthority())))
+			stored, found := f.k.GetProviderChainId(f.ctx)
+			require.True(t, found)
+			followed := 0
+			for _, ev := range f.ctx.EventManager().Events() {
+				if ev.Type == vaastypes.EventTypeProviderChainIdFollowed {
+					followed++
+				}
+			}
+			if !tc.followed {
+				require.ErrorIs(t, err, types.ErrInvalidOwnerExec)
+				require.Equal(t, pinProviderCID, stored, "a pin that is not active is not followed")
+				require.Zero(t, followed)
+				return
+			}
+			require.NoError(t, err)
+			require.Equal(t, "provider-2", stored, "the stored chain id follows the upgraded pin")
+			require.Equal(t, 1, followed)
+			require.Len(t, f.router.executed, 1)
+		})
+	}
 }
 
 // paramsRouter stands in for the app's router with the consumer's own

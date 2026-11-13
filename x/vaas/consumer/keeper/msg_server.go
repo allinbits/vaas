@@ -125,7 +125,7 @@ func (k msgServer) SetProviderClient(goCtx context.Context, msg *types.MsgSetPro
 		sdk.NewEvent(
 			vaastypes.EventTypeClientEstablished,
 			sdk.NewAttribute(sdk.AttributeKeyModule, types.ModuleName),
-			sdk.NewAttribute("client_id", msg.ClientId),
+			sdk.NewAttribute(vaastypes.AttributeClientId, msg.ClientId),
 		),
 	)
 
@@ -199,6 +199,12 @@ func (k msgServer) OwnerExec(goCtx context.Context, msg *types.MsgOwnerExec) (*t
 		return nil, errorsmod.Wrap(types.ErrInvalidOwnerExec, "no messages to execute")
 	}
 
+	// The stored provider chain id follows the pinned client before the
+	// messages run (relay.go), so a pin that ibc-go's verified client upgrade
+	// moved to the provider's new chain id does not read, at the end of the
+	// exec, as a pin this exec left on another chain.
+	k.followPinnedProviderChainID(ctx)
+
 	authority := types.OwnerExecAuthority()
 	for i, inner := range msgs {
 		typeURL := sdk.MsgTypeURL(inner)
@@ -261,13 +267,16 @@ func sendsOnConsumerPort(send *channeltypesv2.MsgSendPacket) bool {
 }
 
 // providerClientCoherent reports, as an error, that the pinned provider
-// client tracks a chain id other than the provider's: the one state an owner
-// exec may not leave behind. A recovery (MsgRecoverClient) substitutes a
-// client of any chain id, and the pin's coherence rule (SetProviderClient)
-// holds for its recovery too; a pin left tracking another chain would accept
-// no packet (relay.go, authenticateProviderChainID) and could never be moved
-// back. Nothing is checked while no client is pinned, or while the pinned
-// client has no state.
+// client tracks a chain id other than the stored provider chain id: the one
+// state an owner exec may not leave behind. A recovery (MsgRecoverClient)
+// substitutes a client of any chain id, and the pin's coherence rule
+// (SetProviderClient) holds for its recovery too: the stored id follows the
+// pinned client (relay.go, authenticateProviderChainID), so a recovery onto a
+// client of another chain would re-point the consumer at that chain by the
+// owner's hand alone, where a provider chain-id change reaches the pinned
+// client through ibc-go's verified client upgrade, by anyone's hand and
+// outside an exec. Nothing is checked while no client is pinned, or while
+// the pinned client has no state.
 func (k Keeper) providerClientCoherent(ctx sdk.Context) error {
 	clientID, found := k.GetProviderClientID(ctx)
 	if !found || clientID == "" {

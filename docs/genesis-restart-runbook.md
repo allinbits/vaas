@@ -159,6 +159,21 @@ chain's pre-restart block store queryable by the relayer until its clients have
 advanced past the restart, or replace the stuck clients through the governance
 client-recovery path.
 
+**A provider chain-id change needs no consumer restart.** On the provider it is
+an IBC-aware upgrade: the plan carries an upgraded client state with the new
+chain id (ibc-go's `MsgIBCSoftwareUpgrade`), which ibc-go commits under its
+upgrade path at the halt height, and the restarted provider's genesis carries
+the new `chain_id`. On each consumer the relayer submits ibc-go's
+`MsgUpgradeClient` on the pinned provider client as an ordinary transaction
+(permissionless and admitted in every mode; not inside an owner exec, which
+must leave the pinned client on the stored chain id): ibc-go verifies the
+upgrade against the old chain's commitment, adopts the new chain id and keeps
+the client id, so the pin survives. The consumer's stored provider chain id
+then follows the pinned client on the next VSC packet or owner exec
+(`vaas_provider_chain_id_followed`); the consumer's owner does nothing. Relay
+the upgrade within the pinned client's trusting period, since ibc-go upgrades
+only an active client.
+
 Order the provider and consumers so the relayer can connect promptly after
 start; the consumer safe-mode clock is preserved across the restart, so a long
 gap before VSC traffic resumes is treated exactly as it would have been without
