@@ -179,16 +179,18 @@ type Keeper struct {
 	DowntimeWindowFloors collections.Map[collections.Pair[uint64, []byte], int64]
 
 	// PunishedEquivocations records, per (chain id, live provider cons addr,
-	// infraction height), a consumer double-sign already punished without
-	// tombstoning the validator, so the same infraction is never punished
-	// twice. Keyed by the chain id rather than the consumer id, and kept when
-	// the consumer is deleted, because the evidence is signed over the chain
-	// id: a consumer that re-registers the id could otherwise be handed the
-	// dead chain's double-signs and punish them again. A tombstoning
-	// punishment needs no record, the tombstone stops every later submission
-	// by itself, and drops the validator's entries as redundant. Keyed by the
-	// live address, so a rotation moves the entries (see
-	// migratePunishedEquivocations).
+	// infraction height), a consumer double-sign whose punishment was
+	// queued, so the same infraction is never punished twice. The record is
+	// written whatever the tombstone policy says at the time: the policy is
+	// read again when the punishment executes, and the record is what holds
+	// when the two disagree. Keyed by the chain id rather than the consumer
+	// id, and kept when the consumer is deleted, because the evidence is
+	// signed over the chain id: a consumer that re-registers the id could
+	// otherwise be handed the dead chain's double-signs and punish them
+	// again. A tombstone stops every later submission by itself, so the
+	// records of a validator it lands on are dropped as redundant (see
+	// forgetPunishedEquivocationsOf). Keyed by the live address, so a
+	// rotation moves the entries (see migratePunishedEquivocations).
 	PunishedEquivocations collections.KeySet[collections.Triple[string, []byte, int64]]
 
 	// WithheldFeeRecords holds fee shares withheld from a validator due to a

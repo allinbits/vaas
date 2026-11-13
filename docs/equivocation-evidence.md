@@ -83,14 +83,17 @@ Both files are decoded with the proto-JSON codec. CLI source:
    [consumer-refusal.md](consumer-refusal.md) section 3. Repeated submissions
    of already-processed evidence are idempotent: already queued is a no-op,
    already-tombstoned is not an error, and a double-sign whose punishment
-   executed without tombstoning (`double_sign.tombstone = false`) is
-   remembered by chain id, live provider consensus address and infraction
-   height (`PunishedEquivocations`, which follows consumer key rotation and
-   is cleared once the validator is tombstoned), so the same infraction is
-   never punished twice. The record is keyed by the chain id the votes were
-   signed over and outlives the consumer: a consumer that re-registers a
-   deleted consumer's chain id cannot be handed the dead chain's double-signs
-   and punish them again.
+   was queued is remembered by chain id, live provider consensus address and
+   infraction height (`PunishedEquivocations`), so the same infraction is
+   never punished twice. The record is written whatever
+   `double_sign.tombstone` says at the time: the policy is read again when
+   the punishment executes, and a governance change in between must not
+   make the same two votes punishable again. It follows consumer key
+   rotation and is dropped once the validator is tombstoned, the tombstone
+   stopping every later submission by itself. It is keyed by the chain id
+   the votes were signed over and outlives the consumer: a consumer that
+   re-registers a deleted consumer's chain id cannot be handed the dead
+   chain's double-signs and punish them again.
 
 On success the provider emits `vaas_submit_consumer_double_voting` and
 `vaas_equivocation_punishment_queued`; the resolution later emits
