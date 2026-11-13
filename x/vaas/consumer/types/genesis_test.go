@@ -158,17 +158,15 @@ func TestValidateMissedBlockBitmapLength(t *testing.T) {
 
 	validator := tmtypes.NewValidator(pubKey, 1)
 	valSet := tmtypes.NewValidatorSet([]*tmtypes.Validator{validator})
-	valHash := valSet.Hash()
 	valUpdates := tmtypes.TM2PB.ValidatorUpdates(valSet)
-
-	cs := ibctmtypes.NewClientState(chainID, ibctmtypes.DefaultTrustLevel, trustingPeriod, ubdPeriod, maxClockDrift, height, commitmenttypes.GetSDKSpecs(), upgradePath)
-	consensusState := ibctmtypes.NewConsensusState(time.Now(), commitmenttypes.NewMerkleRoot([]byte("apphash")), valHash)
 
 	params := vaastypes.DefaultConsumerParams()
 	wantLen := int((params.SignedBlocksWindow + 7) / 8)
 
+	// A restart export is the genesis that carries a bitmap; a new chain
+	// refuses one before its length is looked at.
 	base := func() *types.GenesisState {
-		return types.NewInitialGenesisState(cs, consensusState, valUpdates, params)
+		return types.NewRestartGenesisState("07-tendermint-0", valUpdates, params)
 	}
 
 	t.Run("correct length is valid", func(t *testing.T) {
@@ -221,16 +219,14 @@ func TestValidateStagedDowntimeParams(t *testing.T) {
 
 	validator := tmtypes.NewValidator(pubKey, 1)
 	valSet := tmtypes.NewValidatorSet([]*tmtypes.Validator{validator})
-	valHash := valSet.Hash()
 	valUpdates := tmtypes.TM2PB.ValidatorUpdates(valSet)
-
-	cs := ibctmtypes.NewClientState(chainID, ibctmtypes.DefaultTrustLevel, trustingPeriod, ubdPeriod, maxClockDrift, height, commitmenttypes.GetSDKSpecs(), upgradePath)
-	consensusState := ibctmtypes.NewConsensusState(time.Now(), commitmenttypes.NewMerkleRoot([]byte("apphash")), valHash)
 
 	params := vaastypes.DefaultConsumerParams()
 
+	// A restart export is the genesis that carries staged params; a new
+	// chain refuses them before their values are looked at.
 	base := func() *types.GenesisState {
-		return types.NewInitialGenesisState(cs, consensusState, valUpdates, params)
+		return types.NewRestartGenesisState("07-tendermint-0", valUpdates, params)
 	}
 
 	t.Run("valid staged downtime params", func(t *testing.T) {
@@ -371,19 +367,17 @@ func TestValidatePendingEvidencePackets(t *testing.T) {
 
 	validator := tmtypes.NewValidator(pubKey, 1)
 	valSet := tmtypes.NewValidatorSet([]*tmtypes.Validator{validator})
-	valHash := valSet.Hash()
 	valUpdates := tmtypes.TM2PB.ValidatorUpdates(valSet)
-
-	cs := ibctmtypes.NewClientState(chainID, ibctmtypes.DefaultTrustLevel, trustingPeriod, ubdPeriod, maxClockDrift, height, commitmenttypes.GetSDKSpecs(), upgradePath)
-	consensusState := ibctmtypes.NewConsensusState(time.Now(), commitmenttypes.NewMerkleRoot([]byte("apphash")), valHash)
 
 	params := vaastypes.DefaultConsumerParams()
 
 	addr := sdk.ConsAddress("validator-addr-evidence-one")
 	packet := vaastypes.NewEvidencePacketData(addr, 1, []byte{0xFF, 0x03}, 10, 100, math.LegacyNewDecWithPrec(5, 1))
 
+	// A restart export is the genesis that carries a queued packet; a new
+	// chain refuses one before its bytes are looked at.
 	base := func() *types.GenesisState {
-		return types.NewInitialGenesisState(cs, consensusState, valUpdates, params)
+		return types.NewRestartGenesisState("07-tendermint-0", valUpdates, params)
 	}
 
 	t.Run("valid pending evidence packet", func(t *testing.T) {
@@ -460,4 +454,84 @@ func TestValidateNewChainRejectsConsumerInDebt(t *testing.T) {
 	restart := types.NewRestartGenesisState("07-tendermint-0", valUpdates, params)
 	restart.ConsumerInDebt = true
 	require.NoError(t, restart.Validate(), "a restart genesis may carry the debt flag")
+}
+
+// TestValidateRejectsAnInitialValidatorWithoutPower: InitGenesis hands the
+// initial set to CometBFT as is, and CometBFT refuses a validator set that
+// carries a validator without voting power, so the entry is refused at
+// validation rather than halting the node at start. The export of a running
+// chain never writes one (the keeper stores no validator at power zero).
+func TestValidateRejectsAnInitialValidatorWithoutPower(t *testing.T) {
+	cId := crypto.NewCryptoIdentityFromIntSeed(770013)
+	pubKey := cId.TMCryptoPubKey()
+	validator := tmtypes.NewValidator(pubKey, 1)
+	valSet := tmtypes.NewValidatorSet([]*tmtypes.Validator{validator})
+
+	cs := ibctmtypes.NewClientState(chainID, ibctmtypes.DefaultTrustLevel, trustingPeriod, ubdPeriod, maxClockDrift, height, commitmenttypes.GetSDKSpecs(), upgradePath)
+	consensusState := ibctmtypes.NewConsensusState(time.Now(), commitmenttypes.NewMerkleRoot([]byte("apphash")), valSet.Hash())
+	params := vaastypes.DefaultConsumerParams()
+
+	for _, power := range []int64{0, -1} {
+		valUpdates := tmtypes.TM2PB.ValidatorUpdates(valSet)
+		valUpdates[0].Power = power
+
+		err := types.NewInitialGenesisState(cs, consensusState, valUpdates, params).Validate()
+		require.Error(t, err, "new chain, power %d", power)
+		require.Contains(t, err.Error(), "want positive")
+
+		err = types.NewRestartGenesisState("07-tendermint-0", valUpdates, params).Validate()
+		require.Error(t, err, "restart, power %d", power)
+		require.Contains(t, err.Error(), "want positive")
+	}
+}
+
+// TestValidateNewChainRejectsRestartOnlyState: the fields keeper.ExportGenesis
+// writes for a restart are refused on a new chain, where a provider-authored
+// genesis never sets them: a watermark would drop the first VSC ids, a
+// staleness clock would start the chain already stale, and the downtime
+// window, the evidence queue and the staged params belong to a chain that has
+// run. A restart genesis carries every one of them.
+func TestValidateNewChainRejectsRestartOnlyState(t *testing.T) {
+	cId := crypto.NewCryptoIdentityFromIntSeed(770014)
+	pubKey := cId.TMCryptoPubKey()
+	validator := tmtypes.NewValidator(pubKey, 1)
+	valSet := tmtypes.NewValidatorSet([]*tmtypes.Validator{validator})
+	valUpdates := tmtypes.TM2PB.ValidatorUpdates(valSet)
+
+	cs := ibctmtypes.NewClientState(chainID, ibctmtypes.DefaultTrustLevel, trustingPeriod, ubdPeriod, maxClockDrift, height, commitmenttypes.GetSDKSpecs(), upgradePath)
+	consensusState := ibctmtypes.NewConsensusState(time.Now(), commitmenttypes.NewMerkleRoot([]byte("apphash")), valSet.Hash())
+	params := vaastypes.DefaultConsumerParams()
+
+	now := time.Now().UTC()
+	addr := sdk.ConsAddress("validator-addr-restart-only")
+	packet := vaastypes.NewEvidencePacketData(addr, 1, []byte{0xFF, 0x03}, 10, 100, math.LegacyNewDecWithPrec(5, 1))
+	bitmap := make([]byte, (params.SignedBlocksWindow+7)/8)
+
+	cases := map[string]func(gs *types.GenesisState){
+		"highest_valset_update_id": func(gs *types.GenesisState) { gs.HighestValsetUpdateId = 7 },
+		"last_vsc_recv_time":       func(gs *types.GenesisState) { gs.LastVscRecvTime = &now },
+		"missed_block_bitmaps": func(gs *types.GenesisState) {
+			gs.MissedBlockBitmaps = []types.MissedBlockBitmapEntry{{Addr: addr, Bitmap: bitmap}}
+		},
+		"first_tracked_heights": func(gs *types.GenesisState) {
+			gs.FirstTrackedHeights = []types.FirstTrackedHeightEntry{{Addr: addr, Height: 3}}
+		},
+		"pending_evidence_packets": func(gs *types.GenesisState) {
+			gs.PendingEvidencePackets = []types.PendingEvidencePacketEntry{{Addr: addr, Packet: packet.GetBytes()}}
+		},
+		"staged_downtime_params": func(gs *types.GenesisState) {
+			gs.StagedDowntimeParams = &vaastypes.DowntimeParams{SignedBlocksWindow: 50, MinSignedPerWindow: math.LegacyNewDecWithPrec(5, 1)}
+		},
+	}
+	for field, set := range cases {
+		newChain := types.NewInitialGenesisState(cs, consensusState, valUpdates, params)
+		set(newChain)
+		err := newChain.Validate()
+		require.Error(t, err, field)
+		require.Contains(t, err.Error(), field+" cannot be set for a new chain")
+
+		restart := types.NewRestartGenesisState("07-tendermint-0", valUpdates, params)
+		set(restart)
+		require.NoError(t, restart.Validate(), "a restart genesis carries %s", field)
+	}
 }
