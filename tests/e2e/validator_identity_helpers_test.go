@@ -152,6 +152,31 @@ func consAddrFromBase64(b64 string) (string, error) {
 	return sdk.ConsAddress(raw).String(), nil
 }
 
+// tryStakingValidatorState is stakingValidatorState returning an error
+// instead of failing the test, for the conditions of Eventually and Never,
+// which run in a goroutine of their own: a failure there stalls the wait to
+// its timeout.
+func (s *baseTestSuite) tryStakingValidatorState(valoper string) (jailed bool, tokens string, err error) {
+	stdout, stderr, err := s.dockerExec(s.providerValRes[0].Container.ID, []string{
+		providerBinary, "query", "staking", "validator", valoper,
+		"--home", providerHomePath,
+		"--output", "json",
+	})
+	if err != nil {
+		return false, "", fmt.Errorf("querying staking validator %s: %w (stderr=%s)", valoper, err, stderr.String())
+	}
+	var res struct {
+		Validator struct {
+			Jailed bool   `json:"jailed"`
+			Tokens string `json:"tokens"`
+		} `json:"validator"`
+	}
+	if err := json.Unmarshal(stdout.Bytes(), &res); err != nil {
+		return false, "", fmt.Errorf("decoding staking validator %s: %w (raw=%s)", valoper, err, stdout.String())
+	}
+	return res.Validator.Jailed, res.Validator.Tokens, nil
+}
+
 // providerValidatorConsAddr returns the bech32 consensus address of the
 // provider validator with the given operator address, failing the test if it
 // cannot be resolved.

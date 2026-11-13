@@ -152,17 +152,30 @@ func (s *ByzantineConsumerIntegrationTestSuite) fabricateFork(clientID string) s
 
 // clientStatus reads the status of one of the provider's IBC clients.
 func (s *ByzantineConsumerIntegrationTestSuite) clientStatus(clientID string) string {
-	stdout, _, err := s.dockerExec(s.providerValRes[0].Container.ID, []string{
+	status, err := s.tryClientStatus(clientID)
+	s.Require().NoErrorf(err, "failed to read the status of client %s", clientID)
+	return status
+}
+
+// tryClientStatus is clientStatus returning an error instead of failing the
+// test, for the conditions of Eventually and Never, which run in a goroutine
+// of their own: a failure there stalls the wait to its timeout.
+func (s *ByzantineConsumerIntegrationTestSuite) tryClientStatus(clientID string) (string, error) {
+	stdout, stderr, err := s.dockerExec(s.providerValRes[0].Container.ID, []string{
 		providerBinary, "query", "ibc", "client", "status", clientID,
 		"--home", providerHomePath,
 		"--output", "json",
 	})
-	s.Require().NoErrorf(err, "failed to query the status of client %s", clientID)
+	if err != nil {
+		return "", fmt.Errorf("querying the status of client %s: %w (stderr=%s)", clientID, err, stderr.String())
+	}
 	var res struct {
 		Status string `json:"status"`
 	}
-	s.Require().NoErrorf(json.Unmarshal(stdout.Bytes(), &res), "failed to decode the client status: %s", stdout.String())
-	return res.Status
+	if err := json.Unmarshal(stdout.Bytes(), &res); err != nil {
+		return "", fmt.Errorf("decoding the status of client %s: %w (raw=%s)", clientID, err, stdout.String())
+	}
+	return res.Status, nil
 }
 
 // testForkFreezesAndPausesWithoutPunishing: the test signs a fork of the
@@ -299,8 +312,10 @@ func (s *ByzantineConsumerIntegrationTestSuite) testForkRecoveryWaitsOutTheTrust
 		// The recovered client verifies the consumer's real headers: the
 		// relayer keeps moving it.
 		recoveredAt := s.clientLatestHeight(subject)
-		s.Require().Eventuallyf(func() bool { return s.clientLatestHeight(subject) > recoveredAt },
-			3*time.Minute, 3*time.Second, "the recovered client %s was never updated past height %d", subject, recoveredAt)
+		s.Require().Eventuallyf(func() bool {
+			height, err := s.tryClientLatestHeight(subject)
+			return err == nil && height > recoveredAt
+		}, 3*time.Minute, 3*time.Second, "the recovered client %s was never updated past height %d", subject, recoveredAt)
 		// And the consumer is served again: its acks flow.
 		s.waitForConsumerSync(consumerID)
 
@@ -379,10 +394,21 @@ func resumableAtFromFailure(failure string) time.Time {
 // clientLatestHeight returns the latest height of a provider-side IBC
 // client's state.
 func (s *ByzantineConsumerIntegrationTestSuite) clientLatestHeight(clientID string) int64 {
+	height, err := s.tryClientLatestHeight(clientID)
+	s.Require().NoErrorf(err, "failed to read the latest height of client %s", clientID)
+	return height
+}
+
+// tryClientLatestHeight is clientLatestHeight returning an error instead of
+// failing the test, for the conditions of Eventually and Never, which run in
+// a goroutine of their own: a failure there stalls the wait to its timeout.
+func (s *ByzantineConsumerIntegrationTestSuite) tryClientLatestHeight(clientID string) (int64, error) {
 	stdout, stderr, err := s.dockerExec(s.providerValRes[0].Container.ID, []string{
 		providerBinary, "query", "ibc", "client", "state", clientID, "--home", providerHomePath, "-o", "json",
 	})
-	s.Require().NoErrorf(err, "failed to query client %s: %s", clientID, stderr.String())
+	if err != nil {
+		return 0, fmt.Errorf("querying client %s: %w (stderr=%s)", clientID, err, stderr.String())
+	}
 	var res struct {
 		ClientState struct {
 			LatestHeight struct {
@@ -390,8 +416,12 @@ func (s *ByzantineConsumerIntegrationTestSuite) clientLatestHeight(clientID stri
 			} `json:"latest_height"`
 		} `json:"client_state"`
 	}
-	s.Require().NoErrorf(json.Unmarshal(stdout.Bytes(), &res), "failed to decode client %s: %s", clientID, stdout.String())
+	if err := json.Unmarshal(stdout.Bytes(), &res); err != nil {
+		return 0, fmt.Errorf("decoding client %s: %w (raw=%s)", clientID, err, stdout.String())
+	}
 	height, err := strconv.ParseInt(res.ClientState.LatestHeight.RevisionHeight, 10, 64)
-	s.Require().NoErrorf(err, "client %s latest height: %q", clientID, res.ClientState.LatestHeight.RevisionHeight)
-	return height
+	if err != nil {
+		return 0, fmt.Errorf("client %s latest height: %q: %w", clientID, res.ClientState.LatestHeight.RevisionHeight, err)
+	}
+	return height, nil
 }

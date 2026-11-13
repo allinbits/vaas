@@ -39,7 +39,8 @@ func (s *MultiValidatorIntegrationTestSuite) testRefusalThresholdIsStakeWeighted
 		s.T().Log("val0 refuses the consumer: about a quarter of the bonded power...")
 		s.setConsumerRefusalFrom(0, consumerID, true)
 		s.Require().Never(func() bool {
-			return s.queryProviderConsumerPhase(consumerID) != phaseLaunched
+			phase := s.queryProviderConsumerPhase(consumerID)
+			return phase != "" && phase != phaseLaunched
 		}, 20*time.Second, 4*time.Second,
 			"a quarter of the bonded power refusing must not pause the consumer")
 

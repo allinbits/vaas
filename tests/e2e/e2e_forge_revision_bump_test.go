@@ -61,8 +61,10 @@ func (s *ByzantineConsumerIntegrationTestSuite) testRevisionBumpIsServedOnlyAfte
 		// unupdated and expires with its trusting period (two thirds of the
 		// consumer's unbonding period, create_consumer_forge.json).
 		s.T().Logf("waiting for the declared client %s to expire...", subject)
-		s.Require().Eventuallyf(func() bool { return s.clientStatus(subject) == clientExpired },
-			12*time.Minute, 10*time.Second, "the declared client %s never expired", subject)
+		s.Require().Eventuallyf(func() bool {
+			status, err := s.tryClientStatus(subject)
+			return err == nil && status == clientExpired
+		}, 12*time.Minute, 10*time.Second, "the declared client %s never expired", subject)
 		s.Require().Equalf(phaseLaunched, s.queryProviderConsumerPhase(consumerID), "an expired client changes no phase")
 
 		// The relayer is set up again for the renamed chain, as an operator
@@ -134,8 +136,10 @@ func (s *ByzantineConsumerIntegrationTestSuite) testRevisionBumpIsServedOnlyAfte
 		s.Require().Positive(boundaryHeight, "the boundary is the client's height at the rename")
 		s.Require().LessOrEqual(boundaryHeight, s.clientLatestHeight(subject), "the boundary cannot be past the client")
 
-		s.Require().Eventuallyf(func() bool { return s.nextSequenceSend(subject) > sentBefore },
-			2*time.Minute, 3*time.Second, "the provider sent no VSC packet over client %s after the rename", subject)
+		s.Require().Eventuallyf(func() bool {
+			sent, err := s.tryNextSequenceSend(subject)
+			return err == nil && sent > sentBefore
+		}, 2*time.Minute, 3*time.Second, "the provider sent no VSC packet over client %s after the rename", subject)
 		s.Require().Eventuallyf(func() bool { return s.highestAppliedVscID() > appliedBefore },
 			3*time.Minute, 3*time.Second, "the renamed consumer applied no VSC packet after the rename")
 		s.waitForConsumerSync(consumerID)
@@ -159,7 +163,8 @@ func (s *ByzantineConsumerIntegrationTestSuite) testRevisionBumpIsServedOnlyAfte
 		evidencePath, headerPath := s.fabricateDoubleVote(s.consensusPrivKey(2), oldChainID, haltedAt-5, "forge-val2-old-chain-id")
 		s.submitDoubleVoteEvidence(consumerID, evidencePath, headerPath)
 		s.Require().Eventuallyf(func() bool {
-			return s.pendingEquivocationsOf(consumerID, val2.consAddr) == 2
+			n, err := s.tryPendingEquivocationsOf(consumerID, val2.consAddr)
+			return err == nil && n == 2
 		}, time.Minute, 2*time.Second, "the double vote signed over the old chain id must queue a second punishment against val2")
 		_, tokensAfter := s.stakingValidatorState(val2.valoper)
 		s.Require().Equalf(tokensBefore, tokensAfter, "the punishment must be deferred, not executed")
