@@ -1,4 +1,4 @@
-ARG GO_VERSION=1.26.0
+ARG GO_VERSION=1.26.11
 ARG IMG_TAG=latest
 
 # Compile provider and consumer binaries
