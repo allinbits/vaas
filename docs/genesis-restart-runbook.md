@@ -56,7 +56,9 @@ still fail (or panic) at `InitChain`.
 - every consumer's `ConsumerState`: phase, owner, metadata, init params,
   client id, consumer genesis, pending VSC packets, removal / pause-expiration
   times, the liveness clock (`LastAckTime`, `HighestSentVscId`,
-  `HighestAckedVscId`), and the in-debt flag;
+  `HighestAckedVscId`), the in-debt flag, and the governance-removal record
+  (`removed_by_governance`, set only on a `STOPPED` consumer) that refuses
+  later double-voting evidence;
 - key-assignment state (per-consumer consensus keys, the reverse address index,
   and the addresses-to-prune queue);
 - params, per-consumer `fees_per_block` overrides, and fee-pool shares;

@@ -36,11 +36,32 @@ func (k Keeper) HandleConsumerDoubleVoting(
 	evidence *tmtypes.DuplicateVoteEvidence,
 	pubkey cryptotypes.PubKey,
 ) error {
-	// check that the evidence is for an ICS consumer chain
-	if k.GetConsumerPhase(ctx, consumerId) != types.CONSUMER_PHASE_LAUNCHED {
+	// The evidence needs a consumer that has launched and still holds its
+	// state: LAUNCHED, PAUSED or STOPPED. A pause or a stop does not void a
+	// double-sign: the punishment it queues is frozen with a pause and keeps
+	// its own clock through a stop (see SweepPendingEquivocationPunishments),
+	// and the evidence is self-contained signatures that need nothing from
+	// the chain to stand. Refusing it off LAUNCHED would hand a validator
+	// whose consumer is paused or stopped before its evidence lands an escape.
+	switch k.GetConsumerPhase(ctx, consumerId) {
+	case types.CONSUMER_PHASE_LAUNCHED, types.CONSUMER_PHASE_PAUSED, types.CONSUMER_PHASE_STOPPED:
+	default:
 		return errorsmod.Wrapf(
 			vaastypes.ErrInvalidDoubleVotingEvidence,
-			"consumer chain %d is not launched",
+			"consumer chain %d has not launched or is deleted",
+			consumerId,
+		)
+	}
+	// A governance removal is the one verdict on a consumer's evidence: it
+	// cancels the pending punishments, and evidence submitted after it would
+	// otherwise queue new ones the verdict can no longer reach (a consumer
+	// that carries the verdict cannot be removed again). A stop by the
+	// liveness sweep or by a lapsed pause is not a verdict and leaves the
+	// evidence acceptable until governance removes the stopped consumer.
+	if k.IsConsumerRemovedByGovernance(ctx, consumerId) {
+		return errorsmod.Wrapf(
+			vaastypes.ErrInvalidDoubleVotingEvidence,
+			"consumer chain %d was removed by governance, which voids its equivocation evidence",
 			consumerId,
 		)
 	}
@@ -250,9 +271,11 @@ func (k Keeper) VerifyDoubleVotingEvidence(
 // forked and no validator's stake: the consumer's IBC client is frozen and
 // the consumer is paused (see containLightClientAttack). A frozen client
 // accepts no packet proven against either branch of the fork, ICS-20 escrow
-// and vouchers included; a paused consumer gets no VSC, both evidence paths
-// close, its pending downtime accusations are cancelled and the fees
-// withheld on their account repaid, and an auto-stop at MaxPauseDuration
+// and vouchers included; a paused consumer gets no VSC, its downtime and
+// misbehaviour paths close (double-voting evidence stays acceptable, see
+// HandleConsumerDoubleVoting), its pending downtime accusations are cancelled
+// and the fees withheld on their account repaid, and an auto-stop at
+// MaxPauseDuration
 // guarantees governance silence converges to STOPPED. This message does both
 // in one transaction, through the client keeper's UpdateClient, and adds the
 // attribution. It is not the only way in: a relayer or watcher reports the
@@ -322,9 +345,10 @@ func (k Keeper) HandleConsumerMisbehaviour(ctx sdk.Context, consumerId uint64, m
 // reported the fork to 02-client first) or expired cannot be updated and
 // needs nothing from here; the resume path insists on an active client
 // either way. Then the pause does the rest. A paused consumer receives no
-// further VSC packets (QueueVSCPackets serves only launched consumers), both
-// evidence paths reject it (HandleConsumerDoubleVoting and this handler gate
-// on launched, closing the pipeline a malicious binary would keep feeding),
+// further VSC packets (QueueVSCPackets serves only launched consumers), its
+// downtime packets and this handler reject it (both gate on launched, closing
+// the pipeline a malicious binary would keep feeding; double-voting evidence
+// is self-contained and stays acceptable, see HandleConsumerDoubleVoting),
 // its pending downtime accusations are cancelled and the fees withheld on
 // their account repaid (a forked chain's accusations are no more trustworthy
 // than its headers; see PauseConsumerChain), and an auto-stop at

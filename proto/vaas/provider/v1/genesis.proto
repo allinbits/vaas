@@ -243,6 +243,11 @@ message ConsumerState {
   // period from it, so the fork's evidence can no longer pause the consumer.
   google.protobuf.Timestamp paused_at = 19
       [ (gogoproto.stdtime) = true ];
+  // removed_by_governance records that governance removed the consumer (a
+  // MsgRemoveConsumer stopped it, or its removal vote passed after it had
+  // stopped), the verdict that voids its equivocation evidence. Only a
+  // stopped consumer carries it.
+  bool removed_by_governance = 20;
 }
 
 // ConsumerFeesPerBlockOverride is a single per-consumer override entry for

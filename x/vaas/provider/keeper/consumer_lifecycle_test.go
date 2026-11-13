@@ -202,7 +202,10 @@ func TestDeleteConsumerChain_AutoSweepMultiDenomDust(t *testing.T) {
 }
 
 // TestBeginBlockRemoveConsumers_DeletesEligible verifies that every STOPPED
-// consumer whose removal time has elapsed is deleted in the BeginBlocker.
+// consumer whose removal time has elapsed is deleted in the BeginBlocker, the
+// governance-removal record of one that carries it included: a deleted
+// consumer exports none (ConsumerState.Validate allows it only on a stopped
+// consumer).
 func TestBeginBlockRemoveConsumers_DeletesEligible(t *testing.T) {
 	k, ctx, ctrl, mocks := testkeeper.GetProviderKeeperAndCtx(t, testkeeper.NewInMemKeeperParams(t))
 	defer ctrl.Finish()
@@ -224,11 +227,13 @@ func TestBeginBlockRemoveConsumers_DeletesEligible(t *testing.T) {
 		// Empty pool -> sweep is a no-op (only GetAllBalances is consulted).
 		mocks.MockBankKeeper.EXPECT().GetAllBalances(gomock.Any(), poolAddr).Return(sdk.NewCoins())
 	}
+	k.MarkConsumerRemovedByGovernance(ctx, ids[0])
 
 	require.NoError(t, k.BeginBlockRemoveConsumers(ctx))
 
 	for _, id := range ids {
 		require.Equal(t, providertypes.CONSUMER_PHASE_DELETED, k.GetConsumerPhase(ctx, id))
+		require.False(t, k.IsConsumerRemovedByGovernance(ctx, id), "deletion clears the governance-removal record")
 		_, err := k.FeePoolAddressToConsumerId.Get(ctx, k.GetConsumerFeePoolAddress(id))
 		require.ErrorIs(t, err, collections.ErrNotFound)
 	}

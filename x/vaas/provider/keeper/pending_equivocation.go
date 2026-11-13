@@ -74,6 +74,18 @@ func (k Keeper) QueuePendingEquivocationPunishment(
 	}
 
 	executesAt := ctx.BlockTime().Add(k.GetParams(ctx).EquivocationExecutionDelay)
+	if k.GetConsumerPhase(ctx, consumerId) == types.CONSUMER_PHASE_PAUSED {
+		// A paused consumer's entries are frozen, and the thaw moves every
+		// one of them forward by the pause's length (thawConsumerAccusations).
+		// An entry queued during the pause starts its clock at the pause, so
+		// the thaw lands it one full delay after the resume, like an entry
+		// queued the block before the pause; a pause that lapses into a stop
+		// instead lets it run on that clock from the stop. The jail behind it
+		// spans the pause either way (pendingEquivocationJailHorizon).
+		if pausedAt, err := k.GetConsumerPausedAt(ctx, consumerId); err == nil {
+			executesAt = pausedAt.Add(k.GetParams(ctx).EquivocationExecutionDelay)
+		}
+	}
 	entry := types.PendingEquivocationPunishment{
 		ConsumerId:       consumerId,
 		ProviderConsAddr: consAddr.Bytes(),
@@ -238,17 +250,19 @@ func (k Keeper) hasPendingEquivocationFor(ctx sdk.Context, consAddr sdk.ConsAddr
 //     deferred past the voting end, recording the proposal it deferred
 //     behind, mirroring the downtime deferral;
 //   - a deferred entry is decided by that proposal's tally: a passed vote
-//     cancels it (holds released, jail opened), whether its MsgRemoveConsumer
-//     executed or found the consumer already stopped; a rejected vote lets it
-//     execute; a vote still open at the extended maturity keeps deferring it,
-//     and no other proposal ever does;
+//     cancels it (holds released, jail opened), and so does a vote that
+//     passed but failed in execution against a consumer that had stopped or
+//     been deleted meanwhile; a rejected vote lets it execute; a vote still
+//     open at the extended maturity keeps deferring it, and no other proposal
+//     ever does;
 //   - any other matured entry executes: the validator is slashed and
 //     tombstoned at the double-sign parameters, and the holds are released so
 //     the (now slashed) unbonding operations complete.
 //
 // Only a governance removal cancels a pending punishment: the removal
-// executing (see the RemoveConsumer handler) or the removal vote an entry
-// deferred behind passing. A consumer stopped for liveness or for a lapsed
+// executing, on a running or an already stopped consumer (see the
+// RemoveConsumer handler), or the removal vote an entry deferred behind
+// passing. A consumer stopped for liveness or for a lapsed
 // pause is not a verdict on its evidence, and letting such stops cancel
 // would hand a coalition able to halt the chain a way to void punishments;
 // entries of a STOPPED or DELETED consumer therefore keep running on their
@@ -292,9 +306,11 @@ func (k Keeper) SweepPendingEquivocationPunishments(ctx sdk.Context) {
 			case found && status == govv1.StatusPassed:
 				toCancel = append(toCancel, item{key: key, entry: entry, reason: "removal vote passed"})
 			case found && status == govv1.StatusFailed && k.consumerStopped(ctx, consumerId):
-				// A passed vote whose MsgRemoveConsumer found nothing left to
-				// remove: the consumer stopped for another reason during the
-				// vote. The tally is the verdict.
+				// The vote passed but the proposal failed in execution
+				// against a consumer that stopped or was deleted during the
+				// vote: a deleted consumer refuses the removal, and another
+				// message in the proposal can fail it too. The tally is the
+				// verdict either way.
 				toCancel = append(toCancel, item{key: key, entry: entry, reason: "removal vote passed after the consumer had stopped"})
 			default:
 				toExecute = append(toExecute, item{key: key, entry: entry})
@@ -330,6 +346,13 @@ func (k Keeper) SweepPendingEquivocationPunishments(ctx sdk.Context) {
 		k.executePendingEquivocation(ctx, it.key)
 	}
 	for _, it := range toCancel {
+		// The tally is the verdict on the consumer, not only on this entry:
+		// the record keeps later evidence against the same consumer out. A
+		// consumer the vote found stopped carries it until its deletion; one
+		// already deleted has nothing left for evidence to resolve through.
+		if k.GetConsumerPhase(ctx, it.key.K1()) == types.CONSUMER_PHASE_STOPPED {
+			k.MarkConsumerRemovedByGovernance(ctx, it.key.K1())
+		}
 		k.cancelPendingEquivocation(ctx, it.key, it.reason)
 	}
 }

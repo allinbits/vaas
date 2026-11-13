@@ -750,10 +750,11 @@ func (s *LivenessIntegrationTestSuite) testEquivocationSurvivesLivenessStop() {
 
 // testDeferredEquivocationCancelledByVotePassedAfterStop: lqval2's punishment,
 // queued mid-outage, matures during a removal vote submitted after the
-// liveness stop, so it defers behind that vote. The vote passes, but its
-// MsgRemoveConsumer finds the consumer already STOPPED and gov records the
-// proposal FAILED; the tally is still the community's verdict, so the deferred
-// punishment is cancelled: entry gone, no tombstone, jail opened.
+// liveness stop, so it defers behind that vote instead of executing. The vote
+// passes and its MsgRemoveConsumer executes against the STOPPED consumer as
+// governance's verdict on its evidence: the deferred punishment is cancelled
+// at the tally (entry gone, no tombstone, jail opened) and the consumer stays
+// STOPPED.
 func (s *LivenessIntegrationTestSuite) testDeferredEquivocationCancelledByVotePassedAfterStop() {
 	s.Run("equivocation: a removal vote passed after the liveness stop cancels the deferred punishment", func() {
 		const consumerID = "0"
@@ -768,23 +769,19 @@ func (s *LivenessIntegrationTestSuite) testDeferredEquivocationCancelledByVotePa
 		s.Require().Truef(time.Until(entry.ExecutesAt) > 30*time.Second,
 			"lqval2's maturity (%s) must fall inside the vote about to be submitted", entry.ExecutesAt)
 
-		s.T().Log("submitting a removal proposal against the stopped consumer: the vote passes, the removal cannot execute...")
+		s.T().Log("submitting a removal proposal against the stopped consumer: the vote passes and the removal records the verdict...")
 		proposalID := s.submitProposalWithVote(
 			s.removalProposalJSON(consumerID, "Remove consumer (liveness e2e, passes after the stop)"),
-			"yes", "PROPOSAL_STATUS_FAILED")
+			"yes", "PROPOSAL_STATUS_PASSED")
+		s.T().Logf("removal proposal %d passed against the stopped consumer", proposalID)
+		s.Require().Truef(time.Now().After(entry.ExecutesAt),
+			"lqval2's maturity (%s) must have passed during the vote, so only the deferral kept it from executing", entry.ExecutesAt)
 
-		pending = s.mustPendingEquivocations(consumerID)
-		s.Require().Len(pending, 1, "the punishment waits for the verdict at its extended maturity")
-		s.Require().True(pending[0].Extended, "the punishment must have deferred behind the vote")
-		s.Require().Equal(strconv.FormatUint(proposalID, 10), pending[0].DeferredByProposalId,
-			"the punishment must record the vote it deferred behind")
-
-		s.T().Log("waiting for the deferred punishment to be cancelled at its extended maturity...")
-		s.Require().Eventuallyf(func() bool {
-			return s.pendingEquivocationsEmpty(consumerID)
-		}, time.Until(pending[0].ExecutesAt)+2*time.Minute, 5*time.Second,
-			"the punishment was not cancelled after the passed vote")
+		s.Require().True(s.pendingEquivocationsEmpty(consumerID),
+			"the removal of the stopped consumer must cancel the deferred punishment")
 		s.Require().False(s.signingInfoTombstoned(s.lqval2ConsAddr), "a cancelled punishment must not tombstone")
+		s.Require().Equal("CONSUMER_PHASE_STOPPED", s.queryProviderConsumerPhase(consumerID),
+			"the removal leaves a stopped consumer stopped")
 
 		s.T().Log("unjailing lqval2 now that the cancelled punishment opened the jail...")
 		s.mustUnjail("lqval2", s.lqval2Valoper)

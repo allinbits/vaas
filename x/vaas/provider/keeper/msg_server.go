@@ -579,6 +579,13 @@ func (k msgServer) UpdateConsumer(goCtx context.Context, msg *types.MsgUpdateCon
 // A launched or paused consumer is stopped and prepared for a removal that
 // erases state only once the unbonding period has elapsed; real validators
 // are running such a chain, so ending it is governance's call alone.
+//
+// A consumer already stopped for another reason (the liveness sweep, a
+// lapsed pause) can still be removed by governance: the phase and the
+// scheduled deletion stay as they are, and the removal is recorded as the
+// verdict on the consumer's equivocation evidence, cancelling its pending
+// punishments and refusing evidence submitted afterwards. A consumer that
+// already carries the verdict cannot be removed again.
 func (k msgServer) RemoveConsumer(goCtx context.Context, msg *types.MsgRemoveConsumer) (*types.MsgRemoveConsumerResponse, error) {
 	ctx := sdk.UnwrapSDKContext(goCtx)
 	resp := types.MsgRemoveConsumerResponse{}
@@ -640,15 +647,37 @@ func (k msgServer) RemoveConsumer(goCtx context.Context, msg *types.MsgRemoveCon
 		// cancels them; a consumer stopped for liveness or a lapsed pause is
 		// not a verdict on its evidence (see SweepPendingEquivocationPunishments).
 		k.CancelPendingEquivocationPunishmentsForConsumer(ctx, consumerId)
+		k.MarkConsumerRemovedByGovernance(ctx, consumerId)
 		k.Logger(ctx).Info("stopped consumer",
 			"consumerId", consumerId,
 			"chainId", chainId,
 			"phase", phase,
 		)
 
+	case phase == types.CONSUMER_PHASE_STOPPED:
+		if !isGov {
+			return nil, errorsmod.Wrapf(govtypes.ErrInvalidSigner,
+				"invalid authority; a stopped consumer is removed only by the governance authority %s, got %s",
+				k.GetAuthority(), msg.Signer)
+		}
+		if k.IsConsumerRemovedByGovernance(ctx, consumerId) {
+			return &resp, errorsmod.Wrapf(types.ErrInvalidPhase,
+				"consumer %d is stopped and already removed by governance", consumerId)
+		}
+		// Stopped for another reason, so its deletion is already scheduled
+		// and stays as it is. The removal is still the verdict on the
+		// consumer's evidence: the same cancellation as above, and the
+		// record that refuses evidence submitted afterwards.
+		k.CancelPendingEquivocationPunishmentsForConsumer(ctx, consumerId)
+		k.MarkConsumerRemovedByGovernance(ctx, consumerId)
+		k.Logger(ctx).Info("recorded the governance removal of a stopped consumer",
+			"consumerId", consumerId,
+			"chainId", chainId,
+		)
+
 	default:
 		return &resp, errorsmod.Wrapf(types.ErrInvalidPhase,
-			"consumer %d is %s; a stopped or deleted consumer cannot be removed again", consumerId, phase)
+			"consumer %d is %s; a deleted consumer cannot be removed again", consumerId, phase)
 	}
 
 	ctx.EventManager().EmitEvent(
@@ -657,9 +686,10 @@ func (k msgServer) RemoveConsumer(goCtx context.Context, msg *types.MsgRemoveCon
 			sdk.NewAttribute(sdk.AttributeKeyModule, types.ModuleName),
 			sdk.NewAttribute(types.AttributeConsumerId, strconv.FormatUint(consumerId, 10)),
 			sdk.NewAttribute(types.AttributeConsumerChainId, chainId),
-			// The phase at removal tells the two arms apart for indexers: a
+			// The phase at removal tells the arms apart for indexers: a
 			// pre-launch phase means immediate erasure, launched or paused a
-			// deferred one.
+			// deferred one, stopped a verdict on a consumer whose deletion
+			// was already scheduled.
 			sdk.NewAttribute(types.AttributeConsumerPhase, phase.String()),
 			sdk.NewAttribute(types.AttributeSubmitterAddress, msg.Signer),
 		),

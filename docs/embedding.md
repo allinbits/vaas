@@ -132,8 +132,8 @@ Four of the provider's hook methods carry real behavior; the rest are no-ops:
   already in use as some validator's assigned consumer key. This is the *only*
   enforcement point for that rule at validator creation.
 - `BeforeConsensusPubKeyRotation` -- refuses a consensus-key rotation onto a key
-  already in use as some validator's assigned consumer key, before `x/staking`
-  records the rotation (section 7).
+  already in use as an assigned consumer key, the rotating validator's own
+  included, before `x/staking` records the rotation (section 7).
 - `AfterConsensusPubKeyUpdate` -- after a consensus-key rotation, migrates the
   validator's per-consumer provider-consensus-address-keyed state onto the new
   address (`MigrateStateOnConsPubKeyRotation`) and hands the rotated key to the
@@ -289,8 +289,8 @@ trivially true and pins the chain in restricted mode forever.
 The refusal is one of the staking hooks of section 3, not an ante decorator:
 `BeforeConsensusPubKeyRotation` runs from the `MsgRotateConsPubKey` handler,
 before `x/staking` records the rotation, and fails one whose new consensus key
-is already assigned as some validator's consumer key, with
-`ErrConsumerKeyInUse`. It runs wherever the message executes, so a rotation
+is already assigned as a consumer key, by any validator including the rotating
+one and including a key awaiting pruning, with `ErrConsumerKeyInUse`. It runs wherever the message executes, so a rotation
 wrapped in `authz.MsgExec` is covered, and a rejected rotation costs the sender
 its transaction and nothing else.
 

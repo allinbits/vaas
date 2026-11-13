@@ -60,19 +60,28 @@ unless noted.
    simplification carried over from Interchain Security; the consensus-params
    check that would otherwise decide supported types is disabled (lines 27-40).
 
-2. **The consumer must be active.** Assignment is allowed only while the
-   consumer is `REGISTERED`, `INITIALIZED`, or `LAUNCHED` (`IsConsumerActive`,
-   [permissionless.go](../x/vaas/provider/keeper/permissionless.go) lines
-   189-195); otherwise `ErrInvalidPhase` (lines 74-79). You cannot assign a key
-   on a `PAUSED`, `STOPPED`, or `DELETED` consumer.
+2. **The consumer must be active.** Assignment is allowed while the
+   consumer is `REGISTERED`, `INITIALIZED`, `LAUNCHED` or `PAUSED`
+   (`IsConsumerActive`,
+   [permissionless.go](../x/vaas/provider/keeper/permissionless.go));
+   otherwise `ErrInvalidPhase`. A paused consumer keeps its assignments and
+   can be resumed, so they stay editable; you cannot assign a key on a
+   `STOPPED` or `DELETED` consumer.
 
-3. **No reuse across validators.** A consumer key already in use -- as another
-   validator's provider consensus key, or as any validator's assigned consumer
-   key on this consumer (including a key still awaiting pruning) -- is rejected
-   with `ErrConsumerKeyInUse` (lines 93-100 and 112-119). This prevents two
-   validators from colliding on one consumer consensus address, and prevents a
-   validator from re-adopting a key it previously used on that consumer that is
-   still being pruned.
+3. **No reuse across validators or consumers.** A consumer key already in use,
+   as another validator's provider consensus key, or as any validator's
+   assigned consumer key on this or any other consumer (including a key still
+   awaiting pruning), is rejected with `ErrConsumerKeyInUse`
+   (`AssignConsumerKey`). This prevents two validators from colliding on one
+   consumer consensus address, prevents a validator from re-adopting a key it
+   previously used on that consumer that is still being pruned, and keeps one
+   assigned key to one consumer, so the node that holds it for one consumer
+   cannot sign for another. Reverting to your own provider key is allowed on
+   every consumer (rule 4). The rule also binds provider key rotations: you
+   cannot rotate your provider consensus key onto a key you assigned on any
+   consumer, which would make it valid on the provider and on every consumer
+   where you assigned nothing (see
+   [Rotating onto a key already assigned as a consumer key is rejected](#rotating-onto-a-key-already-assigned-as-a-consumer-key-is-rejected)).
 
 4. **No assigning your default provider key as a consumer key** unless you have
    already assigned some other consumer key first -- `ErrCannotAssignDefaultKeyAssignment`
@@ -170,11 +179,17 @@ forces its own snapshot resync anyway
 (`BeforeConsensusPubKeyRotation`, the hook atomone-sdk adds to the
 `MsgRotateConsPubKey` handler), and the provider's hook
 (`x/vaas/provider/keeper/hooks.go`) fails the rotation with
-`ErrConsumerKeyInUse` if the new consensus key is already some validator's
-assigned consumer key on any consumer that is not deleted. Paused and stopped
+`ErrConsumerKeyInUse` if the new consensus key is already an assigned
+consumer key on any consumer that is not deleted, yours included, and
+including a key still awaiting pruning (rule 5). Paused and stopped
 consumers count: they keep their key assignments, and a paused one can be
-resumed. The check runs wherever the message executes, so wrapping the
-rotation in an `authz.MsgExec` changes nothing.
+resumed. Another validator's key would put two validators at one consensus
+address on that consumer; your own would make the key that consumer's node
+holds valid on the provider and on every consumer where you assigned nothing,
+against the one-key-one-consumer rule (rule 3). To adopt a key you assigned,
+first revert that assignment and wait for the old key to be pruned. The check
+runs wherever the message executes, so wrapping the rotation in an
+`authz.MsgExec` changes nothing.
 
 The hook is the enforcement point because it is the last one available.
 `x/staking` applies a recorded rotation from `EndBlock`, not from the message

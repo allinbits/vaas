@@ -80,9 +80,9 @@ func (k Keeper) HasGovKeeper() bool {
 // while it is still in voting. found is false when the proposal does not
 // exist; gov never deletes a proposal that reached a
 // vote, so a missing one never was one. This is how a removal vote's verdict
-// reaches a punishment whose consumer had already stopped for another reason
-// by the time the vote ended: the proposal's MsgRemoveConsumer cannot run
-// against a stopped consumer, but its tally is on record.
+// reaches a punishment whose proposal failed in execution, for instance
+// because the consumer was deleted by the time the vote ended: the
+// proposal's MsgRemoveConsumer could not run, but its tally is on record.
 func (k Keeper) removalProposalStatus(ctx sdk.Context, proposalId uint64) (status govv1.ProposalStatus, votingEnd time.Time, found bool) {
 	k.mustHaveGovKeeper()
 	if proposalId == 0 {

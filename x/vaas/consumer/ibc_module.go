@@ -175,10 +175,11 @@ func (im IBCModule) OnTimeoutPacket(
 // OnAcknowledgementPacket handles the acknowledgement of a consumer-sent
 // evidence packet. A success acknowledgement means the provider recorded the
 // evidence, so the (already-removed) packet stays gone. An error
-// acknowledgement means the provider evaluated and rejected that exact packet;
-// such rejections are permanent for a given packet, so it is surfaced as an
-// event and dropped rather than re-queued (re-sending the identical evidence
-// could never be accepted and would loop forever).
+// acknowledgement means the provider evaluated and rejected that exact packet,
+// or is not serving the consumer (paused, say); the first is permanent for a
+// given packet and the second is downtime inside a pause, which is not
+// punished, so the packet is surfaced as an event and dropped rather than
+// re-queued (see ReportRejectedEvidencePacket).
 func (im IBCModule) OnAcknowledgementPacket(
 	ctx sdk.Context,
 	sourceClient string,

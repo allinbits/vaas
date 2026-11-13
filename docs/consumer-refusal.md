@@ -57,7 +57,14 @@ consumer's accusations and discard them, repaying the fee shares withheld
 under them (see [consumer-downtime.md](consumer-downtime.md)); the refusal
 pause proves nothing about them and **freezes** them instead. Every pending
 downtime slash and withheld fee record stays as it is, its maturity or
-expiry stopped for the length of the pause. A resume restarts those clocks
+expiry stopped for the length of the pause. Accusations the consumer raises
+during the pause are another matter: the provider rejects them and the
+consumer drops them, so downtime inside a pause goes unpunished, which is
+the point of the pause for a refuser. Double-voting evidence is accepted
+through the pause; the punishment it queues is frozen like the others, with
+its clock started at the pause, so a resume (or a pause that lapses into a
+stop) gives it one full execution delay from then, and governance the whole
+of that delay to remove the consumer. A resume restarts those clocks
 where the pause stopped them; a challenge proven during the pause discards
 the accusations as it would on a launched consumer; a lapsed pause stops the
 consumer, which cancels them like every stop. Discarding them at the pause
@@ -154,12 +161,13 @@ or tombstone in the submission transaction. Instead:
    validator after the queue is slashed at execution with the rest: the jail
    is public, and delegating into it is delegating into the slash.
 4. **Resolution.** Only a governance removal cancels the punishment: either
-   the removal executing against a launched or paused consumer, or the vote
-   the entry deferred behind passing. The deferral records the proposal it
-   waits for, so the verdict counts even when the consumer had already stopped
-   for another reason by the time the vote ended: gov then records the
-   proposal as `FAILED`, its `MsgRemoveConsumer` having found nothing left to
-   remove, and that is read as the passed vote it is. A `FAILED` proposal
+   the removal executing, or the vote the entry deferred behind passing. The
+   removal executes against a launched or paused consumer, and also against
+   one that already stopped for another reason, which stays stopped with its
+   deletion where that stop scheduled it. The deferral records the proposal it
+   waits for, so the verdict counts even when the proposal fails in execution
+   after its vote passed against a consumer that stopped or was deleted
+   meanwhile: that is read as the passed vote it is. A `FAILED` proposal
    whose consumer is still running is a removal that did not happen (another
    message in it failed), and the punishment executes. Cancelling the
    validator's last pending entry releases its holds and opens the jail (the

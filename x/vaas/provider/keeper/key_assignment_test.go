@@ -140,13 +140,12 @@ func TestMigrateStateOnConsPubKeyRotationCoversEveryConsumerAndMapping(t *testin
 
 // TestBeforeConsensusPubKeyRotationRefusesAnAssignedConsumerKey pins the
 // enforcement point: x/staking asks this hook before it records a rotation,
-// and the provider refuses one onto a consensus key another validator holds
-// as an assigned consumer key on any consumer that is not deleted, paused and
-// stopped ones included. A key no consumer holds passes; so does the key of a
-// deleted consumer, whose assignments are gone with it, and so does a key the
-// rotating validator holds itself, since AssignConsumerKey lets one validator
-// run matching keys and only two different validators can collide on a
-// consumer.
+// and the provider refuses one onto a consensus key any validator holds as an
+// assigned consumer key on any consumer that is not deleted, paused and
+// stopped ones included. The rotating validator's own assigned key is refused
+// too, current or awaiting pruning, until the key is pruned. A key no
+// consumer holds passes; so does the key of a deleted consumer, whose
+// assignments are gone with it.
 func TestBeforeConsensusPubKeyRotationRefusesAnAssignedConsumerKey(t *testing.T) {
 	keeper, ctx, ctrl, _ := testkeeper.GetProviderKeeperAndCtx(t, testkeeper.NewInMemKeeperParams(t))
 	defer ctrl.Finish()
@@ -170,8 +169,21 @@ func TestBeforeConsensusPubKeyRotationRefusesAnAssignedConsumerKey(t *testing.T)
 	fresh := cryptotestutil.NewCryptoIdentityFromIntSeed(3)
 	require.NoError(t, rotateOnto(rotating, fresh))
 
-	require.NoError(t, rotateOnto(holder, takenKey),
-		"a validator may rotate its provider key onto a consumer key it holds itself")
+	require.ErrorIs(t, rotateOnto(holder, takenKey), types.ErrConsumerKeyInUse,
+		"a validator may not rotate its provider key onto a consumer key it assigned itself")
+
+	// The holder replaced takenKey with currentKey: takenKey awaits pruning,
+	// still resolving to the holder, and stays refused until it is pruned.
+	currentKey := cryptotestutil.NewCryptoIdentityFromIntSeed(4)
+	keeper.SetValidatorConsumerPubKey(ctx, consumerID, holder.ProviderConsAddress(), currentKey.TMProtoCryptoPublicKey())
+	keeper.SetValidatorByConsumerAddr(ctx, consumerID, currentKey.ConsumerConsAddress(), holder.ProviderConsAddress())
+	require.ErrorIs(t, rotateOnto(holder, currentKey), types.ErrConsumerKeyInUse,
+		"the holder's current assignment is refused")
+	require.ErrorIs(t, rotateOnto(holder, takenKey), types.ErrConsumerKeyInUse,
+		"a key awaiting pruning is refused to its own validator")
+	keeper.DeleteValidatorByConsumerAddr(ctx, consumerID, takenKey.ConsumerConsAddress())
+	require.NoError(t, rotateOnto(holder, takenKey), "a pruned key is free again")
+	keeper.SetValidatorByConsumerAddr(ctx, consumerID, takenKey.ConsumerConsAddress(), holder.ProviderConsAddress())
 
 	keeper.SetConsumerPhase(ctx, consumerID, types.CONSUMER_PHASE_DELETED)
 	require.NoError(t, rotateOnto(rotating, takenKey),
@@ -1404,4 +1416,45 @@ func TestAssignConsumerKeyUnrelatedSameBlockRotationDoesNotBlock(t *testing.T) {
 	got, found := k.GetValidatorByConsumerAddr(ctx, consumerId, consumerKey.ConsumerConsAddress())
 	require.True(t, found)
 	require.Equal(t, assigner.ProviderConsAddress(), got)
+}
+
+// TestAssignConsumerKeyRefusesAKeyAssignedOnAnotherConsumer: one assigned key
+// serves one consumer. A validator that holds a key on one consumer cannot
+// assign the same key on a second (its node for the one could sign for the
+// other), a different key is fine, and reverting to its own provider key is
+// allowed on every consumer since a provider key is not an assigned one.
+func TestAssignConsumerKeyRefusesAKeyAssignedOnAnotherConsumer(t *testing.T) {
+	k, ctx, ctrl, mocks := testkeeper.GetProviderKeeperAndCtx(t, testkeeper.NewInMemKeeperParams(t))
+	defer ctrl.Finish()
+
+	provider := cryptotestutil.NewCryptoIdentityFromIntSeed(5100)
+	shared := cryptotestutil.NewCryptoIdentityFromIntSeed(5101)
+	other := cryptotestutil.NewCryptoIdentityFromIntSeed(5102)
+	first := k.FetchAndIncrementConsumerId(ctx)
+	second := k.FetchAndIncrementConsumerId(ctx)
+	k.SetConsumerPhase(ctx, first, types.CONSUMER_PHASE_LAUNCHED)
+	k.SetConsumerPhase(ctx, second, types.CONSUMER_PHASE_LAUNCHED)
+
+	mocks.MockStakingKeeper.EXPECT().GetValidatorByConsAddr(gomock.Any(), shared.SDKValConsAddress()).
+		Return(stakingtypes.Validator{}, stakingtypes.ErrNoValidatorFound).AnyTimes()
+	mocks.MockStakingKeeper.EXPECT().GetValidatorByConsAddr(gomock.Any(), other.SDKValConsAddress()).
+		Return(stakingtypes.Validator{}, stakingtypes.ErrNoValidatorFound).AnyTimes()
+	mocks.MockStakingKeeper.EXPECT().GetValidatorByConsAddr(gomock.Any(), provider.SDKValConsAddress()).
+		Return(provider.SDKStakingValidator(), nil).AnyTimes()
+	mocks.MockStakingKeeper.EXPECT().UnbondingTime(gomock.Any()).Return(time.Hour, nil).AnyTimes()
+
+	require.NoError(t, k.AssignConsumerKey(ctx, first, provider.SDKStakingValidator(), shared.TMProtoCryptoPublicKey()))
+
+	err := k.AssignConsumerKey(ctx, second, provider.SDKStakingValidator(), shared.TMProtoCryptoPublicKey())
+	require.ErrorIs(t, err, types.ErrConsumerKeyInUse, "the key is already assigned on the first consumer")
+	_, found := k.GetValidatorByConsumerAddr(ctx, second, shared.ConsumerConsAddress())
+	require.False(t, found)
+
+	require.NoError(t, k.AssignConsumerKey(ctx, second, provider.SDKStakingValidator(), other.TMProtoCryptoPublicKey()),
+		"a different key on the second consumer is fine")
+
+	require.NoError(t, k.AssignConsumerKey(ctx, second, provider.SDKStakingValidator(), provider.TMProtoCryptoPublicKey()),
+		"reverting to the provider key is allowed on every consumer")
+	require.NoError(t, k.AssignConsumerKey(ctx, first, provider.SDKStakingValidator(), provider.TMProtoCryptoPublicKey()),
+		"and on the first consumer too, although the second now maps the provider key")
 }
