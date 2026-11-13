@@ -58,8 +58,9 @@ func createRetirableConsumer(
 }
 
 // requireConsumerTornDown asserts that nothing is left of a retired consumer
-// beyond the tombstone DeleteConsumerChain keeps on purpose (phase, owner,
-// metadata and initialization parameters, for explorers).
+// beyond what DeleteConsumerChain keeps on purpose: the tombstone (phase,
+// owner, metadata and initialization parameters, for explorers) and the
+// fee-pool reverse lookup (for the send restriction).
 func requireConsumerTornDown(
 	t *testing.T, k providerkeeper.Keeper, ctx sdk.Context, consumerId uint64,
 ) {
@@ -73,8 +74,9 @@ func requireConsumerTornDown(
 	_, found := k.GetConsumerClientId(ctx, consumerId)
 	require.False(t, found, "client id must be deleted")
 
-	_, err = k.FeePoolAddressToConsumerId.Get(ctx, k.GetConsumerFeePoolAddress(consumerId))
-	require.ErrorIs(t, err, collections.ErrNotFound, "fee-pool reverse lookup must be deleted")
+	cid, err := k.FeePoolAddressToConsumerId.Get(ctx, k.GetConsumerFeePoolAddress(consumerId))
+	require.NoError(t, err, "fee-pool reverse lookup must be kept for the send restriction")
+	require.Equal(t, consumerId, cid)
 
 	require.Empty(t, k.GetAllValidatorConsumerPubKeys(ctx, &consumerId), "key assignments must be cleared")
 	require.Empty(t, k.GetAllValidatorsByConsumerAddr(ctx, &consumerId), "consumer-addr lookups must be cleared")

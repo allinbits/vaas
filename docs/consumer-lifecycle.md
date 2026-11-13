@@ -215,13 +215,14 @@ auto-stop moves it to `STOPPED`.
      evidence minimum height, init-chain height, pending VSC packets, validator set,
      previous-valset hash, removal time, the liveness state (last-ack time and the
      sent/acked VSC-id counters), the in-debt flag, the per-consumer fees-per-block
-     override, the fee-pool-address reverse lookup, and the downtime state (pending
-     downtime slashes, epoch downtime marks, withheld fee records, accepted windows,
-     and window floors).
+     override, and the downtime state (pending downtime slashes, epoch downtime
+     marks, withheld fee records, accepted windows, and window floors).
    - **Releases the chain ID**, as the last step before the phase changes, so the chain
      ID becomes registrable again (see below).
    - **Preserves** (for block explorer use): phase, owner address, metadata,
-     initialization parameters.
+     initialization parameters; and the fee-pool-address reverse lookup, so the
+     bank send restriction keeps refusing every send to the swept pool (see
+     [consumer-fee-pool.md](consumer-fee-pool.md)).
 3. Phase is set to `DELETED`.
 
 **The chain ID is released, not reserved forever.** `MsgCreateConsumer` and

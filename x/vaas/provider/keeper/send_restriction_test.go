@@ -86,24 +86,32 @@ func TestFeePoolSendRestriction_CrossConsumerIsolation(t *testing.T) {
 	require.ErrorIs(t, err, providertypes.ErrUnsolicitedFeePoolDeposit)
 }
 
-// TestFeePoolSendRestriction_DeletedConsumerPassesThrough: once a consumer is
-// deleted its reverse-lookup entry is gone, so sends to its (now-orphan)
-// pool address pass through. This is the documented behavior — funds sent
-// after delete are an unrecoverable user error, but the bank layer doesn't
-// block them.
-func TestFeePoolSendRestriction_DeletedConsumerPassesThrough(t *testing.T) {
+// TestFeePoolSendRestriction_DeletedConsumerRefusesEverySender: deletion keeps
+// the reverse-lookup entry so the restriction keeps refusing sends to the pool
+// of a deleted consumer, from every sender including the two a live pool
+// exempts. The pool was settled by the auto-sweep and nothing sweeps it again,
+// so funds reaching it would be stranded.
+func TestFeePoolSendRestriction_DeletedConsumerRefusesEverySender(t *testing.T) {
 	k, ctx, ctrl, _ := testkeeper.GetProviderKeeperAndCtx(t, testkeeper.NewInMemKeeperParams(t))
 	defer ctrl.Finish()
 
-	deletedPool := k.GetConsumerFeePoolAddress(42)
-	// Reverse-lookup entry intentionally NOT set.
-	restrict := k.FeePoolSendRestriction()
-	user := sdk.AccAddress([]byte("user____________"))
-	amt := sdk.NewCoins(sdk.NewInt64Coin("uphoton", 1))
+	consumerId := uint64(42)
+	poolAddr := k.GetConsumerFeePoolAddress(consumerId)
+	require.NoError(t, k.FeePoolAddressToConsumerId.Set(ctx, poolAddr, consumerId))
+	k.SetConsumerPhase(ctx, consumerId, providertypes.CONSUMER_PHASE_DELETED)
 
-	to, err := restrict(ctx, user, deletedPool, amt)
-	require.NoError(t, err)
-	require.Equal(t, deletedPool, to)
+	restrict := k.FeePoolSendRestriction()
+	amt := sdk.NewCoins(sdk.NewInt64Coin("uphoton", 1))
+	senders := []sdk.AccAddress{
+		sdk.AccAddress([]byte("user____________")),
+		authtypes.NewModuleAddress(providertypes.ModuleName),
+		authtypes.NewModuleAddress(disttypes.ModuleName),
+	}
+	for _, from := range senders {
+		_, err := restrict(ctx, from, poolAddr, amt)
+		require.ErrorIs(t, err, providertypes.ErrInvalidPhase,
+			"sender %s should be refused", from.String())
+	}
 }
 
 // TestFeePoolSendRestriction_OutboundFromPoolUnaffected: sends FROM a fee

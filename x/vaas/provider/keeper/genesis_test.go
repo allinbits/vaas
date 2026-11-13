@@ -969,8 +969,11 @@ func TestInitGenesis_RebuildsDerivedCollections(t *testing.T) {
 	require.NoError(t, err)
 	require.Equal(t, uint64(0), cid)
 
-	_, err = k.FeePoolAddressToConsumerId.Get(ctx, k.GetConsumerFeePoolAddress(1))
-	require.ErrorIs(t, err, collections.ErrNotFound)
+	// The deleted consumer's reverse lookup is rebuilt too, so the send
+	// restriction keeps refusing sends to its pool after a restart.
+	cid, err = k.FeePoolAddressToConsumerId.Get(ctx, k.GetConsumerFeePoolAddress(1))
+	require.NoError(t, err)
+	require.Equal(t, uint64(1), cid)
 }
 
 // TestInitGenesisPanicsOnNilDowntimeSlashFraction verifies that InitGenesis

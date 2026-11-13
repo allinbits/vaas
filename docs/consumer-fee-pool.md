@@ -59,6 +59,12 @@ Governance should fund a pool the same way as everyone else, with
 credits the distribution module account as the depositor and mints shares
 for it.
 
+A deleted consumer's pool accepts nothing at all, from any sender, the two
+exempt module accounts included: deletion keeps the pool address registered
+with the restriction, so a send to it after the auto-sweep (see
+[Sweeping](#sweeping)) is rejected with `ErrInvalidPhase` instead of leaving
+funds stranded in a pool nothing sweeps again.
+
 `MsgFundConsumerFeePool` accepts a single `Coin` whose denom must match the
 current `fees_per_block.Denom`. Anyone may sign. The signer is credited with
 shares.
@@ -161,6 +167,9 @@ count, so consumption is borne pro-rata by current share-holders.
   LAUNCHED or PAUSED.
 - `ErrUnsolicitedFeePoolDeposit` -- a direct bank send to a fee-pool address
   (see [Funding](#funding)).
+- `ErrInvalidPhase` from a bank send -- the destination is the fee pool of a
+  deleted consumer, which accepts nothing from anyone (see
+  [Funding](#funding)).
 
 ### Withheld downtime shares
 

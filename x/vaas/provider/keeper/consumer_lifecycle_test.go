@@ -47,10 +47,10 @@ func TestDeleteConsumerChain_FeesPerBlockOverrideCleanup(t *testing.T) {
 			k.SetConsumerPhase(ctx, consumerId, providertypes.CONSUMER_PHASE_STOPPED)
 			// DeleteConsumerClientId panics on a missing client mapping, so seed one.
 			k.SetConsumerClientId(ctx, consumerId, "07-tendermint-0")
-			// DeleteConsumerChain removes the fee-pool reverse-lookup entry, so
-			// seed it; otherwise the removal panics. The auto-sweep that also
-			// runs queries the pool for any denoms-with-balance; this test
-			// doesn't exercise the sweep, so mock an empty result.
+			// Seed the fee-pool reverse lookup as MsgCreateConsumer does. The
+			// auto-sweep that runs on deletion queries the pool for any
+			// denoms-with-balance; this test doesn't exercise the sweep, so
+			// mock an empty result.
 			poolAddr := k.GetConsumerFeePoolAddress(consumerId)
 			require.NoError(t, k.FeePoolAddressToConsumerId.Set(ctx, poolAddr, consumerId))
 			mocks.MockBankKeeper.EXPECT().GetAllBalances(ctx, poolAddr).Return(sdk.NewCoins())
@@ -69,7 +69,10 @@ func TestDeleteConsumerChain_FeesPerBlockOverrideCleanup(t *testing.T) {
 	}
 }
 
-func TestDeleteConsumerChain_RemovesReverseLookup(t *testing.T) {
+// TestDeleteConsumerChain_KeepsReverseLookup: deletion keeps the fee-pool
+// reverse lookup, and through it the bank send restriction refuses every send
+// to the swept pool, where funds would otherwise be stranded for good.
+func TestDeleteConsumerChain_KeepsReverseLookup(t *testing.T) {
 	k, ctx, ctrl, mocks := testkeeper.GetProviderKeeperAndCtx(t, testkeeper.NewInMemKeeperParams(t))
 	defer ctrl.Finish()
 
@@ -83,8 +86,13 @@ func TestDeleteConsumerChain_RemovesReverseLookup(t *testing.T) {
 
 	require.NoError(t, k.DeleteConsumerChain(ctx, consumerId))
 
-	_, err := k.FeePoolAddressToConsumerId.Get(ctx, poolAddr)
-	require.ErrorIs(t, err, collections.ErrNotFound)
+	cid, err := k.FeePoolAddressToConsumerId.Get(ctx, poolAddr)
+	require.NoError(t, err)
+	require.Equal(t, consumerId, cid)
+
+	user := sdk.AccAddress([]byte("user____________"))
+	_, err = k.FeePoolSendRestriction()(ctx, user, poolAddr, sdk.NewCoins(sdk.NewInt64Coin("uphoton", 1)))
+	require.ErrorIs(t, err, providertypes.ErrInvalidPhase)
 }
 
 func TestDeleteConsumerChain_AutoSweep(t *testing.T) {
@@ -190,9 +198,10 @@ func TestDeleteConsumerChain_AutoSweepMultiDenomDust(t *testing.T) {
 
 	require.Equal(t, providertypes.CONSUMER_PHASE_DELETED, k.GetConsumerPhase(ctx, consumerId))
 
-	// Reverse-lookup entry removed.
-	_, err := k.FeePoolAddressToConsumerId.Get(ctx, poolAddr)
-	require.ErrorIs(t, err, collections.ErrNotFound)
+	// Reverse-lookup entry kept for the send restriction.
+	cid, err := k.FeePoolAddressToConsumerId.Get(ctx, poolAddr)
+	require.NoError(t, err)
+	require.Equal(t, consumerId, cid)
 
 	// All share records cleared.
 	_, err = k.ConsumerFeePoolShares.Get(ctx, collections.Join3(consumerId, "uphoton", alice))
@@ -229,8 +238,9 @@ func TestBeginBlockRemoveConsumers_DeletesEligible(t *testing.T) {
 
 	for _, id := range ids {
 		require.Equal(t, providertypes.CONSUMER_PHASE_DELETED, k.GetConsumerPhase(ctx, id))
-		_, err := k.FeePoolAddressToConsumerId.Get(ctx, k.GetConsumerFeePoolAddress(id))
-		require.ErrorIs(t, err, collections.ErrNotFound)
+		cid, err := k.FeePoolAddressToConsumerId.Get(ctx, k.GetConsumerFeePoolAddress(id))
+		require.NoError(t, err)
+		require.Equal(t, id, cid)
 	}
 }
 
@@ -276,8 +286,9 @@ func TestBeginBlockRemoveConsumers_UnaccountedFeePoolBalance(t *testing.T) {
 	require.Equal(t, providertypes.CONSUMER_PHASE_DELETED, k.GetConsumerPhase(ctx, consumerId))
 	_, err := k.ConsumerFeePoolTotalShares.Get(ctx, collections.Join(consumerId, funds.Denom))
 	require.ErrorIs(t, err, collections.ErrNotFound)
-	_, err = k.FeePoolAddressToConsumerId.Get(ctx, poolAddr)
-	require.ErrorIs(t, err, collections.ErrNotFound)
+	cid, err := k.FeePoolAddressToConsumerId.Get(ctx, poolAddr)
+	require.NoError(t, err)
+	require.Equal(t, consumerId, cid)
 }
 
 // TestDeleteConsumerChain_SweepBankFailurePanics verifies that a bank failure
