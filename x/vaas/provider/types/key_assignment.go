@@ -62,13 +62,19 @@ func (c *ConsumerConsAddress) String() string {
 
 // KeyAssignmentValidateBasic validates all the genesis state for key assignment
 // This is a utility. Key Assignment does not define any new proto types, but
-// has a lot of nested data.
+// has a lot of nested data. Every entry must name a consumer that is known
+// and not deleted: a key may be assigned on a consumer in any earlier phase,
+// and the deletion clears the assignments (see DeleteKeyAssignments).
 func KeyAssignmentValidateBasic(
 	assignedKeys []ValidatorConsumerPubKey,
 	byConsumerAddrs []ValidatorByConsumerAddr,
 	consumerAddrsToPrune []ConsumerAddrsToPrune,
+	liveConsumerIds map[uint64]struct{},
 ) error {
 	for _, e := range assignedKeys {
+		if _, ok := liveConsumerIds[e.ConsumerId]; !ok {
+			return errorsmod.Wrap(vaastypes.ErrInvalidGenesis, fmt.Sprintf("consumer key assigned on unknown or deleted consumer %d", e.ConsumerId))
+		}
 		if err := sdk.VerifyAddressFormat(e.ProviderAddr); err != nil {
 			return errorsmod.Wrap(vaastypes.ErrInvalidGenesis, fmt.Sprintf("invalid provider address: %s", e.ProviderAddr))
 		}
@@ -77,6 +83,9 @@ func KeyAssignmentValidateBasic(
 		}
 	}
 	for _, e := range byConsumerAddrs {
+		if _, ok := liveConsumerIds[e.ConsumerId]; !ok {
+			return errorsmod.Wrap(vaastypes.ErrInvalidGenesis, fmt.Sprintf("consumer address index entry for unknown or deleted consumer %d", e.ConsumerId))
+		}
 		if err := sdk.VerifyAddressFormat(e.ProviderAddr); err != nil {
 			return errorsmod.Wrap(vaastypes.ErrInvalidGenesis, fmt.Sprintf("invalid provider address: %s", e.ProviderAddr))
 		}
@@ -85,6 +94,9 @@ func KeyAssignmentValidateBasic(
 		}
 	}
 	for _, e := range consumerAddrsToPrune {
+		if _, ok := liveConsumerIds[e.ConsumerId]; !ok {
+			return errorsmod.Wrap(vaastypes.ErrInvalidGenesis, fmt.Sprintf("consumer addresses to prune for unknown or deleted consumer %d", e.ConsumerId))
+		}
 		for _, a := range e.ConsumerAddrs.Addresses {
 			if err := sdk.VerifyAddressFormat(a); err != nil {
 				return errorsmod.Wrap(vaastypes.ErrInvalidGenesis, fmt.Sprintf("invalid consumer address: %s", a))
