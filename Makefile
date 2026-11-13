@@ -2,10 +2,6 @@
 # targets that step into the app module keep resolving it.
 rundep=go run -modfile $(CURDIR)/devdeps/go.mod
 
-# Note: If you see "sonic only supports go1.17~1.23" warnings, either:
-# - Use Go 1.23: brew install go@1.23
-# - Or ignore it - the warning is harmless, sonic falls back to stdlib JSON
-
 ###############################################################################
 ###                               Build & Test                              ###
 ###############################################################################
@@ -111,7 +107,7 @@ $(BUILD_TARGETS): go.sum $(BUILDDIR)/
 $(BUILDDIR)/:
 	mkdir -p $(BUILDDIR)/
 
-.PHONY: build-apps install-apps
+.PHONY: build-apps install-apps provider-start
 
 provider-start: build-apps
 	rm -rf $(provider_home)
@@ -141,7 +137,7 @@ provider-start: build-apps
 	jq '.app_state.gov.params.voting_period = "300s"' $(provider_home)/config/genesis.json > /tmp/gen
 	mv /tmp/gen $(provider_home)/config/genesis.json
 
-	# Decrease number of blocks per epoch (VAAS provider VCS update)
+	# Decrease number of blocks per epoch (VAAS provider VSC packets)
 	jq '.app_state.vaasprovider.params.blocks_per_epoch = "10"' $(provider_home)/config/genesis.json > /tmp/gen
 	mv /tmp/gen $(provider_home)/config/genesis.json
 
@@ -236,7 +232,7 @@ provider-fund-consumer-fee-pool:
 		--from val --keyring-backend test --chain-id provider-localnet \
 		--gas auto --gas-adjustment 1.5 --fees 10000uatone -y
 
-.PHONY: consumer-init consumer-create consumer-genesis consumer-run consumer-start provider-fund-consumer-fee-pool
+.PHONY: consumer-init consumer-create consumer-genesis consumer-copy-val-key consumer-run consumer-start provider-fund-consumer-fee-pool
 
 ###############################################################################
 ###                               TS Relayer                                ###
@@ -341,14 +337,14 @@ localnet-start: build-apps
 	@echo "Step 4/4: Triggering valset change to send first VSC packet..."
 	@VALOPER=$$($(providerd) keys show val --bech val -a 2> /dev/null); \
 	$(providerd) tx staking delegate $$VALOPER 1000000uatone --from user --fees 5000uatone -y > /dev/null 2>&1
-	@echo "  Delegation sent. Waiting for VSC packet to be relayed..."
+	@echo "  Delegation sent; the VSC packet goes out at the next epoch boundary. Checking the consumer reports its provider client..."
 	@for i in $$(seq 1 60); do \
 		if $(consumerd) query vaasconsumer provider-info --node tcp://localhost:26667 > /dev/null 2>&1; then \
-			echo "  Channel established! (after $$((i*2))s)"; \
+			echo "  Consumer reports its provider client (after $$((i*2))s)"; \
 			break; \
 		fi; \
 		if [ $$i -eq 60 ]; then \
-			echo "  WARNING: VSC packet not relayed within 120s. The channel may need more time."; \
+			echo "  WARNING: the consumer did not report its provider client within 120s; check /tmp/vaas-consumer.log"; \
 			break; \
 		fi; \
 		sleep 2; \
