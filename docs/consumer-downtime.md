@@ -331,7 +331,11 @@ paused:
   automatically.
 - An **auto-stop** is scheduled at `now + MaxPauseDuration`: a pause governance never
   resolves becomes `STOPPED` (then `DELETED`) like any other dead consumer. No consumer can
-  be paused forever.
+  be paused forever. One pause outlives the parameter: a light-client pause is not stopped
+  while its fork wait (below) runs, since the resume is refused until then and the stop
+  would have made the pause terminal; its auto-stop moves to the end of the wait, capped at
+  one provider unbonding period after the fork became known (a declared client's wait fits
+  within it).
 - The consumer keeps all of its state, key assignments included -- they are what the resume
   snapshot is rebuilt from. So a paused consumer stays visible to anything asking whether a
   consumer still holds state: notably the consensus-key collision guard that runs when a
@@ -370,10 +374,9 @@ Two governance exits:
   known: the pause itself, the block a challenge or refusal pause was moved under the
   light-client reason at, or the block the client was next seen frozen at after a recovery
   during the pause. With a 21-day consumer unbonding period that is about 14 days, which
-  AtomOne's voting period alone already covers; `Params.Validate` holds `MaxPauseDuration`
-  above that wait at the default consumer unbonding period, so a light-client pause can
-  always be resumed before it lapses. A fork at a later height is new evidence and pauses it
-  again.
+  AtomOne's voting period alone already covers. A `MaxPauseDuration` within the wait does
+  not make the pause terminal: the auto-stop waits for the resume to become possible (see
+  above). A fork at a later height is new evidence and pauses it again.
 - **`MsgRemoveConsumer`** accepts a paused consumer and routes it into the ordinary
   `STOPPED -> DELETED` teardown.
 

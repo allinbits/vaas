@@ -581,31 +581,84 @@ func (k Keeper) thawPendingEquivocationPunishments(ctx sdk.Context, consumerId u
 	return nil
 }
 
-// forkEvidenceExpired reports, as an error, that the provider learned of
-// consumerId's fork less than one trusting period (plus the client's
-// clock-drift allowance) ago, so the fork's evidence can still be verified
-// against the client and would pause the consumer again on resume. See
-// ResumeConsumerChain.
-func (k Keeper) forkEvidenceExpired(ctx sdk.Context, consumerId uint64, clientId string) error {
+// forkWait reports when the fork of consumerId, paused for a light-client
+// attack, became known, and how long its evidence stays verifiable against
+// clientId from then: one trusting period plus the client's clock-drift
+// allowance, capped at one provider unbonding period, since the client's
+// values are set by whoever created it and no pause waits longer than that
+// (a declared client fits within it, see SetConsumerClient; one substituted
+// by governance may not). A resume is refused until the wait has run (see
+// forkEvidenceExpired) and the auto-stop of the pause waits for it (see
+// BeginBlockAutoStopPausedConsumers).
+func (k Keeper) forkWait(ctx sdk.Context, consumerId uint64, clientId string) (time.Time, time.Duration, error) {
 	forkKnownAt, err := k.GetConsumerForkKnownAt(ctx, consumerId)
 	if err != nil {
-		return fmt.Errorf("reading fork time for consumer %d: %w", consumerId, err)
+		return time.Time{}, 0, fmt.Errorf("reading fork time for consumer %d: %w", consumerId, err)
 	}
 	clientState, found := k.clientKeeper.GetClientState(ctx, clientId)
 	if !found {
-		return errorsmod.Wrapf(types.ErrInvalidConsumerClient, "client %s of consumer %d has no client state", clientId, consumerId)
+		return time.Time{}, 0, errorsmod.Wrapf(types.ErrInvalidConsumerClient, "client %s of consumer %d has no client state", clientId, consumerId)
 	}
 	tmClientState, ok := clientState.(*ibctmtypes.ClientState)
 	if !ok {
-		return errorsmod.Wrapf(types.ErrInvalidConsumerClient, "client %s of consumer %d is not a tendermint client", clientId, consumerId)
+		return time.Time{}, 0, errorsmod.Wrapf(types.ErrInvalidConsumerClient, "client %s of consumer %d is not a tendermint client", clientId, consumerId)
 	}
-	resumableAt := forkKnownAt.Add(tmClientState.TrustingPeriod + tmClientState.MaxClockDrift)
+	providerUnbonding, err := k.stakingKeeper.UnbondingTime(ctx)
+	if err != nil {
+		return time.Time{}, 0, errorsmod.Wrapf(types.ErrNoUnbondingTime, "unbonding time not found: %s", err)
+	}
+	return forkKnownAt, clientForkWaitWithin(tmClientState, providerUnbonding), nil
+}
+
+// clientForkWaitExceeds reports whether the client's trusting period plus its
+// clock-drift allowance is longer than limit. The parts are compared before
+// they are added, so values near the range of a duration cannot wrap the sum.
+func clientForkWaitExceeds(clientState *ibctmtypes.ClientState, limit time.Duration) bool {
+	return clientState.TrustingPeriod > limit || clientState.MaxClockDrift > limit-clientState.TrustingPeriod
+}
+
+// clientForkWaitWithin is the client's trusting period plus its clock-drift
+// allowance, or limit when the sum would exceed it (see
+// clientForkWaitExceeds).
+func clientForkWaitWithin(clientState *ibctmtypes.ClientState, limit time.Duration) time.Duration {
+	if clientForkWaitExceeds(clientState, limit) {
+		return limit
+	}
+	return clientState.TrustingPeriod + clientState.MaxClockDrift
+}
+
+// forkEvidenceExpired reports, as an error, that the provider learned of
+// consumerId's fork less than its fork wait ago (see forkWait), so the fork's
+// evidence can still be verified against the client and would pause the
+// consumer again on resume. See ResumeConsumerChain.
+func (k Keeper) forkEvidenceExpired(ctx sdk.Context, consumerId uint64, clientId string) error {
+	forkKnownAt, wait, err := k.forkWait(ctx, consumerId, clientId)
+	if err != nil {
+		return err
+	}
+	resumableAt := forkKnownAt.Add(wait)
 	if ctx.BlockTime().Before(resumableAt) {
 		return errorsmod.Wrapf(types.ErrForkEvidenceStillVerifiable,
-			"consumer %d was found forked at %s and its client's trusting period is %s; resume at or after %s",
-			consumerId, forkKnownAt.UTC().Format(time.RFC3339), tmClientState.TrustingPeriod, resumableAt.UTC().Format(time.RFC3339))
+			"consumer %d was found forked at %s and its fork's evidence stays verifiable for %s; resume at or after %s",
+			consumerId, forkKnownAt.UTC().Format(time.RFC3339), wait, resumableAt.UTC().Format(time.RFC3339))
 	}
 	return nil
+}
+
+// lightClientPauseResumableAt is when the resume of consumerId, paused for a
+// light-client attack, stops being refused for the fork's evidence (see
+// forkWait). False when the consumer has no declared client or its client
+// state cannot be read: there is no wait to measure then.
+func (k Keeper) lightClientPauseResumableAt(ctx sdk.Context, consumerId uint64) (time.Time, bool) {
+	clientId, found := k.GetConsumerClientId(ctx, consumerId)
+	if !found {
+		return time.Time{}, false
+	}
+	forkKnownAt, wait, err := k.forkWait(ctx, consumerId, clientId)
+	if err != nil {
+		return time.Time{}, false
+	}
+	return forkKnownAt.Add(wait), true
 }
 
 // PauseConsumersWithFrozenClients pauses, under the light-client reason,
@@ -917,6 +970,30 @@ func (k Keeper) BeginBlockAutoStopPausedConsumers(ctx sdk.Context) error {
 			continue
 		}
 
+		// A light-client pause is not stopped while its fork wait runs: the
+		// resume is refused until the wait has run (see ResumeConsumerChain),
+		// so stopping first would make every such pause terminal under a
+		// MaxPauseDuration within the wait. The auto-stop moves to the end of
+		// the wait instead, capped at one provider unbonding period after the
+		// fork became known, and the jails behind the consumer's pending
+		// equivocation punishments, closed until the pause's expiration, move
+		// with it. A consumer whose client state cannot be read has no wait
+		// to measure and stops as scheduled; so does one whose rescheduling
+		// fails, since a pause must always end.
+		if k.GetConsumerPauseReason(ctx, consumerId) == types.PAUSE_REASON_LIGHT_CLIENT_ATTACK {
+			if resumableAt, ok := k.lightClientPauseResumableAt(ctx, consumerId); ok && ctx.BlockTime().Before(resumableAt) {
+				if err := k.rescheduleConsumerAutoStop(ctx, consumerId, resumableAt); err == nil {
+					k.refreshPendingEquivocationJailsForConsumer(ctx, consumerId)
+					k.Logger(ctx).Info("light-client pause outlived max_pause_duration before its fork wait; the auto-stop waits for the resume to become possible",
+						"consumerId", consumerId, "autoStopAt", resumableAt.UTC().Format(time.RFC3339))
+					continue
+				} else {
+					k.Logger(ctx).Error("failed to move the auto-stop of a light-client pause to the end of its fork wait; stopping as scheduled",
+						"consumerId", consumerId, "error", err.Error())
+				}
+			}
+		}
+
 		cachedCtx, writeFn := ctx.CacheContext()
 		// The stop ends the freeze: the pending equivocation punishments run
 		// from here with the delay the pause left them (see
@@ -938,6 +1015,19 @@ func (k Keeper) BeginBlockAutoStopPausedConsumers(ctx sdk.Context) error {
 		// moved execution times, as after a resume.
 		k.refreshPendingEquivocationJailsForConsumer(cachedCtx, consumerId)
 		writeFn()
+	}
+	return nil
+}
+
+// rescheduleConsumerAutoStop moves the auto-stop of consumerId's pause to
+// expirationTime, for BeginBlockAutoStopPausedConsumers once it has consumed
+// the entry that was due.
+func (k Keeper) rescheduleConsumerAutoStop(ctx sdk.Context, consumerId uint64, expirationTime time.Time) error {
+	if err := k.SetConsumerPauseExpirationTime(ctx, consumerId, expirationTime); err != nil {
+		return fmt.Errorf("setting pause expiration time for consumer %d: %w", consumerId, err)
+	}
+	if err := k.AppendConsumerToBeAutoStopped(ctx, consumerId, expirationTime); err != nil {
+		return fmt.Errorf("scheduling auto-stop for consumer %d: %w", consumerId, err)
 	}
 	return nil
 }
@@ -1194,6 +1284,19 @@ func (k Keeper) SetConsumerClient(ctx sdk.Context, consumerId uint64, clientID s
 		return errorsmod.Wrapf(types.ErrInvalidMsgUpdateConsumer,
 			"client %s trusting period (%s) must exceed the downtime challenge horizon (%s): every accepted downtime accusation must stay disprovable by a header this client can still verify",
 			clientID, tmClientState.TrustingPeriod, horizon)
+	}
+	// The fork wait of the client (see forkWait) is how long a light-client
+	// pause can outlive MaxPauseDuration, and the provider bounds every
+	// pause by its own unbonding period (see BeginBlockAutoStopPausedConsumers);
+	// a client whose wait is longer could never be resumed after a fork.
+	providerUnbonding, err := k.stakingKeeper.UnbondingTime(ctx)
+	if err != nil {
+		return errorsmod.Wrapf(types.ErrNoUnbondingTime, "unbonding time not found: %s", err)
+	}
+	if clientForkWaitExceeds(tmClientState, providerUnbonding) {
+		return errorsmod.Wrapf(types.ErrInvalidMsgUpdateConsumer,
+			"client %s trusting period (%s) plus clock-drift allowance (%s) must not exceed the provider unbonding period (%s): a resume after a light-client pause waits that long from the fork, and no pause waits longer than the provider's unbonding period",
+			clientID, tmClientState.TrustingPeriod, tmClientState.MaxClockDrift, providerUnbonding)
 	}
 
 	k.SetConsumerClientId(ctx, consumerId, clientID)

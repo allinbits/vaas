@@ -1768,6 +1768,7 @@ func TestTheThawAtThePauseInstant(t *testing.T) {
 func TestAnEscalatedPauseThawsFromItsStart(t *testing.T) {
 	k, ctx, ctrl, mocks, validator, providerAddr := setupEquivocationQueueTest(t)
 	defer ctrl.Finish()
+	mocks.MockStakingKeeper.EXPECT().UnbondingTime(gomock.Any()).Return(21*24*time.Hour, nil).AnyTimes()
 	consAddr := providerAddr.ToSdkConsAddr()
 	consumerID := k.FetchAndIncrementConsumerId(ctx)
 	k.SetConsumerClientId(ctx, consumerID, "07-tendermint-0")
@@ -1833,6 +1834,56 @@ func TestAnEscalatedPauseThawsFromItsStart(t *testing.T) {
 	has, err = k.PendingEquivocationPunishments.Has(due, key)
 	require.NoError(t, err)
 	require.False(t, has)
+}
+
+// TestADeferredAutoStopKeepsTheJailClosed: when the auto-stop of a
+// light-client pause moves to the end of the pause's fork wait (see
+// BeginBlockAutoStopPausedConsumers), the jail behind a punishment the pause
+// froze, closed until the later of its maturity and the pause's expiration
+// plus the margin, moves to the new expiration plus the margin: the validator
+// stays jailed for as long as its punishment stays frozen.
+func TestADeferredAutoStopKeepsTheJailClosed(t *testing.T) {
+	k, ctx, ctrl, mocks, validator, providerAddr := setupEquivocationQueueTest(t)
+	defer ctrl.Finish()
+	consAddr := providerAddr.ToSdkConsAddr()
+	mocks.MockStakingKeeper.EXPECT().UnbondingTime(gomock.Any()).Return(21*24*time.Hour, nil).AnyTimes()
+	params := k.GetParams(ctx)
+	params.MaxPauseDuration = time.Hour
+	k.SetParams(ctx, params)
+
+	consumerID := k.FetchAndIncrementConsumerId(ctx)
+	k.SetConsumerClientId(ctx, consumerID, "07-tendermint-0")
+	key := queueWithHeldOp(t, k, ctx, mocks, validator, providerAddr, consumerID, 23)
+	queued, err := k.PendingEquivocationPunishments.Get(ctx, key)
+	require.NoError(t, err)
+
+	// The pause expires a week before the entry matures, so the jail set at
+	// the queue stands through the pause.
+	pausedAt := ctx.BlockTime()
+	pauseExpiration := pausedAt.Add(time.Hour)
+	mocks.MockStakingKeeper.EXPECT().GetValidatorByConsAddr(ctx, consAddr).Return(validator, nil)
+	expectSigningInfo(mocks, ctx, consAddr, queued.ExecutesAt.Add(24*time.Hour))
+	mocks.MockSlashingKeeper.EXPECT().JailUntil(ctx, consAddr, queued.ExecutesAt.Add(24*time.Hour))
+	require.NoError(t, k.PauseConsumerChain(ctx, consumerID, types.PAUSE_REASON_LIGHT_CLIENT_ATTACK))
+
+	clientState := &ibctmtypes.ClientState{TrustingPeriod: 14 * 24 * time.Hour, MaxClockDrift: 10 * time.Second}
+	mocks.MockClientKeeper.EXPECT().GetClientState(gomock.Any(), "07-tendermint-0").Return(clientState, true).AnyTimes()
+	resumableAt := pausedAt.Add(clientState.TrustingPeriod + clientState.MaxClockDrift)
+
+	// The deferred expiration lies past the maturity: the jail follows it.
+	lapsed := ctx.WithBlockTime(pauseExpiration)
+	mocks.MockStakingKeeper.EXPECT().GetValidatorByConsAddr(lapsed, consAddr).Return(validator, nil)
+	expectSigningInfo(mocks, lapsed, consAddr, queued.ExecutesAt.Add(24*time.Hour))
+	mocks.MockSlashingKeeper.EXPECT().JailUntil(lapsed, consAddr, resumableAt.Add(24*time.Hour))
+	require.NoError(t, k.BeginBlockAutoStopPausedConsumers(lapsed))
+
+	require.Equal(t, types.CONSUMER_PHASE_PAUSED, k.GetConsumerPhase(lapsed, consumerID))
+	expiration, err := k.GetConsumerPauseExpirationTime(lapsed, consumerID)
+	require.NoError(t, err)
+	require.Equal(t, resumableAt, expiration)
+	frozen, err := k.PendingEquivocationPunishments.Get(lapsed, key)
+	require.NoError(t, err)
+	require.Equal(t, queued.ExecutesAt, frozen.ExecutesAt, "the entry stays frozen where the pause left it")
 }
 
 // TestALapsedPauseThawsTheFrozenPunishmentsIntoTheStop: a pause that

@@ -232,6 +232,149 @@ func TestBeginBlockAutoStopPausedConsumers_SkipsNoLongerPaused(t *testing.T) {
 	require.Equal(t, providertypes.CONSUMER_PHASE_LAUNCHED, k.GetConsumerPhase(ctx, cid))
 }
 
+// TestBeginBlockAutoStopPausedConsumers_WaitsForTheForkWaitOfALightClientPause:
+// a light-client pause whose MaxPauseDuration runs out before its fork wait
+// is not stopped, since a resume is refused until the wait has run (see
+// ResumeConsumerChain) and the stop would have made the pause terminal; its
+// auto-stop moves to the end of the wait and fires there. A pause moved under
+// the light-client reason by a later freeze waits from the freeze.
+func TestBeginBlockAutoStopPausedConsumers_WaitsForTheForkWaitOfALightClientPause(t *testing.T) {
+	k, ctx, ctrl, mocks := testkeeper.GetProviderKeeperAndCtx(t, testkeeper.NewInMemKeeperParams(t))
+	defer ctrl.Finish()
+	mocks.MockStakingKeeper.EXPECT().UnbondingTime(gomock.Any()).Return(21*24*time.Hour, nil).AnyTimes()
+
+	params := k.GetParams(ctx)
+	params.MaxPauseDuration = time.Hour
+	k.SetParams(ctx, params)
+	clientState := &ibctmtypes.ClientState{TrustingPeriod: 14 * 24 * time.Hour, MaxClockDrift: 10 * time.Second}
+	wait := clientState.TrustingPeriod + clientState.MaxClockDrift
+
+	// Paused for a fork found on the consumer: the wait counts from the pause.
+	forked := k.FetchAndIncrementConsumerId(ctx)
+	k.SetConsumerPhase(ctx, forked, providertypes.CONSUMER_PHASE_LAUNCHED)
+	k.SetConsumerClientId(ctx, forked, "07-tendermint-0")
+	pausedAt := ctx.BlockTime()
+	require.NoError(t, k.PauseConsumerChain(ctx, forked, providertypes.PAUSE_REASON_LIGHT_CLIENT_ATTACK))
+
+	// Paused for a refusal and frozen half an hour in: the wait counts from
+	// the freeze.
+	escalated := k.FetchAndIncrementConsumerId(ctx)
+	k.SetConsumerPhase(ctx, escalated, providertypes.CONSUMER_PHASE_LAUNCHED)
+	k.SetConsumerClientId(ctx, escalated, "07-tendermint-1")
+	require.NoError(t, k.PauseConsumerChain(ctx, escalated, providertypes.PAUSE_REASON_REFUSAL_THRESHOLD))
+	frozenAt := pausedAt.Add(30 * time.Minute)
+	mocks.MockClientKeeper.EXPECT().GetClientStatus(gomock.Any(), "07-tendermint-0").Return(ibcexported.Frozen).Times(1)
+	mocks.MockClientKeeper.EXPECT().GetClientStatus(gomock.Any(), "07-tendermint-1").Return(ibcexported.Frozen).Times(1)
+	k.PauseConsumersWithFrozenClients(ctx.WithBlockTime(frozenAt))
+	require.Equal(t, providertypes.PAUSE_REASON_LIGHT_CLIENT_ATTACK, k.GetConsumerPauseReason(ctx, escalated))
+
+	mocks.MockClientKeeper.EXPECT().GetClientState(gomock.Any(), "07-tendermint-0").Return(clientState, true).AnyTimes()
+	mocks.MockClientKeeper.EXPECT().GetClientState(gomock.Any(), "07-tendermint-1").Return(clientState, true).AnyTimes()
+
+	// MaxPauseDuration runs out: both stay paused, their auto-stops moved to
+	// the ends of their waits.
+	lapsed := ctx.WithBlockTime(pausedAt.Add(time.Hour))
+	require.NoError(t, k.BeginBlockAutoStopPausedConsumers(lapsed))
+	for _, c := range []struct {
+		id          uint64
+		resumableAt time.Time
+	}{{forked, pausedAt.Add(wait)}, {escalated, frozenAt.Add(wait)}} {
+		require.Equal(t, providertypes.CONSUMER_PHASE_PAUSED, k.GetConsumerPhase(lapsed, c.id))
+		expiration, err := k.GetConsumerPauseExpirationTime(lapsed, c.id)
+		require.NoError(t, err)
+		require.Equal(t, c.resumableAt, expiration, "the auto-stop waits for the resume to become possible")
+		queued, err := k.GetConsumersToBeAutoStopped(lapsed, c.resumableAt)
+		require.NoError(t, err)
+		require.Equal(t, []uint64{c.id}, queued.Ids)
+	}
+
+	// The waits end: the first consumer stops at the end of its wait, the
+	// escalated one half an hour later.
+	atForkedWait := ctx.WithBlockTime(pausedAt.Add(wait))
+	require.NoError(t, k.BeginBlockAutoStopPausedConsumers(atForkedWait))
+	require.Equal(t, providertypes.CONSUMER_PHASE_STOPPED, k.GetConsumerPhase(atForkedWait, forked))
+	require.Equal(t, providertypes.CONSUMER_PHASE_PAUSED, k.GetConsumerPhase(atForkedWait, escalated))
+	atEscalatedWait := ctx.WithBlockTime(frozenAt.Add(wait))
+	require.NoError(t, k.BeginBlockAutoStopPausedConsumers(atEscalatedWait))
+	require.Equal(t, providertypes.CONSUMER_PHASE_STOPPED, k.GetConsumerPhase(atEscalatedWait, escalated))
+}
+
+// TestBeginBlockAutoStopPausedConsumers_BoundsTheForkWaitByTheProviderUnbondingPeriod:
+// the deferral of a light-client pause's auto-stop never goes past one
+// provider unbonding period after the fork became known, whatever trusting
+// period and clock-drift allowance the client carries (a client substituted
+// by governance need not fit within it, unlike a declared one), and a drift
+// that would wrap their sum past the range of a duration lands on the same
+// cap rather than on a time in the past.
+func TestBeginBlockAutoStopPausedConsumers_BoundsTheForkWaitByTheProviderUnbondingPeriod(t *testing.T) {
+	k, ctx, ctrl, mocks := testkeeper.GetProviderKeeperAndCtx(t, testkeeper.NewInMemKeeperParams(t))
+	defer ctrl.Finish()
+	unbonding := 21 * 24 * time.Hour
+	mocks.MockStakingKeeper.EXPECT().UnbondingTime(gomock.Any()).Return(unbonding, nil).AnyTimes()
+
+	params := k.GetParams(ctx)
+	params.MaxPauseDuration = time.Hour
+	k.SetParams(ctx, params)
+	mocks.MockClientKeeper.EXPECT().GetClientState(gomock.Any(), "07-tendermint-0").
+		Return(&ibctmtypes.ClientState{TrustingPeriod: 30 * 24 * time.Hour, MaxClockDrift: 10 * time.Second}, true).AnyTimes()
+	mocks.MockClientKeeper.EXPECT().GetClientState(gomock.Any(), "07-tendermint-1").
+		Return(&ibctmtypes.ClientState{TrustingPeriod: 20 * 24 * time.Hour, MaxClockDrift: time.Duration(1<<63 - 1)}, true).AnyTimes()
+
+	pausedAt := ctx.BlockTime()
+	var cids []uint64
+	for _, clientId := range []string{"07-tendermint-0", "07-tendermint-1"} {
+		cid := k.FetchAndIncrementConsumerId(ctx)
+		k.SetConsumerPhase(ctx, cid, providertypes.CONSUMER_PHASE_LAUNCHED)
+		k.SetConsumerClientId(ctx, cid, clientId)
+		require.NoError(t, k.PauseConsumerChain(ctx, cid, providertypes.PAUSE_REASON_LIGHT_CLIENT_ATTACK))
+		cids = append(cids, cid)
+	}
+
+	lapsed := ctx.WithBlockTime(pausedAt.Add(time.Hour))
+	require.NoError(t, k.BeginBlockAutoStopPausedConsumers(lapsed))
+	for _, cid := range cids {
+		require.Equal(t, providertypes.CONSUMER_PHASE_PAUSED, k.GetConsumerPhase(lapsed, cid))
+		expiration, err := k.GetConsumerPauseExpirationTime(lapsed, cid)
+		require.NoError(t, err)
+		require.Equal(t, pausedAt.Add(unbonding), expiration, "the deferral is capped at the provider unbonding period")
+	}
+
+	atCap := ctx.WithBlockTime(pausedAt.Add(unbonding))
+	require.NoError(t, k.BeginBlockAutoStopPausedConsumers(atCap))
+	for _, cid := range cids {
+		require.Equal(t, providertypes.CONSUMER_PHASE_STOPPED, k.GetConsumerPhase(atCap, cid))
+	}
+}
+
+// TestBeginBlockAutoStopPausedConsumers_StopsALightClientPauseWithoutAClientState:
+// a light-client pause with no declared client, or with a client whose state
+// cannot be read, has no fork wait to measure and stops when MaxPauseDuration
+// runs out, like any other pause.
+func TestBeginBlockAutoStopPausedConsumers_StopsALightClientPauseWithoutAClientState(t *testing.T) {
+	k, ctx, ctrl, mocks := testkeeper.GetProviderKeeperAndCtx(t, testkeeper.NewInMemKeeperParams(t))
+	defer ctrl.Finish()
+	mocks.MockStakingKeeper.EXPECT().UnbondingTime(gomock.Any()).Return(21*24*time.Hour, nil).AnyTimes()
+
+	params := k.GetParams(ctx)
+	params.MaxPauseDuration = time.Hour
+	k.SetParams(ctx, params)
+
+	undeclared := k.FetchAndIncrementConsumerId(ctx)
+	k.SetConsumerPhase(ctx, undeclared, providertypes.CONSUMER_PHASE_LAUNCHED)
+	require.NoError(t, k.PauseConsumerChain(ctx, undeclared, providertypes.PAUSE_REASON_LIGHT_CLIENT_ATTACK))
+
+	unreadable := k.FetchAndIncrementConsumerId(ctx)
+	k.SetConsumerPhase(ctx, unreadable, providertypes.CONSUMER_PHASE_LAUNCHED)
+	k.SetConsumerClientId(ctx, unreadable, "07-tendermint-2")
+	require.NoError(t, k.PauseConsumerChain(ctx, unreadable, providertypes.PAUSE_REASON_LIGHT_CLIENT_ATTACK))
+	mocks.MockClientKeeper.EXPECT().GetClientState(gomock.Any(), "07-tendermint-2").Return(nil, false).AnyTimes()
+
+	lapsed := ctx.WithBlockTime(ctx.BlockTime().Add(time.Hour))
+	require.NoError(t, k.BeginBlockAutoStopPausedConsumers(lapsed))
+	require.Equal(t, providertypes.CONSUMER_PHASE_STOPPED, k.GetConsumerPhase(lapsed, undeclared))
+	require.Equal(t, providertypes.CONSUMER_PHASE_STOPPED, k.GetConsumerPhase(lapsed, unreadable))
+}
+
 // TestStopAndPrepareForConsumerRemoval_CancelsDowntimeState verifies that
 // stopping a consumer (whether from the liveness sweep or elsewhere) cancels
 // any pending downtime state and drops its withheld fee records, which a
@@ -732,6 +875,7 @@ func resumeMocks(mocks testkeeper.MockedKeepers) {
 func TestResumeAfterALightClientPauseWaitsOutTheTrustingPeriod(t *testing.T) {
 	k, ctx, ctrl, mocks := testkeeper.GetProviderKeeperAndCtx(t, testkeeper.NewInMemKeeperParams(t))
 	defer ctrl.Finish()
+	mocks.MockStakingKeeper.EXPECT().UnbondingTime(gomock.Any()).Return(21*24*time.Hour, nil).AnyTimes()
 
 	k.SetInfractionParams(ctx, providertypes.DefaultInfractionParameters())
 
@@ -1012,6 +1156,7 @@ func TestPauseConsumersWithFrozenClientsEscalatesAnotherPause(t *testing.T) {
 func TestResumeAfterAnEscalatedPauseWaitsFromTheFreeze(t *testing.T) {
 	k, ctx, ctrl, mocks := testkeeper.GetProviderKeeperAndCtx(t, testkeeper.NewInMemKeeperParams(t))
 	defer ctrl.Finish()
+	mocks.MockStakingKeeper.EXPECT().UnbondingTime(gomock.Any()).Return(21*24*time.Hour, nil).AnyTimes()
 
 	k.SetInfractionParams(ctx, providertypes.DefaultInfractionParameters())
 
