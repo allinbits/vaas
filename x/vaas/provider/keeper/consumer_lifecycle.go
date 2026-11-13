@@ -903,11 +903,10 @@ func (k Keeper) DeleteConsumerChain(ctx sdk.Context, consumerId uint64) (err err
 			return err
 		}
 	}
-	// Removing the reverse-lookup entry can only fail on a store/codec error,
-	// i.e. corruption; panic rather than abort the delete (see auto-sweep above).
-	if err := k.FeePoolAddressToConsumerId.Remove(ctx, k.GetConsumerFeePoolAddress(consumerId)); err != nil {
-		panic(fmt.Sprintf("delete consumer %d: remove fee-pool reverse lookup: %s", consumerId, err))
-	}
+	// The fee-pool reverse lookup (FeePoolAddressToConsumerId) is kept on
+	// purpose: the bank send restriction reads it to refuse every send to the
+	// pool of a deleted consumer, which nothing sweeps again (see
+	// FeePoolSendRestriction).
 
 	// Cancel any downtime state left over for this consumer. In the normal
 	// path this is already a no-op: both StopAndPrepareForConsumerRemoval and

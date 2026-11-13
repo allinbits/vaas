@@ -304,6 +304,9 @@ func (p Params) Validate() error {
 	if err := validateFeesPerBlockAmount(p.FeesPerBlockAmount); err != nil {
 		return err
 	}
+	if err := ValidateFeesPerEpoch(p.FeesPerBlockAmount, p.BlocksPerEpoch); err != nil {
+		return err
+	}
 	if err := vaastypes.ValidateStringFractionNonZero(p.LivenessGraceFraction); err != nil {
 		return fmt.Errorf("liveness grace fraction is invalid: %s", err)
 	}
@@ -335,6 +338,19 @@ func validateFeesPerBlockAmount(amount math.Int) error {
 	}
 	if !amount.IsPositive() {
 		return fmt.Errorf("fees per block amount must be positive")
+	}
+	return nil
+}
+
+// ValidateFeesPerEpoch checks that an epoch's fee, the per-block amount times
+// blocks_per_epoch, fits an int64. Params.Validate holds the module-wide
+// fees_per_block_amount to it and MsgSetConsumerFeesPerBlock a per-consumer
+// override, so the product the epoch distribution forms at every epoch
+// boundary stays bounded. blocksPerEpoch must be positive.
+func ValidateFeesPerEpoch(feesPerBlock math.Int, blocksPerEpoch int64) error {
+	if feesPerBlock.IsNil() || !feesPerBlock.IsInt64() || !feesPerBlock.MulRaw(blocksPerEpoch).IsInt64() {
+		return fmt.Errorf("fees per block amount %s times blocks per epoch %d must fit an int64",
+			feesPerBlock, blocksPerEpoch)
 	}
 	return nil
 }

@@ -224,9 +224,12 @@ func (k Keeper) InitGenesis(ctx sdk.Context, genState *types.GenesisState) []abc
 		}
 	}
 
-	// Rebuild reverse-lookup from non-DELETED consumers (read phase collection)
-	// and, in the same pass, make sure no fee pool address holds a balance
-	// without a matching share record. Bank's InitGenesis runs before ours
+	// Rebuild the fee-pool reverse lookup for every consumer, DELETED ones
+	// included so the send restriction keeps refusing sends to their pools
+	// (see FeePoolSendRestriction), and, in the same pass, make sure no live
+	// consumer's fee pool holds a balance without a matching share record. A
+	// deleted consumer's pool is left alone: nothing may hold shares in it.
+	// Bank's InitGenesis runs before ours
 	// (see app.go OrderInitGenesis), so any pool balance present here was put
 	// there by the genesis file itself -- either hand-written, or exported from
 	// a chain where a community-pool spend addressed a pool directly. Rather
@@ -247,12 +250,12 @@ func (k Keeper) InitGenesis(ctx sdk.Context, genState *types.GenesisState) []abc
 		if err != nil {
 			panic(err)
 		}
-		if types.ConsumerPhase(phaseRaw) == types.CONSUMER_PHASE_DELETED {
-			continue
-		}
 		poolAddr := k.GetConsumerFeePoolAddress(consumerId)
 		if err := k.FeePoolAddressToConsumerId.Set(ctx, poolAddr, consumerId); err != nil {
 			panic(err)
+		}
+		if types.ConsumerPhase(phaseRaw) == types.CONSUMER_PHASE_DELETED {
+			continue
 		}
 		denomsWithShares := totals[consumerId]
 		for _, coin := range k.bankKeeper.GetAllBalances(ctx, poolAddr) {

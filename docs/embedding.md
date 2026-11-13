@@ -105,7 +105,8 @@ Register it right after constructing the provider keeper.
 `FeePoolSendRestriction`
 ([send_restriction.go](../x/vaas/provider/keeper/send_restriction.go)) rejects
 any bank send addressed at a registered consumer fee-pool address unless the
-sender is the provider or distribution module account.
+sender is the provider or distribution module account, and every send to the
+pool of a deleted consumer.
 
 **Omitting it is silent, and user-triggerable.** Fee-pool addresses are
 deterministic and publicly derivable, so without the restriction anyone can send

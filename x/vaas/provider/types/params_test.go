@@ -2,6 +2,7 @@ package types_test
 
 import (
 	"encoding/json"
+	stdmath "math"
 	"testing"
 	"time"
 
@@ -29,6 +30,12 @@ func TestValidateParams(t *testing.T) {
 		{"custom valid params", types.NewParams("0.6", "0.5", time.Hour, 1000, math.NewInt(42), types.DefaultMinDepositBlocks, types.DefaultMaxPauseDuration,
 			types.DefaultRefusalPauseThreshold, types.DefaultEquivocationExecutionDelay, types.DefaultRemovalVoteDeferralMargin, types.DefaultInfractionParameters()), true},
 		{"zero fees per block", types.NewParams("0.33", "0.5", time.Hour, 1000, math.NewInt(0), types.DefaultMinDepositBlocks, types.DefaultMaxPauseDuration,
+			types.DefaultRefusalPauseThreshold, types.DefaultEquivocationExecutionDelay, types.DefaultRemovalVoteDeferralMargin, types.DefaultInfractionParameters()), false},
+		{"epoch fee at the int64 bound", types.NewParams("0.6", "0.5", time.Hour, 1000, math.NewInt(stdmath.MaxInt64/1000), types.DefaultMinDepositBlocks, types.DefaultMaxPauseDuration,
+			types.DefaultRefusalPauseThreshold, types.DefaultEquivocationExecutionDelay, types.DefaultRemovalVoteDeferralMargin, types.DefaultInfractionParameters()), true},
+		{"epoch fee past the int64 bound", types.NewParams("0.6", "0.5", time.Hour, 1000, math.NewInt(stdmath.MaxInt64/1000+1), types.DefaultMinDepositBlocks, types.DefaultMaxPauseDuration,
+			types.DefaultRefusalPauseThreshold, types.DefaultEquivocationExecutionDelay, types.DefaultRemovalVoteDeferralMargin, types.DefaultInfractionParameters()), false},
+		{"fees per block past int64", types.NewParams("0.6", "0.5", time.Hour, 1, math.NewIntFromUint64(stdmath.MaxUint64), types.DefaultMinDepositBlocks, types.DefaultMaxPauseDuration,
 			types.DefaultRefusalPauseThreshold, types.DefaultEquivocationExecutionDelay, types.DefaultRemovalVoteDeferralMargin, types.DefaultInfractionParameters()), false},
 		{"0 trusting period fraction", types.NewParams(
 			"0.00", "0.5", time.Hour, 1000, math.NewInt(1), types.DefaultMinDepositBlocks, types.DefaultMaxPauseDuration,
@@ -80,6 +87,30 @@ func TestValidateParams(t *testing.T) {
 			require.Nil(t, err, "expected error to be nil for testcase: %s", tc.name)
 		} else {
 			require.NotNil(t, err, "expected error but got nil for testcase: %s", tc.name)
+		}
+	}
+}
+
+func TestValidateFeesPerEpoch(t *testing.T) {
+	cases := []struct {
+		name           string
+		feesPerBlock   math.Int
+		blocksPerEpoch int64
+		expPass        bool
+	}{
+		{"defaults", math.NewInt(types.DefaultFeesPerBlockAmount), types.DefaultBlocksPerEpoch, true},
+		{"product at the bound", math.NewInt(stdmath.MaxInt64 / 600), 600, true},
+		{"product past the bound", math.NewInt(stdmath.MaxInt64/600 + 1), 600, false},
+		{"max int64 over one block", math.NewInt(stdmath.MaxInt64), 1, true},
+		{"amount past int64", math.NewIntFromUint64(stdmath.MaxUint64), 1, false},
+		{"nil amount", math.Int{}, 1, false},
+	}
+	for _, tc := range cases {
+		err := types.ValidateFeesPerEpoch(tc.feesPerBlock, tc.blocksPerEpoch)
+		if tc.expPass {
+			require.NoError(t, err, tc.name)
+		} else {
+			require.Error(t, err, tc.name)
 		}
 	}
 }
