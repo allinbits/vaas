@@ -216,7 +216,7 @@ func (s *LifecycleIntegrationTestSuite) SetupSuite() {
 		govVotingPeriod:             lifecycleGovVotingPeriod,
 
 		patchProviderGenesis: func(appState map[string]any) {
-			s.genesisSection(appState, "gov", "params")["voting_period"] = secondsString(lifecycleGovVotingPeriod)
+			s.setGovVotingPeriod(appState)
 
 			params := s.genesisSection(appState, "vaasprovider", "params")
 			params["blocks_per_epoch"] = strconv.FormatInt(lifecycleBlocksPerEpoch, 10)
