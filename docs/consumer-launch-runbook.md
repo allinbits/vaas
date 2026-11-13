@@ -62,7 +62,11 @@ see [params-reference.md](params-reference.md) section 4 for the full bounds):
 - `safe_mode_threshold` (nanoseconds) is required to be positive and strictly
   below the provider's liveness grace. `10800000000000` = 3h.
 - `unbonding_period` (nanoseconds) must not exceed the provider's unbonding
-  period.
+  period, and its trusting period at `trusting_period_fraction` must exceed the
+  downtime challenge horizon (`downtime_evidence_max_age +
+  downtime_challenge_window`): `unbonding_period * 0.66 > 10 days` with the
+  defaults, i.e. more than about 15.2 days, or no client of the consumer could
+  be declared.
 
 On success the provider assigns a `consumer_id` (an auto-incremented integer,
 `"0"` for the first) and records the owner. If `spawn_time` is set, the consumer

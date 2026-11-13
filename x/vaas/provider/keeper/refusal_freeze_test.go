@@ -8,6 +8,7 @@ import (
 	"go.uber.org/mock/gomock"
 
 	ibcexported "github.com/cosmos/ibc-go/v10/modules/core/exported"
+	ibctmtypes "github.com/cosmos/ibc-go/v10/modules/light-clients/07-tendermint"
 
 	"cosmossdk.io/collections"
 	"cosmossdk.io/math"
@@ -72,6 +73,7 @@ func TestRefusalPauseFreezesDowntimeAccusations(t *testing.T) {
 	pausedFor := 3 * time.Hour
 	resumed := ctx.WithBlockTime(ctx.BlockTime().Add(pausedFor))
 	mocks.MockClientKeeper.EXPECT().GetClientStatus(gomock.Any(), "07-tendermint-0").Return(ibcexported.Active)
+	mocks.MockClientKeeper.EXPECT().GetClientState(gomock.Any(), "07-tendermint-0").Return(&ibctmtypes.ClientState{TrustingPeriod: 14 * 24 * time.Hour}, true).AnyTimes()
 	resumeMocks(mocks)
 	require.NoError(t, k.ResumeConsumerChain(resumed, cid))
 	pending, err = k.PendingDowntimeSlashes.Get(resumed, slashKey)

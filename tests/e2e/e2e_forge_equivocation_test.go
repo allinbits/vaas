@@ -33,7 +33,7 @@ func (s *ByzantineConsumerIntegrationTestSuite) consensusPrivKey(i int) cmted255
 
 // pendingEquivocationsOf counts the consumer's pending equivocation
 // punishments naming the validator at consAddr.
-func (s *ByzantineConsumerIntegrationTestSuite) pendingEquivocationsOf(consumerID, consAddr string) int {
+func (s *ByzantineConsumerIntegrationTestSuite) pendingEquivocationsOf(consumerID, consAddr string) int { //nolint:unparam // the suite drives one consumer; the helper stays generic
 	addr, err := sdk.ConsAddressFromBech32(consAddr)
 	s.Require().NoErrorf(err, "failed to decode %s", consAddr)
 	n := 0

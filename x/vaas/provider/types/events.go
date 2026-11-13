@@ -16,11 +16,24 @@ const (
 	EventTypeEquivocationPunishmentExecuted  = "vaas_equivocation_punishment_executed"
 	EventTypeEquivocationPunishmentCancelled = "vaas_equivocation_punishment_cancelled"
 	EventTypeEquivocationPunishmentDropped   = "vaas_equivocation_punishment_dropped"
+	// EventTypeConsumerClientChainIdMismatch is emitted once, alongside
+	// vaas_consumer_paused, when the provider BeginBlock pauses a launched
+	// consumer whose declared client tracks a chain id other than the
+	// consumer's (PauseConsumersWithMismatchedClients): an ibc-go client
+	// upgrade or recovery switched the client's chain id. Governance resumes
+	// the consumer after renaming it to the client's chain id
+	// (MsgUpdateConsumer by the authority) or recovering the client onto the
+	// consumer's.
+	EventTypeConsumerClientChainIdMismatch = "vaas_consumer_client_chain_id_mismatch"
 
 	AttributeProviderValidatorAddress = "provider_validator_address"
 	// AttributeConsumerClientID carries the IBC client id declared for a
 	// consumer via MsgUpdateConsumer.
 	AttributeConsumerClientID = "consumer_client_id"
+	// AttributeClientChainId carries the chain id a declared client tracks.
+	AttributeClientChainId = "client_chain_id"
+	// AttributePreviousChainId carries the chain id a renamed consumer had.
+	AttributePreviousChainId = "previous_chain_id"
 	// AttributePauseReason names, on the consumer_paused event, the
 	// PauseReason the consumer was paused for.
 	AttributePauseReason             = "reason"

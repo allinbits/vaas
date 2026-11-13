@@ -143,6 +143,32 @@ func (k Keeper) HandleConsumerDowntime(ctx sdk.Context, consumerId uint64, evide
 			consumerId,
 		)
 	}
+	// An accusation must stay disprovable, and a challenge header is
+	// verified by the declared client over the chain id it tracks: while
+	// that is not the consumer's, no header the accused could submit would
+	// pass, so the accusation is refused rather than accepted undisprovable.
+	// The next BeginBlock pauses the consumer
+	// (PauseConsumersWithMismatchedClients); this covers the rest of the
+	// block in which a client upgrade or recovery lands.
+	if clientChainId, mismatch := k.consumerClientChainIdMismatch(ctx, consumerId, clientId); mismatch {
+		return errorsmod.Wrapf(
+			vaastypes.ErrInvalidConsumerState,
+			"downtime evidence for consumer chain %d cannot be disproved while its client %s tracks chain id %s",
+			consumerId, clientId, clientChainId,
+		)
+	}
+	// Nor can a window reaching back to before a rename: the heights at or
+	// below the client's height at the rename were sealed under the old chain
+	// id, which no header the recovered client verifies is signed over.
+	if boundary, renamed, err := k.latestRenameBoundary(ctx, consumerId); err != nil {
+		return err
+	} else if renamed && evidencePacket.WindowStartHeight <= boundary {
+		return errorsmod.Wrapf(
+			vaastypes.ErrInvalidPacketData,
+			"downtime evidence for consumer chain %d reaches back to before its rename: window start height %d, rename boundary %d",
+			consumerId, evidencePacket.WindowStartHeight, boundary,
+		)
+	}
 
 	// Anchor the window-end time to real IBC consensus states so the grace
 	// and evidence-age checks below are judged against consumer chain time

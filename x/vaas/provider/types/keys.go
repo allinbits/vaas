@@ -67,5 +67,6 @@ var (
 	PendingEquivocationPunishmentsPrefix   = collections.NewPrefix(41)
 	HeldUnbondingOpsPrefix                 = collections.NewPrefix(42)
 	PendingEquivocationJailsPrefix         = collections.NewPrefix(46)
+	ConsumerPreviousChainIdsPrefix         = collections.NewPrefix(48)
 	ParametersPrefix                       = collections.NewPrefix(0xFF)
 )

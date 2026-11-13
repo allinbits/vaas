@@ -11,7 +11,8 @@ key assignment under a node restart, the refusal threshold, a provider
 consensus key rotation, and a double sign on the provider punished through
 x/evidence; and, against a consumer that lies, the provider's answer to a
 forged downtime accusation, a fabricated double-sign and a fork, followed by
-the recovery from the fork.
+the recovery from the fork and by a revision bump of the consumer's chain id,
+paused until governance renames and resumes the consumer.
 
 This directory is its own Go module (`tests/e2e/go.mod`) and is excluded from the
 top-level `make test` and from linting. It runs via the `make test-e2e` target
@@ -115,9 +116,9 @@ double sign on the provider tombstones val3.
 Entry point `TestByzantineConsumerIntegrationTestSuite`
 ([e2e_forge_suite_test.go](e2e_forge_suite_test.go)), on four validators like
 the suite above. It runs a consumer that lies three ways, observes the
-provider's answer to each, and drills the recovery from the fork, in the one
-order the protocol allows (downtime evidence and misbehaviour are accepted only
-from a launched consumer):
+provider's answer to each, and drills the recovery from the fork and a
+revision bump, in the one order the protocol allows (downtime evidence and
+misbehaviour are accepted only from a launched consumer):
 
 1. every consumer node runs `consumer-forge` and reports a live validator
    absent; the provider queues the accusation, a challenge built from the real
@@ -131,7 +132,13 @@ from a launched consumer):
    consumer in one proposal: refused inside the client's trusting period and
    rolled back, passed once it has elapsed; the consumer is served again and
    nobody is punished;
-5. governance removes the consumer, which cancels the fabricated punishment.
+5. the consumer restarts under the next revision of its chain id; the
+   provider's client expires and governance recovers it onto a client of the
+   renamed chain; the next provider block pauses the consumer for the chain
+   id mismatch, and it is served nothing until one proposal renames it to the
+   client's chain id and resumes it; a double vote signed over the old chain
+   id below the rename is still accepted;
+6. governance removes the consumer, which cancels the fabricated punishments.
 
 `consumer-forge` ([forge/](forge/)) is the reference consumer app, unchanged,
 behind one lie: within a height range given by its environment
@@ -167,7 +174,8 @@ and `Test E2E Forge` checks; a skipped suite counts as passed.
 | `e2e_forge_downtime_test.go` | a forged downtime accusation challenged away |
 | `e2e_forge_equivocation_test.go` | a fabricated double-sign: immediate jail, deferred punishment |
 | `e2e_forge_fork_test.go` | a fabricated fork: frozen client, pause, no punishment, refused resume; the recovery and resume, refused inside the trusting period and passed after it |
-| `e2e_forge_removal_test.go` | the removal that cancels the fabricated punishment |
+| `e2e_forge_revision_bump_test.go` | a revision bump: expired client, recovery, mismatch pause, rename and resume in one proposal, old-id evidence |
+| `e2e_forge_removal_test.go` | the removal that cancels the fabricated punishments |
 | `forge/` | `consumer-forge`, its module, its unit tests and its image |
 | `e2e_tsrelayer_test.go` | ts-relayer container start/stop, `add-path`, relay control |
 | `e2e_vaas_test.go` | core VSC / valset-sync scenarios |

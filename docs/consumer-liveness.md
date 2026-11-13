@@ -57,10 +57,10 @@ the unbonding period) exactly as a governance removal would do. See
 [consumer-lifecycle.md](consumer-lifecycle.md) for the `STOPPED -> DELETED` mechanics.
 
 The sweep only considers `LAUNCHED` consumers. A paused consumer (a successful downtime
-challenge, or a refusal coalition at the pause threshold) is deliberately silent, so the sweep
-skips it; its pause has its own deadline
-(`MaxPauseDuration`), and a governance resume reseeds `lastAck` so the grace budget restarts
-fresh. See [consumer-downtime.md](consumer-downtime.md).
+challenge, a confirmed light-client attack, a refusal coalition at the pause threshold, or a
+declared client tracking another chain id) is deliberately silent, so the sweep skips it;
+its pause has its own deadline (`MaxPauseDuration`), and a governance resume reseeds
+`lastAck` so the grace budget restarts fresh. See [consumer-downtime.md](consumer-downtime.md).
 
 **Guarantee:** a launched-but-unresponsive consumer is removed within the grace period,
 which is strictly less than the provider's unbonding period. So every validator that was in
@@ -141,7 +141,7 @@ traffic that would deliver the first VSC is `/ibc.core.*` and passes the gate th
 | Parameter | Where | Bound | Default |
 |---|---|---|---|
 | `VaasTimeoutPeriod` | provider module param (VSC packet timeout) and per-consumer init param (consumer evidence packet timeout) | `(0, MaxTimeoutDelta (24h)]` | 1h |
-| consumer `UnbondingPeriod` | per-consumer init param | `(0, providerUnbondingPeriod]` | provider default minus 1 day |
+| consumer `UnbondingPeriod` | per-consumer init param | `(0, providerUnbondingPeriod]`, and `UnbondingPeriod * TrustingPeriodFraction > DowntimeEvidenceMaxAge + DowntimeChallengeWindow` | provider default minus 1 day |
 | `LivenessGraceFraction` | provider module param | `(0, 1)` | `0.66` |
 | consumer `SafeModeThreshold` | per-consumer init param | `(0, provider liveness grace)` | 3h |
 
@@ -154,9 +154,13 @@ consumer is handled by the liveness sweep, so a short timeout is not dangerous.
 
 The consumer `UnbondingPeriod` is bounded against the provider's at `MsgCreateConsumer` /
 `MsgUpdateConsumer` time (it must not exceed the provider's), so a consumer cannot be
-configured to outlive the provider's slashable window. No lower floor is enforced: an
-unbonding short enough to make the relayer-derived trusting period impractical is an
-operator concern (and is useful for short-lived test or dev chains), not a protocol minimum.
+configured to outlive the provider's slashable window. Its floor comes from the downtime
+challenge: the declared client's trusting period must exceed the challenge horizon
+(`DowntimeEvidenceMaxAge + DowntimeChallengeWindow`), so `UnbondingPeriod *
+TrustingPeriodFraction` must exceed it at registration, or no client of the consumer could
+ever be declared. With the defaults (a 10-day horizon, a 0.66 fraction) that is an unbonding
+period above about 15.2 days; a short-lived test or dev chain lowers the two downtime
+windows first.
 
 The consumer `SafeModeThreshold` is bounded at the same `MsgCreateConsumer` /
 `MsgUpdateConsumer` boundary: it must be strictly less than the provider's liveness grace

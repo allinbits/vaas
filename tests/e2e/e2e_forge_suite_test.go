@@ -69,7 +69,10 @@ func (s *ByzantineConsumerIntegrationTestSuite) SetupSuite() {
 		consumerP2PPort:  forgeConsumerP2PPort,
 
 		// A short consumer unbonding period (10 minutes, so a client trusting
-		// period of about 6.6), for the fork drill to wait out.
+		// period of about 6.6), for the fork drill to wait out and the
+		// revision bump's declared client to expire in. max_pause_duration
+		// stays at its default of 45 days, so no pause in the suite reaches
+		// its auto-stop.
 		consumerTemplateFile:        "create_consumer_forge.json",
 		consumerTemplatePlaceholder: "CONSUMER_CHAIN_ID",
 
@@ -90,13 +93,16 @@ func (s *ByzantineConsumerIntegrationTestSuite) SetupSuite() {
 // allows: downtime evidence and misbehaviour are accepted only from a
 // launched consumer, so the forged downtime (which ends in a pause and a
 // resume) comes first, the fork (which ends in a pause only the drill's
-// recovery resumes, once the trusting period has elapsed) next, and the
-// removal last.
+// recovery resumes, once the trusting period has elapsed) next, then the
+// revision bump, which needs the launched consumer and the active, recovered
+// client the drill leaves and ends with the consumer renamed and served, and
+// the removal last.
 func (s *ByzantineConsumerIntegrationTestSuite) TestByzantineConsumerVAAS() {
 	s.testForgedDowntimeIsChallenged()
 	s.testFabricatedDoubleSignJailsAndDefers()
 	s.testForkFreezesAndPausesWithoutPunishing()
 	s.testForkRecoveryWaitsOutTheTrustingPeriod()
+	s.testRevisionBumpIsServedOnlyAfterTheRename()
 	s.testRemovalCancelsTheFabricatedPunishment()
 }
 
