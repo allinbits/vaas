@@ -2,7 +2,7 @@
 
 ## What This Is
 
-VAAS (Validator-as-a-Service) is a simplified Interchain Security (ICS) implementation for Cosmos blockchains, derived from [interchain-security](https://github.com/cosmos/interchain-security). It lets a provider chain lease its proof-of-stake security to consumer chains via automatic validator synchronization. All active validators validate all consumers — no opt-in/opt-out.
+VAAS (Validator-as-a-Service) is a simplified Interchain Security (ICS) implementation for Cosmos blockchains, derived from [interchain-security](https://github.com/cosmos/interchain-security). It lets a provider chain lease its proof-of-stake security to consumer chains via automatic validator synchronization. All active validators validate all consumers; there is no opt-in or opt-out.
 
 VAAS runs on **IBC v2 only** (client-based, out-of-order). There is no IBC v1 channel handshake; the VAAS modules register on `ibcRouterV2` under application IDs `vaasprovider` and `vaasconsumer` (see [x/vaas/types/keys.go](x/vaas/types/keys.go)). Consumer launch relies on a relayer (ts-relayer in localnet and e2e) creating IBC v2 clients on both sides; the consumer's owner then declares them on each chain, and the provider serves the declared client from the next epoch boundary.
 
@@ -41,24 +41,24 @@ Dev tool dependencies are isolated in `devdeps/go.mod` and invoked via `go run -
 
 The core protocol lives in `x/vaas/` with two symmetric modules:
 
-- **`x/vaas/provider/`** — runs on the provider chain. Manages consumer lifecycle, generates VSC (Validator Set Change) packets at epoch boundaries, handles key assignment, processes double-voting evidence.
-- **`x/vaas/consumer/`** — runs on consumer chains. Receives VSC packets, maintains VAAS validator set, reports evidence back to provider.
-- **`x/vaas/types/`** — shared types, errors, constants, and `expected_keepers.go` (interfaces for external dependencies like staking/slashing).
+- **`x/vaas/provider/`**: runs on the provider chain. Manages consumer lifecycle, generates VSC (Validator Set Change) packets at epoch boundaries, handles key assignment, processes double-voting evidence.
+- **`x/vaas/consumer/`**: runs on consumer chains. Receives VSC packets, maintains VAAS validator set, reports evidence back to provider.
+- **`x/vaas/types/`**: shared types, errors, constants, and `expected_keepers.go` (interfaces for external dependencies like staking/slashing).
 
 Each module has: `keeper/` (business logic + state), `types/` (data structures + params), `client/cli/` (CLI commands), `module.go`, and `ibc_module.go` (IBC v2 callbacks implementing `api.IBCModule` from `ibc-go/v10/modules/core/api`).
 
 Two helper modules replace the standard Cosmos modules on the **provider** app so the staking module does not push its own validator-set updates to CometBFT -- the VAAS provider module computes and returns the provider validator set itself, in `EndBlock`:
 
-- `x/vaas/no_valupdates_staking/` — staking without EndBlock valset exports
-- `x/vaas/no_valupdates_genutil/` — genutil without gentx-based valset init
+- `x/vaas/no_valupdates_staking/`: staking without EndBlock valset exports
+- `x/vaas/no_valupdates_genutil/`: genutil without gentx-based valset init
 
 The consumer app wires neither: it runs no real staking module and uses stock `genutil` with the `ConsumerKeeper` standing in as a no-op staking keeper, so a consumer's validator set is driven entirely by incoming VSC packets.
 
 ### Application Layer
 
-- **`app/provider/`** — full Cosmos SDK app for the provider chain
-- **`app/consumer/`** — full Cosmos SDK app for consumer chains
-- **`app/cmd/`** — binary entry points (`provider` and `consumer` daemons)
+- **`app/provider/`**: full Cosmos SDK app for the provider chain
+- **`app/consumer/`**: full Cosmos SDK app for consumer chains
+- **`app/cmd/`**: binary entry points (`provider` and `consumer` daemons)
 
 Built with `make build-apps` into `build/`.
 
@@ -97,7 +97,7 @@ Under `proto/vaas/`: `v1/` (shared wire types like `ValidatorSetChangePacketData
 
 - **Unit tests**: alongside source in `*_test.go`. Use `testutil/keeper/unit_test_helpers.go` for in-memory keeper setup with `MockedKeepers` (gomock).
 - **Mock generation**: `make mocks-gen` from `x/vaas/types/expected_keepers.go` -> `testutil/keeper/mocks.go`
-- **E2E tests**: `tests/e2e/` — Docker-based, spins up real provider/consumer chains plus the `ghcr.io/allinbits/ibc-v2-ts-relayer` container; see [tests/e2e/e2e_tsrelayer_test.go](tests/e2e/e2e_tsrelayer_test.go).
+- **E2E tests**: `tests/e2e/`: Docker-based, spins up real provider/consumer chains plus the `ghcr.io/allinbits/ibc-v2-ts-relayer` container; see [tests/e2e/e2e_tsrelayer_test.go](tests/e2e/e2e_tsrelayer_test.go).
 
 ## Lint / Import Ordering
 
