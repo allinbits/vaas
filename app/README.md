@@ -47,6 +47,9 @@ period. A short voting period is therefore set together with them; for 300s:
 }
 ```
 
+`make provider-start` writes this block into the localnet genesis and builds
+the binaries with `MIN_VOTING_PERIOD=300s`.
+
 ## Quick Start
 
 A single command starts the entire localnet (provider, consumer, and relayer):

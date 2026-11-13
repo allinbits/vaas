@@ -109,6 +109,10 @@ $(BUILDDIR)/:
 
 .PHONY: build-apps install-apps provider-start
 
+# The localnet runs governance with a 300s voting period, below the floor
+# atomone-sdk links into the binary, so its builds lower the floor to match.
+provider-start localnet-start: MIN_VOTING_PERIOD = 300s
+
 provider-start: build-apps
 	rm -rf $(provider_home)
 	$(providerd) init localnet --default-denom uatone --chain-id provider-localnet
@@ -133,8 +137,11 @@ provider-start: build-apps
 	sed -i.bak 's#tcp://127.0.0.1:26657#tcp://0.0.0.0:26657#g' $(provider_home)/config/config.toml
 	# enable REST API
 	$(providerd) config set app api.enable true
-	# Decrease voting period to 5min
-	jq '.app_state.gov.params.voting_period = "300s"' $(provider_home)/config/genesis.json > /tmp/gen
+	# Governance with a 300s voting period. The gov fields atomone-sdk bounds
+	# by the voting period move with it: quorum_timeout stays below it,
+	# max_voting_period_extension and both deposit throttlers' update_period
+	# stay at most equal to it (see app/README.md).
+	jq '.app_state.gov.params |= (.voting_period = "300s" | .quorum_timeout = "0s" | .max_voting_period_extension = "300s" | .min_deposit_throttler.update_period = "300s" | .min_initial_deposit_throttler.update_period = "300s")' $(provider_home)/config/genesis.json > /tmp/gen
 	mv /tmp/gen $(provider_home)/config/genesis.json
 
 	# Decrease number of blocks per epoch (VAAS provider VSC packets)
