@@ -7,6 +7,7 @@ import (
 
 	abci "github.com/cometbft/cometbft/abci/types"
 
+	channeltypesv2 "github.com/cosmos/ibc-go/v10/modules/core/04-channel/v2/types"
 	ibcexported "github.com/cosmos/ibc-go/v10/modules/core/exported"
 	ibctmtypes "github.com/cosmos/ibc-go/v10/modules/light-clients/07-tendermint"
 
@@ -39,20 +40,20 @@ func (k msgServer) UpdateParams(goCtx context.Context, msg *types.MsgUpdateParam
 		return nil, errorsmod.Wrapf(govtypes.ErrInvalidSigner, "invalid authority; expected %s, got %s", k.authority, msg.Authority)
 	}
 
-	if err := msg.Params.Validate(); err != nil {
-		return nil, err
-	}
-
 	ctx := sdk.UnwrapSDKContext(goCtx)
 
 	// SignedBlocksWindow/MinSignedPerWindow are provider-owned: distributed
 	// via consumer genesis and VSC packets, not locally updatable through
 	// this message. Preserve the stored values over whatever the message
-	// carries.
+	// carries, and validate the set that is stored, so a message that leaves
+	// the two out is not refused for fields its author cannot set.
 	current := k.Keeper.GetConsumerParams(ctx)
 	params := msg.Params
 	params.SignedBlocksWindow = current.SignedBlocksWindow
 	params.MinSignedPerWindow = current.MinSignedPerWindow
+	if err := params.Validate(); err != nil {
+		return nil, err
+	}
 	k.Keeper.SetParams(ctx, params)
 
 	return &types.MsgUpdateParamsResponse{}, nil
@@ -171,7 +172,12 @@ func (k msgServer) isConsumerOwner(ctx sdk.Context, signer string) bool {
 // nothing else, since every carried message must be signed by that account
 // alone and no other module account can be impersonated. The owner is the
 // one the provider seeded into the consumer params, matched on raw address
-// bytes like the pin's; the message cannot nest.
+// bytes like the pin's; the message cannot nest. One message the module
+// account signs is refused all the same: ibc-go's raw v2 MsgSendPacket on
+// the consumer module's own port, since the packets that port carries are
+// the downtime evidence this module authors in EndBlock (OnSendPacket admits
+// the module account as the signer, and the owner may not send evidence
+// through it).
 //
 // Execution is all or nothing: the transaction fails on the first message
 // that is refused or fails, and the events of the executed messages are
@@ -198,6 +204,10 @@ func (k msgServer) OwnerExec(goCtx context.Context, msg *types.MsgOwnerExec) (*t
 		typeURL := sdk.MsgTypeURL(inner)
 		if _, nested := inner.(*types.MsgOwnerExec); nested {
 			return nil, errorsmod.Wrapf(types.ErrInvalidOwnerExec, "message %d nests another owner exec", i)
+		}
+		if send, ok := inner.(*channeltypesv2.MsgSendPacket); ok && sendsOnConsumerPort(send) {
+			return nil, errorsmod.Wrapf(types.ErrInvalidOwnerExec,
+				"message %d sends a packet from the %s port, which carries only the evidence the consumer module sends itself", i, vaastypes.ConsumerAppID)
 		}
 		signers, _, err := k.cdc.GetMsgV1Signers(inner)
 		if err != nil {
@@ -237,6 +247,17 @@ func (k msgServer) OwnerExec(goCtx context.Context, msg *types.MsgOwnerExec) (*t
 		sdk.NewAttribute(vaastypes.AttributeNumMessages, fmt.Sprintf("%d", len(msgs))),
 	))
 	return &types.MsgOwnerExecResponse{}, nil
+}
+
+// sendsOnConsumerPort reports whether any payload of an ibc-go v2 send names
+// the consumer module's application port as its source.
+func sendsOnConsumerPort(send *channeltypesv2.MsgSendPacket) bool {
+	for _, payload := range send.Payloads {
+		if payload.SourcePort == vaastypes.ConsumerAppID {
+			return true
+		}
+	}
+	return false
 }
 
 // providerClientCoherent reports, as an error, that the pinned provider

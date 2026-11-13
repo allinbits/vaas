@@ -10,6 +10,7 @@ import (
 	abci "github.com/cometbft/cometbft/abci/types"
 
 	clienttypes "github.com/cosmos/ibc-go/v10/modules/core/02-client/types"
+	channeltypesv2 "github.com/cosmos/ibc-go/v10/modules/core/04-channel/v2/types"
 	ibctmtypes "github.com/cosmos/ibc-go/v10/modules/light-clients/07-tendermint"
 
 	errorsmod "cosmossdk.io/errors"
@@ -193,6 +194,40 @@ func TestOwnerExecRefusesNestingUnknownRoutesAndFailures(t *testing.T) {
 	_, err = f.srv.OwnerExec(f.ctx, ownerExecOf(t, pinOwner, inner))
 	require.ErrorIs(t, err, sdkerrors.ErrUnauthorized, "a failing message fails the exec")
 	require.Empty(t, f.router.executed)
+}
+
+// The consumer module's application port carries the downtime evidence the
+// module sends from EndBlock, and OnSendPacket admits the module account as
+// the signer, so an exec carrying ibc-go's raw v2 MsgSendPacket on that port
+// would let the owner author evidence against any provider validator. It is
+// refused before anything executes; a send on another port passes the exec's
+// own checks, whatever the router then makes of it.
+func TestOwnerExecRefusesSendingOnTheConsumerPort(t *testing.T) {
+	f := newOwnerExecFixture(t)
+	f.router.typeURL = sdk.MsgTypeURL(&channeltypesv2.MsgSendPacket{})
+	sendFrom := func(sourcePort string) sdk.Msg {
+		return &channeltypesv2.MsgSendPacket{
+			SourceClient:     pinClientID,
+			TimeoutTimestamp: 1,
+			Payloads: []channeltypesv2.Payload{{
+				SourcePort:      sourcePort,
+				DestinationPort: vaastypes.ProviderAppID,
+				Version:         "1",
+				Encoding:        "application/json",
+				Value:           []byte(`{"validator_addr":"AQID"}`),
+			}},
+			Signer: types.OwnerExecAuthority().String(),
+		}
+	}
+
+	_, err := f.srv.OwnerExec(f.ctx, ownerExecOf(t, pinOwner, sendFrom(vaastypes.ConsumerAppID)))
+	require.ErrorIs(t, err, types.ErrInvalidOwnerExec)
+	require.ErrorContains(t, err, "sends a packet from the "+vaastypes.ConsumerAppID+" port")
+	require.Empty(t, f.router.executed)
+
+	_, err = f.srv.OwnerExec(f.ctx, ownerExecOf(t, pinOwner, sendFrom("transfer")))
+	require.NoError(t, err)
+	require.Len(t, f.router.executed, 1)
 }
 
 // The pin's coherence rule holds for its recovery: an exec that leaves the

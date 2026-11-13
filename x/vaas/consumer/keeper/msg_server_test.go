@@ -10,6 +10,8 @@ import (
 	ibcexported "github.com/cosmos/ibc-go/v10/modules/core/exported"
 	ibctmtypes "github.com/cosmos/ibc-go/v10/modules/light-clients/07-tendermint"
 
+	"cosmossdk.io/math"
+
 	sdk "github.com/cosmos/cosmos-sdk/types"
 	authtypes "github.com/cosmos/cosmos-sdk/x/auth/types"
 	govtypes "github.com/cosmos/cosmos-sdk/x/gov/types"
@@ -210,4 +212,32 @@ func TestUpdateParamsTogglesPhotonFees(t *testing.T) {
 	})
 	require.Error(t, err)
 	require.False(t, k.PhotonFeesEnabled(ctx))
+}
+
+// TestUpdateParamsAcceptsAMessageWithoutTheProviderOwnedFields: the downtime
+// window and its fraction are provider-owned and kept from the store, so a
+// message that leaves them out is accepted, and the set validated is the one
+// stored; the fields the message does own are still validated.
+func TestUpdateParamsAcceptsAMessageWithoutTheProviderOwnedFields(t *testing.T) {
+	k, ctx, ctrl, _ := testkeeper.GetConsumerKeeperAndCtx(t, testkeeper.NewInMemKeeperParams(t))
+	defer ctrl.Finish()
+	current := vaastypes.DefaultConsumerParams()
+	k.SetParams(ctx, current)
+	msgSrv := consumerkeeper.NewMsgServerImpl(&k)
+
+	update := vaastypes.DefaultConsumerParams()
+	update.HistoricalEntries = current.HistoricalEntries + 1
+	update.SignedBlocksWindow = 0
+	update.MinSignedPerWindow = math.LegacyDec{}
+	_, err := msgSrv.UpdateParams(ctx, &types.MsgUpdateParams{Authority: k.GetAuthority(), Params: update})
+	require.NoError(t, err)
+	got := k.GetConsumerParams(ctx)
+	require.Equal(t, update.HistoricalEntries, got.HistoricalEntries)
+	require.Equal(t, current.SignedBlocksWindow, got.SignedBlocksWindow)
+	require.True(t, got.MinSignedPerWindow.Equal(current.MinSignedPerWindow))
+
+	update.HistoricalEntries = 0
+	_, err = msgSrv.UpdateParams(ctx, &types.MsgUpdateParams{Authority: k.GetAuthority(), Params: update})
+	require.Error(t, err, "the fields the message owns are validated")
+	require.Equal(t, current.HistoricalEntries+1, k.GetConsumerParams(ctx).HistoricalEntries)
 }
