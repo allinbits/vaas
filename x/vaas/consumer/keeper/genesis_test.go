@@ -140,6 +140,47 @@ func TestInitGenesis(t *testing.T) {
 	}
 }
 
+// TestInitGenesisCollapsesRepeatedPubkeys: a genesis validator set naming
+// one pubkey twice collapses to its last entry, as the packet paths do,
+// instead of handing CometBFT two InitChain validators for one address.
+func TestInitGenesisCollapsesRepeatedPubkeys(t *testing.T) {
+	consumerKeeper, ctx, ctrl, mocks := testkeeper.GetConsumerKeeperAndCtx(t, testkeeper.NewInMemKeeperParams(t))
+	defer ctrl.Finish()
+	expectProviderClientExists(mocks)
+
+	pkA, err := cryptocodec.ToCmtProtoPublicKey(ed25519.GenPrivKey().PubKey())
+	require.NoError(t, err)
+	pkB, err := cryptocodec.ToCmtProtoPublicKey(ed25519.GenPrivKey().PubKey())
+	require.NoError(t, err)
+	valset := []abci.ValidatorUpdate{
+		{PubKey: pkA, Power: 5},
+		{PubKey: pkA, Power: 9},
+		{PubKey: pkB, Power: 3},
+	}
+
+	updates := consumerKeeper.InitGenesis(ctx, consumertypes.NewRestartGenesisState(
+		genesisProviderClientID, valset, vaastypes.DefaultConsumerParams(),
+	))
+
+	require.Len(t, updates, 2, "one InitChain validator per address")
+	powers := map[string]int64{}
+	for _, u := range updates {
+		powers[u.PubKey.String()] = u.Power
+	}
+	require.Equal(t, int64(9), powers[pkA.String()], "the last entry for a repeated pubkey wins")
+	require.Equal(t, int64(3), powers[pkB.String()])
+
+	stored := consumerKeeper.GetAllVaasValidator(ctx)
+	require.Len(t, stored, 2)
+	for _, v := range stored {
+		pk, err := v.ConsPubKey()
+		require.NoError(t, err)
+		tmPk, err := cryptocodec.ToCmtProtoPublicKey(pk)
+		require.NoError(t, err)
+		require.Equal(t, powers[tmPk.String()], v.Power)
+	}
+}
+
 func TestExportGenesis(t *testing.T) {
 	provClientID := genesisProviderClientID
 
@@ -266,16 +307,19 @@ func TestVSCStalenessClockArmsAtFirstWallClockBlock(t *testing.T) {
 
 		genesisTime := time.Unix(1_850_000_000, 0).UTC()
 		launchTime := genesisTime.Add(48 * time.Hour) // ceremony finished long after the file was written
-		ctx = ctx.WithBlockHeight(1).WithBlockTime(genesisTime)
+		// The InitChain context of a chain starting at height 1 carries
+		// height 0; block 1 is the genesis block.
+		ctx = ctx.WithBlockHeight(0).WithBlockTime(genesisTime)
 
 		ck.InitGenesis(ctx, consumertypes.NewInitialGenesisState(provClientState, provConsState, valset, params))
+		require.Equal(t, int64(1), ck.GetInitGenesisHeight(ctx), "the genesis block of a fresh chain is block 1")
 
 		has, err := ck.LastVSCRecvTime.Has(ctx)
 		require.NoError(t, err)
 		require.False(t, has, "InitGenesis must not arm the clock: the genesis timestamp may predate launch")
 
 		// The genesis block itself still carries genesis_time; no arming.
-		ck.ArmVSCStalenessClock(ctx)
+		ck.ArmVSCStalenessClock(ctx.WithBlockHeight(1))
 		has, err = ck.LastVSCRecvTime.Has(ctx)
 		require.NoError(t, err)
 		require.False(t, has, "the genesis block carries genesis_time, not wall-clock time")
@@ -329,8 +373,11 @@ func TestVSCStalenessClockArmsAtFirstWallClockBlock(t *testing.T) {
 			params,
 		)
 		restartTime := time.Unix(1_850_000_000, 0).UTC()
+		// A restart at initial_height 100: the InitChain context carries
+		// that height, and block 100 is the genesis block.
 		ctx = ctx.WithBlockHeight(100).WithBlockTime(restartTime)
 		ck.InitGenesis(ctx, genesis)
+		require.Equal(t, int64(100), ck.GetInitGenesisHeight(ctx))
 
 		// The restart's own genesis block still carries the file's timestamp.
 		ck.ArmVSCStalenessClock(ctx)

@@ -774,44 +774,6 @@ func (mr *MockClientV2KeeperMockRecorder) SetClientCounterparty(ctx, clientID, c
 	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "SetClientCounterparty", reflect.TypeOf((*MockClientV2Keeper)(nil).SetClientCounterparty), ctx, clientID, counterparty)
 }
 
-// MockConsumerHooks is a mock of ConsumerHooks interface.
-type MockConsumerHooks struct {
-	ctrl     *gomock.Controller
-	recorder *MockConsumerHooksMockRecorder
-	isgomock struct{}
-}
-
-// MockConsumerHooksMockRecorder is the mock recorder for MockConsumerHooks.
-type MockConsumerHooksMockRecorder struct {
-	mock *MockConsumerHooks
-}
-
-// NewMockConsumerHooks creates a new mock instance.
-func NewMockConsumerHooks(ctrl *gomock.Controller) *MockConsumerHooks {
-	mock := &MockConsumerHooks{ctrl: ctrl}
-	mock.recorder = &MockConsumerHooksMockRecorder{mock}
-	return mock
-}
-
-// EXPECT returns an object that allows the caller to indicate expected use.
-func (m *MockConsumerHooks) EXPECT() *MockConsumerHooksMockRecorder {
-	return m.recorder
-}
-
-// AfterValidatorBonded mocks base method.
-func (m *MockConsumerHooks) AfterValidatorBonded(ctx context.Context, consAddr types.ConsAddress, valAddresses types.ValAddress) error {
-	m.ctrl.T.Helper()
-	ret := m.ctrl.Call(m, "AfterValidatorBonded", ctx, consAddr, valAddresses)
-	ret0, _ := ret[0].(error)
-	return ret0
-}
-
-// AfterValidatorBonded indicates an expected call of AfterValidatorBonded.
-func (mr *MockConsumerHooksMockRecorder) AfterValidatorBonded(ctx, consAddr, valAddresses any) *gomock.Call {
-	mr.mock.ctrl.T.Helper()
-	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "AfterValidatorBonded", reflect.TypeOf((*MockConsumerHooks)(nil).AfterValidatorBonded), ctx, consAddr, valAddresses)
-}
-
 // MockBankKeeper is a mock of BankKeeper interface.
 type MockBankKeeper struct {
 	ctrl     *gomock.Controller

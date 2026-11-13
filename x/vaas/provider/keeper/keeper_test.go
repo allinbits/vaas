@@ -88,29 +88,6 @@ func TestConsumerDebtStatus(t *testing.T) {
 	require.False(t, providerKeeper.IsConsumerInDebt(ctx, consumerID))
 }
 
-// TestInitHeight tests the getter and setter methods for the stored block heights (on provider) when a given consumer chain was started
-func TestInitHeight(t *testing.T) {
-	providerKeeper, ctx, ctrl, _ := testkeeper.GetProviderKeeperAndCtx(t, testkeeper.NewInMemKeeperParams(t))
-	defer ctrl.Finish()
-
-	tc := []struct {
-		consumerID uint64
-		expected   uint64
-	}{
-		{expected: 0, consumerID: 0},
-		{expected: 10, consumerID: 1},
-		{expected: 12, consumerID: 2},
-	}
-
-	providerKeeper.SetInitChainHeight(ctx, tc[1].consumerID, tc[1].expected)
-	providerKeeper.SetInitChainHeight(ctx, tc[2].consumerID, tc[2].expected)
-
-	for _, tc := range tc {
-		height, _ := providerKeeper.GetInitChainHeight(ctx, tc.consumerID)
-		require.Equal(t, tc.expected, height)
-	}
-}
-
 // TestConsumerClientId tests the getter, setter, and deletion of the client id <> consumer id mappings
 func TestConsumerClientId(t *testing.T) {
 	providerKeeper, ctx, ctrl, _ := testkeeper.GetProviderKeeperAndCtx(t, testkeeper.NewInMemKeeperParams(t))

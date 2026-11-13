@@ -1,8 +1,8 @@
 // Package staking wraps the Cosmos SDK x/staking module for use on a VAAS
-// consumer chain. It is identical to x/staking except that its InitGenesis and
-// EndBlock return no validator updates: on a consumer chain the validator set
-// is driven by VSC packets from the provider module rather than by the
-// consumer's own staking module.
+// provider chain. It is identical to x/staking except that its InitGenesis and
+// EndBlock return no validator updates: on the provider the validator set
+// handed to CometBFT is computed by the VAAS provider module in its own
+// EndBlock, from the staking state this module still maintains.
 package staking
 
 import (
@@ -46,7 +46,10 @@ type AppModule struct {
 	// embed the Cosmos SDK's x/staking AppModule
 	staking.AppModule
 
-	keeper     keeper.Keeper
+	// keeper is the same pointer the embedded module holds, so hooks set on
+	// the keeper after this module is constructed (the app wires SetHooks
+	// separately) reach the InitGenesis and EndBlock below.
+	keeper     *keeper.Keeper
 	accKeeper  types.AccountKeeper
 	bankKeeper types.BankKeeper
 }
@@ -63,7 +66,7 @@ func NewAppModule(
 	stakingAppMod := staking.NewAppModule(cdc, keeper, ak, bk, ls)
 	return AppModule{
 		AppModule:  stakingAppMod,
-		keeper:     *keeper,
+		keeper:     keeper,
 		accKeeper:  ak,
 		bankKeeper: bk,
 	}

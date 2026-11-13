@@ -843,7 +843,7 @@ func TestGenesisState_Validate_OverrideRejections(t *testing.T) {
 	owner := sdk.AccAddress([]byte("vaas-test-owner-1234")).String()
 	md := providertypes.ConsumerMetadata{Name: "n", Description: "d", Metadata: "m"}
 	knownConsumer := providertypes.ConsumerState{
-		ConsumerId: 1, ChainId: "test-1", Phase: providertypes.CONSUMER_PHASE_REGISTERED,
+		ConsumerId: 0, ChainId: "test-1", Phase: providertypes.CONSUMER_PHASE_REGISTERED,
 		OwnerAddress: owner, Metadata: &md,
 	}
 
@@ -864,19 +864,19 @@ func TestGenesisState_Validate_OverrideRejections(t *testing.T) {
 		{
 			name:       "malformed amount",
 			consumers:  []providertypes.ConsumerState{knownConsumer},
-			override:   providertypes.ConsumerFeesPerBlockOverride{ConsumerId: 1, Amount: "garbage"},
+			override:   providertypes.ConsumerFeesPerBlockOverride{ConsumerId: 0, Amount: "garbage"},
 			wantErrMsg: "not a valid integer",
 		},
 		{
 			name:       "negative amount is below the floor",
 			consumers:  []providertypes.ConsumerState{knownConsumer},
-			override:   providertypes.ConsumerFeesPerBlockOverride{ConsumerId: 1, Amount: "-1"},
+			override:   providertypes.ConsumerFeesPerBlockOverride{ConsumerId: 0, Amount: "-1"},
 			wantErrMsg: "must be greater than",
 		},
 		{
 			name:       "positive amount below the floor",
 			consumers:  []providertypes.ConsumerState{knownConsumer},
-			override:   providertypes.ConsumerFeesPerBlockOverride{ConsumerId: 1, Amount: "500"},
+			override:   providertypes.ConsumerFeesPerBlockOverride{ConsumerId: 0, Amount: "500"},
 			wantErrMsg: "must be greater than",
 		},
 	}
@@ -993,6 +993,43 @@ func TestInitGenesisPanicsOnNilDowntimeSlashFraction(t *testing.T) {
 	require.Contains(t, fmt.Sprint(recovered), "slash_fraction")
 }
 
+// TestInitGenesisPanicsOnNonContiguousConsumerIds verifies that InitGenesis
+// halts on consumer ids that are not exactly 0..n-1: the keeper derives every
+// consumer id from the ConsumerId sequence, so a gap would export a phantom
+// consumer with no phase, chain id, or owner, and the export would never
+// validate again. GenesisState.Validate rejects the same genesis for the CLI.
+func TestInitGenesisPanicsOnNonContiguousConsumerIds(t *testing.T) {
+	owner := sdk.AccAddress([]byte("vaas-test-owner-1234")).String()
+	consumer := func(id uint64, chainId string) providertypes.ConsumerState {
+		return providertypes.ConsumerState{
+			ConsumerId: id, ChainId: chainId, Phase: providertypes.CONSUMER_PHASE_REGISTERED, OwnerAddress: owner,
+		}
+	}
+
+	for name, states := range map[string][]providertypes.ConsumerState{
+		"a gap":          {consumer(0, "chain-a"), consumer(2, "chain-b")},
+		"not from zero":  {consumer(1, "chain-a")},
+		"a duplicate id": {consumer(0, "chain-a"), consumer(0, "chain-b")},
+	} {
+		t.Run(name, func(t *testing.T) {
+			k, ctx, ctrl, _ := testkeeper.GetProviderKeeperAndCtx(t, testkeeper.NewInMemKeeperParams(t))
+			defer ctrl.Finish()
+
+			gs := providertypes.DefaultGenesisState()
+			gs.ConsumerStates = states
+			require.Error(t, gs.Validate())
+
+			var recovered any
+			func() {
+				defer func() { recovered = recover() }()
+				k.InitGenesis(ctx, gs)
+			}()
+			require.NotNil(t, recovered)
+			require.Contains(t, fmt.Sprint(recovered), "contiguous")
+		})
+	}
+}
+
 // TestInitGenesisAcceptsDefaultGenesis verifies that the infraction-parameter
 // check in InitGenesis accepts the module's own default genesis state.
 func TestInitGenesisAcceptsDefaultGenesis(t *testing.T) {
@@ -1006,8 +1043,9 @@ func TestInitGenesisAcceptsDefaultGenesis(t *testing.T) {
 }
 
 // TestGenesisRoundTripKeepsPauseReasonAndPausedAt: the reason a consumer is
-// paused for and the time it was paused at travel through export, validation
-// and import, and a launched consumer carries neither.
+// paused for, the time it was paused at and, for a light-client pause, the
+// time the fork became known travel through export, validation and import,
+// and a launched consumer carries none of them.
 func TestGenesisRoundTripKeepsPauseReasonAndPausedAt(t *testing.T) {
 	pkA, ctxA, ctrlA, mocksA := testkeeper.GetProviderKeeperAndCtx(t, testkeeper.NewInMemKeeperParams(t))
 	defer ctrlA.Finish()
@@ -1039,7 +1077,8 @@ func TestGenesisRoundTripKeepsPauseReasonAndPausedAt(t *testing.T) {
 		return id
 	}
 
-	// consumer 0: paused after a light-client containment.
+	// consumer 0: paused for a refusal, then moved under the light-client
+	// reason when its client froze.
 	paused := seed("consumer-alpha", providertypes.CONSUMER_PHASE_PAUSED, "07-tendermint-0")
 	pauseExpiresAt := time.Unix(1_820_000_000, 0).UTC()
 	require.NoError(t, pkA.SetConsumerPauseExpirationTime(ctxA, paused, pauseExpiresAt))
@@ -1047,6 +1086,8 @@ func TestGenesisRoundTripKeepsPauseReasonAndPausedAt(t *testing.T) {
 	require.NoError(t, pkA.SetConsumerPauseReason(ctxA, paused, providertypes.PAUSE_REASON_LIGHT_CLIENT_ATTACK))
 	pausedAt := time.Unix(1_816_000_000, 0).UTC()
 	require.NoError(t, pkA.SetConsumerPausedAt(ctxA, paused, pausedAt))
+	forkKnownAt := time.Unix(1_817_000_000, 0).UTC()
+	require.NoError(t, pkA.SetConsumerForkKnownAt(ctxA, paused, forkKnownAt))
 
 	// consumer 1: launched, never paused.
 	launched := seed("consumer-beta", providertypes.CONSUMER_PHASE_LAUNCHED, "07-tendermint-1")
@@ -1056,8 +1097,10 @@ func TestGenesisRoundTripKeepsPauseReasonAndPausedAt(t *testing.T) {
 	require.Len(t, expA.ConsumerStates, 2)
 	require.Equal(t, providertypes.PAUSE_REASON_LIGHT_CLIENT_ATTACK, expA.ConsumerStates[0].PauseReason)
 	require.Equal(t, &pausedAt, expA.ConsumerStates[0].PausedAt)
+	require.Equal(t, &forkKnownAt, expA.ConsumerStates[0].ForkKnownAt)
 	require.Equal(t, providertypes.PAUSE_REASON_UNSPECIFIED, expA.ConsumerStates[1].PauseReason)
 	require.Nil(t, expA.ConsumerStates[1].PausedAt)
+	require.Nil(t, expA.ConsumerStates[1].ForkKnownAt)
 
 	pkB, ctxB, ctrlB, mocksB := testkeeper.GetProviderKeeperAndCtx(t, testkeeper.NewInMemKeeperParams(t))
 	defer ctrlB.Finish()
@@ -1071,8 +1114,13 @@ func TestGenesisRoundTripKeepsPauseReasonAndPausedAt(t *testing.T) {
 	got, err := pkB.GetConsumerPausedAt(ctxB, paused)
 	require.NoError(t, err)
 	require.Equal(t, pausedAt, got)
+	got, err = pkB.GetConsumerForkKnownAt(ctxB, paused)
+	require.NoError(t, err)
+	require.Equal(t, forkKnownAt, got)
 	require.Equal(t, providertypes.PAUSE_REASON_UNSPECIFIED, pkB.GetConsumerPauseReason(ctxB, launched))
 	_, err = pkB.GetConsumerPausedAt(ctxB, launched)
+	require.Error(t, err)
+	_, err = pkB.GetConsumerForkKnownAt(ctxB, launched)
 	require.Error(t, err)
 }
 

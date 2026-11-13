@@ -16,7 +16,12 @@ import (
 )
 
 func (k Keeper) InitGenesis(ctx sdk.Context, state *types.GenesisState) []abci.ValidatorUpdate {
-	k.SetInitGenesisHeight(ctx, ctx.BlockHeight())
+	// The InitChain context carries height 0 on a chain that starts at
+	// height 1, and the initial height otherwise; either way the chain's
+	// genesis block, the one whose timestamp is the genesis file's
+	// genesis_time, is the larger of that height and 1 (see
+	// ArmVSCStalenessClock).
+	k.SetInitGenesisHeight(ctx, max(ctx.BlockHeight(), 1))
 
 	k.SetParams(ctx, state.Params)
 	if state.NewChain {
@@ -142,9 +147,13 @@ func (k Keeper) InitGenesis(ctx sdk.Context, state *types.GenesisState) []abci.V
 		}
 	}
 
-	// populate VAAS validators states with initial valset
-	k.ApplyVaasValidatorChanges(ctx, state.Provider.InitialValSet)
-	return state.Provider.InitialValSet
+	// Populate the VAAS validator states with the initial valset. A pubkey
+	// repeated in it collapses to its last entry, as on the packet paths
+	// (see AccumulateChanges and computeReplaceUpdates): CometBFT refuses to
+	// build a validator set that names one address twice.
+	valset := vaastypes.AccumulateChanges(nil, state.Provider.InitialValSet)
+	k.ApplyVaasValidatorChanges(ctx, valset)
+	return valset
 }
 
 // ExportGenesis returns the VAAS consumer module's exported genesis

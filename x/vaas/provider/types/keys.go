@@ -22,7 +22,6 @@ var (
 	// This is the primary lookup mechanism for IBC v2 client-based communication.
 	ConsumerIdToClientIdPrefix             = collections.NewPrefix(1)
 	ConsumerGenesisPrefix                  = collections.NewPrefix(3)
-	InitChainHeightPrefix                  = collections.NewPrefix(4)
 	PendingVSCsPrefix                      = collections.NewPrefix(5)
 	ConsumerValidatorsPrefix               = collections.NewPrefix(6)
 	ValidatorsByConsumerAddrPrefix         = collections.NewPrefix(7)
@@ -68,5 +67,6 @@ var (
 	HeldUnbondingOpsPrefix                 = collections.NewPrefix(42)
 	PendingEquivocationJailsPrefix         = collections.NewPrefix(46)
 	ConsumersRemovedByGovernancePrefix     = collections.NewPrefix(47)
+	ConsumerForkKnownAtPrefix              = collections.NewPrefix(49)
 	ParametersPrefix                       = collections.NewPrefix(0xFF)
 )

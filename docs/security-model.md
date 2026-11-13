@@ -92,9 +92,9 @@ BeginBlock, which pauses the consumer), the consumer is paused, VSC service
 stops, both evidence paths reject it, and its pending downtime accusations are
 cancelled with the fees withheld on their account repaid. Governance resumes
 the chain once the fork is understood and fixed, recovering the client in the
-same proposal and no sooner than one trusting period after the pause, since
-until then the same conflicting headers would pause the chain again, or lets
-the pause expire into `STOPPED` via `MaxPauseDuration`. See [equivocation-evidence.md](equivocation-evidence.md)
+same proposal and no sooner than one trusting period after the fork became
+known, since until then the same conflicting headers would pause the chain
+again, or lets the pause expire into `STOPPED` via `MaxPauseDuration`. See [equivocation-evidence.md](equivocation-evidence.md)
 and the design contract on `HandleConsumerMisbehaviour`.
 
 Provider-native equivocation is punished only if the embedding chain wires the

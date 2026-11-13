@@ -157,7 +157,13 @@ A fork reported through ibc-go's `MsgUpdateClient` instead, the path a generic
 relayer or watcher takes, freezes the client without the provider hearing of
 it. The provider's BeginBlock pauses a launched consumer whose client is
 frozen, so the containment is the same, one block later and without the
-attribution.
+attribution. A consumer already paused for a downtime challenge or a refusal
+when its client freezes is moved under the light-client reason the same way:
+its accusations are discarded as a fresh light-client pause discards them, and
+the fork is recorded as known from that block, which the resume's wait below
+counts from; the pause keeps the time it began. Left unseen, the fork would
+cost a governance round: a recover-and-resume proposal would land the consumer
+back in `LAUNCHED` only for the same headers to pause it again.
 
 Nobody is slashed, jailed, or tombstoned, deliberately. A malicious consumer
 binary can orchestrate a fork in which every honest validator signs each
@@ -168,13 +174,15 @@ attacker a targeting tool. The full rationale, including why this must not be
 
 What happens after containment is a governance decision: `MsgResumeConsumer`
 resumes the chain (with a forced snapshot) once the fork is understood and
-fixed, bundling ibc-go's `MsgRecoverClient` for the frozen client, or the pause
-expires into `STOPPED`. The resume waits out the fork's evidence: a recovery
-keeps the client's pre-fork consensus states, against which the conflicting
-headers verify on either submission path until those states age out of the
-trusting period, so the resume is refused until one trusting period (plus the
-client's clock-drift allowance) has passed since the pause. A fork at a later
-height is new evidence and pauses it again.
+fixed, bundling ibc-go's `MsgRecoverClient` for the frozen client, or the
+pause expires into `STOPPED`. The resume waits out the fork's evidence: a
+recovery keeps the client's pre-fork consensus states, against which the
+conflicting headers verify on either submission path until those states age
+out of the trusting period, so the resume is refused until one trusting period
+(plus the client's clock-drift allowance) has passed since the fork became
+known: the pause, or the block a challenge or refusal pause was moved under
+the light-client reason at. A fork at a later height is new evidence and
+pauses it again.
 
 ---
 

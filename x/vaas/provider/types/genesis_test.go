@@ -180,6 +180,48 @@ func TestValidateGenesisState(t *testing.T) {
 			true,
 		},
 		{
+			"consumer ids with a gap: the export would enumerate a phantom consumer for it",
+			types.NewGenesisState(
+				types.DefaultValsetUpdateID,
+				[]types.ConsumerState{launchedCS(0, "chain-a", "07-tendermint-0"), launchedCS(2, "chain-b", "07-tendermint-1")},
+				types.DefaultParams(),
+				nil,
+				nil,
+				nil,
+				nil,
+				nil,
+			),
+			false,
+		},
+		{
+			"consumer ids not starting at 0",
+			types.NewGenesisState(
+				types.DefaultValsetUpdateID,
+				[]types.ConsumerState{launchedCS(1, "chain-a", "07-tendermint-0")},
+				types.DefaultParams(),
+				nil,
+				nil,
+				nil,
+				nil,
+				nil,
+			),
+			false,
+		},
+		{
+			"contiguous consumer ids in any order",
+			types.NewGenesisState(
+				types.DefaultValsetUpdateID,
+				[]types.ConsumerState{launchedCS(1, "chain-b", "07-tendermint-1"), launchedCS(0, "chain-a", "07-tendermint-0")},
+				types.DefaultParams(),
+				nil,
+				nil,
+				nil,
+				nil,
+				nil,
+			),
+			true,
+		},
+		{
 			"invalid consumer state pending VSC packets",
 			types.NewGenesisState(
 				types.DefaultValsetUpdateID,
@@ -720,6 +762,7 @@ func TestConsumerStateValidatePerPhase(t *testing.T) {
 		HistoricalEntries: 10,
 	}
 	rt := time.Unix(200, 0).UTC()
+	later := rt.Add(time.Hour)
 
 	base := func(phase types.ConsumerPhase) types.ConsumerState {
 		return types.ConsumerState{
@@ -798,6 +841,52 @@ func TestConsumerStateValidatePerPhase(t *testing.T) {
 			cs.PauseReason = types.PAUSE_REASON_DOWNTIME_CHALLENGE
 			cs.PausedAt = &rt
 		}, ""},
+		{"PAUSED for a light-client attack valid", func(cs *types.ConsumerState) {
+			*cs = base(types.CONSUMER_PHASE_PAUSED)
+			cs.InitParams = validInit
+			cs.ClientId = testClientID
+			cs.ConsumerGenesis = nonDefaultConsumerGenesis()
+			cs.PauseExpirationTime = &rt
+			cs.PauseReason = types.PAUSE_REASON_LIGHT_CLIENT_ATTACK
+			cs.PausedAt = &rt
+			cs.ForkKnownAt = &later
+		}, ""},
+		{"PAUSED for a light-client attack missing fork_known_at", func(cs *types.ConsumerState) {
+			*cs = base(types.CONSUMER_PHASE_PAUSED)
+			cs.InitParams = validInit
+			cs.ClientId = testClientID
+			cs.ConsumerGenesis = nonDefaultConsumerGenesis()
+			cs.PauseExpirationTime = &rt
+			cs.PauseReason = types.PAUSE_REASON_LIGHT_CLIENT_ATTACK
+			cs.PausedAt = &rt
+		}, "fork known at required"},
+		{"PAUSED for a light-client attack with fork_known_at before paused_at", func(cs *types.ConsumerState) {
+			*cs = base(types.CONSUMER_PHASE_PAUSED)
+			cs.InitParams = validInit
+			cs.ClientId = testClientID
+			cs.ConsumerGenesis = nonDefaultConsumerGenesis()
+			cs.PauseExpirationTime = &rt
+			cs.PauseReason = types.PAUSE_REASON_LIGHT_CLIENT_ATTACK
+			cs.PausedAt = &later
+			cs.ForkKnownAt = &rt
+		}, "precedes paused at"},
+		{"PAUSED for a challenge with stray fork_known_at", func(cs *types.ConsumerState) {
+			*cs = base(types.CONSUMER_PHASE_PAUSED)
+			cs.InitParams = validInit
+			cs.ClientId = testClientID
+			cs.ConsumerGenesis = nonDefaultConsumerGenesis()
+			cs.PauseExpirationTime = &rt
+			cs.PauseReason = types.PAUSE_REASON_DOWNTIME_CHALLENGE
+			cs.PausedAt = &rt
+			cs.ForkKnownAt = &rt
+		}, "fork known at must be empty"},
+		{"LAUNCHED with stray fork_known_at", func(cs *types.ConsumerState) {
+			*cs = base(types.CONSUMER_PHASE_LAUNCHED)
+			cs.InitParams = validInit
+			cs.ClientId = testClientID
+			cs.ConsumerGenesis = nonDefaultConsumerGenesis()
+			cs.ForkKnownAt = &rt
+		}, "fork known at must be empty"},
 		{"PAUSED missing pause_reason", func(cs *types.ConsumerState) {
 			*cs = base(types.CONSUMER_PHASE_PAUSED)
 			cs.InitParams = validInit

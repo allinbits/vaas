@@ -15,7 +15,9 @@ import (
 // object provided to it during init.
 type GenesisState map[string]json.RawMessage
 
-// NewDefaultGenesisState generates the default state for the application.
+// NewDefaultGenesisState generates the default state for the application. It
+// reads ModuleBasics, which New fills in, so an app must have been built
+// first; before that it returns an empty genesis.
 func NewDefaultGenesisState(cdc codec.JSONCodec) GenesisState {
 	return ModuleBasics.DefaultGenesis(cdc)
 }

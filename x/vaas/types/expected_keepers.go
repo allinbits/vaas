@@ -100,11 +100,6 @@ type ClientV2Keeper interface {
 	GetClientCounterparty(ctx sdk.Context, clientID string) (clientv2types.CounterpartyInfo, bool)
 }
 
-// ConsumerHooks event hooks for newly bonded VAAS validators
-type ConsumerHooks interface {
-	AfterValidatorBonded(ctx context.Context, consAddr sdk.ConsAddress, valAddresses sdk.ValAddress) error
-}
-
 // BankKeeper defines the expected interface needed to retrieve account balances.
 type BankKeeper interface {
 	GetBalance(ctx context.Context, addr sdk.AccAddress, denom string) sdk.Coin

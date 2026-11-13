@@ -204,7 +204,6 @@ func NewInMemConsumerKeeper(params InMemKeeperParams, mocks MockedKeepers) consu
 		mocks.MockClientKeeper,
 		mocks.MockClientV2Keeper,
 		mocks.MockChannelV2Keeper,
-		mocks.MockSlashingKeeper,
 		mocks.MockBankKeeper,
 		mocks.MockAccountKeeper,
 		authtypes.FeeCollectorName,

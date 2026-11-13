@@ -173,9 +173,9 @@ by the provider's BeginBlock (see [equivocation-evidence.md](equivocation-eviden
 **Exits:** `MsgResumeConsumer` (gov) returns the consumer to `LAUNCHED` with an immediate
 snapshot resync (the resume pre-flights the IBC client and fails with `MsgRecoverClient`
 guidance if the client expired or was frozen during the pause; after a light-client pause it
-is accepted only once one client trusting period has passed since the pause, when the fork's
-evidence can no longer pause the consumer); `MsgRemoveConsumer` (gov) or the scheduled
-auto-stop moves it to `STOPPED`.
+is accepted only once one client trusting period has passed since the fork became known,
+when the fork's evidence can no longer pause the consumer); `MsgRemoveConsumer` (gov) or the
+scheduled auto-stop moves it to `STOPPED`.
 
 ---
 
@@ -193,6 +193,9 @@ auto-stop moves it to `STOPPED`.
 2. The consumer is added to a time-indexed removal queue keyed by
    `block_time + provider_unbonding_period`.
 3. No further VSC packets are queued or sent to this consumer.
+4. Its pending downtime slashes are cancelled, and the fee shares withheld from its accused
+   validators are released to the pool's share-holders: a stopped consumer cannot be
+   challenged, so nothing could claim them any more.
 
 A consumer stopped by the liveness sweep or the pause auto-stop can still be
 removed by governance. `MsgRemoveConsumer` then leaves the phase and the
@@ -220,12 +223,12 @@ already carries the verdict cannot be removed again.
    chance any depositor gets — withdrawals are rejected once the phase is `DELETED`.
    It then:
    - Deletes: IBC client ID mapping, consumer genesis, key assignments, equivocation
-     evidence minimum height, init-chain height, pending VSC packets, validator set,
-     previous-valset hash, removal time, the liveness state (last-ack time and the
-     sent/acked VSC-id counters), the in-debt flag, the per-consumer fees-per-block
-     override, the fee-pool-address reverse lookup, and the downtime state (pending
-     downtime slashes, epoch downtime marks, withheld fee records, accepted windows,
-     and window floors).
+     evidence minimum height, pending VSC packets, validator set, removal time, the
+     liveness state (last-ack time and the sent/acked VSC-id counters), the refusals,
+     the pause reason, paused-at and fork-known-at times, the in-debt flag, the
+     per-consumer fees-per-block override, the fee-pool-address reverse lookup, and the
+     downtime state (pending downtime slashes, epoch downtime marks, withheld fee
+     records, accepted windows, and window floors).
    - **Releases the chain ID**, as the last step before the phase changes, so the chain
      ID becomes registrable again (see below).
    - **Preserves** (for block explorer use): phase, owner address, metadata,

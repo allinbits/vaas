@@ -42,3 +42,25 @@ func TestGetValidatorSetCarriesPubKeysAndReloads(t *testing.T) {
 	genDoc := &tmtypes.GenesisDoc{ChainID: "consumer-test", Validators: vals}
 	require.NoError(t, genDoc.ValidateAndComplete())
 }
+
+// TestZeroHeightExportDropsTheOpenDowntimeWindow: the missed-block bitmaps
+// and first-tracked heights of the window in progress are keyed on the
+// exporting chain's heights, so a zero-height export leaves none of them
+// behind and the relaunched chain judges its first window from scratch.
+func TestZeroHeightExportDropsTheOpenDowntimeWindow(t *testing.T) {
+	app := New(log.NewNopLogger(), dbm.NewMemDB(), nil, true, sims.EmptyAppOptions{})
+	ctx := app.NewContextLegacy(true, cmtproto.Header{Height: app.LastBlockHeight()})
+
+	addr := []byte("consumer-validator-1")
+	require.NoError(t, app.ConsumerKeeper.MissedBlockBitmaps.Set(ctx, addr, []byte{0x0F}))
+	require.NoError(t, app.ConsumerKeeper.FirstTrackedHeights.Set(ctx, addr, 5_000))
+
+	app.prepForZeroHeightGenesis(ctx)
+
+	has, err := app.ConsumerKeeper.MissedBlockBitmaps.Has(ctx, addr)
+	require.NoError(t, err)
+	require.False(t, has, "the open window's bitmap must not survive a zero-height export")
+	has, err = app.ConsumerKeeper.FirstTrackedHeights.Has(ctx, addr)
+	require.NoError(t, err)
+	require.False(t, has, "a pre-restart first-tracked height must not survive a zero-height export")
+}

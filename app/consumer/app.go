@@ -20,7 +20,6 @@ import (
 	ibctransferkeeper "github.com/cosmos/ibc-go/v10/modules/apps/transfer/keeper"
 	ibctransfertypes "github.com/cosmos/ibc-go/v10/modules/apps/transfer/types"
 	transferv2 "github.com/cosmos/ibc-go/v10/modules/apps/transfer/v2"
-	ibc "github.com/cosmos/ibc-go/v10/modules/core"
 	porttypes "github.com/cosmos/ibc-go/v10/modules/core/05-port/types"
 	ibcapi "github.com/cosmos/ibc-go/v10/modules/core/api"
 	ibchost "github.com/cosmos/ibc-go/v10/modules/core/exported"
@@ -85,9 +84,6 @@ import (
 	paramsclient "github.com/cosmos/cosmos-sdk/x/params/client"
 	paramskeeper "github.com/cosmos/cosmos-sdk/x/params/keeper"
 	paramstypes "github.com/cosmos/cosmos-sdk/x/params/types"
-	"github.com/cosmos/cosmos-sdk/x/slashing"
-	slashingkeeper "github.com/cosmos/cosmos-sdk/x/slashing/keeper"
-	slashingtypes "github.com/cosmos/cosmos-sdk/x/slashing/types"
 
 	"github.com/allinbits/vaas/app/ibcshim"
 	ibcconsumer "github.com/allinbits/vaas/x/vaas/consumer"
@@ -113,22 +109,10 @@ var (
 	// DefaultNodeHome default home directories for the application daemon
 	DefaultNodeHome string
 
-	// ModuleBasics defines the module BasicManager is in charge of setting up basic,
-	// non-dependant module elements, such as codec registration
-	// and genesis verification.
-	ModuleBasics = module.NewBasicManager(
-		genutil.NewAppModuleBasic(genutiltypes.DefaultMessageValidator),
-		auth.AppModuleBasic{},
-		vesting.AppModuleBasic{},
-		bank.AppModuleBasic{},
-		slashing.AppModuleBasic{},
-		params.AppModuleBasic{},
-		ibc.AppModuleBasic{},
-		upgrade.AppModuleBasic{},
-		transfer.AppModuleBasic{},
-		ibctm.AppModuleBasic{},
-		ibcconsumer.AppModuleBasic{},
-	)
+	// ModuleBasics is the basic manager New builds from the module manager:
+	// codec registration, CLI commands and default genesis for the modules the
+	// app actually runs. The root command builds an app before using it.
+	ModuleBasics module.BasicManager
 
 	// module account permissions
 	maccPerms = map[string][]string{
@@ -159,9 +143,8 @@ type App struct { //nolint:golint
 	memKeys map[string]*storetypes.MemoryStoreKey
 
 	// keepers
-	AccountKeeper  authkeeper.AccountKeeper
-	BankKeeper     bankkeeper.Keeper
-	SlashingKeeper slashingkeeper.Keeper
+	AccountKeeper authkeeper.AccountKeeper
+	BankKeeper    bankkeeper.Keeper
 
 	UpgradeKeeper         upgradekeeper.Keeper
 	ParamsKeeper          paramskeeper.Keeper
@@ -221,14 +204,13 @@ func New(
 	bApp.SetInterfaceRegistry(interfaceRegistry)
 
 	keys := storetypes.NewKVStoreKeys(
-		authtypes.StoreKey, banktypes.StoreKey, slashingtypes.StoreKey,
+		authtypes.StoreKey, banktypes.StoreKey,
 		ibchost.StoreKey, upgradetypes.StoreKey, ibctransfertypes.StoreKey,
 		paramstypes.StoreKey,
 		consensusparamtypes.StoreKey,
 		ibcconsumertypes.StoreKey,
 	)
 
-	// register streaming services TOCHECK
 	if err := bApp.RegisterStreamingServices(appOpts, keys); err != nil {
 		panic(err)
 	}
@@ -283,14 +265,6 @@ func New(
 		logger,
 	)
 
-	app.SlashingKeeper = slashingkeeper.NewKeeper(
-		appCodec,
-		legacyAmino,
-		runtime.NewKVStoreService(keys[slashingtypes.StoreKey]),
-		&app.ConsumerKeeper,
-		authtypes.NewModuleAddress(govtypes.ModuleName).String(),
-	)
-
 	// get skipUpgradeHeights from the app options
 	skipUpgradeHeights := map[int64]bool{}
 	for _, h := range cast.ToIntSlice(appOpts.Get(server.FlagUnsafeSkipUpgrades)) {
@@ -307,15 +281,6 @@ func New(
 		authtypes.NewModuleAddress(govtypes.ModuleName).String(),
 	)
 
-	// pre-initialize ConsumerKeeper to satsfy ibckeeper.NewKeeper
-	// which would panic on nil or zero keeper
-	// ConsumerKeeper implements StakingKeeper but all function calls result in no-ops so this is safe
-	// communication over IBC is not affected by these changes
-	app.ConsumerKeeper = ibcconsumerkeeper.NewNonZeroKeeper(
-		appCodec,
-		runtime.NewKVStoreService(keys[ibcconsumertypes.StoreKey]),
-	)
-
 	app.IBCKeeper = ibckeeper.NewKeeper(
 		appCodec,
 		runtime.NewKVStoreService(keys[ibchost.StoreKey]),
@@ -324,14 +289,14 @@ func New(
 		authtypes.NewModuleAddress(govtypes.ModuleName).String(),
 	)
 
-	// initialize the actual consumer keeper
+	// The consumer keeper takes the IBC client and channel keepers, so it is
+	// built after the IBC keeper.
 	app.ConsumerKeeper = ibcconsumerkeeper.NewKeeper(
 		appCodec,
 		runtime.NewKVStoreService(keys[ibcconsumertypes.StoreKey]),
 		app.IBCKeeper.ClientKeeper,
 		app.IBCKeeper.ClientV2Keeper,
 		app.IBCKeeper.ChannelKeeperV2,
-		app.SlashingKeeper,
 		app.BankKeeper,
 		app.AccountKeeper,
 		authtypes.FeeCollectorName,
@@ -340,8 +305,6 @@ func New(
 		authcodec.NewBech32Codec(sdk.GetConfig().GetBech32ConsensusAddrPrefix()),
 	)
 
-	// register slashing module Slashing hooks to the consumer keeper
-	app.ConsumerKeeper = *app.ConsumerKeeper.SetHooks(app.SlashingKeeper.Hooks())
 	consumerModule := ibcconsumer.NewAppModule(app.ConsumerKeeper)
 
 	app.TransferKeeper = ibctransferkeeper.NewKeeper(
@@ -378,7 +341,6 @@ func New(
 		auth.NewAppModule(appCodec, app.AccountKeeper, nil, app.GetSubspace(authtypes.ModuleName)),
 		vesting.NewAppModule(app.AccountKeeper, app.BankKeeper),
 		bank.NewAppModule(appCodec, app.BankKeeper, app.AccountKeeper, app.GetSubspace(banktypes.ModuleName)),
-		slashing.NewAppModule(appCodec, app.SlashingKeeper, app.AccountKeeper, app.BankKeeper, app.ConsumerKeeper, app.GetSubspace(slashingtypes.ModuleName), app.interfaceRegistry),
 		upgrade.NewAppModule(&app.UpgradeKeeper, app.AccountKeeper.AddressCodec()),
 		params.NewAppModule(app.ParamsKeeper),
 		// ibcshim, not ibc directly: works around ibc-go's clientv2 genesis
@@ -390,7 +352,8 @@ func New(
 		consumerModule,
 	)
 
-	// NOTE: @Msalopek -> ModuleBasic override is happening because Tx commands don't work without it
+	// The basic manager the CLI and the default genesis use, from the modules
+	// the app runs; genutil carries its CLI-side message validator.
 	ModuleBasics = module.NewBasicManagerFromManager(
 		app.MM,
 		map[string]module.AppModuleBasic{
@@ -426,16 +389,11 @@ func New(
 		authtypes.ModuleName,
 	)
 
-	// During begin block slashing happens after distr.BeginBlocker so that
-	// there is nothing left over in the validator fee pool, so as to keep the
-	// CanWithdrawInvariant invariant.
-	// NOTE: staking module is required if HistoricalEntries param > 0
 	app.MM.SetOrderBeginBlockers(
 		ibctransfertypes.ModuleName,
 		ibchost.ModuleName,
 		authtypes.ModuleName,
 		banktypes.ModuleName,
-		slashingtypes.ModuleName,
 		genutiltypes.ModuleName,
 		paramstypes.ModuleName,
 		vestingtypes.ModuleName,
@@ -449,7 +407,6 @@ func New(
 		ibchost.ModuleName,
 		authtypes.ModuleName,
 		banktypes.ModuleName,
-		slashingtypes.ModuleName,
 		genutiltypes.ModuleName,
 		paramstypes.ModuleName,
 		upgradetypes.ModuleName,
@@ -465,7 +422,6 @@ func New(
 	app.MM.SetOrderInitGenesis(
 		authtypes.ModuleName,
 		banktypes.ModuleName,
-		slashingtypes.ModuleName,
 		ibchost.ModuleName,
 		ibctransfertypes.ModuleName,
 		genutiltypes.ModuleName,
@@ -756,7 +712,6 @@ func initParamsKeeper(appCodec codec.BinaryCodec, legacyAmino *codec.LegacyAmino
 
 	paramsKeeper.Subspace(authtypes.ModuleName)
 	paramsKeeper.Subspace(banktypes.ModuleName)
-	paramsKeeper.Subspace(slashingtypes.ModuleName)
 	paramsKeeper.Subspace(ibctransfertypes.ModuleName)
 	paramsKeeper.Subspace(ibchost.ModuleName)
 	paramsKeeper.Subspace(ibcconsumertypes.ModuleName)

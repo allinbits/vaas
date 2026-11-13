@@ -32,9 +32,11 @@ consumer export > consumer_exported.json
 ```
 
 `--height <h>` exports at a specific height. `--for-zero-height` additionally
-scrubs height-relative state (it resets signing-info start heights) for a chain
-that will restart at height 0; use it only for a genuine height-zero relaunch,
-not for a normal halt-and-continue.
+scrubs height-relative state for a chain that will restart at height 0: on the
+provider it resets signing-info start heights; on the consumer, which keeps no
+signing infos, it drops the downtime window in progress, whose bitmaps and
+first-tracked heights are keyed on the old chain's heights. Use it only for a
+genuine height-zero relaunch, not for a normal halt-and-continue.
 
 Always validate an exported (or hand-edited) genesis before starting a node
 from it:
@@ -46,7 +48,12 @@ consumer genesis validate consumer_exported.json
 
 Validation runs the module `GenesisState.Validate` checks. It is a CLI-only
 gate; nodes do not re-run it at boot, so a genesis that skips this step can
-still fail (or panic) at `InitChain`.
+still fail (or panic) at `InitChain`. One rule a hand-edited provider genesis
+can break and a chain-produced export never does: the `consumer_states` ids
+must be exactly `0..n-1` (deleted consumers included, as the export writes
+them). The provider enumerates consumers from its id sequence, so a gap would
+export a phantom consumer and never round-trip; both the CLI and `InitChain`
+reject it.
 
 ## Provider module
 

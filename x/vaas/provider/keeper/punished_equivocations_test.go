@@ -199,6 +199,37 @@ func TestPunishedEquivocationsFollowAConsensusKeyRotation(t *testing.T) {
 	require.True(t, has, "the record must follow the validator to its new address")
 }
 
+// TestPunishedEquivocationsOfADeletedConsumerFollowAConsensusKeyRotation: the
+// records of a deleted consumer, kept for a consumer re-registering its chain
+// id, follow the rotation like the live consumers' records do; left at the
+// old address, the re-registered chain's replay of the dead chain's
+// double-signs would be punished again.
+func TestPunishedEquivocationsOfADeletedConsumerFollowAConsensusKeyRotation(t *testing.T) {
+	k, ctx, ctrl, _ := testkeeper.GetProviderKeeperAndCtx(t, testkeeper.NewInMemKeeperParams(t))
+	defer ctrl.Finish()
+
+	// The consumer is gone and its chain id released; only the record keeps it.
+	deleted := k.FetchAndIncrementConsumerId(ctx)
+	k.SetConsumerPhase(ctx, deleted, types.CONSUMER_PHASE_DELETED)
+	oldAddr := cryptotestutil.NewCryptoIdentityFromIntSeed(44).SDKValConsAddress()
+	newAddr := cryptotestutil.NewCryptoIdentityFromIntSeed(45).SDKValConsAddress()
+	otherAddr := cryptotestutil.NewCryptoIdentityFromIntSeed(46).SDKValConsAddress()
+	require.NoError(t, k.PunishedEquivocations.Set(ctx, collections.Join3("dead-chain", oldAddr.Bytes(), int64(55))))
+	require.NoError(t, k.PunishedEquivocations.Set(ctx, collections.Join3("dead-chain", otherAddr.Bytes(), int64(56))))
+
+	k.MigrateStateOnConsPubKeyRotation(ctx, types.NewProviderConsAddress(oldAddr), types.NewProviderConsAddress(newAddr))
+
+	has, err := k.PunishedEquivocations.Has(ctx, collections.Join3("dead-chain", oldAddr.Bytes(), int64(55)))
+	require.NoError(t, err)
+	require.False(t, has, "nothing may be left at the rotated-away address")
+	has, err = k.PunishedEquivocations.Has(ctx, collections.Join3("dead-chain", newAddr.Bytes(), int64(55)))
+	require.NoError(t, err)
+	require.True(t, has, "the record must follow the validator to its new address")
+	has, err = k.PunishedEquivocations.Has(ctx, collections.Join3("dead-chain", otherAddr.Bytes(), int64(56)))
+	require.NoError(t, err)
+	require.True(t, has, "another validator's record stays where it is")
+}
+
 // TestDeleteConsumerChainKeepsPunishedEquivocations: the records outlive the
 // consumer. They are keyed by the chain id the votes were signed over, so a
 // consumer that re-registers the id inherits them and the dead chain's

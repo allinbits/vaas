@@ -112,14 +112,26 @@ func (k Keeper) closeWindow(ctx sdk.Context, windowStart, window int64, minSigne
 		}
 	}
 
+	k.ResetMissedBlockTracking(ctx)
+
+	k.applyStagedDowntimeParams(ctx)
+}
+
+// ResetMissedBlockTracking discards the window in progress: every
+// missed-block bitmap and first-tracked height. closeWindow calls it ahead of
+// the next window, and a zero-height export calls it as well (see
+// app/consumer's prepForZeroHeightGenesis): both maps are keyed on absolute
+// heights, and a chain relaunched at height 1 could neither map them onto
+// its new windows nor close the imported window, since closeWindow trims each
+// validator's span to a first-tracked height that would then lie above the
+// window and judge nobody. The relaunch starts a fresh window instead.
+func (k Keeper) ResetMissedBlockTracking(ctx sdk.Context) {
 	if err := k.MissedBlockBitmaps.Clear(ctx, nil); err != nil {
 		panic(err)
 	}
 	if err := k.FirstTrackedHeights.Clear(ctx, nil); err != nil {
 		panic(err)
 	}
-
-	k.applyStagedDowntimeParams(ctx)
 }
 
 // countMissedBits counts the set bits in bitmap over the half-open bit range

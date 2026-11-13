@@ -32,8 +32,6 @@ type Keeper struct {
 	clientKeeper     vaastypes.ClientKeeper
 	clientV2Keeper   vaastypes.ClientV2Keeper
 	channelKeeperV2  vaastypes.ChannelV2Keeper
-	slashingKeeper   vaastypes.SlashingKeeper
-	hooks            vaastypes.ConsumerHooks
 	bankKeeper       vaastypes.BankKeeper
 	authKeeper       vaastypes.AccountKeeper
 	feeCollectorName string
@@ -73,7 +71,7 @@ func NewKeeper(
 	clientKeeper vaastypes.ClientKeeper,
 	clientV2Keeper vaastypes.ClientV2Keeper,
 	channelKeeperV2 vaastypes.ChannelV2Keeper,
-	slashingKeeper vaastypes.SlashingKeeper, bankKeeper vaastypes.BankKeeper, accountKeeper vaastypes.AccountKeeper,
+	bankKeeper vaastypes.BankKeeper, accountKeeper vaastypes.AccountKeeper,
 	feeCollectorName, authority string, validatorAddressCodec,
 	consensusAddressCodec addresscodec.Codec,
 ) Keeper {
@@ -86,7 +84,6 @@ func NewKeeper(
 		clientKeeper:          clientKeeper,
 		clientV2Keeper:        clientV2Keeper,
 		channelKeeperV2:       channelKeeperV2,
-		slashingKeeper:        slashingKeeper,
 		bankKeeper:            bankKeeper,
 		authKeeper:            accountKeeper,
 		feeCollectorName:      feeCollectorName,
@@ -124,41 +121,6 @@ func (k Keeper) GetAuthority() string {
 	return k.authority
 }
 
-// Returns a keeper with cdc and storeService set it does not raise any panics during registration (eg with IBCKeeper).
-// Used only in testing.
-func NewNonZeroKeeper(cdc codec.BinaryCodec, storeService corestoretypes.KVStoreService) Keeper {
-	sb := collections.NewSchemaBuilder(storeService)
-
-	k := Keeper{
-		storeService: storeService,
-		cdc:          cdc,
-
-		// Initialize collections with minimal setup for testing
-		ProviderClientID:       collections.NewItem(sb, types.ProviderClientIDPrefix, "provider_client_id", collections.StringValue),
-		PendingChanges:         collections.NewItem(sb, types.PendingChangesPrefix, "pending_changes", codec.CollValue[vaastypes.ValidatorSetChangePacketData](cdc)),
-		InitGenesisHeight:      collections.NewItem(sb, types.InitGenesisHeightPrefix, "init_genesis_height", collections.Uint64Value),
-		Params:                 collections.NewItem(sb, types.ParametersPrefix, "params", codec.CollValue[vaastypes.ConsumerParams](cdc)),
-		ConsumerInDebt:         collections.NewItem(sb, types.ConsumerDebtPrefix, "consumer_in_debt", collections.BoolValue),
-		VaasValidators:         collections.NewMap(sb, types.VaasValidatorPrefix, "vaas_validators", collections.BytesKey, codec.CollValue[types.VaasValidator](cdc)),
-		HistoricalInfos:        collections.NewMap(sb, types.HistoricalInfoPrefix, "historical_infos", collections.Int64Key, codec.CollValue[stakingtypes.HistoricalInfo](cdc)),
-		HighestValsetUpdateID:  collections.NewItem(sb, types.HighestValsetUpdateIDPrefix, "highest_valset_update_id", collections.Uint64Value),
-		PendingEvidencePackets: collections.NewMap(sb, types.PendingEvidencePacketsPrefix, "pending_evidence_packets", collections.PairKeyCodec(collections.BytesKey, collections.Int64Key), collections.BytesValue),
-		LastVSCRecvTime:        collections.NewItem(sb, types.LastVSCRecvTimePrefix, "last_vsc_recv_time", collections.BytesValue),
-		MissedBlockBitmaps:     collections.NewMap(sb, types.MissedBlockBitmapsPrefix, "missed_block_bitmaps", collections.BytesKey, collections.BytesValue),
-		FirstTrackedHeights:    collections.NewMap(sb, types.FirstTrackedHeightsPrefix, "first_tracked_heights", collections.BytesKey, collections.Int64Value),
-		StagedDowntimeParams:   collections.NewItem(sb, types.StagedDowntimeParamsPrefix, "staged_downtime_params", codec.CollValue[vaastypes.DowntimeParams](cdc)),
-		ProviderChainId:        collections.NewItem(sb, types.ProviderChainIdPrefix, "provider_chain_id", collections.StringValue),
-	}
-
-	schema, err := sb.Build()
-	if err != nil {
-		panic(err)
-	}
-	k.Schema = schema
-
-	return k
-}
-
 // ValidatorAddressCodec returns the app validator address codec.
 func (k Keeper) ValidatorAddressCodec() addresscodec.Codec {
 	return k.validatorAddressCodec
@@ -172,18 +134,6 @@ func (k Keeper) ConsensusAddressCodec() addresscodec.Codec {
 // Logger returns a module-specific logger.
 func (k Keeper) Logger(ctx sdk.Context) log.Logger {
 	return ctx.Logger().With("module", "x/"+host.SubModuleName+"-"+types.ModuleName)
-}
-
-func (k *Keeper) SetHooks(sh vaastypes.ConsumerHooks) *Keeper {
-	if k.hooks != nil {
-		// This should never happen as SetHooks is expected
-		// to be called only once in app.go
-		panic("cannot set validator hooks twice")
-	}
-
-	k.hooks = sh
-
-	return k
 }
 
 // SetProviderClientID sets the clientID for the client to the provider.
@@ -266,14 +216,17 @@ func (k Keeper) DeletePendingChanges(ctx context.Context) {
 	}
 }
 
+// GetInitGenesisHeight returns the height of the chain's genesis block, the
+// first block CometBFT produces after InitChain (see InitGenesis).
 func (k Keeper) GetInitGenesisHeight(ctx context.Context) int64 {
 	height, err := k.InitGenesisHeight.Get(ctx)
 	if err != nil {
-		panic("last standalone height not set")
+		panic("init genesis height not set")
 	}
 	return int64(height)
 }
 
+// SetInitGenesisHeight stores the height of the chain's genesis block.
 func (k Keeper) SetInitGenesisHeight(ctx context.Context, height int64) {
 	if err := k.InitGenesisHeight.Set(ctx, uint64(height)); err != nil {
 		panic(fmt.Errorf("failed to set init genesis height: %w", err))
@@ -384,10 +337,10 @@ func (k Keeper) GetLastVSCRecvTime(ctx context.Context) time.Time {
 // threshold instead of running on its genesis validator set unrestricted
 // forever. It runs every BeginBlock and is a no-op once the clock is set
 // (by a restart genesis, a received VSC, or an earlier arming) and at the
-// genesis block itself: under
-// BFT time that block's timestamp is the genesis file's genesis_time, which
-// may predate launch by however long the genesis ceremony took, and arming
-// with it would burn safe-mode budget before the chain produced a block.
+// genesis block itself, whose height InitGenesis stores: under BFT time that
+// block's timestamp is the genesis file's genesis_time, which may predate
+// launch by however long the genesis ceremony took, and arming with it would
+// burn safe-mode budget before the chain produced a block.
 func (k Keeper) ArmVSCStalenessClock(ctx sdk.Context) {
 	if ctx.BlockHeight() <= k.GetInitGenesisHeight(ctx) {
 		return

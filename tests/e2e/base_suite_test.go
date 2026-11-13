@@ -437,9 +437,6 @@ func (s *baseTestSuite) initAndStartConsumer(consumerGenesisJSON []byte) {
 		})
 	}
 
-	// Patch consumer slashing params for aggressive downtime detection
-	s.patchConsumerSlashingParams()
-
 	// Apply the suite-specific config.toml mutations (e.g. fast blocks).
 	if s.cfg.patchConsumerConfigToml != nil {
 		s.cfg.patchConsumerConfigToml(filepath.Join(consumerDir, "config", "config.toml"))

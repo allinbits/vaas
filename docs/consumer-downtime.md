@@ -38,8 +38,10 @@ exists.
 The consumer's VAAS module tracks missed blocks itself, reading each block's `LastCommit`
 vote flags in `BeginBlock`. Detection does not use `x/slashing`'s sliding window: consumers
 cannot jail (the validator set is provider-owned), and a sliding window without jail
-re-triggers on every block once below threshold. The consumer's `x/slashing` downtime calls
-into the VAAS keeper are log-only.
+re-triggers on every block once below threshold. The reference consumer wires no
+`x/slashing` at all (its message types are not registered, so a transaction carrying one
+fails to decode), so there are no signing infos, no `liveness` or `slash` events and no
+slashing parameters on the consumer: operators read downtime from the VAAS events.
 
 Windows are **tumbling**: heights `[k*W, (k+1)*W)` where `W = SignedBlocksWindow`. Each
 validator gets one bit per height (`1` = missed, absent from the commit). When the window
@@ -103,9 +105,14 @@ acknowledgement at the first failure:
    true window-end time, and the anchor can therefore never place the window end later than
    it really was. Against that anchor: the window must end after the launch grace period
    (`SpawnTime + DowntimeGracePeriod`), must be no older than `DowntimeEvidenceMaxAge`
-   at receipt -- old windows are rejected because their challenge data availability decays --
-   and must leave the whole `DowntimeChallengeWindow` inside the consumer client's trusting
-   period, so the accused can still verify a challenge header at the end of it.
+   at receipt -- old windows are rejected because their challenge data availability decays.
+   The window *start* is anchored the same way, and that anchor must leave the whole
+   `DowntimeChallengeWindow` inside the consumer client's trusting period: a challenge of a
+   claimed height verifies the header at that height plus one against a stored consensus
+   state below it, so the state anchoring the window start, up to a whole window of
+   consumer blocks older than the window-end anchor, is the oldest one any height of the
+   window needs, and the accused can still challenge every height of the window at the end
+   of it.
    Anchoring to the upper state instead would overstate the window-end time by however far
    the client skipped past it, understating the evidence's age by the same amount and
    admitting evidence whose challenge data is already gone; anchoring to the lower state
@@ -297,8 +304,12 @@ proves the chain's consensus is compromised without proving who is at fault, so 
 contains the chain and punishes nobody, and the consumer's IBC client is frozen so that no
 packet proven against the fork lands any more; `MsgSubmitConsumerMisbehaviour` does both in one
 transaction (see `HandleConsumerMisbehaviour`), and a client frozen through ibc-go's
-`MsgUpdateClient` is caught by the provider's BeginBlock, which pauses the consumer. A refusal
-coalition reaching `RefusalPauseThreshold` pauses the consumer the same way (see
+`MsgUpdateClient` is caught by the provider's BeginBlock, which pauses the consumer, or, when
+the consumer is already paused for a challenge or a refusal, moves that pause under the
+light-client reason (discarding the accusations as a light-client pause does, and recording
+the fork as known from that block for the resume's wait to count from, while the pause keeps
+the time it began), so governance does not resume it into the fork. A refusal coalition
+reaching `RefusalPauseThreshold` pauses the consumer the same way (see
 [consumer-refusal.md](consumer-refusal.md)). A challenge or light-client pause first repays
 the fees withheld from accused validators: their accusations are cancelled with it and could
 not be challenged any more. A refusal pause proves nothing about the accusations and freezes
@@ -352,9 +363,11 @@ Two governance exits:
   the client's pre-fork consensus states, and the conflicting headers verify against them on
   either submission path until those states age out of the trusting period, so a consumer
   resumed earlier would be paused again by the same headers. The resume is refused until one
-  trusting period (plus the client's clock-drift allowance) has passed since the pause; with
-  a 21-day consumer unbonding period that is about 14 days, which AtomOne's voting period
-  alone already covers. A fork at a later height is new evidence and pauses it again.
+  trusting period (plus the client's clock-drift allowance) has passed since the fork became
+  known: the pause itself, or the block a challenge or refusal pause was moved under the
+  light-client reason at. With a 21-day consumer unbonding period that is about 14 days,
+  which AtomOne's voting period alone already covers. A fork at a later height is new
+  evidence and pauses it again.
 - **`MsgRemoveConsumer`** accepts a paused consumer and routes it into the ordinary
   `STOPPED -> DELETED` teardown.
 
@@ -407,9 +420,10 @@ That check bounds the interval by the trusting period derived from the *default*
 unbonding period, i.e. it constrains the parameters in the abstract, and deliberately not by
 the clients that exist: a consumer adopted with a shorter trusting period would otherwise veto
 a provider-wide change. The client that actually verifies a challenge bounds evidence at
-acceptance instead: an accusation is rejected when its age plus `DowntimeChallengeWindow`
-reaches that client's trusting period (section 3), so every accusation the provider accepts
-stays challengeable for its whole window, whatever the parameters say.
+acceptance instead: an accusation is rejected when the age of its window-start anchor plus
+`DowntimeChallengeWindow` reaches that client's trusting period (section 3), so every
+accusation the provider accepts stays challengeable, at every height of its window, for its
+whole challenge window, whatever the parameters say.
 
 ## 9. Operator guidance
 
