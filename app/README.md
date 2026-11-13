@@ -66,7 +66,11 @@ This will:
 4. Start the `ts-relayer` Docker container, fund relayer keys on both chains
    (test mnemonic), and create an **IBC v2 path** between the two chains
    (`add-path ... --ibc-version 2`).
-5. Trigger a delegation on the provider so the first VSC packet is queued and
+5. Fund the consumer's fee pool (`provider-fund-consumer-fee-pool`, from
+   `val`): the provider collects each consumer's epoch fee from its pool, and
+   a consumer whose pool cannot pay is flagged in debt and restricts user
+   transactions until an epoch is paid again.
+6. Trigger a delegation on the provider so the first VSC packet is queued and
    relayed to the consumer.
 
 Log files:

@@ -225,7 +225,8 @@ consumer-start: consumer-init consumer-create
 # the consumer stays out of debt. The fee denom is uphoton (fixed at module
 # wiring); FEE_POOL_AMOUNT must clear the min-deposit floor
 # (fees_per_block_amount x min_deposit_blocks). Run after the consumer exists,
-# e.g. make provider-fund-consumer-fee-pool CONSUMER_ID=0
+# e.g. make provider-fund-consumer-fee-pool CONSUMER_ID=0; localnet-start runs
+# it once the clients are declared.
 FEE_POOL_AMOUNT ?= 100000000uphoton
 provider-fund-consumer-fee-pool:
 	$(providerd) tx vaasprovider fund-consumer-fee-pool $(CONSUMER_ID) $(FEE_POOL_AMOUNT) \
@@ -296,7 +297,7 @@ localnet-clean:
 localnet-start: build-apps
 	@echo "=== Starting VAAS Localnet ==="
 	@echo ""
-	@echo "Step 1/4: Starting provider chain in background..."
+	@echo "Step 1/5: Starting provider chain in background..."
 	@$(MAKE) provider-start > /tmp/vaas-provider.log 2>&1 &
 	@echo "  Waiting for provider to produce blocks..."
 	@for i in $$(seq 1 60); do \
@@ -312,7 +313,7 @@ localnet-start: build-apps
 		sleep 2; \
 	done
 	@echo ""
-	@echo "Step 2/4: Starting consumer chain in background..."
+	@echo "Step 2/5: Starting consumer chain in background..."
 	@$(MAKE) consumer-start > /tmp/vaas-consumer.log 2>&1 &
 	@echo "  Waiting for consumer to produce blocks..."
 	@for i in $$(seq 1 90); do \
@@ -328,13 +329,17 @@ localnet-start: build-apps
 		sleep 2; \
 	done
 	@echo ""
-	@echo "Step 3/4: Starting ts-relayer..."
+	@echo "Step 3/5: Starting ts-relayer..."
 	@$(MAKE) ts-relayer-start > /tmp/vaas-ts-relayer.log 2>&1
 	@echo ""
-	@echo "Step 3b/4: Declaring the relayer-created IBC clients (owner, both chains)..."
+	@echo "Step 3b/5: Declaring the relayer-created IBC clients (owner, both chains)..."
 	@$(MAKE) localnet-declare-clients
 	@echo ""
-	@echo "Step 4/4: Triggering valset change to send first VSC packet..."
+	@echo "Step 4/5: Funding the consumer fee pool..."
+	@$(MAKE) provider-fund-consumer-fee-pool CONSUMER_ID=0 > /dev/null
+	@echo "  Fee pool funded with $(FEE_POOL_AMOUNT) from val; the next epoch collection clears the debt flagged while the pool was empty."
+	@echo ""
+	@echo "Step 5/5: Triggering valset change to send the first VSC packet..."
 	@VALOPER=$$($(providerd) keys show val --bech val -a 2> /dev/null); \
 	$(providerd) tx staking delegate $$VALOPER 1000000uatone --from user --fees 5000uatone -y > /dev/null 2>&1
 	@echo "  Delegation sent; the VSC packet goes out at the next epoch boundary. Checking the consumer reports its provider client..."
