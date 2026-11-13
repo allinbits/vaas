@@ -15,6 +15,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"time"
 
@@ -78,6 +79,12 @@ type baseSuiteConfig struct {
 	// photon ante polices the fee denom in consensus, while the relayer's
 	// exempt traffic must stay admissible whatever it pays.
 	enableConsumerPhotonFees bool
+
+	// validators is the number of validator nodes each chain runs, one
+	// consumer node per provider validator; zero means one. Only val0 binds
+	// host ports and holds the keys the suite transacts from; the other
+	// nodes are reached through docker exec.
+	validators int
 }
 
 // baseTestSuite carries the shared Docker state and helper methods. Concrete
@@ -103,14 +110,10 @@ func (s *baseTestSuite) TearDownSuite() {
 	s.T().Log("tearing down e2e suite...")
 
 	// A failed run leaves no other trace of what the chains were doing; keep
-	// the tail of both logs in the test output.
+	// the tail of every node's log in the test output.
 	if s.T().Failed() {
-		if len(s.providerValRes) > 0 {
-			s.T().Logf("provider log tail:\n%s", tailLines(s.providerLogs(), 300))
-		}
-		if len(s.consumerValRes) > 0 {
-			s.T().Logf("consumer log tail:\n%s", tailLines(s.consumerLogs(), 100))
-		}
+		s.logNodeTails(s.providerValRes, 300)
+		s.logNodeTails(s.consumerValRes, 100)
 	}
 
 	if os.Getenv("VAAS_E2E_SKIP_CLEANUP") == "true" {
@@ -152,9 +155,13 @@ func (s *baseTestSuite) cleanupStaleContainers() {
 	staleNames := []string{
 		s.cfg.providerInitName,
 		s.cfg.consumerInitName,
-		fmt.Sprintf("%s-val0", s.cfg.providerChainID),
-		fmt.Sprintf("%s-val0", s.cfg.consumerChainID),
 		fmt.Sprintf("%s-%s-ts-relayer", s.cfg.providerChainID, s.cfg.consumerChainID),
+	}
+	for i := range s.validatorCount() {
+		staleNames = append(staleNames,
+			fmt.Sprintf("%s-val%d", s.cfg.providerChainID, i),
+			fmt.Sprintf("%s-val%d", s.cfg.consumerChainID, i),
+		)
 	}
 	for _, name := range staleNames {
 		c, err := s.dkrPool.Client.InspectContainer(name)
@@ -213,8 +220,6 @@ func (s *baseTestSuite) runInitContainer(name, scriptPath, containerScriptPath, 
 	s.Require().NoError(s.dkrPool.Purge(initResource), "failed to purge %s container", name)
 }
 
-// initAndStartProvider initializes the provider chain using a temporary Docker
-// container that runs provider-init.sh, then starts the actual chain container.
 // genesisSection returns the object at path in a genesis app state, failing
 // the suite when any step is missing: a patch that skipped a missing section
 // would leave the suite running on the shipped defaults it exists to replace.
@@ -228,74 +233,230 @@ func (s *baseTestSuite) genesisSection(appState map[string]any, path ...string) 
 	return section
 }
 
-func (s *baseTestSuite) initAndStartProvider() {
-	// Create host directory for provider data
-	providerDir, err := os.MkdirTemp("", s.cfg.tmpDirPrefix+"provider-")
-	s.Require().NoError(err)
-	s.tmpDirs = append(s.tmpDirs, providerDir)
-	s.provider.dataDir = providerDir
+// validatorCount is the number of validator nodes each chain runs.
+func (s *baseTestSuite) validatorCount() int {
+	if s.cfg.validators < 1 {
+		return 1
+	}
+	return s.cfg.validators
+}
 
-	// Make writable
-	s.Require().NoError(os.Chmod(providerDir, 0o777))
+// providerHome returns the host home directory of provider node i.
+func (s *baseTestSuite) providerHome(i int) string {
+	return s.provider.homes[i]
+}
+
+// consumerHome returns the host home directory of consumer node i.
+func (s *baseTestSuite) consumerHome(i int) string {
+	return s.consumer.homes[i]
+}
+
+// newChainHomes creates the host directory an init container fills with one
+// node home per validator, and returns it with the home paths it will hold
+// (val0, val1, ...), in validator order.
+func (s *baseTestSuite) newChainHomes(suffix string) (parent string, homes []string) {
+	parent, err := os.MkdirTemp("", s.cfg.tmpDirPrefix+suffix)
+	s.Require().NoError(err)
+	s.tmpDirs = append(s.tmpDirs, parent)
+	s.Require().NoError(os.Chmod(parent, 0o777))
+	homes = make([]string, s.validatorCount())
+	for i := range homes {
+		homes[i] = filepath.Join(parent, fmt.Sprintf("val%d", i))
+	}
+	return parent, homes
+}
+
+// copyToAllHomes copies relPath from homes[0] over the same path in every
+// other home, so a file patched on val0 reaches every node.
+func (s *baseTestSuite) copyToAllHomes(homes []string, relPath string) {
+	for _, home := range homes[1:] {
+		s.Require().NoErrorf(copyFile(filepath.Join(homes[0], relPath), filepath.Join(home, relPath)),
+			"failed to copy %s to %s", relPath, home)
+	}
+}
+
+// nodePorts are the host ports a chain's val0 binds.
+type nodePorts struct {
+	rpc, grpc, rest, p2p string
+}
+
+func (s *baseTestSuite) providerPorts() nodePorts {
+	return nodePorts{rpc: s.cfg.providerRPCPort, grpc: s.cfg.providerGRPCPort, rest: s.cfg.providerRESTPort, p2p: s.cfg.providerP2PPort}
+}
+
+func (s *baseTestSuite) consumerPorts() nodePorts {
+	return nodePorts{rpc: s.cfg.consumerRPCPort, grpc: s.cfg.consumerGRPCPort, rest: s.cfg.consumerRESTPort, p2p: s.cfg.consumerP2PPort}
+}
+
+// startChainNode starts validator node index of a chain as the container
+// <chainID>-val<index>, mounting hostHome at homePath. Only val0 binds host
+// ports: the other nodes are reached through docker exec, and the relayer
+// and the suite's queries address val0 by container name and host port.
+func (s *baseTestSuite) startChainNode(chainID, binary, homePath, hostHome string, index int, ports nodePorts) *dockertest.Resource {
+	opts := &dockertest.RunOptions{
+		Name:       fmt.Sprintf("%s-val%d", chainID, index),
+		Repository: e2eChainImage,
+		NetworkID:  s.dkrNet.Network.ID,
+		Mounts:     []string{fmt.Sprintf("%s:%s", hostHome, homePath)},
+		Cmd:        []string{binary, "start", "--home", homePath},
+	}
+	if index == 0 {
+		opts.PortBindings = map[docker.Port][]docker.PortBinding{
+			"26657/tcp": {{HostIP: "", HostPort: ports.rpc}},
+			"9090/tcp":  {{HostIP: "", HostPort: ports.grpc}},
+			"1317/tcp":  {{HostIP: "", HostPort: ports.rest}},
+			"26656/tcp": {{HostIP: "", HostPort: ports.p2p}},
+		}
+	}
+	resource, err := s.dkrPool.RunWithOptions(opts, func(config *docker.HostConfig) {
+		config.RestartPolicy = docker.RestartPolicy{Name: "no"}
+	})
+	s.Require().NoErrorf(err, "failed to start %s container", opts.Name)
+	return resource
+}
+
+// nodeHeight reads a node's latest block height from its own status, through
+// docker exec, which is how nodes without host ports are observed.
+func (s *baseTestSuite) nodeHeight(containerID, binary, homePath string) (int64, error) {
+	stdout, stderr, err := s.dockerExec(containerID, []string{binary, "status", "--home", homePath})
+	if err != nil {
+		return 0, fmt.Errorf("status: %w (stderr: %s)", err, stderr.String())
+	}
+	var res struct {
+		SyncInfo struct {
+			LatestBlockHeight string `json:"latest_block_height"`
+		} `json:"sync_info"`
+	}
+	if err := json.Unmarshal(stdout.Bytes(), &res); err != nil {
+		return 0, fmt.Errorf("decode status: %w (stderr: %s)", err, stderr.String())
+	}
+	return strconv.ParseInt(res.SyncInfo.LatestBlockHeight, 10, 64)
+}
+
+// waitForNodesCaughtUp fails the suite unless every node of resources reaches
+// height 3 and sits within two blocks of resources[0] before timeout, logging
+// every node's last log lines first when it does fail.
+func (s *baseTestSuite) waitForNodesCaughtUp(resources []*dockertest.Resource, binary, homePath string, timeout time.Duration) {
+	if len(resources) < 2 {
+		return
+	}
+	caughtUp := func() bool {
+		head, err := s.nodeHeight(resources[0].Container.ID, binary, homePath)
+		if err != nil || head < 3 {
+			return false
+		}
+		for _, r := range resources[1:] {
+			h, err := s.nodeHeight(r.Container.ID, binary, homePath)
+			if err != nil || h < 3 || head-h > 2 {
+				return false
+			}
+		}
+		return true
+	}
+	deadline := time.Now().Add(timeout)
+	for time.Now().Before(deadline) {
+		if caughtUp() {
+			return
+		}
+		time.Sleep(3 * time.Second)
+	}
+	s.logNodeTails(resources, 80)
+	s.Require().Failf("nodes not caught up", "not every node caught up with val0 within %s", timeout)
+}
+
+// logNodeTails logs the last lines of every node's container output, under
+// the container's name. A failed bring-up or run purges its nodes with the
+// suite, so this is the only record of what they were doing.
+func (s *baseTestSuite) logNodeTails(resources []*dockertest.Resource, lines int) {
+	for _, r := range resources {
+		var buf bytes.Buffer
+		_ = s.dkrPool.Client.Logs(docker.LogsOptions{
+			Container:    r.Container.ID,
+			OutputStream: &buf,
+			ErrorStream:  &buf,
+			Stdout:       true,
+			Stderr:       true,
+			Tail:         strconv.Itoa(lines),
+		})
+		s.T().Logf("%s (%s), last %d log lines:\n%s", strings.TrimPrefix(r.Container.Name, "/"), r.Container.ID[:12], lines, buf.String())
+	}
+}
+
+// stopConsumerNode stops consumer node i, the way a validator's node goes
+// offline; its container and data stay, so startConsumerNode brings the same
+// node back. The node gets five seconds to exit on its own before the kill:
+// CometBFT recovers from its write-ahead log, and the scenarios that restart
+// a node need the gap short, since a validator away for more than half a
+// downtime window is accused for it. The stop's duration is logged so a node
+// that ignores the signal shows.
+func (s *baseTestSuite) stopConsumerNode(i int) {
+	started := time.Now()
+	s.Require().NoErrorf(s.dkrPool.Client.StopContainer(s.consumerValRes[i].Container.ID, 5),
+		"failed to stop consumer val%d", i)
+	s.T().Logf("consumer val%d stopped in %s", i, time.Since(started).Round(time.Millisecond))
+}
+
+// startConsumerNode starts consumer node i again and waits until every
+// consumer node has caught up with val0.
+func (s *baseTestSuite) startConsumerNode(i int) {
+	started := time.Now()
+	s.Require().NoErrorf(s.dkrPool.Client.StartContainer(s.consumerValRes[i].Container.ID, nil),
+		"failed to start consumer val%d", i)
+	s.waitForNodesCaughtUp(s.consumerValRes, consumerBinary, consumerHomePath, 3*time.Minute)
+	s.T().Logf("consumer val%d started and caught up in %s", i, time.Since(started).Round(time.Millisecond))
+}
+
+// initAndStartProvider initializes the provider chain's node homes using a
+// temporary Docker container that runs provider-init.sh, then starts one
+// chain container per validator.
+func (s *baseTestSuite) initAndStartProvider() {
+	parentDir, homes := s.newChainHomes("provider-")
+	s.provider.homes = homes
+	s.provider.dataDir = homes[0]
 
 	// Run init script in a temporary container
 	scriptPath := filepath.Join(testDir(), "scripts", "provider-init.sh")
-	s.runInitContainer(s.cfg.providerInitName, scriptPath, "/scripts/provider-init.sh", providerDir, providerHomePath, []string{
+	s.runInitContainer(s.cfg.providerInitName, scriptPath, "/scripts/provider-init.sh", parentDir, initHomesPath, []string{
 		"BINARY=" + providerBinary,
-		"HOME_DIR=" + providerHomePath,
+		"HOMES_DIR=" + initHomesPath,
+		"NUM_VALIDATORS=" + strconv.Itoa(s.validatorCount()),
 		"CHAIN_ID=" + s.cfg.providerChainID,
 		"DENOM=" + bondDenom,
 		"MNEMONIC=" + relayerMnemonic,
 	})
 
-	// Apply the suite-specific genesis mutations.
-	genesisFile := filepath.Join(providerDir, "config", "genesis.json")
+	// Apply the suite-specific genesis mutations on val0 and hand the result
+	// to every node.
+	genesisFile := filepath.Join(homes[0], "config", "genesis.json")
 	s.patchGenesisJSON(genesisFile, func(genesis map[string]any) {
 		appState := genesis["app_state"].(map[string]any)
 		s.cfg.patchProviderGenesis(appState)
 	})
+	s.copyToAllHomes(homes, filepath.Join("config", "genesis.json"))
 
 	// Apply the suite-specific config.toml mutations (e.g. fast blocks).
 	if s.cfg.patchProviderConfigToml != nil {
-		s.cfg.patchProviderConfigToml(filepath.Join(providerDir, "config", "config.toml"))
+		for _, home := range homes {
+			s.cfg.patchProviderConfigToml(filepath.Join(home, "config", "config.toml"))
+		}
 	}
 
-	// Now start the actual provider container
-	s.T().Log("starting provider chain container...")
+	s.T().Logf("starting %d provider chain container(s)...", len(homes))
+	for i, home := range homes {
+		resource := s.startChainNode(s.cfg.providerChainID, providerBinary, providerHomePath, home, i, s.providerPorts())
+		s.providerValRes = append(s.providerValRes, resource)
+		s.T().Logf("provider container val%d started: %s", i, resource.Container.ID[:12])
+	}
 
-	resource, err := s.dkrPool.RunWithOptions(
-		&dockertest.RunOptions{
-			Name:       fmt.Sprintf("%s-val0", s.cfg.providerChainID),
-			Repository: e2eChainImage,
-			NetworkID:  s.dkrNet.Network.ID,
-			Mounts: []string{
-				fmt.Sprintf("%s:%s", providerDir, providerHomePath),
-			},
-			PortBindings: map[docker.Port][]docker.PortBinding{
-				"26657/tcp": {{HostIP: "", HostPort: s.cfg.providerRPCPort}},
-				"9090/tcp":  {{HostIP: "", HostPort: s.cfg.providerGRPCPort}},
-				"1317/tcp":  {{HostIP: "", HostPort: s.cfg.providerRESTPort}},
-				"26656/tcp": {{HostIP: "", HostPort: s.cfg.providerP2PPort}},
-			},
-			Cmd: []string{
-				providerBinary, "start",
-				"--home", providerHomePath,
-			},
-		},
-		func(config *docker.HostConfig) {
-			config.RestartPolicy = docker.RestartPolicy{Name: "no"}
-		},
-	)
-	s.Require().NoError(err, "failed to start provider container")
-
-	s.providerValRes = append(s.providerValRes, resource)
-	s.T().Logf("provider container started: %s", resource.Container.ID[:12])
-
-	// Wait for provider to produce blocks
+	// Wait for the provider to produce blocks and every node to follow.
 	waitCtx, waitCancel := context.WithTimeout(context.Background(), 2*time.Minute)
 	defer waitCancel()
-	err = s.waitForChainHeight(waitCtx, "http://localhost:"+s.cfg.providerRPCPort, 3)
+	err := s.waitForChainHeight(waitCtx, "http://localhost:"+s.cfg.providerRPCPort, 3)
+	if err != nil {
+		s.logNodeTails(s.providerValRes, 80)
+	}
 	s.Require().NoError(err, "provider failed to produce blocks")
+	s.waitForNodesCaughtUp(s.providerValRes, providerBinary, providerHomePath, 2*time.Minute)
 	s.T().Log("provider chain is producing blocks")
 }
 
@@ -376,21 +537,20 @@ func (s *baseTestSuite) fetchConsumerGenesis() []byte {
 	return []byte(output)
 }
 
-// initAndStartConsumer initializes the consumer chain and starts it.
+// initAndStartConsumer initializes the consumer chain's node homes using a
+// temporary Docker container that runs consumer-init.sh, then starts one
+// chain container per validator.
 func (s *baseTestSuite) initAndStartConsumer(consumerGenesisJSON []byte) {
-	// Create host directory for consumer data
-	consumerDir, err := os.MkdirTemp("", s.cfg.tmpDirPrefix+"consumer-")
-	s.Require().NoError(err)
-	s.tmpDirs = append(s.tmpDirs, consumerDir)
-	s.consumer.dataDir = consumerDir
-
-	s.Require().NoError(os.Chmod(consumerDir, 0o777))
+	parentDir, homes := s.newChainHomes("consumer-")
+	s.consumer.homes = homes
+	s.consumer.dataDir = homes[0]
 
 	// Run init script in a temporary container
 	scriptPath := filepath.Join(testDir(), "scripts", "consumer-init.sh")
 	initEnv := []string{
 		"BINARY=" + consumerBinary,
-		"HOME_DIR=" + consumerHomePath,
+		"HOMES_DIR=" + initHomesPath,
+		"NUM_VALIDATORS=" + strconv.Itoa(s.validatorCount()),
 		"CHAIN_ID=" + s.cfg.consumerChainID,
 		"DENOM=" + bondDenom,
 		"MNEMONIC=" + relayerMnemonic,
@@ -398,11 +558,11 @@ func (s *baseTestSuite) initAndStartConsumer(consumerGenesisJSON []byte) {
 	if s.cfg.enableConsumerPhotonFees {
 		initEnv = append(initEnv, "MIN_GAS_PRICE=0"+bondDenom)
 	}
-	s.runInitContainer(s.cfg.consumerInitName, scriptPath, "/scripts/consumer-init.sh", consumerDir, consumerHomePath, initEnv)
+	s.runInitContainer(s.cfg.consumerInitName, scriptPath, "/scripts/consumer-init.sh", parentDir, initHomesPath, initEnv)
 
 	// Patch consumer genesis with provider's consumer-genesis data on the host
-	genesisFile := filepath.Join(consumerDir, "config", "genesis.json")
-	err = patchConsumerGenesisWithProviderData(genesisFile, consumerGenesisJSON)
+	genesisFile := filepath.Join(homes[0], "config", "genesis.json")
+	err := patchConsumerGenesisWithProviderData(genesisFile, consumerGenesisJSON)
 	s.Require().NoError(err, "failed to patch consumer genesis")
 
 	// The provider-authored consumer genesis always writes photon_fees_enabled
@@ -420,64 +580,45 @@ func (s *baseTestSuite) initAndStartConsumer(consumerGenesisJSON []byte) {
 		})
 	}
 
-	// Patch consumer slashing params for aggressive downtime detection
+	// Patch consumer slashing params for aggressive downtime detection, then
+	// hand the finished genesis to every node.
 	s.patchConsumerSlashingParams()
+	s.copyToAllHomes(homes, filepath.Join("config", "genesis.json"))
 
 	// Apply the suite-specific config.toml mutations (e.g. fast blocks).
 	if s.cfg.patchConsumerConfigToml != nil {
-		s.cfg.patchConsumerConfigToml(filepath.Join(consumerDir, "config", "config.toml"))
+		for _, home := range homes {
+			s.cfg.patchConsumerConfigToml(filepath.Join(home, "config", "config.toml"))
+		}
 	}
 
-	// Copy validator keys from provider to consumer
-	providerDir := s.provider.dataDir
-	err = copyFile(
-		filepath.Join(providerDir, "config", "priv_validator_key.json"),
-		filepath.Join(consumerDir, "config", "priv_validator_key.json"),
-	)
-	s.Require().NoError(err, "failed to copy priv_validator_key.json")
+	// Each consumer node validates under its provider validator's consensus
+	// key. Its node key stays the one its init produced: the peer lists the
+	// init step wrote name those.
+	for i, home := range homes {
+		err = copyFile(
+			filepath.Join(s.providerHome(i), "config", "priv_validator_key.json"),
+			filepath.Join(home, "config", "priv_validator_key.json"),
+		)
+		s.Require().NoErrorf(err, "failed to copy priv_validator_key.json for val%d", i)
+	}
 
-	err = copyFile(
-		filepath.Join(providerDir, "config", "node_key.json"),
-		filepath.Join(consumerDir, "config", "node_key.json"),
-	)
-	s.Require().NoError(err, "failed to copy node_key.json")
+	s.T().Logf("starting %d consumer chain container(s)...", len(homes))
+	for i, home := range homes {
+		resource := s.startChainNode(s.cfg.consumerChainID, consumerBinary, consumerHomePath, home, i, s.consumerPorts())
+		s.consumerValRes = append(s.consumerValRes, resource)
+		s.T().Logf("consumer container val%d started: %s", i, resource.Container.ID[:12])
+	}
 
-	// Start the actual consumer container
-	s.T().Log("starting consumer chain container...")
-
-	resource, err := s.dkrPool.RunWithOptions(
-		&dockertest.RunOptions{
-			Name:       fmt.Sprintf("%s-val0", s.cfg.consumerChainID),
-			Repository: e2eChainImage,
-			NetworkID:  s.dkrNet.Network.ID,
-			Mounts: []string{
-				fmt.Sprintf("%s:%s", consumerDir, consumerHomePath),
-			},
-			PortBindings: map[docker.Port][]docker.PortBinding{
-				"26657/tcp": {{HostIP: "", HostPort: s.cfg.consumerRPCPort}},
-				"9090/tcp":  {{HostIP: "", HostPort: s.cfg.consumerGRPCPort}},
-				"1317/tcp":  {{HostIP: "", HostPort: s.cfg.consumerRESTPort}},
-				"26656/tcp": {{HostIP: "", HostPort: s.cfg.consumerP2PPort}},
-			},
-			Cmd: []string{
-				consumerBinary, "start",
-				"--home", consumerHomePath,
-			},
-		},
-		func(config *docker.HostConfig) {
-			config.RestartPolicy = docker.RestartPolicy{Name: "no"}
-		},
-	)
-	s.Require().NoError(err, "failed to start consumer container")
-
-	s.consumerValRes = append(s.consumerValRes, resource)
-	s.T().Logf("consumer container started: %s", resource.Container.ID[:12])
-
-	// Wait for consumer to produce blocks
+	// Wait for the consumer to produce blocks and every node to follow.
 	waitCtx, waitCancel := context.WithTimeout(context.Background(), 2*time.Minute)
 	defer waitCancel()
 	err = s.waitForChainHeight(waitCtx, "http://localhost:"+s.cfg.consumerRPCPort, 3)
+	if err != nil {
+		s.logNodeTails(s.consumerValRes, 80)
+	}
 	s.Require().NoError(err, "consumer failed to produce blocks")
+	s.waitForNodesCaughtUp(s.consumerValRes, consumerBinary, consumerHomePath, 2*time.Minute)
 	s.T().Log("consumer chain is producing blocks")
 }
 

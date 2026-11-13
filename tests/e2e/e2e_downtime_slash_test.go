@@ -335,6 +335,7 @@ func generateEd25519PubKeyJSON() string {
 // serialized as strings by the proto JSON marshaler.
 type pendingDowntimeSlashJSON struct {
 	ConsumerId        string `json:"consumer_id"`
+	ProviderConsAddr  string `json:"provider_cons_addr"`
 	WindowStartHeight string `json:"window_start_height"`
 	Span              string `json:"span"`
 	SlashTokens       string `json:"slash_tokens"`
@@ -359,7 +360,7 @@ func (p pendingDowntimeSlashJSON) coversWindowEnd(windowEnd int64) bool {
 // queryPendingDowntimeSlashes returns the pending downtime slashes queued for
 // a consumer, awaiting the challenge window before execution. Returns nil on
 // any query/decode error so callers can poll it directly inside Eventually.
-func (s *baseTestSuite) queryPendingDowntimeSlashes(consumerID string) []pendingDowntimeSlashJSON { //nolint:unparam // the suite drives one consumer; the helper stays generic
+func (s *baseTestSuite) queryPendingDowntimeSlashes(consumerID string) []pendingDowntimeSlashJSON {
 	stdout, _, err := s.dockerExec(s.providerValRes[0].Container.ID, []string{
 		providerBinary, "query", "vaasprovider", "pending-downtime-slashes", consumerID,
 		"--home", providerHomePath,
@@ -457,7 +458,7 @@ func (s *IntegrationTestSuite) getProviderValidatorTokens() (string, math.Int) {
 }
 
 // getProviderValidatorTokensByAddr returns the token amount for a specific validator by operator address.
-func (s *IntegrationTestSuite) getProviderValidatorTokensByAddr(valoperAddr string) (math.Int, error) {
+func (s *baseTestSuite) getProviderValidatorTokensByAddr(valoperAddr string) (math.Int, error) {
 	vals, err := s.queryProviderValidators()
 	if err != nil {
 		return math.ZeroInt(), err

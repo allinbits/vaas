@@ -380,9 +380,41 @@ docker-build-debug:
 # Build all Docker images needed for e2e tests
 docker-build-all: docker-build-debug
 
-# Run the e2e integration test suite
-test-e2e: docker-build-all
-	@echo "Running e2e tests..."
-	cd tests/e2e && go test -timeout=60m -v ./... --count=1
+# Run every e2e suite, one at a time, each through test-e2e-suite and under
+# its timeout. The suites are the top-level Test*Suite functions; a failed one
+# does not stop the others, and the run fails if any did.
+test-e2e:
+	@suites=$$(cd tests/e2e && go test -list '^Test.*Suite$$' ./... | grep '^Test') || \
+		{ echo "no e2e suite found in tests/e2e"; exit 1; }; \
+	failed=""; \
+	for suite in $$suites; do \
+		$(MAKE) --no-print-directory test-e2e-suite SUITE=$$suite || failed="$$failed $$suite"; \
+	done; \
+	if [ -n "$$failed" ]; then echo "failed e2e suites:$$failed"; exit 1; fi
 
-.PHONY: docker-build-debug docker-build-all test-e2e
+# Run one e2e suite by its top-level test name, as CI does per job:
+#   make test-e2e-suite SUITE=TestLivenessIntegrationTestSuite
+test-e2e-suite: require-suite docker-build-all
+	@echo "Running e2e suite $(SUITE)..."
+	cd tests/e2e && go test -timeout=60m -v -run '^$(SUITE)$$' ./... --count=1
+
+# go test exits 0 when -run matches no test, so an empty, misspelled or
+# missing SUITE would pass without running anything; refuse it before
+# building anything.
+require-suite:
+	$(if $(SUITE),,$(error SUITE is required, e.g. make test-e2e-suite SUITE=TestIntegrationTestSuite))
+	@cd tests/e2e && go test -list '^$(SUITE)$$' ./... | grep -qx '$(SUITE)' || \
+		{ echo "no e2e suite named $(SUITE) in tests/e2e"; exit 1; }
+
+# Every e2e suite needs a job in the CI workflow's e2e matrix, or CI never
+# runs it.
+check-e2e-matrix:
+	@suites=$$(sed -n 's/^func \(Test[A-Za-z0-9_]*Suite\)(t \*testing\.T).*/\1/p' tests/e2e/*_test.go); \
+	if [ -z "$$suites" ]; then echo "no e2e suite found in tests/e2e"; exit 1; fi; \
+	missing=""; \
+	for suite in $$suites; do \
+		grep -Eq "^[[:space:]]+- $$suite$$" .github/workflows/ci.yml || missing="$$missing $$suite"; \
+	done; \
+	if [ -n "$$missing" ]; then echo "e2e suites missing from the e2e matrix in .github/workflows/ci.yml:$$missing"; exit 1; fi
+
+.PHONY: docker-build-debug docker-build-all test-e2e test-e2e-suite require-suite check-e2e-matrix

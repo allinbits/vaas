@@ -48,18 +48,43 @@ func consAddrFromEd25519PubKey(pubKey []byte) string {
 // generateConsumerConsensusKey generates a fresh ed25519 keypair and returns
 // the public half as an inline Cosmos SDK Any-JSON pubkey blob (the format
 // `tx provider assign-consensus-key` expects) together with the consensus
-// address it derives. The private half is discarded: the key is only ever
-// assigned to a validator that runs no consumer node (see
+// address it derives. The private half is discarded: the key is assigned to
+// a validator that runs no consumer node under it (see
 // e2e_key_assignment_test.go), so nothing needs to sign with it.
 func generateConsumerConsensusKey(t *testing.T) (pubKeyJSON, consAddr string) {
 	t.Helper()
-	pub, _, err := ed25519.GenerateKey(rand.Reader)
+	pubKeyJSON, consAddr, _ = generateConsumerConsensusKeyPair(t)
+	return pubKeyJSON, consAddr
+}
+
+// generateConsumerConsensusKeyPair is generateConsumerConsensusKey keeping
+// the private half: besides the assignable pubkey blob and the consensus
+// address, it returns the priv_validator_key.json document a consumer node
+// runs under to sign with the key (see e2e_multival_key_assignment_test.go).
+func generateConsumerConsensusKeyPair(t *testing.T) (pubKeyJSON, consAddr string, privValidatorKeyJSON []byte) {
+	t.Helper()
+	pub, priv, err := ed25519.GenerateKey(rand.Reader)
 	if err != nil {
 		t.Fatalf("failed to generate ed25519 key: %v", err)
 	}
 	pubKeyJSON = fmt.Sprintf(`{"@type":"/cosmos.crypto.ed25519.PubKey","key":%q}`,
 		base64.StdEncoding.EncodeToString(pub))
-	return pubKeyJSON, consAddrFromEd25519PubKey(pub)
+	digest := sha256.Sum256(pub)
+	privValidatorKeyJSON, err = json.Marshal(map[string]any{
+		"address": strings.ToUpper(hex.EncodeToString(digest[:20])),
+		"pub_key": map[string]string{
+			"type":  "tendermint/PubKeyEd25519",
+			"value": base64.StdEncoding.EncodeToString(pub),
+		},
+		"priv_key": map[string]string{
+			"type":  "tendermint/PrivKeyEd25519",
+			"value": base64.StdEncoding.EncodeToString(priv),
+		},
+	})
+	if err != nil {
+		t.Fatalf("failed to encode priv_validator_key.json: %v", err)
+	}
+	return pubKeyJSON, consAddrFromEd25519PubKey(pub), privValidatorKeyJSON
 }
 
 // consAddrToCometHex converts a bech32 consensus address to the uppercase hex
@@ -86,7 +111,7 @@ func consAddrFromBase64(b64 string) (string, error) {
 // providerValidatorConsAddr returns the bech32 consensus address of the
 // provider validator with the given operator address, failing the test if it
 // cannot be resolved.
-func (s *IntegrationTestSuite) providerValidatorConsAddr(valoperAddr string) string {
+func (s *baseTestSuite) providerValidatorConsAddr(valoperAddr string) string {
 	consAddr, err := s.tryProviderValidatorConsAddr(valoperAddr)
 	s.Require().NoErrorf(err, "failed to resolve the consensus address of validator %s", valoperAddr)
 	return consAddr
@@ -96,7 +121,7 @@ func (s *IntegrationTestSuite) providerValidatorConsAddr(valoperAddr string) str
 // address from the consensus pubkey the staking module stores for it. It
 // returns an error instead of failing the test so it can be called from inside
 // an Eventually condition.
-func (s *IntegrationTestSuite) tryProviderValidatorConsAddr(valoperAddr string) (string, error) {
+func (s *baseTestSuite) tryProviderValidatorConsAddr(valoperAddr string) (string, error) {
 	stdout, _, err := s.dockerExec(s.providerValRes[0].Container.ID, []string{
 		providerBinary, "query", "staking", "validator", valoperAddr,
 		"--home", providerHomePath,
@@ -150,7 +175,7 @@ func (s *IntegrationTestSuite) tryProviderValidatorConsAddr(valoperAddr string) 
 
 // providerValoperForConsAddr returns the operator address of the provider
 // validator whose consensus address is consAddr, or "" when none matches.
-func (s *IntegrationTestSuite) providerValoperForConsAddr(consAddr string) string {
+func (s *baseTestSuite) providerValoperForConsAddr(consAddr string) string {
 	vals, err := s.queryProviderValidators()
 	if err != nil {
 		return ""
@@ -166,7 +191,7 @@ func (s *IntegrationTestSuite) providerValoperForConsAddr(consAddr string) strin
 
 // consumerValsetConsAddrs returns the bech32 consensus addresses of the
 // consumer chain's current CometBFT validator set.
-func (s *IntegrationTestSuite) consumerValsetConsAddrs() ([]string, error) {
+func (s *baseTestSuite) consumerValsetConsAddrs() ([]string, error) {
 	vals, err := s.queryConsumerNetValidators()
 	if err != nil {
 		return nil, err

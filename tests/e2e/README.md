@@ -4,8 +4,10 @@ Docker-based integration tests that spin up a real provider chain, a real
 consumer chain, and the `ibc-v2-ts-relayer`, then exercise the full VAAS
 lifecycle: consumer registration, genesis bootstrapping, IBC v2 client
 discovery, VSC synchronization, downtime slashing and challenges, fee pooling
-and distribution, key assignment, refusal and punishment deferral, liveness, and
-genesis round-trip.
+and distribution, key assignment, refusal and punishment deferral, liveness,
+genesis round-trip, and, on four validator nodes per chain, the validator set
+mirror, a delegation change, an offline validator's slash and recovery, and a
+key assignment under a node restart.
 
 This directory is its own Go module (`tests/e2e/go.mod`) and is excluded from the
 top-level `make test` and from linting. It runs via the `make test-e2e` target
@@ -15,15 +17,20 @@ described below. Docker is required.
 
 ```
 make docker-build-all   # build the chain image (cosmos/vaas-e2e); ts-relayer image is pulled
-make test-e2e           # docker-build-all, then go test in this directory
+make test-e2e           # every suite, one at a time, each through test-e2e-suite
+make test-e2e-suite SUITE=TestLivenessIntegrationTestSuite   # one suite, as each CI job runs it
 ```
 
-`make test-e2e`
-([Makefile](../../Makefile) lines 305-322) runs:
+`make test-e2e-suite` ([Makefile](../../Makefile)) builds the image and runs:
 
 ```
-cd tests/e2e && go test -timeout=60m -v ./... --count=1
+cd tests/e2e && go test -timeout=60m -v -run '^$(SUITE)$' ./... --count=1
 ```
+
+It first refuses a `SUITE` that names no top-level test in this directory,
+since `go test -run` passes when it matches nothing. `make test-e2e` lists the
+`Test*Suite` functions and runs each through it, so every suite gets its own
+timeout; a failed suite does not stop the others.
 
 The chain image is built from
 [docker/e2e.Dockerfile](docker/e2e.Dockerfile) and contains both the provider
@@ -31,16 +38,17 @@ and consumer binaries. The relayer image is
 `ghcr.io/allinbits/ibc-v2-ts-relayer:latest`, pulled at runtime
 ([e2e_tsrelayer_test.go](e2e_tsrelayer_test.go) lines 17-18).
 
-To run a single suite:
+CI runs each suite as its own job, in parallel, through `make test-e2e-suite`
+with the suite's top-level test name; the same target runs one suite locally:
 
 ```
-cd tests/e2e && go test -run TestIntegrationTestSuite -v --count=1
-cd tests/e2e && go test -run TestLivenessIntegrationTestSuite -v --count=1
+make test-e2e-suite SUITE=TestIntegrationTestSuite
+make test-e2e-suite SUITE=TestLivenessIntegrationTestSuite
 ```
 
-## The two suites
+## The three suites
 
-Both are `testify` suites that embed a shared `baseTestSuite`
+All are `testify` suites that embed a shared `baseTestSuite`
 ([base_suite_test.go](base_suite_test.go)) providing container lifecycle, chain
 init, ts-relayer wiring, and exec/query helpers. Each suite launches its own
 isolated set of containers (distinct chain IDs, Docker network, and host ports)
@@ -81,6 +89,19 @@ in order in `TestLivenessVAAS`, each with its doc comment;
 `equivocation_execution_delay` is 420s and the gov voting period 180s here,
 and the header comment of that file documents the timing rationale in detail.
 
+### `MultiValidatorIntegrationTestSuite` -- four validator nodes per chain
+
+Entry point `TestMultiValidatorIntegrationTestSuite`
+([e2e_multival_suite_test.go](e2e_multival_suite_test.go)). The base suite
+starts N validator nodes per chain from `baseSuiteConfig.validators` (one
+consumer node per provider validator, zero or one meaning the single node the
+other suites run); this suite runs four of equal power, on fast blocks and the
+main suite's downtime parameters, with photon fees off. Only val0 of each chain
+binds host ports and holds the keys the suite transacts from; the other nodes
+are reached through `docker exec`. Four is the smallest set where one node can
+stop and both chains keep producing blocks. Scenarios run in order in
+`TestMultiValidatorVAAS`, each leaving the set whole for the next.
+
 ## File layout
 
 | File | Purpose |
@@ -90,6 +111,12 @@ and the header comment of that file documents the timing rationale in detail.
 | `e2e_setup_test.go` | `IntegrationTestSuite` + its `SetupSuite` / config |
 | `e2e_test.go` | `TestVAAS` ordered scenario list |
 | `e2e_liveness_suite_test.go` | `LivenessIntegrationTestSuite` + `TestLivenessVAAS` |
+| `e2e_multival_suite_test.go` | `MultiValidatorIntegrationTestSuite` + `TestMultiValidatorVAAS` |
+| `e2e_multival_valset_test.go` | validator identities and the set mirror |
+| `e2e_multival_delegation_test.go` | consumer powers and a delegation reaching the consumer's set |
+| `e2e_multival_key_assignment_test.go` | a key assignment with the node restarted under the new key |
+| `e2e_multival_offline_test.go` | an offline validator's downtime slash and recovery; pending-slash filters |
+| `e2e_multival_refusal_test.go` | the stake-weighted refusal pause threshold, and the resume after withdrawal |
 | `e2e_tsrelayer_test.go` | ts-relayer container start/stop, `add-path`, relay control |
 | `e2e_vaas_test.go` | core VSC / valset-sync scenarios |
 | `e2e_debt_test.go` | fee-pool debt-gating scenario |
@@ -116,13 +143,19 @@ and the header comment of that file documents the timing rationale in detail.
    a new or existing `e2e_*.go` file. Use the base-suite helpers for container
    exec, chain queries, gov proposals, and ts-relayer control (start, pause,
    resume, `add-path`) rather than driving Docker directly.
-2. Call it from the ordered sequence in `TestVAAS` (or `TestLivenessVAAS`) at
+2. Call it from the ordered sequence in `TestVAAS` (or `TestLivenessVAAS`,
+   or `TestMultiValidatorVAAS` for a scenario that needs several nodes) at
    the right point. Ordering matters: the suite shares one set of containers and
    one consumer across all scenarios, so place your test where the chain is in
    the state it needs, and before anything that tears that state down.
 3. If the scenario needs specific chain configuration, extend the suite's
    `patchProviderGenesis` (or add a `testdata` payload) rather than mutating
    state mid-run.
+
+A new suite (a top-level `Test*Suite` function) also goes into the e2e matrix
+in [.github/workflows/ci.yml](../../.github/workflows/ci.yml), or CI never runs
+it: `make check-e2e-matrix`, a step of CI's Build job, fails while a suite is
+missing from the matrix.
 
 The relayer is available at
 <https://github.com/allinbits/ibc-v2-ts-relayer>.
