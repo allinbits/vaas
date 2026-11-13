@@ -62,8 +62,10 @@ reject it.
 - the global valset-update-id counter;
 - every consumer's `ConsumerState`: phase, owner, metadata, init params,
   client id, consumer genesis, pending VSC packets, removal / pause-expiration
-  times, the liveness clock (`LastAckTime`, `HighestSentVscId`,
-  `HighestAckedVscId`), the in-debt flag, and the governance-removal record
+  times, the pause reason and time, the fork-known-at time and the
+  client-recovered-since-fork mark of a light-client pause, the liveness
+  clock (`LastAckTime`, `HighestSentVscId`, `HighestAckedVscId`), the
+  in-debt flag, and the governance-removal record
   (`removed_by_governance`, set only on a `STOPPED` consumer) that refuses
   later double-voting evidence;
 - key-assignment state (per-consumer consensus keys, the reverse address index,

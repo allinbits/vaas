@@ -363,6 +363,7 @@ func (k Keeper) StopAndPrepareForConsumerRemoval(ctx sdk.Context, consumerId uin
 	k.DeleteConsumerPauseReason(ctx, consumerId)
 	k.DeleteConsumerPausedAt(ctx, consumerId)
 	k.DeleteConsumerForkKnownAt(ctx, consumerId)
+	k.DeleteConsumerClientRecoveredSinceFork(ctx, consumerId)
 
 	// state of this chain is removed once UnbondingPeriod elapses
 	unbondingPeriod, err := k.stakingKeeper.UnbondingTime(ctx)
@@ -622,25 +623,26 @@ func (k Keeper) forkEvidenceExpired(ctx sdk.Context, consumerId uint64, clientId
 // recover-and-resume proposal would then land the consumer back in LAUNCHED
 // only for the same headers to pause it again, now under the light-client
 // reason and its trusting-period wait, one governance round late (see
-// escalatePauseToLightClientAttack). A pause that fails is logged and retried
-// next block; nothing here may halt the chain.
+// escalatePauseToLightClientAttack). A consumer already paused for a
+// light-client attack is followed through a recovery and a later fork
+// instead (see trackForkDuringLightClientPause). A pause that fails is
+// logged and retried next block; nothing here may halt the chain.
 func (k Keeper) PauseConsumersWithFrozenClients(ctx sdk.Context) {
 	for _, consumerId := range k.GetAllConsumerIds(ctx) {
 		phase := k.GetConsumerPhase(ctx, consumerId)
-		switch phase {
-		case types.CONSUMER_PHASE_LAUNCHED:
-		case types.CONSUMER_PHASE_PAUSED:
-			if k.GetConsumerPauseReason(ctx, consumerId) == types.PAUSE_REASON_LIGHT_CLIENT_ATTACK {
-				continue
-			}
-		default:
+		if phase != types.CONSUMER_PHASE_LAUNCHED && phase != types.CONSUMER_PHASE_PAUSED {
 			continue
 		}
 		clientId, found := k.GetConsumerClientId(ctx, consumerId)
 		if !found {
 			continue
 		}
-		if k.clientKeeper.GetClientStatus(ctx, clientId) != ibcexported.Frozen {
+		status := k.clientKeeper.GetClientStatus(ctx, clientId)
+		if phase == types.CONSUMER_PHASE_PAUSED && k.GetConsumerPauseReason(ctx, consumerId) == types.PAUSE_REASON_LIGHT_CLIENT_ATTACK {
+			k.trackForkDuringLightClientPause(ctx, consumerId, clientId, status)
+			continue
+		}
+		if status != ibcexported.Frozen {
 			continue
 		}
 		var err error
@@ -655,6 +657,44 @@ func (k Keeper) PauseConsumersWithFrozenClients(ctx sdk.Context) {
 			continue
 		}
 		k.Logger(ctx).Info("consumer client frozen by verified misbehaviour: consumer paused pending a governance decision",
+			"consumerId", consumerId, "clientId", clientId)
+	}
+}
+
+// trackForkDuringLightClientPause follows the client of a consumer paused
+// for a light-client attack. The client is Frozen from the pause on and stays
+// so until governance recovers it (ibc-go's MsgRecoverClient), which it may
+// do before the resume; seen Active, the recovery is noted. Seen Frozen
+// after that, the client was forked again, by headers the recovered client
+// verified, and the fork is recorded as known from this block: the resume's
+// wait counts from the latest fork (see ResumeConsumerChain), or a resume
+// due by the first one would land the consumer in the second. The pause
+// keeps its start and the auto-stop it scheduled stands. A write that fails
+// is logged and retried next block.
+func (k Keeper) trackForkDuringLightClientPause(ctx sdk.Context, consumerId uint64, clientId string, status ibcexported.Status) {
+	recovered, err := k.IsConsumerClientRecoveredSinceFork(ctx, consumerId)
+	if err != nil {
+		k.Logger(ctx).Error("cannot read whether a paused consumer's client was recovered; retrying next block",
+			"consumerId", consumerId, "clientId", clientId, "err", err.Error())
+		return
+	}
+	switch {
+	case status == ibcexported.Active && !recovered:
+		if err := k.SetConsumerClientRecoveredSinceFork(ctx, consumerId); err != nil {
+			k.Logger(ctx).Error("consumer client recovered during a light-client pause but the recovery could not be recorded; retrying next block",
+				"consumerId", consumerId, "clientId", clientId, "err", err.Error())
+			return
+		}
+		k.Logger(ctx).Info("consumer client recovered during a light-client pause; a later freeze moves the fork time",
+			"consumerId", consumerId, "clientId", clientId)
+	case status == ibcexported.Frozen && recovered:
+		if err := k.SetConsumerForkKnownAt(ctx, consumerId, ctx.BlockTime()); err != nil {
+			k.Logger(ctx).Error("consumer client frozen again after a recovery but the fork time could not be moved; retrying next block",
+				"consumerId", consumerId, "clientId", clientId, "err", err.Error())
+			return
+		}
+		k.DeleteConsumerClientRecoveredSinceFork(ctx, consumerId)
+		k.Logger(ctx).Info("consumer client frozen again after a recovery during its light-client pause: the fork is known from now",
 			"consumerId", consumerId, "clientId", clientId)
 	}
 }
@@ -765,11 +805,12 @@ func (k Keeper) ResumeConsumerChain(ctx sdk.Context, consumerId uint64) error {
 	// the client's trusting period (a client recovery keeps them), and a
 	// resumed consumer would be paused again by the same headers. So the
 	// resume waits out that period, counted from the moment the fork became
-	// known (the pause, or the block a pause for another reason was moved
-	// under the light-client reason at) and padded by the client's
-	// clock-drift allowance, since a consensus state can carry a timestamp
-	// that far ahead of the provider's. A downtime pause says nothing about
-	// forks and waits for nothing.
+	// known (the pause, the block a pause for another reason was moved under
+	// the light-client reason at, or the block the client was next found
+	// frozen at after a recovery during the pause) and padded by the
+	// client's clock-drift allowance, since a consensus state can carry a
+	// timestamp that far ahead of the provider's. A downtime pause says
+	// nothing about forks and waits for nothing.
 	if k.GetConsumerPauseReason(ctx, consumerId) == types.PAUSE_REASON_LIGHT_CLIENT_ATTACK {
 		if err := k.forkEvidenceExpired(ctx, consumerId, clientId); err != nil {
 			return err
@@ -788,6 +829,7 @@ func (k Keeper) ResumeConsumerChain(ctx sdk.Context, consumerId uint64) error {
 	k.DeleteConsumerPauseReason(ctx, consumerId)
 	k.DeleteConsumerPausedAt(ctx, consumerId)
 	k.DeleteConsumerForkKnownAt(ctx, consumerId)
+	k.DeleteConsumerClientRecoveredSinceFork(ctx, consumerId)
 
 	if err := k.CancelConsumerPauseExpiration(ctx, consumerId); err != nil {
 		return fmt.Errorf("cancelling pause-expiration schedule for consumer %d: %w", consumerId, err)
@@ -1002,6 +1044,7 @@ func (k Keeper) DeleteConsumerChain(ctx sdk.Context, consumerId uint64) (err err
 	k.DeleteConsumerPausedAt(ctx, consumerId)
 	k.DeleteConsumerRemovedByGovernance(ctx, consumerId)
 	k.DeleteConsumerForkKnownAt(ctx, consumerId)
+	k.DeleteConsumerClientRecoveredSinceFork(ctx, consumerId)
 	k.DeleteConsumerDebt(ctx, consumerId)
 
 	if err := k.ConsumerFeesPerBlockOverride.Remove(ctx, consumerId); err != nil {

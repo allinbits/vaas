@@ -107,6 +107,13 @@ type Keeper struct {
 	// trusting period from it (see ResumeConsumerChain). Cleared with the
 	// pause reason.
 	ConsumerForkKnownAt collections.Map[uint64, []byte]
+	// ConsumerClientRecoveredSinceFork marks a consumer paused for a
+	// light-client attack whose client has been seen Active since the fork
+	// became known: a recovery landed during the pause. The next time the
+	// BeginBlock mirror sees that client Frozen, the fork is recorded as
+	// known from that block and the mark is cleared (see
+	// trackForkDuringLightClientPause). Cleared with the pause reason.
+	ConsumerClientRecoveredSinceFork collections.KeySet[uint64]
 
 	// Key assignment collections
 	ValidatorConsumerPubKey collections.Map[collections.Pair[uint64, []byte], []byte]
@@ -335,6 +342,7 @@ func NewKeeper(
 		ConsumerPauseReason:              collections.NewMap(sb, types.ConsumerPauseReasonPrefix, "consumer_pause_reason", collections.Uint64Key, collections.Int32Value),
 		ConsumerPausedAt:                 collections.NewMap(sb, types.ConsumerPausedAtPrefix, "consumer_paused_at", collections.Uint64Key, collections.BytesValue),
 		ConsumerForkKnownAt:              collections.NewMap(sb, types.ConsumerForkKnownAtPrefix, "consumer_fork_known_at", collections.Uint64Key, collections.BytesValue),
+		ConsumerClientRecoveredSinceFork: collections.NewKeySet(sb, types.ConsumerClientRecoveredSinceForkPrefix, "consumer_client_recovered_since_fork", collections.Uint64Key),
 
 		// Key assignment collections
 		ValidatorConsumerPubKey: collections.NewMap(sb, types.ConsumerValidatorsPrefix, "validator_consumer_pub_key", collections.PairKeyCodec(collections.Uint64Key, collections.BytesKey), collections.BytesValue),
@@ -1051,6 +1059,31 @@ func (k Keeper) GetConsumerForkKnownAt(ctx context.Context, consumerId uint64) (
 func (k Keeper) DeleteConsumerForkKnownAt(ctx context.Context, consumerId uint64) {
 	if err := k.ConsumerForkKnownAt.Remove(ctx, consumerId); err != nil {
 		panic(fmt.Errorf("failed to delete fork-known-at time for consumer id (%d): %w", consumerId, err))
+	}
+}
+
+// SetConsumerClientRecoveredSinceFork records that the client of consumerId,
+// paused for a light-client attack, was seen Active after the fork became
+// known.
+func (k Keeper) SetConsumerClientRecoveredSinceFork(ctx context.Context, consumerId uint64) error {
+	return k.ConsumerClientRecoveredSinceFork.Set(ctx, consumerId)
+}
+
+// IsConsumerClientRecoveredSinceFork reports whether the client of
+// consumerId was seen Active since its fork became known.
+func (k Keeper) IsConsumerClientRecoveredSinceFork(ctx context.Context, consumerId uint64) (bool, error) {
+	recovered, err := k.ConsumerClientRecoveredSinceFork.Has(ctx, consumerId)
+	if err != nil {
+		return false, fmt.Errorf("failed to read the client-recovered mark for consumer id (%d): %w", consumerId, err)
+	}
+	return recovered, nil
+}
+
+// DeleteConsumerClientRecoveredSinceFork forgets that the client of
+// consumerId was seen Active since its fork became known.
+func (k Keeper) DeleteConsumerClientRecoveredSinceFork(ctx context.Context, consumerId uint64) {
+	if err := k.ConsumerClientRecoveredSinceFork.Remove(ctx, consumerId); err != nil {
+		panic(fmt.Errorf("failed to delete the client-recovered mark for consumer id (%d): %w", consumerId, err))
 	}
 }
 

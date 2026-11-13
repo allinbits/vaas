@@ -164,7 +164,10 @@ attribution. A consumer already paused for a downtime challenge or a refusal
 when its client freezes is moved under the light-client reason the same way:
 its accusations are discarded as a fresh light-client pause discards them, and
 the fork is recorded as known from that block, which the resume's wait below
-counts from; the pause keeps the time it began. Left unseen, the fork would
+counts from; the pause keeps the time it began. A consumer already paused for
+a light-client attack is followed through a recovery: its client recovered
+during the pause and frozen again by a later fork has the fork recorded as
+known from the block it is next seen frozen at. Left unseen, either fork would
 cost a governance round: a recover-and-resume proposal would land the consumer
 back in `LAUNCHED` only for the same headers to pause it again.
 

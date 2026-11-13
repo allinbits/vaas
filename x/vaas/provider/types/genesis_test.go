@@ -883,6 +883,34 @@ func TestConsumerStateValidatePerPhase(t *testing.T) {
 			cs.PausedAt = &rt
 			cs.ForkKnownAt = &later
 		}, ""},
+		{"PAUSED for a light-client attack with the client recovered since", func(cs *types.ConsumerState) {
+			*cs = base(types.CONSUMER_PHASE_PAUSED)
+			cs.InitParams = validInit
+			cs.ClientId = testClientID
+			cs.ConsumerGenesis = nonDefaultConsumerGenesis()
+			cs.PauseExpirationTime = &rt
+			cs.PauseReason = types.PAUSE_REASON_LIGHT_CLIENT_ATTACK
+			cs.PausedAt = &rt
+			cs.ForkKnownAt = &later
+			cs.ClientRecoveredSinceFork = true
+		}, ""},
+		{"PAUSED for a challenge with the client-recovered mark", func(cs *types.ConsumerState) {
+			*cs = base(types.CONSUMER_PHASE_PAUSED)
+			cs.InitParams = validInit
+			cs.ClientId = testClientID
+			cs.ConsumerGenesis = nonDefaultConsumerGenesis()
+			cs.PauseExpirationTime = &rt
+			cs.PauseReason = types.PAUSE_REASON_DOWNTIME_CHALLENGE
+			cs.PausedAt = &rt
+			cs.ClientRecoveredSinceFork = true
+		}, "client recovered since fork must be unset"},
+		{"LAUNCHED with the client-recovered mark", func(cs *types.ConsumerState) {
+			*cs = base(types.CONSUMER_PHASE_LAUNCHED)
+			cs.InitParams = validInit
+			cs.ClientId = testClientID
+			cs.ConsumerGenesis = nonDefaultConsumerGenesis()
+			cs.ClientRecoveredSinceFork = true
+		}, "client recovered since fork must be unset"},
 		{"PAUSED for a light-client attack without a client", func(cs *types.ConsumerState) {
 			*cs = base(types.CONSUMER_PHASE_PAUSED)
 			cs.InitParams = validInit

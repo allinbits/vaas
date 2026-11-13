@@ -225,7 +225,8 @@ already carries the verdict cannot be removed again.
    - Deletes: IBC client ID mapping, consumer genesis, key assignments, equivocation
      evidence minimum height, pending VSC packets, validator set, removal time, the
      liveness state (last-ack time and the sent/acked VSC-id counters), the refusals,
-     the pause reason, paused-at and fork-known-at times, the in-debt flag, the
+     the pause reason, paused-at and fork-known-at times, the
+     client-recovered-since-fork mark, the in-debt flag, the
      per-consumer fees-per-block override, the fee-pool-address reverse lookup, and the
      downtime state (pending downtime slashes, epoch downtime marks, withheld fee
      records, accepted windows, and window floors).

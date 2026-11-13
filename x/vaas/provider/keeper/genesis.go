@@ -110,6 +110,11 @@ func (k Keeper) InitGenesis(ctx sdk.Context, genState *types.GenesisState) []abc
 				panic(fmt.Errorf("init: set fork-known-at time for %d: %w", consumerId, err))
 			}
 		}
+		if cs.ClientRecoveredSinceFork {
+			if err := k.SetConsumerClientRecoveredSinceFork(ctx, consumerId); err != nil {
+				panic(fmt.Errorf("init: set the client-recovered mark for %d: %w", consumerId, err))
+			}
+		}
 		// Restore the liveness clock (see ExportGenesis): only when present, so
 		// a consumer that never launched keeps the absent-defaults.
 		if cs.LastAckTime != nil {
@@ -526,6 +531,11 @@ func (k Keeper) ExportGenesis(ctx sdk.Context) *types.GenesisState {
 			cs.ForkKnownAt = &forkKnownAt
 		} else if !errors.Is(err, collections.ErrNotFound) {
 			panic(fmt.Errorf("export: failed to read fork-known-at time for consumer %d: %w", consumerId, err))
+		}
+		if recovered, err := k.IsConsumerClientRecoveredSinceFork(ctx, consumerId); err == nil {
+			cs.ClientRecoveredSinceFork = recovered
+		} else {
+			panic(fmt.Errorf("export: failed to read the client-recovered mark for consumer %d: %w", consumerId, err))
 		}
 
 		// Liveness clock: export the last-ack time only when actually recorded

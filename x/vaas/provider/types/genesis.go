@@ -714,6 +714,11 @@ func (cs ConsumerState) Validate() error {
 	if lightClientPause && cs.ForkKnownAt.Before(*cs.PausedAt) {
 		return fmt.Errorf("fork known at %s precedes paused at %s", cs.ForkKnownAt, cs.PausedAt)
 	}
+	// A client is recovered since the fork only while a light-client pause
+	// lasts (see trackForkDuringLightClientPause).
+	if cs.ClientRecoveredSinceFork && !lightClientPause {
+		return fmt.Errorf("client recovered since fork must be unset unless paused for %s", PAUSE_REASON_LIGHT_CLIENT_ATTACK)
+	}
 
 	return nil
 }
