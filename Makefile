@@ -82,13 +82,31 @@ BUILDDIR ?= $(CURDIR)/build
 provider_home=~/.provider-localnet
 providerd=./build/provider --home $(provider_home)
 
+# Version information linked into both binaries (`provider version --long`).
+VERSION ?= $(shell git describe --tags --always --dirty)
+COMMIT ?= $(shell git rev-parse HEAD)
 
-GO_REQUIRED_VERSION = $(shell go list -f {{.GoVersion}} -m)
+# MIN_VOTING_PERIOD lowers the governance voting-period floor that atomone-sdk
+# links into the binary (504h). Empty keeps the floor; a network whose voting
+# period is below it must build with the variable set, for example
+# `make build-apps MIN_VOTING_PERIOD=30s` (see app/README.md).
+MIN_VOTING_PERIOD ?=
+
+ldflags = -X github.com/cosmos/cosmos-sdk/version.Name=vaas \
+	-X github.com/cosmos/cosmos-sdk/version.Version=$(VERSION) \
+	-X github.com/cosmos/cosmos-sdk/version.Commit=$(COMMIT) \
+	$(if $(MIN_VOTING_PERIOD),-X github.com/cosmos/cosmos-sdk/x/gov/types/v1.MinVotingPeriod=$(MIN_VOTING_PERIOD))
+
+apps := provider consumer
 BUILD_TARGETS := build-apps install-apps
 build-apps: BUILD_ARGS=-o $(BUILDDIR)/
 
+# One go invocation per binary, so each carries its own version.AppName.
 $(BUILD_TARGETS): go.sum $(BUILDDIR)/
-	@cd app; go $(patsubst %-apps,%,$@) -mod=readonly $(BUILD_ARGS) ./...
+	@for app in $(apps); do \
+		(cd app && go $(patsubst %-apps,%,$@) -mod=readonly $(BUILD_ARGS) \
+			-ldflags "$(ldflags) -X github.com/cosmos/cosmos-sdk/version.AppName=$$app" ./cmd/$$app) || exit 1; \
+	done
 
 $(BUILDDIR)/:
 	mkdir -p $(BUILDDIR)/
