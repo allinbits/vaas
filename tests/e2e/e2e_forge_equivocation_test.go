@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"encoding/base64"
 	"encoding/json"
+	"fmt"
 	"os"
 	"path/filepath"
 	"time"
@@ -34,15 +35,47 @@ func (s *ByzantineConsumerIntegrationTestSuite) consensusPrivKey(i int) cmted255
 // pendingEquivocationsOf counts the consumer's pending equivocation
 // punishments naming the validator at consAddr.
 func (s *ByzantineConsumerIntegrationTestSuite) pendingEquivocationsOf(consumerID, consAddr string) int { //nolint:unparam // the suite drives one consumer; the helper stays generic
+	n, err := s.tryPendingEquivocationsOf(consumerID, consAddr)
+	s.Require().NoErrorf(err, "failed to count the pending equivocation punishments naming %s", consAddr)
+	return n
+}
+
+// tryPendingEquivocationsOf is pendingEquivocationsOf returning an error
+// instead of failing the test, for the conditions of Eventually and Never,
+// which run in a goroutine of their own: a failure there stalls the wait to
+// its timeout.
+func (s *ByzantineConsumerIntegrationTestSuite) tryPendingEquivocationsOf(consumerID, consAddr string) (int, error) {
+	pending, err := s.pendingEquivocationsNaming(consumerID, consAddr)
+	return len(pending), err
+}
+
+// pendingEquivocationsNaming lists the consumer's pending equivocation
+// punishments naming the validator at consAddr.
+func (s *ByzantineConsumerIntegrationTestSuite) pendingEquivocationsNaming(consumerID, consAddr string) ([]pendingEquivocationJSON, error) {
 	addr, err := sdk.ConsAddressFromBech32(consAddr)
-	s.Require().NoErrorf(err, "failed to decode %s", consAddr)
-	n := 0
-	for _, p := range s.mustPendingEquivocations(consumerID) {
+	if err != nil {
+		return nil, fmt.Errorf("decoding %s: %w", consAddr, err)
+	}
+	pending, err := s.queryPendingEquivocations(consumerID)
+	if err != nil {
+		return nil, err
+	}
+	var naming []pendingEquivocationJSON
+	for _, p := range pending {
 		if bytes.Equal(p.ProviderConsAddr, addr) {
-			n++
+			naming = append(naming, p)
 		}
 	}
-	return n
+	return naming, nil
+}
+
+// pendingEquivocationMaturity returns when the consumer's one pending
+// equivocation punishment naming the validator at consAddr executes.
+func (s *ByzantineConsumerIntegrationTestSuite) pendingEquivocationMaturity(consumerID, consAddr string) time.Time { //nolint:unparam // the suite drives one consumer; the helper stays generic
+	pending, err := s.pendingEquivocationsNaming(consumerID, consAddr)
+	s.Require().NoErrorf(err, "failed to read the pending equivocation punishments naming %s", consAddr)
+	s.Require().Lenf(pending, 1, "one pending equivocation punishment naming %s expected, got %d", consAddr, len(pending))
+	return pending[0].ExecutesAt
 }
 
 // testFabricatedDoubleSignJailsAndDefers: the test signs two conflicting
@@ -63,8 +96,8 @@ func (s *ByzantineConsumerIntegrationTestSuite) testFabricatedDoubleSignJailsAnd
 		s.submitDoubleVoteEvidence(consumerID, evidencePath, headerPath)
 
 		s.Require().Eventuallyf(func() bool {
-			jailed, _ := s.stakingValidatorState(val2.valoper)
-			return jailed
+			jailed, _, err := s.tryStakingValidatorState(val2.valoper)
+			return err == nil && jailed
 		}, time.Minute, 2*time.Second, "val2 was not jailed for the fabricated double-sign")
 		s.Require().Equalf(1, s.pendingEquivocationsOf(consumerID, val2.consAddr),
 			"the fabricated double-sign must queue one punishment against val2")

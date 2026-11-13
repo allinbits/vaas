@@ -152,17 +152,53 @@ func (s *ByzantineConsumerIntegrationTestSuite) fabricateFork(clientID string) s
 
 // clientStatus reads the status of one of the provider's IBC clients.
 func (s *ByzantineConsumerIntegrationTestSuite) clientStatus(clientID string) string {
-	stdout, _, err := s.dockerExec(s.providerValRes[0].Container.ID, []string{
+	status, err := s.tryClientStatus(clientID)
+	s.Require().NoErrorf(err, "failed to read the status of client %s", clientID)
+	return status
+}
+
+// tryClientStatus is clientStatus returning an error instead of failing the
+// test, for the conditions of Eventually and Never, which run in a goroutine
+// of their own: a failure there stalls the wait to its timeout.
+func (s *ByzantineConsumerIntegrationTestSuite) tryClientStatus(clientID string) (string, error) {
+	stdout, stderr, err := s.dockerExec(s.providerValRes[0].Container.ID, []string{
 		providerBinary, "query", "ibc", "client", "status", clientID,
 		"--home", providerHomePath,
 		"--output", "json",
 	})
-	s.Require().NoErrorf(err, "failed to query the status of client %s", clientID)
+	if err != nil {
+		return "", fmt.Errorf("querying the status of client %s: %w (stderr=%s)", clientID, err, stderr.String())
+	}
 	var res struct {
 		Status string `json:"status"`
 	}
-	s.Require().NoErrorf(json.Unmarshal(stdout.Bytes(), &res), "failed to decode the client status: %s", stdout.String())
-	return res.Status
+	if err := json.Unmarshal(stdout.Bytes(), &res); err != nil {
+		return "", fmt.Errorf("decoding the status of client %s: %w (raw=%s)", clientID, err, stdout.String())
+	}
+	return res.Status, nil
+}
+
+// committedTxHeight returns the height of the provider block that committed
+// the transaction a `-o json` broadcast response names, once
+// requireTxCommitted has seen it committed.
+func (s *ByzantineConsumerIntegrationTestSuite) committedTxHeight(broadcastOut []byte) int64 {
+	var bres struct {
+		TxHash string `json:"txhash"`
+	}
+	s.Require().NoErrorf(json.Unmarshal(broadcastOut, &bres), "decode broadcast response: %s", string(broadcastOut))
+	stdout, stderr, err := s.dockerExec(s.providerValRes[0].Container.ID, []string{
+		providerBinary, "query", "tx", bres.TxHash,
+		"--home", providerHomePath,
+		"--output", "json",
+	})
+	s.Require().NoErrorf(err, "failed to query tx %s: %s", bres.TxHash, stderr.String())
+	var res struct {
+		Height string `json:"height"`
+	}
+	s.Require().NoErrorf(json.Unmarshal(stdout.Bytes(), &res), "failed to decode tx %s: %s", bres.TxHash, stdout.String())
+	height, err := strconv.ParseInt(res.Height, 10, 64)
+	s.Require().NoErrorf(err, "tx %s height: %q", bres.TxHash, res.Height)
+	return height
 }
 
 // testForkFreezesAndPausesWithoutPunishing: the test signs a fork of the
@@ -192,6 +228,11 @@ func (s *ByzantineConsumerIntegrationTestSuite) testForkFreezesAndPausesWithoutP
 		}
 		equivocationsBefore := len(s.mustPendingEquivocations(consumerID))
 		downtimeBefore := len(s.queryPendingDowntimeSlashes(consumerID))
+		// val2's deferred punishment, queued by the fabricated double-sign,
+		// keeps its maturity through the pause; the fork drill requires the
+		// resume to move it by exactly the pause.
+		val2 := s.validator(2)
+		s.val2MaturityBeforeFork = s.pendingEquivocationMaturity(consumerID, val2.consAddr)
 
 		path := s.fabricateFork(clientID)
 		stdout, stderr, err := s.dockerExec(s.providerValRes[0].Container.ID, []string{
@@ -207,9 +248,14 @@ func (s *ByzantineConsumerIntegrationTestSuite) testForkFreezesAndPausesWithoutP
 		})
 		s.Require().NoErrorf(err, "failed to submit the fabricated misbehaviour: stderr=%s", stderr.String())
 		s.requireTxCommitted(stdout.Bytes())
+		// The message freezes the client and pauses the consumer in its own
+		// block, whose time is the pause's.
+		s.forkPausedAt = s.providerBlockTime(s.committedTxHeight(stdout.Bytes()))
 
 		s.Require().Equalf("Frozen", s.clientStatus(clientID), "the fork must freeze client %s", clientID)
 		s.Require().Equalf(phasePaused, s.queryProviderConsumerPhase(consumerID), "the fork must pause the consumer")
+		s.Require().Truef(s.pendingEquivocationMaturity(consumerID, val2.consAddr).Equal(s.val2MaturityBeforeFork),
+			"the pause must leave val2's deferred punishment at its maturity")
 		for i, was := range before {
 			v := s.validator(i)
 			jailed, tokens := s.stakingValidatorState(v.valoper)
@@ -244,15 +290,18 @@ func (s *ByzantineConsumerIntegrationTestSuite) testForkFreezesAndPausesWithoutP
 // the client stays frozen. Once the trusting period has elapsed since the
 // pause the same proposal passes: the client is active and the relayer
 // keeps updating it with the consumer's real headers, the consumer is
-// launched and its acks flow again, and nobody was punished. The forge
-// suite's consumer carries a short unbonding period so this wait fits the
-// job (create_consumer_forge.json).
+// launched and its acks flow again, nobody was punished, and val2's deferred
+// punishment executes as long after the resume as it would have after the
+// pause. The forge suite's consumer carries a short unbonding period so this
+// wait fits the job (create_consumer_forge.json).
 func (s *ByzantineConsumerIntegrationTestSuite) testForkRecoveryWaitsOutTheTrustingPeriod() {
 	s.Run("a recovery and resume is refused inside the trusting period, and passes once it has elapsed", func() {
 		const consumerID = "0"
 		subject := s.queryConsumerClientID(consumerID)
 		s.Require().Equalf("Frozen", s.clientStatus(subject), "the drill starts from the fork's freeze")
 		s.Require().Equalf(phasePaused, s.queryProviderConsumerPhase(consumerID), "the drill starts from the fork's pause")
+		s.Require().Falsef(s.forkPausedAt.IsZero(), "the drill starts from the pause the fork scenario recorded")
+		val2 := s.validator(2)
 
 		type state struct {
 			jailed     bool
@@ -275,6 +324,8 @@ func (s *ByzantineConsumerIntegrationTestSuite) testForkRecoveryWaitsOutTheTrust
 		s.Require().Containsf(failure, "trusting period", "the resume must be refused inside the trusting period: %s", failure)
 		s.Require().Equalf("Frozen", s.clientStatus(subject), "a failed proposal rolls the recovery back with it")
 		s.Require().Equalf(phasePaused, s.queryProviderConsumerPhase(consumerID), "a refused resume leaves the consumer paused")
+		s.Require().Truef(s.pendingEquivocationMaturity(consumerID, val2.consAddr).Equal(s.val2MaturityBeforeFork),
+			"a refused resume leaves val2's deferred punishment at its maturity")
 
 		resumableAt := resumableAtFromFailure(failure)
 		s.Require().Falsef(resumableAt.IsZero(), "the refusal must say when the resume is allowed: %s", failure)
@@ -292,15 +343,35 @@ func (s *ByzantineConsumerIntegrationTestSuite) testForkRecoveryWaitsOutTheTrust
 		substitute = s.newProviderClientOfTheConsumer()
 		s.T().Logf("recovering the frozen client %s onto the fresh substitute %s", subject, substitute)
 		proposal = s.recoverAndResumeProposalJSON(consumerID, subject, substitute)
+		resumeSubmittedAt, err := s.queryProviderBlockHeight()
+		s.Require().NoError(err, "failed to read the provider height")
 		s.submitProposalWithVote(proposal, "yes", "PROPOSAL_STATUS_PASSED")
 		s.Require().Equalf("Active", s.clientStatus(subject), "the recovered client must be active")
 		s.Require().Equalf(phaseLaunched, s.queryProviderConsumerPhase(consumerID), "the consumer must be launched again")
 
+		// The resume thaws what the pause froze: val2's deferred punishment
+		// executes as long after the resume as it would have after the
+		// pause, the pause being the time from the block the fork paused the
+		// consumer in to the block the proposal resumed it in.
+		latest, err := s.queryProviderBlockHeight()
+		s.Require().NoError(err, "failed to read the provider height")
+		resumed := s.providerBlockEventHeights(resumeSubmittedAt, latest, resumedEventType, map[string]string{"consumer_id": consumerID})
+		s.Require().Lenf(resumed, 1, "one resume of consumer %s expected in provider blocks %d..%d, got %v", consumerID, resumeSubmittedAt, latest, resumed)
+		pausedFor := s.providerBlockTime(resumed[0]).Sub(s.forkPausedAt)
+		wantMaturity := s.val2MaturityBeforeFork.Add(pausedFor)
+		maturity := s.pendingEquivocationMaturity(consumerID, val2.consAddr)
+		s.Require().Truef(maturity.Equal(wantMaturity),
+			"val2's deferred punishment must execute at %s, its maturity before the fork moved by the pause of %s, not at %s",
+			wantMaturity.Format(time.RFC3339Nano), pausedFor, maturity.Format(time.RFC3339Nano))
+		s.T().Logf("the resume moved val2's deferred punishment by the pause of %s", pausedFor.Round(time.Second))
+
 		// The recovered client verifies the consumer's real headers: the
 		// relayer keeps moving it.
 		recoveredAt := s.clientLatestHeight(subject)
-		s.Require().Eventuallyf(func() bool { return s.clientLatestHeight(subject) > recoveredAt },
-			3*time.Minute, 3*time.Second, "the recovered client %s was never updated past height %d", subject, recoveredAt)
+		s.Require().Eventuallyf(func() bool {
+			height, err := s.tryClientLatestHeight(subject)
+			return err == nil && height > recoveredAt
+		}, 3*time.Minute, 3*time.Second, "the recovered client %s was never updated past height %d", subject, recoveredAt)
 		// And the consumer is served again: its acks flow.
 		s.waitForConsumerSync(consumerID)
 
@@ -379,10 +450,21 @@ func resumableAtFromFailure(failure string) time.Time {
 // clientLatestHeight returns the latest height of a provider-side IBC
 // client's state.
 func (s *ByzantineConsumerIntegrationTestSuite) clientLatestHeight(clientID string) int64 {
+	height, err := s.tryClientLatestHeight(clientID)
+	s.Require().NoErrorf(err, "failed to read the latest height of client %s", clientID)
+	return height
+}
+
+// tryClientLatestHeight is clientLatestHeight returning an error instead of
+// failing the test, for the conditions of Eventually and Never, which run in
+// a goroutine of their own: a failure there stalls the wait to its timeout.
+func (s *ByzantineConsumerIntegrationTestSuite) tryClientLatestHeight(clientID string) (int64, error) {
 	stdout, stderr, err := s.dockerExec(s.providerValRes[0].Container.ID, []string{
 		providerBinary, "query", "ibc", "client", "state", clientID, "--home", providerHomePath, "-o", "json",
 	})
-	s.Require().NoErrorf(err, "failed to query client %s: %s", clientID, stderr.String())
+	if err != nil {
+		return 0, fmt.Errorf("querying client %s: %w (stderr=%s)", clientID, err, stderr.String())
+	}
 	var res struct {
 		ClientState struct {
 			LatestHeight struct {
@@ -390,8 +472,12 @@ func (s *ByzantineConsumerIntegrationTestSuite) clientLatestHeight(clientID stri
 			} `json:"latest_height"`
 		} `json:"client_state"`
 	}
-	s.Require().NoErrorf(json.Unmarshal(stdout.Bytes(), &res), "failed to decode client %s: %s", clientID, stdout.String())
+	if err := json.Unmarshal(stdout.Bytes(), &res); err != nil {
+		return 0, fmt.Errorf("decoding client %s: %w (raw=%s)", clientID, err, stdout.String())
+	}
 	height, err := strconv.ParseInt(res.ClientState.LatestHeight.RevisionHeight, 10, 64)
-	s.Require().NoErrorf(err, "client %s latest height: %q", clientID, res.ClientState.LatestHeight.RevisionHeight)
-	return height
+	if err != nil {
+		return 0, fmt.Errorf("client %s latest height: %q: %w", clientID, res.ClientState.LatestHeight.RevisionHeight, err)
+	}
+	return height, nil
 }

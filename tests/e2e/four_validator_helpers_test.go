@@ -1,7 +1,6 @@
 package e2e
 
 import (
-	"fmt"
 	"strconv"
 	"time"
 
@@ -25,7 +24,7 @@ const fourValidatorBlocksPerEpoch = 5
 // downtime window is loosened, so a stopped consumer node never gets its
 // validator jailed on the provider, whose node keeps running.
 func (s *baseTestSuite) patchFourValidatorProviderGenesis(appState map[string]any) {
-	s.genesisSection(appState, "gov", "params")["voting_period"] = fmt.Sprintf("%ds", int64(s.cfg.govVotingPeriod/time.Second))
+	s.setGovVotingPeriod(appState)
 
 	params := s.genesisSection(appState, "vaasprovider", "params")
 	params["blocks_per_epoch"] = strconv.Itoa(fourValidatorBlocksPerEpoch)

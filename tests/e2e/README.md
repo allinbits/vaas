@@ -130,8 +130,9 @@ misbehaviour are accepted only from a launched consumer):
    a resume is refused while the client is frozen;
 4. governance recovers the frozen client onto a substitute and resumes the
    consumer in one proposal: refused inside the client's trusting period and
-   rolled back, passed once it has elapsed; the consumer is served again and
-   nobody is punished;
+   rolled back, passed once it has elapsed; the consumer is served again,
+   nobody is punished, and the deferred punishment's clock resumes where the
+   pause stopped it;
 5. the consumer restarts under the next revision of its chain id; the
    provider's client expires and governance recovers it onto a client of the
    renamed chain; the next provider block pauses the consumer for the chain

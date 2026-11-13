@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"strconv"
+	"time"
 
 	rpchttp "github.com/cometbft/cometbft/rpc/client/http"
 
@@ -203,20 +204,35 @@ func (s *baseTestSuite) queryConsumerPreviousChainIDs(consumerID string) []previ
 // nextSequenceSend returns the sequence the provider's next IBC v2 packet over
 // the client takes; it moves exactly when the provider sends a packet over it.
 func (s *baseTestSuite) nextSequenceSend(clientID string) uint64 {
+	sequence, err := s.tryNextSequenceSend(clientID)
+	s.Require().NoErrorf(err, "failed to read the next send sequence of client %s", clientID)
+	return sequence
+}
+
+// tryNextSequenceSend is nextSequenceSend returning an error instead of
+// failing the test, for the conditions of Eventually and Never, which run in
+// a goroutine of their own: a failure there stalls the wait to its timeout.
+func (s *baseTestSuite) tryNextSequenceSend(clientID string) (uint64, error) {
 	stdout, stderr, err := s.dockerExec(s.providerValRes[0].Container.ID, []string{
 		providerBinary, "query", "ibc", "channelv2", "next-sequence-send", clientID,
 		"--prove=false",
 		"--home", providerHomePath,
 		"--output", "json",
 	})
-	s.Require().NoErrorf(err, "failed to query the next send sequence of client %s: %s", clientID, stderr.String())
+	if err != nil {
+		return 0, fmt.Errorf("querying the next send sequence of client %s: %w (stderr=%s)", clientID, err, stderr.String())
+	}
 	var res struct {
 		NextSequenceSend string `json:"next_sequence_send"`
 	}
-	s.Require().NoErrorf(json.Unmarshal(stdout.Bytes(), &res), "failed to decode the next send sequence of client %s: %s", clientID, stdout.String())
+	if err := json.Unmarshal(stdout.Bytes(), &res); err != nil {
+		return 0, fmt.Errorf("decoding the next send sequence of client %s: %w (raw=%s)", clientID, err, stdout.String())
+	}
 	sequence, err := strconv.ParseUint(res.NextSequenceSend, 10, 64)
-	s.Require().NoErrorf(err, "next send sequence of client %s: %q", clientID, res.NextSequenceSend)
-	return sequence
+	if err != nil {
+		return 0, fmt.Errorf("next send sequence of client %s: %q: %w", clientID, res.NextSequenceSend, err)
+	}
+	return sequence, nil
 }
 
 // blockEvent is an event a block emitted outside any transaction, as the
@@ -281,6 +297,26 @@ func blockEventMatches(ev blockEvent, want map[string]string) bool {
 		}
 	}
 	return true
+}
+
+// providerBlockTime returns the header time of the provider block at height:
+// the block time the keepers took every deadline set or judged in that block
+// from.
+func (s *baseTestSuite) providerBlockTime(height int64) time.Time {
+	body, err := httpGet(fmt.Sprintf("%s/block?height=%d", s.providerRPCEndpoint(), height))
+	s.Require().NoErrorf(err, "failed to read the provider's block %d", height)
+	var res struct {
+		Result struct {
+			Block struct {
+				Header struct {
+					Time time.Time `json:"time"`
+				} `json:"header"`
+			} `json:"block"`
+		} `json:"result"`
+	}
+	s.Require().NoErrorf(json.Unmarshal(body, &res), "failed to decode the provider's block %d: %s", height, body)
+	s.Require().Falsef(res.Result.Block.Header.Time.IsZero(), "the provider's block %d carries no time: %s", height, body)
+	return res.Result.Block.Header.Time
 }
 
 // queryProviderConsumerChains queries the provider for registered consumer chains.

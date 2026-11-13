@@ -174,8 +174,33 @@ func (s *baseTestSuite) cleanupStaleContainers() {
 	for _, name := range staleNames {
 		s.removeContainerByName(name)
 	}
-	// Also remove stale network
-	_ = s.dkrPool.Client.RemoveNetwork(s.cfg.dockerNetwork)
+	s.removeStaleNetwork()
+}
+
+// removeStaleNetwork removes the suite's docker network if a previous run
+// left it behind, with whatever containers are still attached to it: a
+// scenario's ephemeral export or validate container outlives a run killed
+// while it ran, docker refuses to remove a network with an endpoint, and
+// the name stays taken, so bringUpSuite would fail to create the network.
+// A network that cannot be removed fails the suite here, with docker's
+// reason, instead of at that creation.
+func (s *baseTestSuite) removeStaleNetwork() {
+	var missing *docker.NoSuchNetwork
+	network, err := s.dkrPool.Client.NetworkInfo(s.cfg.dockerNetwork)
+	if errors.As(err, &missing) {
+		return
+	}
+	s.Require().NoErrorf(err, "failed to inspect the docker network %s", s.cfg.dockerNetwork)
+	for id, endpoint := range network.Containers {
+		s.T().Logf("removing stale container %s attached to network %s", endpoint.Name, s.cfg.dockerNetwork)
+		if err := s.dkrPool.Client.RemoveContainer(docker.RemoveContainerOptions{ID: id, Force: true, RemoveVolumes: true}); err != nil {
+			s.T().Logf("failed to remove stale container %s: %v", endpoint.Name, err)
+		}
+	}
+	s.T().Logf("removing stale network: %s", s.cfg.dockerNetwork)
+	if err := s.dkrPool.Client.RemoveNetwork(network.ID); err != nil && !errors.As(err, &missing) {
+		s.Require().NoErrorf(err, "failed to remove the stale docker network %s", s.cfg.dockerNetwork)
+	}
 }
 
 // removeContainerByName force-removes the container of that name, if one
@@ -254,6 +279,23 @@ func (s *baseTestSuite) genesisSection(appState map[string]any, path ...string) 
 		section = next
 	}
 	return section
+}
+
+// setGovVotingPeriod sets the provider's governance voting period to the
+// suite's and brings the gov periods that atomone-sdk validates against it
+// along: the quorum timeout stays below it, the voting period extension
+// covers the gap, and the two deposit throttlers update no less often than
+// it. Quorum checks are off (the default check count is zero) and the
+// throttlers only decay toward their floors on the clock, so the test
+// proposals see none of this.
+func (s *baseTestSuite) setGovVotingPeriod(appState map[string]any) {
+	period := fmt.Sprintf("%ds", int64(s.cfg.govVotingPeriod.Seconds()))
+	params := s.genesisSection(appState, "gov", "params")
+	params["voting_period"] = period
+	params["quorum_timeout"] = "0s"
+	params["max_voting_period_extension"] = period
+	s.genesisSection(appState, "gov", "params", "min_deposit_throttler")["update_period"] = period
+	s.genesisSection(appState, "gov", "params", "min_initial_deposit_throttler")["update_period"] = period
 }
 
 // validatorCount is the number of validator nodes each chain runs.
