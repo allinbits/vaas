@@ -3,29 +3,29 @@ module github.com/allinbits/vaas/app
 go 1.26.0
 
 replace (
-	cosmossdk.io/store => github.com/atomone-hub/cosmos-sdk/store v1.1.2-0.20260107105933-680c2b513b67
-	cosmossdk.io/x/evidence => github.com/atomone-hub/cosmos-sdk/x/evidence v0.1.1
+	cosmossdk.io/x/evidence => github.com/atomone-hub/cosmos-sdk/x/evidence v0.1.2-0.20261110100055-7e840818630c
 	cosmossdk.io/x/upgrade => github.com/atomone-hub/cosmos-sdk/x/upgrade v0.1.5-atomone.1.0.20251218143825-cbb67818e94a
 	github.com/allinbits/vaas => ../
 	github.com/bytedance/sonic => github.com/bytedance/sonic v1.15.0
-	github.com/cometbft/cometbft => github.com/atomone-hub/cometbft v0.0.0-20251216151559-a24cfa28b916
-	// TEMPORARY: pinned to atomone-hub/atomone-sdk main at the squash of
-	// atomone-hub/atomone-sdk#137 (the pre-rotation staking hook). That commit
-	// carries everything in v0.500.6 plus the hook; the pseudo-version only
-	// sorts below the tag by name. Switch this replace to a release tag once
-	// one carries the hook.
-	github.com/cosmos/cosmos-sdk => github.com/atomone-hub/cosmos-sdk v0.500.3-0.20261029093443-581d8bc35953
+	// TEMPORARY: pinned to atomone-hub/atomone-sdk main (7e840818, 2026-11-10).
+	// That head carries everything in v0.500.6 plus the pre-rotation staking
+	// hook (#137), the change in atomone-sdk's x/evidence module that ignores
+	// evidence for unknown validators (#138) and the genesis round-trip of
+	// consensus-key rotation state (#140); the pseudo-version only sorts below
+	// the tag by name. Switch this replace, and the x/evidence one, to the next
+	// release tag.
+	github.com/cosmos/cosmos-sdk => github.com/atomone-hub/cosmos-sdk v0.500.3-0.20261110100055-7e840818630c
 	github.com/syndtr/goleveldb => github.com/syndtr/goleveldb v1.0.1-0.20210819022825-2ae1ddf74ef7
 )
 
 require (
 	cosmossdk.io/api v1.0.0-alpha.1
-	cosmossdk.io/client/v2 v2.10.0-beta.4
+	cosmossdk.io/client/v2 v2.0.0-beta.11
 	cosmossdk.io/core v1.1.0-alpha.2
 	cosmossdk.io/errors v1.0.2
 	cosmossdk.io/log v1.6.1
 	cosmossdk.io/math v1.5.3
-	cosmossdk.io/store v1.3.0-alpha.1
+	cosmossdk.io/store v1.1.2
 	cosmossdk.io/tools/confix v0.1.2
 	cosmossdk.io/x/evidence v0.2.0
 	cosmossdk.io/x/tx v1.2.0-alpha.1
@@ -33,7 +33,7 @@ require (
 	github.com/allinbits/vaas v0.0.0-20260126105106-3bcd2c75855e
 	github.com/cometbft/cometbft v0.38.20
 	github.com/cosmos/cosmos-db v1.1.3
-	github.com/cosmos/cosmos-sdk v0.54.0-alpha.0.0.20250611155041-9fa93c9afe32
+	github.com/cosmos/cosmos-sdk v0.500.0
 	github.com/cosmos/gogoproto v1.7.2
 	github.com/cosmos/ibc-go/v10 v10.5.0
 	github.com/spf13/cast v1.10.0
@@ -107,8 +107,8 @@ require (
 	github.com/cosmos/iavl v1.2.6 // indirect
 	github.com/cosmos/ics23/go v0.11.0 // indirect
 	github.com/cosmos/ledger-cosmos-go v0.16.0 // indirect
-	github.com/creachadair/atomicfile v0.3.1 // indirect
-	github.com/creachadair/tomledit v0.0.24 // indirect
+	github.com/creachadair/atomicfile v0.3.7 // indirect
+	github.com/creachadair/tomledit v0.0.27 // indirect
 	github.com/danieljoos/wincred v1.2.1 // indirect
 	github.com/davecgh/go-spew v1.1.2-0.20180830191138-d8f796af33cc // indirect
 	github.com/decred/dcrd/dcrec/secp256k1/v4 v4.4.0 // indirect
