@@ -293,12 +293,27 @@ func (s *baseTestSuite) consumerPorts() nodePorts {
 // ports: the other nodes are reached through docker exec, and the relayer
 // and the suite's queries address val0 by container name and host port.
 func (s *baseTestSuite) startChainNode(chainID, binary, homePath, hostHome string, index int, ports nodePorts) *dockertest.Resource {
+	return s.startChainNodeWith(chainID, homePath, hostHome, index, ports,
+		nodeRun{image: e2eChainImage, cmd: []string{binary, "start", "--home", homePath}})
+}
+
+// nodeRun is what a node container runs: its image, its command, and any
+// environment the command reads.
+type nodeRun struct {
+	image string
+	cmd   []string
+	env   []string
+}
+
+// startChainNodeWith is startChainNode running the given image and command.
+func (s *baseTestSuite) startChainNodeWith(chainID, homePath, hostHome string, index int, ports nodePorts, run nodeRun) *dockertest.Resource {
 	opts := &dockertest.RunOptions{
 		Name:       fmt.Sprintf("%s-val%d", chainID, index),
-		Repository: e2eChainImage,
+		Repository: run.image,
 		NetworkID:  s.dkrNet.Network.ID,
 		Mounts:     []string{fmt.Sprintf("%s:%s", hostHome, homePath)},
-		Cmd:        []string{binary, "start", "--home", homePath},
+		Cmd:        run.cmd,
+		Env:        run.env,
 	}
 	if index == 0 {
 		opts.PortBindings = map[docker.Port][]docker.PortBinding{
@@ -394,6 +409,35 @@ func (s *baseTestSuite) stopConsumerNode(i int) {
 	s.Require().NoErrorf(s.dkrPool.Client.StopContainer(s.consumerValRes[i].Container.ID, 5),
 		"failed to stop consumer val%d", i)
 	s.T().Logf("consumer val%d stopped in %s", i, time.Since(started).Round(time.Millisecond))
+}
+
+// recreateConsumerNodes replaces every consumer node's container with one
+// running what plan returns, on the same home, name and ports: every node is
+// stopped first (the chain halts meanwhile and resumes from its own state),
+// then all are started again and waited on until they have caught up with
+// val0.
+//
+// plan builds what the nodes run from the height the consumer halted at:
+// every node but the last is stopped first, which halts the chain, and the
+// last node's height, read before it stops too, is the highest any node
+// committed. A plan that depends on heights (the forge's lie range) is then
+// independent of how long each stop took.
+func (s *baseTestSuite) recreateConsumerNodes(plan func(haltedHeight int64) nodeRun) {
+	last := len(s.consumerValRes) - 1
+	for i := range last {
+		s.stopConsumerNode(i)
+	}
+	halted, err := s.nodeHeight(s.consumerValRes[last].Container.ID, consumerBinary, consumerHomePath)
+	s.Require().NoError(err, "failed to read the halted consumer's height")
+	s.stopConsumerNode(last)
+	run := plan(halted)
+	for i, r := range s.consumerValRes {
+		s.Require().NoErrorf(s.dkrPool.Purge(r), "failed to remove consumer val%d's container", i)
+	}
+	for i := range s.consumerValRes {
+		s.consumerValRes[i] = s.startChainNodeWith(s.cfg.consumerChainID, consumerHomePath, s.consumerHome(i), i, s.consumerPorts(), run)
+	}
+	s.waitForNodesCaughtUp(s.consumerValRes, consumerBinary, consumerHomePath, 3*time.Minute)
 }
 
 // startConsumerNode starts consumer node i again and waits until every
@@ -672,7 +716,7 @@ func (s *baseTestSuite) waitForChainHeight(ctx context.Context, rpcEndpoint stri
 // delivered. Without this gate a test could assert against a consumer that has
 // launched but never synced. The grace (~150s) is sized to exceed this
 // first-sync latency, so the consumer is not swept while we wait here.
-func (s *baseTestSuite) waitForConsumerSync(consumerID string) {
+func (s *baseTestSuite) waitForConsumerSync(consumerID string) { //nolint:unparam // the suites drive one consumer; the helper stays generic
 	livenessURL := fmt.Sprintf("http://localhost:%s/vaas/provider/consumer_liveness/%s",
 		s.cfg.providerRESTPort, consumerID)
 

@@ -30,7 +30,8 @@ make localnet-clean     # stop all, clean data
 
 # E2E (Docker-based)
 make docker-build-all   # build chain image (ts-relayer image is pulled)
-make test-e2e           # run e2e suite
+make test-e2e           # run the e2e suites (all but the byzantine-consumer one)
+make test-e2e-forge     # build the forge image and run the byzantine-consumer suite
 ```
 
 Dev tool dependencies are isolated in `devdeps/go.mod` and invoked via `go run -modfile devdeps/go.mod`.

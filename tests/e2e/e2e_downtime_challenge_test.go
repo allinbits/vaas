@@ -134,7 +134,7 @@ func (s *IntegrationTestSuite) testDowntimeChallengeWithoutSealedSignature() {
 // validator was in the consumer's validator set at the claimed height (the CLI
 // reads its consensus pubkey from that set). Returns false when no pending
 // slash currently qualifies.
-func (s *IntegrationTestSuite) findDowntimeChallengeTarget(consumerID string) (downtimeChallengeTarget, bool) {
+func (s *baseTestSuite) findDowntimeChallengeTarget(consumerID string) (downtimeChallengeTarget, bool) {
 	consumerHeight, err := s.queryConsumerBlockHeight()
 	if err != nil {
 		return downtimeChallengeTarget{}, false
@@ -232,7 +232,7 @@ func (s *IntegrationTestSuite) findDowntimeChallengeTarget(consumerID string) (d
 // consensus state's NextValidatorsHash -- the set for the following height.
 // The two agree exactly when the block at the trusted height has
 // validators_hash == next_validators_hash.
-func (s *IntegrationTestSuite) pickChallengeTrustedHeight(clientID string, headerHeight int64) (int64, bool) {
+func (s *baseTestSuite) pickChallengeTrustedHeight(clientID string, headerHeight int64) (int64, bool) {
 	heights := s.queryClientConsensusStateHeights(clientID)
 	slices.Sort(heights)
 	slices.Reverse(heights)
@@ -261,7 +261,7 @@ func (s *IntegrationTestSuite) pickChallengeTrustedHeight(clientID string, heade
 
 // queryClientConsensusStateHeights returns the revision heights of every
 // consensus state the provider stores for an IBC client.
-func (s *IntegrationTestSuite) queryClientConsensusStateHeights(clientID string) []int64 {
+func (s *baseTestSuite) queryClientConsensusStateHeights(clientID string) []int64 {
 	stdout, _, err := s.dockerExec(s.providerValRes[0].Container.ID, []string{
 		providerBinary, "query", "ibc", "client", "consensus-state-heights", clientID,
 		"--home", providerHomePath,
@@ -287,7 +287,7 @@ func (s *IntegrationTestSuite) queryClientConsensusStateHeights(clientID string)
 
 // queryConsumerClientID returns the id of the provider's IBC client tracking a
 // consumer chain.
-func (s *IntegrationTestSuite) queryConsumerClientID(consumerID string) string {
+func (s *baseTestSuite) queryConsumerClientID(consumerID string) string {
 	stdout, _, err := s.dockerExec(s.providerValRes[0].Container.ID, []string{
 		providerBinary, "query", "vaasprovider", "consumer-chain", consumerID,
 		"--home", providerHomePath,
@@ -331,7 +331,7 @@ type downtimeSlashDetail struct {
 // queryPendingDowntimeSlashDetails returns the pending downtime slashes queued
 // for a consumer. Returns nil on any query/decode error so callers can poll it
 // directly inside Eventually.
-func (s *IntegrationTestSuite) queryPendingDowntimeSlashDetails(consumerID string) []downtimeSlashDetail {
+func (s *baseTestSuite) queryPendingDowntimeSlashDetails(consumerID string) []downtimeSlashDetail {
 	stdout, _, err := s.dockerExec(s.providerValRes[0].Container.ID, []string{
 		providerBinary, "query", "vaasprovider", "pending-downtime-slashes", consumerID,
 		"--home", providerHomePath,

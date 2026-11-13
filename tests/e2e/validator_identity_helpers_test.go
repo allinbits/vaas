@@ -206,7 +206,7 @@ func (s *baseTestSuite) consumerValsetConsAddrs() ([]string, error) {
 // consumerValidatorHexAddrsAtHeight returns the consumer chain's validator set
 // at a past height as uppercase hex addresses, read from the consumer's own
 // CometBFT RPC (the same source a challenger's tooling reads).
-func (s *IntegrationTestSuite) consumerValidatorHexAddrsAtHeight(height int64) ([]string, error) {
+func (s *baseTestSuite) consumerValidatorHexAddrsAtHeight(height int64) ([]string, error) {
 	body, err := httpGet(fmt.Sprintf("%s/validators?height=%d&per_page=100", s.consumerRPCEndpoint(), height))
 	if err != nil {
 		return nil, err
@@ -230,7 +230,7 @@ func (s *IntegrationTestSuite) consumerValidatorHexAddrsAtHeight(height int64) (
 
 // consumerBlockValidatorHashes returns the validators_hash and
 // next_validators_hash of the consumer's block at the given height.
-func (s *IntegrationTestSuite) consumerBlockValidatorHashes(height int64) (valsHash, nextValsHash string, err error) {
+func (s *baseTestSuite) consumerBlockValidatorHashes(height int64) (valsHash, nextValsHash string, err error) {
 	body, err := httpGet(fmt.Sprintf("%s/block?height=%d", s.consumerRPCEndpoint(), height))
 	if err != nil {
 		return "", "", err

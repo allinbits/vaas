@@ -25,21 +25,6 @@ func (s *MultiValidatorIntegrationTestSuite) pendingSlashesStartingAtOrAfter(con
 	return n
 }
 
-// pendingSlashesOf counts the consumer's pending downtime slashes that accuse
-// the validator at consAddr, its provider consensus address, which is what
-// an accusation names even when the validator runs the consumer under an
-// assigned key.
-func (s *MultiValidatorIntegrationTestSuite) pendingSlashesOf(consumerID, consAddr string) int {
-	n := 0
-	for _, slash := range s.queryPendingDowntimeSlashes(consumerID) {
-		accused, err := consAddrFromBase64(slash.ProviderConsAddr)
-		if err == nil && accused == consAddr {
-			n++
-		}
-	}
-	return n
-}
-
 // testOfflineValidatorIsSlashedAndRecovers: val2's consumer node stops while
 // the other three keep the consumer live; its real missed blocks become
 // downtime evidence, the provider slashes it without jailing it, the

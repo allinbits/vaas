@@ -6,8 +6,10 @@ lifecycle: consumer registration, genesis bootstrapping, IBC v2 client
 discovery, VSC synchronization, downtime slashing and challenges, fee pooling
 and distribution, key assignment, refusal and punishment deferral, liveness,
 genesis round-trip, and, on four validator nodes per chain, the validator set
-mirror, a delegation change, an offline validator's slash and recovery, and a
-key assignment under a node restart.
+mirror, a delegation change, an offline validator's slash and recovery, a
+key assignment under a node restart, and the refusal threshold; and, against
+a consumer that lies, the provider's answer to a forged downtime accusation,
+a fabricated double-sign and a fork.
 
 This directory is its own Go module (`tests/e2e/go.mod`) and is excluded from the
 top-level `make test` and from linting. It runs via the `make test-e2e` target
@@ -17,8 +19,9 @@ described below. Docker is required.
 
 ```
 make docker-build-all   # build the chain image (cosmos/vaas-e2e); ts-relayer image is pulled
-make test-e2e           # every suite, one at a time, each through test-e2e-suite
+make test-e2e           # every suite but the forge one, one at a time, each through test-e2e-suite
 make test-e2e-suite SUITE=TestLivenessIntegrationTestSuite   # one suite, as each CI job runs it
+make test-e2e-forge     # build the forge image too, then run the byzantine-consumer suite
 ```
 
 `make test-e2e-suite` ([Makefile](../../Makefile)) builds the image and runs:
@@ -29,8 +32,9 @@ cd tests/e2e && go test -timeout=60m -v -run '^$(SUITE)$' ./... --count=1
 
 It first refuses a `SUITE` that names no top-level test in this directory,
 since `go test -run` passes when it matches nothing. `make test-e2e` lists the
-`Test*Suite` functions and runs each through it, so every suite gets its own
-timeout; a failed suite does not stop the others.
+`Test*Suite` functions and runs each but the byzantine-consumer suite through
+it, so every suite gets its own timeout; a failed suite does not stop the
+others.
 
 The chain image is built from
 [docker/e2e.Dockerfile](docker/e2e.Dockerfile) and contains both the provider
@@ -46,7 +50,7 @@ make test-e2e-suite SUITE=TestIntegrationTestSuite
 make test-e2e-suite SUITE=TestLivenessIntegrationTestSuite
 ```
 
-## The three suites
+## The suites
 
 All are `testify` suites that embed a shared `baseTestSuite`
 ([base_suite_test.go](base_suite_test.go)) providing container lifecycle, chain
@@ -102,6 +106,36 @@ are reached through `docker exec`. Four is the smallest set where one node can
 stop and both chains keep producing blocks. Scenarios run in order in
 `TestMultiValidatorVAAS`, each leaving the set whole for the next.
 
+### `ByzantineConsumerIntegrationTestSuite` -- a consumer that lies
+
+Entry point `TestByzantineConsumerIntegrationTestSuite`
+([e2e_forge_suite_test.go](e2e_forge_suite_test.go)), on four validators like
+the suite above. It runs a consumer that lies three ways and observes the
+provider's answer to each, in the one order the protocol allows (downtime
+evidence and misbehaviour are accepted only from a launched consumer):
+
+1. every consumer node runs `consumer-forge` and reports a live validator
+   absent; the provider queues the accusation, a challenge built from the real
+   chain cancels it and pauses the consumer, governance resumes it;
+2. the test signs a double-vote with a validator's key and submits it; the
+   provider jails at once and defers the punishment;
+3. the test signs a fork of the consumer's history with every key; the
+   provider freezes its client and pauses the consumer, punishing nobody, and
+   a resume is refused while the client is frozen;
+4. governance removes the consumer, which cancels the fabricated punishment.
+
+`consumer-forge` ([forge/](forge/)) is the reference consumer app, unchanged,
+behind one lie: within a height range given by its environment
+(`FORGE_ABSENT_ADDRESS`, `FORGE_FROM_HEIGHT`, `FORGE_UNTIL_HEIGHT`) it shows
+the app a validator as absent from blocks it signed. It is its own Go module,
+built only into the `cosmos/vaas-e2e-forge` image (`make docker-build-forge`),
+and only this suite runs it; nothing outside `tests/e2e` knows it exists. The
+suite runs in the `E2E Forge` workflow on every push to main, on demand, and on
+pull requests, where a path filter skips it unless the change touches the code
+whose answer it checks (`make test-e2e-forge` locally); the other e2e jobs
+never build the forge. Branch protection requires the workflow's `Forge paths`
+and `Test E2E Forge` checks; a skipped suite counts as passed.
+
 ## File layout
 
 | File | Purpose |
@@ -112,11 +146,18 @@ stop and both chains keep producing blocks. Scenarios run in order in
 | `e2e_test.go` | `TestVAAS` ordered scenario list |
 | `e2e_liveness_suite_test.go` | `LivenessIntegrationTestSuite` + `TestLivenessVAAS` |
 | `e2e_multival_suite_test.go` | `MultiValidatorIntegrationTestSuite` + `TestMultiValidatorVAAS` |
-| `e2e_multival_valset_test.go` | validator identities and the set mirror |
+| `e2e_multival_valset_test.go` | the set mirror |
 | `e2e_multival_delegation_test.go` | consumer powers and a delegation reaching the consumer's set |
 | `e2e_multival_key_assignment_test.go` | a key assignment with the node restarted under the new key |
 | `e2e_multival_offline_test.go` | an offline validator's downtime slash and recovery; pending-slash filters |
 | `e2e_multival_refusal_test.go` | the stake-weighted refusal pause threshold, and the resume after withdrawal |
+| `four_validator_helpers_test.go` | the multi-validator suites' shared genesis, bring-up, validator identities, accusation filter |
+| `e2e_forge_suite_test.go` | `ByzantineConsumerIntegrationTestSuite` + `TestByzantineConsumerVAAS`; the switch to the forge |
+| `e2e_forge_downtime_test.go` | a forged downtime accusation challenged away |
+| `e2e_forge_equivocation_test.go` | a fabricated double-sign: immediate jail, deferred punishment |
+| `e2e_forge_fork_test.go` | a fabricated fork: frozen client, pause, no punishment, refused resume |
+| `e2e_forge_removal_test.go` | the removal that cancels the fabricated punishment |
+| `forge/` | `consumer-forge`, its module, its unit tests and its image |
 | `e2e_tsrelayer_test.go` | ts-relayer container start/stop, `add-path`, relay control |
 | `e2e_vaas_test.go` | core VSC / valset-sync scenarios |
 | `e2e_debt_test.go` | fee-pool debt-gating scenario |
@@ -155,7 +196,8 @@ stop and both chains keep producing blocks. Scenarios run in order in
 A new suite (a top-level `Test*Suite` function) also goes into the e2e matrix
 in [.github/workflows/ci.yml](../../.github/workflows/ci.yml), or CI never runs
 it: `make check-e2e-matrix`, a step of CI's Build job, fails while a suite is
-missing from the matrix.
+missing from the matrix. The byzantine-consumer suite is the one exception: it
+runs in its own workflow.
 
 The relayer is available at
 <https://github.com/allinbits/ibc-v2-ts-relayer>.
