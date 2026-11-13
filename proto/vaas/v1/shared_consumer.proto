@@ -80,9 +80,9 @@ message ConsumerGenesisState {
   // This is needed and always set to true; otherwise, new_chain in the consumer
   // genesis state will default to false
   bool new_chain = 3;
-  // preVAAS is reserved for a future standalone-to-consumer changeover and is
+  // pre_vaas is reserved for a future standalone-to-consumer changeover and is
   // currently unused. See docs/consumer-transition.md.
-  bool preVAAS = 4;
+  bool pre_vaas = 4;
 }
 
 // ProviderInfo defines all information a consumer needs from a provider

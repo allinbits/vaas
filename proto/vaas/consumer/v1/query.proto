@@ -7,6 +7,7 @@ option go_package = "github.com/allinbits/vaas/x/vaas/consumer/types";
 import "gogoproto/gogo.proto";
 import "google/api/annotations.proto";
 
+// Query defines the gRPC query service of the VAAS consumer module.
 service Query {
   // QueryParams queries the vaas/consumer module parameters.
   rpc QueryParams(QueryParamsRequest) returns (QueryParamsResponse) {
@@ -20,6 +21,7 @@ service Query {
   }
 }
 
+// QueryParamsRequest is the request type for the Query/QueryParams RPC method.
 message QueryParamsRequest {}
 
 // QueryParamsResponse is response type for the Query/Params RPC method.
@@ -28,16 +30,25 @@ message QueryParamsResponse {
   vaas.v1.ConsumerParams params = 1 [ (gogoproto.nullable) = false ];
 }
 
+// QueryProviderInfoRequest is the request type for the Query/QueryProviderInfo
+// RPC method.
 message QueryProviderInfoRequest {}
 
+// QueryProviderInfoResponse is the response type for the
+// Query/QueryProviderInfo RPC method.
 message QueryProviderInfoResponse {
+  // consumer is the consumer's own chain id and the id of its IBC client
+  // that tracks the provider.
   ChainInfo consumer = 1 [ (gogoproto.nullable) = false ];
+  // provider is the provider's chain id as the state of that client reports
+  // it; its client_id is not populated.
   ChainInfo provider = 2 [ (gogoproto.nullable) = false ];
 }
 
 // ChainInfo contains IBC connection information for a chain.
 message ChainInfo {
-  string chainID = 1;
-  // clientID is the IBC client identifier.
-  string clientID = 2;
+  // chain_id is the chain id.
+  string chain_id = 1;
+  // client_id is the IBC client identifier.
+  string client_id = 2;
 }

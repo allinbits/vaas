@@ -103,8 +103,8 @@ users, balances, or contracts.
 
 ## Requirements for implementation
 
-1. **Genesis-time `preVAAS` flag handling.** The consumer's `InitGenesis` would
-   branch on the reserved `preVAAS` genesis field (still present on
+1. **Genesis-time `pre_vaas` flag handling.** The consumer's `InitGenesis` would
+   branch on the reserved `pre_vaas` genesis field (still present on
    `GenesisState`; see *Current code state*). When set, the consumer module
    would:
    - Skip applying the provider's initial validator set to CometBFT (the local
@@ -129,7 +129,7 @@ users, balances, or contracts.
 4. **Upgrade handler.** The chain operator runs a coordinated software upgrade at
    the transition height that:
    - Adds the VAAS consumer module to the app.
-   - Provides genesis state with `preVAAS = true` and the provider's
+   - Provides genesis state with `pre_vaas = true` and the provider's
      client/consensus state.
    - Stops the local staking module from emitting validator-set updates.
      `x/vaas/no_valupdates_staking` is the wrapper module that does this, but it
@@ -141,7 +141,7 @@ users, balances, or contracts.
    the consumer registered through the standard lifecycle
    (`REGISTERED -> INITIALIZED -> LAUNCHED`) so that by the transition height the
    provider is ready to send VSC packets. The provider would also have to pass
-   `preVAAS = true` in the consumer genesis it builds (today it always passes
+   `pre_vaas = true` in the consumer genesis it builds (today it always passes
    `false`).
 
 6. **Relayer coordination.** The IBC v2 clients must exist on both sides at the
@@ -170,20 +170,20 @@ users, balances, or contracts.
 The dead standalone-changeover Go was removed because it was non-functional
 under the current architecture: the consumer app wires no staking keeper for the
 consumer module to use as a standalone staking keeper, so the plumbing was always
-nil, and a hand-crafted `preVAAS = true` genesis would have skipped the
+nil, and a hand-crafted `pre_vaas = true` genesis would have skipped the
 validator-set application and bricked the chain rather than performing a
 changeover.
 
 **Reserved and kept (inert):**
-- `proto/vaas/consumer/v1/genesis.proto` — `GenesisState.preVAAS` (field 5) is
+- `proto/vaas/consumer/v1/genesis.proto`: `GenesisState.pre_vaas` (field 4) is
   kept and documented-reserved. It is deliberately **not** deleted and **not**
   marked with the proto `reserved` keyword, so a future implementation can reuse
   the same field number without a wire-format clash. The consumer keeper does
   not read it today.
-- `proto/vaas/v1/shared_consumer.proto` — `ConsumerGenesisState.preVAAS`
+- `proto/vaas/v1/shared_consumer.proto`: `ConsumerGenesisState.pre_vaas`
   (field 4) is likewise still present and fully inert: nothing validates it and
   nothing sets it anymore (the genesis validation branch and the provider-side
-  `preVAAS = false` pass-through were removed together with the rest of the
+  `pre_vaas = false` pass-through were removed together with the rest of the
   plumbing). The field number is kept so a future implementation can reuse it
   without a wire-format clash.
 **Removed (was dead weight):**

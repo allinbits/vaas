@@ -2,8 +2,6 @@ syntax = "proto3";
 package vaas.consumer.v1;
 option go_package = "github.com/allinbits/vaas/x/vaas/consumer/types";
 
-import "amino/amino.proto";
-import "google/api/annotations.proto";
 import "gogoproto/gogo.proto";
 import "cosmos_proto/cosmos.proto";
 import "cosmos/msg/v1/msg.proto";
@@ -12,7 +10,12 @@ import "vaas/v1/shared_consumer.proto";
 // Msg defines the Msg service.
 service Msg {
   option (cosmos.msg.v1.service) = true;
+
+  // UpdateParams updates the params.
   rpc UpdateParams(MsgUpdateParams) returns (MsgUpdateParamsResponse);
+
+  // SetProviderClient pins the IBC client the consumer treats as the provider,
+  // exactly once, at bootstrap.
   rpc SetProviderClient(MsgSetProviderClient)
       returns (MsgSetProviderClientResponse);
 }
@@ -28,6 +31,8 @@ message MsgUpdateParams {
   vaas.v1.ConsumerParams params = 2 [ (gogoproto.nullable) = false ];
 }
 
+// MsgUpdateParamsResponse defines the response type for MsgUpdateParams
+// messages.
 message MsgUpdateParamsResponse {}
 
 // MsgSetProviderClient pins the IBC client the consumer treats as the
@@ -50,4 +55,6 @@ message MsgSetProviderClient {
   string client_id = 2;
 }
 
+// MsgSetProviderClientResponse defines the response type for
+// MsgSetProviderClient messages.
 message MsgSetProviderClientResponse {}

@@ -232,7 +232,7 @@ func TestGenesisRoundTripLastVSCRecvTime(t *testing.T) {
 // file's genesis_time, which may predate launch by however long the genesis
 // ceremony took, and arming with it would burn safe-mode budget before the
 // chain produced a block. A restart genesis carrying the exported value keeps
-// it; one without the field arms at the next block the same way; PreVAAS
+// it; one without the field arms at the next block the same way; PreVaas
 // chains stay unarmed until their changeover, since the standalone staking
 // keeper still runs the chain there and VSC staleness is not yet meaningful.
 func TestVSCStalenessClockArmsAtFirstWallClockBlock(t *testing.T) {

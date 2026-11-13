@@ -6,11 +6,9 @@ import "amino/amino.proto";
 import "cosmos_proto/cosmos.proto";
 import "gogoproto/gogo.proto";
 import "cosmos/base/v1beta1/coin.proto";
-import "cosmos/evidence/v1beta1/evidence.proto";
 import "google/protobuf/duration.proto";
 import "google/protobuf/timestamp.proto";
 import "ibc/core/client/v1/client.proto";
-import "ibc/lightclients/tendermint/v1/tendermint.proto";
 import "vaas/v1/wire.proto";
 import "tendermint/crypto/keys.proto";
 
@@ -388,7 +386,8 @@ message WithheldFeeRecord {
       [ (gogoproto.nullable) = false, (gogoproto.stdtime) = true ];
 }
 
-//
+// SlashJailParameters is the slash fraction, jail duration and tombstone flag
+// applied to one infraction type.
 message SlashJailParameters {
   bytes slash_fraction = 1 [
     (cosmos_proto.scalar) = "cosmos.Dec",
