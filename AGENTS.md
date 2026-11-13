@@ -10,6 +10,7 @@ VAAS runs on **IBC v2 only** (client-based, out-of-order). There is no IBC v1 ch
 
 ```bash
 make build              # go build ./...
+make build-apps         # provider + consumer binaries into build/; MIN_VOTING_PERIOD=30s lowers atomone-sdk's gov floor
 make test               # all unit tests (excludes e2e), 25m timeout
 make lint               # golangci-lint via devdeps/go.mod
 make lint-fix           # auto-fix lint issues

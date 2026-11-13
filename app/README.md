@@ -12,6 +12,44 @@ For protocol details, see [`docs/consumer-lifecycle.md`](../docs/consumer-lifecy
 - Docker — the relayer runs as a container; the image is pulled from
   `ghcr.io/allinbits/ibc-v2-ts-relayer:latest`.
 
+## Building the Binaries
+
+```bash
+make build-apps                        # provider and consumer into build/
+make build-apps MIN_VOTING_PERIOD=30s  # with the governance voting-period floor lowered
+```
+
+Both binaries carry their build information (`./build/provider version --long`):
+the `git describe` output as the version, the commit hash, and the binary's
+name.
+
+atomone-sdk fixes the minimum governance voting period at link time (504h,
+21 days) and enforces it in `genesis validate` and in every governance
+`MsgUpdateParams`; a chain starts with any voting period, because `InitGenesis`
+does not validate the parameters, so the refusal shows up later. A network
+whose voting period is below the floor must build its binaries with
+`MIN_VOTING_PERIOD` set at or below that period (the default, empty, keeps the
+floor). The voting period also bounds four other gov fields that the same
+checks enforce: `quorum_timeout` must be strictly below it,
+`max_voting_period_extension` at least the voting period minus the quorum
+timeout, and both deposit throttlers' `update_period` at most the voting
+period. A short voting period is therefore set together with them; for 300s:
+
+```json
+"gov": {
+  "params": {
+    "voting_period": "300s",
+    "quorum_timeout": "0s",
+    "max_voting_period_extension": "300s",
+    "min_deposit_throttler": { "update_period": "300s" },
+    "min_initial_deposit_throttler": { "update_period": "300s" }
+  }
+}
+```
+
+`make provider-start` writes this block into the localnet genesis and builds
+the binaries with `MIN_VOTING_PERIOD=300s`.
+
 ## Quick Start
 
 A single command starts the entire localnet (provider, consumer, and relayer):
@@ -31,7 +69,11 @@ This will:
 4. Start the `ts-relayer` Docker container, fund relayer keys on both chains
    (test mnemonic), and create an **IBC v2 path** between the two chains
    (`add-path ... --ibc-version 2`).
-5. Trigger a delegation on the provider so the first VSC packet is queued and
+5. Fund the consumer's fee pool (`provider-fund-consumer-fee-pool`, from
+   `val`): the provider collects each consumer's epoch fee from its pool, and
+   a consumer whose pool cannot pay is flagged in debt and restricts user
+   transactions until an epoch is paid again.
+6. Trigger a delegation on the provider so the first VSC packet is queued and
    relayed to the consumer.
 
 Log files:

@@ -2,10 +2,6 @@
 # targets that step into the app module keep resolving it.
 rundep=go run -modfile $(CURDIR)/devdeps/go.mod
 
-# Note: If you see "sonic only supports go1.17~1.23" warnings, either:
-# - Use Go 1.23: brew install go@1.23
-# - Or ignore it - the warning is harmless, sonic falls back to stdlib JSON
-
 ###############################################################################
 ###                               Build & Test                              ###
 ###############################################################################
@@ -82,18 +78,40 @@ BUILDDIR ?= $(CURDIR)/build
 provider_home=~/.provider-localnet
 providerd=./build/provider --home $(provider_home)
 
+# Version information linked into both binaries (`provider version --long`).
+VERSION ?= $(shell git describe --tags --always --dirty)
+COMMIT ?= $(shell git rev-parse HEAD)
 
-GO_REQUIRED_VERSION = $(shell go list -f {{.GoVersion}} -m)
+# MIN_VOTING_PERIOD lowers the governance voting-period floor that atomone-sdk
+# links into the binary (504h). Empty keeps the floor; a network whose voting
+# period is below it must build with the variable set, for example
+# `make build-apps MIN_VOTING_PERIOD=30s` (see app/README.md).
+MIN_VOTING_PERIOD ?=
+
+ldflags = -X github.com/cosmos/cosmos-sdk/version.Name=vaas \
+	-X github.com/cosmos/cosmos-sdk/version.Version=$(VERSION) \
+	-X github.com/cosmos/cosmos-sdk/version.Commit=$(COMMIT) \
+	$(if $(MIN_VOTING_PERIOD),-X github.com/cosmos/cosmos-sdk/x/gov/types/v1.MinVotingPeriod=$(MIN_VOTING_PERIOD))
+
+apps := provider consumer
 BUILD_TARGETS := build-apps install-apps
 build-apps: BUILD_ARGS=-o $(BUILDDIR)/
 
+# One go invocation per binary, so each carries its own version.AppName.
 $(BUILD_TARGETS): go.sum $(BUILDDIR)/
-	@cd app; go $(patsubst %-apps,%,$@) -mod=readonly $(BUILD_ARGS) ./...
+	@for app in $(apps); do \
+		(cd app && go $(patsubst %-apps,%,$@) -mod=readonly $(BUILD_ARGS) \
+			-ldflags "$(ldflags) -X github.com/cosmos/cosmos-sdk/version.AppName=$$app" ./cmd/$$app) || exit 1; \
+	done
 
 $(BUILDDIR)/:
 	mkdir -p $(BUILDDIR)/
 
-.PHONY: build-apps install-apps
+.PHONY: build-apps install-apps provider-start
+
+# The localnet runs governance with a 300s voting period, below the floor
+# atomone-sdk links into the binary, so its builds lower the floor to match.
+provider-start localnet-start: MIN_VOTING_PERIOD = 300s
 
 provider-start: build-apps
 	rm -rf $(provider_home)
@@ -119,11 +137,14 @@ provider-start: build-apps
 	sed -i.bak 's#tcp://127.0.0.1:26657#tcp://0.0.0.0:26657#g' $(provider_home)/config/config.toml
 	# enable REST API
 	$(providerd) config set app api.enable true
-	# Decrease voting period to 5min
-	jq '.app_state.gov.params.voting_period = "300s"' $(provider_home)/config/genesis.json > /tmp/gen
+	# Governance with a 300s voting period. The gov fields atomone-sdk bounds
+	# by the voting period move with it: quorum_timeout stays below it,
+	# max_voting_period_extension and both deposit throttlers' update_period
+	# stay at most equal to it (see app/README.md).
+	jq '.app_state.gov.params |= (.voting_period = "300s" | .quorum_timeout = "0s" | .max_voting_period_extension = "300s" | .min_deposit_throttler.update_period = "300s" | .min_initial_deposit_throttler.update_period = "300s")' $(provider_home)/config/genesis.json > /tmp/gen
 	mv /tmp/gen $(provider_home)/config/genesis.json
 
-	# Decrease number of blocks per epoch (VAAS provider VCS update)
+	# Decrease number of blocks per epoch (VAAS provider VSC packets)
 	jq '.app_state.vaasprovider.params.blocks_per_epoch = "10"' $(provider_home)/config/genesis.json > /tmp/gen
 	mv /tmp/gen $(provider_home)/config/genesis.json
 
@@ -211,14 +232,15 @@ consumer-start: consumer-init consumer-create
 # the consumer stays out of debt. The fee denom is uphoton (fixed at module
 # wiring); FEE_POOL_AMOUNT must clear the min-deposit floor
 # (fees_per_block_amount x min_deposit_blocks). Run after the consumer exists,
-# e.g. make provider-fund-consumer-fee-pool CONSUMER_ID=0
+# e.g. make provider-fund-consumer-fee-pool CONSUMER_ID=0; localnet-start runs
+# it once the clients are declared.
 FEE_POOL_AMOUNT ?= 100000000uphoton
 provider-fund-consumer-fee-pool:
 	$(providerd) tx vaasprovider fund-consumer-fee-pool $(CONSUMER_ID) $(FEE_POOL_AMOUNT) \
 		--from val --keyring-backend test --chain-id provider-localnet \
 		--gas auto --gas-adjustment 1.5 --fees 10000uatone -y
 
-.PHONY: consumer-init consumer-create consumer-genesis consumer-run consumer-start provider-fund-consumer-fee-pool
+.PHONY: consumer-init consumer-create consumer-genesis consumer-copy-val-key consumer-run consumer-start provider-fund-consumer-fee-pool
 
 ###############################################################################
 ###                               TS Relayer                                ###
@@ -282,7 +304,7 @@ localnet-clean:
 localnet-start: build-apps
 	@echo "=== Starting VAAS Localnet ==="
 	@echo ""
-	@echo "Step 1/4: Starting provider chain in background..."
+	@echo "Step 1/5: Starting provider chain in background..."
 	@$(MAKE) provider-start > /tmp/vaas-provider.log 2>&1 &
 	@echo "  Waiting for provider to produce blocks..."
 	@for i in $$(seq 1 60); do \
@@ -298,7 +320,7 @@ localnet-start: build-apps
 		sleep 2; \
 	done
 	@echo ""
-	@echo "Step 2/4: Starting consumer chain in background..."
+	@echo "Step 2/5: Starting consumer chain in background..."
 	@$(MAKE) consumer-start > /tmp/vaas-consumer.log 2>&1 &
 	@echo "  Waiting for consumer to produce blocks..."
 	@for i in $$(seq 1 90); do \
@@ -314,23 +336,27 @@ localnet-start: build-apps
 		sleep 2; \
 	done
 	@echo ""
-	@echo "Step 3/4: Starting ts-relayer..."
+	@echo "Step 3/5: Starting ts-relayer..."
 	@$(MAKE) ts-relayer-start > /tmp/vaas-ts-relayer.log 2>&1
 	@echo ""
-	@echo "Step 3b/4: Declaring the relayer-created IBC clients (owner, both chains)..."
+	@echo "Step 3b/5: Declaring the relayer-created IBC clients (owner, both chains)..."
 	@$(MAKE) localnet-declare-clients
 	@echo ""
-	@echo "Step 4/4: Triggering valset change to send first VSC packet..."
+	@echo "Step 4/5: Funding the consumer fee pool..."
+	@$(MAKE) provider-fund-consumer-fee-pool CONSUMER_ID=0 > /dev/null
+	@echo "  Fee pool funded with $(FEE_POOL_AMOUNT) from val; the next epoch collection clears the debt flagged while the pool was empty."
+	@echo ""
+	@echo "Step 5/5: Triggering valset change to send the first VSC packet..."
 	@VALOPER=$$($(providerd) keys show val --bech val -a 2> /dev/null); \
 	$(providerd) tx staking delegate $$VALOPER 1000000uatone --from user --fees 5000uatone -y > /dev/null 2>&1
-	@echo "  Delegation sent. Waiting for VSC packet to be relayed..."
+	@echo "  Delegation sent; the VSC packet goes out at the next epoch boundary. Checking the consumer reports its provider client..."
 	@for i in $$(seq 1 60); do \
 		if $(consumerd) query vaasconsumer provider-info --node tcp://localhost:26667 > /dev/null 2>&1; then \
-			echo "  Channel established! (after $$((i*2))s)"; \
+			echo "  Consumer reports its provider client (after $$((i*2))s)"; \
 			break; \
 		fi; \
 		if [ $$i -eq 60 ]; then \
-			echo "  WARNING: VSC packet not relayed within 120s. The channel may need more time."; \
+			echo "  WARNING: the consumer did not report its provider client within 120s; check /tmp/vaas-consumer.log"; \
 			break; \
 		fi; \
 		sleep 2; \
