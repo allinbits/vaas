@@ -43,6 +43,13 @@ type ByzantineConsumerIntegrationTestSuite struct {
 	// the suite's last check compares against: nothing the lying consumer
 	// did may have cost val1 anything.
 	val1StakeBeforeLie string
+
+	// val2MaturityBeforeFork is when val2's deferred punishment was to
+	// execute before the fork, and forkPausedAt the time of the provider
+	// block the fork paused the consumer in: the fork drill requires the
+	// resume to have moved the punishment by exactly the pause.
+	val2MaturityBeforeFork time.Time
+	forkPausedAt           time.Time
 }
 
 func TestByzantineConsumerIntegrationTestSuite(t *testing.T) {

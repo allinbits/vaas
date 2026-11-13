@@ -69,6 +69,15 @@ func (s *ByzantineConsumerIntegrationTestSuite) pendingEquivocationsNaming(consu
 	return naming, nil
 }
 
+// pendingEquivocationMaturity returns when the consumer's one pending
+// equivocation punishment naming the validator at consAddr executes.
+func (s *ByzantineConsumerIntegrationTestSuite) pendingEquivocationMaturity(consumerID, consAddr string) time.Time { //nolint:unparam // the suite drives one consumer; the helper stays generic
+	pending, err := s.pendingEquivocationsNaming(consumerID, consAddr)
+	s.Require().NoErrorf(err, "failed to read the pending equivocation punishments naming %s", consAddr)
+	s.Require().Lenf(pending, 1, "one pending equivocation punishment naming %s expected, got %d", consAddr, len(pending))
+	return pending[0].ExecutesAt
+}
+
 // testFabricatedDoubleSignJailsAndDefers: the test signs two conflicting
 // votes with val2's consumer key, which val2 never signed, and submits them
 // as consumer double-voting evidence. The provider cannot tell them from a

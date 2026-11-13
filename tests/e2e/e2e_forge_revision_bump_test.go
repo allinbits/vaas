@@ -102,12 +102,21 @@ func (s *ByzantineConsumerIntegrationTestSuite) testRevisionBumpIsServedOnlyAfte
 			"consumer_chain_id":  oldChainID,
 		})
 		s.T().Logf("the consumer was paused for the chain id mismatch at provider height %d", pausedAt)
-		s.Require().Emptyf(s.queryPendingDowntimeSlashes(consumerID), "the mismatch pause discards the consumer's downtime accusations")
+		// No accusation is pending against the paused consumer. None was
+		// before the recovery either (four live validators, the lie long
+		// over, val1's accusation challenged away), so this shows the pause
+		// adding none, not discarding any; the discard is pinned by
+		// TestPauseConsumersWithMismatchedClients in the provider keeper's
+		// tests.
+		s.Require().Emptyf(s.queryPendingDowntimeSlashes(consumerID), "no downtime accusation may be pending against the paused consumer")
 
-		// The paused consumer is served nothing, and neither the liveness
-		// sweep nor the mismatch check acts on it again meanwhile. The pause
-		// also schedules the consumer's auto-stop max_pause_duration out,
-		// which this suite leaves at its default of 45 days.
+		// The paused consumer is served nothing, and the mismatch check does
+		// not act on it again meanwhile: the pause is reported once. The
+		// liveness sweep is out of this window's reach whatever it did, the
+		// suite's grace being two thirds of the provider's 21-day unbonding
+		// period, so the watch says nothing about it. The pause also
+		// schedules the consumer's auto-stop max_pause_duration out, which
+		// this suite leaves at its default of 45 days.
 		sentBefore, appliedBefore := s.requireConsumerNotServed(subject, consumerID, pausedAt)
 
 		// 4. One governance proposal renames the consumer to the chain id its
@@ -333,12 +342,11 @@ func (s *ByzantineConsumerIntegrationTestSuite) requireMismatchPause(from int64,
 // the consumer was paused at height pausedAt and requires that it serves the
 // consumer nothing: the declared client's send sequence stays put, the
 // consumer's applied valset update id stops advancing, the consumer stays
-// paused (the liveness sweep does not stop it), and the provider neither
-// pauses it again nor repeats the mismatch event. The relayer may still be
-// delivering the packets the provider sent before the client expired, which
-// the consumer applies late; the watch starts over while that backlog lands.
-// Returns the send sequence and the applied valset update id the window
-// settled at.
+// paused, and the provider neither pauses it again nor repeats the mismatch
+// event. The relayer may still be delivering the packets the provider sent
+// before the client expired, which the consumer applies late; the watch
+// starts over while that backlog lands. Returns the send sequence and the
+// applied valset update id the window settled at.
 func (s *ByzantineConsumerIntegrationTestSuite) requireConsumerNotServed(subject, consumerID string, pausedAt int64) (sent, applied uint64) {
 	const epochs = 6
 	const window = epochs * fourValidatorBlocksPerEpoch

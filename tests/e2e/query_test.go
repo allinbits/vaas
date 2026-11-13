@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"strconv"
+	"time"
 
 	rpchttp "github.com/cometbft/cometbft/rpc/client/http"
 
@@ -296,6 +297,26 @@ func blockEventMatches(ev blockEvent, want map[string]string) bool {
 		}
 	}
 	return true
+}
+
+// providerBlockTime returns the header time of the provider block at height:
+// the block time the keepers took every deadline set or judged in that block
+// from.
+func (s *baseTestSuite) providerBlockTime(height int64) time.Time {
+	body, err := httpGet(fmt.Sprintf("%s/block?height=%d", s.providerRPCEndpoint(), height))
+	s.Require().NoErrorf(err, "failed to read the provider's block %d", height)
+	var res struct {
+		Result struct {
+			Block struct {
+				Header struct {
+					Time time.Time `json:"time"`
+				} `json:"header"`
+			} `json:"block"`
+		} `json:"result"`
+	}
+	s.Require().NoErrorf(json.Unmarshal(body, &res), "failed to decode the provider's block %d: %s", height, body)
+	s.Require().Falsef(res.Result.Block.Header.Time.IsZero(), "the provider's block %d carries no time: %s", height, body)
+	return res.Result.Block.Header.Time
 }
 
 // queryProviderConsumerChains queries the provider for registered consumer chains.
