@@ -242,7 +242,7 @@ func (s *IntegrationTestSuite) testDowntimeSlashQueueThenExecute() {
 // tumbling window closes, without needing a second physical consumer node.
 // Returns the new validator's account and operator (valoper) bech32
 // addresses.
-func (s *baseTestSuite) createSilentValidator(key, selfBondAmount string) (accAddr, valoperAddr string) { //nolint:unparam // the account address pairs with the operator address for scenarios that fund or query the validator; the downtime scenarios only need the operator
+func (s *baseTestSuite) createSilentValidator(key, selfBondAmount string) (accAddr, valoperAddr string) {
 	containerID := s.providerValRes[0].Container.ID
 
 	s.dockerExecMust(containerID, []string{
@@ -335,6 +335,7 @@ func generateEd25519PubKeyJSON() string {
 // serialized as strings by the proto JSON marshaler.
 type pendingDowntimeSlashJSON struct {
 	ConsumerId        string `json:"consumer_id"`
+	ProviderConsAddr  string `json:"provider_cons_addr"`
 	WindowStartHeight string `json:"window_start_height"`
 	Span              string `json:"span"`
 	SlashTokens       string `json:"slash_tokens"`
@@ -359,12 +360,25 @@ func (p pendingDowntimeSlashJSON) coversWindowEnd(windowEnd int64) bool {
 // queryPendingDowntimeSlashes returns the pending downtime slashes queued for
 // a consumer, awaiting the challenge window before execution. Returns nil on
 // any query/decode error so callers can poll it directly inside Eventually.
-func (s *baseTestSuite) queryPendingDowntimeSlashes(consumerID string) []pendingDowntimeSlashJSON { //nolint:unparam // the suite drives one consumer; the helper stays generic
-	stdout, _, err := s.dockerExec(s.providerValRes[0].Container.ID, []string{
+func (s *baseTestSuite) queryPendingDowntimeSlashes(consumerID string) []pendingDowntimeSlashJSON {
+	return s.queryPendingDowntimeSlashesWith(consumerID)
+}
+
+// queryPendingDowntimeSlashesAt is queryPendingDowntimeSlashes as of a past
+// provider height.
+func (s *baseTestSuite) queryPendingDowntimeSlashesAt(consumerID string, height int64) []pendingDowntimeSlashJSON {
+	return s.queryPendingDowntimeSlashesWith(consumerID, "--height", strconv.FormatInt(height, 10))
+}
+
+// queryPendingDowntimeSlashesWith is queryPendingDowntimeSlashes with extra
+// query flags.
+func (s *baseTestSuite) queryPendingDowntimeSlashesWith(consumerID string, flags ...string) []pendingDowntimeSlashJSON {
+	args := append([]string{
 		providerBinary, "query", "vaasprovider", "pending-downtime-slashes", consumerID,
 		"--home", providerHomePath,
 		"--output", "json",
-	})
+	}, flags...)
+	stdout, _, err := s.dockerExec(s.providerValRes[0].Container.ID, args)
 	if err != nil {
 		return nil
 	}
@@ -377,23 +391,45 @@ func (s *baseTestSuite) queryPendingDowntimeSlashes(consumerID string) []pending
 	return res.Slashes
 }
 
-// withheldFeeRecordJSON mirrors the fields this test needs from the
-// `withheld-fee-records` CLI query's JSON output.
+// withheldFeeRecordJSON mirrors the fields the suites need from the
+// `withheld-fee-records` CLI query's JSON output: the accused validator, the
+// escrowed share and when the claim on it lapses.
 type withheldFeeRecordJSON struct {
-	ConsumerId       string `json:"consumer_id"`
-	ProviderConsAddr string `json:"provider_cons_addr"`
+	ConsumerId       string    `json:"consumer_id"`
+	ProviderConsAddr string    `json:"provider_cons_addr"`
+	Amount           coinJSON  `json:"amount"`
+	ExpiresAt        time.Time `json:"expires_at"`
+}
+
+// coinJSON is a Coin as the proto JSON marshaler prints it.
+type coinJSON struct {
+	Denom  string `json:"denom"`
+	Amount string `json:"amount"`
 }
 
 // queryWithheldFeeRecords returns the fee shares currently withheld from
 // validators for a consumer following a downtime-driven fee exclusion.
 // Returns nil on any query/decode error so callers can poll it directly
 // inside Eventually.
-func (s *IntegrationTestSuite) queryWithheldFeeRecords(consumerID string) []withheldFeeRecordJSON {
-	stdout, _, err := s.dockerExec(s.providerValRes[0].Container.ID, []string{
+func (s *baseTestSuite) queryWithheldFeeRecords(consumerID string) []withheldFeeRecordJSON {
+	return s.queryWithheldFeeRecordsWith(consumerID)
+}
+
+// queryWithheldFeeRecordsAt is queryWithheldFeeRecords as of a past provider
+// height.
+func (s *baseTestSuite) queryWithheldFeeRecordsAt(consumerID string, height int64) []withheldFeeRecordJSON {
+	return s.queryWithheldFeeRecordsWith(consumerID, "--height", strconv.FormatInt(height, 10))
+}
+
+// queryWithheldFeeRecordsWith is queryWithheldFeeRecords with extra query
+// flags.
+func (s *baseTestSuite) queryWithheldFeeRecordsWith(consumerID string, flags ...string) []withheldFeeRecordJSON {
+	args := append([]string{
 		providerBinary, "query", "vaasprovider", "withheld-fee-records", consumerID,
 		"--home", providerHomePath,
 		"--output", "json",
-	})
+	}, flags...)
+	stdout, _, err := s.dockerExec(s.providerValRes[0].Container.ID, args)
 	if err != nil {
 		return nil
 	}
