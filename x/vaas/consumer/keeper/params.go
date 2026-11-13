@@ -60,15 +60,3 @@ func (k Keeper) GetHistoricalEntries(ctx context.Context) int64 {
 	params := k.GetConsumerParams(ctx)
 	return params.HistoricalEntries
 }
-
-// Only used to set an unbonding period in diff tests
-func (k Keeper) SetUnbondingPeriod(ctx context.Context, period time.Duration) {
-	params := k.GetConsumerParams(ctx)
-	params.UnbondingPeriod = period
-	k.SetParams(ctx, params)
-}
-
-func (k Keeper) GetUnbondingPeriod(ctx context.Context) time.Duration {
-	params := k.GetConsumerParams(ctx)
-	return params.UnbondingPeriod
-}

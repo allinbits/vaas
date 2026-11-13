@@ -88,8 +88,8 @@ func TestInitGenesis(t *testing.T) {
 		{
 			"start a new chain",
 			func(ctx sdk.Context, mocks testkeeper.MockedKeepers) {
-				// No client is created at genesis; an unexpected CreateClient
-				// call fails the test through the mock controller.
+				// InitGenesis creates no client: the relayer creates it and
+				// the owner pins it via MsgSetProviderClient.
 			},
 			consumertypes.NewInitialGenesisState(
 				provClientState,
@@ -667,8 +667,6 @@ func TestInitGenesisAcceptsDefaultGenesis(t *testing.T) {
 func TestInitGenesisNewChainCreatesNoClient(t *testing.T) {
 	ck, ctx, ctrl, _ := testkeeper.GetConsumerKeeperAndCtx(t, testkeeper.NewInMemKeeperParams(t))
 	defer ctrl.Finish()
-	// No CreateClient expectation on the mock: any attempt to create a client
-	// fails the test as an unexpected call.
 
 	provClientState := ibctmtypes.NewClientState(
 		"provider-chain-7", ibctmtypes.DefaultTrustLevel,

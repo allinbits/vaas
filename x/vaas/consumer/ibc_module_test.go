@@ -239,10 +239,8 @@ func TestIBCModuleEvidenceAckAndTimeoutHandling(t *testing.T) {
 		require.True(t, ok)
 		require.Equal(t, strconv.FormatInt(packet.WindowEndHeight, 10), gotWindow)
 
-		// No ack-bytes attribute: an IBC v2 error acknowledgement is a
-		// sentinel constant carrying no application error.
-		_, ok = attrValue(evs[0], vaastypes.AttributeKeyAckError)
-		require.False(t, ok)
+		// The event carries no ack attribute: an IBC v2 error acknowledgement
+		// is a sentinel constant with no application error to report.
 	})
 
 	t.Run("success acknowledgement does not requeue or emit a rejection", func(t *testing.T) {

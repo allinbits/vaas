@@ -244,13 +244,6 @@ func GetConsumerKeeperAndCtx(t *testing.T, params InMemKeeperParams) (
 	return NewInMemConsumerKeeper(params, mocks), params.Ctx, ctrl, mocks
 }
 
-func ExpectCreateClientMock(ctx sdk.Context, mocks MockedKeepers, clientType, clientID string,
-	clientState, consState []byte,
-) *gomock.Call {
-	return mocks.MockClientKeeper.EXPECT().CreateClient(ctx, clientType, clientState, consState).Return(clientID,
-		nil).Times(1)
-}
-
 // StubClientState makes every call to the mocked ClientKeeper's GetClientState
 // return a tendermint client state tracking chainID, regardless of which
 // client ID is queried. Intended for tests that exercise VSC handling

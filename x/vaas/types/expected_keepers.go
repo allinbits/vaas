@@ -50,16 +50,6 @@ type StakingKeeper interface {
 	GetRedelegationsFromSrcValidator(ctx context.Context, valAddr sdk.ValAddress) ([]stakingtypes.Redelegation, error)
 	GetBondedValidatorsByPower(ctx context.Context) ([]stakingtypes.Validator, error)
 	ValidatorAddressCodec() addresscodec.Codec
-	IterateDelegations(
-		ctx context.Context, delegator sdk.AccAddress,
-		fn func(index int64, delegation stakingtypes.DelegationI) (stop bool),
-	) error
-	IterateBondedValidatorsByPower(
-		context.Context, func(index int64, validator stakingtypes.ValidatorI) (stop bool),
-	) error
-	StakingTokenSupply(ctx context.Context) (math.Int, error)
-	BondedRatio(ctx context.Context) (math.LegacyDec, error)
-	TotalBondedTokens(ctx context.Context) (math.Int, error)
 	GetHistoricalInfo(ctx context.Context, height int64) (stakingtypes.HistoricalInfo, error)
 }
 
@@ -81,7 +71,6 @@ type PhotonKeeper interface {
 
 // ClientKeeper defines the expected IBC client keeper for v1 operations.
 type ClientKeeper interface {
-	CreateClient(ctx sdk.Context, clientType string, clientState, consensusState []byte) (string, error)
 	GetClientState(ctx sdk.Context, clientID string) (ibcexported.ClientState, bool)
 	GetClientConsensusState(ctx sdk.Context, clientID string, height ibcexported.Height) (ibcexported.ConsensusState,
 		bool)
@@ -91,7 +80,6 @@ type ClientKeeper interface {
 	// client that is not active.
 	UpdateClient(ctx sdk.Context, clientID string, clientMsg ibcexported.ClientMessage) error
 	GetStoreProvider() clienttypes.StoreProvider
-	IterateClientStates(ctx sdk.Context, storePrefix []byte, cb func(clientID string, cs ibcexported.ClientState) bool)
 }
 
 // ClientV2Keeper defines the expected IBC client v2 keeper for counterparty management.
@@ -111,13 +99,12 @@ type BankKeeper interface {
 	GetAllBalances(ctx context.Context, addr sdk.AccAddress) sdk.Coins
 	InputOutputCoins(ctx context.Context, input banktypes.Input, outputs []banktypes.Output) error
 	SendCoinsFromAccountToModule(ctx context.Context, senderAddr sdk.AccAddress, recipientModule string, amt sdk.Coins) error
-	SendCoinsFromModuleToModule(ctx context.Context, senderModule, recipientModule string, amt sdk.Coins) error
 	SendCoinsFromModuleToAccount(ctx context.Context, senderModule string, recipientAddr sdk.AccAddress, amt sdk.Coins) error
 }
 
-// AccountKeeper defines the expected account keeper used for simulations
+// AccountKeeper defines the expected account keeper; VAAS reads only its
+// address codec.
 type AccountKeeper interface {
-	GetModuleAccount(ctx context.Context, name string) sdk.ModuleAccountI
 	AddressCodec() addresscodec.Codec
 }
 
