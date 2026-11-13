@@ -304,7 +304,11 @@ That staking module also charges the rotation fee into the community pool
 through a distribution keeper handed to it after construction
 (`StakingKeeper.SetDistributionKeeper`); without that call every rotation
 fails at the fee step, refused or not, so the hook never gets a rotation to
-admit.
+admit. The fee is the genesis parameter `staking.params.key_rotation_fee`,
+whose default atomone-sdk computes when the package loads, before
+`init --default-denom` changes the bond denom: a genesis made that way prices
+the fee in `stake`, and a rotation then fails at the fee step unless the
+operator holds that denom. Set the fee in the bond denom.
 
 **A staking module that does not ask the hook is silent, and cannot halt the
 chain.** `AfterConsensusPubKeyUpdate` logs the anomaly it can no longer

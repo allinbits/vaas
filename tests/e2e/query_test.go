@@ -4,6 +4,8 @@ import (
 	"encoding/json"
 	"fmt"
 
+	rpchttp "github.com/cometbft/cometbft/rpc/client/http"
+
 	cmtservice "github.com/cosmos/cosmos-sdk/client/grpc/cmtservice"
 	banktypes "github.com/cosmos/cosmos-sdk/x/bank/types"
 	stakingtypes "github.com/cosmos/cosmos-sdk/x/staking/types"
@@ -57,6 +59,18 @@ func (s *baseTestSuite) providerRPCEndpoint() string {
 // consumerRPCEndpoint returns the consumer chain's RPC HTTP endpoint using the Docker-assigned host port.
 func (s *baseTestSuite) consumerRPCEndpoint() string {
 	return fmt.Sprintf("http://%s", s.consumerValRes[0].GetHostPort("26657/tcp"))
+}
+
+// providerCometClient returns a CometBFT RPC client on provider val0, for
+// what the chain's REST API does not serve: past validator sets, block
+// commits and the evidence a block carries, and evidence submission.
+func (s *baseTestSuite) providerCometClient() *rpchttp.HTTP {
+	if s.providerComet == nil {
+		client, err := rpchttp.New(s.providerRPCEndpoint(), "/websocket")
+		s.Require().NoError(err, "failed to create the provider's CometBFT RPC client")
+		s.providerComet = client
+	}
+	return s.providerComet
 }
 
 // queryProviderBlockHeight returns the current block height of the provider chain.

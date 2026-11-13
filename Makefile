@@ -148,6 +148,13 @@ provider-start: build-apps
 	# Decrease number of blocks per epoch (VAAS provider VCS update)
 	jq '.app_state.vaasprovider.params.blocks_per_epoch = "10"' $(provider_home)/config/genesis.json > /tmp/gen
 	mv /tmp/gen $(provider_home)/config/genesis.json
+	# Price the consensus key rotation fee in the bond denom: init writes it in
+	# "stake" whatever --default-denom says, since atomone-sdk's x/staking fixes
+	# its default fee at package init, before the flag renames the denom, and
+	# a rotation then fails to fund the community pool from an account that
+	# holds none.
+	jq '.app_state.staking.params.key_rotation_fee = {"denom": "uatone", "amount": "1000000"}' $(provider_home)/config/genesis.json > /tmp/gen
+	mv /tmp/gen $(provider_home)/config/genesis.json
 
 	$(providerd) start
 

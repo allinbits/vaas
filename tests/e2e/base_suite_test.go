@@ -24,6 +24,8 @@ import (
 	"github.com/ory/dockertest/v3/docker"
 	"github.com/stretchr/testify/suite"
 
+	rpchttp "github.com/cometbft/cometbft/rpc/client/http"
+
 	"github.com/cosmos/cosmos-sdk/codec"
 )
 
@@ -104,6 +106,11 @@ type baseTestSuite struct {
 	providerValRes    []*dockertest.Resource
 	consumerValRes    []*dockertest.Resource
 	tsRelayerResource *dockertest.Resource
+
+	// providerComet is the CometBFT RPC client on provider val0 that
+	// providerCometClient hands out, created on first use and kept so the
+	// polling scenarios share one connection pool.
+	providerComet *rpchttp.HTTP
 }
 
 // TearDownSuite cleans up all Docker resources and temp directories.
@@ -399,7 +406,7 @@ func (s *baseTestSuite) logNodeTails(resources []*dockertest.Resource, lines int
 }
 
 // stopNode stops node i of a chain, the way a validator's node goes offline;
-// its container and data stay, so the same node can be started again. The
+// its container and data stay, so startNode brings the same node back. The
 // node gets nodeStopTimeoutSeconds to exit on the stop signal before its
 // goroutines are dumped and it is killed: CometBFT recovers from its
 // write-ahead log, and the scenarios that restart a node need the gap short,
@@ -433,11 +440,6 @@ func (s *baseTestSuite) stopNode(chainName string, resources []*dockertest.Resou
 		Tail:         "600",
 	})
 	s.T().Logf("%s val%d last lines and goroutines:\n%s", chainName, i, tail.String())
-}
-
-// stopConsumerNode stops consumer node i; startConsumerNode brings it back.
-func (s *baseTestSuite) stopConsumerNode(i int) {
-	s.stopNode("consumer", s.consumerValRes, i)
 }
 
 // waitContainerExit polls until the container is no longer running, or the
@@ -499,14 +501,35 @@ func (s *baseTestSuite) recreateConsumerNodes(plan func(haltedHeight int64) node
 	s.waitForNodesCaughtUp(s.consumerValRes, consumerBinary, consumerHomePath, 3*time.Minute)
 }
 
-// startConsumerNode starts consumer node i again and waits until every
-// consumer node has caught up with val0.
-func (s *baseTestSuite) startConsumerNode(i int) {
+// startNode starts node i of a chain again and waits until every node of the
+// chain has caught up with val0.
+func (s *baseTestSuite) startNode(chainName string, resources []*dockertest.Resource, i int, binary, homePath string) {
 	started := time.Now()
-	s.Require().NoErrorf(s.dkrPool.Client.StartContainer(s.consumerValRes[i].Container.ID, nil),
-		"failed to start consumer val%d", i)
-	s.waitForNodesCaughtUp(s.consumerValRes, consumerBinary, consumerHomePath, 3*time.Minute)
-	s.T().Logf("consumer val%d started and caught up in %s", i, time.Since(started).Round(time.Millisecond))
+	s.Require().NoErrorf(s.dkrPool.Client.StartContainer(resources[i].Container.ID, nil),
+		"failed to start %s val%d", chainName, i)
+	s.waitForNodesCaughtUp(resources, binary, homePath, 3*time.Minute)
+	s.T().Logf("%s val%d started and caught up in %s", chainName, i, time.Since(started).Round(time.Millisecond))
+}
+
+// stopConsumerNode and startConsumerNode stop consumer node i and bring it
+// back.
+func (s *baseTestSuite) stopConsumerNode(i int) {
+	s.stopNode("consumer", s.consumerValRes, i)
+}
+
+func (s *baseTestSuite) startConsumerNode(i int) {
+	s.startNode("consumer", s.consumerValRes, i, consumerBinary, consumerHomePath)
+}
+
+// stopProviderNode and startProviderNode stop provider node i and bring it
+// back. The node is never val0: it binds the host ports the suite's queries
+// and the relayer reach the provider through.
+func (s *baseTestSuite) stopProviderNode(i int) {
+	s.stopNode("provider", s.providerValRes, i)
+}
+
+func (s *baseTestSuite) startProviderNode(i int) {
+	s.startNode("provider", s.providerValRes, i, providerBinary, providerHomePath)
 }
 
 // initAndStartProvider initializes the provider chain's node homes using a

@@ -7,9 +7,11 @@ discovery, VSC synchronization, downtime slashing and challenges, fee pooling
 and distribution, key assignment, refusal and punishment deferral, liveness,
 genesis round-trip, and, on four validator nodes per chain, the validator set
 mirror, a delegation change, an offline validator's slash and recovery, a
-key assignment under a node restart, and the refusal threshold; and, against
-a consumer that lies, the provider's answer to a forged downtime accusation,
-a fabricated double-sign and a fork, followed by the recovery from the fork.
+key assignment under a node restart, the refusal threshold, a provider
+consensus key rotation, and a double sign on the provider punished through
+x/evidence; and, against a consumer that lies, the provider's answer to a
+forged downtime accusation, a fabricated double-sign and a fork, followed by
+the recovery from the fork.
 
 This directory is its own Go module (`tests/e2e/go.mod`) and is excluded from the
 top-level `make test` and from linting. It runs via the `make test-e2e` target
@@ -104,7 +106,9 @@ main suite's downtime parameters, with photon fees off. Only val0 of each chain
 binds host ports and holds the keys the suite transacts from; the other nodes
 are reached through `docker exec`. Four is the smallest set where one node can
 stop and both chains keep producing blocks. Scenarios run in order in
-`TestMultiValidatorVAAS`, each leaving the set whole for the next.
+`TestMultiValidatorVAAS`, each leaving the set whole for the next, down to the
+last two: the consensus key rotations hold for the rest of the run, and the
+double sign on the provider tombstones val3.
 
 ### `ByzantineConsumerIntegrationTestSuite` -- a consumer that lies
 
@@ -156,6 +160,8 @@ and `Test E2E Forge` checks; a skipped suite counts as passed.
 | `e2e_multival_key_assignment_test.go` | a key assignment with the node restarted under the new key |
 | `e2e_multival_offline_test.go` | an offline validator's downtime slash and recovery; pending-slash filters |
 | `e2e_multival_refusal_test.go` | the stake-weighted refusal pause threshold, and the resume after withdrawal |
+| `e2e_multival_cons_key_rotation_test.go` | provider consensus key rotations with the node restarted under the new key, behind an assigned key and without one, and the refused rotation onto an assigned key |
+| `e2e_multival_native_double_sign_test.go` | a double sign on the provider handed to CometBFT as evidence and punished through x/evidence |
 | `four_validator_helpers_test.go` | the multi-validator suites' shared genesis, bring-up, validator identities, accusation filter |
 | `e2e_forge_suite_test.go` | `ByzantineConsumerIntegrationTestSuite` + `TestByzantineConsumerVAAS`; the switch to the forge |
 | `e2e_forge_downtime_test.go` | a forged downtime accusation challenged away |

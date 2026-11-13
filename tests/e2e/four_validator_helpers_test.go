@@ -1,11 +1,7 @@
 package e2e
 
 import (
-	"encoding/base64"
-	"encoding/json"
 	"fmt"
-	"os"
-	"path/filepath"
 	"time"
 
 	"github.com/ory/dockertest/v3"
@@ -47,6 +43,16 @@ func (s *baseTestSuite) patchFourValidatorProviderGenesis(appState map[string]an
 	}
 
 	s.genesisSection(appState, "slashing", "params")["signed_blocks_window"] = "100000"
+
+	// A consensus key rotation pays x/staking's key_rotation_fee from the
+	// operator account. The genesis the init container writes prices that
+	// fee in "stake" whatever --default-denom says, since x/staking fixes its
+	// default fee at package init, before the flag renames the bond denom;
+	// the validators hold uatone.
+	s.genesisSection(appState, "staking", "params")["key_rotation_fee"] = map[string]any{
+		"denom":  bondDenom,
+		"amount": "1000000",
+	}
 }
 
 // bringUpSuite starts everything a suite configured in s.cfg runs on: both
@@ -107,16 +113,7 @@ type validatorIdentity struct {
 // runs under (the node's priv_validator_key.json on the host) and the staking
 // entry that key belongs to.
 func (s *baseTestSuite) validator(i int) validatorIdentity {
-	raw, err := os.ReadFile(filepath.Join(s.providerHome(i), "config", "priv_validator_key.json"))
-	s.Require().NoErrorf(err, "failed to read provider val%d's consensus key", i)
-	var keyFile struct {
-		PubKey struct {
-			Value string `json:"value"`
-		} `json:"pub_key"`
-	}
-	s.Require().NoErrorf(json.Unmarshal(raw, &keyFile), "failed to decode provider val%d's consensus key", i)
-	pub, err := base64.StdEncoding.DecodeString(keyFile.PubKey.Value)
-	s.Require().NoErrorf(err, "failed to decode provider val%d's public key", i)
+	pub, _ := nodeConsensusKey(s.T(), s.providerHome(i))
 	consAddr := consAddrFromEd25519PubKey(pub)
 	valoper := s.providerValoperForConsAddr(consAddr)
 	s.Require().NotEmptyf(valoper, "provider val%d (%s) has no bonded validator", i, consAddr)
@@ -127,7 +124,7 @@ func (s *baseTestSuite) validator(i int) validatorIdentity {
 // the validator at consAddr, its provider consensus address, which is what
 // an accusation names even when the validator runs the consumer under an
 // assigned key.
-func (s *baseTestSuite) pendingSlashesOf(consumerID, consAddr string) int { //nolint:unparam // the suites drive one consumer; the helper stays generic
+func (s *baseTestSuite) pendingSlashesOf(consumerID, consAddr string) int {
 	n := 0
 	for _, slash := range s.queryPendingDowntimeSlashes(consumerID) {
 		accused, err := consAddrFromBase64(slash.ProviderConsAddr)
