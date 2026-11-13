@@ -178,6 +178,16 @@ app.IBCKeeper = ibckeeper.NewKeeper(
     consumerAuthority,
 )
 // ...every other keeper's authority likewise...
+blockedAddrs := app.ModuleAccountAddrs()
+blockedAddrs[consumerAuthority] = true // nothing may fund the account the owner acts as
+app.BankKeeper = bankkeeper.NewBaseKeeper(
+    appCodec,
+    runtime.NewKVStoreService(keys[banktypes.StoreKey]),
+    app.AccountKeeper,
+    blockedAddrs,
+    consumerAuthority,
+    logger,
+)
 app.ConsumerKeeper.SetMessageRouter(app.MsgServiceRouter())
 ```
 
@@ -209,8 +219,17 @@ and the consumer module executes them in order through the app's message
 router, all or nothing. Nothing else is impersonated: a carried message signed
 by any other account, the gov module's included, is refused, so the owner
 holds exactly the authorities the app grants the consumer module and no more.
-The consumer module account is a blocked address in the bank keeper, so no
-funds can reach it for the owner to move. The admission and fee rules judge an
+That key is then the chain's only authority: the reference consumer wires no
+governance to replace it, and nothing on the provider pushes a new owner to
+the consumer, so a lost owner key leaves the chain with no authority at all
+(no client recovery, no upgrade, no parameter change; the remedy is a
+coordinated restart from a genesis with a hand-edited `owner_address`). Hold
+it in a multisig, or hand the consumer over to one before launch. The
+consumer module account must be among the bank keeper's blocked addresses
+(the snippet above; `BlockedModuleAccountAddrs` in the reference app), so no
+funds can reach it for the owner to move: on a chain that omits it, whatever
+anyone sends to the authority address becomes the owner's through an exec
+carrying a bank send. The admission and fee rules judge an
 owner exec by the messages it carries (a client recovery is IBC traffic
 whoever submits it; a parameter update is not), and the disabled modules stay
 disabled inside it. `query vaasconsumer owner-authority` prints the account to
@@ -241,8 +260,10 @@ terminal.
 
 **What restricted mode leaves the authority.** While a consumer is in debt or
 its validator set is stale (section 6), on-chain recovery needs only relayer
-traffic and, for an expired provider client, a client recovery: both pass, an
-owner exec carrying `MsgRecoverClient` included. A fix that needs new code is
+traffic, for an expired provider client a client recovery, and for a pinned
+client its creator locked to itself a reset of its allowed relayers: all
+pass, an owner exec carrying `MsgRecoverClient` or `MsgUpdateClientConfig`
+included. A fix that needs new code is
 an off-chain coordinated halt or hard fork, not an on-chain upgrade, so
 restricted mode admits no upgrade and no parameter change (ibc-go's
 `MsgIBCSoftwareUpgrade` and `MsgUpdateParams` included), from the owner or from
@@ -322,7 +343,9 @@ can satisfy it with the consumer keeper or its own adapter. It has three modes
   messages, not a prefix: client creation, update (misbehaviour included),
   upgrade and recovery, the IBC v1 connection and channel handshakes (minus a
   channel close initiated here) and packet messages, and the IBC v2 counterparty
-  registration and packet messages. ICS-20 v1 `MsgTransfer` is blocked in this
+  registration, client configuration (`MsgUpdateClientConfig`, the
+  allowed-relayers list a client's creator or the chain's authority sets) and
+  packet messages. ICS-20 v1 `MsgTransfer` is blocked in this
   mode, and so is the raw ICS-20 v2 transfer riding
   `/ibc.core.channel.v2.MsgSendPacket`: restricted mode is for recovery, and
   value stays in. ibc-go's `MsgIBCSoftwareUpgrade` and every `MsgUpdateParams`
@@ -516,6 +539,7 @@ Two further order traps, both silent:
 | `AppendSendRestriction(FeePoolSendRestriction())` | silent, user-triggerable | unattributable fee-pool balance |
 | `ProviderKeeper.Hooks()` on staking | silent | duplicate consumer consensus addresses; orphaned key assignments and stranded downtime/fee bookkeeping after rotation or removal; no immediate post-rotation snapshot |
 | An authority the chain can act as: `x/gov` wired and named, or the consumer module account named with `ConsumerKeeper.SetMessageRouter` | silent until recovery is needed, then terminal | `MsgRecoverClient` unreachable; a dead client is permanent (without the router, every `MsgOwnerExec` fails with "the app wires no message router") |
+| The consumer module account among the bank keeper's blocked addresses | silent | funds sent to the authority address become the owner's through an exec carrying a bank send |
 | `x/evidence` on the provider | silent | provider-native double-signs unpunished |
 | `consumerante.NewMsgFilterDecorator` | silent | safe mode and debt gating cease to exist |
 | `consumerante.NewPhotonFeeDecorator` | silent | the photon-only fee policy ceases to exist; any denom pays |

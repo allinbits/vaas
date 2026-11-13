@@ -1,6 +1,6 @@
 # Queries Reference
 
-The full query surface of both VAAS modules: 20 provider queries and 2 consumer
+The full query surface of both VAAS modules: 20 provider queries and 3 consumer
 queries, each with a CLI command. Every gRPC method has a CLI equivalent and
 vice versa.
 

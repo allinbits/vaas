@@ -24,7 +24,13 @@ Roles in this flow:
   left out is reset, `photon_fees_enabled` to off), so read the current set
   back with `consumerd query vaasconsumer params -o json` and change only the
   owner. An exec that leaves the consumer with no usable owner (empty, or the
-  consumer module account itself) is refused.
+  consumer module account itself) is refused. On the reference consumer that
+  key is the chain's only authority: no governance exists to replace it, and
+  nothing on the provider pushes a new owner to the consumer, so a lost owner
+  key leaves the chain with no authority at all (no client recovery, no
+  upgrade, no parameter change; the remedy is a coordinated restart from a
+  genesis with a hand-edited `owner_address`). Hold it in a multisig, or hand
+  the consumer over to one before launch.
 - **Relayer** -- creates the IBC v2 clients; the provider never creates them.
 - **Provider governance** -- only needed for pause/resume/removal, not for a
   normal launch.
@@ -179,8 +185,13 @@ expires is recovered in place, under the same id, by the chain's authority:
 on the reference consumer the owner wraps ibc-go's `MsgRecoverClient`, signed
 by the consumer module account that `query vaasconsumer owner-authority`
 prints, in `consumerd tx vaasconsumer owner-exec recover.json --from <owner>`.
-Restricted mode admits that recovery, and no upgrade or parameter change: a
-fix that needs new code is an off-chain coordinated halt or hard fork. VSC
+The relayer that created the pinned client holds its creator key, with which
+ibc-go lets it restrict the client to a list of allowed relayers
+(`MsgUpdateClientConfig`); the owner clears or resets that list the same way,
+with an owner exec carrying `MsgUpdateClientConfig` signed by the consumer
+module account. Restricted mode admits that recovery and that reset, and no
+upgrade or parameter change: a fix that needs new code is an off-chain
+coordinated halt or hard fork. VSC
 delivery starts at the first epoch boundary after the provider-side
 declaration. In localnet and e2e
 the relayer is the `ts-relayer` and the declarations are scripted (the e2e
