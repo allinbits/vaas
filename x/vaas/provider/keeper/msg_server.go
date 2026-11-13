@@ -380,19 +380,32 @@ func (k msgServer) UpdateConsumer(goCtx context.Context, msg *types.MsgUpdateCon
 
 	consumerId := msg.ConsumerId
 
-	// The updatable phases are named here instead of asking IsConsumerActive,
-	// so that stopped and deleted consumers stay out. A paused consumer is
-	// updatable like a launched one: its metadata, its ownership and its
-	// client declaration change, its initialization parameters are frozen
-	// (checked below), and only the governance authority renames it, to the
-	// chain id its declared client tracks (RenameLaunchedConsumer).
-	updatePhase := k.Keeper.GetConsumerPhase(ctx, consumerId)
-	if updatePhase != types.CONSUMER_PHASE_REGISTERED &&
-		updatePhase != types.CONSUMER_PHASE_INITIALIZED &&
-		updatePhase != types.CONSUMER_PHASE_LAUNCHED &&
-		updatePhase != types.CONSUMER_PHASE_PAUSED {
+	// The governance authority may update a consumer too: it is the one
+	// signer that may rename a consumer that has launched, to the chain id
+	// its declared client tracks (RenameLaunchedConsumer).
+	isGov := msg.Owner == k.GetAuthority()
+
+	// The updatable phases are named here instead of asking IsConsumerActive.
+	// A paused consumer is updatable like a launched one: its metadata, its
+	// ownership and its client declaration change, its initialization
+	// parameters are frozen (checked below), and only the governance
+	// authority renames it. A stopped consumer admits the governance
+	// authority alone, for that rename: a mismatch pause that outlived
+	// MaxPauseDuration stops the consumer with its record still naming the
+	// old chain id, and the chain id of a stopped consumer serves the
+	// verification of its evidence and nothing else until its deletion. A
+	// deleted consumer admits nothing.
+	switch k.Keeper.GetConsumerPhase(ctx, consumerId) {
+	case types.CONSUMER_PHASE_REGISTERED, types.CONSUMER_PHASE_INITIALIZED,
+		types.CONSUMER_PHASE_LAUNCHED, types.CONSUMER_PHASE_PAUSED:
+	case types.CONSUMER_PHASE_STOPPED:
+		if !isGov {
+			return &resp, errorsmod.Wrapf(types.ErrUnauthorized,
+				"only the governance authority updates a stopped consumer, to rename it to the chain id its declared client tracks: %d", consumerId)
+		}
+	default:
 		return &resp, errorsmod.Wrapf(types.ErrInvalidPhase,
-			"cannot update consumer chain that is not in the registered, initialized, launched or paused phase: %d", consumerId)
+			"cannot update consumer chain that is not in the registered, initialized, launched, paused or stopped phase: %d", consumerId)
 	}
 
 	ownerAddress, err := k.Keeper.GetConsumerOwnerAddress(ctx, consumerId)
@@ -400,10 +413,6 @@ func (k msgServer) UpdateConsumer(goCtx context.Context, msg *types.MsgUpdateCon
 		return &resp, errorsmod.Wrapf(types.ErrNoOwnerAddress, "cannot retrieve owner address %s", ownerAddress)
 	}
 
-	// The governance authority may update a consumer too: it is the one
-	// signer that may rename a launched or paused consumer, to the chain id
-	// its declared client tracks (RenameLaunchedConsumer).
-	isGov := msg.Owner == k.GetAuthority()
 	if msg.Owner != ownerAddress && !isGov {
 		return &resp, errorsmod.Wrapf(types.ErrUnauthorized, "expected owner address %s or the governance authority, got %s", ownerAddress, msg.Owner)
 	}

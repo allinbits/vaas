@@ -475,3 +475,46 @@ func TestGovernanceRenameBackToAPreviousChainIdIsRefused(t *testing.T) {
 	require.NoError(t, err)
 	require.Equal(t, chainIDTestNew, got)
 }
+
+// TestGovernanceRenamesAStoppedConsumer: a mismatch pause that outlives
+// MaxPauseDuration stops the consumer with its record still naming the old
+// chain id. The governance rename is accepted on the stopped consumer under
+// the same checks, so the old id is kept with its boundary and the client's
+// chain id is on record to verify double-voting evidence over until the
+// deletion; the owner cannot update a stopped consumer, and a deleted one
+// admits nothing.
+func TestGovernanceRenamesAStoppedConsumer(t *testing.T) {
+	k, ctx, ctrl, mocks := testkeeper.GetProviderKeeperAndCtx(t, testkeeper.NewInMemKeeperParams(t))
+	defer ctrl.Finish()
+	msgServer := providerkeeper.NewMsgServerImpl(&k)
+	k.SetParams(ctx, types.DefaultParams())
+	ctx = ctx.WithBlockTime(time.Date(2025, 6, 1, 0, 0, 0, 0, time.UTC))
+	cid, _ := pausedForMismatch(t, k, ctx, mocks)
+	mocks.MockStakingKeeper.EXPECT().UnbondingTime(gomock.Any()).Return(21*24*time.Hour, nil).AnyTimes()
+	ctx = ctx.WithBlockTime(ctx.BlockTime().Add(k.GetMaxPauseDuration(ctx)))
+	require.NoError(t, k.BeginBlockAutoStopPausedConsumers(ctx))
+	require.Equal(t, types.CONSUMER_PHASE_STOPPED, k.GetConsumerPhase(ctx, cid))
+
+	_, err := msgServer.UpdateConsumer(ctx, &types.MsgUpdateConsumer{Owner: declOwner, ConsumerId: cid, NewChainId: chainIDTestNew})
+	require.ErrorIs(t, err, types.ErrUnauthorized, "the owner cannot update a stopped consumer")
+	got, err := k.GetConsumerChainId(ctx, cid)
+	require.NoError(t, err)
+	require.Equal(t, chainIDTestOld, got)
+
+	_, err = msgServer.UpdateConsumer(ctx, &types.MsgUpdateConsumer{Owner: k.GetAuthority(), ConsumerId: cid, NewChainId: chainIDTestNew})
+	require.NoError(t, err)
+	require.Equal(t, types.CONSUMER_PHASE_STOPPED, k.GetConsumerPhase(ctx, cid), "a rename does not revive a stopped consumer")
+	got, err = k.GetConsumerChainId(ctx, cid)
+	require.NoError(t, err)
+	require.Equal(t, chainIDTestNew, got)
+	previous, err := k.GetConsumerPreviousChainIds(ctx, cid)
+	require.NoError(t, err)
+	require.Equal(t, []types.PreviousChainId{{ChainId: chainIDTestOld, Boundary: clienttypes.NewHeight(2, 500)}}, previous)
+	evidenceChainId, err := k.EvidenceChainIdFor(ctx, cid, chainIDTestNew, 600)
+	require.NoError(t, err, "votes signed over the client's chain id are verified over it from the rename on")
+	require.Equal(t, chainIDTestNew, evidenceChainId)
+
+	k.SetConsumerPhase(ctx, cid, types.CONSUMER_PHASE_DELETED)
+	_, err = msgServer.UpdateConsumer(ctx, &types.MsgUpdateConsumer{Owner: k.GetAuthority(), ConsumerId: cid, NewChainId: "consumer-3"})
+	require.ErrorIs(t, err, types.ErrInvalidPhase, "a deleted consumer admits no update")
+}
