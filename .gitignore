@@ -5,6 +5,7 @@ Icon?
 coverage.out
 build/
 hermes
+tests/e2e/forge/forge
 
 # IDEs and editors
 .vscode/
