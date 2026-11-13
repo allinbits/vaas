@@ -23,52 +23,52 @@ import "cosmos_proto/cosmos.proto";
 // SetConsumerGenesis.
 //
 message ConsumerParams {
-    // Sent VAAS related IBC packets will timeout after this duration
-    google.protobuf.Duration vaas_timeout_period = 1
-        [ (gogoproto.nullable) = false, (gogoproto.stdduration) = true ];
+  // Sent VAAS related IBC packets will timeout after this duration
+  google.protobuf.Duration vaas_timeout_period = 1
+      [ (gogoproto.nullable) = false, (gogoproto.stdduration) = true ];
 
-    // The number of historical info entries to persist in store.
-    // This param is a part of the cosmos sdk staking module. In the case of
-    // a VAAS enabled consumer chain, the VAAS module acts as the staking module.
-    int64 historical_entries = 2;
+  // The number of historical info entries to persist in store.
+  // This param is a part of the cosmos sdk staking module. In the case of
+  // a VAAS enabled consumer chain, the VAAS module acts as the staking module.
+  int64 historical_entries = 2;
 
-    // Unbonding period for the consumer,
-    // which should be smaller than that of the provider in general.
-    google.protobuf.Duration unbonding_period = 3
-        [ (gogoproto.nullable) = false, (gogoproto.stdduration) = true ];
+  // Unbonding period for the consumer,
+  // which should be smaller than that of the provider in general.
+  google.protobuf.Duration unbonding_period = 3
+      [ (gogoproto.nullable) = false, (gogoproto.stdduration) = true ];
 
-    // How long the consumer may go without receiving a VSC packet before its
-    // tx admission gate enters safe mode (only ibc.core and gov messages pass).
-    google.protobuf.Duration safe_mode_threshold = 4
-        [ (gogoproto.nullable) = false, (gogoproto.stdduration) = true ];
+  // How long the consumer may go without receiving a VSC packet before its
+  // tx admission gate enters safe mode (only ibc.core and gov messages pass).
+  google.protobuf.Duration safe_mode_threshold = 4
+      [ (gogoproto.nullable) = false, (gogoproto.stdduration) = true ];
 
-    // Provider-owned downtime detection window size, in consumer blocks.
-    // Written by the provider into the consumer genesis and updated via
-    // VSC packets; not locally updatable.
-    int64 signed_blocks_window = 5;
+  // Provider-owned downtime detection window size, in consumer blocks.
+  // Written by the provider into the consumer genesis and updated via
+  // VSC packets; not locally updatable.
+  int64 signed_blocks_window = 5;
 
-    // Provider-owned minimum signing fraction per window.
-    string min_signed_per_window = 6 [
-        (cosmos_proto.scalar) = "cosmos.Dec",
-        (gogoproto.customtype) = "cosmossdk.io/math.LegacyDec",
-        (gogoproto.nullable) = false
-    ];
+  // Provider-owned minimum signing fraction per window.
+  string min_signed_per_window = 6 [
+    (cosmos_proto.scalar) = "cosmos.Dec",
+    (gogoproto.customtype) = "cosmossdk.io/math.LegacyDec",
+    (gogoproto.nullable) = false
+  ];
 
-    // The account authorized to pin the provider IBC client at bootstrap via
-    // MsgSetProviderClient (the governance authority always may). Seeded by
-    // the provider from the consumer's registered owner when it authors the
-    // consumer genesis; empty leaves the pin to governance alone.
-    string owner_address = 7 [(cosmos_proto.scalar) = "cosmos.AddressString"];
+  // The account authorized to pin the provider IBC client at bootstrap via
+  // MsgSetProviderClient (the governance authority always may). Seeded by
+  // the provider from the consumer's registered owner when it authors the
+  // consumer genesis; empty leaves the pin to governance alone.
+  string owner_address = 7 [ (cosmos_proto.scalar) = "cosmos.AddressString" ];
 
-    // Whether transaction fees must be paid exclusively in the one-hop photon
-    // voucher received from the provider (an AtomOne core-shard requirement).
-    // Consumer-local and off by default; the provider-authored consumer
-    // genesis always writes it off, so a chain opts in through a hand-authored
-    // genesis or a later MsgUpdateParams from its params authority, where the
-    // embedding app wires one (the reference consumer app wires none). The
-    // switch lives here, in consensus state, because the ante policy it drives
-    // also runs in FinalizeBlock.
-    bool photon_fees_enabled = 8;
+  // Whether transaction fees must be paid exclusively in the one-hop photon
+  // voucher received from the provider (an AtomOne core-shard requirement).
+  // Consumer-local and off by default; the provider-authored consumer
+  // genesis always writes it off, so a chain opts in through a hand-authored
+  // genesis or a later MsgUpdateParams from its params authority, where the
+  // embedding app wires one (the reference consumer app wires none). The
+  // switch lives here, in consensus state, because the ante policy it drives
+  // also runs in FinalizeBlock.
+  bool photon_fees_enabled = 8;
 }
 
 // ConsumerGenesisState defines shared genesis information between provider and
@@ -80,17 +80,19 @@ message ConsumerGenesisState {
   // This is needed and always set to true; otherwise, new_chain in the consumer
   // genesis state will default to false
   bool new_chain = 3;
-  // preVAAS is reserved for a future standalone-to-consumer changeover and is
+  // pre_vaas is reserved for a future standalone-to-consumer changeover and is
   // currently unused. See docs/consumer-transition.md.
-  bool preVAAS = 4;
+  bool pre_vaas = 4;
 }
 
 // ProviderInfo defines all information a consumer needs from a provider
 // Shared data type between provider and consumer
 message ProviderInfo {
-  // The client state for the provider client filled in on new chain, nil on restart.
+  // The client state for the provider client filled in on new chain, nil on
+  // restart.
   ibc.lightclients.tendermint.v1.ClientState client_state = 1;
-  // The consensus state for the provider client filled in on new chain, nil on restart.
+  // The consensus state for the provider client filled in on new chain, nil on
+  // restart.
   ibc.lightclients.tendermint.v1.ConsensusState consensus_state = 2;
   // InitialValset filled in on new chain and on restart.
   repeated .tendermint.abci.ValidatorUpdate initial_val_set = 3

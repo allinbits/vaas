@@ -6,11 +6,9 @@ import "amino/amino.proto";
 import "cosmos_proto/cosmos.proto";
 import "gogoproto/gogo.proto";
 import "cosmos/base/v1beta1/coin.proto";
-import "cosmos/evidence/v1beta1/evidence.proto";
 import "google/protobuf/duration.proto";
 import "google/protobuf/timestamp.proto";
 import "ibc/core/client/v1/client.proto";
-import "ibc/lightclients/tendermint/v1/tendermint.proto";
 import "vaas/v1/wire.proto";
 import "tendermint/crypto/keys.proto";
 
@@ -30,7 +28,8 @@ message Params {
 
   // LivenessGraceFraction sets the consumer liveness grace period as a fraction
   // of the provider unbonding period (grace = unbonding * fraction). A consumer
-  // with no successful VSC acknowledgement for longer than the grace is removed.
+  // with no successful VSC acknowledgement for longer than the grace is
+  // removed.
   string liveness_grace_fraction = 2;
 
   // Sent IBC packets will timeout after this duration
@@ -277,7 +276,8 @@ enum PauseReason {
   // consumer forked (MsgSubmitConsumerMisbehaviour).
   PAUSE_REASON_LIGHT_CLIENT_ATTACK = 2;
   // REFUSAL_THRESHOLD: the bonded power refusing the consumer reached
-  // RefusalPauseThreshold (MsgSetConsumerRefusal, see EvaluateConsumerRefusals).
+  // RefusalPauseThreshold (MsgSetConsumerRefusal, see
+  // EvaluateConsumerRefusals).
   PAUSE_REASON_REFUSAL_THRESHOLD = 3;
 }
 
@@ -386,7 +386,8 @@ message WithheldFeeRecord {
       [ (gogoproto.nullable) = false, (gogoproto.stdtime) = true ];
 }
 
-//
+// SlashJailParameters is the slash fraction, jail duration and tombstone flag
+// applied to one infraction type.
 message SlashJailParameters {
   bytes slash_fraction = 1 [
     (cosmos_proto.scalar) = "cosmos.Dec",

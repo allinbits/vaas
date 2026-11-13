@@ -4,8 +4,6 @@ package vaas.v1;
 
 option go_package = "github.com/allinbits/vaas/x/vaas/types";
 
-import "cosmos/staking/v1beta1/staking.proto";
-
 import "gogoproto/gogo.proto";
 import "tendermint/abci/types.proto";
 import "cosmos_proto/cosmos.proto";

@@ -6,7 +6,6 @@ option go_package = "github.com/allinbits/vaas/x/vaas/consumer/types";
 import "google/protobuf/any.proto";
 import "gogoproto/gogo.proto";
 import "cosmos_proto/cosmos.proto";
-import "google/protobuf/timestamp.proto";
 
 //
 // Note any type defined in this file is ONLY used internally to the consumer
