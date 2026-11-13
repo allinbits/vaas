@@ -59,16 +59,19 @@ tidy:
 
 containerProtoVer=0.14.0
 containerProtoImage=ghcr.io/cosmos/proto-builder:$(containerProtoVer)
+# protoImage runs a command at the repository root; protoDirImage runs it from
+# proto/, where buf.yaml lives, as buf lint and clang-format expect.
 protoImage=docker run --rm -v $(CURDIR):/workspace --workdir /workspace $(containerProtoImage)
+protoDirImage=docker run --rm -v $(CURDIR):/workspace --workdir /workspace/proto $(containerProtoImage)
 
 proto-gen:
 	$(protoImage) sh ./scripts/protocgen.sh
 
 proto-format:
-	$(protoImage) find ./ -name "*.proto" -exec clang-format -i {} \;
+	$(protoDirImage) find ./ -name "*.proto" -exec clang-format -i {} \;
 
 proto-lint:
-	$(protoImage) buf lint --error-format=json
+	$(protoDirImage) buf lint --error-format=json
 
 proto-update-deps:
 	$(protoImage) buf mod update proto/
