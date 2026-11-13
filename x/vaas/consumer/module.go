@@ -27,7 +27,6 @@ import (
 )
 
 var (
-	_ module.AppModule           = (*AppModule)(nil)
 	_ module.AppModuleBasic      = (*AppModuleBasic)(nil)
 	_ module.AppModuleSimulation = (*AppModule)(nil)
 	_ module.HasABCIGenesis      = (*AppModule)(nil)
