@@ -15,9 +15,11 @@ import (
 )
 
 const (
-	tsRelayerImage    = "ghcr.io/allinbits/ibc-v2-ts-relayer"
-	tsRelayerImageTag = "latest"
-	IBCv2             = "2"
+	tsRelayerImage = "ghcr.io/allinbits/ibc-v2-ts-relayer"
+	// The index digest (linux/amd64 and linux/arm64) of the relayer image the
+	// suites run; bump it from `docker buildx imagetools inspect ghcr.io/allinbits/ibc-v2-ts-relayer:latest`.
+	tsRelayerImageDigest = "sha256:4f61a9e711a4ffa29910aadecf56bf47f0426d6139f791dac06d04485007d8ca"
+	IBCv2                = "2"
 )
 
 type tsRelayerPath struct {
@@ -35,14 +37,33 @@ func noRestart(config *docker.HostConfig) {
 	config.RestartPolicy = docker.RestartPolicy{Name: "no"}
 }
 
+// pullTSRelayerImage pulls the relayer image tsRelayerImageDigest pins, unless
+// the daemon already holds it, tags it locally under the digest hex and returns
+// that tag. dockertest joins RunOptions.Repository and Tag with a colon, so a
+// digest reference cannot be handed to RunWithOptions; the local tag names the
+// pinned image through it.
+func (s *baseTestSuite) pullTSRelayerImage() string {
+	ref := tsRelayerImage + "@" + tsRelayerImageDigest
+	if _, err := s.dkrPool.Client.InspectImage(ref); err != nil {
+		s.T().Logf("pulling %s", ref)
+		err := s.dkrPool.Client.PullImage(docker.PullImageOptions{Repository: ref}, docker.AuthConfiguration{})
+		s.Require().NoError(err, "failed to pull the ts-relayer image")
+	}
+	tag := strings.TrimPrefix(tsRelayerImageDigest, "sha256:")
+	err := s.dkrPool.Client.TagImage(ref, docker.TagImageOptions{Repo: tsRelayerImage, Tag: tag})
+	s.Require().NoError(err, "failed to tag the ts-relayer image")
+	return tag
+}
+
 func (s *baseTestSuite) startTSRelayer() {
 	s.T().Log("starting ts-relayer container")
 
+	tag := s.pullTSRelayerImage()
 	resource, err := s.dkrPool.RunWithOptions(
 		&dockertest.RunOptions{
 			Name:       fmt.Sprintf("%s-%s-ts-relayer", s.cfg.providerChainID, s.cfg.consumerChainID),
 			Repository: tsRelayerImage,
-			Tag:        tsRelayerImageTag,
+			Tag:        tag,
 			NetworkID:  s.dkrNet.Network.ID,
 			User:       "root",
 			CapAdd:     []string{"IPC_LOCK"},

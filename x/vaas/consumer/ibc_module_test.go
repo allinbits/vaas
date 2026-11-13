@@ -166,10 +166,11 @@ func TestIBCModuleOnRecvPacketRejectsBadPubkeyInsteadOfPanicking(t *testing.T) {
 	})
 }
 
-// TestIBCModuleEvidenceAckAndTimeoutHandling pins the M5 fix: a consumer-sent
-// downtime evidence packet is removed from the queue when SendPacket commits
-// it, then on the acknowledgement/timeout callback it is either retried or
-// permanently discarded. A timeout means non-delivery, so the evidence is
+// TestIBCModuleEvidenceAckAndTimeoutHandling pins how queued evidence rides
+// its packet's acknowledgement and timeout: a consumer-sent downtime evidence
+// packet is removed from the queue when SendPacket commits it, then on the
+// acknowledgement/timeout callback it is either retried or permanently
+// discarded. A timeout means non-delivery, so the evidence is
 // re-queued and retried. An error acknowledgement is a permanent rejection of
 // that exact packet, so it is surfaced as an event and dropped (never
 // re-queued, which would loop forever). A success acknowledgement leaves it
