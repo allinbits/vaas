@@ -27,6 +27,9 @@ jobs:
       - name: Every e2e suite is in the e2e matrix
         run: make check-e2e-matrix
 
+      - name: Every go.mod and go.sum is tidy
+        run: make check-tidy
+
   lint:
     name: Lint
     runs-on: ubuntu-latest
@@ -53,9 +56,25 @@ jobs:
       - name: Test
         run: make test
 
+  vulncheck:
+    name: Vulncheck
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+
+      - name: Vulncheck
+        run: make vulncheck
+
   test-e2e:
     name: Test E2E (${{ matrix.suite }})
     runs-on: ubuntu-latest
+    # go test bounds a suite at 60 minutes once the chain image is built and
+    # the relayer image pulled; this bounds the whole job.
+    timeout-minutes: 90
     strategy:
       fail-fast: false
       matrix:

@@ -10,11 +10,15 @@ VAAS runs on **IBC v2 only** (client-based, out-of-order). There is no IBC v1 ch
 
 ```bash
 make build              # go build ./...
-make test               # all unit tests (excludes e2e), 25m timeout
+make test               # unit tests of the root, app and tests/e2e/forge modules (no e2e suites), 25m timeout each
 make lint               # golangci-lint via devdeps/go.mod
 make lint-fix           # auto-fix lint issues
 make mocks-gen          # regenerate mocks from x/vaas/types/expected_keepers.go
-make vulncheck          # govulncheck
+make vulncheck          # govulncheck on the root and app modules (CI Vulncheck job)
+make tidy               # go mod tidy in every module (root, app, tests/e2e, tests/e2e/forge, devdeps)
+make check-tidy         # fail when make tidy would change a go.mod or go.sum (CI Build job)
+make check-e2e-matrix   # fail when an e2e suite is missing from ci.yml's e2e matrix (CI Build job)
+make check-forge-replaces  # fail when tests/e2e/forge/go.mod's replaces differ from app/go.mod's (run by make lint)
 
 # Single test
 go test ./x/vaas/provider/keeper -run TestConsumerClientId -v
