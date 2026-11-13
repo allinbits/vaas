@@ -3,6 +3,7 @@ package keeper
 import (
 	"errors"
 	"fmt"
+	"math/big"
 	"sort"
 	"strconv"
 
@@ -30,10 +31,35 @@ func (k Keeper) emitSweepEvent(
 	))
 }
 
+// Bounds on a pool's share total. Epoch distributions draw tokens from a pool
+// without burning shares, so every deposit onto a drained pool multiplies the
+// shares-per-token ratio, and nothing else bounds it. A mint that would take
+// the total past shareTotalRebaseThreshold rescales the ledger first (see
+// rebaseShares); one that would still take it past shareTotalLimit is refused.
+// Together they keep every stored total, and every product the claim math
+// forms from it, far inside the 256 bits math.Int can hold.
+var (
+	shareTotalRebaseThreshold = new(big.Int).Lsh(big.NewInt(1), 128)
+	shareTotalLimit           = new(big.Int).Lsh(big.NewInt(1), 200)
+)
+
+// rebaseSharesPerTokenBits is the number of shares per token a rebase leaves
+// in the ledger at the least, as a power of two: 2^32.
+const rebaseSharesPerTokenBits = 32
+
+// mulDiv returns floor(a * b / c) computed over big.Int, so the product may
+// pass the 256-bit bound that math.Int enforces by panicking. c must be
+// positive.
+func mulDiv(a, b, c math.Int) *big.Int {
+	p := new(big.Int).Mul(a.BigInt(), b.BigInt())
+	return p.Quo(p, c.BigInt())
+}
+
 // feePoolDraw resolves what a depositor holding `shares` of `total` gets out of
 // a pool holding `balance` when at most `limit` tokens may leave the pool right
 // now: `limit` is the lesser of what was asked for and the balance not reserved
-// as withheld-fee escrow (see outstandingWithheldFees).
+// as withheld-fee escrow (see outstandingWithheldFees), so it never passes the
+// balance.
 //
 // Shares are always measured against the full pool balance -- they back the
 // escrowed portion too -- so a draw held back by `limit` burns shares at the
@@ -41,6 +67,11 @@ func (k Keeper) emitSweepEvent(
 // burned. The remainder therefore stays backed by the depositor's residual
 // shares, and the pool is never left holding a balance with no shares. Both
 // results are zero when nothing can be drawn.
+//
+// Every product is taken over big.Int (see mulDiv): the share total may sit far
+// above the balance, and math.Int panics past 256 bits. Each quotient is
+// bounded by one of its operands, a token amount by the balance and a share
+// amount by the total, so the results always convert back.
 //
 // This is the single definition of the fee-pool claim: WithdrawShares moves
 // money by it, and ComputeClaim (and through it the claim queries) quote it, so
@@ -50,16 +81,16 @@ func feePoolDraw(shares, total, balance, limit math.Int) (sharesToBurn, tokens m
 		!balance.IsPositive() || !limit.IsPositive() {
 		return math.ZeroInt(), math.ZeroInt()
 	}
-	claim := shares.Mul(balance).Quo(total)
+	claim := math.NewIntFromBigInt(mulDiv(shares, balance, total))
 	if claim.LTE(limit) {
 		// The whole claim fits: burn every share and deliver it.
 		return shares, claim
 	}
-	sharesToBurn = limit.Mul(total).Quo(balance)
+	sharesToBurn = math.NewIntFromBigInt(mulDiv(limit, total, balance))
 	if !sharesToBurn.IsPositive() {
 		return math.ZeroInt(), math.ZeroInt()
 	}
-	return sharesToBurn, sharesToBurn.Mul(balance).Quo(total)
+	return sharesToBurn, math.NewIntFromBigInt(mulDiv(sharesToBurn, balance, total))
 }
 
 // ComputeClaim returns the depositor's currently claimable tokens for one denom
@@ -152,6 +183,10 @@ func (k Keeper) absorbUnaccountedBalance(
 // if balance == 0 but total_shares > 0, all existing shares for this
 // (consumer, denom) are deleted first (they represent worthless claims).
 //
+// A deposit that would take the share total past shareTotalRebaseThreshold
+// rescales the ledger first (see rebaseShares); one that would take it past
+// shareTotalLimit even so is refused with ErrShareLedgerOverflow.
+//
 // Caller is responsible for the bank-side movement of funds into the pool.
 func (k Keeper) MintShares(
 	ctx sdk.Context, consumerId uint64, depositor sdk.AccAddress, amount sdk.Coin,
@@ -191,20 +226,34 @@ func (k Keeper) MintShares(
 		total = balance.Amount
 	}
 
-	var shares math.Int
-	if total.IsZero() {
-		shares = amount.Amount
-	} else {
-		// shares_to_mint = amount * total / balance
-		// (balance is balance BEFORE this deposit lands)
-		shares = amount.Amount.Mul(total).Quo(balance.Amount)
+	// shares_to_mint = amount * total / balance, the balance being the one
+	// before this deposit lands; a first deposit mints one share per token.
+	// The product is taken over big.Int (see mulDiv): the share total may sit
+	// far above the balance.
+	minted := amount.Amount.BigInt()
+	if total.IsPositive() {
+		minted = mulDiv(amount.Amount, total, balance.Amount)
+		if new(big.Int).Add(total.BigInt(), minted).Cmp(shareTotalRebaseThreshold) > 0 {
+			rebased, err := k.rebaseShares(ctx, consumerId, amount.Denom, total, balance.Amount)
+			if err != nil {
+				return err
+			}
+			total = rebased
+			minted = mulDiv(amount.Amount, total, balance.Amount)
+		}
 	}
-	if !shares.IsPositive() {
-		// sub-share deposit (extreme dilution) — should be very rare but
-		// refuse rather than silently dropping
+	if new(big.Int).Add(total.BigInt(), minted).Cmp(shareTotalLimit) > 0 {
+		return errorsmod.Wrapf(types.ErrShareLedgerOverflow,
+			"minting %s shares onto a total of %s for consumer %d denom %s",
+			minted, total, consumerId, amount.Denom)
+	}
+	if minted.Sign() <= 0 {
+		// sub-share deposit (extreme dilution): refuse rather than silently
+		// dropping it.
 		return errorsmod.Wrap(types.ErrDepositTooSmall,
 			"deposit too small to mint any shares")
 	}
+	shares := math.NewIntFromBigInt(minted)
 
 	depKey := collections.Join3(consumerId, amount.Denom, depositor)
 	existing, err := k.ConsumerFeePoolShares.Get(ctx, depKey)
@@ -218,6 +267,81 @@ func (k Keeper) MintShares(
 		return err
 	}
 	return k.ConsumerFeePoolTotalShares.Set(ctx, totalKey, total.Add(shares))
+}
+
+// rebaseShares rescales the share ledger of one (consumer, denom) pair down by
+// a power of two, holdings and total alike, so a share total that epoch
+// distributions have driven far above the balance returns to a working range
+// without moving anyone's claim. The ledger keeps at least 2^32 shares per
+// token: the factor is the largest power of two that leaves
+// total / balance >= 2^32, and when the ratio is already below twice that
+// nothing is rescaled. Returns the total the ledger holds afterwards.
+//
+// Rounding: every holding is truncated to the rescaled unit and the new total
+// is the sum of the truncated holdings, so the ledger invariant
+// total == sum(shares) stays exact. A holder's claim, shares * balance / total,
+// moves by less than holders / 2^32 of a token: each truncation drops under one
+// rescaled share, and a rescaled share is worth at most 2^-32 of a token. A
+// holding that truncates to nothing had a claim below that already; its record
+// is removed, as a withdrawal of the last share removes it.
+//
+// Holders are read into memory before anything is written: they are the
+// depositors of this one pool, and the store must not change under an open
+// iterator.
+func (k Keeper) rebaseShares(
+	ctx sdk.Context, consumerId uint64, denom string, total, balance math.Int,
+) (math.Int, error) {
+	unit := new(big.Int).Lsh(balance.BigInt(), rebaseSharesPerTokenBits)
+	ratio := new(big.Int).Quo(total.BigInt(), unit)
+	if ratio.BitLen() < 2 {
+		return total, nil
+	}
+	shift := uint(ratio.BitLen() - 1)
+
+	type holding struct {
+		addr   sdk.AccAddress
+		shares math.Int
+	}
+	var holdings []holding
+	prefix := collections.NewSuperPrefixedTripleRange[uint64, string, sdk.AccAddress](consumerId, denom)
+	err := k.ConsumerFeePoolShares.Walk(ctx, prefix,
+		func(key collections.Triple[uint64, string, sdk.AccAddress], shares math.Int) (bool, error) {
+			holdings = append(holdings, holding{addr: key.K3(), shares: shares})
+			return false, nil
+		})
+	if err != nil {
+		return math.Int{}, fmt.Errorf("failed to walk fee pool shares for consumer %d denom %s: %w", consumerId, denom, err)
+	}
+
+	newTotal := math.ZeroInt()
+	for _, h := range holdings {
+		rescaled := math.NewIntFromBigInt(new(big.Int).Rsh(h.shares.BigInt(), shift))
+		key := collections.Join3(consumerId, denom, h.addr)
+		if rescaled.IsZero() {
+			if err := k.ConsumerFeePoolShares.Remove(ctx, key); err != nil {
+				return math.Int{}, err
+			}
+			continue
+		}
+		if err := k.ConsumerFeePoolShares.Set(ctx, key, rescaled); err != nil {
+			return math.Int{}, err
+		}
+		newTotal = newTotal.Add(rescaled)
+	}
+	if !newTotal.IsPositive() {
+		return math.Int{}, fmt.Errorf("rebasing fee pool shares for consumer %d denom %s by 2^%d left no shares", consumerId, denom, shift)
+	}
+	if err := k.ConsumerFeePoolTotalShares.Set(ctx, collections.Join(consumerId, denom), newTotal); err != nil {
+		return math.Int{}, err
+	}
+	k.Logger(ctx).Info("rebased consumer fee pool shares",
+		"consumerId", consumerId,
+		"denom", denom,
+		"shift", shift,
+		"total", total.String(),
+		"rebasedTotal", newTotal.String(),
+	)
+	return newTotal, nil
 }
 
 // WithdrawShares burns shares for the given depositor and returns the tokens
@@ -396,7 +520,9 @@ func (k Keeper) SweepConsumerFeePoolDenom(
 			iter.Close()
 			panic(fmt.Sprintf("fee-pool sweep: read share value: %s", err))
 		}
-		slice := shares.Mul(balance.Amount).Quo(total)
+		// Over big.Int (see mulDiv): shares * balance may pass 256 bits while
+		// the slice itself never passes the balance.
+		slice := math.NewIntFromBigInt(mulDiv(shares, balance.Amount, total))
 		if slice.IsZero() {
 			continue
 		}

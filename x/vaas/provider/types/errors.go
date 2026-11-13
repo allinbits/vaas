@@ -36,4 +36,5 @@ var (
 	ErrForkEvidenceStillVerifiable             = errorsmod.Register(ModuleName, 28, "the fork's evidence is still verifiable; resuming now would let it pause the consumer again")
 	ErrProviderChainId                         = errorsmod.Register(ModuleName, 29, "a consumer cannot use the provider's own chain id")
 	ErrConsumerRefused                         = errorsmod.Register(ModuleName, 30, "consumer is refused by validators at the pause threshold")
+	ErrShareLedgerOverflow                     = errorsmod.Register(ModuleName, 31, "deposit would take the fee pool's share total past its bound")
 )

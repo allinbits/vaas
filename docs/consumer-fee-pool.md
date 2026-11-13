@@ -146,6 +146,15 @@ gov exception is considered (`msgServer.WithdrawConsumerFeePool`).
   the escrowed remainder. Partial withdraws (`amount < claim`) burn
   proportional shares and may deliver marginally less than requested due to
   integer truncation.
+- **The ledger rebases itself.** Fee distribution draws tokens without
+  burning shares, so every top-up of a drained pool multiplies the
+  shares-per-token ratio. When a deposit would take `total_shares` past
+  2^128, every holding and the total are first divided by the same power of
+  two, the largest that keeps at least 2^32 shares per token; the total is
+  recomputed as the sum of the truncated holdings and every claim moves by
+  less than one token (`rebaseShares`). A deposit that would take the total
+  past 2^200 even so is refused with `ErrShareLedgerOverflow`, which takes a
+  pool balance near 2^168 base units.
 
 This is the same accounting pattern used by ERC-4626 vaults and liquid
 staking modules: per-block fee consumption reduces share value, not share
@@ -170,6 +179,8 @@ count, so consumption is borne pro-rata by current share-holders.
 - `ErrInvalidPhase` from a bank send -- the destination is the fee pool of a
   deleted consumer, which accepts nothing from anyone (see
   [Funding](#funding)).
+- `ErrShareLedgerOverflow` -- the deposit would take the pool's share total
+  past its bound even after a rebase (see [Share math](#share-math-tldr)).
 
 ### Withheld downtime shares
 

@@ -1,10 +1,13 @@
 package keeper_test
 
 import (
+	"context"
+	"math/big"
 	"testing"
 	"time"
 
 	"github.com/stretchr/testify/require"
+	"go.uber.org/mock/gomock"
 
 	"cosmossdk.io/collections"
 	"cosmossdk.io/math"
@@ -19,6 +22,11 @@ import (
 )
 
 const poolDenom = "uphoton"
+
+// pow2 returns 2^n as a math.Int.
+func pow2(n uint) math.Int {
+	return math.NewIntFromBigInt(new(big.Int).Lsh(big.NewInt(1), n))
+}
 
 func TestComputeClaim(t *testing.T) {
 	k, ctx, ctrl, mocks := testkeeper.GetProviderKeeperAndCtx(t, testkeeper.NewInMemKeeperParams(t))
@@ -83,6 +91,188 @@ func TestFeePoolSharesConsistencyInvariant_UnaccountedBalance(t *testing.T) {
 
 	msg, broken = providerkeeper.FeePoolSharesConsistencyInvariant(k)(ctx)
 	require.False(t, broken, msg)
+}
+
+// TestComputeClaim_SharesFarAboveBalance: the claim math takes its products
+// over big.Int, so holdings far above the balance (2^250 shares against a
+// million tokens) resolve to the exact pro-rata amount instead of overflowing.
+func TestComputeClaim_SharesFarAboveBalance(t *testing.T) {
+	k, ctx, ctrl, mocks := testkeeper.GetProviderKeeperAndCtx(t, testkeeper.NewInMemKeeperParams(t))
+	defer ctrl.Finish()
+
+	consumerId := uint64(0)
+	denom := poolDenom
+	alice := sdk.AccAddress([]byte("alice___________"))
+	bob := sdk.AccAddress([]byte("bob_____________"))
+	poolAddr := k.GetConsumerFeePoolAddress(consumerId)
+
+	require.NoError(t, k.ConsumerFeePoolShares.Set(ctx,
+		collections.Join3(consumerId, denom, alice), pow2(250)))
+	require.NoError(t, k.ConsumerFeePoolShares.Set(ctx,
+		collections.Join3(consumerId, denom, bob), pow2(250).MulRaw(3)))
+	require.NoError(t, k.ConsumerFeePoolTotalShares.Set(ctx,
+		collections.Join(consumerId, denom), pow2(250).MulRaw(4)))
+	mocks.MockBankKeeper.EXPECT().GetBalance(ctx, poolAddr, denom).
+		Return(sdk.NewInt64Coin(denom, 1_000_000)).Times(2)
+
+	require.Equal(t, math.NewInt(250_000), k.ComputeClaim(ctx, consumerId, alice, denom))
+	require.Equal(t, math.NewInt(750_000), k.ComputeClaim(ctx, consumerId, bob, denom))
+}
+
+// TestMintSharesRebasesDrainedPoolLedger drives the share ledger through the
+// cycle that inflates it on a running chain: an epoch distribution draws the
+// pool down to a small remainder without burning any shares (the balance move
+// DistributeConsumerFees makes), a depositor tops the pool back up with the
+// floor amount, and so on. Each top-up multiplies the shares-per-token ratio
+// by about deposit / remainder, so the total crosses the rebase threshold
+// within a handful of cycles. The ledger must rescale instead of growing past
+// the threshold, keep its sum invariant, and keep every holder's claim within
+// one token of an exact pro-rata model of the pool throughout.
+func TestMintSharesRebasesDrainedPoolLedger(t *testing.T) {
+	k, ctx, ctrl, mocks := testkeeper.GetProviderKeeperAndCtx(t, testkeeper.NewInMemKeeperParams(t))
+	defer ctrl.Finish()
+
+	consumerId := uint64(0)
+	denom := poolDenom
+	poolAddr := k.GetConsumerFeePoolAddress(consumerId)
+	require.NoError(t, k.FeePoolAddressToConsumerId.Set(ctx, poolAddr, consumerId))
+	holders := []sdk.AccAddress{
+		sdk.AccAddress([]byte("alice___________")),
+		sdk.AccAddress([]byte("bob_____________")),
+	}
+
+	// The pool balance the bank reports, driven from here.
+	balance := math.ZeroInt()
+	mocks.MockBankKeeper.EXPECT().GetBalance(gomock.Any(), poolAddr, denom).
+		DoAndReturn(func(context.Context, sdk.AccAddress, string) sdk.Coin {
+			return sdk.NewCoin(denom, balance)
+		}).AnyTimes()
+	mocks.MockBankKeeper.EXPECT().GetAllBalances(gomock.Any(), poolAddr).
+		DoAndReturn(func(context.Context, sdk.AccAddress) sdk.Coins {
+			return sdk.NewCoins(sdk.NewCoin(denom, balance))
+		}).AnyTimes()
+
+	// Exact pro-rata model: each holder's ideal balance as a rational.
+	ideal := make([]*big.Rat, len(holders))
+	for i := range ideal {
+		ideal[i] = new(big.Rat)
+	}
+	requireClaimsMatchModel := func(step string) {
+		t.Helper()
+		for i, holder := range holders {
+			claim := k.ComputeClaim(ctx, consumerId, holder, denom).BigInt()
+			expected := new(big.Int).Quo(ideal[i].Num(), ideal[i].Denom())
+			diff := new(big.Int).Abs(new(big.Int).Sub(claim, expected))
+			require.LessOrEqual(t, diff.Cmp(big.NewInt(1)), 0,
+				"%s: holder %d claims %s, model says %s", step, i, claim, expected)
+		}
+		msg, broken := providerkeeper.FeePoolSharesConsistencyInvariant(k)(ctx)
+		require.False(t, broken, "%s: %s", step, msg)
+	}
+
+	// One above the default floor, fees_per_block * min_deposit_blocks.
+	deposit := math.NewInt(14_400_001)
+	remainder := math.NewInt(1000)
+	threshold := new(big.Int).Lsh(big.NewInt(1), 128)
+	totalKey := collections.Join(consumerId, denom)
+
+	rebases := 0
+	for cycle := 0; cycle < 24; cycle++ {
+		depositor := cycle % len(holders)
+
+		before := math.ZeroInt()
+		if cycle > 0 {
+			var err error
+			before, err = k.ConsumerFeePoolTotalShares.Get(ctx, totalKey)
+			require.NoError(t, err)
+		}
+		// MintShares prices the deposit against the balance before it lands.
+		require.NoError(t, k.MintShares(ctx, consumerId, holders[depositor], sdk.NewCoin(denom, deposit)))
+		balance = balance.Add(deposit)
+		ideal[depositor].Add(ideal[depositor], new(big.Rat).SetInt(deposit.BigInt()))
+
+		after, err := k.ConsumerFeePoolTotalShares.Get(ctx, totalKey)
+		require.NoError(t, err)
+		require.LessOrEqual(t, after.BigInt().Cmp(threshold), 0,
+			"cycle %d: total %s passed the rebase threshold", cycle, after)
+		if after.LT(before) {
+			rebases++
+		}
+		requireClaimsMatchModel("after the deposit of cycle " + string(rune('0'+cycle%10)))
+
+		// The epoch distributions draw the pool down to the remainder without
+		// touching the ledger; every holder's stake shrinks pro rata.
+		scale := new(big.Rat).SetFrac(remainder.BigInt(), balance.BigInt())
+		for i := range ideal {
+			ideal[i].Mul(ideal[i], scale)
+		}
+		balance = remainder
+		requireClaimsMatchModel("after the drain of cycle " + string(rune('0'+cycle%10)))
+	}
+	require.GreaterOrEqual(t, rebases, 2, "the cycle must have crossed the rebase threshold more than once")
+}
+
+// TestMintSharesRefusesShareTotalPastBound: a rebase keeps at least 2^32
+// shares per token, so the share total can only pass 2^200 when the balance
+// itself approaches 2^168; the drain-and-redeposit cycle never gets there
+// because the rebase intercepts it at 2^128. The state is seeded directly:
+// alice holds 2^199 shares against a balance of 2^170, where the ratio 2^29
+// leaves nothing to rescale. A deposit of 2^170 lands the total exactly on
+// the bound and is accepted; one token more would mint 2^199 + 2^29 shares,
+// pass the bound and is refused with the ledger untouched.
+func TestMintSharesRefusesShareTotalPastBound(t *testing.T) {
+	consumerId := uint64(0)
+	denom := poolDenom
+	alice := sdk.AccAddress([]byte("alice___________"))
+	bob := sdk.AccAddress([]byte("bob_____________"))
+
+	cases := []struct {
+		name      string
+		deposit   math.Int
+		wantErr   error
+		wantTotal math.Int
+	}{
+		{
+			name:      "deposit landing on the bound is accepted",
+			deposit:   pow2(170),
+			wantTotal: pow2(200),
+		},
+		{
+			name:      "deposit passing the bound is refused",
+			deposit:   pow2(170).AddRaw(1),
+			wantErr:   providertypes.ErrShareLedgerOverflow,
+			wantTotal: pow2(199),
+		},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			k, ctx, ctrl, mocks := testkeeper.GetProviderKeeperAndCtx(t, testkeeper.NewInMemKeeperParams(t))
+			defer ctrl.Finish()
+			poolAddr := k.GetConsumerFeePoolAddress(consumerId)
+
+			require.NoError(t, k.ConsumerFeePoolShares.Set(ctx,
+				collections.Join3(consumerId, denom, alice), pow2(199)))
+			require.NoError(t, k.ConsumerFeePoolTotalShares.Set(ctx,
+				collections.Join(consumerId, denom), pow2(199)))
+			mocks.MockBankKeeper.EXPECT().GetBalance(ctx, poolAddr, denom).
+				Return(sdk.NewCoin(denom, pow2(170)))
+
+			err := k.MintShares(ctx, consumerId, bob, sdk.NewCoin(denom, tc.deposit))
+			if tc.wantErr != nil {
+				require.ErrorIs(t, err, tc.wantErr)
+				_, err := k.ConsumerFeePoolShares.Get(ctx, collections.Join3(consumerId, denom, bob))
+				require.ErrorIs(t, err, collections.ErrNotFound)
+			} else {
+				require.NoError(t, err)
+			}
+			aliceShares, err := k.ConsumerFeePoolShares.Get(ctx, collections.Join3(consumerId, denom, alice))
+			require.NoError(t, err)
+			require.Equal(t, pow2(199), aliceShares)
+			total, err := k.ConsumerFeePoolTotalShares.Get(ctx, collections.Join(consumerId, denom))
+			require.NoError(t, err)
+			require.Equal(t, tc.wantTotal, total)
+		})
+	}
 }
 
 func TestMintShares(t *testing.T) {
@@ -380,6 +570,64 @@ func TestWithdrawShares(t *testing.T) {
 			},
 		},
 		{
+			name:      "shares far above the balance: full withdraw delivers the claim",
+			depositor: alice,
+			withdraw:  sdk.NewInt64Coin(denom, 500_000),
+			setup: func(k providerkeeper.Keeper, ctx sdk.Context, mocks testkeeper.MockedKeepers, poolAddr sdk.AccAddress) {
+				// Alice and bob hold 2^250 shares each against a balance of a
+				// million: shares * balance passes 256 bits, the claim does not.
+				require.NoError(t, k.ConsumerFeePoolShares.Set(ctx,
+					collections.Join3(consumerId, denom, alice), pow2(250)))
+				require.NoError(t, k.ConsumerFeePoolShares.Set(ctx,
+					collections.Join3(consumerId, denom, bob), pow2(250)))
+				require.NoError(t, k.ConsumerFeePoolTotalShares.Set(ctx,
+					collections.Join(consumerId, denom), pow2(251)))
+				mocks.MockBankKeeper.EXPECT().GetBalance(ctx, poolAddr, denom).Return(sdk.NewInt64Coin(denom, 1_000_000))
+			},
+			postCheck: func(t *testing.T, k providerkeeper.Keeper, ctx sdk.Context, tokens sdk.Coin) {
+				t.Helper()
+				require.Equal(t, math.NewInt(500_000), tokens.Amount)
+
+				_, err := k.ConsumerFeePoolShares.Get(ctx, collections.Join3(consumerId, denom, alice))
+				require.ErrorIs(t, err, collections.ErrNotFound)
+				total, err := k.ConsumerFeePoolTotalShares.Get(ctx, collections.Join(consumerId, denom))
+				require.NoError(t, err)
+				require.Equal(t, pow2(250), total)
+			},
+		},
+		{
+			name:      "shares far above the balance: partial withdraw burns at the full-balance rate",
+			depositor: alice,
+			withdraw:  sdk.NewInt64Coin(denom, 100_000),
+			setup: func(k providerkeeper.Keeper, ctx sdk.Context, mocks testkeeper.MockedKeepers, poolAddr sdk.AccAddress) {
+				require.NoError(t, k.ConsumerFeePoolShares.Set(ctx,
+					collections.Join3(consumerId, denom, alice), pow2(250)))
+				require.NoError(t, k.ConsumerFeePoolShares.Set(ctx,
+					collections.Join3(consumerId, denom, bob), pow2(250)))
+				require.NoError(t, k.ConsumerFeePoolTotalShares.Set(ctx,
+					collections.Join(consumerId, denom), pow2(251)))
+				mocks.MockBankKeeper.EXPECT().GetBalance(ctx, poolAddr, denom).Return(sdk.NewInt64Coin(denom, 1_000_000))
+			},
+			postCheck: func(t *testing.T, k providerkeeper.Keeper, ctx sdk.Context, tokens sdk.Coin) {
+				t.Helper()
+				// sharesToBurn = 100_000 * 2^251 / 1_000_000, and the tokens are
+				// re-derived from them: 99_999 after truncation.
+				burn := new(big.Int).Mul(big.NewInt(100_000), pow2(251).BigInt())
+				burn.Quo(burn, big.NewInt(1_000_000))
+				delivered := new(big.Int).Mul(burn, big.NewInt(1_000_000))
+				delivered.Quo(delivered, pow2(251).BigInt())
+				require.Equal(t, math.NewInt(99_999), math.NewIntFromBigInt(delivered))
+				require.Equal(t, math.NewIntFromBigInt(delivered), tokens.Amount)
+
+				aliceShares, err := k.ConsumerFeePoolShares.Get(ctx, collections.Join3(consumerId, denom, alice))
+				require.NoError(t, err)
+				require.Equal(t, pow2(250).Sub(math.NewIntFromBigInt(burn)), aliceShares)
+				total, err := k.ConsumerFeePoolTotalShares.Get(ctx, collections.Join(consumerId, denom))
+				require.NoError(t, err)
+				require.Equal(t, pow2(251).Sub(math.NewIntFromBigInt(burn)), total)
+			},
+		},
+		{
 			name:      "zero pool balance returns ErrPoolEmpty",
 			depositor: alice,
 			withdraw:  sdk.NewInt64Coin(denom, 50),
@@ -532,6 +780,36 @@ func TestSweepConsumerFeePoolDenom(t *testing.T) {
 				mocks.MockDistributionKeeper.EXPECT().FundCommunityPool(
 					ctx, sdk.NewCoins(sdk.NewInt64Coin(denom, 100)),
 					providerModuleAddr).Return(nil)
+			},
+		},
+		{
+			name: "shares far above the balance: alice 2^250 bob 3 * 2^250 balance 1_000_000",
+			setupMocks: func(k providerkeeper.Keeper, ctx sdk.Context, mocks testkeeper.MockedKeepers, poolAddr sdk.AccAddress) {
+				// shares * balance passes 256 bits; each slice is the exact
+				// pro-rata amount and nothing is left as dust.
+				require.NoError(t, k.ConsumerFeePoolShares.Set(ctx,
+					collections.Join3(consumerId, denom, alice), pow2(250)))
+				require.NoError(t, k.ConsumerFeePoolShares.Set(ctx,
+					collections.Join3(consumerId, denom, bob), pow2(250).MulRaw(3)))
+				require.NoError(t, k.ConsumerFeePoolTotalShares.Set(ctx,
+					collections.Join(consumerId, denom), pow2(252)))
+
+				mocks.MockBankKeeper.EXPECT().GetBalance(ctx, poolAddr, denom).Return(sdk.NewInt64Coin(denom, 1_000_000))
+				mocks.MockBankKeeper.EXPECT().SendCoinsFromAccountToModule(
+					ctx, poolAddr, providerModuleName, sdk.NewCoins(sdk.NewInt64Coin(denom, 1_000_000))).Return(nil)
+				mocks.MockBankKeeper.EXPECT().SendCoinsFromModuleToAccount(
+					ctx, providerModuleName, alice, sdk.NewCoins(sdk.NewInt64Coin(denom, 250_000))).Return(nil)
+				mocks.MockBankKeeper.EXPECT().SendCoinsFromModuleToAccount(
+					ctx, providerModuleName, bob, sdk.NewCoins(sdk.NewInt64Coin(denom, 750_000))).Return(nil)
+			},
+			postCheck: func(t *testing.T, k providerkeeper.Keeper, ctx sdk.Context) {
+				t.Helper()
+				_, err := k.ConsumerFeePoolShares.Get(ctx, collections.Join3(consumerId, denom, alice))
+				require.ErrorIs(t, err, collections.ErrNotFound)
+				_, err = k.ConsumerFeePoolShares.Get(ctx, collections.Join3(consumerId, denom, bob))
+				require.ErrorIs(t, err, collections.ErrNotFound)
+				_, err = k.ConsumerFeePoolTotalShares.Get(ctx, collections.Join(consumerId, denom))
+				require.ErrorIs(t, err, collections.ErrNotFound)
 			},
 		},
 		{
