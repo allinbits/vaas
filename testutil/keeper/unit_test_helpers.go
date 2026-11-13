@@ -103,9 +103,9 @@ type MockedKeepers struct {
 	// ClientCounterparties backs the mocked ClientV2Keeper's
 	// GetClientCounterparty: a client id present in the map has a registered
 	// counterparty, any other id does not. Tests exercising client
-	// authentication (the provider's discovery content check, the consumer's
+	// authentication (the provider's client declaration check, the consumer's
 	// provider-client pin) populate it to mark specific clients routable;
-	// the empty default preserves the historical "no counterparty" behavior.
+	// with the empty default no client has a counterparty.
 	ClientCounterparties map[string]clientv2types.CounterpartyInfo
 
 	// pendingRotations holds what GetBlockConsPubKeyRotationHistory reports:

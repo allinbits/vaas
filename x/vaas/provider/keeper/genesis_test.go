@@ -283,7 +283,7 @@ func TestInitGenesisRestoresPerConsumerStateAndDerivedQueues(t *testing.T) {
 	require.NoError(t, err)
 	require.Equal(t, md, gotMd)
 
-	// init_params are set on INITIALIZED, LAUNCHED, STOPPED, DELETED (ids 1–4).
+	// init_params are set on INITIALIZED, LAUNCHED, STOPPED, DELETED (ids 1 to 4).
 	for _, consumerId := range []uint64{1, 2, 3, 4} {
 		gotIp, err := pk.GetConsumerInitializationParameters(ctx, consumerId)
 		require.NoError(t, err, "init_params missing for consumer %d", consumerId)
@@ -409,7 +409,7 @@ func TestGenesisRoundTrip(t *testing.T) {
 	pruneTs := time.Unix(1_900_000_000, 0).UTC()
 	prunedAddr := providertypes.NewConsumerConsAddress([]byte("consumer-addr-to-prune-x"))
 
-	// Seed on consumer 2 (LAUNCHED — has a populated state to assign keys against).
+	// Seed on consumer 2 (LAUNCHED, with a populated state to assign keys against).
 	const keyedConsumerID uint64 = 2
 	pkA.SetValidatorConsumerPubKey(ctxA, keyedConsumerID, assignedProviderConsAddr, assignedConsumerKey)
 	pkA.SetValidatorByConsumerAddr(ctxA, keyedConsumerID, assignedConsumerConsAddr, assignedProviderConsAddr)
@@ -653,7 +653,7 @@ func TestGenesisRoundTrip(t *testing.T) {
 
 	// After import, the consumer-id-keyed key-assignment state must reconnect
 	// to the same consumer id; this is the bug guard for the proto rename
-	// (chain_id → consumer_id on ValidatorConsumerPubKey / ValidatorByConsumerAddr
+	// (chain_id to consumer_id on ValidatorConsumerPubKey / ValidatorByConsumerAddr
 	// / ConsumerAddrsToPrune).
 	gotKey, foundKey := pkB.GetValidatorConsumerPubKey(ctxB, keyedConsumerID, assignedProviderConsAddr)
 	require.True(t, foundKey, "ValidatorConsumerPubKey lost across round-trip")

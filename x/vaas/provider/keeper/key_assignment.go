@@ -24,10 +24,6 @@ func (k Keeper) ParseConsumerKey(consumerKey string) (tmprotocrypto.PublicKey, e
 		return tmprotocrypto.PublicKey{}, err
 	}
 
-	// Note: the correct way to decide if a key type is supported is to check the
-	// consensus params. That path is disabled for now as a quick way to get
-	// ed25519 working, avoiding amino/proto-any marshalling issues.
-
 	// ed25519 only (docs/key-assignment.md, rule 1): a consumer key must be one
 	// every consumer's CometBFT accepts, and the provider cannot read a consumer's
 	// consensus parameters to check anything else. Widening this is a decision

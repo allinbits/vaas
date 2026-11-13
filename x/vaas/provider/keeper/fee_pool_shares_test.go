@@ -304,7 +304,7 @@ func TestWithdrawShares(t *testing.T) {
 					collections.Join(consumerId, denom), math.NewInt(100)))
 				mocks.MockBankKeeper.EXPECT().GetBalance(ctx, poolAddr, denom).Return(sdk.NewInt64Coin(denom, 100))
 			},
-			// Request 200 (over claim) — should burn all shares, return claim=100
+			// Request 200 (over claim): should burn all shares, return claim=100
 			postCheck: func(t *testing.T, k providerkeeper.Keeper, ctx sdk.Context, tokens sdk.Coin) {
 				t.Helper()
 				require.Equal(t, math.NewInt(100), tokens.Amount)
@@ -465,7 +465,7 @@ func TestSweepConsumerFeePoolDenom(t *testing.T) {
 		{
 			name: "no dust: alice 30 bob 70 balance 100",
 			setupMocks: func(k providerkeeper.Keeper, ctx sdk.Context, mocks testkeeper.MockedKeepers, poolAddr sdk.AccAddress) {
-				// alice 30, bob 70, total 100, balance 100 — no dust
+				// alice 30, bob 70, total 100, balance 100: no dust
 				require.NoError(t, k.ConsumerFeePoolShares.Set(ctx,
 					collections.Join3(consumerId, denom, alice), math.NewInt(30)))
 				require.NoError(t, k.ConsumerFeePoolShares.Set(ctx,

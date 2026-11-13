@@ -69,7 +69,7 @@ func TestFeePoolSendRestriction_BlocksUnsanctionedSenders(t *testing.T) {
 }
 
 // TestFeePoolSendRestriction_CrossConsumerIsolation: a send to one consumer's
-// fee pool from another consumer's fee pool is blocked — fee pool addresses
+// fee pool from another consumer's fee pool is blocked: fee pool addresses
 // are not on the sanctioned-sender list.
 func TestFeePoolSendRestriction_CrossConsumerIsolation(t *testing.T) {
 	k, ctx, ctrl, _ := testkeeper.GetProviderKeeperAndCtx(t, testkeeper.NewInMemKeeperParams(t))
@@ -88,7 +88,7 @@ func TestFeePoolSendRestriction_CrossConsumerIsolation(t *testing.T) {
 
 // TestFeePoolSendRestriction_DeletedConsumerPassesThrough: once a consumer is
 // deleted its reverse-lookup entry is gone, so sends to its (now-orphan)
-// pool address pass through. This is the documented behavior — funds sent
+// pool address pass through. This is the documented behavior: funds sent
 // after delete are an unrecoverable user error, but the bank layer doesn't
 // block them.
 func TestFeePoolSendRestriction_DeletedConsumerPassesThrough(t *testing.T) {

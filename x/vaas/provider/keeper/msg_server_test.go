@@ -139,7 +139,7 @@ func TestCreateConsumerDuplicateChainId(t *testing.T) {
 	require.NoError(t, err)
 	require.Equal(t, uint64(0), response.ConsumerId)
 
-	// Attempt to register another consumer with the same chainId — rejected before unbonding check
+	// Attempt to register another consumer with the same chainId: rejected before the unbonding check
 	_, err = msgServer.CreateConsumer(ctx,
 		&providertypes.MsgCreateConsumer{
 			Submitter: "submitter2", ChainId: "duplicateChainId", Metadata: consumerMetadata,

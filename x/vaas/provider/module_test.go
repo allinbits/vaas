@@ -68,7 +68,7 @@ func TestBeginBlockCommitsDebtStateWhenDistributionFails(t *testing.T) {
 		GetBalance(gomock.Any(), consumerInDebtPool, "uphoton").
 		Return(sdk.NewCoin("uphoton", feesPerEpoch.Amount.QuoRaw(2)))
 
-	// consumerPaying: balance sufficient → pays via InputOutputCoins
+	// consumerPaying: balance sufficient -> pays via InputOutputCoins
 	mocks.MockBankKeeper.EXPECT().
 		GetBalance(gomock.Any(), consumerPayingPool, "uphoton").
 		Return(feesPerEpoch)

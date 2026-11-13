@@ -39,7 +39,7 @@ func (vsc ValidatorSetChangePacketData) Validate() error {
 	for i := range vsc.ValidatorUpdates {
 		update := vsc.ValidatorUpdates[i]
 		// encoding.PubKeyFromProto (CometBFT) asserts the key type AND its
-		// length; the SDK's FromCmtProtoPublicKey only wraps the bytes, so a
+		// length; cosmos-sdk's FromCmtProtoPublicKey only wraps the bytes, so a
 		// wrong-length key would pass here and still panic EndBlock later at
 		// PubKey.Address().
 		if _, err := encoding.PubKeyFromProto(update.PubKey); err != nil {

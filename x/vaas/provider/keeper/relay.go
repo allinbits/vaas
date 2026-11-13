@@ -400,7 +400,7 @@ func (k Keeper) QueueConsPubKeyRotationSnapshots(ctx sdk.Context, newProviderAdd
 
 		clientId, found := k.GetConsumerClientId(ctx, consumerId)
 		if !found {
-			k.Logger(ctx).Error("no client discovered for consumer; consensus-key rotation snapshot stays queued for the next epoch",
+			k.Logger(ctx).Error("no client declared for consumer; consensus-key rotation snapshot stays queued for the next epoch",
 				"consumerId", consumerId,
 				"providerConsAddr", newProviderAddr.String(),
 			)

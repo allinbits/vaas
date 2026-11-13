@@ -144,7 +144,7 @@ func initCometBFTConfig() *cmtcfg.Config {
 
 // initAppConfig helps to override default appConfig template and configs.
 func initAppConfig() (string, interface{}) {
-	// The SDK's default minimum gas price is "" in app.toml, which halts the
+	// cosmos-sdk's default minimum gas price is "" in app.toml, which halts the
 	// node on startup if a validator leaves it unset. We default it to a zero
 	// uatone price so a fresh node starts; validators can override it in their
 	// own app.toml.
@@ -224,8 +224,6 @@ func txCommand() *cobra.Command {
 		authcmd.GetSimulateCmd(),
 	)
 
-	// NOTE: this must be registered for now so that submit-legacy-proposal
-	// message can be routed to the provider handler and processed correctly.
 	providerApp.ModuleBasics.AddTxCommands(cmd)
 
 	return cmd

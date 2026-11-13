@@ -19,7 +19,7 @@ import (
 )
 
 // CryptoIdentity is a test helper for generating keys and addresses of
-// various interfaces and types used by the SDK and Tendermint from a single
+// various interfaces and types used by cosmos-sdk and CometBFT from a single
 // 'root' seed.
 type CryptoIdentity struct {
 	// private key for validators to run consensus

@@ -29,7 +29,7 @@ func (app *App) ExportAppStateAndValidators(
 	ctx := app.NewContextLegacy(true, cmtproto.Header{Height: app.LastBlockHeight()})
 
 	// We export at last height + 1, because that's the height at which
-	// Tendermint will start InitChain.
+	// CometBFT will start InitChain.
 	height := app.LastBlockHeight() + 1
 	if forZeroHeight {
 		height = 0
@@ -57,10 +57,11 @@ func (app *App) ExportAppStateAndValidators(
 	}, nil
 }
 
-// prepare for fresh start at zero height
-// NOTE zero height genesis is a temporary feature which will be deprecated
-//
-//	in favour of export at a block height
+// prepForZeroHeightGenesis prepares the exported state for a fresh start at
+// height zero: it withdraws every validator commission and delegator reward
+// and re-initialises distribution, zeroes the creation heights of unbonding
+// and redelegation entries and the signing-info start heights, and, when
+// jailAllowedAddrs is non-empty, jails every validator not listed there.
 func (app *App) prepForZeroHeightGenesis(ctx sdk.Context, jailAllowedAddrs []string) {
 	applyAllowedAddrs := false
 

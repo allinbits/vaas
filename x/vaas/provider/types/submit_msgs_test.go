@@ -159,7 +159,7 @@ func TestMsgSubmitConsumerDoubleVotingValidateBasic_RejectsVoteHeightMismatch(t 
 	ev, header := makeValidDoubleVoteEvidenceAndHeader(t, "consumer-1", 10)
 
 	// Mutate VoteB.Height so it diverges from VoteA.Height while the infraction
-	// header still matches VoteA — exercises the explicit cross-vote height check.
+	// header still matches VoteA, which exercises the explicit cross-vote height check.
 	ev.VoteB.Height = ev.VoteA.Height + 1
 
 	msg := types.MsgSubmitConsumerDoubleVoting{
