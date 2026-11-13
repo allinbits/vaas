@@ -68,5 +68,6 @@ var (
 	PendingEquivocationJailsPrefix         = collections.NewPrefix(46)
 	ConsumersRemovedByGovernancePrefix     = collections.NewPrefix(47)
 	ConsumerForkKnownAtPrefix              = collections.NewPrefix(49)
+	ConsumerClientRecoveredSinceForkPrefix = collections.NewPrefix(50)
 	ParametersPrefix                       = collections.NewPrefix(0xFF)
 )

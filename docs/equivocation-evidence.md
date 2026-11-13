@@ -83,14 +83,17 @@ Both files are decoded with the proto-JSON codec. CLI source:
    [consumer-refusal.md](consumer-refusal.md) section 3. Repeated submissions
    of already-processed evidence are idempotent: already queued is a no-op,
    already-tombstoned is not an error, and a double-sign whose punishment
-   executed without tombstoning (`double_sign.tombstone = false`) is
-   remembered by chain id, live provider consensus address and infraction
-   height (`PunishedEquivocations`, which follows consumer key rotation and
-   is cleared once the validator is tombstoned), so the same infraction is
-   never punished twice. The record is keyed by the chain id the votes were
-   signed over and outlives the consumer: a consumer that re-registers a
-   deleted consumer's chain id cannot be handed the dead chain's double-signs
-   and punish them again.
+   was queued is remembered by chain id, live provider consensus address and
+   infraction height (`PunishedEquivocations`), so the same infraction is
+   never punished twice. The record is written whatever
+   `double_sign.tombstone` says at the time: the policy is read again when
+   the punishment executes, and a governance change in between must not
+   make the same two votes punishable again. It follows consumer key
+   rotation and is dropped once the validator is tombstoned, the tombstone
+   stopping every later submission by itself. It is keyed by the chain id
+   the votes were signed over and outlives the consumer: a consumer that
+   re-registers a deleted consumer's chain id cannot be handed the dead
+   chain's double-signs and punish them again.
 
 On success the provider emits `vaas_submit_consumer_double_voting` and
 `vaas_equivocation_punishment_queued`; the resolution later emits
@@ -161,7 +164,10 @@ attribution. A consumer already paused for a downtime challenge or a refusal
 when its client freezes is moved under the light-client reason the same way:
 its accusations are discarded as a fresh light-client pause discards them, and
 the fork is recorded as known from that block, which the resume's wait below
-counts from; the pause keeps the time it began. Left unseen, the fork would
+counts from; the pause keeps the time it began. A consumer already paused for
+a light-client attack is followed through a recovery: its client recovered
+during the pause and frozen again by a later fork has the fork recorded as
+known from the block it is next seen frozen at. Left unseen, either fork would
 cost a governance round: a recover-and-resume proposal would land the consumer
 back in `LAUNCHED` only for the same headers to pause it again.
 

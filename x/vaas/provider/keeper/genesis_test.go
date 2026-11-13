@@ -1044,8 +1044,9 @@ func TestInitGenesisAcceptsDefaultGenesis(t *testing.T) {
 
 // TestGenesisRoundTripKeepsPauseReasonAndPausedAt: the reason a consumer is
 // paused for, the time it was paused at and, for a light-client pause, the
-// time the fork became known travel through export, validation and import,
-// and a launched consumer carries none of them.
+// time the fork became known and whether the client was recovered since
+// travel through export, validation and import, and a launched consumer
+// carries none of them.
 func TestGenesisRoundTripKeepsPauseReasonAndPausedAt(t *testing.T) {
 	pkA, ctxA, ctrlA, mocksA := testkeeper.GetProviderKeeperAndCtx(t, testkeeper.NewInMemKeeperParams(t))
 	defer ctrlA.Finish()
@@ -1088,6 +1089,7 @@ func TestGenesisRoundTripKeepsPauseReasonAndPausedAt(t *testing.T) {
 	require.NoError(t, pkA.SetConsumerPausedAt(ctxA, paused, pausedAt))
 	forkKnownAt := time.Unix(1_817_000_000, 0).UTC()
 	require.NoError(t, pkA.SetConsumerForkKnownAt(ctxA, paused, forkKnownAt))
+	require.NoError(t, pkA.SetConsumerClientRecoveredSinceFork(ctxA, paused))
 
 	// consumer 1: launched, never paused.
 	launched := seed("consumer-beta", providertypes.CONSUMER_PHASE_LAUNCHED, "07-tendermint-1")
@@ -1098,9 +1100,11 @@ func TestGenesisRoundTripKeepsPauseReasonAndPausedAt(t *testing.T) {
 	require.Equal(t, providertypes.PAUSE_REASON_LIGHT_CLIENT_ATTACK, expA.ConsumerStates[0].PauseReason)
 	require.Equal(t, &pausedAt, expA.ConsumerStates[0].PausedAt)
 	require.Equal(t, &forkKnownAt, expA.ConsumerStates[0].ForkKnownAt)
+	require.True(t, expA.ConsumerStates[0].ClientRecoveredSinceFork)
 	require.Equal(t, providertypes.PAUSE_REASON_UNSPECIFIED, expA.ConsumerStates[1].PauseReason)
 	require.Nil(t, expA.ConsumerStates[1].PausedAt)
 	require.Nil(t, expA.ConsumerStates[1].ForkKnownAt)
+	require.False(t, expA.ConsumerStates[1].ClientRecoveredSinceFork)
 
 	pkB, ctxB, ctrlB, mocksB := testkeeper.GetProviderKeeperAndCtx(t, testkeeper.NewInMemKeeperParams(t))
 	defer ctrlB.Finish()
@@ -1117,11 +1121,17 @@ func TestGenesisRoundTripKeepsPauseReasonAndPausedAt(t *testing.T) {
 	got, err = pkB.GetConsumerForkKnownAt(ctxB, paused)
 	require.NoError(t, err)
 	require.Equal(t, forkKnownAt, got)
+	recovered, err := pkB.IsConsumerClientRecoveredSinceFork(ctxB, paused)
+	require.NoError(t, err)
+	require.True(t, recovered)
 	require.Equal(t, providertypes.PAUSE_REASON_UNSPECIFIED, pkB.GetConsumerPauseReason(ctxB, launched))
 	_, err = pkB.GetConsumerPausedAt(ctxB, launched)
 	require.Error(t, err)
 	_, err = pkB.GetConsumerForkKnownAt(ctxB, launched)
 	require.Error(t, err)
+	recovered, err = pkB.IsConsumerClientRecoveredSinceFork(ctxB, launched)
+	require.NoError(t, err)
+	require.False(t, recovered)
 }
 
 // TestInitGenesisPanicsOnWithheldFeeDenomMismatch: the record denom is fixed

@@ -137,27 +137,61 @@ func TestDoubleVoteIsPunishedOncePerInfractionWithoutTombstoning(t *testing.T) {
 	require.Equal(t, 2, f.counters.slashes, "a double-sign at another height is another infraction")
 }
 
-// TestDoubleVoteKeepsNoRecordWhenTombstoning: with tombstoning on, the
-// tombstone is what stops a second punishment, so no record is written and
-// a re-submission is a no-op through the tombstone alone.
-func TestDoubleVoteKeepsNoRecordWhenTombstoning(t *testing.T) {
+// TestDoubleVoteRecordIsDroppedByTheTombstone: with tombstoning on, the
+// record is written at queue time like any other and dropped once the
+// tombstone lands, the tombstone being what stops a re-submission from then
+// on.
+func TestDoubleVoteRecordIsDroppedByTheTombstone(t *testing.T) {
 	f, ctrl := newDoubleVoteFixture(t, true)
 	defer ctrl.Finish()
 
 	evidence := doubleVoteBy(t, f.signer, 55, f.ctx.BlockTime())
 	require.NoError(t, f.k.HandleConsumerDoubleVoting(f.ctx, f.cid, evidence, f.pubKey))
-	require.False(t, f.punished(t, 55), "a tombstoning punishment needs no record")
+	require.True(t, f.punished(t, 55), "the infraction is recorded at queue time whatever the policy")
 	f.sweep(t)
 	require.Equal(t, 1, f.counters.slashes)
 	require.True(t, f.signing.at(f.consAddr).Tombstoned)
+	require.False(t, f.punished(t, 55), "the tombstone makes the record redundant")
 
 	require.NoError(t, f.k.HandleConsumerDoubleVoting(f.ctx, f.cid, evidence, f.pubKey))
 	require.Equal(t, 1, f.counters.slashes)
 }
 
-// TestTombstoningForgetsThePunishedEquivocations: records left by an
-// earlier, non-tombstoning policy become redundant the moment the validator
-// is tombstoned, and are dropped with the punishment that tombstones it.
+// TestAPolicyFlipBetweenQueueAndExecutionCannotRePunish: the tombstone policy
+// is read when the punishment executes, so one queued while
+// double_sign.tombstone was true executes without a tombstone once
+// governance has turned it off meanwhile. The record written at queue time
+// is what keeps the same evidence from being queued, jailed and slashed
+// again.
+func TestAPolicyFlipBetweenQueueAndExecutionCannotRePunish(t *testing.T) {
+	f, ctrl := newDoubleVoteFixture(t, true)
+	defer ctrl.Finish()
+
+	evidence := doubleVoteBy(t, f.signer, 55, f.ctx.BlockTime())
+	require.NoError(t, f.k.HandleConsumerDoubleVoting(f.ctx, f.cid, evidence, f.pubKey))
+	require.True(t, f.punished(t, 55), "the infraction is recorded at queue time whatever the policy")
+
+	params := f.k.GetInfractionParams(f.ctx)
+	params.DoubleSign.Tombstone = false
+	f.k.SetInfractionParams(f.ctx, params)
+
+	f.sweep(t)
+	require.Equal(t, 1, f.counters.slashes)
+	require.False(t, f.signing.at(f.consAddr).Tombstoned, "the policy at execution decides the tombstone")
+	require.True(t, f.punished(t, 55), "the record stays while no tombstone makes it redundant")
+
+	jails := f.counters.jails
+	require.NoError(t, f.k.HandleConsumerDoubleVoting(f.ctx, f.cid, evidence, f.pubKey))
+	require.Equal(t, 1, f.counters.slashes, "the same infraction must not be slashed twice")
+	require.Equal(t, jails, f.counters.jails, "nor queued again")
+	pending, err := f.k.PendingEquivocationPunishments.Has(f.ctx, collections.Join3(f.cid, f.consAddr.Bytes(), int64(55)))
+	require.NoError(t, err)
+	require.False(t, pending, "nor queued again")
+}
+
+// TestTombstoningForgetsThePunishedEquivocations: records left by earlier
+// punishments become redundant the moment the validator is tombstoned, and
+// are dropped with the punishment that tombstones it, not before.
 func TestTombstoningForgetsThePunishedEquivocations(t *testing.T) {
 	f, ctrl := newDoubleVoteFixture(t, true)
 	defer ctrl.Finish()
@@ -167,6 +201,9 @@ func TestTombstoningForgetsThePunishedEquivocations(t *testing.T) {
 	}
 
 	require.NoError(t, f.k.HandleConsumerDoubleVoting(f.ctx, f.cid, doubleVoteBy(t, f.signer, 55, f.ctx.BlockTime()), f.pubKey))
+	for _, height := range []int64{10, 20, 55} {
+		require.True(t, f.punished(t, height), "height %d stays recorded until the tombstone lands", height)
+	}
 	f.sweep(t)
 	require.True(t, f.signing.at(f.consAddr).Tombstoned)
 	for _, height := range []int64{10, 20, 55} {

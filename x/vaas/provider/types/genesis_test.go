@@ -169,7 +169,7 @@ func TestValidateGenesisState(t *testing.T) {
 			"valid consumer state with client id",
 			types.NewGenesisState(
 				types.DefaultValsetUpdateID,
-				[]types.ConsumerState{launchedCS(0, "chainid", "abc")},
+				[]types.ConsumerState{launchedCS(0, "chainid", testClientID)},
 				types.DefaultParams(),
 				nil,
 				nil,
@@ -781,6 +781,10 @@ func TestConsumerStateValidatePerPhase(t *testing.T) {
 	}{
 		// REGISTERED: only chain_id + owner required.
 		{"REGISTERED valid", func(cs *types.ConsumerState) { *cs = base(types.CONSUMER_PHASE_REGISTERED) }, ""},
+		{"REGISTERED with a pending VSC packet", func(cs *types.ConsumerState) {
+			*cs = base(types.CONSUMER_PHASE_REGISTERED)
+			cs.PendingValsetChanges = []vaastypes.ValidatorSetChangePacketData{{ValsetUpdateId: 1}}
+		}, "pending valset changes must be empty"},
 		{"REGISTERED empty owner", func(cs *types.ConsumerState) {
 			*cs = base(types.CONSUMER_PHASE_REGISTERED)
 			cs.OwnerAddress = ""
@@ -803,18 +807,31 @@ func TestConsumerStateValidatePerPhase(t *testing.T) {
 			*cs = base(types.CONSUMER_PHASE_INITIALIZED)
 		}, "init params required"},
 
-		// LAUNCHED: requires init_params + client_id + non-default consumer_genesis.
+		// LAUNCHED: requires init_params + non-default consumer_genesis; the
+		// client is declared after the launch, so its id may be absent.
 		{"LAUNCHED valid", func(cs *types.ConsumerState) {
 			*cs = base(types.CONSUMER_PHASE_LAUNCHED)
 			cs.InitParams = validInit
 			cs.ClientId = testClientID
 			cs.ConsumerGenesis = nonDefaultConsumerGenesis()
 		}, ""},
-		{"LAUNCHED missing client_id", func(cs *types.ConsumerState) {
+		{"LAUNCHED without a declared client", func(cs *types.ConsumerState) {
 			*cs = base(types.CONSUMER_PHASE_LAUNCHED)
 			cs.InitParams = validInit
 			cs.ConsumerGenesis = nonDefaultConsumerGenesis()
-		}, "client id"},
+		}, ""},
+		{"LAUNCHED with a malformed client id", func(cs *types.ConsumerState) {
+			*cs = base(types.CONSUMER_PHASE_LAUNCHED)
+			cs.InitParams = validInit
+			cs.ClientId = "07/tendermint-0"
+			cs.ConsumerGenesis = nonDefaultConsumerGenesis()
+		}, "invalid client id"},
+		{"LAUNCHED with a pending VSC packet", func(cs *types.ConsumerState) {
+			*cs = base(types.CONSUMER_PHASE_LAUNCHED)
+			cs.InitParams = validInit
+			cs.ConsumerGenesis = nonDefaultConsumerGenesis()
+			cs.PendingValsetChanges = []vaastypes.ValidatorSetChangePacketData{{ValsetUpdateId: 1}}
+		}, ""},
 
 		// STOPPED: LAUNCHED requirements + removal_time.
 		{"STOPPED valid", func(cs *types.ConsumerState) {
@@ -823,6 +840,13 @@ func TestConsumerStateValidatePerPhase(t *testing.T) {
 			cs.ClientId = testClientID
 			cs.ConsumerGenesis = nonDefaultConsumerGenesis()
 			cs.RemovalTime = &rt
+		}, ""},
+		{"STOPPED without a declared client, with a pending VSC packet", func(cs *types.ConsumerState) {
+			*cs = base(types.CONSUMER_PHASE_STOPPED)
+			cs.InitParams = validInit
+			cs.ConsumerGenesis = nonDefaultConsumerGenesis()
+			cs.RemovalTime = &rt
+			cs.PendingValsetChanges = []vaastypes.ValidatorSetChangePacketData{{ValsetUpdateId: 1}}
 		}, ""},
 		{"STOPPED missing removal_time", func(cs *types.ConsumerState) {
 			*cs = base(types.CONSUMER_PHASE_STOPPED)
@@ -841,6 +865,14 @@ func TestConsumerStateValidatePerPhase(t *testing.T) {
 			cs.PauseReason = types.PAUSE_REASON_DOWNTIME_CHALLENGE
 			cs.PausedAt = &rt
 		}, ""},
+		{"PAUSED for a challenge without a declared client", func(cs *types.ConsumerState) {
+			*cs = base(types.CONSUMER_PHASE_PAUSED)
+			cs.InitParams = validInit
+			cs.ConsumerGenesis = nonDefaultConsumerGenesis()
+			cs.PauseExpirationTime = &rt
+			cs.PauseReason = types.PAUSE_REASON_DOWNTIME_CHALLENGE
+			cs.PausedAt = &rt
+		}, ""},
 		{"PAUSED for a light-client attack valid", func(cs *types.ConsumerState) {
 			*cs = base(types.CONSUMER_PHASE_PAUSED)
 			cs.InitParams = validInit
@@ -851,6 +883,43 @@ func TestConsumerStateValidatePerPhase(t *testing.T) {
 			cs.PausedAt = &rt
 			cs.ForkKnownAt = &later
 		}, ""},
+		{"PAUSED for a light-client attack with the client recovered since", func(cs *types.ConsumerState) {
+			*cs = base(types.CONSUMER_PHASE_PAUSED)
+			cs.InitParams = validInit
+			cs.ClientId = testClientID
+			cs.ConsumerGenesis = nonDefaultConsumerGenesis()
+			cs.PauseExpirationTime = &rt
+			cs.PauseReason = types.PAUSE_REASON_LIGHT_CLIENT_ATTACK
+			cs.PausedAt = &rt
+			cs.ForkKnownAt = &later
+			cs.ClientRecoveredSinceFork = true
+		}, ""},
+		{"PAUSED for a challenge with the client-recovered mark", func(cs *types.ConsumerState) {
+			*cs = base(types.CONSUMER_PHASE_PAUSED)
+			cs.InitParams = validInit
+			cs.ClientId = testClientID
+			cs.ConsumerGenesis = nonDefaultConsumerGenesis()
+			cs.PauseExpirationTime = &rt
+			cs.PauseReason = types.PAUSE_REASON_DOWNTIME_CHALLENGE
+			cs.PausedAt = &rt
+			cs.ClientRecoveredSinceFork = true
+		}, "client recovered since fork must be unset"},
+		{"LAUNCHED with the client-recovered mark", func(cs *types.ConsumerState) {
+			*cs = base(types.CONSUMER_PHASE_LAUNCHED)
+			cs.InitParams = validInit
+			cs.ClientId = testClientID
+			cs.ConsumerGenesis = nonDefaultConsumerGenesis()
+			cs.ClientRecoveredSinceFork = true
+		}, "client recovered since fork must be unset"},
+		{"PAUSED for a light-client attack without a client", func(cs *types.ConsumerState) {
+			*cs = base(types.CONSUMER_PHASE_PAUSED)
+			cs.InitParams = validInit
+			cs.ConsumerGenesis = nonDefaultConsumerGenesis()
+			cs.PauseExpirationTime = &rt
+			cs.PauseReason = types.PAUSE_REASON_LIGHT_CLIENT_ATTACK
+			cs.PausedAt = &rt
+			cs.ForkKnownAt = &later
+		}, "client id required"},
 		{"PAUSED for a light-client attack missing fork_known_at", func(cs *types.ConsumerState) {
 			*cs = base(types.CONSUMER_PHASE_PAUSED)
 			cs.InitParams = validInit
@@ -954,6 +1023,14 @@ func TestConsumerStateValidatePerPhase(t *testing.T) {
 			cs.Metadata = &validMetadata
 			cs.ConsumerGenesis = vaastypes.ConsumerGenesisState{}
 		}, "chain id must be empty"},
+		{"DELETED with a pending VSC packet", func(cs *types.ConsumerState) {
+			*cs = base(types.CONSUMER_PHASE_DELETED)
+			cs.ChainId = ""
+			cs.InitParams = validInit
+			cs.Metadata = &validMetadata
+			cs.ConsumerGenesis = vaastypes.ConsumerGenesisState{}
+			cs.PendingValsetChanges = []vaastypes.ValidatorSetChangePacketData{{ValsetUpdateId: 1}}
+		}, "pending valset changes must be empty"},
 	}
 
 	for _, tc := range cases {
@@ -1006,6 +1083,128 @@ func initialConsumerGenesis(chainID string) vaastypes.ConsumerGenesisState {
 	params := vaastypes.DefaultConsumerParams()
 
 	return *vaastypes.NewInitialConsumerGenesisState(clientState, consensusState, valUpdates, params)
+}
+
+// TestValidateGenesisState_RecordsFollowTheConsumerPhase: each per-consumer
+// list is checked against the consumers that can carry it. Key assignments
+// and fee-pool shares belong to consumers that are not deleted, the deletion
+// clearing the former and sweeping the latter; epoch share records belong to
+// consumers that have launched at some point, the fee distribution writing
+// them for launched consumers only and the deletion leaving them to the
+// age-based prune.
+func TestValidateGenesisState_RecordsFollowTheConsumerPhase(t *testing.T) {
+	owner := sdk.AccAddress([]byte("vaas-test-owner-1234")).String()
+	initParams := &types.ConsumerInitializationParameters{
+		InitialHeight:     clienttypes.Height{RevisionNumber: 1, RevisionHeight: 1},
+		GenesisHash:       []byte("g"),
+		BinaryHash:        []byte("b"),
+		SpawnTime:         time.Unix(100, 0).UTC(),
+		UnbondingPeriod:   time.Hour,
+		VaasTimeoutPeriod: time.Hour,
+		HistoricalEntries: 10,
+	}
+	removalTime := time.Unix(200, 0).UTC()
+	registered := types.ConsumerState{
+		ConsumerId: 0, ChainId: "chain-registered", Phase: types.CONSUMER_PHASE_REGISTERED, OwnerAddress: owner,
+	}
+	deleted := types.ConsumerState{
+		ConsumerId: 1, Phase: types.CONSUMER_PHASE_DELETED, OwnerAddress: owner, InitParams: initParams,
+		Metadata: &types.ConsumerMetadata{Name: "n", Description: "d", Metadata: "m"},
+	}
+	stopped := types.ConsumerState{
+		ConsumerId: 2, ChainId: "chain-stopped", ClientId: testClientID, Phase: types.CONSUMER_PHASE_STOPPED,
+		OwnerAddress: owner, InitParams: initParams, ConsumerGenesis: getInitialConsumerGenesis(t, "chain-stopped"),
+		RemovalTime: &removalTime,
+	}
+	build := func() *types.GenesisState {
+		return types.NewGenesisState(
+			types.DefaultValsetUpdateID,
+			[]types.ConsumerState{registered, deleted, stopped},
+			types.DefaultParams(),
+			nil, nil, nil, nil, nil,
+		)
+	}
+
+	depositor := sdk.AccAddress([]byte("alice___________")).String()
+	share := func(consumerId uint64) types.ConsumerFeePoolShare {
+		return types.ConsumerFeePoolShare{ConsumerId: consumerId, Depositor: depositor, Denom: "uphoton", Shares: math.NewInt(100)}
+	}
+	providerAddr := []byte("provider-cons-addr-one11")
+	consumerAddr := []byte("consumer-cons-addr-one11")
+	consumerKey := crypto.NewCryptoIdentityFromIntSeed(7).TMProtoCryptoPublicKey()
+	assignment := func(consumerId uint64) types.ValidatorConsumerPubKey {
+		return types.ValidatorConsumerPubKey{ConsumerId: consumerId, ProviderAddr: providerAddr, ConsumerKey: &consumerKey}
+	}
+	byConsumerAddr := func(consumerId uint64) types.ValidatorByConsumerAddr {
+		return types.ValidatorByConsumerAddr{ConsumerId: consumerId, ConsumerAddr: consumerAddr, ProviderAddr: providerAddr}
+	}
+	toPrune := func(consumerId uint64) types.ConsumerAddrsToPrune {
+		return types.ConsumerAddrsToPrune{
+			ConsumerId: consumerId, PruneTs: time.Unix(300, 0).UTC(),
+			ConsumerAddrs: &types.AddressList{Addresses: [][]byte{consumerAddr}},
+		}
+	}
+	epochShare := func(consumerId uint64) types.EpochShareRecord {
+		return types.EpochShareRecord{ConsumerId: consumerId, DistributedAtUnixNano: 1_000, Share: math.NewInt(5)}
+	}
+
+	t.Run("records of the consumers that can carry them", func(t *testing.T) {
+		gs := build()
+		gs.ConsumerFeePoolShares = []types.ConsumerFeePoolShare{share(0), share(2)}
+		gs.ValidatorConsumerPubkeys = []types.ValidatorConsumerPubKey{assignment(0), assignment(2)}
+		gs.ValidatorsByConsumerAddr = []types.ValidatorByConsumerAddr{byConsumerAddr(0), byConsumerAddr(2)}
+		gs.ConsumerAddrsToPrune = []types.ConsumerAddrsToPrune{toPrune(0), toPrune(2)}
+		gs.EpochShareRecords = []types.EpochShareRecord{epochShare(1), epochShare(2)}
+		require.NoError(t, gs.Validate())
+	})
+
+	t.Run("fee-pool share of a deleted consumer", func(t *testing.T) {
+		gs := build()
+		gs.ConsumerFeePoolShares = []types.ConsumerFeePoolShare{share(1)}
+		require.ErrorContains(t, gs.Validate(), "unknown or deleted consumer 1")
+	})
+
+	t.Run("key assignment of a deleted consumer", func(t *testing.T) {
+		gs := build()
+		gs.ValidatorConsumerPubkeys = []types.ValidatorConsumerPubKey{assignment(1)}
+		require.ErrorContains(t, gs.Validate(), "unknown or deleted consumer 1")
+	})
+
+	t.Run("key assignment of an unknown consumer", func(t *testing.T) {
+		gs := build()
+		gs.ValidatorConsumerPubkeys = []types.ValidatorConsumerPubKey{assignment(9)}
+		require.ErrorContains(t, gs.Validate(), "unknown or deleted consumer 9")
+	})
+
+	t.Run("consumer address index entry of a deleted consumer", func(t *testing.T) {
+		gs := build()
+		gs.ValidatorsByConsumerAddr = []types.ValidatorByConsumerAddr{byConsumerAddr(1)}
+		require.ErrorContains(t, gs.Validate(), "unknown or deleted consumer 1")
+	})
+
+	t.Run("prune entry of a deleted consumer", func(t *testing.T) {
+		gs := build()
+		gs.ConsumerAddrsToPrune = []types.ConsumerAddrsToPrune{toPrune(1)}
+		require.ErrorContains(t, gs.Validate(), "unknown or deleted consumer 1")
+	})
+
+	t.Run("epoch share record of a consumer that never launched", func(t *testing.T) {
+		gs := build()
+		gs.EpochShareRecords = []types.EpochShareRecord{epochShare(0)}
+		require.ErrorContains(t, gs.Validate(), "unknown or never launched")
+	})
+
+	t.Run("epoch share record of an unknown consumer", func(t *testing.T) {
+		gs := build()
+		gs.EpochShareRecords = []types.EpochShareRecord{epochShare(9)}
+		require.ErrorContains(t, gs.Validate(), "unknown or never launched")
+	})
+
+	t.Run("duplicate epoch share record", func(t *testing.T) {
+		gs := build()
+		gs.EpochShareRecords = []types.EpochShareRecord{epochShare(2), epochShare(2)}
+		require.ErrorContains(t, gs.Validate(), "duplicate epoch share record")
+	})
 }
 
 func TestGenesisStateValidatePunishedEquivocations(t *testing.T) {

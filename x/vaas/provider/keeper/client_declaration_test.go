@@ -63,6 +63,7 @@ func newDeclFixture(t *testing.T) *declFixture {
 	t.Cleanup(ctrl.Finish)
 
 	k.SetInfractionParams(ctx, types.DefaultInfractionParameters())
+	mocks.MockStakingKeeper.EXPECT().UnbondingTime(gomock.Any()).Return(declProviderUnbonding, nil).AnyTimes()
 	consumerId := k.FetchAndIncrementConsumerId(ctx)
 	k.SetConsumerPhase(ctx, consumerId, types.CONSUMER_PHASE_LAUNCHED)
 	k.SetConsumerChainId(ctx, consumerId, declChainID)
@@ -77,8 +78,12 @@ func newDeclFixture(t *testing.T) *declFixture {
 }
 
 // goodTrusting comfortably outlives the default challenge horizon
-// (72h evidence age + 7d challenge window).
-const goodTrusting = 21 * 24 * time.Hour
+// (72h evidence age + 7d challenge window) and fits within the provider
+// unbonding period the fixture reports.
+const (
+	goodTrusting          = 21 * 24 * time.Hour
+	declProviderUnbonding = 28 * 24 * time.Hour
+)
 
 func (f *declFixture) declare(t *testing.T, clientID string) error {
 	t.Helper()
@@ -208,6 +213,57 @@ func TestSendVSCPacketsSkipsUndeclaredConsumer(t *testing.T) {
 	// No client declared; SendVSCPackets must be a no-op for this consumer
 	// (any attempt to reach IBC would blow up on the unstubbed mock).
 	require.NoError(t, f.k.SendVSCPackets(f.ctx))
+}
+
+// TestDeclareConsumerClientRefusesAForkWaitBeyondTheProviderUnbonding: a
+// client's trusting period plus its clock-drift allowance is how long a
+// light-client pause's resume waits from the fork, and the provider bounds
+// every pause by its own unbonding period (see
+// BeginBlockAutoStopPausedConsumers), so a client whose wait is longer could
+// never be resumed after a fork and is refused at declaration. The drift
+// counts: a trusting period within the unbonding period with a drift that
+// carries the sum past it is refused too.
+func TestDeclareConsumerClientRefusesAForkWaitBeyondTheProviderUnbonding(t *testing.T) {
+	f := newDeclFixture(t)
+	for _, c := range []struct {
+		clientID string
+		trusting time.Duration
+		drift    time.Duration
+	}{
+		{"07-tendermint-4", declProviderUnbonding + time.Second, 0},
+		{"07-tendermint-5", declProviderUnbonding - time.Hour, 2 * time.Hour},
+		// A drift that wraps the sum past the range of a duration.
+		{"07-tendermint-7", declProviderUnbonding - time.Hour, time.Duration(1<<63 - 1)},
+	} {
+		f.mocks.MockClientKeeper.EXPECT().
+			GetClientState(gomock.Any(), c.clientID).
+			Return(&ibctmtypes.ClientState{
+				ChainId:        declChainID,
+				TrustingPeriod: c.trusting,
+				MaxClockDrift:  c.drift,
+				LatestHeight:   clienttypes.NewHeight(1, 10),
+			}, true).AnyTimes()
+		f.mocks.MockClientKeeper.EXPECT().GetClientStatus(gomock.Any(), c.clientID).Return(ibcexported.Active).AnyTimes()
+		f.mocks.ClientCounterparties[c.clientID] = clientv2types.CounterpartyInfo{ClientId: "07-tendermint-0"}
+		err := f.declare(t, c.clientID)
+		require.ErrorIs(t, err, types.ErrInvalidMsgUpdateConsumer)
+		require.Contains(t, err.Error(), "provider unbonding period")
+		_, found := f.k.GetConsumerClientId(f.ctx, f.consumerId)
+		require.False(t, found)
+	}
+
+	// Exactly the unbonding period fits.
+	f.mocks.MockClientKeeper.EXPECT().
+		GetClientState(gomock.Any(), "07-tendermint-6").
+		Return(&ibctmtypes.ClientState{
+			ChainId:        declChainID,
+			TrustingPeriod: declProviderUnbonding - 10*time.Second,
+			MaxClockDrift:  10 * time.Second,
+			LatestHeight:   clienttypes.NewHeight(1, 10),
+		}, true).AnyTimes()
+	f.mocks.MockClientKeeper.EXPECT().GetClientStatus(gomock.Any(), "07-tendermint-6").Return(ibcexported.Active).AnyTimes()
+	f.mocks.ClientCounterparties["07-tendermint-6"] = clientv2types.CounterpartyInfo{ClientId: "07-tendermint-0"}
+	require.NoError(t, f.declare(t, "07-tendermint-6"))
 }
 
 // TestConsumerRegistrationRejectsUnbondingBelowChallengeHorizon pins the other

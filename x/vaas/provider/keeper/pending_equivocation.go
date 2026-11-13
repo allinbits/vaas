@@ -443,10 +443,13 @@ func (k Keeper) executePendingEquivocation(ctx sdk.Context, key collections.Trip
 	}
 	consAddr := providerAddr.ToSdkConsAddr()
 	// A tombstone ends the validator's punishability, so its other entries go
-	// with this one; without it each remaining entry is a further infraction
-	// that executes on its own, and the holds stay until the last one has.
+	// with this one, and so do the records of its punished infractions, which
+	// the tombstone makes redundant; without it each remaining entry is a
+	// further infraction that executes on its own, and the holds stay until
+	// the last one has.
 	if alreadyTombstoned || infractionParams.DoubleSign.Tombstone {
 		k.dropEntriesOfTombstonedValidator(ctx, consAddr)
+		k.forgetPunishedEquivocationsOf(ctx, consAddr)
 	}
 	k.settleValidatorWithNothingPending(ctx, consAddr)
 
@@ -478,6 +481,33 @@ func (k Keeper) dropEntriesOfTombstonedValidator(ctx sdk.Context, consAddr sdk.C
 	}
 	for _, key := range keys {
 		k.dropPendingEquivocation(ctx, key, "validator tombstoned")
+	}
+}
+
+// forgetPunishedEquivocationsOf drops the validator's PunishedEquivocations
+// records, under every chain id, once it is tombstoned: the tombstone stops
+// every later submission by itself (see QueuePendingEquivocationPunishment),
+// so the records have nothing left to guard. The whole set is walked rather
+// than the live consumers' chain ids, since a record outlives the consumer
+// it was written under (see migratePunishedEquivocations). Failures are
+// logged: the sweep runs in BeginBlock, and a record left behind is
+// redundant, not wrong.
+func (k Keeper) forgetPunishedEquivocationsOf(ctx sdk.Context, consAddr sdk.ConsAddress) {
+	var keys []collections.Triple[string, []byte, int64]
+	if err := k.PunishedEquivocations.Walk(ctx, nil, func(key collections.Triple[string, []byte, int64]) (bool, error) {
+		if bytes.Equal(key.K2(), consAddr.Bytes()) {
+			keys = append(keys, key)
+		}
+		return false, nil
+	}); err != nil {
+		k.Logger(ctx).Error("failed to scan punished equivocations", "error", err)
+		return
+	}
+	for _, key := range keys {
+		if err := k.PunishedEquivocations.Remove(ctx, key); err != nil {
+			k.Logger(ctx).Error("failed to delete a punished equivocation of a tombstoned validator",
+				"chainId", key.K1(), "providerAddr", consAddr.String(), "error", err)
+		}
 	}
 }
 

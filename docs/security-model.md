@@ -43,9 +43,12 @@ the consumer's owner (or governance) declares it through the optional
 `client_id` of `MsgUpdateConsumer`. The declaration is validated before it
 binds: the client must exist, be an active tendermint client of the consumer's
 registered chain id, hold a registered IBC v2 counterparty (an IBC v2 packet
-can only route over a counterparty-linked client), and its trusting period must
+can only route over a counterparty-linked client), its trusting period must
 exceed the downtime challenge horizon, so every accepted downtime accusation
-stays disprovable by a header the client can still verify. Until a valid
+stays disprovable by a header the client can still verify, and that period plus
+the client's clock-drift allowance must fit within the provider's unbonding
+period, so a light-client pause can be resumed before the provider stops
+waiting for it. Until a valid
 declaration lands the provider sends nothing (fail closed -- the liveness sweep
 owns a consumer that never gets served). Once bound, the client is latched
 permanently: expiry, freezing, or counterparty loss halt traffic rather than

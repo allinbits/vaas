@@ -6,6 +6,8 @@ import (
 	"sort"
 	"strings"
 
+	host "github.com/cosmos/ibc-go/v10/modules/core/24-host"
+
 	errorsmod "cosmossdk.io/errors"
 	"cosmossdk.io/math"
 
@@ -53,9 +55,18 @@ func (gs GenesisState) Validate() error {
 	// every consumer id from the ConsumerId sequence, which ExportGenesis
 	// enumerates from 0, so a gap would export a phantom consumer with no
 	// phase, chain id, or owner. Distinct ids all below n are that set.
-	seenConsumerIds := map[uint64]bool{}
+	//
+	// The per-consumer lists are checked against the consumers that can
+	// carry them: the known ids; the ones not deleted, the deletion clearing
+	// the key assignments and sweeping the fee-pool shares; and the ones that
+	// have launched at some point, the fee distribution writing epoch share
+	// records for launched consumers only and the deletion leaving them to
+	// the age-based prune.
+	known := make(map[uint64]struct{}, len(gs.ConsumerStates))
+	live := make(map[uint64]struct{}, len(gs.ConsumerStates))
+	everLaunched := make(map[uint64]struct{}, len(gs.ConsumerStates))
 	for _, cs := range gs.ConsumerStates {
-		if seenConsumerIds[cs.ConsumerId] {
+		if _, seen := known[cs.ConsumerId]; seen {
 			return errorsmod.Wrap(vaastypes.ErrInvalidGenesis,
 				fmt.Sprintf("duplicate consumer id %d in genesis", cs.ConsumerId))
 		}
@@ -63,7 +74,13 @@ func (gs GenesisState) Validate() error {
 			return errorsmod.Wrap(vaastypes.ErrInvalidGenesis,
 				fmt.Sprintf("consumer ids must be contiguous from 0: got consumer id %d among %d consumer states", cs.ConsumerId, len(gs.ConsumerStates)))
 		}
-		seenConsumerIds[cs.ConsumerId] = true
+		known[cs.ConsumerId] = struct{}{}
+		if cs.Phase != CONSUMER_PHASE_DELETED {
+			live[cs.ConsumerId] = struct{}{}
+		}
+		if !cs.Phase.Prelaunched() {
+			everLaunched[cs.ConsumerId] = struct{}{}
+		}
 		if err := cs.Validate(); err != nil {
 			return errorsmod.Wrap(vaastypes.ErrInvalidGenesis,
 				fmt.Sprintf("%s: for consumer id %d (chain id %q)", err, cs.ConsumerId, cs.ChainId))
@@ -77,14 +94,9 @@ func (gs GenesisState) Validate() error {
 	if err := KeyAssignmentValidateBasic(gs.ValidatorConsumerPubkeys,
 		gs.ValidatorsByConsumerAddr,
 		gs.ConsumerAddrsToPrune,
+		live,
 	); err != nil {
 		return err
-	}
-
-	// Build a set of known consumer ids from consumer_states.
-	known := make(map[uint64]struct{}, len(gs.ConsumerStates))
-	for _, cs := range gs.ConsumerStates {
-		known[cs.ConsumerId] = struct{}{}
 	}
 	// Overrides must reference a known consumer and stay strictly above the
 	// module-wide fees_per_block floor (the same invariant the msg handler and
@@ -103,7 +115,7 @@ func (gs GenesisState) Validate() error {
 		}
 	}
 
-	if err := validateConsumerFeePoolShares(gs.ConsumerFeePoolShares, seenConsumerIds); err != nil {
+	if err := validateConsumerFeePoolShares(gs.ConsumerFeePoolShares, live); err != nil {
 		return errorsmod.Wrap(vaastypes.ErrInvalidGenesis, err.Error())
 	}
 
@@ -115,13 +127,9 @@ func (gs GenesisState) Validate() error {
 		return errorsmod.Wrap(vaastypes.ErrInvalidGenesis, err.Error())
 	}
 
-	for _, r := range gs.EpochShareRecords {
-		if r.Share.IsNil() || r.Share.IsNegative() {
-			return errorsmod.Wrap(vaastypes.ErrInvalidGenesis,
-				"epoch share record: share cannot be nil or negative")
-		}
+	if err := validateEpochShareRecords(gs.EpochShareRecords, everLaunched); err != nil {
+		return errorsmod.Wrap(vaastypes.ErrInvalidGenesis, err.Error())
 	}
-
 	if err := validateWithheldFeeRecords(gs.WithheldFeeRecords, known); err != nil {
 		return errorsmod.Wrap(vaastypes.ErrInvalidGenesis, err.Error())
 	}
@@ -155,10 +163,12 @@ func (gs GenesisState) Validate() error {
 
 // validateConsumerFeePoolShares rejects malformed share records before
 // InitGenesis would otherwise panic on them: bad bech32, empty denom,
-// non-positive shares, duplicate (consumer, depositor, denom) triples,
-// and orphan consumer ids not present in ConsumerStates.
+// non-positive shares, duplicate (consumer, depositor, denom) triples, and
+// consumer ids unknown or deleted (the deletion sweeps the pool and clears
+// its shares, see SweepConsumerFeePool; a pool imported for a deleted
+// consumer would never be swept again).
 func validateConsumerFeePoolShares(
-	shares []ConsumerFeePoolShare, knownConsumerIds map[uint64]bool,
+	shares []ConsumerFeePoolShare, liveConsumerIds map[uint64]struct{},
 ) error {
 	type triple struct {
 		consumerId uint64
@@ -183,13 +193,41 @@ func validateConsumerFeePoolShares(
 			return fmt.Errorf("non-positive shares for consumer %d depositor %s denom %s: %s",
 				s.ConsumerId, s.Depositor, s.Denom, s.Shares)
 		}
-		if !knownConsumerIds[s.ConsumerId] {
-			return fmt.Errorf("share record references unknown consumer %d", s.ConsumerId)
+		if _, ok := liveConsumerIds[s.ConsumerId]; !ok {
+			return fmt.Errorf("share record references unknown or deleted consumer %d", s.ConsumerId)
 		}
 		k := triple{s.ConsumerId, s.Depositor, s.Denom}
 		if seen[k] {
 			return fmt.Errorf("duplicate share record (consumer=%d, depositor=%s, denom=%s)",
 				s.ConsumerId, s.Depositor, s.Denom)
+		}
+		seen[k] = true
+	}
+	return nil
+}
+
+// validateEpochShareRecords rejects records with a nil or negative share,
+// records of a consumer that is unknown or never launched (the fee
+// distribution writes them for launched consumers only, see
+// SetEpochShareRecord; a deleted consumer keeps its records until the
+// age-based prune), and duplicate (consumer_id, distributed_at) entries,
+// which the keeper's collection key cannot represent.
+func validateEpochShareRecords(records []EpochShareRecord, everLaunchedConsumerIds map[uint64]struct{}) error {
+	type key struct {
+		consumerId    uint64
+		distributedAt int64
+	}
+	seen := map[key]bool{}
+	for _, r := range records {
+		if r.Share.IsNil() || r.Share.IsNegative() {
+			return fmt.Errorf("epoch share record: share cannot be nil or negative")
+		}
+		if _, ok := everLaunchedConsumerIds[r.ConsumerId]; !ok {
+			return fmt.Errorf("epoch share record references consumer %d, which is unknown or never launched", r.ConsumerId)
+		}
+		k := key{r.ConsumerId, r.DistributedAtUnixNano}
+		if seen[k] {
+			return fmt.Errorf("duplicate epoch share record for consumer %d distributed at %d", r.ConsumerId, r.DistributedAtUnixNano)
 		}
 		seen[k] = true
 	}
@@ -529,6 +567,12 @@ func (cs ConsumerState) Validate() error {
 			return errors.New("valset update ID cannot be equal to zero")
 		}
 	}
+	// VSC packets are queued for a launched consumer and cleared by the send
+	// that delivers them or by the deletion; a pause or a stop leaves them
+	// where they are (see QueueVSCPackets and DeleteConsumerChain).
+	if len(cs.PendingValsetChanges) > 0 && (cs.Phase.Prelaunched() || cs.Phase == CONSUMER_PHASE_DELETED) {
+		return fmt.Errorf("pending valset changes must be empty for phase %s", cs.Phase)
+	}
 
 	if cs.RemovedByGovernance && cs.Phase != CONSUMER_PHASE_STOPPED {
 		return fmt.Errorf("removed by governance is only set on a stopped consumer, phase is %s", cs.Phase)
@@ -560,12 +604,12 @@ func (cs ConsumerState) Validate() error {
 		}
 
 	case CONSUMER_PHASE_LAUNCHED:
-		// Live: init_params + IBC client + consumer genesis all required.
+		// Live: init_params and consumer genesis required. The IBC client is
+		// declared by the owner once the consumer has launched (see
+		// SetConsumerClient), so it may still be absent; its form is checked
+		// below.
 		if cs.InitParams == nil {
 			return fmt.Errorf("init params required for phase %s", cs.Phase)
-		}
-		if cs.ClientId == "" {
-			return fmt.Errorf("client id required for phase %s", cs.Phase)
 		}
 		if err := cs.ConsumerGenesis.Validate(); err != nil {
 			return err
@@ -575,12 +619,11 @@ func (cs ConsumerState) Validate() error {
 		}
 
 	case CONSUMER_PHASE_STOPPED:
-		// Scheduled for removal: LAUNCHED requirements plus a removal time.
+		// Scheduled for removal: the LAUNCHED requirements plus a removal time.
+		// The liveness sweep stops a consumer whose client was never declared,
+		// so the client id may be absent here too.
 		if cs.InitParams == nil {
 			return fmt.Errorf("init params required for phase %s", cs.Phase)
-		}
-		if cs.ClientId == "" {
-			return fmt.Errorf("client id required for phase %s", cs.Phase)
 		}
 		if err := cs.ConsumerGenesis.Validate(); err != nil {
 			return err
@@ -590,14 +633,13 @@ func (cs ConsumerState) Validate() error {
 		}
 
 	case CONSUMER_PHASE_PAUSED:
-		// Live but paused (see PauseConsumerChain): LAUNCHED requirements plus
-		// a scheduled auto-stop time; mutually exclusive with removal_time
-		// since a consumer is never both PAUSED and STOPPED at once.
+		// Live but paused (see PauseConsumerChain): the LAUNCHED requirements
+		// plus a scheduled auto-stop time; mutually exclusive with removal_time
+		// since a consumer is never both PAUSED and STOPPED at once. A
+		// challenge or refusal pause can hold a consumer whose client was
+		// never declared; a light-client pause cannot (see below).
 		if cs.InitParams == nil {
 			return fmt.Errorf("init params required for phase %s", cs.Phase)
-		}
-		if cs.ClientId == "" {
-			return fmt.Errorf("client id required for phase %s", cs.Phase)
 		}
 		if err := cs.ConsumerGenesis.Validate(); err != nil {
 			return err
@@ -630,6 +672,13 @@ func (cs ConsumerState) Validate() error {
 		return fmt.Errorf("invalid phase: %s", cs.Phase)
 	}
 
+	// A declared client id is an ibc-go client identifier.
+	if cs.ClientId != "" {
+		if err := host.ClientIdentifierValidator(cs.ClientId); err != nil {
+			return fmt.Errorf("invalid client id %q: %w", cs.ClientId, err)
+		}
+	}
+
 	// The pause reason and the pause time live exactly as long as the pause
 	// (see PauseConsumerChain).
 	if _, known := PauseReason_name[int32(cs.PauseReason)]; !known {
@@ -649,8 +698,13 @@ func (cs ConsumerState) Validate() error {
 	}
 	// The time the fork became known lives exactly as long as a light-client
 	// pause, and a fork found during a pause is found no earlier than it began
-	// (see escalatePauseToLightClientAttack).
+	// (see escalatePauseToLightClientAttack). Such a pause always has a
+	// client: the one found frozen (see containLightClientAttack and
+	// PauseConsumersWithFrozenClients).
 	lightClientPause := cs.Phase == CONSUMER_PHASE_PAUSED && cs.PauseReason == PAUSE_REASON_LIGHT_CLIENT_ATTACK
+	if lightClientPause && cs.ClientId == "" {
+		return fmt.Errorf("client id required for a %s pause", PAUSE_REASON_LIGHT_CLIENT_ATTACK)
+	}
 	if lightClientPause && cs.ForkKnownAt == nil {
 		return fmt.Errorf("fork known at required for a %s pause", PAUSE_REASON_LIGHT_CLIENT_ATTACK)
 	}
@@ -659,6 +713,11 @@ func (cs ConsumerState) Validate() error {
 	}
 	if lightClientPause && cs.ForkKnownAt.Before(*cs.PausedAt) {
 		return fmt.Errorf("fork known at %s precedes paused at %s", cs.ForkKnownAt, cs.PausedAt)
+	}
+	// A client is recovered since the fork only while a light-client pause
+	// lasts (see trackForkDuringLightClientPause).
+	if cs.ClientRecoveredSinceFork && !lightClientPause {
+		return fmt.Errorf("client recovered since fork must be unset unless paused for %s", PAUSE_REASON_LIGHT_CLIENT_ATTACK)
 	}
 
 	return nil

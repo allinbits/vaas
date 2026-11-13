@@ -308,7 +308,10 @@ transaction (see `HandleConsumerMisbehaviour`), and a client frozen through ibc-
 the consumer is already paused for a challenge or a refusal, moves that pause under the
 light-client reason (discarding the accusations as a light-client pause does, and recording
 the fork as known from that block for the resume's wait to count from, while the pause keeps
-the time it began), so governance does not resume it into the fork. A refusal coalition
+the time it began), so governance does not resume it into the fork. The same BeginBlock
+follows a light-client pause through a client recovery: a client recovered during the pause
+and frozen again by a later fork has the fork recorded as known from the block it is next
+seen frozen at, the pause again keeping the time it began. A refusal coalition
 reaching `RefusalPauseThreshold` pauses the consumer the same way (see
 [consumer-refusal.md](consumer-refusal.md)). A challenge or light-client pause first repays
 the fees withheld from accused validators: their accusations are cancelled with it and could
@@ -328,7 +331,11 @@ paused:
   automatically.
 - An **auto-stop** is scheduled at `now + MaxPauseDuration`: a pause governance never
   resolves becomes `STOPPED` (then `DELETED`) like any other dead consumer. No consumer can
-  be paused forever.
+  be paused forever. One pause outlives the parameter: a light-client pause is not stopped
+  while its fork wait (below) runs, since the resume is refused until then and the stop
+  would have made the pause terminal; its auto-stop moves to the end of the wait, capped at
+  one provider unbonding period after the fork became known (a declared client's wait fits
+  within it).
 - The consumer keeps all of its state, key assignments included -- they are what the resume
   snapshot is rebuilt from. So a paused consumer stays visible to anything asking whether a
   consumer still holds state: notably the consensus-key collision guard that runs when a
@@ -364,10 +371,12 @@ Two governance exits:
   either submission path until those states age out of the trusting period, so a consumer
   resumed earlier would be paused again by the same headers. The resume is refused until one
   trusting period (plus the client's clock-drift allowance) has passed since the fork became
-  known: the pause itself, or the block a challenge or refusal pause was moved under the
-  light-client reason at. With a 21-day consumer unbonding period that is about 14 days,
-  which AtomOne's voting period alone already covers. A fork at a later height is new
-  evidence and pauses it again.
+  known: the pause itself, the block a challenge or refusal pause was moved under the
+  light-client reason at, or the block the client was next seen frozen at after a recovery
+  during the pause. With a 21-day consumer unbonding period that is about 14 days, which
+  AtomOne's voting period alone already covers. A `MaxPauseDuration` within the wait does
+  not make the pause terminal: the auto-stop waits for the resume to become possible (see
+  above). A fork at a later height is new evidence and pauses it again.
 - **`MsgRemoveConsumer`** accepts a paused consumer and routes it into the ordinary
   `STOPPED -> DELETED` teardown.
 

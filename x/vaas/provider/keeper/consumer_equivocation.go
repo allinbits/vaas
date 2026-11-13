@@ -74,11 +74,12 @@ func (k Keeper) HandleConsumerDoubleVoting(
 	//
 	//   - Equivocation is a permanent, self-contained cryptographic fault: the
 	//     two conflicting signed votes prove it forever, so it is punished
-	//     whenever proven, and exactly once: with tombstoning on, the tombstone
-	//     stops every later submission; with it off, the PunishedEquivocations
-	//     record of the infraction does (see below). Either way there is no
-	//     re-slash risk from stale evidence, and the min-height gate already
-	//     blocks evidence from before the validator was in the consumer's set.
+	//     whenever proven, and exactly once: the PunishedEquivocations record
+	//     of the infraction, written when its punishment is queued, stops
+	//     every later submission, and so does the tombstone once one lands
+	//     (see below). Either way there is no re-slash risk from stale
+	//     evidence, and the min-height gate already blocks evidence from
+	//     before the validator was in the consumer's set.
 	//   - Downtime is a liveness signal priced against a specific epoch and
 	//     resolved through a challenge window; letting arbitrarily old downtime
 	//     evidence in would misprice it and reopen a settled window, so it is
@@ -134,8 +135,6 @@ func (k Keeper) HandleConsumerDoubleVoting(
 		return nil
 	}
 
-	infractionParams := k.GetInfractionParams(ctx)
-
 	// Queue the punishment instead of executing it: the validator is jailed
 	// now (reversible), while the slash and tombstone wait out
 	// EquivocationExecutionDelay so a removal proposal against the consumer
@@ -147,17 +146,18 @@ func (k Keeper) HandleConsumerDoubleVoting(
 		return err
 	}
 
-	// A tombstoning punishment needs no record: the pending entry stops the
-	// next submission while it waits, the tombstone does once it executes,
-	// and either makes any record left by an earlier, non-tombstoning policy
-	// redundant. A non-tombstoning punishment is remembered now, or the same
-	// evidence would queue again once its entry has resolved.
-	if alreadyTombstoned || infractionParams.DoubleSign.Tombstone {
-		if err := k.PunishedEquivocations.Clear(ctx, collections.NewSuperPrefixedTripleRange[string, []byte, int64](chainId, punishedKey.K2())); err != nil {
-			return fmt.Errorf("forgetting the punished equivocations of a tombstoned validator: %w", err)
+	// The infraction is remembered as soon as its punishment is queued,
+	// whatever the tombstone policy says now: the policy is read again when
+	// the punishment executes (see executePendingEquivocation), and a
+	// governance change in between must not leave the same two votes
+	// punishable a second time. The record goes with the validator's others
+	// once a tombstone lands (see forgetPunishedEquivocationsOf), the
+	// tombstone stopping every later submission by itself, which is also why
+	// a validator already tombstoned needs none.
+	if !alreadyTombstoned {
+		if err := k.PunishedEquivocations.Set(ctx, punishedKey); err != nil {
+			return fmt.Errorf("recording the punished equivocation: %w", err)
 		}
-	} else if err := k.PunishedEquivocations.Set(ctx, punishedKey); err != nil {
-		return fmt.Errorf("recording the punished equivocation: %w", err)
 	}
 
 	k.Logger(ctx).Info(

@@ -120,7 +120,8 @@ consumerd tx vaasconsumer set-provider-client <client-id> --from <owner>
 
 Each declaration is validated before it binds (an active tendermint client of
 the right chain id with a registered counterparty; on the provider side also a
-trusting period above the downtime challenge horizon) and is permanent once
+trusting period above the downtime challenge horizon and, with the client's clock-drift
+allowance, within the provider's unbonding period) and is permanent once
 accepted ([security-model.md](security-model.md)). VSC delivery starts at the
 first epoch boundary after the provider-side declaration. In localnet and e2e
 the relayer is the `ts-relayer` and the declarations are scripted; see
