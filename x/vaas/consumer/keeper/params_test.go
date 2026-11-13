@@ -21,7 +21,7 @@ func TestParams(t *testing.T) {
 		vaastypes.DefaultHistoricalEntries,
 		vaastypes.DefaultConsumerUnbondingPeriod,
 		vaastypes.DefaultSafeModeThreshold,
-	) // these are the default params, IBC suite independently sets enabled=true
+	) // DefaultConsumerParams, spelled out field by field
 
 	params := consumerKeeper.GetConsumerParams(ctx)
 	require.Equal(t, expParams, params)
