@@ -38,7 +38,7 @@ import (
 	sdk "github.com/cosmos/cosmos-sdk/types"
 )
 
-// AppModule is ibc-go's core AppModule with InitGenesis overridden.
+// AppModule is ibc-go's core AppModule with InitGenesis and ValidateGenesis overridden.
 type AppModule struct {
 	ibc.AppModule
 	keeper *ibckeeper.Keeper

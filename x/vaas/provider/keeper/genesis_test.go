@@ -12,6 +12,7 @@ import (
 	abci "github.com/cometbft/cometbft/abci/types"
 
 	clienttypes "github.com/cosmos/ibc-go/v10/modules/core/02-client/types"
+	ibctmtypes "github.com/cosmos/ibc-go/v10/modules/light-clients/07-tendermint"
 
 	"cosmossdk.io/collections"
 	"cosmossdk.io/math"
@@ -494,6 +495,12 @@ func TestGenesisRoundTrip(t *testing.T) {
 		collections.Join(keyedConsumerID, time.Unix(1_700_000_001, 0).UTC().UnixNano()), math.NewInt(500)))
 	require.NoError(t, pkA.EpochShareRecords.Set(ctxA,
 		collections.Join(otherConsumerID, time.Unix(1_700_000_002, 0).UTC().UnixNano()), math.NewInt(700)))
+	// An epoch distribution recorded at the end of the downtime window
+	// delivered to the re-imported keeper below, past the default grace
+	// period after spawnAt, so that accusation prices its slash from an
+	// exported record.
+	accusedWindowEnd := spawnAt.Add(8 * 24 * time.Hour)
+	pkA.SetEpochShareRecord(ctxA, keyedConsumerID, accusedWindowEnd, math.NewInt(1000))
 
 	// Seed one WithheldFeeRecords / EpochDowntime entry, two
 	// AcceptedDowntimeWindows records for the same pair, and one
@@ -600,7 +607,7 @@ func TestGenesisRoundTrip(t *testing.T) {
 	}}, expA.PunishedEquivocations)
 	require.NotNil(t, expA.PreviousDowntimeParams)
 	require.Equal(t, previousDowntimeParams, *expA.PreviousDowntimeParams)
-	require.Len(t, expA.EpochShareRecords, 2)
+	require.Len(t, expA.EpochShareRecords, 3)
 	require.Len(t, expA.WithheldFeeRecords, 1)
 	require.Equal(t, withheldFeeRecord, expA.WithheldFeeRecords[0])
 	require.ElementsMatch(t, []providertypes.AcceptedDowntimeWindowRecord{
@@ -776,6 +783,38 @@ func TestGenesisRoundTrip(t *testing.T) {
 	})
 
 	require.Equal(t, expA, expB, "round-trip must be a fixed point")
+
+	// A downtime accusation naming the restored validator is judged against
+	// the imported set from the restarted provider's first block: with the
+	// window-end anchor and the client's trusting period supplied the way
+	// the downtime tests supply them, keeper B accepts it and queues the
+	// priced slash. The restored params (window 30, min signed 0.5) put the
+	// threshold at 15 missed; 24 of 30 clears it.
+	accuseCtx := ctxB.WithBlockTime(accusedWindowEnd)
+	pkB.OverrideWindowEndTimestampForTest(func(_ sdk.Context, _ string, _ int64) (time.Time, error) {
+		return accusedWindowEnd, nil
+	})
+	stakingB.MockClientKeeper.EXPECT().GetClientState(gomock.Any(), "07-tendermint-0").
+		Return(&ibctmtypes.ClientState{TrustingPeriod: 365 * 24 * time.Hour}, true)
+	stakingB.MockPhotonKeeper.EXPECT().ConversionRate(accuseCtx).Return(math.LegacyNewDec(2), nil)
+
+	restoredAddr := setValidator.SDKValConsAddress()
+	// windowStart 61, span 30 => window end height 90.
+	accusation := vaastypes.NewEvidencePacketData(
+		restoredAddr, 61, []byte{0xFF, 0xFF, 0xFF, 0x00}, 30,
+		customInfractionParams.SignedBlocksWindow, customInfractionParams.MinSignedPerWindow,
+	)
+	require.NoError(t, pkB.HandleConsumerEvidencePacket(accuseCtx, keyedConsumerID, accusation))
+
+	restoredPending, err := pkB.PendingDowntimeSlashes.Get(accuseCtx,
+		collections.Join3(keyedConsumerID, restoredAddr.Bytes(), int64(90)))
+	require.NoError(t, err, "an accusation naming a restored validator must queue a pending slash")
+	require.Equal(t, int64(61), restoredPending.WindowStartHeight)
+	require.Equal(t, int64(24), restoredPending.MissedCount)
+	// P = 1000 from the record at the window end, M = 24/30, C = 2:
+	// 1000 * 0.8 / 2 = 400.
+	require.True(t, math.NewInt(400).Equal(restoredPending.SlashTokens), "expected 400, got %s", restoredPending.SlashTokens)
+	require.Equal(t, accusedWindowEnd.Add(customInfractionParams.DowntimeChallengeWindow), restoredPending.MaturesAt)
 }
 
 // TestGenesisRoundTrip_PreservesFeesPerBlockOverrides verifies that
