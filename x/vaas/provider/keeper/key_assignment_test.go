@@ -3,6 +3,7 @@ package keeper_test
 import (
 	"bytes"
 	"errors"
+	"fmt"
 	"math/rand"
 	"sort"
 	"testing"
@@ -13,6 +14,8 @@ import (
 
 	abci "github.com/cometbft/cometbft/abci/types"
 	tmprotocrypto "github.com/cometbft/cometbft/proto/tendermint/crypto"
+
+	storetypes "cosmossdk.io/store/types"
 
 	codectypes "github.com/cosmos/cosmos-sdk/codec/types"
 	sdk "github.com/cosmos/cosmos-sdk/types"
@@ -1404,4 +1407,51 @@ func TestAssignConsumerKeyUnrelatedSameBlockRotationDoesNotBlock(t *testing.T) {
 	got, found := k.GetValidatorByConsumerAddr(ctx, consumerId, consumerKey.ConsumerConsAddress())
 	require.True(t, found)
 	require.Equal(t, assigner.ProviderConsAddress(), got)
+}
+
+// TestConsumeConsumerAddrsToPruneStopsAtTheFirstFutureEntry: the prune queue
+// is keyed by prune time, so consuming it at ts reads the due entries and the
+// first future one and stops there. Only the due entries are consumed, and
+// the cost of the walk does not grow with the number of entries still in the
+// future.
+func TestConsumeConsumerAddrsToPruneStopsAtTheFirstFutureEntry(t *testing.T) {
+	now := time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC)
+
+	// seed queues three due entries and the given number of future ones.
+	seed := func(t *testing.T, future int) (providerkeeper.Keeper, sdk.Context) {
+		t.Helper()
+		k, ctx, ctrl, _ := testkeeper.GetProviderKeeperAndCtx(t, testkeeper.NewInMemKeeperParams(t))
+		t.Cleanup(ctrl.Finish)
+		for i := 1; i <= 3; i++ {
+			k.AppendConsumerAddrsToPrune(ctx, CONSUMER_ID, now.Add(-time.Duration(i)*time.Hour),
+				types.NewConsumerConsAddress([]byte(fmt.Sprintf("due-%d", i))))
+		}
+		for i := 1; i <= future; i++ {
+			k.AppendConsumerAddrsToPrune(ctx, CONSUMER_ID, now.Add(time.Duration(i)*time.Hour),
+				types.NewConsumerConsAddress([]byte(fmt.Sprintf("future-%d", i))))
+		}
+		return k, ctx
+	}
+	consume := func(k providerkeeper.Keeper, ctx sdk.Context) (types.AddressList, storetypes.Gas) {
+		ctx = ctx.WithGasMeter(storetypes.NewInfiniteGasMeter())
+		consumed := k.ConsumeConsumerAddrsToPrune(ctx, CONSUMER_ID, now)
+		return consumed, ctx.GasMeter().GasConsumed()
+	}
+
+	dense, denseCtx := seed(t, 200)
+	consumed, denseGas := consume(dense, denseCtx)
+	require.Len(t, consumed.Addresses, 3)
+	for i := 1; i <= 3; i++ {
+		require.Contains(t, consumed.Addresses, []byte(fmt.Sprintf("due-%d", i)))
+	}
+	remaining := dense.GetAllConsumerAddrsToPrune(denseCtx, CONSUMER_ID)
+	require.Len(t, remaining, 200)
+	for _, entry := range remaining {
+		require.True(t, entry.PruneTs.After(now), "a future entry was consumed: %s", entry.PruneTs)
+	}
+
+	sparse, sparseCtx := seed(t, 1)
+	_, sparseGas := consume(sparse, sparseCtx)
+	require.Positive(t, sparseGas)
+	require.Equal(t, sparseGas, denseGas, "the walk read past the first future entry")
 }

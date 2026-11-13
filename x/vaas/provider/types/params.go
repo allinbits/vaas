@@ -9,6 +9,8 @@ import (
 
 	"cosmossdk.io/math"
 
+	sdk "github.com/cosmos/cosmos-sdk/types"
+
 	vaastypes "github.com/allinbits/vaas/x/vaas/types"
 )
 
@@ -109,6 +111,12 @@ const (
 	// executes a passed proposal within a block of the voting end; an hour is
 	// generous.
 	DefaultRemovalVoteDeferralMargin = time.Hour
+
+	// DefaultConsumerRegistrationFeeAmount is the default amount (in
+	// DefaultFeesPerBlockDenom) charged to and burned from the submitter of
+	// MsgCreateConsumer. Zero disables the fee: a chain that wants consumer
+	// registration to cost more than gas sets it through governance.
+	DefaultConsumerRegistrationFeeAmount = int64(0)
 )
 
 // NewParams creates new provider parameters with provided arguments
@@ -124,6 +132,7 @@ func NewParams(
 	equivocationExecutionDelay time.Duration,
 	removalVoteDeferralMargin time.Duration,
 	infractionParameters InfractionParameters,
+	consumerRegistrationFee sdk.Coin,
 ) Params {
 	return Params{
 		TrustingPeriodFraction:     trustingPeriodFraction,
@@ -137,6 +146,7 @@ func NewParams(
 		EquivocationExecutionDelay: equivocationExecutionDelay,
 		RemovalVoteDeferralMargin:  removalVoteDeferralMargin,
 		InfractionParameters:       infractionParameters,
+		ConsumerRegistrationFee:    consumerRegistrationFee,
 	}
 }
 
@@ -153,7 +163,14 @@ func DefaultParams() Params {
 		DefaultEquivocationExecutionDelay,
 		DefaultRemovalVoteDeferralMargin,
 		DefaultInfractionParameters(),
+		DefaultConsumerRegistrationFee(),
 	)
+}
+
+// DefaultConsumerRegistrationFee returns the default consumer registration
+// fee: nothing, in the default per-block fee denom.
+func DefaultConsumerRegistrationFee() sdk.Coin {
+	return sdk.NewInt64Coin(DefaultFeesPerBlockDenom, DefaultConsumerRegistrationFeeAmount)
 }
 
 // DefaultInfractionParameters returns the default infraction parameters for consumer chain slashing.
@@ -324,6 +341,12 @@ func (p Params) Validate() error {
 	}
 	if err := ValidateInfractionParamsAgainst(p.InfractionParameters, p.TrustingPeriodFraction); err != nil {
 		return err
+	}
+	// A valid coin: a well-formed denom and a set, non-negative amount. That
+	// the denom is the per-block fee denom is the keeper's check (see
+	// Keeper.ValidateParams), since the fee denom is wired there.
+	if err := p.ConsumerRegistrationFee.Validate(); err != nil {
+		return fmt.Errorf("consumer registration fee is invalid: %s", err)
 	}
 
 	return nil

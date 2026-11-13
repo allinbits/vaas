@@ -6,7 +6,7 @@ import (
 	"fmt"
 	"time"
 
-	ibcexported "github.com/cosmos/ibc-go/v10/modules/core/exported"
+	clienttypes "github.com/cosmos/ibc-go/v10/modules/core/02-client/types"
 	ibctmtypes "github.com/cosmos/ibc-go/v10/modules/light-clients/07-tendermint"
 
 	"cosmossdk.io/collections"
@@ -455,44 +455,47 @@ func (k Keeper) consumerClientTrustingPeriod(ctx sdk.Context, clientId string) (
 // every consensus state the client retains -- the states around it expired and
 // were pruned, or the client is too sparse there -- leaving no verified lower
 // bound to anchor to.
+//
+// Each anchor is a seek from windowEnd (ibc-go's GetPreviousConsensusState and
+// GetNextConsensusState step one iteration key from the height), so the cost
+// is the same however many consensus states the client retains. Updating a
+// client is permissionless, so that number is the relayer's to grow, and the
+// evidence packet pays for this lookup.
 func (k Keeper) windowEndTimestamp(ctx sdk.Context, clientId string, windowEnd int64) (time.Time, error) {
 	if k.windowEndTimestampFn != nil {
 		return k.windowEndTimestampFn(ctx, clientId, windowEnd)
 	}
+	if windowEnd <= 0 {
+		return time.Time{}, fmt.Errorf("cannot anchor evidence window time: window-end height %d is not a chain height", windowEnd)
+	}
 
+	// Consensus states are keyed by (revision number, revision height). The
+	// evidence names a height of the consumer's current revision, which the
+	// client's latest height carries.
+	clientState, found := k.clientKeeper.GetClientState(ctx, clientId)
+	if !found {
+		return time.Time{}, fmt.Errorf("cannot anchor evidence window time: client %s has no client state", clientId)
+	}
+	tmClientState, ok := clientState.(*ibctmtypes.ClientState)
+	if !ok {
+		return time.Time{}, fmt.Errorf("cannot anchor evidence window time: client %s is not a tendermint client", clientId)
+	}
+	height := clienttypes.NewHeight(tmClientState.LatestHeight.RevisionNumber, uint64(windowEnd))
 	clientStore := k.clientKeeper.GetStoreProvider().ClientStore(ctx, clientId)
 
-	var anchorHeight, upperHeight ibcexported.Height
-	anchorFound := false
-	upperFound := false
-	ibctmtypes.IterateConsensusStateAscending(clientStore, func(height ibcexported.Height) bool {
-		revisionHeight := int64(height.GetRevisionHeight())
-		if revisionHeight <= windowEnd {
-			// Iteration is ascending, so the last height at or below windowEnd
-			// wins; a state at exactly windowEnd anchors the window exactly.
-			anchorHeight = height
-			anchorFound = true
-		}
-		if revisionHeight >= windowEnd {
-			upperHeight = height
-			upperFound = true
-			return true
-		}
-		return false
-	})
-	if !upperFound {
+	// A state at exactly windowEnd is both anchors at once.
+	if consensusState, found := ibctmtypes.GetConsensusState(clientStore, k.cdc, height); found {
+		return consensusState.Timestamp, nil
+	}
+	if _, found := ibctmtypes.GetNextConsensusState(clientStore, k.cdc, height); !found {
 		return time.Time{}, fmt.Errorf("cannot anchor evidence window time: no consensus state at height >= %d", windowEnd)
 	}
-	if !anchorFound {
+	consensusState, found := ibctmtypes.GetPreviousConsensusState(clientStore, k.cdc, height)
+	if !found {
 		return time.Time{}, fmt.Errorf(
-			"cannot anchor evidence window time: window-end height %d predates the client's retained consensus states (nearest stored is %d); evidence is too old or the client too sparse to anchor",
-			windowEnd, upperHeight.GetRevisionHeight(),
+			"cannot anchor evidence window time: window-end height %d predates the client's retained consensus states; evidence is too old or the client too sparse to anchor",
+			windowEnd,
 		)
 	}
-
-	consensusState, ok := k.clientKeeper.GetClientConsensusState(ctx, clientId, anchorHeight)
-	if !ok {
-		return time.Time{}, fmt.Errorf("cannot anchor evidence window time: consensus state lookup failed for height %s", anchorHeight)
-	}
-	return time.Unix(0, int64(consensusState.GetTimestamp())), nil //nolint:staticcheck
+	return consensusState.Timestamp, nil
 }

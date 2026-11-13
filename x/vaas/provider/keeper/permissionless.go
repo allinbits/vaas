@@ -7,6 +7,7 @@ import (
 	errorsmod "cosmossdk.io/errors"
 
 	sdk "github.com/cosmos/cosmos-sdk/types"
+	sdkerrors "github.com/cosmos/cosmos-sdk/types/errors"
 
 	"github.com/allinbits/vaas/x/vaas/provider/types"
 )
@@ -24,6 +25,30 @@ func (k Keeper) GetConsumerId(ctx context.Context) (uint64, bool) {
 		return 0, false
 	}
 	return consumerId, true
+}
+
+// ChargeConsumerRegistrationFee collects the consumer registration fee
+// (Params.ConsumerRegistrationFee) from submitter and burns it, so that
+// creating a consumer, which adds an id the provider keeps for good, costs
+// more than the gas of the message. A zero fee charges nothing and does not
+// read the submitter.
+func (k Keeper) ChargeConsumerRegistrationFee(ctx sdk.Context, submitter string) error {
+	fee := k.GetParams(ctx).ConsumerRegistrationFee
+	if !fee.IsPositive() {
+		return nil
+	}
+	submitterAddr, err := sdk.AccAddressFromBech32(submitter)
+	if err != nil {
+		return errorsmod.Wrapf(sdkerrors.ErrInvalidAddress, "submitter: %s", err)
+	}
+	coins := sdk.NewCoins(fee)
+	if err := k.bankKeeper.SendCoinsFromAccountToModule(ctx, submitterAddr, types.ModuleName, coins); err != nil {
+		return errorsmod.Wrapf(err, "collecting the consumer registration fee of %s", fee)
+	}
+	if err := k.bankKeeper.BurnCoins(ctx, types.ModuleName, coins); err != nil {
+		return errorsmod.Wrapf(err, "burning the consumer registration fee of %s", fee)
+	}
+	return nil
 }
 
 // FetchAndIncrementConsumerId fetches the first consumer id that can be used and increments the
@@ -176,10 +201,22 @@ func (k Keeper) GetConsumerPhase(ctx context.Context, consumerId uint64) types.C
 	return types.ConsumerPhase(phase)
 }
 
-// SetConsumerPhase sets the phase associated with this consumer id
+// SetConsumerPhase sets the phase associated with this consumer id and keeps
+// LiveConsumerIds in step: the consumer is in the set while its phase is a
+// live one and leaves it when the phase becomes DELETED.
 func (k Keeper) SetConsumerPhase(ctx context.Context, consumerId uint64, phase types.ConsumerPhase) {
 	if err := k.ConsumerPhase.Set(ctx, consumerId, uint32(phase)); err != nil {
 		panic(fmt.Errorf("failed to set consumer phase for consumer id (%d): %w", consumerId, err))
+	}
+	var err error
+	switch phase {
+	case types.CONSUMER_PHASE_UNSPECIFIED, types.CONSUMER_PHASE_DELETED:
+		err = k.LiveConsumerIds.Remove(ctx, consumerId)
+	default:
+		err = k.LiveConsumerIds.Set(ctx, consumerId)
+	}
+	if err != nil {
+		panic(fmt.Errorf("failed to update the live consumer ids for consumer id (%d): %w", consumerId, err))
 	}
 }
 

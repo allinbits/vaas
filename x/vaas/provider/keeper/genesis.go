@@ -269,7 +269,7 @@ func (k Keeper) InitGenesis(ctx sdk.Context, genState *types.GenesisState) []abc
 	// genesis JSON whose downtime object omits slash_fraction deserializes to
 	// a nil LegacyDec, which the store round-trip would turn into an explicit
 	// zero, silently capping every downtime slash at zero.
-	if err := genState.Params.Validate(); err != nil {
+	if err := k.ValidateParams(genState.Params); err != nil {
 		panic(fmt.Errorf("invalid parameters in genesis: %w", err))
 	}
 	k.SetParams(ctx, genState.Params)

@@ -67,6 +67,10 @@ func NewInMemKeeperParams(tb testing.TB) InMemKeeperParams {
 
 	registry := codectypes.NewInterfaceRegistry()
 	cryptocodec.RegisterInterfaces(registry)
+	// The provider decodes tendermint consensus states straight from the IBC
+	// client store through this codec (windowEndTimestamp), so tests that seed
+	// real consensus states need the 07-tendermint types on the registry.
+	ibctmtypes.RegisterInterfaces(registry)
 	// Gov proposals carry their messages as Any; unpacking a stored
 	// MsgRemoveConsumer needs the provider's msg types on the registry.
 	providertypes.RegisterInterfaces(registry)

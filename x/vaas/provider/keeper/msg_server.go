@@ -51,7 +51,7 @@ func (k msgServer) UpdateParams(goCtx context.Context, msg *types.MsgUpdateParam
 	// challengeable interval against the trusting period fraction, say).
 	current := k.GetParams(ctx)
 	merged := msg.ApplyTo(current)
-	if err := merged.Validate(); err != nil {
+	if err := k.ValidateParams(merged); err != nil {
 		return nil, errorsmod.Wrap(sdkerrors.ErrInvalidRequest, err.Error())
 	}
 
@@ -275,6 +275,12 @@ func (k msgServer) CreateConsumer(goCtx context.Context, msg *types.MsgCreateCon
 
 	// initialize an empty slice to store event attributes
 	eventAttributes := []sdk.Attribute{}
+
+	// The registration fee comes first: a submitter who cannot pay it creates
+	// nothing, not even a consumer id.
+	if err := k.Keeper.ChargeConsumerRegistrationFee(ctx, msg.Submitter); err != nil {
+		return nil, err
+	}
 
 	consumerId := k.Keeper.FetchAndIncrementConsumerId(ctx)
 

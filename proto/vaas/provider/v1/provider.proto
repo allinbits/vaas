@@ -93,6 +93,13 @@ message Params {
   // downtime SLA window, the challenge window and the evidence max age.
   InfractionParameters infraction_parameters = 11
       [ (gogoproto.nullable) = false ];
+
+  // ConsumerRegistrationFee is charged to the submitter of MsgCreateConsumer
+  // and burned, so registering consumers has a cost beyond gas. It must be
+  // denominated in the per-block fee denom when its amount is positive; a
+  // zero amount disables it.
+  cosmos.base.v1beta1.Coin consumer_registration_fee = 12
+      [ (gogoproto.nullable) = false, (amino.dont_omitempty) = true ];
 }
 
 // AddressList contains a list of consensus addresses

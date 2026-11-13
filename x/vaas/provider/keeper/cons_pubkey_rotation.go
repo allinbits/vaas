@@ -59,7 +59,7 @@ func (k Keeper) MigrateStateOnConsPubKeyRotation(
 	ctx sdk.Context,
 	oldProviderAddr, newProviderAddr types.ProviderConsAddress,
 ) {
-	for _, consumerId := range k.nonDeletedConsumerIds(ctx) {
+	for _, consumerId := range k.GetLiveConsumerIds(ctx) {
 		if k.migrateKeyAssignment(ctx, consumerId, oldProviderAddr, newProviderAddr) {
 			k.migrateConsumerValidator(ctx, consumerId, oldProviderAddr, newProviderAddr)
 			k.migrateDowntimeAcceptance(ctx, consumerId, oldProviderAddr, newProviderAddr)

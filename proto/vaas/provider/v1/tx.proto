@@ -138,6 +138,7 @@ message MsgUpdateParams {
   google.protobuf.Duration removal_vote_deferral_margin = 11
       [ (gogoproto.stdduration) = true ];
   InfractionParametersUpdate infraction_parameters = 12;
+  cosmos.base.v1beta1.Coin consumer_registration_fee = 13;
 }
 
 message MsgUpdateParamsResponse {}

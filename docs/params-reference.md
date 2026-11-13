@@ -52,6 +52,7 @@ defaults and `Params.Validate`) and the `UpdateParams` handler in
 | `refusal_pause_threshold` | string decimal | `(0, 1)` | `"0.333333333333333333"` | share of bonded power whose recorded refusal pauses a consumer; keep it at or above the share that halts the chain physically (one third); see [consumer-refusal.md](consumer-refusal.md) section 1 |
 | `equivocation_execution_delay` | duration | `> 0` | `168h` (7 days) | jailed-but-pending window before a verified equivocation's slash and tombstone execute; see [consumer-refusal.md](consumer-refusal.md) section 3 |
 | `removal_vote_deferral_margin` | duration | `> 0` | `1h` | how far past a removal vote's end a punishment deferred behind it waits for the tally; see [consumer-refusal.md](consumer-refusal.md) section 2 |
+| `consumer_registration_fee` | Coin | valid coin; when positive, its denom must be the fee denom (keeper check) | `0uphoton` | charged to the submitter of `MsgCreateConsumer` and burned, so registering a consumer (whose id the provider keeps for good) costs more than gas; `0` disables it |
 
 The bounds come from `Params.Validate`: `trusting_period_fraction` and
 `liveness_grace_fraction` go through `ValidateStringFractionNonZero`, which
@@ -66,6 +67,11 @@ and `max_pause_duration`, `equivocation_execution_delay` and
 `min_deposit_blocks` is
 **not** validated in `Params.Validate` -- its only effect is as the fee-pool
 floor multiplier, where `0` is a valid "disable the floor" value.
+`consumer_registration_fee` goes through `Coin.Validate` (a well-formed denom,
+a set and non-negative amount); that a positive fee is in the fee denom is
+checked by the keeper (`Keeper.ValidateParams`), which validates the genesis
+parameters and every merged `MsgUpdateParams`, since the fee denom is wired
+there rather than being a parameter.
 
 **The fee denom is not a parameter.** It is wired into the keeper at application
 construction (`Keeper.feeDenom`) and cannot change without a binary upgrade; the
@@ -75,6 +81,8 @@ standalone provider app in this repository wires `uphoton`. Only the amount
 [x/vaas/provider/keeper/params.go](../x/vaas/provider/keeper/params.go) lines
 64-69. A per-consumer raise-only override to this amount can be set with
 `MsgSetConsumerFeesPerBlock`; see [consumer-fee-pool.md](consumer-fee-pool.md).
+The consumer registration fee is denominated in the same denom: it is a coin
+parameter, but a positive one must carry the fee denom.
 
 ---
 

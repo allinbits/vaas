@@ -24,7 +24,10 @@ Roles in this flow:
 
 The owner submits `MsgCreateConsumer` on the provider (any account may; the
 submitter becomes the owner). Its `initialization_parameters` seed the consumer
-genesis the provider will build.
+genesis the provider will build. The provider charges the submitter the
+`consumer_registration_fee` parameter and burns it (zero by default; see
+[params-reference.md](params-reference.md) section 1), so the submitter must
+hold it on top of the gas.
 
 ```
 providerd tx vaasprovider create-consumer <path/to/create_consumer.json> --from <owner>

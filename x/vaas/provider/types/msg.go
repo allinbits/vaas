@@ -307,7 +307,8 @@ func (msg MsgUpdateParams) ValidateBasic() error {
 func (msg MsgUpdateParams) changesSomething() bool {
 	if msg.TrustingPeriodFraction != nil || msg.LivenessGraceFraction != nil || msg.VaasTimeoutPeriod != nil ||
 		msg.BlocksPerEpoch != nil || msg.FeesPerBlockAmount != nil || msg.MinDepositBlocks != nil || msg.MaxPauseDuration != nil ||
-		msg.RefusalPauseThreshold != nil || msg.EquivocationExecutionDelay != nil || msg.RemovalVoteDeferralMargin != nil {
+		msg.RefusalPauseThreshold != nil || msg.EquivocationExecutionDelay != nil || msg.RemovalVoteDeferralMargin != nil ||
+		msg.ConsumerRegistrationFee != nil {
 		return true
 	}
 	return msg.InfractionParameters != nil && msg.InfractionParameters.changesSomething()
@@ -360,6 +361,9 @@ func (msg MsgUpdateParams) ApplyTo(p Params) Params {
 	}
 	if msg.InfractionParameters != nil {
 		p.InfractionParameters = msg.InfractionParameters.ApplyTo(p.InfractionParameters)
+	}
+	if msg.ConsumerRegistrationFee != nil {
+		p.ConsumerRegistrationFee = *msg.ConsumerRegistrationFee
 	}
 	return p
 }
