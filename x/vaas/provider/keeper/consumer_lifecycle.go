@@ -639,7 +639,7 @@ func (k Keeper) forkEvidenceExpired(ctx sdk.Context, consumerId uint64, clientId
 	resumableAt := forkKnownAt.Add(wait)
 	if ctx.BlockTime().Before(resumableAt) {
 		return errorsmod.Wrapf(types.ErrForkEvidenceStillVerifiable,
-			"consumer %d was found forked at %s and its fork's evidence stays verifiable for %s; resume at or after %s",
+			"consumer %d was found forked at %s and its fork's evidence stays verifiable for one client trusting period (%s with the clock-drift allowance, capped at the provider unbonding period); resume at or after %s",
 			consumerId, forkKnownAt.UTC().Format(time.RFC3339), wait, resumableAt.UTC().Format(time.RFC3339))
 	}
 	return nil
