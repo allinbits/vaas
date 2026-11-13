@@ -95,7 +95,7 @@ func setupDowntimeTestWithTrustingPeriod(
 		return windowEndTime, nil
 	})
 	mocks.MockClientKeeper.EXPECT().GetClientState(gomock.Any(), "07-tendermint-0").
-		Return(&ibctmtypes.ClientState{TrustingPeriod: trustingPeriod}, true).AnyTimes()
+		Return(&ibctmtypes.ClientState{ChainId: "consumer-chain", TrustingPeriod: trustingPeriod}, true).AnyTimes()
 
 	return providerKeeper, ctx, ctrl, mocks, consumerId, providerAddr
 }

@@ -279,6 +279,11 @@ enum PauseReason {
   // REFUSAL_THRESHOLD: the bonded power refusing the consumer reached
   // RefusalPauseThreshold (MsgSetConsumerRefusal, see EvaluateConsumerRefusals).
   PAUSE_REASON_REFUSAL_THRESHOLD = 3;
+  // CLIENT_CHAIN_ID_MISMATCH: the consumer's declared client tracks a chain
+  // id other than the consumer's (an ibc-go client upgrade or recovery
+  // switched it), so the provider cannot judge the consumer's
+  // evidence (see PauseConsumersWithMismatchedClients).
+  PAUSE_REASON_CLIENT_CHAIN_ID_MISMATCH = 4;
 }
 
 // InfractionParameters is the part of Params that governs consumer-sourced

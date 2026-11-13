@@ -484,6 +484,7 @@ func TestResumeConsumerChain_SendFailureFailsResume(t *testing.T) {
 	require.NoError(t, err)
 
 	mocks.MockClientKeeper.EXPECT().GetClientStatus(gomock.Any(), "07-tendermint-0").Return(ibcexported.Active)
+	mocks.MockClientKeeper.EXPECT().GetClientState(gomock.Any(), "07-tendermint-0").Return(&ibctmtypes.ClientState{TrustingPeriod: 14 * 24 * time.Hour}, true).AnyTimes()
 	mocks.MockStakingKeeper.EXPECT().MaxValidators(gomock.Any()).Return(uint32(100), nil).AnyTimes()
 	mocks.MockStakingKeeper.EXPECT().GetBondedValidatorsByPower(gomock.Any()).Return([]stakingtypes.Validator{}, nil).AnyTimes()
 	mocks.MockChannelV2Keeper.EXPECT().
@@ -565,6 +566,7 @@ func TestResumeConsumerChain_Success(t *testing.T) {
 	ctx = ctx.WithBlockTime(ctx.BlockTime().Add(time.Hour))
 
 	mocks.MockClientKeeper.EXPECT().GetClientStatus(gomock.Any(), "07-tendermint-0").Return(ibcexported.Active)
+	mocks.MockClientKeeper.EXPECT().GetClientState(gomock.Any(), "07-tendermint-0").Return(&ibctmtypes.ClientState{TrustingPeriod: 14 * 24 * time.Hour}, true).AnyTimes()
 	mocks.MockStakingKeeper.EXPECT().MaxValidators(gomock.Any()).Return(uint32(100), nil).AnyTimes()
 	mocks.MockStakingKeeper.EXPECT().GetBondedValidatorsByPower(gomock.Any()).Return([]stakingtypes.Validator{}, nil).AnyTimes()
 	mocks.MockChannelV2Keeper.EXPECT().
@@ -755,6 +757,7 @@ func TestResumeAfterADowntimePauseWaitsForNothing(t *testing.T) {
 	require.NoError(t, k.PauseConsumerChain(ctx, cid, providertypes.PAUSE_REASON_DOWNTIME_CHALLENGE))
 
 	mocks.MockClientKeeper.EXPECT().GetClientStatus(gomock.Any(), "07-tendermint-0").Return(ibcexported.Active)
+	mocks.MockClientKeeper.EXPECT().GetClientState(gomock.Any(), "07-tendermint-0").Return(&ibctmtypes.ClientState{TrustingPeriod: 14 * 24 * time.Hour}, true).AnyTimes()
 	resumeMocks(mocks)
 
 	require.NoError(t, k.ResumeConsumerChain(ctx.WithBlockTime(ctx.BlockTime().Add(time.Second)), cid))
@@ -790,6 +793,7 @@ func TestPauseConsumersWithFrozenClients(t *testing.T) {
 
 	mocks.MockClientKeeper.EXPECT().GetClientStatus(gomock.Any(), "07-tendermint-0").Return(ibcexported.Frozen)
 	mocks.MockClientKeeper.EXPECT().GetClientStatus(gomock.Any(), "07-tendermint-1").Return(ibcexported.Active)
+	mocks.MockClientKeeper.EXPECT().GetClientState(gomock.Any(), "07-tendermint-1").Return(&ibctmtypes.ClientState{TrustingPeriod: 14 * 24 * time.Hour}, true).AnyTimes()
 	mocks.MockClientKeeper.EXPECT().GetClientStatus(gomock.Any(), "07-tendermint-2").Return(ibcexported.Expired)
 
 	k.PauseConsumersWithFrozenClients(ctx)

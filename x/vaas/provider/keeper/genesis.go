@@ -96,6 +96,11 @@ func (k Keeper) InitGenesis(ctx sdk.Context, genState *types.GenesisState) []abc
 				panic(fmt.Errorf("init: set paused-at time for %d: %w", consumerId, err))
 			}
 		}
+		for _, previous := range cs.PreviousChainIds {
+			if err := k.ConsumerPreviousChainIds.Set(ctx, collections.Join(consumerId, previous.ChainId), previous.Boundary); err != nil {
+				panic(fmt.Errorf("init: set previous chain id for %d: %w", consumerId, err))
+			}
+		}
 		// Restore the liveness clock (see ExportGenesis): only when present, so
 		// a consumer that never launched keeps the absent-defaults.
 		if cs.LastAckTime != nil {
@@ -507,6 +512,11 @@ func (k Keeper) ExportGenesis(ctx sdk.Context) *types.GenesisState {
 		} else if !errors.Is(err, collections.ErrNotFound) {
 			panic(fmt.Errorf("export: failed to read paused-at time for consumer %d: %w", consumerId, err))
 		}
+		previous, err := k.GetConsumerPreviousChainIds(ctx, consumerId)
+		if err != nil {
+			panic(fmt.Errorf("export: failed to read previous chain ids for consumer %d: %w", consumerId, err))
+		}
+		cs.PreviousChainIds = previous
 
 		// Liveness clock: export the last-ack time only when actually recorded
 		// (GetConsumerLastAckTime falls back to block time when absent, which we

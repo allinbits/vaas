@@ -51,7 +51,11 @@ Both files are decoded with the proto-JSON codec. CLI source:
 `HandleConsumerDoubleVoting` in
 [x/vaas/provider/keeper/consumer_equivocation.go](../x/vaas/provider/keeper/consumer_equivocation.go):
 
-1. Requires the consumer to be `LAUNCHED`.
+1. Requires the consumer to be `LAUNCHED`. The votes are verified over the
+   consumer's chain id, or over a chain id the consumer carried before a
+   governance rename when the infraction block is at or below the declared
+   client's height at that rename (`EvidenceChainIdFor`; see
+   [consumer-lifecycle.md](consumer-lifecycle.md) on renames).
 2. Rejects evidence older than the consumer's equivocation-evidence minimum
    height. Note the *age* of the vote is not otherwise bounded -- there is no
    max-age on double-vote evidence.

@@ -299,6 +299,9 @@ func TestUpdateConsumerDuplicateChainId(t *testing.T) {
 	require.Equal(t, chainId2, actualChainId)
 }
 
+// doubleVotingChainID is the consumer chain id of the double-voting tests.
+const doubleVotingChainID = "consumer-chain-id"
+
 func TestSubmitConsumerDoubleVotingRejectsMismatchedChainID(t *testing.T) {
 	providerKeeper, ctx, ctrl, _ := testkeeper.GetProviderKeeperAndCtx(t, testkeeper.NewInMemKeeperParams(t))
 	defer ctrl.Finish()
@@ -306,9 +309,10 @@ func TestSubmitConsumerDoubleVotingRejectsMismatchedChainID(t *testing.T) {
 	msgServer := providerkeeper.NewMsgServerImpl(&providerKeeper)
 
 	consumerID := uint64(0)
-	storedChainID := "consumer-chain-id"
+	storedChainID := doubleVotingChainID
 	differentChainID := "different-chain-id"
 	providerKeeper.SetConsumerChainId(ctx, consumerID, storedChainID)
+	providerKeeper.SetConsumerPhase(ctx, consumerID, providertypes.CONSUMER_PHASE_LAUNCHED)
 
 	height := int64(12)
 	evidence, valSet := makeDuplicateVoteEvidenceProtoWithValSet(t, differentChainID, height)
@@ -325,8 +329,41 @@ func TestSubmitConsumerDoubleVotingRejectsMismatchedChainID(t *testing.T) {
 		_, err := msgServer.SubmitConsumerDoubleVoting(ctx, msg)
 		require.Error(t, err)
 		require.Contains(t, err.Error(), "infraction block header chain id")
-		require.Contains(t, err.Error(), "does not match consumer chain id")
+		require.Contains(t, err.Error(), "is not consumer 0's chain id")
 	})
+}
+
+// TestSubmitConsumerDoubleVotingRefusesAConsumerThatIsNotLaunched: the phase
+// gate runs before the chain id is read, so a deleted consumer, whose chain
+// id deletion released, is refused with the double-voting evidence error
+// like a registered one, not with a missing-state error.
+func TestSubmitConsumerDoubleVotingRefusesAConsumerThatIsNotLaunched(t *testing.T) {
+	providerKeeper, ctx, ctrl, _ := testkeeper.GetProviderKeeperAndCtx(t, testkeeper.NewInMemKeeperParams(t))
+	defer ctrl.Finish()
+	msgServer := providerkeeper.NewMsgServerImpl(&providerKeeper)
+
+	chainID := doubleVotingChainID
+	height := int64(12)
+	evidence, valSet := makeDuplicateVoteEvidenceProtoWithValSet(t, chainID, height)
+	header := makeHeader(t, chainID, height, valSet)
+
+	registered := providerKeeper.FetchAndIncrementConsumerId(ctx)
+	providerKeeper.SetConsumerPhase(ctx, registered, providertypes.CONSUMER_PHASE_REGISTERED)
+	providerKeeper.SetConsumerChainId(ctx, registered, chainID)
+	deleted := providerKeeper.FetchAndIncrementConsumerId(ctx)
+	providerKeeper.SetConsumerPhase(ctx, deleted, providertypes.CONSUMER_PHASE_DELETED)
+
+	for _, consumerID := range []uint64{registered, deleted} {
+		_, err := msgServer.SubmitConsumerDoubleVoting(ctx, &providertypes.MsgSubmitConsumerDoubleVoting{
+			ConsumerId:            consumerID,
+			Submitter:             validSubmitter(),
+			DuplicateVoteEvidence: evidence,
+			InfractionBlockHeader: header,
+		})
+		require.ErrorIs(t, err, vaastypes.ErrInvalidDoubleVotingEvidence, "consumer %d", consumerID)
+		require.ErrorContains(t, err, "is not launched")
+	}
+	require.ErrorIs(t, providerKeeper.HandleConsumerDoubleVoting(ctx, deleted, nil, nil), vaastypes.ErrInvalidDoubleVotingEvidence)
 }
 
 func TestSubmitConsumerDoubleVotingHappyPath(t *testing.T) {
@@ -336,7 +373,7 @@ func TestSubmitConsumerDoubleVotingHappyPath(t *testing.T) {
 	msgServer := providerkeeper.NewMsgServerImpl(&providerKeeper)
 
 	consumerID := uint64(0)
-	chainID := "consumer-chain-id"
+	chainID := doubleVotingChainID
 	providerKeeper.SetConsumerChainId(ctx, consumerID, chainID)
 	providerKeeper.SetConsumerPhase(ctx, consumerID, providertypes.CONSUMER_PHASE_LAUNCHED)
 	providerKeeper.SetInfractionParams(ctx, providertypes.DefaultInfractionParameters())
@@ -1053,6 +1090,7 @@ func TestResumeConsumerGovAuth(t *testing.T) {
 
 	// correct authority succeeds
 	mocks.MockClientKeeper.EXPECT().GetClientStatus(gomock.Any(), "07-tendermint-0").Return(ibcexported.Active)
+	mocks.MockClientKeeper.EXPECT().GetClientState(gomock.Any(), "07-tendermint-0").Return(&ibctmtypes.ClientState{ChainId: "chainId", TrustingPeriod: 14 * 24 * time.Hour}, true).AnyTimes()
 	mocks.MockStakingKeeper.EXPECT().MaxValidators(gomock.Any()).Return(uint32(100), nil).AnyTimes()
 	mocks.MockStakingKeeper.EXPECT().GetBondedValidatorsByPower(gomock.Any()).Return([]stakingtypes.Validator{}, nil).AnyTimes()
 	mocks.MockChannelV2Keeper.EXPECT().
@@ -1204,7 +1242,7 @@ func TestUpdateConsumerLaunchedOnlyMetadata(t *testing.T) {
 			NewChainId: "newChainId",
 		})
 	require.Error(t, err)
-	require.ErrorIs(t, err, providertypes.ErrInvalidPhase)
+	require.ErrorIs(t, err, providertypes.ErrUnauthorized)
 
 	// owner transfer should succeed on launched chain
 	newOwner := declOwner
@@ -1801,6 +1839,20 @@ func TestCreateConsumerUnbondingBounds(t *testing.T) {
 			unbondingPeriod: time.Hour,
 			wantErr:         true,
 		},
+		{
+			// Above the horizon itself, but a client's trusting period is a
+			// fraction of it (TrustingPeriodFraction, 0.66 by default): 11
+			// days give 7.26, under the 10-day horizon, so no declarable
+			// client exists and registration refuses it.
+			name:            "trusting period at the fraction below the horizon: rejected",
+			unbondingPeriod: 11 * 24 * time.Hour,
+			wantErr:         true,
+		},
+		{
+			name:            "trusting period at the fraction above the horizon: ok",
+			unbondingPeriod: 16 * 24 * time.Hour,
+			wantErr:         false,
+		},
 	}
 
 	for _, tc := range tests {
@@ -2083,15 +2135,11 @@ func TestUpdateConsumerUnbondingBounds(t *testing.T) {
 	}
 }
 
-// TestUpdateConsumerRejectsPausedConsumer pins the one place that deliberately
-// treats PAUSED as ineligible even though IsConsumerActive accepts it.
-//
-// An update can rewrite the infraction parameters and initialization
-// parameters that the challenge which paused the consumer was judged under,
-// and the resume path replays state built from them. Governance resumes or
-// removes the consumer first, then updates it. Key assignment, by contrast, is
-// available during a pause.
-func TestUpdateConsumerRejectsPausedConsumer(t *testing.T) {
+// TestUpdateConsumerOnPausedConsumer: a paused consumer stays updatable for
+// what a launched one is (metadata, ownership, and the client declaration a
+// refusal pause may have pre-empted); its initialization parameters are
+// frozen, and only governance renames it, to its client's chain id.
+func TestUpdateConsumerOnPausedConsumer(t *testing.T) {
 	providerKeeper, ctx, ctrl, _ := testkeeper.GetProviderKeeperAndCtx(t, testkeeper.NewInMemKeeperParams(t))
 	defer ctrl.Finish()
 
@@ -2100,15 +2148,29 @@ func TestUpdateConsumerRejectsPausedConsumer(t *testing.T) {
 	owner := declOwner
 	consumerId := providerKeeper.FetchAndIncrementConsumerId(ctx)
 	providerKeeper.SetConsumerOwnerAddress(ctx, consumerId, owner)
+	providerKeeper.SetConsumerChainId(ctx, consumerId, "paused-1")
 	providerKeeper.SetConsumerPhase(ctx, consumerId, providertypes.CONSUMER_PHASE_PAUSED)
+	require.NoError(t, providerKeeper.SetConsumerInitializationParameters(ctx, consumerId, providertypes.ConsumerInitializationParameters{
+		InitialHeight: clienttypes.NewHeight(1, 1), SpawnTime: time.Unix(1_700_000_000, 0).UTC(),
+	}))
 
+	renamed := &providertypes.ConsumerMetadata{Name: "renamed", Description: "d", Metadata: "m"}
 	_, err := msgServer.UpdateConsumer(ctx, &providertypes.MsgUpdateConsumer{
-		Owner:      owner,
-		ConsumerId: consumerId,
-		Metadata: &providertypes.ConsumerMetadata{
-			Name: "renamed", Description: "d", Metadata: "m",
-		},
+		Owner: owner, ConsumerId: consumerId, Metadata: renamed,
 	})
-	require.ErrorIs(t, err, providertypes.ErrInvalidPhase,
-		"a paused consumer must not be updatable")
+	require.NoError(t, err, "metadata stays updatable on a paused consumer")
+	got, err := providerKeeper.GetConsumerMetadata(ctx, consumerId)
+	require.NoError(t, err)
+	require.Equal(t, *renamed, got)
+
+	_, err = msgServer.UpdateConsumer(ctx, &providertypes.MsgUpdateConsumer{
+		Owner: owner, ConsumerId: consumerId,
+		InitializationParameters: &providertypes.ConsumerInitializationParameters{UnbondingPeriod: time.Hour},
+	})
+	require.ErrorIs(t, err, providertypes.ErrInvalidPhase, "initialization parameters are frozen after launch")
+
+	_, err = msgServer.UpdateConsumer(ctx, &providertypes.MsgUpdateConsumer{
+		Owner: owner, ConsumerId: consumerId, NewChainId: "paused-2",
+	})
+	require.ErrorIs(t, err, providertypes.ErrUnauthorized, "only governance renames a consumer that has launched")
 }

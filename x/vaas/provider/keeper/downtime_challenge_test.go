@@ -10,6 +10,7 @@ import (
 	tmproto "github.com/cometbft/cometbft/proto/tendermint/types"
 	tmtypes "github.com/cometbft/cometbft/types"
 
+	clienttypes "github.com/cosmos/ibc-go/v10/modules/core/02-client/types"
 	ibcexported "github.com/cosmos/ibc-go/v10/modules/core/exported"
 	ibctmtypes "github.com/cosmos/ibc-go/v10/modules/light-clients/07-tendermint"
 
@@ -659,7 +660,7 @@ func TestHandleChallengeConsumerDowntime_WrongHeaderChainID(t *testing.T) {
 
 	err := f.k.HandleChallengeConsumerDowntime(f.ctx, f.msg)
 	require.ErrorIs(t, err, types.ErrDowntimeChallengeFailed)
-	require.ErrorContains(t, err, "does not match consumer chain id")
+	require.ErrorContains(t, err, "header chain id")
 	f.requireNoStateChange(t)
 }
 
@@ -796,4 +797,22 @@ func TestHandleChallengeConsumerDowntime_RejectsNonActiveClient(t *testing.T) {
 				"the consumer must not be paused by a challenge over a non-active client")
 		})
 	}
+}
+
+// TestHandleChallengeConsumerDowntime_RefusesAPreviousChainId: a header
+// signed over a chain id the consumer carried before a governance rename is
+// refused even though the consumer still records it. The recovered client
+// verifies headers over the chain id it tracks now, so such a header could
+// never pass it, and the rename discarded the windows from before it (see
+// TestGovernanceRenamesALaunchedConsumerToItsClientsChainId).
+func TestHandleChallengeConsumerDowntime_RefusesAPreviousChainId(t *testing.T) {
+	f := newChallengeFixture(t)
+	f.k.SetConsumerChainId(f.ctx, f.cid, "renamed-chain")
+	require.NoError(t, f.k.ConsumerPreviousChainIds.Set(f.ctx, collections.Join(f.cid, challengeTestChainID),
+		clienttypes.NewHeight(clienttypes.ParseChainID(challengeTestChainID), 10_000)))
+
+	err := f.k.HandleChallengeConsumerDowntime(f.ctx, f.msg)
+	require.ErrorIs(t, err, types.ErrDowntimeChallengeFailed)
+	require.ErrorContains(t, err, "does not match consumer chain id (renamed-chain)")
+	f.requireNoStateChange(t)
 }

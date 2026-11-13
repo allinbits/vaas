@@ -287,3 +287,37 @@ func TestMakeConsumerGenesisSeedsOwnerAddress(t *testing.T) {
 	require.Equal(t, declOwner, gen.Params.OwnerAddress,
 		"the registered owner must be seeded as the consumer-side pin authority")
 }
+
+// TestDeclareConsumerClientRefusesAClientAnotherConsumerDeclared: the
+// reverse index is unique; a second consumer declaring the same client is
+// refused with a reason rather than the index's panic.
+func TestDeclareConsumerClientRefusesAClientAnotherConsumerDeclared(t *testing.T) {
+	f := newDeclFixture(t)
+	f.stubClient(declClientID, declChainID, ibcexported.Active, goodTrusting)
+	f.mocks.ClientCounterparties[declClientID] = clientv2types.CounterpartyInfo{ClientId: "07-tendermint-0"}
+	require.NoError(t, f.declare(t, declClientID))
+
+	other := f.k.FetchAndIncrementConsumerId(f.ctx)
+	f.k.SetConsumerPhase(f.ctx, other, types.CONSUMER_PHASE_LAUNCHED)
+	f.k.SetConsumerChainId(f.ctx, other, declChainID)
+	f.k.SetConsumerOwnerAddress(f.ctx, other, declOwner)
+	err := f.k.SetConsumerClient(f.ctx, other, declClientID)
+	require.ErrorIs(t, err, types.ErrInvalidMsgUpdateConsumer)
+	require.ErrorContains(t, err, "already declared by consumer")
+	_, found := f.k.GetConsumerClientId(f.ctx, other)
+	require.False(t, found)
+}
+
+// TestDeclareConsumerClientWhilePaused: a refusal pause can land before the
+// owner declares the client; the declaration stays open on a paused consumer
+// so the resume has a client to serve.
+func TestDeclareConsumerClientWhilePaused(t *testing.T) {
+	f := newDeclFixture(t)
+	f.k.SetConsumerPhase(f.ctx, f.consumerId, types.CONSUMER_PHASE_PAUSED)
+	f.stubClient(declClientID, declChainID, ibcexported.Active, goodTrusting)
+	f.mocks.ClientCounterparties[declClientID] = clientv2types.CounterpartyInfo{ClientId: "07-tendermint-0"}
+	require.NoError(t, f.declare(t, declClientID))
+	got, found := f.k.GetConsumerClientId(f.ctx, f.consumerId)
+	require.True(t, found)
+	require.Equal(t, declClientID, got)
+}

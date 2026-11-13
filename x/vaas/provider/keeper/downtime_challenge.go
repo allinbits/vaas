@@ -95,6 +95,10 @@ func (k Keeper) HandleChallengeConsumerDowntime(ctx sdk.Context, msg *types.MsgC
 	}
 
 	// 2. the header is for claimed_height+1 on the consumer's own chain id.
+	// Only the current one: the client verifies the header below over the
+	// chain id it tracks, so a header signed over a chain id the consumer
+	// carried before a governance rename could never pass, and the rename
+	// discarded the accusations from before it (RenameLaunchedConsumer).
 	consumerChainId, err := k.GetConsumerChainId(ctx, msg.ConsumerId)
 	if err != nil {
 		return errorsmod.Wrapf(types.ErrDowntimeChallengeFailed,

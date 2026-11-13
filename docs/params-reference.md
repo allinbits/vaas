@@ -196,15 +196,19 @@ and the additional cross-chain bounds enforced in `validateConsumerInitParams`
 | `genesis_hash` | bytes | length `<= MaxHashLength` | empty |
 | `binary_hash` | bytes | length `<= MaxHashLength` | empty |
 | `spawn_time` | timestamp | zero means "not scheduled" | zero |
-| `unbonding_period` | duration | `> 0` and `<= provider unbonding` | provider default minus 1 day |
+| `unbonding_period` | duration | `> 0`, `<= provider unbonding`, and `unbonding_period * trusting_period_fraction > downtime_evidence_max_age + downtime_challenge_window` | provider default minus 1 day |
 | `vaas_timeout_period` | duration | `(0, 24h]` | `1h` |
 | `historical_entries` | int64 | `> 0` | `10000` |
 | `safe_mode_threshold` | duration | `> 0` and `< provider liveness grace` | `3h` |
 
-The two cross-chain bounds are provider-enforced at create/update time so the
+The cross-chain bounds are provider-enforced at create/update time so the
 relationships hold without operator discipline: a consumer cannot be configured
 to outlive the provider's slashable window (`unbonding_period <= provider
-unbonding`), and its own safe mode always engages before the provider's liveness
+unbonding`), a client of it can always be declared, since the declaration
+requires a trusting period above the downtime challenge horizon
+(`unbonding_period * trusting_period_fraction > downtime_evidence_max_age +
+downtime_challenge_window`, an unbonding period above about 15.2 days with the
+defaults), and its own safe mode always engages before the provider's liveness
 sweep would remove it (`safe_mode_threshold < provider liveness grace`). See
 [consumer-liveness.md](consumer-liveness.md) section 5.
 

@@ -36,13 +36,44 @@ func (k Keeper) HandleConsumerDoubleVoting(
 	evidence *tmtypes.DuplicateVoteEvidence,
 	pubkey cryptotypes.PubKey,
 ) error {
-	// check that the evidence is for an ICS consumer chain
+	if err := k.checkDoubleVotingConsumerPhase(ctx, consumerId); err != nil {
+		return err
+	}
+	chainId, err := k.GetConsumerChainId(ctx, consumerId)
+	if err != nil {
+		return err
+	}
+	return k.HandleConsumerDoubleVotingOver(ctx, consumerId, chainId, evidence, pubkey)
+}
+
+// checkDoubleVotingConsumerPhase refuses double-voting evidence for a
+// consumer that is not launched. Callers run it before reading the
+// consumer's chain id, which deletion releases, so the refusal is the
+// evidence error rather than a missing-state one.
+func (k Keeper) checkDoubleVotingConsumerPhase(ctx sdk.Context, consumerId uint64) error {
 	if k.GetConsumerPhase(ctx, consumerId) != types.CONSUMER_PHASE_LAUNCHED {
 		return errorsmod.Wrapf(
 			vaastypes.ErrInvalidDoubleVotingEvidence,
 			"consumer chain %d is not launched",
 			consumerId,
 		)
+	}
+	return nil
+}
+
+// HandleConsumerDoubleVotingOver is HandleConsumerDoubleVoting with the chain
+// id the votes are verified over given by the caller: the consumer's current
+// one, or a previous one it carried at the infraction height after a
+// governance rename (EvidenceChainIdFor).
+func (k Keeper) HandleConsumerDoubleVotingOver(
+	ctx sdk.Context,
+	consumerId uint64,
+	chainId string,
+	evidence *tmtypes.DuplicateVoteEvidence,
+	pubkey cryptotypes.PubKey,
+) error {
+	if err := k.checkDoubleVotingConsumerPhase(ctx, consumerId); err != nil {
+		return err
 	}
 
 	// Reject evidence below the per-consumer minimum height (set at launch and
@@ -75,14 +106,8 @@ func (k Keeper) HandleConsumerDoubleVoting(
 		)
 	}
 
-	// get the chainId of this consumer chain to verify the double-voting evidence
-	chainId, err := k.GetConsumerChainId(ctx, consumerId)
-	if err != nil {
-		return err
-	}
-
 	// verifies the double voting evidence using the consumer chain public key
-	if err = k.VerifyDoubleVotingEvidence(*evidence, chainId, pubkey); err != nil {
+	if err := k.VerifyDoubleVotingEvidence(*evidence, chainId, pubkey); err != nil {
 		return err
 	}
 
