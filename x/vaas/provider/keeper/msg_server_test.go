@@ -1,6 +1,7 @@
 package keeper_test
 
 import (
+	stdmath "math"
 	"strconv"
 	"sync"
 	"testing"
@@ -539,6 +540,16 @@ func TestSetConsumerFeesPerBlock(t *testing.T) {
 			name:       "amount above global stored",
 			amount:     "2500",
 			wantAmount: math.NewInt(2500),
+		},
+		{
+			name:       "amount whose epoch fee lands on the int64 bound stored",
+			amount:     strconv.FormatInt(stdmath.MaxInt64/providertypes.DefaultBlocksPerEpoch, 10),
+			wantAmount: math.NewInt(stdmath.MaxInt64 / providertypes.DefaultBlocksPerEpoch),
+		},
+		{
+			name:       "amount whose epoch fee passes int64 rejected",
+			amount:     strconv.FormatInt(stdmath.MaxInt64/providertypes.DefaultBlocksPerEpoch+1, 10),
+			wantErrMsg: "must fit an int64",
 		},
 		{
 			name:       "amount equal to global rejected",

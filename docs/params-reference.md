@@ -46,7 +46,7 @@ defaults and `Params.Validate`) and the `UpdateParams` handler in
 | `liveness_grace_fraction` | string decimal | `(0, 1)` | `"0.66"` | consumer removal grace = provider unbonding * this fraction; see [consumer-liveness.md](consumer-liveness.md) section 5 |
 | `vaas_timeout_period` | duration | `(0, 24h]` | `1h` | IBC timeout on VSC packets; 24h is the ibc-go v2 `MaxTimeoutDelta` hard cap |
 | `blocks_per_epoch` | int64 | `> 0` | `600` | VSC cadence and the fee-collection period (about 1h at 6s blocks) |
-| `fees_per_block_amount` | Int | set and `> 0` | `1000` | amount only; the denom is not a parameter (see below) |
+| `fees_per_block_amount` | Int | set, `> 0`, and `* blocks_per_epoch` fits an int64 | `1000` | amount only; the denom is not a parameter (see below) |
 | `min_deposit_blocks` | uint64 | none (not checked in `Params.Validate`) | `14400` | fee-pool minimum-deposit floor multiplier; `0` disables the floor |
 | `max_pause_duration` | duration | `> 0` | `1080h` (45 days) | how long a consumer may stay `PAUSED` before auto-stop; must exceed the provider's governance latency (on AtomOne a 21-day voting period plus the time to notice the pause and reach the deposit), since every pause is resumed by governance only, a refusal-triggered one after the coalition withdraws; see [consumer-downtime.md](consumer-downtime.md) section 7 |
 | `refusal_pause_threshold` | string decimal | `(0, 1)` | `"0.333333333333333333"` | share of bonded power whose recorded refusal pauses a consumer; keep it at or above the share that halts the chain physically (one third); see [consumer-refusal.md](consumer-refusal.md) section 1 |
@@ -59,7 +59,10 @@ rejects `0`, negatives, and any value `>= 1`
 ([x/vaas/types/shared_params.go](../x/vaas/types/shared_params.go) lines 64-79);
 `vaas_timeout_period` through `ValidateVAASTimeoutPeriod` against
 `channeltypesv2.MaxTimeoutDelta` (24h); `blocks_per_epoch` must be a positive
-int64; `fees_per_block_amount` must be set and positive;
+int64; `fees_per_block_amount` must be set and positive, and the epoch fee
+`fees_per_block_amount * blocks_per_epoch` must fit an int64
+(`ValidateFeesPerEpoch`, which `MsgSetConsumerFeesPerBlock` holds a
+per-consumer override to as well);
 `refusal_pause_threshold` goes through `ValidateStringFractionNonZero` as well,
 and `max_pause_duration`, `equivocation_execution_delay` and
 `removal_vote_deferral_margin` through `ValidateDuration` (strictly positive).

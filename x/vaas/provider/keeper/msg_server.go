@@ -713,6 +713,11 @@ func (k msgServer) SetConsumerFeesPerBlock(
 				amt, defaultAmt,
 			)
 		}
+		// The override is multiplied by blocks_per_epoch at every epoch boundary
+		// exactly as the default is, so it is held to the same bound.
+		if err := types.ValidateFeesPerEpoch(amt, k.GetBlocksPerEpoch(ctx)); err != nil {
+			return nil, errorsmod.Wrap(sdkerrors.ErrInvalidRequest, err.Error())
+		}
 		if err := k.ConsumerFeesPerBlockOverride.Set(ctx, msg.ConsumerId, amt); err != nil {
 			return nil, err
 		}
