@@ -12,8 +12,8 @@ import (
 	stakingtypes "github.com/cosmos/cosmos-sdk/x/staking/types"
 )
 
-// StakingQueryServer implements the staking query server interface
-// to allow Hermes and other IBC relayers to query staking params
+// StakingQueryServer implements the staking query server interface so IBC
+// relayers can query staking params.
 type StakingQueryServer struct {
 	keeper *Keeper
 }
@@ -24,12 +24,12 @@ func NewStakingQueryServer(k *Keeper) StakingQueryServer {
 }
 
 // Params returns the subset of staking params that have a meaningful value on a
-// VAAS consumer chain. The endpoint exists so IBC relayers (e.g. Hermes,
-// ts-relayer) can read UnbondingTime when deriving the trusting_period of a
-// Tendermint light client targeting this chain.
+// VAAS consumer chain. The endpoint exists so IBC relayers (ts-relayer in
+// localnet and e2e) can read UnbondingTime when deriving the trusting_period
+// of a 07-tendermint light client targeting this chain.
 //
 // Consumer chains have no local validator selection, no local bonding, and no
-// local commission — the active set is dictated by the provider via VSC
+// local commission: the active set is dictated by the provider via VSC
 // packets. The remaining staking.Params fields (BondDenom, MaxValidators,
 // MaxEntries, MinCommissionRate) are therefore left at their zero values
 // rather than fabricated, so callers are not misled.

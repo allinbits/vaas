@@ -55,7 +55,7 @@ func TestValidatorConsumerPubKeyCRUD(t *testing.T) {
 // every reverse mapping that names the old address, not just the first of
 // either.
 //
-// Both counts are load-bearing. A validator validates every consumer, so a
+// Both counts matter. A validator validates every consumer, so a
 // migration that stopped at the first would leave the rest resolving a rotated
 // validator's assigned key under an address it no longer holds. And a validator
 // has more than one reverse mapping on a consumer whenever it has re-assigned

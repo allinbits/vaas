@@ -9,7 +9,7 @@ For protocol details, see [`docs/consumer-lifecycle.md`](../docs/consumer-lifecy
 ## Prerequisites
 
 - Go (version pinned in [`go.mod`](../go.mod))
-- Docker — the relayer runs as a container; the image is pulled from
+- Docker: the relayer runs as a container; the image is pulled from
   `ghcr.io/allinbits/ibc-v2-ts-relayer:latest`.
 
 ## Quick Start
@@ -203,10 +203,10 @@ lsof -i :9092   # Consumer gRPC
 
 ```text
    ┌─────────────────┐        IBC v2 (clients)         ┌─────────────────┐
-   │                 │◄────── VSC packets ────────────►│                 │
+   │                 │<────── VSC packets ────────────>│                 │
    │    Provider     │                                 │    Consumer     │
    │     chain       │       ts-relayer (Docker)       │     chain       │
-   │  vaasprovider   │◄───────────────────────────────►│  vaasconsumer   │
+   │  vaasprovider   │<───────────────────────────────>│  vaasconsumer   │
    │  app ID         │                                 │  app ID         │
    └─────────────────┘                                 └─────────────────┘
         :26657                                              :26667

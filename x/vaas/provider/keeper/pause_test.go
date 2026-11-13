@@ -431,12 +431,12 @@ func TestResumeConsumerChain_RequiresPaused(t *testing.T) {
 	}
 }
 
-// TestResumeConsumerChain_RequiresDiscoveredClient verifies the pre-flight
+// TestResumeConsumerChain_RequiresDeclaredClient verifies the pre-flight
 // that runs before the client-status check: a paused consumer with no
-// client ever discovered (GetConsumerClientId not found) is rejected with
+// client declared (GetConsumerClientId not found) is rejected with
 // ErrInvalidConsumerClient rather than reaching the status check, and no
 // state changes (phase stays PAUSED, the auto-stop schedule survives).
-func TestResumeConsumerChain_RequiresDiscoveredClient(t *testing.T) {
+func TestResumeConsumerChain_RequiresDeclaredClient(t *testing.T) {
 	k, ctx, ctrl, _ := testkeeper.GetProviderKeeperAndCtx(t, testkeeper.NewInMemKeeperParams(t))
 	defer ctrl.Finish()
 

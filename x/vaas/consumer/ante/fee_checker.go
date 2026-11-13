@@ -11,7 +11,7 @@ import (
 )
 
 // InfrastructureExemptTxFeeChecker is the consumer's TxFeeChecker for
-// ante.NewDeductFeeDecorator. It mirrors the SDK default (the node's
+// ante.NewDeductFeeDecorator. It mirrors cosmos-sdk's default (the node's
 // minimum-gas-prices floor enforced at CheckTx, priority derived from the gas
 // price) with one change: a transaction made up exclusively of infrastructure
 // messages (see isInfrastructureTx) skips the floor.
@@ -38,7 +38,7 @@ func InfrastructureExemptTxFeeChecker(ctx sdk.Context, tx sdk.Tx) (sdk.Coins, in
 
 	// The floor is local mempool policy, so it only runs on CheckTx, and the
 	// infrastructure carve-out applies here and nowhere else: everything
-	// below matches the SDK's default checker.
+	// below matches cosmos-sdk's default checker.
 	if ctx.IsCheckTx() && !isInfrastructureTx(tx.GetMsgs()) {
 		minGasPrices := ctx.MinGasPrices()
 		if !minGasPrices.IsZero() {
@@ -61,7 +61,7 @@ func InfrastructureExemptTxFeeChecker(ctx sdk.Context, tx sdk.Tx) (sdk.Coins, in
 	return feeCoins, txPriority(feeCoins, int64(gas)), nil
 }
 
-// txPriority mirrors the SDK default's naive priority: the smallest
+// txPriority mirrors cosmos-sdk's default naive priority: the smallest
 // per-denom gas price across the fee coins. A zero-gas transaction gets
 // priority zero rather than dividing by zero.
 func txPriority(fee sdk.Coins, gas int64) int64 {

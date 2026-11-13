@@ -31,7 +31,7 @@ func entry(clientID, counterpartyID string) clientv2types.GenesisCounterpartyInf
 // The reason this package exists: two fresh chains both name their first
 // client 07-tendermint-0, ibc-go's own RegisterCounterparty accepts the
 // pairing, and only its genesis Validate rejects it, so an exported state
-// cannot be re-imported. Upstream's clientv2.InitGenesis panics on this input.
+// cannot be re-imported. ibc-go's clientv2.InitGenesis panics on this input.
 func TestInitClientV2GenesisAcceptsCollidingCrossChainIds(t *testing.T) {
 	r := &recordingSetter{set: map[string]clientv2types.CounterpartyInfo{}}
 	gs := clientv2types.GenesisState{
@@ -44,11 +44,11 @@ func TestInitClientV2GenesisAcceptsCollidingCrossChainIds(t *testing.T) {
 	require.Equal(t, "07-tendermint-0", r.set["07-tendermint-0"].ClientId,
 		"the counterparty must be restored exactly as exported")
 
-	// The guard being skipped is real: upstream still rejects this input.
-	require.Error(t, gs.Validate(), "if upstream stops rejecting this, delete the ibcshim package")
+	// The guard being skipped is real: ibc-go still rejects this input.
+	require.Error(t, gs.Validate(), "if ibc-go stops rejecting this, delete the ibcshim package")
 }
 
-// Every other upstream check is retained.
+// Every other ibc-go check is retained.
 func TestInitClientV2GenesisKeepsTheOtherChecks(t *testing.T) {
 	cases := []struct {
 		name string

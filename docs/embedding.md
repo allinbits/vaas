@@ -58,8 +58,9 @@ Both hops are wrapped in `panic`, by design: the sweep runs on the consumer
 deletion path, where returning an error would strand the consumer in `STOPPED`
 with no way out, so state corruption is made loud instead of silent.
 
-**The panic path when the entry is missing.** The SDK resolves a module name to
-an address through the permissions map the account keeper was constructed with.
+**The panic path when the entry is missing.** cosmos-sdk's account keeper
+resolves a module name to an address through the permissions map it was
+constructed with.
 With no entry, `GetModuleAddress` returns nil and `bank`'s
 `SendCoinsFromAccountToModule` / `SendCoinsFromModuleToAccount` **panic**
 (`ErrUnknownAddress`, "module account does not exist") before VAAS's own wrappers
@@ -309,8 +310,8 @@ The hook is the right enforcement point because the staking module applies a
 recorded rotation from `EndBlock`, not from the message handler -- by the time
 VAAS's `AfterConsensusPubKeyUpdate` hook runs, the rotation is already
 committed and there is nothing left to reject. The hook exists in atomone-sdk's
-`x/staking` (upstream has no pre-rotation hook), which the reference apps
-replace the SDK with; a staking module that does not ask it refuses nothing.
+`x/staking` (cosmos-sdk's has no pre-rotation hook), which the reference apps
+build against; a staking module that does not ask it refuses nothing.
 That staking module also charges the rotation fee into the community pool
 through a distribution keeper handed to it after construction
 (`StakingKeeper.SetDistributionKeeper`); without that call every rotation
@@ -332,7 +333,7 @@ to swap the node signing key, and where the validator's state ends up -- see
 ## 8. Module substitutions and ordering on the provider
 
 The provider computes and returns the provider validator set itself, in
-`EndBlock`. The SDK's module manager refuses two producers of validator updates,
+`EndBlock`. The cosmos-sdk module manager refuses two producers of validator updates,
 so the stock staking and genutil modules have to be replaced:
 
 ```go
@@ -341,10 +342,10 @@ no_valupdates_staking.NewAppModule(appCodec, app.StakingKeeper, app.AccountKeepe
     app.BankKeeper, app.GetSubspace(stakingtypes.ModuleName)),
 ```
 
-Both embed the SDK modules and register under the stock module names, so the
-ordering lists still name `stakingtypes.ModuleName` and
-`genutiltypes.ModuleName`. They suppress only the validator-update return values;
-errors still propagate.
+Both embed atomone-sdk's staking and genutil modules and register under the
+stock module names, so the ordering lists still name `stakingtypes.ModuleName`
+and `genutiltypes.ModuleName`. They suppress only the validator-update return
+values; errors still propagate.
 
 **Omitting them is fatal at genesis, with an unhelpful message.** The module
 manager returns "validator InitGenesis updates already set by a previous module"
@@ -363,7 +364,7 @@ Three ordering constraints:
   **silent**: the provider consensus set and every VSC packet lag by one block.
   The reference app places the provider module last.
 - **`SetOrderBeginBlockers`:** `evidencetypes.ModuleName` after slashing and
-  distribution, per the SDK's own convention; the provider module last.
+  distribution, per cosmos-sdk's own convention; the provider module last.
 
 On the consumer, the VAAS consumer module is last in all three orderings and is
 the sole producer of validator updates. It needs neither `no_valupdates`

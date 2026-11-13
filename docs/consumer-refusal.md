@@ -64,6 +64,15 @@ consumer, which cancels them like every stop. Discarding them at the pause
 would hand a coalition with pending accusations an exemption by the back
 door: refuse, pause, withdraw, let governance resume.
 
+The lapse is the one way out the freeze leaves, and it is bounded. A
+coalition at the threshold that never withdraws is not resumed (a governance
+resume is refused while it stands, below), so after `MaxPauseDuration` the
+consumer stops, and the stop cancels its pending downtime slashes like every
+stop. What that escapes is at most
+`InfractionParameters.Downtime.SlashFraction` of stake per accepted window,
+and at a threshold of one third or more a coalition of that size could have
+stopped the consumer by not signing it.
+
 Signals of validators x/staking no longer knows at all (removed after
 unbonding to nothing) are pruned at evaluation; a validator that merely lost
 its power, jailed or out of the set, keeps its stance.

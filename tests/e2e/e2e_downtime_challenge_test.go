@@ -300,7 +300,7 @@ func (s *IntegrationTestSuite) queryConsumerClientID(consumerID string) string {
 	}
 	s.Require().NoErrorf(json.Unmarshal(stdout.Bytes(), &res),
 		"failed to decode consumer-chain response: %s", stdout.String())
-	s.Require().NotEmptyf(res.ClientID, "consumer %s has no discovered IBC client yet", consumerID)
+	s.Require().NotEmptyf(res.ClientID, "consumer %s has no declared IBC client yet", consumerID)
 	return res.ClientID
 }
 

@@ -11,7 +11,7 @@
 //
 // The wrapper re-implements only clientv2's InitGenesis, keeping every check
 // except the cross-chain id comparison. Delete this package once the check is
-// removed upstream.
+// removed from ibc-go.
 package ibcshim
 
 import (

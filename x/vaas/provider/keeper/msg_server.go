@@ -820,7 +820,7 @@ func (k msgServer) FundConsumerFeePool(
 // WithdrawConsumerFeePool burns the depositor's shares across one or more
 // denoms and returns the corresponding tokens. The handler is all-or-nothing
 // at the tx boundary: a mid-flight failure on any denom returns an error and
-// the SDK rolls back the entire tx.
+// cosmos-sdk's BaseApp rolls back the entire tx.
 //
 // When the signer is the gov authority, the depositor identity is the
 // distribution module account and the tokens are routed back to the community

@@ -346,7 +346,7 @@ func (k Keeper) containLightClientAttack(
 
 	clientId, found := k.GetConsumerClientId(ctx, consumerId)
 	if !found {
-		return nil, errorsmod.Wrapf(types.ErrInvalidConsumerClient, "no client discovered for consumer %d", consumerId)
+		return nil, errorsmod.Wrapf(types.ErrInvalidConsumerClient, "no client declared for consumer %d", consumerId)
 	}
 	if k.clientKeeper.GetClientStatus(ctx, clientId) == ibcexported.Active {
 		if err := k.clientKeeper.UpdateClient(ctx, clientId, misbehaviour); err != nil {

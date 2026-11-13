@@ -54,10 +54,10 @@ All enforced in `Keeper.AssignConsumerKey`
 noted.
 
 1. **ed25519 only.** Any other key type is rejected with
-   `ErrValidatorPubKeyTypeNotSupported` (`ParseConsumerKey`). This is a
-   deliberate simplification carried over from Interchain Security; the
-   consensus-params check that would otherwise decide supported types is
-   disabled (see the note in `ParseConsumerKey`).
+   `ErrValidatorPubKeyTypeNotSupported` (`ParseConsumerKey`). A consumer key
+   must be one every consumer's CometBFT accepts, and the provider cannot read
+   a consumer's consensus parameters to check anything else; widening the set
+   is a decision for the day a consumer needs another type.
 
 2. **The consumer must not be stopped or deleted.** Assignment is allowed while
    the consumer is `REGISTERED`, `INITIALIZED`, `LAUNCHED`, or `PAUSED`

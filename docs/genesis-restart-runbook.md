@@ -130,10 +130,13 @@ unpacks the stored key exactly as `x/staking` does.
 
 For a coordinated stop-and-restart (state-export upgrade):
 
-1. Stop the provider and every consumer at the same agreed height (a governance
-   software-upgrade halt, or a coordinated `halt-height`). A clean halt at a
-   shared height keeps the IBC clients and any in-flight packets mutually
-   consistent.
+1. Stop the provider and every consumer at the same agreed height with
+   `halt-height` in each node's `app.toml`. A passed `MsgSoftwareUpgrade` also
+   halts every node at its height, but neither app registers an upgrade
+   handler, so after that halt the binary starts only with
+   `--unsafe-skip-upgrades <height>` on every node; `halt-height` is the
+   mechanism to use. A clean halt at a shared height keeps the IBC clients and
+   any in-flight packets mutually consistent.
 2. On each chain run `export` at that height and `genesis validate` the result.
 3. Assemble the new `genesis.json` for each chain from its exported app state,
    carrying over `chain_id` (or bumping it per your upgrade policy) and the
@@ -141,10 +144,10 @@ For a coordinated stop-and-restart (state-export upgrade):
 4. Distribute the genesis, reset only Tendermint/CometBFT block state
    (`comet unsafe-reset-all` / a fresh data dir), keep validator and node keys,
    and start the new binaries.
-5. Restart the relayer against the same IBC clients. The provider rediscovers
-   each consumer client at the next epoch boundary and, per the must-snapshot
-   rule above, its first post-restart VSC to each launched consumer is a full
-   snapshot.
+5. Restart the relayer against the same IBC clients. The provider serves each
+   declared consumer client again from the next epoch boundary and, per the
+   must-snapshot rule above, its first post-restart VSC to each launched
+   consumer is a full snapshot.
 
 **The relayer needs the restarted chain's pre-restart history.** Advancing an
 IBC client past the restart requires a client update whose trusted validators

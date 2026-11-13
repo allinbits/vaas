@@ -305,7 +305,10 @@ func (k Keeper) MakeConsumerGenesis(
 	return gen, nil
 }
 
-// This is copied from the client keeper in ibc v8, since this function was removed in ibc v9
+// getSelfConsensusState returns this chain's own 07-tendermint consensus state
+// at height, built from the staking module's historical info (header time, app
+// hash as the commitment root, next validators hash). It seeds the client state
+// in the consumer genesis; ibc-go's client keeper exposes no equivalent.
 func (k Keeper) getSelfConsensusState(ctx sdk.Context, height clienttypes.Height) (*ibctmtypes.ConsensusState, error) {
 	// check that height revision matches chainID revision
 	revision := clienttypes.ParseChainID(ctx.ChainID())
@@ -626,7 +629,7 @@ func (k Keeper) ResumeConsumerChain(ctx sdk.Context, consumerId uint64) error {
 
 	clientId, found := k.GetConsumerClientId(ctx, consumerId)
 	if !found {
-		return errorsmod.Wrapf(types.ErrInvalidConsumerClient, "no client discovered for consumer %d", consumerId)
+		return errorsmod.Wrapf(types.ErrInvalidConsumerClient, "no client declared for consumer %d", consumerId)
 	}
 	if status := k.clientKeeper.GetClientStatus(ctx, clientId); status != ibcexported.Active {
 		return errorsmod.Wrapf(types.ErrConsumerClientNotActive,

@@ -560,7 +560,7 @@ func (k Keeper) ExportGenesis(ctx sdk.Context) *types.GenesisState {
 	feePoolShares, recomputedTotals := k.exportFeePoolShares(ctx)
 
 	// Sanity check: compare stored ConsumerFeePoolTotalShares against the
-	// totals we just recomputed. Divergence is logged but not blocking —
+	// totals we just recomputed. Divergence is logged but not blocking:
 	// export should never fail on a sanity check.
 	k.checkFeePoolTotalsConsistency(ctx, recomputedTotals)
 

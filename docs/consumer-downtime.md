@@ -200,6 +200,12 @@ compound with no aggregate bound. A downtime slash **never jails**. Entries whos
 meanwhile unbonded, been tombstoned, or has no slashable stake are dropped with an event rather
 than executed; a zero-token slash is likewise dropped as vacuous.
 
+The slash is applied with infraction height 0, as the equivocation slash is: a consumer height
+cannot be mapped to a provider height, so `x/staking` slashes every unmatured undelegation and
+redelegation from the validator, whenever it began, as well as its bonded stake. The slashable
+power the fraction applies to counts that in-flight stake in (`slashableStake`), so a delegator
+who left up to an unbonding period before the accused window is reached by the same fraction.
+
 ## 5. Fee exclusion and the pool as escrow
 
 Fee exclusion targets the epoch the infraction window falls in. When that is the current,

@@ -90,12 +90,12 @@ func TestQueueVSCPacketsDiffWhenCaughtUp(t *testing.T) {
 // TestSnapshotAfterLostDiff is the core resync SAFETY property.
 //
 // When a consumer is BEHIND (acked < sent) the provider must send a full
-// snapshot so the consumer can replace its entire set — no reliance on a
+// snapshot so the consumer can replace its entire set, with no reliance on a
 // diff that may never have arrived. This test verifies:
 //   - the queued packet is flagged as a snapshot (IsSnapshot == true),
 //   - the snapshot contains validator A with non-zero power (the survivor
 //     is present in the live set and kept in the snapshot), and
-//   - validator B is NOT present in the snapshot — proving the snapshot is
+//   - validator B is NOT present in the snapshot, proving the snapshot is
 //     computed from the live bonded set and not the stale consumer valset.
 func TestSnapshotAfterLostDiff(t *testing.T) {
 	k, ctx, ctrl, mocks := testkeeper.GetProviderKeeperAndCtx(t, testkeeper.NewInMemKeeperParams(t))
@@ -123,7 +123,7 @@ func TestSnapshotAfterLostDiff(t *testing.T) {
 	k.SetConsumerHighestAckedVscId(ctx, cid, 3)
 
 	// Build a real staking validator for A to return from the bonded set.
-	// B is absent — it has departed from the bonded set.
+	// B is absent: it has departed from the bonded set.
 	stakingValA := identityA.SDKStakingValidator()
 	const powerA = int64(10)
 

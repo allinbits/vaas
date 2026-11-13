@@ -14,8 +14,9 @@ import (
 	ibcconsumerkeeper "github.com/allinbits/vaas/x/vaas/consumer/keeper"
 )
 
-// HandlerOptions extend the SDK's AnteHandler options by requiring the IBC
-// channel keeper.
+// HandlerOptions extend cosmos-sdk's ante.HandlerOptions with the ibc-go
+// keeper the redundant-relay decorator needs and the consumer keeper the
+// message filter and photon fee decorators read.
 type HandlerOptions struct {
 	ante.HandlerOptions
 
@@ -55,7 +56,7 @@ func NewAnteHandler(options HandlerOptions) (sdk.AnteHandler, error) {
 		// that did not opt in.
 		consumerante.NewPhotonFeeDecorator(options.ConsumerKeeper),
 		// The infrastructure exemption must hold at the node fee floor too:
-		// with the SDK's default checker, a raised minimum-gas-prices would
+		// with cosmos-sdk's default checker, a raised minimum-gas-prices would
 		// price the relayer traffic the photon exemption keeps flowing. An
 		// explicitly configured checker still wins.
 		ante.NewDeductFeeDecorator(options.AccountKeeper, options.BankKeeper, options.FeegrantKeeper, txFeeCheckerOrDefault(options.TxFeeChecker)),

@@ -90,6 +90,12 @@ parameters (see [params-reference.md](params-reference.md) section 2); with the
 defaults, a double-signer whose consumer governance does not remove is slashed
 5% and permanently removed seven days after the evidence is accepted.
 
+The slash is applied with infraction height 0: a consumer height cannot be
+mapped to a provider height, so `x/staking` slashes every unmatured
+undelegation and redelegation from the validator, whenever it began, as well
+as its bonded stake, and the slashable power the fraction applies to counts
+that in-flight stake in (`ComputePowerToSlash`).
+
 ---
 
 ## Light-client attack (IBC misbehaviour)

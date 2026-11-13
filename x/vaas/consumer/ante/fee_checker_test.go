@@ -13,7 +13,7 @@ import (
 )
 
 // TestInfrastructureExemptTxFeeChecker covers the consumer's TxFeeChecker: the
-// node's minimum-gas-prices floor applies at CheckTx exactly as the SDK
+// node's minimum-gas-prices floor applies at CheckTx exactly as cosmos-sdk's
 // default, except that a transaction made up exclusively of infrastructure
 // messages skips it. Without the skip, a validator raising its floor would
 // price the relayer traffic the photon exemption exists to keep flowing.

@@ -200,7 +200,7 @@ func (k Keeper) MintShares(
 		shares = amount.Amount.Mul(total).Quo(balance.Amount)
 	}
 	if !shares.IsPositive() {
-		// sub-share deposit (extreme dilution) — should be very rare but
+		// sub-share deposit (extreme dilution): should be very rare, but
 		// refuse rather than silently dropping
 		return errorsmod.Wrap(types.ErrDepositTooSmall,
 			"deposit too small to mint any shares")

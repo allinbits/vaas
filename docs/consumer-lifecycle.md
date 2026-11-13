@@ -29,25 +29,25 @@ DELETED (see [Removing a consumer before launch](#removing-a-consumer-before-lau
 **Trigger:** `MsgCreateConsumer` submitted by any account on the provider chain.
 
 **Required fields.** Only two:
-- `chain_id` — unique identifier for the consumer chain (must not be in use; a chain ID
+- `chain_id`: unique identifier for the consumer chain (must not be in use; a chain ID
   claimed by a consumer that is later deleted is released and can be claimed again)
-- `metadata` — name, description, metadata blob
+- `metadata`: name, description, metadata blob
 
 **`initialization_parameters` is optional**, and it is all-or-nothing. Omit the
 whole block and `MsgCreateConsumer` substitutes
-`DefaultConsumerInitializationParameters()` wholesale — including a zero
+`DefaultConsumerInitializationParameters()` wholesale, including a zero
 `spawn_time`, so the consumer stays in `REGISTERED` until the owner supplies one
 with `MsgUpdateConsumer`. Supply the block and every field in it is validated
 (`ValidateInitializationParameters` plus the cross-chain bounds in
 `validateConsumerInitParams`), so a partially-filled block is rejected rather
 than defaulted field by field:
 
-- `initial_height` — the height at which the consumer chain starts (must be non-zero)
-- `spawn_time` — the provider block time at which the consumer is launched (zero means "not scheduled")
-- `unbonding_period` — unbonding period for the consumer (positive, not above the provider's own unbonding period, and above the downtime challenge horizon `downtime_evidence_max_age + downtime_challenge_window`)
-- `vaas_timeout_period` — timeout on the evidence packets the consumer sends the provider (positive, at most 24h)
-- `historical_entries` — number of historical entries to keep (positive)
-- `safe_mode_threshold` — how long the consumer tolerates a stale provider validator set before entering safe mode (positive, and strictly below the provider's liveness grace period)
+- `initial_height`: the height at which the consumer chain starts (must be non-zero)
+- `spawn_time`: the provider block time at which the consumer is launched (zero means "not scheduled")
+- `unbonding_period`: unbonding period for the consumer (positive, not above the provider's own unbonding period, and above the downtime challenge horizon `downtime_evidence_max_age + downtime_challenge_window`)
+- `vaas_timeout_period`: timeout on the evidence packets the consumer sends the provider (positive, at most 24h)
+- `historical_entries`: number of historical entries to keep (positive)
+- `safe_mode_threshold`: how long the consumer tolerates a stale provider validator set before entering safe mode (positive, and strictly below the provider's liveness grace period)
 
 See [params-reference.md](params-reference.md) section 4 for the full bounds and
 defaults.
@@ -206,7 +206,7 @@ auto-stop moves it to `STOPPED`.
 - automatic, at the first `BeginBlock` where
   `block_time >= stopped_time + provider_unbonding_period`, for a consumer that went
   through `STOPPED`, or
-- `MsgRemoveConsumer` on a consumer that never launched — no unbonding delay applies
+- `MsgRemoveConsumer` on a consumer that never launched: no unbonding delay applies
   (see [Removing a consumer before launch](#removing-a-consumer-before-launch)).
 
 **What happens on-chain:**
@@ -214,7 +214,7 @@ auto-stop moves it to `STOPPED`.
 2. For each consumer, `DeleteConsumerChain` runs. **Deletion moves money first:** it
    auto-sweeps the consumer's fee pool, distributing the remaining balance pro-rata to
    its depositors (see [consumer-fee-pool.md](consumer-fee-pool.md)). This is the last
-   chance any depositor gets — withdrawals are rejected once the phase is `DELETED`.
+   chance any depositor gets: withdrawals are rejected once the phase is `DELETED`.
    It then:
    - Deletes: IBC client ID mapping, consumer genesis, key assignments, equivocation
      evidence minimum height, init-chain height, pending VSC packets, validator set,
@@ -282,8 +282,8 @@ pro rata to its depositors, with the per-denom truncation residue forwarded to t
 community pool, so anyone who prepaid fees for a chain that never launched is paid out
 at removal and the owner does not have to run `MsgSweepConsumerFeePool` first (see
 [consumer-fee-pool.md](consumer-fee-pool.md)). Key assignments the consumer accumulated
-before launch — assignment is allowed while `REGISTERED` and `INITIALIZED` (see
-[key-assignment.md](key-assignment.md)) — are cleared with the rest of its state.
+before launch (assignment is allowed while `REGISTERED` and `INITIALIZED`, see
+[key-assignment.md](key-assignment.md)) are cleared with the rest of its state.
 
 **The chain ID is free immediately.** Unlike the post-launch path, the pre-launch
 removal is not gated on an unbonding period, so a mistyped or abandoned registration

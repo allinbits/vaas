@@ -34,5 +34,5 @@ EXPOSE 26656 26657 26658 1317 9090
 
 USER nonroot
 
-# No fixed entrypoint — the test suite specifies the command
+# No fixed entrypoint: the test suite specifies the command
 ENTRYPOINT []

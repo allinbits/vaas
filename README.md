@@ -8,7 +8,7 @@ VAAS allows Cosmos blockchains to lease their proof-of-stake security to consume
 
 ## IBC v2 only
 
-VAAS uses IBC v2 exclusively — no channel handshake, no port reservations.
+VAAS uses IBC v2 exclusively: no channel handshake, no port reservations.
 The provider and consumer modules register on `ibcRouterV2` under the
 application IDs `vaasprovider` and `vaasconsumer`. After a consumer launches,
 a relayer (the localnet and e2e suites use
@@ -19,7 +19,7 @@ VSC packets flow over the declared client from the next epoch boundary.
 
 Registering the v2 routes is necessary but nowhere near sufficient: a host chain
 must also carry a set of wiring duties the modules cannot install themselves,
-and most of them fail silently when omitted — one of them halts the provider
+and most of them fail silently when omitted; one of them halts the provider
 chain at the first consumer deletion. See
 [docs/embedding.md](docs/embedding.md) for the checklist.
 [`app/provider/app.go`](app/provider/app.go) demonstrates the full wiring;
@@ -80,26 +80,26 @@ make test-e2e
 
 ## Documentation
 
-- [Localnet setup](app/README.md) — run a provider, a consumer, and `ts-relayer` locally
-- [Embedding VAAS](docs/embedding.md) — the host-app wiring duties a chain integrating the modules must carry, and what breaks without each
-- [Security model](docs/security-model.md) — what a deployment trusts, what it punishes, and the residual assumptions
-- [Consumer launch runbook](docs/consumer-launch-runbook.md) — end-to-end operator flow from registration to a funded, launched consumer
-- [Consumer lifecycle](docs/consumer-lifecycle.md) — phases, on-chain effects, operator/relayer responsibilities
-- [Consumer downtime](docs/consumer-downtime.md) — detection, verifiable evidence, optimistic slashing, challenges, and the PAUSED phase
-- [Consumer liveness](docs/consumer-liveness.md) — removal sweep, snapshot resync, and consumer safe mode
-- [Consumer refusal](docs/consumer-refusal.md) — refusal signal and threshold pause, punishment deferral behind removal votes, delayed equivocation punishment
-- [Consumer fee pool](docs/consumer-fee-pool.md) — funding, share accounting, withdrawal locks, and sweeping
-- [Consumer transition](docs/consumer-transition.md) — future-work considerations for a standalone-to-consumer changeover
-- [Key assignment](docs/key-assignment.md) — per-consumer consensus keys and the assignment rules
-- [Equivocation and light-client evidence](docs/equivocation-evidence.md) — submitting double-voting and misbehaviour evidence, and their consequences
-- [Validator obligations](docs/validator-obligations.md) — the operational duties bonding on the provider imposes
-- [Parameters reference](docs/params-reference.md) — every provider and consumer parameter: type, bound, default, where set
-- [Queries reference](docs/queries-reference.md) — every provider and consumer query, its CLI command, and what it returns
-- [Events reference](docs/events-reference.md) — every event both modules emit, its attributes, and what is deliberately not an event
-- [Genesis / restart runbook](docs/genesis-restart-runbook.md) — exporting and re-importing state, per-module round-trip guarantees, and the halt/upgrade flow
-- [End-to-end tests](tests/e2e/README.md) — the Docker e2e suites and how to run and extend them
-- [Contributor guide (AGENTS.md)](AGENTS.md) — architecture, build/test commands, code layout
-- [Design rationale (DESIGN_RATIONALE.md)](DESIGN_RATIONALE.md) — why VAAS is shaped the way it is
+- [Localnet setup](app/README.md): run a provider, a consumer, and `ts-relayer` locally
+- [Embedding VAAS](docs/embedding.md): the host-app wiring duties a chain integrating the modules must carry, and what breaks without each
+- [Security model](docs/security-model.md): what a deployment trusts, what it punishes, and the residual assumptions
+- [Consumer launch runbook](docs/consumer-launch-runbook.md): end-to-end operator flow from registration to a funded, launched consumer
+- [Consumer lifecycle](docs/consumer-lifecycle.md): phases, on-chain effects, operator/relayer responsibilities
+- [Consumer downtime](docs/consumer-downtime.md): detection, verifiable evidence, optimistic slashing, challenges, and the PAUSED phase
+- [Consumer liveness](docs/consumer-liveness.md): removal sweep, snapshot resync, and consumer safe mode
+- [Consumer refusal](docs/consumer-refusal.md): refusal signal and threshold pause, punishment deferral behind removal votes, delayed equivocation punishment
+- [Consumer fee pool](docs/consumer-fee-pool.md): funding, share accounting, withdrawal locks, and sweeping
+- [Consumer transition](docs/consumer-transition.md): future-work considerations for a standalone-to-consumer changeover
+- [Key assignment](docs/key-assignment.md): per-consumer consensus keys and the assignment rules
+- [Equivocation and light-client evidence](docs/equivocation-evidence.md): submitting double-voting and misbehaviour evidence, and their consequences
+- [Validator obligations](docs/validator-obligations.md): the operational duties bonding on the provider imposes
+- [Parameters reference](docs/params-reference.md): every provider and consumer parameter: type, bound, default, where set
+- [Queries reference](docs/queries-reference.md): every provider and consumer query, its CLI command, and what it returns
+- [Events reference](docs/events-reference.md): every event both modules emit, its attributes, and what is deliberately not an event
+- [Genesis / restart runbook](docs/genesis-restart-runbook.md): exporting and re-importing state, per-module round-trip guarantees, and the halt/upgrade flow
+- [End-to-end tests](tests/e2e/README.md): the Docker e2e suites and how to run and extend them
+- [Contributor guide (AGENTS.md)](AGENTS.md): architecture, build/test commands, code layout
+- [Design rationale (DESIGN_RATIONALE.md)](DESIGN_RATIONALE.md): why VAAS is shaped the way it is
 
 ## Learn More
 
