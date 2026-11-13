@@ -175,7 +175,7 @@ func (k Keeper) MaxValidators(context.Context) (uint32, error) {
 
 // UnbondingTime returns consumer unbonding period, satisfying the staking keeper interface
 func (k Keeper) UnbondingTime(goCtx context.Context) (time.Duration, error) {
-	return k.GetUnbondingPeriod(goCtx), nil
+	return k.GetConsumerParams(goCtx).UnbondingPeriod, nil
 }
 
 // GetHistoricalInfo gets the historical info at a given height

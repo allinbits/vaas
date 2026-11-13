@@ -51,7 +51,6 @@ const (
 	EventTypeWithheldFeePaid = "vaas_withheld_fee_paid"
 
 	AttributeKeyAckSuccess            = "success"
-	AttributeKeyAckError              = "error"
 	AttributeWindowEndHeight          = "window_end_height"
 	AttributeProviderValidatorAddress = "provider_validator_address"
 	AttributeConsumerMisbehaviour     = "consumer_misbehaviour"

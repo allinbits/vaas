@@ -4,14 +4,19 @@ go 1.26.0
 
 replace (
 	github.com/bytedance/sonic => github.com/bytedance/sonic v1.15.0
-	github.com/cosmos/cosmos-sdk => github.com/atomone-hub/cosmos-sdk v0.500.6
+	// TEMPORARY: pinned to atomone-hub/atomone-sdk main at the squash of
+	// atomone-hub/atomone-sdk#137 (the pre-rotation staking hook). That commit
+	// carries everything in v0.500.6 plus the hook; the pseudo-version only
+	// sorts below the tag by name. Switch this replace to a release tag once
+	// one carries the hook.
+	github.com/cosmos/cosmos-sdk => github.com/atomone-hub/cosmos-sdk v0.500.3-0.20261029093443-581d8bc35953
 	github.com/syndtr/goleveldb => github.com/syndtr/goleveldb v1.0.1-0.20210819022825-2ae1ddf74ef7
 )
 
 require (
 	cosmossdk.io/math v1.5.3
 	github.com/cometbft/cometbft v0.38.20
-	github.com/cosmos/cosmos-sdk v0.53.4
+	github.com/cosmos/cosmos-sdk v0.500.0
 	github.com/cosmos/ibc-go/v10 v10.5.0
 	github.com/ory/dockertest/v3 v3.11.0
 	github.com/stretchr/testify v1.11.1
