@@ -56,7 +56,7 @@ func (o testAppOptions) Get(key string) any { return o[key] }
 // and runs it through InitChain, one finalized block, and a commit, so the
 // ante chain sees the same committed module state (auth params, bank send
 // config, consumer params) a live node has. The consumer module is
-// initialized from an enabled restart genesis carrying one validator and the
+// initialized from a restart genesis carrying one validator and the
 // pinned provider client, the state a launched consumer runs with, with the
 // photon-only fee policy set as the chain would set it: through the
 // photon_fees_enabled consumer param.

@@ -28,8 +28,9 @@ cd tests/e2e && go test -timeout=60m -v ./... --count=1
 The chain image is built from
 [docker/e2e.Dockerfile](docker/e2e.Dockerfile) and contains both the provider
 and consumer binaries. The relayer image is
-`ghcr.io/allinbits/ibc-v2-ts-relayer:latest`, pulled at runtime
-([e2e_tsrelayer_test.go](e2e_tsrelayer_test.go) lines 17-18).
+`ghcr.io/allinbits/ibc-v2-ts-relayer`, pinned by digest in
+[e2e_tsrelayer_test.go](e2e_tsrelayer_test.go) (`tsRelayerImageDigest`, whose
+comment gives the command that bumps it) and pulled at runtime.
 
 To run a single suite:
 

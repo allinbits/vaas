@@ -1,7 +1,7 @@
 package e2e
 
-// e2e_consumer_liveness_test.go exercises the liveness scenarios introduced by
-// issue #36 that require a full provider+consumer network:
+// e2e_consumer_liveness_test.go exercises the consumer liveness scenarios that
+// need a full provider+consumer network:
 //
 //   1. testLivenessTransientOutage - brief outage + valset change; the consumer
 //                                    stays LAUNCHED and re-converges after recovery.
@@ -17,16 +17,19 @@ package e2e
 //
 // HARNESS CONSTRAINTS
 //
-// These tests share the single IntegrationTestSuite spun up by TestVAAS in
-// e2e_test.go.  That consumer's unbonding_period is ~20 days (from
-// testdata/create_consumer.json), so the derived liveness grace period
-// (unbonding * 0.66) is ~13 days.  Waiting for an automatic STOPPED transition
-// in real-time is therefore impractical in CI.
+// These tests share the single IntegrationTestSuite started by
+// TestIntegrationTestSuite (e2e_setup_test.go), the go test entry point, and
+// run from its ordered scenario method TestVAAS (e2e_test.go).  That
+// consumer's unbonding_period is ~20 days (from testdata/create_consumer.json),
+// so the derived liveness grace period (unbonding * 0.66) is ~13 days.  Waiting
+// for an automatic STOPPED transition in real-time is therefore impractical in
+// CI.
 //
 // For testLivenessRemoval we issue an explicit remove-consumer via governance
-// (gov authority is required since PR #53), then assert the provider transitions
-// to STOPPED.  The STOPPED -> DELETED leg relies on removal_time elapsing, which
-// needs a short-unbonding consumer -- exercised by LivenessIntegrationTestSuite.
+// (only the gov authority may remove a launched consumer), then assert the
+// provider transitions to STOPPED.  The STOPPED -> DELETED leg relies on
+// removal_time elapsing, which needs a short-unbonding consumer -- exercised by
+// LivenessIntegrationTestSuite.
 //
 // For testLivenessTransientOutage we pause the consumer container (same
 // mechanism as testDowntimeSlash) for a brief window while the provider's valset
@@ -172,8 +175,8 @@ func (s *IntegrationTestSuite) testLivenessRemoval() {
 		s.Require().Equalf(phaseLaunched, phase,
 			"consumer %s must be LAUNCHED before the liveness removal test", consumerID)
 
-		// Issue an explicit remove-consumer via governance (gov authority is required
-		// since PR #53; a direct --from val tx would fail DeliverTx).
+		// Issue an explicit remove-consumer via governance (only the gov authority
+		// may remove a launched consumer; a direct --from val tx would fail DeliverTx).
 		s.T().Log("submitting remove-consumer governance proposal...")
 		govAddr := s.queryGovAuthority()
 		removeJSON := fmt.Sprintf(`{

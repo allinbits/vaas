@@ -482,7 +482,8 @@ func (s *IntegrationTestSuite) testConsumerRefusalPauseAndResume() {
 		s.T().Log("withdrawing the refusal: nothing resumes on its own...")
 		s.setConsumerRefusal(consumerID, false)
 		s.Require().Never(func() bool {
-			return s.queryProviderConsumerPhase(consumerID) != "CONSUMER_PHASE_PAUSED"
+			phase := s.queryProviderConsumerPhase(consumerID)
+			return phase != "" && phase != "CONSUMER_PHASE_PAUSED"
 		}, 16*time.Second, 4*time.Second, "withdrawing a refusal must not resume the consumer by itself")
 
 		s.T().Log("resuming the consumer via governance now that the coalition is gone...")
@@ -495,7 +496,8 @@ func (s *IntegrationTestSuite) testConsumerRefusalPauseAndResume() {
 		// Still launched over the next blocks: the withdrawn signal stays
 		// withdrawn, so nothing re-pauses the consumer.
 		s.Require().Never(func() bool {
-			return s.queryProviderConsumerPhase(consumerID) != "CONSUMER_PHASE_LAUNCHED"
+			phase := s.queryProviderConsumerPhase(consumerID)
+			return phase != "" && phase != "CONSUMER_PHASE_LAUNCHED"
 		}, 16*time.Second, 4*time.Second, "the resumed consumer must stay launched")
 	})
 }
