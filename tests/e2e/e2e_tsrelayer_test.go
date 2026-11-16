@@ -18,7 +18,7 @@ const (
 	tsRelayerImage = "ghcr.io/allinbits/ibc-v2-ts-relayer"
 	// The index digest (linux/amd64 and linux/arm64) of the relayer image the
 	// suites run; bump it from `docker buildx imagetools inspect ghcr.io/allinbits/ibc-v2-ts-relayer:latest`.
-	tsRelayerImageDigest = "sha256:4f61a9e711a4ffa29910aadecf56bf47f0426d6139f791dac06d04485007d8ca"
+	tsRelayerImageDigest = "sha256:876041af379375bd86aa2b9bbfa663d5f5ddba924729db9031cc09b03c7a0bf1"
 	IBCv2                = "2"
 )
 
