@@ -31,7 +31,7 @@ require (
 	cosmossdk.io/x/tx v1.2.0-alpha.1
 	cosmossdk.io/x/upgrade v0.2.0
 	github.com/allinbits/vaas v0.0.0-20260126105106-3bcd2c75855e
-	github.com/cometbft/cometbft v0.38.23
+	github.com/cometbft/cometbft v0.38.25
 	github.com/cosmos/cosmos-db v1.1.3
 	github.com/cosmos/cosmos-sdk v0.500.0
 	github.com/cosmos/gogoproto v1.7.2
